@@ -1,26 +1,53 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
-"""Builds stable-2026a profile values from a legacy umbrella Ingestion Gateway install."""
+"""Builds and validates stable-2026a profile values from a legacy umbrella install."""
 
 import json
 import math
-import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import HandledError, parse_bool_flag, verify_helm_min_version
+from tools.common.tool_utils import (
+    HandledError,
+    parse_bool_flag,
+    run_command,
+    verify_helm_min_version,
+)
+from tools.components.run_linter import LintTarget, resolve_linter_binary, run_linter_on_target
 from tools.migrations.components.cluster_inspector import (
     GATEWAY_DEPLOYMENT_NAME,
     GATEWAY_HPA_NAME,
     fetch_live_resource,
     fetch_umbrella_values,
+    validate_dns1123_namespace,
+    verify_secret_exists,
 )
 
 _COMPONENTS = ("redpanda", "clickhouse", "ingestion-gateway")
 _DEFAULT_BROKERS = "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
-_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_KNOWN_GATEWAY_FLAGS = frozenset(
+    [
+        "port",
+        "enable_components",
+        "components_namespace",
+        "redpanda_brokers",
+        "topic_name",
+        "min_partitions",
+        "min_replicas",
+        "project_id",
+        "sasl_enabled",
+        "sasl_mechanism",
+        "sasl_credentials_dir",
+        "tls_enabled",
+        "tls_ca_file",
+        "tls_cert_file",
+        "tls_key_file",
+    ]
+)
+_KNOWN_VOLUME_NAMES = frozenset({"kafka-sasl-credentials", "kafka-tls-credentials"})
 
 
 def _pod_spec(deployment: dict[str, Any]) -> dict[str, Any]:
@@ -48,14 +75,63 @@ def _resolve_int(*candidates: Any, default: int, field: str) -> int:
     return default
 
 
-def parse_gateway_cli_flags(deployment: dict[str, Any]) -> dict[str, str]:
+def audit_live_gateway_deployment(deployment: dict[str, Any]) -> dict[str, str]:
+    """Audits live gateway PodSpec for unmapped customizations and returns parsed CLI flags."""
+    pod_spec = _pod_spec(deployment)
+    if pod_spec.get("initContainers"):
+        raise HandledError(
+            "Live ingestion-gateway has custom initContainers.",
+            "Migrate initContainers manually before enabling components.",
+        )
+    containers = pod_spec.get("containers") or []
+    if len(containers) != 1 or containers[0].get("name") != "ingestion-gateway":
+        raise HandledError(
+            "Live ingestion-gateway has sidecar or renamed containers.",
+            "Inspect live Deployment YAML before migrating.",
+        )
+    container = containers[0]
+    if container.get("env") or container.get("envFrom"):
+        raise HandledError(
+            "Live ingestion-gateway defines custom env/envFrom (e.g. MESSAGE_BUS=pubsub).",
+            "Remove custom env vars before migrating to the Redpanda component gateway.",
+        )
+    extra_vols = [
+        v.get("name", "")
+        for v in (pod_spec.get("volumes") or [])
+        if v.get("name") not in _KNOWN_VOLUME_NAMES
+    ]
+    if extra_vols:
+        raise HandledError(
+            f"Live ingestion-gateway mounts unmapped volumes: {extra_vols}.",
+            "Only kafka-sasl-credentials and kafka-tls-credentials are supported.",
+        )
+    return parse_gateway_cli_flags(deployment, strict=True)
+
+
+def parse_gateway_cli_flags(deployment: dict[str, Any], *, strict: bool = False) -> dict[str, str]:
     """Extracts key=value CLI flags from the primary ingestion-gateway container."""
     parsed: dict[str, str] = {}
     for arg in _primary_container(deployment).get("args") or []:
         key, sep, val = arg.lstrip("-").partition("=")
-        if sep:
-            parsed[key] = val
+        if not sep or (strict and key not in _KNOWN_GATEWAY_FLAGS):
+            if strict:
+                raise HandledError(
+                    f"Unsupported gateway CLI argument '{arg}'.",
+                    "Component gateway supports Redpanda ingestion flags only.",
+                )
+            continue
+        parsed[key] = val
     return parsed
+
+
+def _extract_volume_secrets(deployment: dict[str, Any]) -> dict[str, str]:
+    """Returns volume_name -> secretName map from live Deployment pod spec."""
+    vols = _pod_spec(deployment).get("volumes") or []
+    return {
+        v["name"]: v["secret"]["secretName"]
+        for v in vols
+        if v.get("name") and isinstance(v.get("secret"), dict) and v["secret"].get("secretName")
+    }
 
 
 def build_gateway_parameters(
@@ -88,7 +164,10 @@ def build_gateway_parameters(
         ),
         "serviceAccountName": str(sa),
     }
+    if live_flags.get("project_id"):
+        params["projectId"] = live_flags["project_id"]
     _apply_scaling_and_resources(params, ig, live_dep, live_hpa, container)
+    _apply_auth_parameters(params, ig, live_flags, _extract_volume_secrets(live_dep))
     return params
 
 
@@ -128,6 +207,40 @@ def _apply_scaling_and_resources(
             params[key] = str(val)
 
 
+def _apply_auth_parameters(
+    params: dict[str, Any],
+    ig: dict[str, Any],
+    live_flags: dict[str, str],
+    vol_secrets: dict[str, str],
+) -> None:
+    """Populates SASL and TLS parameters from live flags/volumes and umbrella values."""
+    sasl, tls = ig.get("sasl") or {}, ig.get("tls") or {}
+    sasl_raw = live_flags.get("sasl_enabled")
+    sasl_on = parse_bool_flag(sasl_raw if sasl_raw is not None else sasl.get("enabled"))
+    params["saslEnabled"] = sasl_on
+    if sasl_on:
+        mech = live_flags.get("sasl_mechanism") or sasl.get("mechanism") or "SCRAM-SHA-256"
+        params["saslMechanism"] = str(mech)
+        sasl_sec = str(vol_secrets.get("kafka-sasl-credentials") or sasl.get("secretName") or "")
+        if sasl_sec:
+            params["saslSecretName"] = sasl_sec
+    tls_raw = live_flags.get("tls_enabled")
+    tls_on = parse_bool_flag(tls_raw if tls_raw is not None else tls.get("enabled"))
+    params["tlsEnabled"] = tls_on
+    if tls_on:
+        tls_sec = str(vol_secrets.get("kafka-tls-credentials") or tls.get("secretName") or "")
+        if tls_sec:
+            params["tlsSecretName"] = tls_sec
+        for pkey, fkey, tkey in (
+            ("tlsCaFile", "tls_ca_file", "caFile"),
+            ("tlsCertFile", "tls_cert_file", "certFile"),
+            ("tlsKeyFile", "tls_key_file", "keyFile"),
+        ):
+            val = str(live_flags.get(fkey) or tls.get(tkey) or "")
+            if val:
+                params[pkey] = val
+
+
 def build_redpanda_parameters(gateway_params: dict[str, Any]) -> dict[str, Any]:
     """Prefills Redpanda 3P wrapper parameters from gateway broker and topic settings."""
     brokers = str(gateway_params.get("redpandaBrokers") or _DEFAULT_BROKERS)
@@ -147,7 +260,7 @@ def build_clickhouse_parameters(umbrella_values: dict[str, Any]) -> dict[str, An
     host = str(ch.get("host") or "clickhouse.xmc-metrics.svc.cluster.local")
     port = _resolve_int(ch.get("port"), default=9000, field="metrics.clickhouse.port")
     ep_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
-    return {
+    params: dict[str, Any] = {
         "host": host,
         "clusterEndpoints": f"{ep_host}:{port}",
         "nativePort": port,
@@ -157,6 +270,9 @@ def build_clickhouse_parameters(umbrella_values: dict[str, Any]) -> dict[str, An
         "secretName": str(ch.get("secretName") or "clickhouse-secret"),
         "secretPasswordKey": "clickhouse-password",
     }
+    if ":" in host:
+        params["healthCheckEndpoint"] = f"http://{ep_host}:8123/ping"
+    return params
 
 
 def render_profile_yaml(doc: dict[str, Any], indent: int = 0) -> str:
@@ -181,10 +297,46 @@ def render_profile_yaml(doc: dict[str, Any], indent: int = 0) -> str:
     return "\n".join(lines) + "\n"
 
 
-def prepare_profile_values(release: str, namespace: str, output_path: Path) -> dict[str, Any]:
-    """Generates profile-values.yaml from live umbrella values and gateway state."""
-    if not namespace or len(namespace) > 63 or not _DNS1123_RE.match(namespace):
-        raise HandledError(f"Invalid Kubernetes namespace {namespace!r}.", "Use a DNS-1123 label.")
+def validate_profile_values(
+    values_path: Path, namespace: str, profile_dir: Path, repo_root: Path
+) -> None:
+    """Validates profile-values.yaml via helm template (JSON Schema) and component-linter."""
+    with tempfile.TemporaryDirectory(prefix="xmc_profile_lint_") as tmp_dir:
+        try:
+            args = ["template", "xmc-profile", str(profile_dir), "-n", namespace]
+            rendered = run_command(
+                ["helm", *args, "-f", str(values_path)],
+                capture_output=True,
+                log_on_error=False,
+                stream=sys.stderr,
+            ).stdout
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            err = (getattr(e, "stderr", "") or str(e)).strip()
+            raise HandledError(
+                f"Helm template validation failed: {err}",
+                "Check generated profile-values.yaml against values.schema.json.",
+            ) from e
+        (Path(tmp_dir) / "profile.yaml").write_text(rendered, encoding="utf-8")
+        target = LintTarget(manifests_dir=Path(tmp_dir), rules_config=profile_dir / "rules.yaml")
+        res = run_linter_on_target(
+            target, resolve_linter_binary(None, repo_root), "json", cwd=repo_root
+        )
+        if not res.success:
+            raise HandledError(
+                f"component-linter failed: {(res.stderr or res.stdout).strip()}",
+                "Fix the reported component-linter errors before migrating.",
+            )
+
+
+def prepare_profile_values(
+    release: str,
+    namespace: str,
+    output_path: Path,
+    profile_dir: Path | None = None,
+    repo_root: Path | None = None,
+) -> dict[str, Any]:
+    """Generates and validates profile-values.yaml from live umbrella values and gateway state."""
+    validate_dns1123_namespace(namespace)
     try:
         helm_ver = verify_helm_min_version(stream=sys.stderr)
     except (FileNotFoundError, subprocess.CalledProcessError, RuntimeError, ValueError) as e:
@@ -200,6 +352,9 @@ def prepare_profile_values(release: str, namespace: str, output_path: Path) -> d
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_profile_yaml(doc), encoding="utf-8")
+    resolved_root = repo_root or Path(__file__).resolve().parents[3]
+    resolved_profile = profile_dir or (resolved_root / "deploy" / "profiles" / "stable-2026a")
+    validate_profile_values(output_path, namespace, resolved_profile, resolved_root)
     return {
         "output_path": str(output_path),
         "namespace": namespace,
@@ -210,18 +365,28 @@ def prepare_profile_values(release: str, namespace: str, output_path: Path) -> d
 
 
 def _build_enabled_profile_doc(umbrella_values: dict[str, Any], namespace: str) -> dict[str, Any]:
-    """Inspects live cluster objects and constructs the enabled profile dictionary."""
+    """Audits live cluster objects, verifies secrets, and returns enabled profile dict."""
     live_dep = fetch_live_resource("deployment", GATEWAY_DEPLOYMENT_NAME, namespace, required=True)
     assert isinstance(live_dep, dict)
     live_hpa = fetch_live_resource(
         "horizontalpodautoscaler", GATEWAY_HPA_NAME, namespace, required=False
     )
     gw_params = build_gateway_parameters(
-        umbrella_values, live_dep, live_hpa, parse_gateway_cli_flags(live_dep)
+        umbrella_values, live_dep, live_hpa, audit_live_gateway_deployment(live_dep)
     )
+    ch_params = build_clickhouse_parameters(umbrella_values)
+    if gw_params.get("saslEnabled") and gw_params.get("saslSecretName"):
+        verify_secret_exists(str(gw_params["saslSecretName"]), namespace, field_label="SASL")
+    if gw_params.get("tlsEnabled") and gw_params.get("tlsSecretName"):
+        verify_secret_exists(str(gw_params["tlsSecretName"]), namespace, field_label="TLS")
+    csi_on = parse_bool_flag(
+        (((umbrella_values.get("secrets") or {}).get("csi")) or {}).get("enabled")
+    )
+    if not csi_on:
+        verify_secret_exists(str(ch_params["secretName"]), namespace, field_label="ClickHouse")
     param_map = {
         "redpanda": build_redpanda_parameters(gw_params),
-        "clickhouse": build_clickhouse_parameters(umbrella_values),
+        "clickhouse": ch_params,
         "ingestion-gateway": gw_params,
     }
     return {

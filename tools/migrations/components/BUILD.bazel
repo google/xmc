@@ -13,9 +13,13 @@ py_library(
         "cluster_inspector.py",
         "migrate.py",
         "profile_preparer.py",
+        "resource_handoff.py",
     ],
     imports = ["../../.."],
-    deps = ["//tools/common:tool_utils"],
+    deps = [
+        "//tools/common:tool_utils",
+        "//tools/components:run_linter_lib",
+    ],
 )
 
 py_binary(
@@ -35,6 +39,14 @@ py_test(
     name = "profile_preparer_test",
     size = "small",
     srcs = ["profile_preparer_test.py"],
+    data = ["//deploy/profiles/stable-2026a:chart"],
+    deps = [":components_migration_lib"],
+)
+
+py_test(
+    name = "resource_handoff_test",
+    size = "small",
+    srcs = ["resource_handoff_test.py"],
     deps = [":components_migration_lib"],
 )
 

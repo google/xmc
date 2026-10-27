@@ -85,9 +85,10 @@ Offline syntax walkers and static validation tooling:
 
 ### 8. [`tools/migrations/components/`](migrations/components/README.md) (One-Time Component Migration CLI)
 Deterministic operator CLI for migrating legacy umbrella Ingestion Gateway installs to XMC Components:
-- [`migrate.py`](migrations/components/migrate.py): Structured CLI entrypoint (`prepare`) generating `profile-values.yaml` from live umbrella Helm values and workload state.
-- [`profile_preparer.py`](migrations/components/profile_preparer.py): Gateway/Redpanda/ClickHouse parameter synthesis and deterministic YAML serialization.
-- [`cluster_inspector.py`](migrations/components/cluster_inspector.py): Read-only Helm and Kubernetes resource inspection queries.
+- [`migrate.py`](migrations/components/migrate.py): Structured CLI entrypoint (`prepare`, `handoff`) for generating validated profile values and transferring Helm resource ownership.
+- [`profile_preparer.py`](migrations/components/profile_preparer.py): Fail-fast live PodSpec/Secret audit, gateway/Redpanda/ClickHouse parameter synthesis, and `helm template` + `component-linter` validation.
+- [`resource_handoff.py`](migrations/components/resource_handoff.py): Idempotent `helm.sh/resource-policy=keep` and Helm ownership annotation handoff (with reversible `--undo` guard).
+- [`cluster_inspector.py`](migrations/components/cluster_inspector.py): Read-only Helm and Kubernetes resource/Secret/release inspection queries.
 
 ---
 

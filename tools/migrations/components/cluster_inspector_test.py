@@ -65,6 +65,39 @@ class TestClusterInspector(unittest.TestCase):
         with self.assertRaises(HandledError):
             cluster_inspector.fetch_live_resource("deployment", "x", "xmc", required=True)
 
+    @patch("tools.migrations.components.cluster_inspector.run_command")
+    def test_validate_namespace_and_annotate_resource(self, mock_run: MagicMock) -> None:
+        cluster_inspector.validate_dns1123_namespace("tenant-a")
+        with self.assertRaises(HandledError):
+            cluster_inspector.validate_dns1123_namespace("BAD_NS")
+
+        mock_run.return_value = subprocess.CompletedProcess(args=[], returncode=0)
+        cluster_inspector.annotate_resource("service", "s1", "tenant-a", ["k=v"])
+        mock_run.side_effect = FileNotFoundError("kubectl")
+        with self.assertRaises(HandledError):
+            cluster_inspector.annotate_resource("service", "s1", "tenant-a", ["k=v"])
+
+    @patch("tools.migrations.components.cluster_inspector.run_command")
+    def test_verify_secret_exists_and_helm_release_exists(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"kind": "Secret"}', stderr=""
+        )
+        cluster_inspector.verify_secret_exists("ch-sec", "xmc", field_label="ClickHouse")
+        self.assertTrue(cluster_inspector.helm_release_exists("xmc-cmp-ingestion-gateway", "xmc"))
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="Error: release: not found"
+        )
+        self.assertFalse(cluster_inspector.helm_release_exists("xmc-cmp-ingestion-gateway", "xmc"))
+        with self.assertRaises(HandledError):
+            cluster_inspector.verify_secret_exists("ch-sec", "xmc", field_label="ClickHouse")
+
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="Error: Kubernetes cluster unreachable"
+        )
+        with self.assertRaises(HandledError):
+            cluster_inspector.helm_release_exists("xmc-cmp-ingestion-gateway", "xmc")
+
 
 if __name__ == "__main__":
     unittest.main()
