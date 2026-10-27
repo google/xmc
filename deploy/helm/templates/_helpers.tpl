@@ -264,6 +264,21 @@ environment.
 {{- end -}}
 
 {{/*
+PostgreSQL password environment variable for XMC services when database.backend is "postgres".
+Consumed by internal/storage/dbconfig.Load from the postgres-secret Secret rendered by
+templates/postgres-secret.yaml out of a Helm value.
+*/}}
+{{- define "xmanager-cloud.postgresEnv" -}}
+{{- if eq (include "xmanager-cloud.dbBackend" .) "postgres" -}}
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: postgres-secret
+      key: postgres-password
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}

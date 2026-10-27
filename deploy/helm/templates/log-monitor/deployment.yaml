@@ -55,6 +55,7 @@ spec:
           value: {{ .Values.projectId | quote }}
         - name: PUBSUB_SUBSCRIPTION_ID
           value: {{ .Values.logMonitor.subscriptionId | quote }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
             name: db-config
