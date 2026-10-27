@@ -72,15 +72,17 @@ func NewCMSTokenCredentials(ctx context.Context) (credentials.PerRPCCredentials,
 }
 
 func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idTokenSourceFactory) (credentials.PerRPCCredentials, error) {
-	if os.Getenv("DISABLE_AUTHENTICATION") == "true" {
-		return NewBearerTokenCredentials(nil), nil
-	}
 	oauthCfg, err := xmcoauth.LoadConfig()
 	if errors.Is(err, xmcoauth.ErrDevAuthNotCompiledIn) {
 		return nil, err
 	}
 	if err != nil {
 		logging.Warn(ctx, "Failed to load OAuth config for CMS credentials; falling back to Google ID token", "error", err)
+	}
+	// In mockauth builds DISABLE_AUTHENTICATION is honored only when LoadConfig succeeds; on any
+	// other config error the bridge falls back to Google ID tokens below.
+	if xmcoauth.DevAuthCompiledIn() && oauthCfg != nil && oauthCfg.DisableAuthentication {
+		return NewBearerTokenCredentials(nil), nil
 	}
 	if oauthCfg != nil && oauthCfg.IsNonProdAuth() {
 		if fn := buildNonProdTokenFunc(oauthCfg); fn != nil {

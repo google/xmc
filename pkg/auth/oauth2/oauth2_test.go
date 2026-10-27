@@ -206,15 +206,15 @@ func TestHybridAuthorizationPipeline(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:                  "No parameters: Open access compatibility with disableAuthentication=true",
+			name:                  "No parameters: disableAuthentication=true opens access only with the mockauth tag",
 			allowedDomains:        []string{},
 			allowedEmails:         []string{},
 			gcpProjectID:          "",
 			disableAuthentication: true,
 			emailToCheck:          "anyone@external.com",
 			mockAuth:              true,
-			want:                  true,
-			wantErr:               false,
+			want:                  devAuthCompiledIn,
+			wantErr:               !devAuthCompiledIn,
 		},
 		{
 			name:                  "No parameters: Fail-closed default",

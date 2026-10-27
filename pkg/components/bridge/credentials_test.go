@@ -86,14 +86,6 @@ func mustCMSTokenCredentials(t *testing.T, factory idTokenSourceFactory) credent
 func TestNewCMSTokenCredentials(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("DISABLE_AUTHENTICATION=true returns no-op credentials", func(t *testing.T) {
-		t.Setenv("DISABLE_AUTHENTICATION", "true")
-		md, err := mustCMSTokenCredentials(t, idtoken.NewTokenSource).GetRequestMetadata(ctx)
-		if err != nil || md != nil {
-			t.Fatalf("GetRequestMetadata() = (%v, %v), want (nil, nil)", md, err)
-		}
-	})
-
 	t.Run("non-prod OIDC token provider fetches ID token", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")

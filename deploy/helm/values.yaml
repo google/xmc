@@ -192,7 +192,8 @@ auth:
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   # Mock authentication is for local development only: rendering fails unless isDevEnvironment.
-  # It works only in binaries built with gotags = ["mockauth"]; published images refuse to start.
+  # Both mockAuth and disableAuthentication work only in binaries built with
+  # gotags = ["mockauth"]; published images refuse to start when either is true.
   mockAuth: false
   disableAuthentication: false
   # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.

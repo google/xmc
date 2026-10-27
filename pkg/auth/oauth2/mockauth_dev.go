@@ -26,9 +26,9 @@ import (
 	"google.golang.org/api/idtoken"
 )
 
-// mockAuthCompiledIn reports that this binary was built with the mockauth tag, so LoadConfig
-// accepts MOCK_AUTH.
-const mockAuthCompiledIn = true
+// devAuthCompiledIn reports that this binary was built with the mockauth tag, so LoadConfig
+// accepts the non-production auth modes (MOCK_AUTH, DISABLE_AUTHENTICATION).
+const devAuthCompiledIn = true
 
 // devOnlyJWTSecret is a well-known, non-secret value used to sign session tokens
 // only in local/dev mode (MOCK_AUTH or DISABLE_AUTHENTICATION). It must never be

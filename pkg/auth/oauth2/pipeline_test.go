@@ -229,13 +229,7 @@ func TestIsAdmin(t *testing.T) {
 		},
 	}
 
-	t.Run("returns true when DisableAuthentication is true", func(t *testing.T) {
-		a := NewAuthenticator(&Config{DisableAuthentication: true})
-		got, err := a.IsAdmin(context.Background(), "anyone@company.com")
-		if err != nil || !got {
-			t.Errorf("IsAdmin() = (%v, %v), want (true, nil)", got, err)
-		}
-	})
+	// DisableAuthentication is covered by TestDisableAuthentication* in mockauth_{dev,prod}_test.go.
 
 	t.Run("returns error when AdminIAMRole is not configured", func(t *testing.T) {
 		a := NewAuthenticator(&Config{AdminIAMRole: ""})

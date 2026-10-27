@@ -16,7 +16,7 @@ This skill guides the agent through upgrading an existing deployed XManager on C
 > Agents MUST NOT run manual `helm upgrade`, `kubectl apply`, `kubectl set image`, or `gcluster deploy` commands for upgrades. If the user does not specify a specific upgrade step, run the entire upgrade script (or run step-by-step using `--only <step>` or `--start-from <step>` depending on the prompt). If a step fails or is interrupted, troubleshoot script inputs or resume using `python3 tools/dev_env/dev_env.py gke-upgrade --start-from <step>` or `--only <step>`.
 
 > [!CAUTION]
-> **Authentication Integrity Policy**: Under no circumstances should `gke-upgrade` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
+> **Authentication Integrity Policy**: Under no circumstances should `gke-upgrade` be invoked with `auth.mockAuth="true"` or `auth.disableAuthentication="true"` unless the user explicitly requests and confirms mock authentication. Published images are built without the `mockauth` Go build tag, so every XMC service refuses to start when either flag is true. Always maintain the production OAuth/IAP authentication pipeline configured in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`.
 
 ```mermaid
 graph TD
