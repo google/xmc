@@ -15,11 +15,13 @@
 """Tests for check_image_binaries."""
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -40,6 +42,12 @@ go_binary(name = "svc_tagged", embed = [":lib"], gotags = ["mockauth"])
 go_binary(name = "svc_select", gotags = select({"//conditions:default": []}))
 
 go_binary(name = "svc_unhashable", gotags = {["mockauth"]: 1})
+
+go_binary(name = "svc_kwargs", embed = [":lib"], **DEV_KWARGS)
+
+go_binary(name = "svc_string_tags", gotags = "mockauth")
+
+go_binary(name = "svc_nested_tags", gotags = [["mockauth"]])
 
 oci_image_for_service(name = "{image}", binary = "{binary}")
 """
@@ -97,6 +105,9 @@ class FindViolationsTest(unittest.TestCase):
             ":svc_tagged": "binary is built with development gotags ['mockauth']",
             ":svc_select": "binary gotags are not a literal list: select({'//conditions:default': []})",
             ":svc_unhashable": "binary gotags are not a literal list: {['mockauth']: 1}",
+            ":svc_kwargs": "binary gotags are not a literal list: **DEV_KWARGS",
+            ":svc_string_tags": "binary gotags are not a literal list of strings: 'mockauth'",
+            ":svc_nested_tags": "binary gotags are not a literal list of strings: [['mockauth']]",
             ":missing": "binary is not a go_binary declared in this repository",
             "@external//:svc": "binary is not a go_binary declared in this repository",
         }
@@ -115,7 +126,12 @@ class FindViolationsTest(unittest.TestCase):
 
     def test_rejects_non_literal_or_missing_binary(self) -> None:
         files = {
-            "BUILD.bazel": 'oci_image_for_service(name = "i", binary = BIN)\noci_image_for_service(name = "j")\n'
+            "BUILD.bazel": (
+                'oci_image_for_service(name = "i", binary = BIN)\n'
+                'oci_image_for_service(name = "j")\n'
+                'oci_image_for_service(name = "k", binary = ":svc", **IMAGE_KWARGS)\n'
+                'go_binary(name = "svc")\n'
+            )
         }
         reason = "binary is not a go_binary declared in this repository"
         self.assertEqual(
@@ -123,8 +139,17 @@ class FindViolationsTest(unittest.TestCase):
             [
                 {"image": "//:i", "binary": "<non-literal: BIN>", "reason": reason},
                 {"image": "//:j", "binary": "<invalid: None>", "reason": reason},
+                {"image": "//:k", "binary": "<non-literal: **IMAGE_KWARGS>", "reason": reason},
             ],
         )
+
+    def test_ignores_image_call_text_in_comments_and_strings(self) -> None:
+        source = (
+            '# oci_image_for_service(name = "old", binary = ":svc_dev")\n'
+            'DOC = "oci_image_for_service(binary = \\":svc_dev\\")"\n'
+            + _build_files(":svc")["cmd/svc/BUILD.bazel"]
+        )
+        self.assertEqual(_violations({"cmd/svc/BUILD.bazel": source}), [])
 
     def test_rejects_image_calls_it_cannot_parse(self) -> None:
         cases = {
@@ -171,6 +196,19 @@ class CheckImageBinariesTest(unittest.TestCase):
         root = self._git_repo({"cmd/svc/BUILD.bazel": 'go_binary(name = "svc")\n'})
         with self.assertRaisesRegex(HandledError, "no oci_image_for_service targets found"):
             cli.check_image_binaries(argparse.Namespace(repo_root=str(root)))
+
+    def test_raises_handled_error_outside_git_repository(self) -> None:
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        cases = {"not a git repository": root, "missing directory": root / "missing"}
+        for name, repo_root in cases.items():
+            with (
+                self.subTest(name),
+                mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(root.parent)}),
+            ):
+                with self.assertRaises(HandledError) as ctx:
+                    cli.check_image_binaries(argparse.Namespace(repo_root=str(repo_root)))
+                self.assertIn("git ls-files failed", ctx.exception.message)
+                self.assertTrue((ctx.exception.details or {}).get("stderr"))
 
     def test_raises_on_violation(self) -> None:
         root = self._git_repo(_build_files(":svc_dev"))

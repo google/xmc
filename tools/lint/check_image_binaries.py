@@ -40,8 +40,9 @@ DEV_BUILD_TAGS = frozenset({"mockauth"})
 DEV_BINARY_SUFFIX = "_dev"
 IMAGE_MACRO = "oci_image_for_service"
 _BUILD_FILE_NAMES = frozenset({"BUILD", "BUILD.bazel"})
-_IMAGE_CALL = re.compile(rf"\b{IMAGE_MACRO}\s*\(")
 _IMAGE_ALIAS = re.compile(rf"\w\s*=\s*[\"']{IMAGE_MACRO}[\"']")
+# Key under which a `**kwargs` unpacking is recorded; it is not a valid Starlark identifier.
+UNPACKED_KWARGS = "**"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -59,25 +60,49 @@ class Call:
     kwargs: dict[str, Any]
 
 
-def parse_calls(source: str) -> list[Call]:
-    """Returns top-level rule calls in a BUILD file; non-literal arguments become NonLiteral."""
+def parse_calls(module: ast.Module) -> list[Call]:
+    """Returns top-level rule calls; non-literal arguments and `**kwargs` become NonLiteral."""
     calls = []
-    for node in ast.parse(source).body:
+    for node in module.body:
         if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
             continue
         func = node.value.func
         if not isinstance(func, ast.Name):
             continue
-        kwargs = {kw.arg: _literal_or_marker(kw.value) for kw in node.value.keywords if kw.arg}
+        kwargs = dict(_keyword_entry(kw) for kw in node.value.keywords)
         calls.append(Call(rule=func.id, kwargs=kwargs))
     return calls
 
 
+def _keyword_entry(keyword: ast.keyword) -> tuple[str, Any]:
+    """Returns the (name, value) entry for a keyword argument, marking `**kwargs` unpacking."""
+    if keyword.arg is None:
+        return UNPACKED_KWARGS, NonLiteral(f"**{ast.unparse(keyword.value)}")
+    return keyword.arg, _literal_or_marker(keyword.value)
+
+
+def count_image_calls(module: ast.Module) -> int:
+    """Returns the number of oci_image_for_service calls anywhere in the module, nested or not."""
+    return sum(
+        1
+        for node in ast.walk(module)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == IMAGE_MACRO
+    )
+
+
 def _literal_or_marker(value: ast.expr) -> Any:
+    """Returns the literal value of an expression, or NonLiteral when it is not a literal."""
     try:
         return ast.literal_eval(value)
     except (ValueError, TypeError, SyntaxError, RecursionError):
         return NonLiteral(ast.unparse(value))
+
+
+def _kwarg(call: Call, key: str, default: Any = None) -> Any:
+    """Returns a keyword argument, or the `**kwargs` marker when an unpacking may override it."""
+    return call.kwargs.get(UNPACKED_KWARGS, call.kwargs.get(key, default))
 
 
 def resolve_label(package: str, label: Any) -> str:
@@ -102,8 +127,8 @@ class Targets:
     Attributes:
         go_binaries: gotags (a list or NonLiteral) keyed by go_binary label.
         images: (image label, resolved binary label) pairs.
-        unparsed_images: BUILD files whose textual image call count differs from the parsed count,
-            for example because the macro is called from a loop, under an alias or with a
+        unparsed_images: BUILD files whose image call count differs from the parsed count, for
+            example because the macro is called from a loop, under an alias or with a
             non-literal name.
     """
 
@@ -118,18 +143,19 @@ def collect_targets(build_files: dict[str, str]) -> Targets:
     for path, source in build_files.items():
         parent = Path(path).parent.as_posix()
         package = "" if parent == "." else parent
+        module = ast.parse(source)
         parsed_images = 0
-        for call in parse_calls(source):
+        for call in parse_calls(module):
             name = call.kwargs.get("name")
             if not isinstance(name, str):
                 continue
             if call.rule == "go_binary":
-                targets.go_binaries[f"//{package}:{name}"] = call.kwargs.get("gotags", [])
+                targets.go_binaries[f"//{package}:{name}"] = _kwarg(call, "gotags", [])
             if call.rule == IMAGE_MACRO:
-                binary = resolve_label(package, call.kwargs.get("binary"))
+                binary = resolve_label(package, _kwarg(call, "binary"))
                 targets.images.append((f"//{package}:{name}", binary))
                 parsed_images += 1
-        if _IMAGE_ALIAS.search(source) or len(_IMAGE_CALL.findall(source)) != parsed_images:
+        if _IMAGE_ALIAS.search(source) or count_image_calls(module) != parsed_images:
             targets.unparsed_images.append(path)
     return targets
 
@@ -148,6 +174,7 @@ def find_violations(targets: Targets) -> list[dict[str, str]]:
 
 
 def _violation_reason(binary: str, go_binaries: dict[str, Any]) -> str:
+    """Returns why an image's binary is not allowed, or an empty string when it is allowed."""
     if binary not in go_binaries:
         return "binary is not a go_binary declared in this repository"
     if binary.endswith(DEV_BINARY_SUFFIX):
@@ -155,6 +182,8 @@ def _violation_reason(binary: str, go_binaries: dict[str, Any]) -> str:
     gotags = go_binaries[binary]
     if isinstance(gotags, NonLiteral):
         return f"binary gotags are not a literal list: {gotags.expression}"
+    if not (isinstance(gotags, (list, tuple)) and all(isinstance(t, str) for t in gotags)):
+        return f"binary gotags are not a literal list of strings: {gotags!r}"
     dev_tags = sorted(DEV_BUILD_TAGS.intersection(gotags))
     if dev_tags:
         return f"binary is built with development gotags {dev_tags}"
@@ -163,10 +192,20 @@ def _violation_reason(binary: str, go_binaries: dict[str, Any]) -> str:
 
 def list_build_files(repo_root: Path) -> dict[str, str]:
     """Returns the sources of git-tracked BUILD files keyed by repository-relative path."""
-    result = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
-    )
-    paths = [p for p in result.stdout.decode().split("\0") if Path(p).name in _BUILD_FILE_NAMES]
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
+        )
+    except (subprocess.CalledProcessError, OSError) as e:
+        stderr = getattr(e, "stderr", None) or b""
+        raise HandledError(
+            f"git ls-files failed in {repo_root}",
+            "Run inside the repository or pass --repo-root.",
+            details={"stderr": stderr.decode("utf-8", errors="replace") or str(e)},
+        ) from e
+    paths = [
+        p for p in result.stdout.decode("utf-8").split("\0") if Path(p).name in _BUILD_FILE_NAMES
+    ]
     return {
         p: (repo_root / p).read_text(encoding="utf-8") for p in paths if (repo_root / p).is_file()
     }
