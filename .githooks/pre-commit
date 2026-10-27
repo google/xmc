@@ -146,7 +146,7 @@ check_examples_coverage() {
 
 check_docs_topography_map() {
   echo "--> Checking Documentation Topography Map Coverage..."
-  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_docs_topography_map.py >/dev/null; then
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_docs_topography_map.py; then
     echo "❌ Documentation topography map check failed."
     FAILED=1
   fi

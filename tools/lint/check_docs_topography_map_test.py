@@ -74,7 +74,7 @@ SAMPLE_TRACKED_FILES: tuple[str, ...] = (
 class CheckDocsTopographyMapTest(unittest.TestCase):
     """Tests for bi-directional documentation topography map verification."""
 
-    def test_matches_pattern_uses_pure_posix_path_full_match(self) -> None:
+    def test_matches_pattern_evaluates_recursive_and_single_segment_globs(self) -> None:
         """Verifies `matches_pattern` evaluates standard globs via PurePosixPath."""
         self.assertTrue(linter.matches_pattern("cmd/actuator/main.go", "cmd/**"))
         self.assertFalse(linter.matches_pattern("pkg/actuator/main.go", "cmd/**"))

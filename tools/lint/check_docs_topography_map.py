@@ -134,20 +134,18 @@ def find_dead_map_entries(
     patterns: TopographyPatterns, tracked_files: Sequence[str]
 ) -> tuple[str, ...]:
     """Returns map patterns that match zero tracked files in the repository."""
-    all_patterns = (
-        *patterns.source_patterns,
-        *patterns.doc_patterns,
-        *patterns.registry_patterns,
+    unique_patterns = dict.fromkeys(
+        (
+            *patterns.source_patterns,
+            *patterns.doc_patterns,
+            *patterns.registry_patterns,
+        )
     )
-    seen: set[str] = set()
-    dead: list[str] = []
-    for pattern in all_patterns:
-        if pattern in seen:
-            continue
-        seen.add(pattern)
-        if not any(matches_pattern(path, pattern) for path in tracked_files):
-            dead.append(pattern)
-    return tuple(dead)
+    return tuple(
+        pattern
+        for pattern in unique_patterns
+        if not any(matches_pattern(path, pattern) for path in tracked_files)
+    )
 
 
 def find_unmapped_doc_files(
@@ -166,15 +164,16 @@ def find_unmapped_source_dirs(
     source_patterns: Sequence[str], tracked_files: Sequence[str]
 ) -> tuple[str, ...]:
     """Returns top-level component directories with no mapped tracked files."""
-    component_dirs = discover_component_directories(tracked_files)
-    unmapped: list[str] = []
-    for comp_dir in component_dirs:
-        dir_files = [path for path in tracked_files if path.startswith(comp_dir)]
+    return tuple(
+        comp_dir
+        for comp_dir in discover_component_directories(tracked_files)
         if not any(
-            matches_pattern(path, pattern) for path in dir_files for pattern in source_patterns
-        ):
-            unmapped.append(comp_dir)
-    return tuple(unmapped)
+            matches_pattern(path, pattern)
+            for path in tracked_files
+            if path.startswith(comp_dir)
+            for pattern in source_patterns
+        )
+    )
 
 
 def validate_topography_map(
