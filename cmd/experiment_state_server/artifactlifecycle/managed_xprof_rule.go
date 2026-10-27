@@ -226,13 +226,14 @@ func (r *ManagedXprofRule) OnExecutionSuperseded(
 }
 
 func parseArtifactID(name string) (int64, error) {
-	if aid, err := validator.ValidateArtifactName(name); err == nil {
+	aid, err := validator.ValidateArtifactName(name)
+	if err == nil {
 		return aid, nil
 	}
 	if idx := strings.LastIndex(name, "/artifacts/"); idx != -1 {
 		return validator.ValidateArtifactName(name[idx+1:])
 	}
-	return validator.ValidateArtifactName(name)
+	return 0, err
 }
 
 // persistArtifactURL updates the shared Artifact row inside a Spanner RW transaction,
@@ -250,74 +251,73 @@ func (r *ManagedXprofRule) persistArtifactURL(
 	}
 
 	return store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		// 1. Shared-Artifact Execution Fencing: verify event EID is still the current execution.
-		wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
-		if err != nil {
-			return fmt.Errorf("failed to fetch work unit %d: %w", wid, err)
-		}
-		curExecution := wu.GetCurrentWorkUnitExecution()
-		if curExecution != nil {
-			_, _, curEID, err := validator.ValidateWorkUnitExecutionName(curExecution.GetName())
-			if err == nil && curEID != eventEID {
-				logging.Info(ctx, "Skipping artifact xprof_url update; execution is superseded", "eventEID", eventEID, "curEID", curEID)
-				return nil
-			}
+		fenced, err := isExecutionSupersededInTx(ctx, tx, xid, wid, eventEID)
+		if err != nil || fenced {
+			return err
 		}
 
-		// 2. Fetch existing artifact within transaction.
 		currentArt, err := tx.Artifacts.FetchArtifact(ctx, aid)
 		if err != nil {
 			return fmt.Errorf("failed to fetch artifact %d in transaction: %w", aid, err)
 		}
-
-		// If URL is already set to the desired URL, avoid redundant write.
 		if currentArt.GetUrl().GetUrl() == xprofURL &&
 			currentArt.GetPayload().GetManagedXprof().GetXprof().GetXprofUrl() == xprofURL {
 			return nil
 		}
 
-		var updatedUrl *essmsgpb.Url
-		if currentArt.GetUrl() != nil {
-			updatedUrl = proto.Clone(currentArt.GetUrl()).(*essmsgpb.Url)
-		} else {
-			updatedUrl = &essmsgpb.Url{}
-		}
-		updatedUrl.Url = xprofURL
-
-		var updatedPayload *essmsgpb.ArtifactPayload
-		if currentArt.GetPayload() != nil {
-			updatedPayload = proto.Clone(currentArt.GetPayload()).(*essmsgpb.ArtifactPayload)
-		} else {
-			updatedPayload = &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-				},
-			}
-		}
-		if mx := updatedPayload.GetManagedXprof(); mx != nil {
-			mx.Xprof = &essmsgpb.XProfUIInstance{XprofUrl: xprofURL}
-		} else {
-			updatedPayload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
-				ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-					Xprof: &essmsgpb.XProfUIInstance{XprofUrl: xprofURL},
-				},
-			}
-		}
-
-		updatedArt := &essmsgpb.Artifact{
-			Url:     updatedUrl,
-			Payload: updatedPayload,
-		}
-
 		update := &storage.ArtifactUpdate{
 			AID:        aid,
-			Artifact:   updatedArt,
+			Artifact:   buildArtifactWithXprofURL(currentArt, xprofURL),
 			UpdateMask: &fmpb.FieldMask{Paths: []string{"url", "payload"}},
 		}
-
 		_, err = tx.Artifacts.UpdateArtifact(ctx, update)
 		return err
 	})
+}
+
+func isExecutionSupersededInTx(ctx context.Context, tx *storage.Transaction, xid, wid, eventEID int64) (bool, error) {
+	wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch work unit %d: %w", wid, err)
+	}
+	if cur := wu.GetCurrentWorkUnitExecution(); cur != nil {
+		if _, _, curEID, err := validator.ValidateWorkUnitExecutionName(cur.GetName()); err == nil && curEID != eventEID {
+			logging.Info(ctx, "Skipping artifact xprof_url update; execution is superseded", "eventEID", eventEID, "curEID", curEID)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func buildArtifactWithXprofURL(currentArt *essmsgpb.Artifact, xprofURL string) *essmsgpb.Artifact {
+	var updatedURL *essmsgpb.Url
+	if currentArt.GetUrl() != nil {
+		updatedURL = proto.Clone(currentArt.GetUrl()).(*essmsgpb.Url)
+	} else {
+		updatedURL = &essmsgpb.Url{}
+	}
+	updatedURL.Url = xprofURL
+
+	var updatedPayload *essmsgpb.ArtifactPayload
+	if currentArt.GetPayload() != nil {
+		updatedPayload = proto.Clone(currentArt.GetPayload()).(*essmsgpb.ArtifactPayload)
+	} else {
+		updatedPayload = &essmsgpb.ArtifactPayload{}
+	}
+	if mx := updatedPayload.GetManagedXprof(); mx != nil {
+		mx.Xprof = &essmsgpb.XProfUIInstance{XprofUrl: xprofURL}
+	} else {
+		updatedPayload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+			ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+				Xprof: &essmsgpb.XProfUIInstance{XprofUrl: xprofURL},
+			},
+		}
+	}
+
+	return &essmsgpb.Artifact{
+		Url:     updatedURL,
+		Payload: updatedPayload,
+	}
 }
 
 func (r *ManagedXprofRule) getOrCreateMLRun(

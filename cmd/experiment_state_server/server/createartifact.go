@@ -183,13 +183,7 @@ func (h *ArtifactHandler) syncWorkUnitNotifyWhen(ctx context.Context, xid, wid i
 	if h.artifactLifecycle == nil || h.actuator == nil {
 		return
 	}
-	parent := validator.ConstructWorkUnitName(xid, wid)
-	artifacts, _, err := h.storage.ListArtifacts(ctx, parent, 100, "", "", "", 0)
-	if err != nil {
-		logging.Warn(ctx, "Failed to list artifacts for notify_when synchronization", "wid", wid, "error", err)
-		return
-	}
-	notifyWhen := h.artifactLifecycle.RequiredNotifyWhenAnnotation(artifacts)
+	notifyWhen := h.requiredNotifyWhen(ctx, validator.ConstructWorkUnitName(xid, wid))
 	if notifyWhen == "" {
 		return
 	}

@@ -181,3 +181,15 @@ func (s *Server) ArtifactLifecycle() *artifactlifecycle.Registry {
 	}
 	return s.WorkUnitHandler.artifactLifecycle
 }
+
+// requiredNotifyWhen computes the required notify-when annotation value for the given work unit.
+func (h *baseHandler) requiredNotifyWhen(ctx context.Context, wuName string) string {
+	if h.artifactLifecycle == nil || h.storage == nil {
+		return ""
+	}
+	arts, _, err := h.storage.ListArtifacts(ctx, wuName, 100, "", "", "", 0)
+	if err != nil || len(arts) == 0 {
+		return ""
+	}
+	return h.artifactLifecycle.RequiredNotifyWhenAnnotation(arts)
+}

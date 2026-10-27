@@ -16,6 +16,7 @@ package jobset
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"time"
 
@@ -414,21 +415,11 @@ func ExtractJobSetRuntimeContext(jobSet *v1alpha2.JobSet, clusterName string) *t
 		}
 	}
 
-	labelsCopy := make(map[string]string, len(jobSet.Labels))
-	for k, v := range jobSet.Labels {
-		labelsCopy[k] = v
-	}
-
-	annotationsCopy := make(map[string]string, len(jobSet.Annotations))
-	for k, v := range jobSet.Annotations {
-		annotationsCopy[k] = v
-	}
-
 	return &taskqueuepb.JobSetRuntimeContext{
 		CreationTime:         creationTime,
 		EnvironmentVariables: envVars,
-		Labels:               labelsCopy,
-		Annotations:          annotationsCopy,
+		Labels:               maps.Clone(jobSet.Labels),
+		Annotations:          maps.Clone(jobSet.Annotations),
 		Cluster:              proto.String(clusterName),
 		Namespace:            proto.String(jobSet.Namespace),
 		JobSetName:           proto.String(jobSet.Name),

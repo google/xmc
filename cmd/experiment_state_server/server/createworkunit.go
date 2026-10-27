@@ -151,12 +151,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 		return fmt.Errorf("failed to fetch experiment: experiment %d not found: %w", xid, grpcerr.ErrInternal)
 	}
 
-	var notifyWhen string
-	if h.artifactLifecycle != nil {
-		if arts, _, err := h.storage.ListArtifacts(ctx, newWorkUnit.GetName(), 100, "", "", "", 0); err == nil && len(arts) > 0 {
-			notifyWhen = h.artifactLifecycle.RequiredNotifyWhenAnnotation(arts)
-		}
-	}
+	notifyWhen := h.requiredNotifyWhen(ctx, newWorkUnit.GetName())
 	err = h.actuator.EnqueueWorkUnitTask(ctx, newWorkUnit.GetCurrentWorkUnitExecution().GetName(), newWorkUnit, client.CreateAction(exp.GetPriority(), email, notifyWhen), operation.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to enqueue work unit for scheduling", "name", newWorkUnit.GetName(), "error", err)

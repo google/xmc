@@ -181,12 +181,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitRestart(ctx context.Context, oldExecuti
 
 	// 2. Enqueue the work unit for restarting.
 	logging.Info(ctx, "Add restart request for work unit to the queue")
-	var notifyWhen string
-	if h.artifactLifecycle != nil {
-		if arts, _, err := h.storage.ListArtifacts(ctx, newWU.GetName(), 100, "", "", "", 0); err == nil && len(arts) > 0 {
-			notifyWhen = h.artifactLifecycle.RequiredNotifyWhenAnnotation(arts)
-		}
-	}
+	notifyWhen := h.requiredNotifyWhen(ctx, newWU.GetName())
 	err = h.actuator.EnqueueWorkUnitTask(ctx, oldExecutionName, newWU, client.RestartAction(experimentPriority, email, notifyWhen), operation.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)

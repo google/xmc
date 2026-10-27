@@ -42,13 +42,6 @@ type TxRepository struct {
 	tx *spanner.ReadWriteTransaction
 }
 
-// NewTxRepository creates a new transactional repository bound to the given Spanner transaction.
-func NewTxRepository(tx *spanner.ReadWriteTransaction) *TxRepository {
-	return &TxRepository{
-		tx: tx,
-	}
-}
-
 // WithTx returns a wrapper bound to the given read-write transaction.
 func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 	return &TxRepository{
