@@ -21,6 +21,8 @@ import (
 	"io"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
 )
 
 // ClickHouseConn abstracts ClickHouse database connection methods required by DataEngine.
@@ -66,3 +68,20 @@ func (b clickHouseBackend) Close() error {
 	}
 	return nil
 }
+
+type bigQueryBackend struct{ conn xmcbigquery.Conn }
+
+var _ queryBackend = bigQueryBackend{}
+
+func (b bigQueryBackend) Query(ctx context.Context, query string, args ...any) (rowScanner, error) {
+	return b.conn.Query(ctx, query, args...)
+}
+
+func (b bigQueryBackend) Ping(ctx context.Context) error {
+	if err := b.conn.Ping(ctx); err != nil {
+		return fmt.Errorf("bigquery ping failed: %w", err)
+	}
+	return nil
+}
+
+func (b bigQueryBackend) Close() error { return b.conn.Close() }

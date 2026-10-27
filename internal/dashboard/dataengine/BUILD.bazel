@@ -30,6 +30,7 @@ go_library(
         "//api/protos/dashboard:api_go_proto",
         "//api/protos/dashboard:service_go_proto",
         "//internal/logging",
+        "//pkg/bigquery",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_golang_x_sync//errgroup",
@@ -52,6 +53,7 @@ go_test(
     deps = [
         "//api/protos/dashboard:api_go_proto",
         "//api/protos/dashboard:service_go_proto",
+        "//pkg/bigquery",
         "@com_github_clickhouse_clickhouse_go_v2//lib/driver",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],

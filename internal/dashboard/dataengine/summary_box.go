@@ -31,6 +31,7 @@ func (e *DataEngine) fetchSummaryBox(ctx context.Context, xid int64, wid int64, 
 	}
 
 	pred := buildWhereClause(xid, wid, plot.GetData(), plot.GetData().GetRanges())
+	backend := e.activeBackend()
 	query := fmt.Sprintf(`
 		SELECT
 			metric_name,
@@ -45,8 +46,20 @@ func (e *DataEngine) fetchSummaryBox(ctx context.Context, xid int64, wid int64, 
 		GROUP BY metric_name
 		ORDER BY metric_name ASC;
 	`, e.tableName, pred.whereClause)
+	if _, ok := backend.(bigQueryBackend); ok {
+		query = fmt.Sprintf(`
+			SELECT metric_name, latest.val AS latest_val, min_val, max_val, mean_val, latest.stp AS latest_step, latest_ts
+			FROM (
+				SELECT metric_name,
+					ARRAY_AGG(STRUCT(metric_value AS val, step AS stp) ORDER BY timestamp DESC, step DESC LIMIT 1)[OFFSET(0)] AS latest,
+					MIN(metric_value) AS min_val, MAX(metric_value) AS max_val, AVG(metric_value) AS mean_val, MAX(timestamp) AS latest_ts
+				FROM %s WHERE %s GROUP BY metric_name
+			)
+			ORDER BY metric_name ASC;
+		`, e.tableName, pred.whereClause)
+	}
 
-	rows, err := e.activeBackend().Query(ctx, query, pred.args...)
+	rows, err := backend.Query(ctx, query, pred.args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query summary box metrics: %w", err)
 	}
