@@ -16,7 +16,7 @@ The following fields are structural constants of the Ingestion Gateway blueprint
 | `metadata.labels["app.kubernetes.io/name"]` | `"ingestion-gateway"` | Standard Kubernetes application label. |
 | `spec.componentType` | `COMPONENT_TYPE_CUSTOM_1P_COMPONENT` | Hardcoded as a 1P Native Component actuated via Helm by `xmc-bridge`. |
 | `spec.componentClass` | `"metrics-ingestion"` | Canonical service class for the experiment metrics ingestion pipeline. |
-| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.1"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
+| `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 | `spec.dependencies` | `["redpanda", "clickhouse"]` | Declares upstream dependencies on the `redpanda` and `clickhouse` 3P Wrapper Components: the gateway publishes to Redpanda, and without ClickHouse the metrics have no store. `xmc-bridge` waits for both to be Ready before actuating, and CMS blocks disabling either while the gateway is enabled. |
 
 ---
@@ -28,8 +28,10 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | Parameter | Default | Target Flag / Spec Field | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `ingestion-gateway` Component CR in the catalog. |
+| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace`, `-components_namespace`, & `RoleBinding.subjects` | Target Kubernetes namespace for the `Component` CR and component reader RBAC subject. |
 | `deployWorkload` | `false` | Template guard | When `true` (or when `ingestionGatewayDeployment.enabled=true` via `xmc-bridge`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`). |
 | `global.imageTag` | `""` | `spec.imageTag` & Container `image` | Overrides the container image tag across both the `Component` CR (`spec.imageTag`) and the `Deployment` container spec (`{{ repository }}:{{ global.imageTag }}`). |
+| `imageTag` | `""` | `spec.imageTag` & Container `image` | Per-component fallback image tag used when `global.imageTag` is empty. |
 | `parameters.port` | `8080` (`"8080"`) | `-port`, `containerPort`, `Service.spec.ports` | HTTP/gRPC port exposed by the Ingestion Gateway container and ClusterIP Service. |
 | `parameters.redpandaBrokers` | `"redpanda-0.redpanda.xmc.svc.cluster.local:9092"` | `-redpanda_brokers` | Static fallback Kafka broker addresses when dynamic discovery from `Component/redpanda` is inactive. |
 | `parameters.topicName` | `"xmc-metrics"` | `-topic_name` | Default Kafka topic for ingested telemetry and experiment metrics. |
