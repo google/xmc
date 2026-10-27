@@ -49,6 +49,7 @@ import (
 	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/auth/oauth2"
 	xmcbigquery "xmanager_cloud/pkg/bigquery"
+	bqconfig "xmanager_cloud/pkg/bigquery/componentconfig"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
@@ -204,17 +205,50 @@ func resolveMetricsStore(cfg *server.Config) (string, error) {
 	}
 }
 
-func buildStaticBigQueryEngine(projectID string, dial func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error)) dataengine.EngineBuilder {
-	return func(ctx context.Context) (*dataengine.DataEngine, error) {
-		opts, err := xmcbigquery.GetOptions(projectID)
-		if err != nil {
-			return nil, err
+func buildBigQueryResolver(enableComponents bool, namespace, projectID string, customGetter crreader.Getter) dataengine.EngineResolver {
+	if !enableComponents {
+		return resolveBigQueryWithSource(bqconfig.Source{Enabled: false, FallbackProjectID: projectID})
+	}
+	var (
+		mu     sync.Mutex
+		getter = customGetter
+	)
+	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
+		mu.Lock()
+		if getter == nil {
+			g, err := crreader.NewK8sGetter()
+			if err != nil {
+				mu.Unlock()
+				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+			}
+			getter = g
 		}
-		conn, err := dial(ctx, opts)
+		g := getter
+		mu.Unlock()
+		src := bqconfig.Source{Enabled: true, Namespace: namespace, FallbackProjectID: projectID, Getter: g}
+		return resolveBigQueryWithSource(src)(ctx)
+	}
+}
+
+func resolveBigQueryWithSource(src bqconfig.Source) dataengine.EngineResolver {
+	return resolveBigQueryWithDialer(src, func(ctx context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+		return xmcbigquery.ConnectWithOptions(ctx, opts)
+	})
+}
+
+func resolveBigQueryWithDialer(src bqconfig.Source, dial func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error)) dataengine.EngineResolver {
+	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
+		opts, err := bqconfig.ResolveOptions(ctx, src)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		return dataengine.NewBigQuery(conn)
+		return bqconfig.OptionsFingerprint(opts), func(dialCtx context.Context) (*dataengine.DataEngine, error) {
+			conn, err := dial(dialCtx, opts)
+			if err != nil {
+				return nil, err
+			}
+			return dataengine.NewBigQuery(conn)
+		}, nil
 	}
 }
 
@@ -236,10 +270,8 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 	if cfg != nil {
 		enableComponents, componentsNamespace, projectID = cfg.EnableComponents, cfg.ComponentsNamespace, cfg.ProjectID
 	}
-	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && xmcbigquery.Configured()) {
-		return warmProvider(ctx, "BigQuery", dataengine.NewEngineProvider(buildStaticBigQueryEngine(projectID, func(dialCtx context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
-			return xmcbigquery.ConnectWithOptions(dialCtx, opts)
-		})))
+	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter)) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
 	}
 	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
@@ -258,12 +290,14 @@ func warmProvider(ctx context.Context, name string, provider *dataengine.Provide
 }
 
 func isClickHouseExpected(ctx context.Context, enableComponents bool, namespace string, customGetter crreader.Getter) bool {
-	if clickhouse.Configured() {
-		return true
-	}
-	if !enableComponents {
-		return false
-	}
+	return clickhouse.Configured() || (enableComponents && isComponentExpected(ctx, namespace, componentconfig.ClickHouseComponentName, customGetter))
+}
+
+func isBigQueryExpected(ctx context.Context, enableComponents bool, namespace string, customGetter crreader.Getter) bool {
+	return xmcbigquery.Configured() || (enableComponents && isComponentExpected(ctx, namespace, bqconfig.BigQueryComponentName, customGetter))
+}
+
+func isComponentExpected(ctx context.Context, namespace, componentName string, customGetter crreader.Getter) bool {
 	getter := customGetter
 	if getter == nil {
 		g, err := crreader.NewK8sGetter()
@@ -273,7 +307,7 @@ func isClickHouseExpected(ctx context.Context, enableComponents bool, namespace 
 		getter = g
 	}
 	ns := crreader.ResolveNamespace(namespace)
-	comp, err := getter.GetComponent(ctx, ns, componentconfig.ClickHouseComponentName)
+	comp, err := getter.GetComponent(ctx, ns, componentName)
 	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
 		return false
 	}

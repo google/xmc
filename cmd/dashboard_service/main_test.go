@@ -38,6 +38,7 @@ import (
 	"xmanager_cloud/internal/dashboard/dataengine"
 	"xmanager_cloud/pkg/auth/oauth2"
 	xmcbigquery "xmanager_cloud/pkg/bigquery"
+	bqconfig "xmanager_cloud/pkg/bigquery/componentconfig"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader/crreadertest"
@@ -698,22 +699,32 @@ func TestBigQueryMetricsStoreSelectionAndBuilder(t *testing.T) {
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
 	t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
 	t.Setenv("BIGQUERY_TABLE", "xmc_metrics")
-	if _, err := buildStaticBigQueryEngine("", func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+	staticSrc := bqconfig.Source{Enabled: false}
+	if _, _, err := resolveBigQueryWithDialer(staticSrc, func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error) {
 		return stubBigQueryConn{}, nil
 	})(ctx); err == nil {
-		t.Error("buildStaticBigQueryEngine() without project ID succeeded, want error")
+		t.Error("resolveBigQueryWithDialer() without project ID succeeded, want error")
 	}
-	if _, err := buildStaticBigQueryEngine("proj-1", func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+	staticWithProj := bqconfig.Source{Enabled: false, FallbackProjectID: "proj-1"}
+	_, buildFail, err := resolveBigQueryWithDialer(staticWithProj, func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error) {
 		return nil, errors.New("dial failed")
-	})(ctx); err == nil {
-		t.Error("buildStaticBigQueryEngine() with failing dialer succeeded, want error")
+	})(ctx)
+	if err != nil {
+		t.Fatalf("resolveBigQueryWithDialer() error: %v", err)
 	}
-	engine, err := buildStaticBigQueryEngine("proj-1", func(_ context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+	if _, err := buildFail(ctx); err == nil {
+		t.Error("buildFail() with failing dialer succeeded, want error")
+	}
+	_, buildOK, err := resolveBigQueryWithDialer(staticWithProj, func(_ context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
 		ref, _ := opts.TableRef()
 		return stubBigQueryConn{tableRef: ref}, nil
 	})(ctx)
 	if err != nil {
-		t.Fatalf("buildStaticBigQueryEngine() unexpected error: %v", err)
+		t.Fatalf("resolveBigQueryWithDialer() unexpected error: %v", err)
+	}
+	engine, err := buildOK(ctx)
+	if err != nil {
+		t.Fatalf("buildOK() unexpected error: %v", err)
 	}
 	_ = engine.Close()
 
@@ -728,5 +739,73 @@ func TestBigQueryMetricsStoreSelectionAndBuilder(t *testing.T) {
 	}
 	if p := initDataEngineWithGetter(ctx, &server.Config{MetricsStore: "bigquery"}, nil); p == nil {
 		t.Error("initDataEngineWithGetter(explicit bigquery) = nil, want non-nil provider")
+	}
+}
+
+func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("CLICKHOUSE_HOST", "")
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("BIGQUERY_DATASET", "")
+	t.Setenv("BIGQUERY_PROJECT_ID", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	_ = os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600)
+	t.Setenv("KUBECONFIG", badKubeconfig)
+
+	if _, _, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx); err == nil {
+		t.Error("buildBigQueryResolver() with invalid kubeconfig succeeded, want error")
+	}
+	if isBigQueryExpected(ctx, true, "xmc", nil) {
+		t.Error("isBigQueryExpected() with invalid kubeconfig = true, want false")
+	}
+
+	cr := &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1",
+			"kind":       "Component",
+			"metadata":   map[string]any{"name": "bigquery", "namespace": "xmc"},
+			"spec":       map[string]any{"enabled": true, "parameters": map[string]any{"dataset": "ds_v1"}},
+			"status": map[string]any{
+				"state":  "COMPONENT_STATE_ENABLED",
+				"access": map[string]any{"envVars": map[string]any{"PROJECT_ID": "proj-1", "DATASET": "ds_v1", "TABLE": "xmc_metrics"}},
+			},
+		},
+	}
+	getter := &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"bigquery": cr}}
+	if !isBigQueryExpected(ctx, true, "xmc", getter) {
+		t.Error("isBigQueryExpected() with enabled Component/bigquery = false, want true")
+	}
+	if fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", getter)(ctx); err != nil || fp == "" || build == nil {
+		t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want non-empty fp and builder", fp, build, err)
+	}
+
+	var dialedRefs []string
+	resolve := resolveBigQueryWithDialer(
+		bqconfig.Source{Enabled: true, Namespace: "xmc", FallbackProjectID: "proj-1", Getter: getter},
+		func(_ context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+			ref, _ := opts.TableRef()
+			dialedRefs = append(dialedRefs, ref)
+			return stubBigQueryConn{tableRef: ref}, nil
+		},
+	)
+	provider := dataengine.NewDynamicEngineProvider(resolve, dataengine.WithRetryInterval(0))
+	defer provider.Close()
+
+	if err := provider.Ping(ctx); err != nil {
+		t.Fatalf("initial Ping() error: %v", err)
+	}
+	if err := provider.Ping(ctx); err != nil {
+		t.Fatalf("unchanged Ping() error: %v", err)
+	}
+	_ = unstructured.SetNestedField(cr.Object, "ds_v2", "status", "access", "envVars", "DATASET")
+	if err := provider.Ping(ctx); err != nil {
+		t.Fatalf("Ping() after CR update error: %v", err)
+	}
+	wantRefs := []string{"`proj-1.ds_v1.xmc_metrics`", "`proj-1.ds_v2.xmc_metrics`"}
+	if diff := cmp.Diff(wantRefs, dialedRefs); diff != "" {
+		t.Errorf("dialedRefs mismatch (-want +got):\n%s", diff)
 	}
 }
