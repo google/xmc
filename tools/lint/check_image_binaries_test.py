@@ -59,6 +59,31 @@ class FindViolationsTest(unittest.TestCase):
     def test_untagged_binary_passes(self) -> None:
         self.assertEqual(_violations(_build_files(":svc")), [])
 
+    def test_resolve_label_forms(self) -> None:
+        cases = {
+            ":svc": "//cmd/svc:svc",
+            "svc": "//cmd/svc:svc",
+            "//cmd/svc": "//cmd/svc:svc",
+            "//cmd/other:bin": "//cmd/other:bin",
+            "@external//:svc": "@external//:svc",
+        }
+        for label, want in cases.items():
+            with self.subTest(label=label):
+                self.assertEqual(cli.resolve_label("cmd/svc", label), want)
+
+    def test_package_relative_shorthand_labels(self) -> None:
+        self.assertEqual(_violations(_build_files("svc")), [])
+        self.assertEqual(
+            _violations(_build_files("svc_dev")),
+            [
+                {
+                    "image": "//cmd/svc:svc_image",
+                    "binary": "//cmd/svc:svc_dev",
+                    "reason": "binary name ends with _dev",
+                }
+            ],
+        )
+
     def test_absolute_and_shorthand_labels_resolve(self) -> None:
         self.assertEqual(_violations(_build_files("//cmd/svc:svc")), [])
         files = {

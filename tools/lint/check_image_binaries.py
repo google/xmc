@@ -90,6 +90,8 @@ def resolve_label(package: str, label: Any) -> str:
         return f"//{package}{label}"
     if label.startswith("//") and ":" not in label:
         return f"{label}:{label.rsplit('/', 1)[-1]}"
+    if not label.startswith(("//", "@")):
+        return f"//{package}:{label}"
     return label
 
 
