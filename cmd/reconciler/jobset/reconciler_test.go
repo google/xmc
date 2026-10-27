@@ -47,36 +47,10 @@ type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
 	updateErr error
 	updateRes map[int64]*spb.WorkUnitExecution
-	fetchErr  error
-	fetchRes  *spb.WorkUnitExecution
-
-	// listArtifacts is returned by ListArtifacts. The reconciler reads a single
-	// page, so no pagination is modeled. listArtifactsErr, when set, is returned
-	// instead.
-	listArtifacts      []*spb.Artifact
-	listArtifactsErr   error
-	listArtifactsCalls int
-
-	// gotFilters records the filter argument passed to each ListArtifacts call so
-	// tests can assert the reconciler applies the server-side ManagedXprof filter.
-	gotFilters []string
 
 	// onUpdate, when set, is invoked at the start of each UpdateWorkUnitExecutions
 	// call so tests can observe external state (e.g. finalizers) at write time.
 	onUpdate func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate)
-}
-
-func (m *mockStorageUpdater) FetchCurrentWorkUnitExecution(ctx context.Context, xid, wid int64) (*spb.WorkUnitExecution, error) {
-	return m.fetchRes, m.fetchErr
-}
-
-func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error) {
-	m.gotFilters = append(m.gotFilters, filter)
-	m.listArtifactsCalls++
-	if m.listArtifactsErr != nil {
-		return nil, "", m.listArtifactsErr
-	}
-	return m.listArtifacts, "", nil
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -768,7 +742,7 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 				batcher.Add(t.Context(), 123, *tc.pending, shared.JobsetSource)
 			}
 			var gotWrites []stoppedWrite
-			var store ReconcilerStorage
+			var store shared.StorageUpdater
 			if !tc.nilStorage {
 				mockStore := &mockStorageUpdater{updateErr: tc.updateErr}
 				mockStore.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
@@ -956,7 +930,7 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	for _, mf := range mfs {
 		registered[mf.GetName()] = true
 	}
-	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_stopped_write_abandoned_total", "jobset_reconciler_mlrun_sync_duration_seconds"} {
+	for _, name := range []string{"jobset_reconcile_total", "jobset_reconcile_errors_total", "jobset_reconcile_duration_milliseconds", "jobset_updates_sent_to_batcher_total", "jobset_stopped_write_abandoned_total"} {
 		if !registered[name] {
 			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
 		}

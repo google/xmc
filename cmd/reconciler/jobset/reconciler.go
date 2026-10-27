@@ -87,12 +87,9 @@ type Params struct {
 	Project                  string
 	Location                 string
 	ClusterName              string
-	MLRunProject             string
-	MLRunLocation            string
 	MaxConcurrentReconciles  int
 	StartupPodErrorCheckTime time.Duration
-	Storage                  ReconcilerStorage
-	MLRunClient              MLRunCreator
+	Storage                  shared.StorageUpdater
 	LifecycleNotifier        shared.LifecycleNotifier
 }
 
@@ -104,12 +101,9 @@ type Reconciler struct {
 	Project                  string
 	Location                 string
 	ClusterName              string
-	MLRunProject             string
-	MLRunLocation            string
 	MaxConcurrentReconciles  int
 	StartupPodErrorCheckTime time.Duration
-	Storage                  ReconcilerStorage
-	MLRunClient              MLRunCreator
+	Storage                  shared.StorageUpdater
 	LifecycleNotifier        shared.LifecycleNotifier
 	lastSeenNotifyWhen       sync.Map
 
@@ -136,36 +130,12 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		Project:                  p.Project,
 		Location:                 p.Location,
 		ClusterName:              p.ClusterName,
-		MLRunProject:             p.MLRunProject,
-		MLRunLocation:            p.MLRunLocation,
 		MaxConcurrentReconciles:  p.MaxConcurrentReconciles,
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
-		MLRunClient:              p.MLRunClient,
 		LifecycleNotifier:        p.LifecycleNotifier,
 		now:                      time.Now,
 	}, nil
-}
-
-// WorkUnitExecutionReader is an interface for reading WorkUnitExecutions from ESS.
-type WorkUnitExecutionReader interface {
-	FetchCurrentWorkUnitExecution(ctx context.Context, xid int64, wid int64) (*spb.WorkUnitExecution, error)
-}
-
-// ManagedXprofArtifactReader lists the artifacts attached to a resource so the
-// reconciler can read the ManagedXprof artifact directly from storage.
-type ManagedXprofArtifactReader interface {
-	ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Artifact, string, error)
-}
-
-// ReconcilerStorage is the storage surface the JobSet reconciler depends on. It is
-// composed from focused interfaces so callers and tests only implement what they use.
-// shared.StorageUpdater is used to write the terminal status synchronously
-// before releasing a deleting JobSet's finalizer.
-type ReconcilerStorage interface {
-	WorkUnitExecutionReader
-	shared.StorageUpdater
-	ManagedXprofArtifactReader
 }
 
 func observeReconcileMetrics(startTime time.Time, recErr error) {
@@ -412,12 +382,10 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
 	forceNotify := r.checkNotifyWhenUpdate(jobSet)
 
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	update.ForceNotify = forceNotify
-	setMLRunURL(update, mlRunURL)
 	logging.Debug(ctx, "Successfully converted JobSet", "namespace", jobSet.Namespace)
 
 	updatesSentTotal.WithLabelValues().Inc()
