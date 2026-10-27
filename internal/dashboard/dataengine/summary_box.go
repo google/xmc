@@ -46,7 +46,7 @@ func (e *DataEngine) fetchSummaryBox(ctx context.Context, xid int64, wid int64, 
 		ORDER BY metric_name ASC;
 	`, e.tableName, pred.whereClause)
 
-	rows, err := e.conn.Query(ctx, query, pred.args...)
+	rows, err := e.activeBackend().Query(ctx, query, pred.args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query summary box metrics: %w", err)
 	}

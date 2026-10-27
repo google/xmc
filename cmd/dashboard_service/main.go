@@ -413,6 +413,9 @@ func run() int {
 	}
 	defer authenticator.Close()
 	de := initDataEngine(ctx, cfg)
+	if de != nil {
+		defer de.Close()
+	}
 
 	dbCfg, err := dbconfig.Load()
 	if err != nil {
