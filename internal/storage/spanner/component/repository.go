@@ -136,26 +136,46 @@ func getComponentByID(ctx context.Context, q Queryable, componentID int64) (*sto
 
 // listActiveComponents reads all non-deleted components keyed by canonical name and their active dependencies through q.
 func listActiveComponents(ctx context.Context, q Queryable) (map[string]*store.ComponentRecord, error) {
-	compIter := q.Query(ctx, spanner.Statement{SQL: selectAllActiveComponentsSQL})
-	defer compIter.Stop()
+	if q == nil {
+		return nil, fmt.Errorf("cannot list active components without a transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	componentsByID, err := scanActiveComponents(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active components: %w", err)
+	}
+	if err := attachActiveDependencies(ctx, q, componentsByID); err != nil {
+		return nil, fmt.Errorf("failed to list component dependencies: %w", err)
+	}
+	componentsByName := make(map[string]*store.ComponentRecord, len(componentsByID))
+	for _, rec := range componentsByID {
+		rec.Etag = store.GenerateEtag(rec)
+		componentsByName[rec.Name] = rec
+	}
+	return componentsByName, nil
+}
 
-	componentsByName := make(map[string]*store.ComponentRecord)
+// scanActiveComponents reads all non-deleted components keyed by component ID, without their dependencies.
+func scanActiveComponents(ctx context.Context, q Queryable) (map[int64]*store.ComponentRecord, error) {
+	iter := q.Query(ctx, spanner.Statement{SQL: selectAllActiveComponentsSQL})
+	defer iter.Stop()
 	componentsByID := make(map[int64]*store.ComponentRecord)
-	if err := compIter.Do(func(row *spanner.Row) error {
+	err := iter.Do(func(row *spanner.Row) error {
 		rec, err := RowToComponentRecord(row)
 		if err != nil {
 			return err
 		}
-		componentsByName[rec.Name] = rec
 		componentsByID[rec.ComponentID] = rec
 		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list active components: %w", err)
-	}
+	})
+	return componentsByID, err
+}
 
-	depIter := q.Query(ctx, spanner.Statement{SQL: selectAllActiveDependenciesSQL})
-	defer depIter.Stop()
-	if err := depIter.Do(func(row *spanner.Row) error {
+// attachActiveDependencies appends the names of the active dependencies of every component in
+// componentsByID, sorted by name.
+func attachActiveDependencies(ctx context.Context, q Queryable, componentsByID map[int64]*store.ComponentRecord) error {
+	iter := q.Query(ctx, spanner.Statement{SQL: selectAllActiveDependenciesSQL})
+	defer iter.Stop()
+	return iter.Do(func(row *spanner.Row) error {
 		var compID int64
 		var depName string
 		if err := row.ColumnByName("ComponentId", &compID); err != nil {
@@ -168,13 +188,7 @@ func listActiveComponents(ctx context.Context, q Queryable) (map[string]*store.C
 			rec.Dependencies = append(rec.Dependencies, depName)
 		}
 		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list component dependencies: %w", err)
-	}
-	for _, rec := range componentsByName {
-		rec.Etag = store.GenerateEtag(rec)
-	}
-	return componentsByName, nil
+	})
 }
 
 // queryComponentWithDeps reads the first component matched by stmt and its active dependencies through q.

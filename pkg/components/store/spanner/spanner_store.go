@@ -90,12 +90,14 @@ type SpannerStore struct {
 	beforeIntentWrite func()
 }
 
-// NewSpannerStore creates a new Spanner-backed component store.
-func NewSpannerStore(client *spanner.Client, st storage.Storage) *SpannerStore {
+// NewSpannerStore creates a new Spanner-backed component store. st must be the Spanner storage for
+// the same database as client: top-level reads go through st.Components(), while writes and reads
+// inside transactions still use client directly until they move behind storage.TransactionRunner.
+func NewSpannerStore(client *spanner.Client, st storage.Storage) (*SpannerStore, error) {
 	if st == nil {
-		panic("st (storage.Storage) cannot be nil")
+		return nil, errors.New("spannerstore: storage.Storage must not be nil")
 	}
-	return &SpannerStore{client: client, storage: st, repo: component.NewRepository(client)}
+	return &SpannerStore{client: client, storage: st, repo: component.NewRepository(client)}, nil
 }
 
 // SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose

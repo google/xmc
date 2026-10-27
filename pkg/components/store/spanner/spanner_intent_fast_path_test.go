@@ -134,7 +134,10 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	other := spannerstore.NewSpannerStore(client, otherSt)
+	other, err := spannerstore.NewSpannerStore(client, otherSt)
+	if err != nil {
+		t.Fatalf("NewSpannerStore() failed: %v", err)
+	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dep, name := fmt.Sprintf("concurrent-fast-path-dep-%d", i), fmt.Sprintf("concurrent-fast-path-%d", i)

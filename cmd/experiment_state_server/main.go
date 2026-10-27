@@ -235,7 +235,11 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		store.OwnershipGaugeReader
 	}
 	if st != nil && spannerClient != nil {
-		cmsStore = spannerstore.NewSpannerStore(spannerClient, st)
+		spannerStore, err := spannerstore.NewSpannerStore(spannerClient, st)
+		if err != nil {
+			logging.Fatal(ctx, "failed to create SpannerStore for Component Manager Service", "error", err)
+		}
+		cmsStore = spannerStore
 		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
 	} else {
 		cmsStore = memory.NewMemoryStore()

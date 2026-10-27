@@ -46,7 +46,11 @@ func setupTestStore(ctx context.Context, t *testing.T) (*spannerstore.SpannerSto
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	return spannerstore.NewSpannerStore(essClient, st), essClient
+	s, err := spannerstore.NewSpannerStore(essClient, st)
+	if err != nil {
+		t.Fatalf("NewSpannerStore() failed: %v", err)
+	}
+	return s, essClient
 }
 
 func TestSpannerStore_SetComponentIntent_Success(t *testing.T) {

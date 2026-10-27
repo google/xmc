@@ -133,7 +133,10 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 		return nil, err
 	}
 
-	compStore := spannerstore.NewSpannerStore(client, st)
+	compStore, err := spannerstore.NewSpannerStore(client, st)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create component store: %w", err)
+	}
 	provider, err := summary.NewStoreComponentsProvider(compStore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create custom components info provider: %w", err)
