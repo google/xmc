@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//:oci.bzl", "oci_image_for_service")
+load("//:oci.bzl", "dev_binary_guard_test", "oci_image_for_service")
 
 go_library(
     name = "experiment_state_server_lib",
@@ -66,8 +66,8 @@ go_binary(
 )
 
 # Local development only: compiles in the non-production auth modes (MOCK_AUTH and
-# DISABLE_AUTHENTICATION). Never package this binary into an image;
-# tools/lint/check_image_binaries.py enforces that in CI.
+# DISABLE_AUTHENTICATION). Never package this binary into an image; the
+# *_dev_binary_guard_test that oci_image_for_service generates enforces that.
 go_binary(
     name = "experiment_state_server_dev",
     embed = [":experiment_state_server_lib"],
@@ -79,6 +79,13 @@ go_binary(
 oci_image_for_service(
     name = "experiment_state_server_image",
     binary = ":experiment_state_server",
+)
+
+# Regression check that the image guard detects the mockauth-tagged dev binary.
+dev_binary_guard_test(
+    name = "experiment_state_server_dev_detected_test",
+    binary = ":experiment_state_server_dev",
+    expect_dev_binary = True,
 )
 
 go_test(

@@ -859,6 +859,10 @@ class TestResolveTestScope(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(classify_modified_files([path])["has_core_infra"])
 
+    def test_classify_oci_macro_as_core_infra(self):
+        """Verifies oci.bzl, which generates every image dev_binary_guard_test, runs the full suite."""
+        self.assertTrue(classify_modified_files(["oci.bzl"])["has_core_infra"])
+
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
     def test_discover_bazel_rdeps_targets_includes_non_code_testdata_package(self, mock_run):
         with tempfile.TemporaryDirectory() as tmpdir:

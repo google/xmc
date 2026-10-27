@@ -55,6 +55,8 @@ CORE_INFRA_FILES: set[str] = {
     "tools/benchmark/resolve_test_scope.py",
     "tools/common/changed_files.py",
     "tools/common/tool_utils.py",
+    # Generates the dev_binary_guard_test for every container image.
+    "oci.bzl",
 }
 
 # The Helm chart suite (.github/actions/run-chart-tests) renders templates with a host helm

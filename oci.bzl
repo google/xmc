@@ -12,7 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_python//python:py_test.bzl", "py_test")
+
+# go_binary gotags that compile in authentication bypasses and must never ship in an image.
+_DEV_BUILD_TAGS = ["mockauth"]
+
+def dev_binary_guard_test(name, binary, expect_dev_binary = False):
+    """Tests that no go_binary in binary's transitive deps is a *_dev or dev-tagged binary.
+
+    Bazel resolves the labels and attributes, so every image is checked by construction. The
+    unconfigured deps() query also walks exec and tool deps, which is strict by design: no dev
+    binary may appear anywhere in the image binary's build graph.
+
+    Args:
+      name: Name of the test target.
+      binary: Label of the binary to check.
+      expect_dev_binary: Invert the check; used to prove the guard detects a dev binary.
+    """
+    label = binary if binary.startswith("//") or binary.startswith("@") else "//%s%s%s" % (
+        native.package_name(),
+        "" if binary.startswith(":") else ":",
+        binary,
+    )
+    query = name + "_dev_binaries"
+    native.genquery(
+        name = query,
+        expression = "let bins = kind(go_binary, deps({label})) in attr(name, '_dev$', $bins) + {tagged}".format(
+            label = label,
+            tagged = " + ".join(["attr(gotags, '\\b%s\\b', $bins)" % tag for tag in _DEV_BUILD_TAGS]),
+        ),
+        scope = [binary],
+        testonly = True,
+    )
+    py_test(
+        name = name,
+        size = "small",
+        srcs = ["//tools/lint:dev_binary_guard.py"],
+        main = "//tools/lint:dev_binary_guard.py",
+        args = ["$(rootpath :%s)" % query] + (["--expect-dev-binary"] if expect_dev_binary else []),
+        data = [":" + query],
+    )
+
 def oci_image_for_service(name, binary):
+    dev_binary_guard_test(name = name + "_dev_binary_guard_test", binary = binary)
+
     # Split binary name
     binary_name = binary.split(":")[-1]
     tarball_target = name + "_tarball"

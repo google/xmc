@@ -136,14 +136,6 @@ check_legacy_imports() {
   fi
 }
 
-check_image_binaries() {
-  echo "--> Checking that container images never package development-only binaries..."
-  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_image_binaries.py >/dev/null; then
-    echo "❌ An oci_image_for_service target packages a *_dev binary or one built with dev gotags (see JSON error above)."
-    FAILED=1
-  fi
-}
-
 check_examples_coverage() {
   echo "--> Checking Nightly E2E Verification Coverage for examples/..."
   if ! XMC_BYPASS_VENV=1 python3 tools/nightly_tests/check_examples_coverage.py >/dev/null; then
@@ -475,7 +467,6 @@ main() {
   check_bazel
   check_go
   check_legacy_imports
-  check_image_binaries
   check_examples_coverage
   check_ui
   check_license
