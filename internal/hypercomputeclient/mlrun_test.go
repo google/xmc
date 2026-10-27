@@ -252,6 +252,122 @@ func TestUpdateMLRun(t *testing.T) {
 			t.Errorf("labels = %v, want %v", labels, wantLabels)
 		}
 	})
+
+	t.Run("monotonicity fencing prevents COMPLETED from downgrading to ACTIVE", func(t *testing.T) {
+		patchCalled := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPatch {
+				patchCalled = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"displayName": "test-run", "runPhase": "COMPLETED"})
+		}))
+		defer server.Close()
+
+		got, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			RunPhase: "ACTIVE",
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchCalled {
+			t.Errorf("PATCH was called, want no-op when attempting to downgrade COMPLETED to ACTIVE")
+		}
+		if got["runPhase"] != "COMPLETED" {
+			t.Errorf("runPhase = %v, want COMPLETED", got["runPhase"])
+		}
+	})
+
+	t.Run("monotonicity fencing prevents FAILED from downgrading to ACTIVE", func(t *testing.T) {
+		patchCalled := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPatch {
+				patchCalled = true
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"displayName": "test-run", "runPhase": "FAILED"})
+		}))
+		defer server.Close()
+
+		got, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			RunPhase: "ACTIVE",
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchCalled {
+			t.Errorf("PATCH was called, want no-op when attempting to downgrade FAILED to ACTIVE")
+		}
+		if got["runPhase"] != "FAILED" {
+			t.Errorf("runPhase = %v, want FAILED", got["runPhase"])
+		}
+	})
+
+	t.Run("preserves etag from GET in PATCH payload", func(t *testing.T) {
+		var patchBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]any{
+					"displayName": "run-1",
+					"runPhase":    "ACTIVE",
+					"etag":        "original-etag-12345",
+				})
+			case http.MethodPatch:
+				json.NewDecoder(r.Body).Decode(&patchBody)
+				json.NewEncoder(w).Encode(map[string]any{"done": true, "response": map[string]any{}})
+			default:
+				http.Error(w, "unexpected method", http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		_, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			RunPhase: "COMPLETED",
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchBody["etag"] != "original-etag-12345" {
+			t.Errorf("patchBody[etag] = %v, want original-etag-12345", patchBody["etag"])
+		}
+		if patchBody["runPhase"] != "COMPLETED" {
+			t.Errorf("patchBody[runPhase] = %v, want COMPLETED", patchBody["runPhase"])
+		}
+	})
+
+	t.Run("explicit etag in options overrides GET etag in PATCH payload", func(t *testing.T) {
+		var patchBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			switch r.Method {
+			case http.MethodGet:
+				json.NewEncoder(w).Encode(map[string]any{
+					"displayName": "run-1",
+					"runPhase":    "ACTIVE",
+					"etag":        "original-etag-12345",
+				})
+			case http.MethodPatch:
+				json.NewDecoder(r.Body).Decode(&patchBody)
+				json.NewEncoder(w).Encode(map[string]any{"done": true, "response": map[string]any{}})
+			default:
+				http.Error(w, "unexpected method", http.StatusInternalServerError)
+			}
+		}))
+		defer server.Close()
+
+		_, err := newTestClient(server).UpdateMLRun(context.Background(), "run-1", &UpdateMLRunOptions{
+			RunPhase: "COMPLETED",
+			ETag:     "override-etag-99999",
+		})
+		if err != nil {
+			t.Fatalf("UpdateMLRun() unexpected error: %v", err)
+		}
+		if patchBody["etag"] != "override-etag-99999" {
+			t.Errorf("patchBody[etag] = %v, want override-etag-99999", patchBody["etag"])
+		}
+	})
 }
 
 func TestUpdateMLRunNilPayloadNoPanic(t *testing.T) {

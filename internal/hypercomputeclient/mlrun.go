@@ -116,6 +116,9 @@ type UpdateMLRunOptions struct {
 	Artifacts       map[string]string
 	Orchestrator    string
 	WorkloadDetails *GKEWorkloadDetails
+	// ETag provides explicit optimistic concurrency control. If omitted, the
+	// etag returned by GetMLRun is preserved.
+	ETag string
 }
 
 // mergeStringMap merges updates into a nested string map in payload under field.
@@ -140,13 +143,24 @@ func mergeStringMap(payload map[string]any, field string, updates map[string]str
 	return changed
 }
 
+func isTerminalPhase(phase string) bool {
+	return phase == "COMPLETED" || phase == "FAILED"
+}
+
 func applyMLRunUpdateOptions(payload map[string]any, opts *UpdateMLRunOptions) bool {
 	if opts == nil {
 		return false
 	}
 	needUpdate := opts.Force
+	if opts.ETag != "" && payload["etag"] != opts.ETag {
+		payload["etag"] = opts.ETag
+		needUpdate = true
+	}
 	for k, v := range map[string]string{"displayName": opts.DisplayName, "runPhase": opts.RunPhase, "runSet": opts.RunGroup} {
 		if curr, _ := payload[k].(string); v != "" && curr != v {
+			if k == "runPhase" && isTerminalPhase(curr) && v == "ACTIVE" {
+				continue
+			}
 			payload[k] = v
 			needUpdate = true
 		}

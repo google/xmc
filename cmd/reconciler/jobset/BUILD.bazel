@@ -29,8 +29,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//cmd/reconciler/hypercomputeclient",
         "//cmd/reconciler/shared",
+        "//internal/hypercomputeclient",
         "//internal/kubernetes/common/constants",
         "//internal/kubernetes/common/jobsetutil",
         "//internal/kubernetes/common/labels",
@@ -72,8 +72,8 @@ go_test(
     embed = [":jobset"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
-        "//cmd/reconciler/hypercomputeclient",
         "//internal/grpcerr",
+        "//internal/hypercomputeclient",
         "//internal/kubernetes/common/constants",
         "//internal/storage",
         "@com_github_google_go_cmp//cmp",
