@@ -84,11 +84,12 @@ Offline syntax walkers and static validation tooling:
 - [`check_legacy_imports.py`](lint/check_legacy_imports.py): Ratchet lint preventing regression of google3 migration leftovers (legacy Go import roots, unresolved `xmanager_cloud/...` module paths, `compat_go_*` targets, `gazelle:resolve` overrides, `third_party/` proto paths, google3 Helm flags, legacy UI/Python paths) against the zeroed [`legacy_imports_baseline.json`](lint/legacy_imports_baseline.json). Fails when any count grows above zero. Runs in pre-commit and the lint CI job. Tracking: [#1066](https://github.com/google/xmc/issues/1066).
 
 ### 8. [`tools/migrations/components/`](migrations/components/README.md) (One-Time Component Migration CLI)
-Deterministic operator CLI for migrating legacy umbrella Ingestion Gateway installs to XMC Components:
-- [`migrate.py`](migrations/components/migrate.py): Structured CLI entrypoint (`prepare`, `handoff`) for generating validated profile values and transferring Helm resource ownership.
+Deterministic operator CLI for migrating legacy umbrella Ingestion Gateway installs to XMC Components (see [`docs/migrations/components.md`](../docs/migrations/components.md)):
+- [`migrate.py`](migrations/components/migrate.py): Structured CLI entrypoint (`prepare`, `handoff`, `finalize`) for generating validated profile values, transferring Helm resource ownership, and verifying adoption.
 - [`profile_preparer.py`](migrations/components/profile_preparer.py): Fail-fast live PodSpec/Secret audit, gateway/Redpanda/ClickHouse parameter synthesis, and `helm template` + `component-linter` validation.
-- [`resource_handoff.py`](migrations/components/resource_handoff.py): Idempotent `helm.sh/resource-policy=keep` and Helm ownership annotation handoff (with reversible `--undo` guard).
-- [`cluster_inspector.py`](migrations/components/cluster_inspector.py): Read-only Helm and Kubernetes resource/Secret/release inspection queries.
+- [`resource_handoff.py`](migrations/components/resource_handoff.py): Idempotent `helm.sh/resource-policy=keep` and Helm ownership annotation handoff (with guarded `--undo` rollback).
+- [`adoption_finalizer.py`](migrations/components/adoption_finalizer.py): Component readiness polling, rendered-vs-live drift verification, rollout/pod checks, `keep` stripping, and `/api/v1/metrics` probing.
+- [`cluster_inspector.py`](migrations/components/cluster_inspector.py): Helm and Kubernetes resource, Secret, manifest, and release-status queries.
 
 ---
 

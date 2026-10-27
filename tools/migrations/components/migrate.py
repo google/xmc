@@ -13,6 +13,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.migrations.components.adoption_finalizer import finalize_adoption  # noqa: E402
 from tools.migrations.components.profile_preparer import prepare_profile_values  # noqa: E402
 from tools.migrations.components.resource_handoff import execute_resource_handoff  # noqa: E402
 
@@ -40,6 +41,13 @@ def build_parser() -> argparse.ArgumentParser:
     hoff.add_argument(
         "--undo", action="store_true", help="Revert handoff annotations before upgrade."
     )
+    fin = sub.add_parser("finalize", help="Verify adoption, strip keep, and probe metrics.")
+    fin.add_argument("--release", default="xmc", help="Umbrella Helm release name (default: xmc).")
+    fin.add_argument("-n", "--namespace", default="xmc", help="Target Kubernetes namespace.")
+    fin.add_argument("--timeout", type=int, default=300, help="Readiness timeout in seconds.")
+    fin.add_argument("--metrics-url", default="", help="HTTP POST URL for /api/v1/metrics probe.")
+    fin.add_argument("--test-xid", type=int, default=0, help="Optional experiment ID (>0) to post.")
+    fin.add_argument("--skip-probe", action="store_true", help="Skip HTTP metrics probe.")
     return parser
 
 
@@ -51,7 +59,18 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
     if args.subcommand == "handoff":
         return execute_resource_handoff(args.release, args.namespace, undo=args.undo)
-    raise HandledError(f"Unsupported subcommand: {args.subcommand}", "Use 'prepare' or 'handoff'.")
+    if args.subcommand == "finalize":
+        return finalize_adoption(
+            args.release,
+            args.namespace,
+            timeout_sec=args.timeout,
+            metrics_url=args.metrics_url,
+            test_xid=args.test_xid,
+            skip_probe=args.skip_probe,
+        )
+    raise HandledError(
+        f"Unsupported subcommand: {args.subcommand}", "Use 'prepare', 'handoff', or 'finalize'."
+    )
 
 
 if __name__ == "__main__":

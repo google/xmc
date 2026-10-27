@@ -88,6 +88,7 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/dashboard_service:dashboard_service_image_push
    bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
+   bazel run //cmd/xmc_bridge:xmc_bridge_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -395,6 +396,7 @@ bazel run //cmd/health_service:health_service_image_push
 bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
+bazel run //cmd/xmc_bridge:xmc_bridge_image_push
 ```
 
 #### Step 3: Run Database Schema Migrations
@@ -553,6 +555,10 @@ Run the verification script from the repository root to verify that all upgraded
 python3 ./deploy/ctk_v2/verify_xmc.py
 ```
 
+#### Step 6 (Optional): Migrate Legacy Ingestion Gateway to XMC Components
+
+Existing installations retain the legacy umbrella-managed `ingestion-gateway` by default (`enable_components: false`). Once your cluster upgrade is healthy, follow the one-time zero-downtime [Legacy-to-Components Migration Guide](docs/migrations/components.md) (`tools/migrations/components/migrate.py`) to hand off `ingestion-gateway` ownership to `xmc-bridge` and the `stable-2026a` component profile.
+
 ---
 
 ## Configuration Reference
@@ -589,3 +595,4 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
+| `enable_components` | No | `false` | Deploys `xmc-bridge` and delegates `ingestion-gateway` lifecycle to the XMC Components profile chart (see [Legacy-to-Components Migration Guide](docs/migrations/components.md)) |

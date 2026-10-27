@@ -10,6 +10,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "components_migration_lib",
     srcs = [
+        "adoption_finalizer.py",
         "cluster_inspector.py",
         "migrate.py",
         "profile_preparer.py",
@@ -25,6 +26,13 @@ py_library(
 py_binary(
     name = "migrate",
     srcs = ["migrate.py"],
+    deps = [":components_migration_lib"],
+)
+
+py_test(
+    name = "adoption_finalizer_test",
+    size = "small",
+    srcs = ["adoption_finalizer_test.py"],
     deps = [":components_migration_lib"],
 )
 

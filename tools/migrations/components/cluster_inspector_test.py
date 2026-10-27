@@ -98,6 +98,33 @@ class TestClusterInspector(unittest.TestCase):
         with self.assertRaises(HandledError):
             cluster_inspector.helm_release_exists("xmc-cmp-ingestion-gateway", "xmc")
 
+    @patch("tools.migrations.components.cluster_inspector.run_command")
+    def test_fetch_helm_status_and_rendered_objects(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"info": {"status": "deployed"}}', stderr=""
+        )
+        self.assertEqual(
+            cluster_inspector.fetch_helm_release_status("xmc-cmp-ingestion-gateway", "xmc"),
+            "deployed",
+        )
+        stream = (
+            '{"kind": "Deployment", "metadata": {"name": "ingestion-gateway-deployment"}}\n'
+            '{"kind": "List", "items": [{"kind": "Service", "metadata": {"name": "s1"}}]}\n'
+        )
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="---\nkind: Deployment\n"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=stream),
+        ]
+        objs = cluster_inspector.fetch_rendered_release_objects("xmc-cmp-ingestion-gateway", "xmc")
+        self.assertIn(("deployment", "ingestion-gateway-deployment"), objs)
+        self.assertIn(("service", "s1"), objs)
+
+        mock_run.side_effect = FileNotFoundError("helm")
+        with self.assertRaises(HandledError):
+            cluster_inspector.fetch_helm_release_status("xmc-cmp-ingestion-gateway", "xmc")
+        with self.assertRaises(HandledError):
+            cluster_inspector.fetch_rendered_release_objects("xmc-cmp-ingestion-gateway", "xmc")
+
 
 if __name__ == "__main__":
     unittest.main()

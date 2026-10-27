@@ -6,6 +6,8 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command
@@ -126,3 +128,61 @@ def helm_release_exists(release: str, namespace: str) -> bool:
         f"Failed to check Helm status for '{release}' in '{namespace}': {err_text}",
         "Verify kubectl/helm cluster connectivity and RBAC permissions.",
     )
+
+
+def fetch_helm_release_status(release: str, namespace: str) -> str:
+    """Returns info.status (e.g. 'deployed') for a Helm release in namespace."""
+    cmd = ["helm", "status", release, "-n", namespace, "-o", "json"]
+    try:
+        res = run_command(cmd, capture_output=True, log_on_error=False, stream=sys.stderr)
+        data = json.loads(res.stdout or "{}")
+    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        err = (getattr(e, "stderr", "") or str(e)).strip()
+        raise HandledError(f"Helm status failed for '{release}': {err}", "Check helm.") from e
+    return str(((data.get("info") or {}) if isinstance(data, dict) else {}).get("status") or "")
+
+
+def _decode_json_stream(raw: str) -> list[dict[str, Any]]:
+    """Parses one or more concatenated JSON objects emitted by kubectl --dry-run=client -o json."""
+    decoder, idx, length = json.JSONDecoder(), 0, len(raw)
+    items: list[dict[str, Any]] = []
+    while idx < length:
+        while idx < length and raw[idx].isspace():
+            idx += 1
+        if idx >= length:
+            break
+        obj, idx = decoder.raw_decode(raw, idx)
+        if isinstance(obj, dict):
+            sub = obj.get("items") if obj.get("kind") == "List" else None
+            if isinstance(sub, list):
+                items.extend(it for it in sub if isinstance(it, dict))
+            else:
+                items.append(obj)
+    return items
+
+
+def fetch_rendered_release_objects(
+    release: str, namespace: str
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Returns rendered objects for a Helm release keyed by (kind.lower(), metadata.name)."""
+    h_cmd = ["helm", "get", "manifest", release, "-n", namespace]
+    try:
+        manifest = run_command(
+            h_cmd, capture_output=True, log_on_error=False, stream=sys.stderr
+        ).stdout
+        with tempfile.TemporaryDirectory(prefix="xmc_manifest_") as tmp_dir:
+            p = Path(tmp_dir) / "manifest.yaml"
+            p.write_text(manifest, encoding="utf-8")
+            k_cmd = ["kubectl", "create", "--dry-run=client", "-o", "json", "-f", str(p)]
+            raw = run_command(
+                k_cmd, capture_output=True, log_on_error=False, stream=sys.stderr
+            ).stdout
+        objects = _decode_json_stream(raw)
+    except (FileNotFoundError, subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        err = (getattr(e, "stderr", "") or str(e)).strip()
+        raise HandledError(f"Manifest parse failed for '{release}': {err}", "Check helm.") from e
+    return {
+        (str(o["kind"]).lower(), str(o["metadata"]["name"])): o
+        for o in objects
+        if o.get("kind") and isinstance(o.get("metadata"), dict) and o["metadata"].get("name")
+    }
