@@ -26,6 +26,8 @@ spec:
       app: rod-data-provider
   template:
     metadata:
+      annotations:
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: rod-data-provider
     spec:

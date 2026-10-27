@@ -17,44 +17,33 @@ import (
 	"context"
 	"fmt"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/option"
-	"xmanager_cloud/internal/storage"
-	ss "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 )
 
-// StorageComponents holds initialized Spanner and storage clients along with cleanup callback.
-type StorageComponents struct {
-	Storage storage.Storage
-	Client  *spanner.Client
-	Cleanup func()
+func newStorage(ctx context.Context) (*dbfactory.Storage, error) {
+	dbCfg, err := dbconfig.Load()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load database config: %w", err)
+	}
+	applyLegacySpannerFlags(ctx, &dbCfg)
+	return dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
 }
 
-func newStorage(ctx context.Context, config *Config) (StorageComponents, error) {
-	sc, err := spanner.NewClientWithConfig(
-		ctx,
-		config.SpannerDatabaseName,
-		spanner.ClientConfig{SessionPoolConfig: spanner.SessionPoolConfig{
-			TrackSessionHandles: true,
-			InactiveTransactionRemovalOptions: spanner.InactiveTransactionRemovalOptions{
-				ActionOnInactiveTransaction: spanner.Warn,
-			},
-		}},
-		option.WithQuotaProject(config.QuotaProjectID),
-	)
-	if err != nil {
-		return StorageComponents{}, fmt.Errorf("failed to create spanner client: %w", err)
+// applyLegacySpannerFlags populates Spanner settings from the deprecated -spanner_database_name and
+// -quota_project_id CLI flags when the corresponding db-config environment variables are unset.
+// TODO: Remove once all deployments pass db-config environment variables.
+func applyLegacySpannerFlags(ctx context.Context, dbCfg *dbconfig.Config) {
+	if dbCfg.Backend != dbconfig.BackendSpanner {
+		return
 	}
-
-	stg, err := ss.NewStorage(sc)
-	if err != nil {
-		sc.Close()
-		return StorageComponents{}, fmt.Errorf("failed to create storage: %w", err)
+	if dbCfg.Spanner.EssDatabase == "" && spannerDatabaseName != "" {
+		logging.Warn(ctx, "Using deprecated database flag; migrate to db-config", "deprecated_flag", "-spanner_database_name", "replacement_env", "SPANNER_ESS_DATABASE")
+		dbCfg.Spanner.EssDatabase = spannerDatabaseName
 	}
-
-	return StorageComponents{
-		Storage: stg,
-		Client:  sc,
-		Cleanup: func() { sc.Close() },
-	}, nil
+	if dbCfg.Spanner.QuotaProjectID == "" && quotaProjectID != "" {
+		logging.Warn(ctx, "Using deprecated database flag; migrate to db-config", "deprecated_flag", "-quota_project_id", "replacement_env", "SPANNER_QUOTA_PROJECT_ID")
+		dbCfg.Spanner.QuotaProjectID = quotaProjectID
+	}
 }

@@ -411,19 +411,21 @@ func TestGracefulShutdown_ServerError(t *testing.T) {
 	}
 }
 
-func TestInitSpannerClient_EmptyDatabaseName(t *testing.T) {
-	ctx := context.Background()
-	_, err := initSpannerClient(ctx, "", "proj")
-	if err == nil {
-		t.Fatal("expected error for empty database name, got nil")
-	}
+type fakeReadinessChecker struct {
+	err error
 }
 
-func TestInitRepository_NilClient(t *testing.T) {
+func (f fakeReadinessChecker) CheckReady(ctx context.Context) error {
+	return f.err
+}
+
+func TestNewReadinessCheck_DatabaseCheck(t *testing.T) {
 	ctx := context.Background()
-	_, err := initRepository(ctx, nil)
-	if err == nil {
-		t.Fatal("expected error for nil spanner client, got nil")
+	if err := newReadinessCheck(fakeReadinessChecker{}, nil)(ctx); err != nil {
+		t.Errorf("newReadinessCheck(healthyDB, nil) = %v, want nil", err)
+	}
+	if err := newReadinessCheck(fakeReadinessChecker{err: errors.New("db down")}, nil)(ctx); err == nil {
+		t.Fatal("newReadinessCheck(unhealthyDB, nil) = nil, want error")
 	}
 }
 

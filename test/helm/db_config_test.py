@@ -34,8 +34,11 @@ WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
 
 CHECKSUM_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
+    "templates/dashboard-service/deployment.yaml",
     "templates/ess/deployment.yaml",
+    "templates/log-monitor/deployment.yaml",
     "templates/reconciler/deployment.yaml",
+    "templates/rod/deployment.yaml",
     "templates/xid/deployment.yaml",
 )
 

@@ -143,6 +143,18 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
+			name: "spanner backend falls back to legacy dashboard_spanner_database_name when SPANNER_ESS_DATABASE unset",
+			env: map[string]string{
+				"dashboard_spanner_database_name": "projects/p/instances/i/databases/legacy-dashboard-ess-db",
+			},
+			want: Config{
+				Backend: BackendSpanner,
+				Spanner: Spanner{
+					EssDatabase: "projects/p/instances/i/databases/legacy-dashboard-ess-db",
+				},
+			},
+		},
+		{
 			name: "SPANNER_* settings take precedence over legacy per-service env vars",
 			env: map[string]string{
 				"SPANNER_ESS_DATABASE":      "projects/p/instances/i/databases/ess-db",

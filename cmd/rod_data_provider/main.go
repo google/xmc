@@ -25,9 +25,6 @@ import (
 	"syscall"
 	"time"
 
-	"cloud.google.com/go/spanner"
-	"google.golang.org/api/option"
-
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -43,12 +40,16 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/spanner/statushistory"
-	"xmanager_cloud/internal/storage/spanner/workunit"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/dbconfig"
+	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
-var _ QueueVelocityFetcher = (*statushistory.Repository)(nil)
+var (
+	_ WorkUnitFetcher      = (storage.Storage)(nil)
+	_ QueueVelocityFetcher = (storage.Storage)(nil)
+)
 
 func main() {
 	flag.Parse()
@@ -73,12 +74,13 @@ func run(ctx context.Context, cfg *Config) error {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
 
-	workUnitStore, velocityStore, err := initStorage(ctx, cfg)
+	dbStorage, err := initStorage(ctx)
 	if err != nil {
 		return err
 	}
+	defer dbStorage.Close()
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, workUnitStore, velocityStore)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, dbStorage, dbStorage)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -126,26 +128,12 @@ func run(ctx context.Context, cfg *Config) error {
 	return g.Wait()
 }
 
-func initStorage(ctx context.Context, cfg *Config) (WorkUnitFetcher, QueueVelocityFetcher, error) {
-	if cfg.SpannerDatabaseName == "" {
-		logging.Warn(ctx, "OPERATIONAL WARNING: Spanner database name not configured. Active WorkUnit queue queries will fail until database connection is configured.", "database", cfg.SpannerDatabaseName)
-		return nil, nil, nil
-	}
-	logging.Info(ctx, "Initializing Spanner WorkUnit storage", "database", cfg.SpannerDatabaseName)
-	var opts []option.ClientOption
-	if cfg.QuotaProjectID != "" {
-		opts = append(opts, option.WithQuotaProject(cfg.QuotaProjectID))
-	}
-	spannerClient, err := spanner.NewClient(ctx, cfg.SpannerDatabaseName, opts...)
+func initStorage(ctx context.Context) (*dbfactory.Storage, error) {
+	dbCfg, err := dbconfig.Load()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create spanner client for WorkUnit storage: %w", err)
+		return nil, fmt.Errorf("failed to load database config: %w", err)
 	}
-	wuStore, err := workunit.NewRepository(spannerClient)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create WorkUnit repository: %w", err)
-	}
-	statusHistoryRepo := statushistory.NewRepository(spannerClient)
-	return wuStore, statusHistoryRepo, nil
+	return dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
 }
 
 // GRPCServerComponents contains the listener and gRPC server instance.

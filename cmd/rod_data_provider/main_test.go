@@ -23,16 +23,15 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-func TestInitStorage(t *testing.T) {
+func TestInitStorage_EmptyDBName(t *testing.T) {
 	ctx := context.Background()
-	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 
-	wuStore, velStore, err := initStorage(ctx, cfg)
-	if err != nil {
-		t.Fatalf("initStorage failed: %v", err)
+	storage, err := initStorage(ctx)
+	if err == nil {
+		t.Fatal("initStorage with empty database config succeeded, want error")
 	}
-	if wuStore != nil || velStore != nil {
-		t.Errorf("initStorage with empty database name returned non-nil stores: wuStore=%v, velStore=%v", wuStore, velStore)
+	if storage != nil {
+		t.Errorf("initStorage with empty database config returned non-nil storage: %v", storage)
 	}
 }
 

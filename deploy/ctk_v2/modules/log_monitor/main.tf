@@ -106,7 +106,23 @@ resource "google_cloud_run_v2_service" "log_monitor" {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
       }
+      # The Cloud Run log_monitor path only supports Cloud Spanner; PostgreSQL deployments must run
+      # log_monitor in GKE (log_monitor_deployment_enabled = true).
+      env {
+        name  = "DB_BACKEND"
+        value = "spanner"
+      }
+      env {
+        name  = "SPANNER_ESS_DATABASE"
+        value = "projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}"
+      }
+      env {
+        name  = "SPANNER_QUOTA_PROJECT_ID"
+        value = var.project_id
+      }
       args = [
+        # Deprecated: retained for one-release rollout compatibility; service reads SPANNER_* env vars.
+        # TODO: Remove -spanner_database_name and -quota_project_id once all deployments run db-config images.
         "-spanner_database_name=projects/${var.project_id}/instances/xmc-${var.environment}/databases/experiment-db-${var.environment}",
         "-quota_project_id=${var.project_id}",
         "-log_keyword=${var.logging_sink_custom_keyword}",

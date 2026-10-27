@@ -25,7 +25,7 @@ import (
 )
 
 // activeHealthCheck returns an HTTP handler that performs active dependency checks.
-func activeHealthCheck(sc health.SpannerHealthClient, listener *Listener) http.HandlerFunc {
+func activeHealthCheck(db health.ReadinessChecker, listener *Listener) http.HandlerFunc {
 	const healthCheckTimeout = 2 * time.Second
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -34,9 +34,12 @@ func activeHealthCheck(sc health.SpannerHealthClient, listener *Listener) http.H
 
 		var eg errgroup.Group
 
-		// 1. Spanner check
+		// 1. Database check
 		eg.Go(func() error {
-			return health.CheckSpannerESS(ctx, sc)
+			if db == nil {
+				return fmt.Errorf("database: %w", health.ErrNilClient)
+			}
+			return db.CheckReady(ctx)
 		})
 
 		// 2. Pub/Sub Listener check

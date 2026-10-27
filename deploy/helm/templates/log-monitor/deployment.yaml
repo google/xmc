@@ -25,6 +25,8 @@ spec:
       app: log-monitor
   template:
     metadata:
+      annotations:
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: log-monitor
     spec:
@@ -57,6 +59,8 @@ spec:
         - configMapRef:
             name: db-config
         args:
+        # Deprecated: retained for one-release rollout compatibility; service reads db-config.
+        # TODO: Remove -spanner_database_name and -quota_project_id once all deployments run db-config images.
         - "-spanner_database_name={{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) }}"
         - "-quota_project_id={{ .Values.projectId }}"
         - "-log_keyword={{ .Values.logMonitor.logKeyword }}"
