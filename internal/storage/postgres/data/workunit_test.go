@@ -127,14 +127,6 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 	if diff := cmp.Diff(wu.CurrentWorkUnitExecution, gotCurExec, protocmp.Transform()); diff != "" {
 		t.Errorf("WorkUnitCurrentExecutionRowToProto mismatch (-want +got):\n%s", diff)
 	}
-
-	gotUpdating, err := UpdatingWorkUnitRowToProto(row)
-	if err != nil {
-		t.Fatalf("UpdatingWorkUnitRowToProto() failed: %v", err)
-	}
-	if gotUpdating.GetName() != wu.GetName() || gotUpdating.GetCurrentWorkUnitExecution().GetState() != essmsgpb.WorkUnitExecution_INACTIVE {
-		t.Errorf("UpdatingWorkUnitRowToProto() = %v, want name %q and INACTIVE state", gotUpdating, wu.GetName())
-	}
 }
 
 func TestWorkUnitExecutionRoundTripAndDefaults(t *testing.T) {

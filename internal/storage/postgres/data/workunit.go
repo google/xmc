@@ -93,6 +93,10 @@ func WorkUnitExecutionRowToProto(row WorkUnitExecutionRow) (*essmsgpb.WorkUnitEx
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal WorkUnitStatus: %w", err)
 	}
+	var completeTime *timestamppb.Timestamp
+	if row.CompleteTime != nil {
+		completeTime = timestamppb.New(*row.CompleteTime)
+	}
 	return &essmsgpb.WorkUnitExecution{
 		Name:         validator.ConstructWorkUnitExecutionName(row.Xid, row.WorkUnitID, row.ExecutionID),
 		State:        essmsgpb.WorkUnitExecution_INACTIVE,
@@ -100,7 +104,7 @@ func WorkUnitExecutionRowToProto(row WorkUnitExecutionRow) (*essmsgpb.WorkUnitEx
 		Status:       status,
 		CreateTime:   timestamppb.New(row.CreateTime),
 		UpdateTime:   timestamppb.New(row.UpdateTime),
-		CompleteTime: optionalTimestamp(row.CompleteTime),
+		CompleteTime: completeTime,
 	}, nil
 }
 
@@ -121,46 +125,32 @@ func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExec
 	return wue, nil
 }
 
-// UpdatingWorkUnitRowToProto converts a partial WorkUnitRow selected by FetchUpdatingWorkUnits into a WorkUnit proto.
-func UpdatingWorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
-	execProto, err := UnmarshalProto[essmsgpb.Executable](row.Executable)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
-	}
-	wue, err := WorkUnitExecutionRowToProto(WorkUnitExecutionRow{
-		Xid: row.Xid, WorkUnitID: row.WorkUnitID, ExecutionID: row.ExecutionID,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &essmsgpb.WorkUnit{
-		Name:                     validator.ConstructWorkUnitName(row.Xid, row.WorkUnitID),
-		Executable:               execProto,
-		CurrentWorkUnitExecution: wue,
-	}, nil
-}
-
 // WorkUnitRowToProto converts a scanned PostgreSQL WorkUnitRow into a WorkUnit proto.
 func WorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
 	urls, err := unmarshalUrls(row.Urls)
 	if err != nil {
 		return nil, err
 	}
-	wu, err := UpdatingWorkUnitRowToProto(row)
+	execProto, err := UnmarshalProto[essmsgpb.Executable](row.Executable)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
+	}
+	wue, err := WorkUnitCurrentExecutionRowToProto(row)
 	if err != nil {
 		return nil, err
 	}
-	wu.CurrentWorkUnitExecution.State = essmsgpb.WorkUnitExecution_ACTIVE
-	wu.WorkUnitType = essmsgpb.WorkUnit_WorkUnitType(row.WorkUnitType)
-	wu.Priority = essmsgpb.Priority(row.Priority)
-	wu.Urls = urls
-	wu.Tags = normalizeTags(row.Tags)
-	wu.Notes = row.Notes
-	wu.CreateTime = timestamppb.New(row.CreateTime)
-	wu.UpdateTime = timestamppb.New(row.UpdateTime)
-	return wu, nil
+	return &essmsgpb.WorkUnit{
+		Name:                     validator.ConstructWorkUnitName(row.Xid, row.WorkUnitID),
+		WorkUnitType:             essmsgpb.WorkUnit_WorkUnitType(row.WorkUnitType),
+		Priority:                 essmsgpb.Priority(row.Priority),
+		Urls:                     urls,
+		Tags:                     normalizeTags(row.Tags),
+		Notes:                    row.Notes,
+		Executable:               execProto,
+		CurrentWorkUnitExecution: wue,
+		CreateTime:               timestamppb.New(row.CreateTime),
+		UpdateTime:               timestamppb.New(row.UpdateTime),
+	}, nil
 }
 
 // CurrentWorkUnitExecutionProtoToRow converts a WorkUnitExecution proto into a WorkUnitRow for updating the current execution.
@@ -173,14 +163,16 @@ func CurrentWorkUnitExecutionProtoToRow(xid, wid, eid int64, execution *essmsgpb
 	if err != nil {
 		return WorkUnitRow{}, fmt.Errorf("failed to marshal WorkUnitStatus: %w", err)
 	}
+	var completeTime *time.Time
+	if ts := execution.GetCompleteTime(); ts != nil {
+		t := ts.AsTime()
+		completeTime = &t
+	}
 	row := WorkUnitRow{
 		Xid: xid, WorkUnitID: wid, ExecutionID: eid,
-		ExecutionCreateTime:   execution.GetCreateTime().AsTime(),
-		ExecutionUpdateTime:   execution.GetUpdateTime().AsTime(),
-		ExecutionCompleteTime: optionalTime(execution.GetCompleteTime()),
-		ExecutionMetadata:     metadataBytes,
-		WorkUnitStatus:        statusBytes,
-		UpdateTime:            execution.GetUpdateTime().AsTime(),
+		ExecutionCreateTime: execution.GetCreateTime().AsTime(), ExecutionUpdateTime: execution.GetUpdateTime().AsTime(),
+		ExecutionCompleteTime: completeTime, ExecutionMetadata: metadataBytes, WorkUnitStatus: statusBytes,
+		UpdateTime: execution.GetUpdateTime().AsTime(),
 	}
 	populateDerivedStatusFields(&row, execution.GetStatus())
 	return row, nil
@@ -229,19 +221,4 @@ func normalizeTags(tags []string) []string {
 		return []string{}
 	}
 	return tags
-}
-
-func optionalTime(ts *timestamppb.Timestamp) *time.Time {
-	if ts == nil {
-		return nil
-	}
-	t := ts.AsTime()
-	return &t
-}
-
-func optionalTimestamp(t *time.Time) *timestamppb.Timestamp {
-	if t == nil {
-		return nil
-	}
-	return timestamppb.New(*t)
 }

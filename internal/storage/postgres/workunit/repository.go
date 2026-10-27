@@ -39,9 +39,8 @@ var (
 	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
 	lockWorkUnitSQL   = safesql.Concat(selectWorkUnitSQL, safesql.New(" FOR NO KEY UPDATE"))
 
-	selectCurrentExecutionSQL  = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionMetadata, WorkUnitStatus FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
-	listWorkUnitExecutionsSQL  = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime, CompleteTime FROM WorkUnitExecutions WHERE Xid = $1 AND WorkUnitId = $2 ORDER BY ExecutionId DESC`)
-	selectUpdatingWorkUnitsSQL = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionMetadata, WorkUnitStatus, Executable FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = ANY($2) ORDER BY WorkUnitId FOR NO KEY UPDATE`)
+	selectCurrentExecutionSQL = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionMetadata, WorkUnitStatus FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
+	listWorkUnitExecutionsSQL = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime, CompleteTime FROM WorkUnitExecutions WHERE Xid = $1 AND WorkUnitId = $2 ORDER BY ExecutionId DESC`)
 
 	insertWorkUnitExecutionSQL = safesql.New(`INSERT INTO WorkUnitExecutions (Xid, WorkUnitId, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime, CompleteTime)
 VALUES (@xid, @workunitid, @executionid, @executionmetadata, @workunitstatus, @createtime, @updatetime, @completetime)`)
@@ -142,25 +141,7 @@ func (r *TxRepository) FetchWorkUnit(ctx context.Context, xid, wid int64) (*essm
 
 // FetchUpdatingWorkUnits retrieves a batch of work units for update by their unique IDs within the transaction.
 func (r *TxRepository) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
-	if err := requireDB(r.tx); err != nil {
-		return nil, err
-	}
-	if len(wids) == 0 {
-		return map[int64]*essmsgpb.WorkUnit{}, nil
-	}
-	rawRows, err := queryRows[postgresdata.WorkUnitRow](ctx, r.tx, selectUpdatingWorkUnitsSQL.String(), xid, wids)
-	if err != nil {
-		return nil, err
-	}
-	workUnits := make(map[int64]*essmsgpb.WorkUnit, len(rawRows))
-	for _, row := range rawRows {
-		wu, err := postgresdata.UpdatingWorkUnitRowToProto(row)
-		if err != nil {
-			return nil, err
-		}
-		workUnits[row.WorkUnitID] = wu
-	}
-	return workUnits, nil
+	return nil, status.Error(codes.Unimplemented, "postgres TxRepository.FetchUpdatingWorkUnits is not implemented")
 }
 
 // SaveWorkUnitExecution saves a work unit execution within the transaction.

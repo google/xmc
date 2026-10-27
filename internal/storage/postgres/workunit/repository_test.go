@@ -60,7 +60,6 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 		func() error { _, err := repo.FetchCurrentWorkUnitExecution(ctx, 1, 1); return err },
 		func() error { _, err := repo.ListWorkUnitExecutions(ctx, 1, 1); return err },
 		func() error { _, err := txRepo.FetchWorkUnit(ctx, 1, 1); return err },
-		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
 		func() error { return txRepo.SaveWorkUnitExecution(ctx, &essmsgpb.WorkUnitExecution{}) },
 		func() error {
 			return txRepo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, &essmsgpb.WorkUnitExecution{})
@@ -86,6 +85,7 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 		func() error { _, err := repo.UpdateWorkUnit(ctx, nil); return err },
 		func() error { _, _, err := repo.ListWorkUnits(ctx, "experiments/1", 10, "", "", "", 0); return err },
 		func() error { _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); return err },
+		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
 		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
 		func() error { return txRepo.InsertWorkUnit(ctx, nil) },
 		func() error {
@@ -216,31 +216,6 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 		}
 		if _, err := repo.ListWorkUnitExecutions(ctx, xid, 999); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("ListWorkUnitExecutions(missing) = %v, want ErrNotFound", err)
-		}
-	})
-
-	t.Run("FetchUpdatingWorkUnits", func(t *testing.T) {
-		const xid = 103
-		seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, 1, baseTestTime)
-		seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, 2, baseTestTime)
-
-		err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
-			txRepo := repo.WithTx(tx)
-			empty, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, nil)
-			if err != nil || len(empty) != 0 {
-				t.Fatalf("FetchUpdatingWorkUnits(nil) = (%v, %v), want empty", empty, err)
-			}
-			got, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, []int64{2, 1, 999})
-			if err != nil {
-				return err
-			}
-			if len(got) != 2 || got[1] == nil || got[2] == nil {
-				t.Fatalf("FetchUpdatingWorkUnits() returned %v, want keys 1 and 2", got)
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("FetchUpdatingWorkUnits failed: %v", err)
 		}
 	})
 }
