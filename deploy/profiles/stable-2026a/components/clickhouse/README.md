@@ -135,7 +135,7 @@ spec:
 
 ## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
 
-When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../pkg/clickhouse/componentconfig/resolver.go):
+When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
 
 1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
 2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).

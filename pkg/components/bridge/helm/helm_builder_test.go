@@ -24,6 +24,9 @@ import (
 )
 
 func TestBuildHelmValues(t *testing.T) {
+	t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", "")
+	t.Setenv("PROJECT_ID", "")
+
 	t.Run("basic 1p component with parameters and image tag", func(t *testing.T) {
 		opts := HelmComponentOptions{
 			Ref: ComponentRef{
@@ -213,35 +216,54 @@ func TestParseHelmComponentOptions(t *testing.T) {
 
 func TestResolveImage(t *testing.T) {
 	tests := []struct {
-		name       string
-		component  string
-		imageTag   string
-		parameters map[string]string
-		wantImage  string
+		name          string
+		component     string
+		imageTag      string
+		defaultEnvImg string
+		parameters    map[string]string
+		wantImage     string
 	}{
 		{
-			name:       "full image parameter override (tier 1)",
-			component:  "ingestion-gateway",
-			imageTag:   "v1.0.0",
-			parameters: map[string]string{"image": "custom.registry.io/custom-image:custom-tag"},
-			wantImage:  "custom.registry.io/custom-image:custom-tag",
+			name:          "full image parameter override (tier 1)",
+			component:     "ingestion-gateway",
+			imageTag:      "v1.0.0",
+			defaultEnvImg: "localhost:5000/env/ig:old",
+			parameters:    map[string]string{"image": " custom.registry.io/custom-image:custom-tag "},
+			wantImage:     "custom.registry.io/custom-image:custom-tag",
 		},
 		{
-			name:       "custom imageRepository + tag (tier 2)",
-			component:  "ingestion-gateway",
-			imageTag:   "v1.2.0",
-			parameters: map[string]string{"imageRepository": "custom.registry.io/repo"},
-			wantImage:  "custom.registry.io/repo:v1.2.0",
+			name:          "custom imageRepository + tag takes precedence over env image (tier 2)",
+			component:     "ingestion-gateway",
+			imageTag:      "v1.2.0",
+			defaultEnvImg: "localhost:5000/env/ig:old",
+			parameters:    map[string]string{"imageRepository": "custom.registry.io/repo"},
+			wantImage:     "custom.registry.io/repo:v1.2.0",
 		},
 		{
-			name:       "default repository + tag override (tier 3)",
+			name:          "env default image verbatim when tag is empty (tier 3a)",
+			component:     "ingestion-gateway",
+			imageTag:      "",
+			defaultEnvImg: "localhost:5000/xmc/ig@sha256:0123456789abcdef\n",
+			parameters:    nil,
+			wantImage:     "localhost:5000/xmc/ig@sha256:0123456789abcdef",
+		},
+		{
+			name:          "env default image repository with explicit tag over digest (tier 3b)",
+			component:     "ingestion-gateway",
+			imageTag:      "v2.4.0",
+			defaultEnvImg: "localhost:5000/xmc/ig:old@sha256:0123456789abcdef",
+			parameters:    nil,
+			wantImage:     "localhost:5000/xmc/ig:v2.4.0",
+		},
+		{
+			name:       "default repository + tag override (tier 4a)",
 			component:  "ingestion-gateway",
 			imageTag:   "v3.0.0",
 			parameters: nil,
 			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway:v3.0.0",
 		},
 		{
-			name:       "default repository + latest (tier 4)",
+			name:       "default repository + latest (tier 4b)",
 			component:  "rod-data-provider",
 			imageTag:   "",
 			parameters: nil,
@@ -251,6 +273,8 @@ func TestResolveImage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
+			t.Setenv("DEFAULT_ROD_DATA_PROVIDER_IMAGE", "")
 			got := ResolveImage(tt.component, tt.imageTag, tt.parameters)
 			if got != tt.wantImage {
 				t.Errorf("ResolveImage(%q, %q, %+v) = %q, want %q", tt.component, tt.imageTag, tt.parameters, got, tt.wantImage)
@@ -355,6 +379,38 @@ func TestBuildHelmValues_DefaultEnvImageAndCustomNamespace(t *testing.T) {
 				"ingestionGatewayDeployment": map[string]any{
 					"enabled": true,
 					"image":   "gcr.io/pinned/ig:1.0",
+				},
+			},
+		},
+		{
+			name:          "explicit spec.imageTag equal to chartVersion still pins workload tag",
+			namespace:     "xmc",
+			defaultEnvImg: "localhost:5000/xmc/ingestion_gateway@sha256:abcdef123456",
+			protoVersion:  "0.1.1",
+			rawSpec:       map[string]any{"version": "0.1.1", "chartVersion": "0.1.1", "imageTag": "0.1.1"},
+			want: map[string]any{
+				"namespace": "xmc",
+				"global":    map[string]any{"imageTag": "0.1.1"},
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
+					"image":   "localhost:5000/xmc/ingestion_gateway:0.1.1",
+				},
+			},
+		},
+		{
+			name:          "whitespace-only namespace, imageTag, and env image fall through cleanly",
+			namespace:     "   ",
+			defaultEnvImg: "   ",
+			protoVersion:  "0.1.1 ",
+			rawSpec: map[string]any{
+				"version":      "0.1.1 ",
+				"chartVersion": " 0.1.1",
+				"imageTag":     "   ",
+				"parameters":   map[string]any{"image": "   ", "imageRepository": "   "},
+			},
+			want: map[string]any{
+				"ingestionGatewayDeployment": map[string]any{
+					"enabled": true,
 				},
 			},
 		},

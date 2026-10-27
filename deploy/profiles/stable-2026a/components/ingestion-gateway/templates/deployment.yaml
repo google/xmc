@@ -45,24 +45,25 @@
 {{- $tlsKeyFile := ($ig.tlsKeyFile | default $params.tlsKeyFile | default $tls.keyFile | default "") | toString -}}
 {{- $useTls := and $tlsEnabled (ne $tlsSecretName "") -}}
 {{- $hpaMap := $ig.hpa | default dict -}}
-{{- $hpaRaw := "true" -}}
-{{- if hasKey $ig "hpaEnabled" -}}
-  {{- $hpaRaw = ($ig.hpaEnabled | toString | lower | trim) -}}
-{{- else if hasKey $params "hpaEnabled" -}}
-  {{- $hpaRaw = ($params.hpaEnabled | toString | lower | trim) -}}
-{{- else if hasKey $hpaMap "enabled" -}}
-  {{- $hpaRaw = ($hpaMap.enabled | toString | lower | trim) -}}
+{{- $hpaCandidate := "" -}}
+{{- if and (hasKey $ig "hpaEnabled") (not (kindIs "invalid" $ig.hpaEnabled)) (ne ($ig.hpaEnabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($ig.hpaEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $params "hpaEnabled") (not (kindIs "invalid" $params.hpaEnabled)) (ne ($params.hpaEnabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($params.hpaEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $hpaMap "enabled") (not (kindIs "invalid" $hpaMap.enabled)) (ne ($hpaMap.enabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($hpaMap.enabled | toString | lower | trim) -}}
 {{- end -}}
+{{- $hpaRaw := $hpaCandidate | default "true" -}}
 {{- $hpaEnabled := or (eq $hpaRaw "true") (eq $hpaRaw "1") -}}
 {{- $replicas := 1 -}}
-{{- if hasKey $ig "replicas" -}}
-  {{- $replicas = $ig.replicas -}}
-{{- else if hasKey $params "replicas" -}}
-  {{- $replicas = $params.replicas -}}
+{{- if and (hasKey $ig "replicas") (not (kindIs "invalid" $ig.replicas)) (ne ($ig.replicas | toString | trim) "") -}}
+  {{- $replicas = ($ig.replicas | toString | trim | int) -}}
+{{- else if and (hasKey $params "replicas") (not (kindIs "invalid" $params.replicas)) (ne ($params.replicas | toString | trim) "") -}}
+  {{- $replicas = ($params.replicas | toString | trim | int) -}}
 {{- end -}}
 {{- $managedBy := .Release.Service | default "Helm" | quote -}}
 {{- $saName := ($ig.serviceAccountName | default $params.serviceAccountName | default .Values.serviceAccountName | default "default") | toString -}}
-{{- $ns := (.Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default")))) | toString }}
+{{- $ns := ((.Values.namespace | toString | trim) | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default")))) | toString }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -86,10 +87,14 @@ spec:
         app: ingestion-gateway
     spec:
       serviceAccountName: {{ $saName | quote }}
-      {{- if ($ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds) }}
-      terminationGracePeriodSeconds: {{ $ig.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds }}
+      {{- $tgp := $ig.terminationGracePeriodSeconds | default $params.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds -}}
+      {{- if $tgp }}
+      terminationGracePeriodSeconds: {{ $tgp }}
       {{- end }}
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       {{- if or $useSasl $useTls }}
@@ -113,6 +118,7 @@ spec:
           allowPrivilegeEscalation: false
           privileged: false
           readOnlyRootFilesystem: true
+          runAsNonRoot: true
           runAsUser: 1000
           runAsGroup: 1000
           capabilities:
@@ -141,7 +147,7 @@ spec:
         - "-topic_name={{ $ig.topicName | default $params.topicName | default "xmc-metrics" }}"
         - "-min_partitions={{ $ig.minPartitions | default $params.minPartitions | default 128 }}"
         - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 1 }}"
-        - "-project_id={{ $ig.projectId | default .Values.projectId }}"
+        - "-project_id={{ $ig.projectId | default $params.projectId | default .Values.projectId }}"
         {{- if or $sasl (hasKey $ig "saslEnabled") (hasKey $params "saslEnabled") }}
         - "-sasl_enabled={{ $saslEnabled }}"
         {{- if $useSasl }}
@@ -151,6 +157,7 @@ spec:
         {{- end }}
         {{- if or $tls (hasKey $ig "tlsEnabled") (hasKey $params "tlsEnabled") }}
         - "-tls_enabled={{ $tlsEnabled }}"
+        {{- if $tlsEnabled }}
         {{- if ne $tlsCaFile "" }}
         - "-tls_ca_file={{ $tlsCaFile }}"
         {{- end }}
@@ -159,6 +166,7 @@ spec:
         {{- end }}
         {{- if ne $tlsKeyFile "" }}
         - "-tls_key_file={{ $tlsKeyFile }}"
+        {{- end }}
         {{- end }}
         {{- end }}
         readinessProbe:

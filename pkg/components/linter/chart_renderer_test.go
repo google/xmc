@@ -858,6 +858,7 @@ func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
 		assertWellFormedManifests(t, dep)
 		for _, want := range []string{
 			`serviceAccountName: "custom-ig-sa"`,
+			"runAsNonRoot: true",
 			`"-components_namespace=custom-ns"`,
 			`"-sasl_enabled=true"`,
 			`"-sasl_mechanism=SCRAM-SHA-512"`,
@@ -891,10 +892,12 @@ func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
 		rendered, err := renderChartWithNamespace(igDir, "ingestion-gateway", "xmc", map[string]any{
 			"deployWorkload": true,
 			"parameters": map[string]any{
-				"image":      "gcr.io/custom/ig@sha256:abcdef0123456789",
-				"hpaEnabled": "FALSE",
-				"replicas":   0,
-				"tlsEnabled": "TRUE",
+				"image":                         "gcr.io/custom/ig@sha256:abcdef0123456789",
+				"hpaEnabled":                    "FALSE",
+				"replicas":                      0,
+				"tlsEnabled":                    "TRUE",
+				"projectId":                     "custom-proj",
+				"terminationGracePeriodSeconds": 40,
 			},
 		})
 		if err != nil {
@@ -911,8 +914,35 @@ func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
 		if !strings.Contains(dep, `image: "gcr.io/custom/ig@sha256:abcdef0123456789"`) {
 			t.Errorf("expected standalone parameters.image to resolve container image:\n%s", dep)
 		}
+		if !strings.Contains(dep, `"-project_id=custom-proj"`) || !strings.Contains(dep, "terminationGracePeriodSeconds: 40") {
+			t.Errorf("expected standalone parameters.projectId and terminationGracePeriodSeconds applied:\n%s", dep)
+		}
 		if !strings.Contains(dep, `"-tls_enabled=true"`) || strings.Contains(dep, "kafka-tls-credentials") {
 			t.Errorf("expected -tls_enabled=true without kafka-tls-credentials volume when tlsSecretName is empty:\n%s", dep)
+		}
+	})
+
+	t.Run("empty scalar overrides keep hpa and replicas defaults and tls disabled omits cert flags", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "xmc", map[string]any{
+			"ingestionGatewayDeployment": map[string]any{
+				"enabled":    true,
+				"hpaEnabled": "",
+				"replicas":   "",
+				"tlsEnabled": false,
+				"tlsCaFile":  "/etc/kafka/tls/ca.crt",
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		if !strings.Contains(dep, "kind: HorizontalPodAutoscaler") {
+			t.Errorf("expected empty hpaEnabled override to preserve HPA default=true:\n%s", dep)
+		}
+		if strings.Contains(dep, "-tls_ca_file=") {
+			t.Errorf("expected -tls_ca_file omitted when tlsEnabled=false:\n%s", dep)
 		}
 	})
 }
