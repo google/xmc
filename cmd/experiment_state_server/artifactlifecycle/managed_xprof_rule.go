@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
@@ -44,7 +45,33 @@ const (
 	runPhaseFailed                = "FAILED"
 )
 
-var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
+var (
+	mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
+	mlRunURLSegmentRE   = regexp.MustCompile(`/runs/([a-zA-Z0-9_-]+)`)
+)
+
+func parseMLRunIDFromArtifact(artifact *essmsgpb.Artifact) string {
+	if artifact == nil {
+		return ""
+	}
+	var rawURL string
+	if mx := artifact.GetPayload().GetManagedXprof(); mx != nil && mx.GetXprof() != nil {
+		rawURL = mx.GetXprof().GetXprofUrl()
+	}
+	if rawURL == "" && artifact.GetUrl() != nil {
+		rawURL = artifact.GetUrl().GetUrl()
+	}
+	if rawURL == "" {
+		return ""
+	}
+	if m := mlRunURLSegmentRE.FindStringSubmatch(rawURL); len(m) >= 2 {
+		return m[1]
+	}
+	if m := mlRunResourceNameRE.FindStringSubmatch(rawURL); len(m) >= 2 {
+		return m[1]
+	}
+	return ""
+}
 
 // MLRunClient defines the external Hypercompute operations required by ManagedXprofRule.
 type MLRunClient interface {
@@ -156,7 +183,7 @@ func (r *ManagedXprofRule) handleTerminalState(
 	}
 
 	terminalPhase := runPhaseFailed
-	if event.GetNewState() == essmsgpb.WorkUnitStatus_COMPLETED {
+	if event.GetNewState() == essmsgpb.WorkUnitStatus_COMPLETED || event.GetNewState() == essmsgpb.WorkUnitStatus_STOPPED {
 		terminalPhase = runPhaseCompleted
 	}
 
@@ -182,8 +209,11 @@ func (r *ManagedXprofRule) OnExecutionSuperseded(
 	if r.mlRunClient == nil {
 		return nil
 	}
-	jobSetName := fmt.Sprintf("xmc-wu-%d-%d", wid, oldEID)
-	mlRunID := ConstructMLRunID("", "", "JobSet", jobSetName, time.Time{})
+	mlRunID := parseMLRunIDFromArtifact(artifact)
+	if mlRunID == "" {
+		jobSetName := fmt.Sprintf("xmc-wu-%d-%d", wid, oldEID)
+		mlRunID = ConstructMLRunID("", "", "JobSet", jobSetName, time.Time{})
+	}
 
 	logging.Info(ctx, "Finalizing superseded execution MLRun", "xid", xid, "wid", wid, "oldEID", oldEID, "mlRunID", mlRunID)
 	_, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
@@ -246,23 +276,43 @@ func (r *ManagedXprofRule) persistArtifactURL(
 			return nil
 		}
 
-		updatedArt := &essmsgpb.Artifact{
-			Url: &essmsgpb.Url{Url: xprofURL},
-			Payload: &essmsgpb.ArtifactPayload{
+		var updatedUrl *essmsgpb.Url
+		if currentArt.GetUrl() != nil {
+			updatedUrl = proto.Clone(currentArt.GetUrl()).(*essmsgpb.Url)
+		} else {
+			updatedUrl = &essmsgpb.Url{}
+		}
+		updatedUrl.Url = xprofURL
+
+		var updatedPayload *essmsgpb.ArtifactPayload
+		if currentArt.GetPayload() != nil {
+			updatedPayload = proto.Clone(currentArt.GetPayload()).(*essmsgpb.ArtifactPayload)
+		} else {
+			updatedPayload = &essmsgpb.ArtifactPayload{
 				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-						Xprof: &essmsgpb.XProfUIInstance{
-							XprofUrl: xprofURL,
-						},
-					},
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
 				},
-			},
+			}
+		}
+		if mx := updatedPayload.GetManagedXprof(); mx != nil {
+			mx.Xprof = &essmsgpb.XProfUIInstance{XprofUrl: xprofURL}
+		} else {
+			updatedPayload.Type = &essmsgpb.ArtifactPayload_ManagedXprof{
+				ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+					Xprof: &essmsgpb.XProfUIInstance{XprofUrl: xprofURL},
+				},
+			}
+		}
+
+		updatedArt := &essmsgpb.Artifact{
+			Url:     updatedUrl,
+			Payload: updatedPayload,
 		}
 
 		update := &storage.ArtifactUpdate{
 			AID:        aid,
 			Artifact:   updatedArt,
-			UpdateMask: &fmpb.FieldMask{Paths: []string{"url", "managed_xprof.xprof_url"}},
+			UpdateMask: &fmpb.FieldMask{Paths: []string{"url", "payload"}},
 		}
 
 		_, err = tx.Artifacts.UpdateArtifact(ctx, update)

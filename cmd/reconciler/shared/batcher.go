@@ -195,8 +195,13 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 	// Storage skips updates whose EID is not the current execution, so letting a
 	// stale (lower-EID) update replace a pending newer one would silently drop the
 	// newer execution's update.
-	if pending, exists := b.Updates[xid][update.WID][source]; exists && update.EID < pending.EID {
-		return
+	if pending, exists := b.Updates[xid][update.WID][source]; exists {
+		if update.EID < pending.EID {
+			return
+		}
+		if update.EID == pending.EID && pending.ForceNotify {
+			update.ForceNotify = true
+		}
 	}
 	b.Updates[xid][update.WID][source] = update
 }

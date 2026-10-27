@@ -397,25 +397,29 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 }
 
 func (r *Reconciler) checkNotifyWhenUpdate(jobSet *v1alpha2.JobSet) bool {
-	if jobSet == nil || jobSet.Annotations == nil {
+	if jobSet == nil {
 		return false
 	}
-	currentNotifyWhen := jobSet.Annotations[constants.NotifyWhenAnnotation]
-	if currentNotifyWhen == "" {
-		return false
+	var currentNotifyWhen string
+	if jobSet.Annotations != nil {
+		currentNotifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
 	}
 	jobSetKey := fmt.Sprintf("%s/%s", jobSet.Namespace, jobSet.Name)
 	lastSeenVal, ok := r.lastSeenNotifyWhen.Load(jobSetKey)
-	if !ok {
-		r.lastSeenNotifyWhen.Store(jobSetKey, currentNotifyWhen)
+	r.lastSeenNotifyWhen.Store(jobSetKey, currentNotifyWhen)
+
+	if currentNotifyWhen == "" {
 		return false
+	}
+	curState := ToWorkUnitState(jobSet)
+	if !ok {
+		// First time seeing this JobSet with notify-when annotation set.
+		return shared.MatchesNotifyWhen(curState, currentNotifyWhen)
 	}
 	lastSeen, _ := lastSeenVal.(string)
 	if lastSeen == currentNotifyWhen {
 		return false
 	}
-	r.lastSeenNotifyWhen.Store(jobSetKey, currentNotifyWhen)
-	curState := ToWorkUnitState(jobSet)
 	return shared.MatchesNotifyWhen(curState, currentNotifyWhen) && !shared.MatchesNotifyWhen(curState, lastSeen)
 }
 

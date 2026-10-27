@@ -675,3 +675,24 @@ func TestBatcher_NotifyLifecycleEvents(t *testing.T) {
 		t.Errorf("unexpected event 1: %v", notifier.events[1])
 	}
 }
+
+func TestBatcher_PreservesForceNotifyOnSameEID(t *testing.T) {
+	ctx := context.Background()
+	batcher := NewUpdateBatcher(ctx, &BatcherConfig{
+		TickDuration:           10 * time.Millisecond,
+		MaxParallelExperiments: 1,
+	}, &mockStorageUpdater{})
+
+	u1 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	u1.ForceNotify = true
+	batcher.Add(ctx, 100, u1, JobsetSource)
+
+	u2 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
+	u2.ForceNotify = false
+	batcher.Add(ctx, 100, u2, JobsetSource)
+
+	pending := batcher.Updates[100][1][JobsetSource]
+	if !pending.ForceNotify {
+		t.Errorf("expected ForceNotify to remain true after subsequent update with ForceNotify: false for same EID")
+	}
+}

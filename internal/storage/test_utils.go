@@ -157,6 +157,7 @@ type MockStorage struct {
 	ListArtifactsErr   error
 	UpdateArtifactErr  error
 	UpdateArtifactResp *essmsgpb.Artifact
+	LastArtifactUpdate *ArtifactUpdate
 	DeleteArtifactErr  error
 
 	FetchExperimentErr                error
@@ -314,6 +315,7 @@ func (s *MockStorage) ListArtifacts(ctx context.Context, parent string, pageSize
 
 // UpdateArtifact mocks artifact updating.
 func (s *MockStorage) UpdateArtifact(ctx context.Context, update *ArtifactUpdate) (UpdatedArtifacts, error) {
+	s.LastArtifactUpdate = update
 	if s.UpdateArtifactErr != nil {
 		return UpdatedArtifacts{}, s.UpdateArtifactErr
 	}

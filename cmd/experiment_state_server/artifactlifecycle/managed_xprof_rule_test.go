@@ -103,7 +103,10 @@ func TestManagedXprofRule(t *testing.T) {
 				Name: "experiments/10/workUnits/20/artifacts/30",
 				Payload: &essmsgpb.ArtifactPayload{
 					Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
+						ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+							DisplayName: "persisted-display-name",
+							RunGroup:    "persisted-run-group",
+						},
 					},
 				},
 			},
@@ -139,6 +142,20 @@ func TestManagedXprofRule(t *testing.T) {
 
 		if len(mlClient.createdRuns) != 1 {
 			t.Errorf("createdRuns count = %d, want 1", len(mlClient.createdRuns))
+		}
+
+		if mockStore.LastArtifactUpdate == nil {
+			t.Fatal("expected LastArtifactUpdate to be set")
+		}
+		paths := mockStore.LastArtifactUpdate.UpdateMask.GetPaths()
+		if len(paths) != 2 || paths[0] != "url" || paths[1] != "payload" {
+			t.Errorf("expected UpdateMask [url, payload], got %v", paths)
+		}
+		if got := mockStore.LastArtifactUpdate.Artifact.GetPayload().GetManagedXprof().GetDisplayName(); got != "persisted-display-name" {
+			t.Errorf("expected preserved DisplayName 'persisted-display-name', got %q", got)
+		}
+		if got := mockStore.LastArtifactUpdate.Artifact.GetPayload().GetManagedXprof().GetRunGroup(); got != "persisted-run-group" {
+			t.Errorf("expected preserved RunGroup 'persisted-run-group', got %q", got)
 		}
 	})
 
@@ -190,67 +207,78 @@ func TestManagedXprofRule(t *testing.T) {
 		}
 	})
 
-	t.Run("Terminal state transitions MLRun to COMPLETED", func(t *testing.T) {
-		mlClient := newFakeMLRunClient()
-		rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
+	t.Run("Terminal state transitions MLRun to COMPLETED for COMPLETED and STOPPED", func(t *testing.T) {
+		for _, termState := range []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_COMPLETED, essmsgpb.WorkUnitStatus_STOPPED} {
+			mlClient := newFakeMLRunClient()
+			rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
 
-		mockStore := &storage.MockStorage{
-			WorkUnit: &essmsgpb.WorkUnit{
-				Name: "experiments/10/workUnits/20",
-				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-					Name: "experiments/10/workUnits/20/executions/1",
+			mockStore := &storage.MockStorage{
+				WorkUnit: &essmsgpb.WorkUnit{
+					Name: "experiments/10/workUnits/20",
+					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+						Name: "experiments/10/workUnits/20/executions/1",
+					},
 				},
-			},
-			Artifact: &essmsgpb.Artifact{
+				Artifact: &essmsgpb.Artifact{
+					Name: "experiments/10/workUnits/20/artifacts/30",
+					Payload: &essmsgpb.ArtifactPayload{
+						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+							ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
+						},
+					},
+				},
+			}
+
+			event := &taskqueuepb.ArtifactLifecycleEvent{
+				ExperimentId:        proto.Int64(10),
+				WorkUnitId:          proto.Int64(20),
+				WorkUnitExecutionId: proto.Int64(1),
+				NewState:            termState.Enum(),
+			}
+
+			art := &essmsgpb.Artifact{
 				Name: "experiments/10/workUnits/20/artifacts/30",
 				Payload: &essmsgpb.ArtifactPayload{
 					Type: &essmsgpb.ArtifactPayload_ManagedXprof{
 						ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
 					},
 				},
-			},
-		}
-
-		event := &taskqueuepb.ArtifactLifecycleEvent{
-			ExperimentId:        proto.Int64(10),
-			WorkUnitId:          proto.Int64(20),
-			WorkUnitExecutionId: proto.Int64(1),
-			NewState:            essmsgpb.WorkUnitStatus_COMPLETED.Enum(),
-		}
-
-		art := &essmsgpb.Artifact{
-			Name: "experiments/10/workUnits/20/artifacts/30",
-			Payload: &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-				},
-			},
-		}
-
-		err := rule.OnExecutionStateChanged(ctx, mockStore, event, art)
-		if err != nil {
-			t.Fatalf("OnExecutionStateChanged failed: %v", err)
-		}
-
-		foundCompleted := false
-		for _, phase := range mlClient.updatedRuns {
-			if phase == "COMPLETED" {
-				foundCompleted = true
-				break
 			}
-		}
-		if !foundCompleted {
-			t.Errorf("updatedRuns missing COMPLETED phase: %v", mlClient.updatedRuns)
+
+			err := rule.OnExecutionStateChanged(ctx, mockStore, event, art)
+			if err != nil {
+				t.Fatalf("OnExecutionStateChanged failed for %v: %v", termState, err)
+			}
+
+			foundCompleted := false
+			for _, phase := range mlClient.updatedRuns {
+				if phase == "COMPLETED" {
+					foundCompleted = true
+					break
+				}
+			}
+			if !foundCompleted {
+				t.Errorf("updatedRuns missing COMPLETED phase for state %v: %v", termState, mlClient.updatedRuns)
+			}
 		}
 	})
 
-	t.Run("OnExecutionSuperseded finalizes old EID MLRun", func(t *testing.T) {
+	t.Run("OnExecutionSuperseded finalizes old EID MLRun using artifact URL", func(t *testing.T) {
 		mlClient := newFakeMLRunClient()
 		rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
 
 		mockStore := &storage.MockStorage{}
 		art := &essmsgpb.Artifact{
 			Name: "experiments/10/workUnits/20/artifacts/30",
+			Payload: &essmsgpb.ArtifactPayload{
+				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
+					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
+						Xprof: &essmsgpb.XProfUIInstance{
+							XprofUrl: "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/real-active-mlrun-999?project=test-proj&tab=profiles",
+						},
+					},
+				},
+			},
 		}
 
 		err := rule.OnExecutionSuperseded(ctx, mockStore, 10, 20, 1, art)
@@ -258,15 +286,8 @@ func TestManagedXprofRule(t *testing.T) {
 			t.Fatalf("OnExecutionSuperseded failed: %v", err)
 		}
 
-		foundCompleted := false
-		for _, phase := range mlClient.updatedRuns {
-			if phase == "COMPLETED" {
-				foundCompleted = true
-				break
-			}
-		}
-		if !foundCompleted {
-			t.Errorf("updatedRuns missing COMPLETED phase for superseded execution: %v", mlClient.updatedRuns)
+		if gotPhase, ok := mlClient.updatedRuns["real-active-mlrun-999"]; !ok || gotPhase != "COMPLETED" {
+			t.Errorf("expected real-active-mlrun-999 to be updated to COMPLETED, got map: %v", mlClient.updatedRuns)
 		}
 	})
 }

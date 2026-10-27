@@ -936,3 +936,58 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckNotifyWhenUpdate(t *testing.T) {
+	r := &Reconciler{}
+
+	// Case 1: JobSet initially has no annotations. Should record "" and return false.
+	js := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "test-jobset",
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+		},
+		Status: v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		},
+	}
+	if r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected false for initial JobSet without notify-when annotation")
+	}
+
+	// Case 2: JobSet is patched with notify-when="STARTING.RUNNING". Should detect change from "" and return true.
+	js.Annotations = map[string]string{
+		constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+	}
+	if !r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected true when notify-when is patched onto running JobSet")
+	}
+
+	// Case 3: Reconcile repeats without changes. Should return false.
+	if r.checkNotifyWhenUpdate(js) {
+		t.Errorf("expected false on repeated reconcile with identical notify-when annotation")
+	}
+
+	// Case 4: A new JobSet is seen for the first time with notify-when="STARTING.RUNNING" in running state.
+	// (e.g. reconciler restart or created with annotation). Should return true.
+	jsNew := &v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "new-jobset",
+			Annotations: map[string]string{
+				constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+			},
+		},
+		Spec: v1alpha2.JobSetSpec{
+			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+		},
+		Status: v1alpha2.JobSetStatus{
+			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		},
+	}
+	if !r.checkNotifyWhenUpdate(jsNew) {
+		t.Errorf("expected true for first-seen JobSet matching notify-when")
+	}
+}
