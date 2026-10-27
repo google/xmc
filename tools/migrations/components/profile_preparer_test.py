@@ -89,9 +89,56 @@ class TestProfilePreparer(unittest.TestCase):
 
         rp = profile_preparer.build_redpanda_parameters(gw)
         self.assertEqual(rp["brokerEndpoints"], "rp-0:9092,rp-1:9092")
+        self.assertEqual(rp["kafkaPort"], 9092)
         ch = profile_preparer.build_clickhouse_parameters(umbrella)
         self.assertEqual(ch["clusterEndpoints"], "[fd00::1]:9000")
         self.assertEqual(ch["user"], "writer")
+
+    def test_parse_gateway_cli_flags_space_separated_bool_and_terminator(self) -> None:
+        dep = _baseline_deployment(
+            container_patch={
+                "args": [
+                    "positional-ignored",
+                    "-",
+                    "-tls_enabled",
+                    "-port",
+                    "9090",
+                    "--topic_name",
+                    "custom-metrics",
+                    "-project_id",
+                    "--min_partitions=64",
+                    "--",
+                    "-port=9999",
+                ]
+            }
+        )
+        parsed = profile_preparer.parse_gateway_cli_flags(dep)
+        self.assertEqual(
+            parsed,
+            {
+                "tls_enabled": "true",
+                "port": "9090",
+                "topic_name": "custom-metrics",
+                "min_partitions": "64",
+            },
+        )
+
+    def test_build_redpanda_parameters_ipv6_and_port_edge_cases(self) -> None:
+        cases = [
+            ("fd00::1", 9092),
+            ("fd00::1,fd00::2", 9092),
+            ("[fd00::1]:9094", 9094),
+            ("[fd00::1]", 9092),
+            ("rp-0", 9092),
+            ("rp-0:19092", 19092),
+            ("rp-0:0", 9092),
+            ("rp-0:70000", 9092),
+        ]
+        for brokers, expected_port in cases:
+            with self.subTest(brokers=brokers):
+                rp = profile_preparer.build_redpanda_parameters({"redpandaBrokers": brokers})
+                self.assertEqual(rp["kafkaPort"], expected_port)
+                self.assertEqual(rp["brokerEndpoints"], brokers)
 
     def test_render_profile_yaml_types_and_guards(self) -> None:
         rendered = profile_preparer.render_profile_yaml({"empty": {}, "ratio": 0.5, "flag": False})
