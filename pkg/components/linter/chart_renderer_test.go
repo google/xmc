@@ -925,12 +925,14 @@ func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
 	t.Run("empty scalar overrides keep hpa and replicas defaults and tls disabled omits cert flags", func(t *testing.T) {
 		t.Parallel()
 		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "xmc", map[string]any{
+			"sasl": map[string]any{"enabled": true, "secretName": "fallback-sasl-sec"},
 			"ingestionGatewayDeployment": map[string]any{
-				"enabled":    true,
-				"hpaEnabled": "",
-				"replicas":   "",
-				"tlsEnabled": false,
-				"tlsCaFile":  "/etc/kafka/tls/ca.crt",
+				"enabled":     true,
+				"hpaEnabled":  "",
+				"replicas":    "",
+				"saslEnabled": "",
+				"tlsEnabled":  false,
+				"tlsCaFile":   "/etc/kafka/tls/ca.crt",
 			},
 		})
 		if err != nil {
@@ -941,8 +943,30 @@ func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
 		if !strings.Contains(dep, "kind: HorizontalPodAutoscaler") {
 			t.Errorf("expected empty hpaEnabled override to preserve HPA default=true:\n%s", dep)
 		}
+		if !strings.Contains(dep, `"-sasl_enabled=true"`) || !strings.Contains(dep, `secretName: "fallback-sasl-sec"`) {
+			t.Errorf("expected empty saslEnabled override to fall back to sasl.enabled=true:\n%s", dep)
+		}
 		if strings.Contains(dep, "-tls_ca_file=") {
 			t.Errorf("expected -tls_ca_file omitted when tlsEnabled=false:\n%s", dep)
+		}
+	})
+
+	t.Run("empty tlsEnabled override falls back to tls.enabled", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "xmc", map[string]any{
+			"tls": map[string]any{"enabled": true, "secretName": "fallback-tls-sec"},
+			"ingestionGatewayDeployment": map[string]any{
+				"enabled":    true,
+				"tlsEnabled": "",
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		if !strings.Contains(dep, `"-tls_enabled=true"`) || !strings.Contains(dep, `secretName: "fallback-tls-sec"`) {
+			t.Errorf("expected empty tlsEnabled override to fall back to tls.enabled=true:\n%s", dep)
 		}
 	})
 }

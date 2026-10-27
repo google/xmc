@@ -18,11 +18,11 @@
 {{- $port := $ig.port | default $params.port | default 8080 -}}
 {{- $sasl := $ig.sasl | default .Values.sasl | default dict -}}
 {{- $saslRaw := "false" -}}
-{{- if hasKey $ig "saslEnabled" -}}
+{{- if and (hasKey $ig "saslEnabled") (not (kindIs "invalid" $ig.saslEnabled)) (ne ($ig.saslEnabled | toString | trim) "") -}}
   {{- $saslRaw = ($ig.saslEnabled | toString | lower | trim) -}}
-{{- else if hasKey $params "saslEnabled" -}}
+{{- else if and (hasKey $params "saslEnabled") (not (kindIs "invalid" $params.saslEnabled)) (ne ($params.saslEnabled | toString | trim) "") -}}
   {{- $saslRaw = ($params.saslEnabled | toString | lower | trim) -}}
-{{- else if hasKey $sasl "enabled" -}}
+{{- else if and (hasKey $sasl "enabled") (not (kindIs "invalid" $sasl.enabled)) (ne ($sasl.enabled | toString | trim) "") -}}
   {{- $saslRaw = ($sasl.enabled | toString | lower | trim) -}}
 {{- end -}}
 {{- $saslEnabled := or (eq $saslRaw "true") (eq $saslRaw "1") -}}
@@ -31,11 +31,11 @@
 {{- $useSasl := and $saslEnabled (ne $saslSecretName "") -}}
 {{- $tls := $ig.tls | default .Values.tls | default dict -}}
 {{- $tlsRaw := "false" -}}
-{{- if hasKey $ig "tlsEnabled" -}}
+{{- if and (hasKey $ig "tlsEnabled") (not (kindIs "invalid" $ig.tlsEnabled)) (ne ($ig.tlsEnabled | toString | trim) "") -}}
   {{- $tlsRaw = ($ig.tlsEnabled | toString | lower | trim) -}}
-{{- else if hasKey $params "tlsEnabled" -}}
+{{- else if and (hasKey $params "tlsEnabled") (not (kindIs "invalid" $params.tlsEnabled)) (ne ($params.tlsEnabled | toString | trim) "") -}}
   {{- $tlsRaw = ($params.tlsEnabled | toString | lower | trim) -}}
-{{- else if hasKey $tls "enabled" -}}
+{{- else if and (hasKey $tls "enabled") (not (kindIs "invalid" $tls.enabled)) (ne ($tls.enabled | toString | trim) "") -}}
   {{- $tlsRaw = ($tls.enabled | toString | lower | trim) -}}
 {{- end -}}
 {{- $tlsEnabled := or (eq $tlsRaw "true") (eq $tlsRaw "1") -}}
