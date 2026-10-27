@@ -47,10 +47,12 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 		return nil, fmt.Errorf("CreateExperiment validation failed: %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
 
-	// 2.1. Fill in any null values in the request payload. Unset or empty ACLs default to the
-	// creator as the sole OWNER.
+	// 2.1. Fill in any null values in the request payload, in place. Unset or empty
+	// ACLs default to the creator as the sole OWNER. ACL principals are put in canonical form so
+	// they match case-insensitively.
 	exp := validator.FillExperimentNullValues(req.GetExperiment())
 	exp = validator.FillExperimentDefaultACLs(exp, creator)
+	exp.Acls = auth.NormalizeACLs(exp.GetAcls())
 
 	// 2.2. Inject the execution environment on experiment creation.
 	executionEnv, err := h.defaultExecutionEnvironment()

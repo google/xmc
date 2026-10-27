@@ -87,6 +87,20 @@ func TestUpdateArtifact_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			name: "update_acls_returns_normalized_principals",
+			update: &msgpb.Artifact{
+				Acls: &xidmsgpb.XidAcls{
+					Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
+				},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"acls"}},
+			want: &msgpb.Artifact{
+				Acls: &xidmsgpb.XidAcls{
+					Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+				},
+			},
+		},
+		{
 			name: "update_multiple",
 			update: &msgpb.Artifact{
 				Url:   &msgpb.Url{Url: "http://another.url"},

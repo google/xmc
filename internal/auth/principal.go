@@ -18,6 +18,9 @@ import (
 	"net/mail"
 	"regexp"
 	"strings"
+
+	"google.golang.org/protobuf/proto"
+	xpb "xmanager_cloud/api/protos/xid"
 )
 
 // plainEmailPattern is the conservative set of email addresses accepted as authenticated
@@ -67,6 +70,36 @@ func asciiLower(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// NormalizeACLs returns a copy of acls with every user, service account, group and domain
+// principal in canonical form (see NormalizePrincipal). acls is not modified; nil returns nil.
+func NormalizeACLs(acls *xpb.XidAcls) *xpb.XidAcls {
+	if acls == nil {
+		return nil
+	}
+	normalized := proto.Clone(acls).(*xpb.XidAcls)
+	for _, roles := range [][]*xpb.XidAcls_Role{normalized.GetOwners(), normalized.GetWriters(), normalized.GetReaders()} {
+		for _, role := range roles {
+			normalizeRolePrincipal(role)
+		}
+	}
+	return normalized
+}
+
+// normalizeRolePrincipal rewrites an email or domain principal of role in canonical form in place.
+// Principals without an identity string (e.g. all authenticated users) are left unchanged.
+func normalizeRolePrincipal(role *xpb.XidAcls_Role) {
+	switch p := role.GetPrincipal().(type) {
+	case *xpb.XidAcls_Role_User:
+		p.User = NormalizePrincipal(p.User)
+	case *xpb.XidAcls_Role_ServiceAccount:
+		p.ServiceAccount = NormalizePrincipal(p.ServiceAccount)
+	case *xpb.XidAcls_Role_Group:
+		p.Group = NormalizePrincipal(p.Group)
+	case *xpb.XidAcls_Role_Domain:
+		p.Domain = NormalizePrincipal(p.Domain)
+	}
 }
 
 // principalsMatch reports whether two principals are equal in canonical form. An empty principal

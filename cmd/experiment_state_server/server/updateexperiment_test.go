@@ -87,6 +87,15 @@ func TestUpdateExperiment_HappyPath(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"acls"}},
 		},
 		{
+			name: "update_acls_returns_normalized_principals",
+			updateExp: &msgpb.Experiment{
+				Acls: &xidmsgpb.XidAcls{
+					Owners: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
+				},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"acls"}},
+		},
+		{
 			name: "update_multiple",
 			updateExp: &msgpb.Experiment{
 				Title:    "another title",
@@ -136,7 +145,7 @@ func TestUpdateExperiment_HappyPath(t *testing.T) {
 				case "notes":
 					wantExp.Notes = tc.updateExp.Notes
 				case "acls":
-					wantExp.Acls = tc.updateExp.Acls
+					wantExp.Acls = auth.NormalizeACLs(tc.updateExp.Acls)
 				}
 			}
 

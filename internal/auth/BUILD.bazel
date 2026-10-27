@@ -37,6 +37,7 @@ go_library(
         "@org_golang_google_api//idtoken",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -62,5 +63,7 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )
