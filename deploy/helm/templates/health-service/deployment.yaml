@@ -55,6 +55,10 @@ spec:
           configMap:
             name: health-config
             optional: true
+        - name: db-config-volume
+          configMap:
+            name: db-config
+            optional: true
       containers:
       - name: health-service
         image: {{ .Values.health_service_custom_image | quote }}
@@ -86,6 +90,9 @@ spec:
             readOnly: true
           - name: health-config-volume
             mountPath: /config/health-service
+            readOnly: true
+          - name: db-config-volume
+            mountPath: /config/db
             readOnly: true
         ports:
         - containerPort: 8080

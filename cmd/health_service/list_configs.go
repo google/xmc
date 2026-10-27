@@ -65,6 +65,7 @@ func listConfigs(ctx context.Context, fsys fs.FS) ([]*spb.ConfigGroup, error) {
 		{"reconciler", "Reconciler Config"},
 		{"xid", "XID Service Config"},
 		{"health-service", "Health Service Config"},
+		{"db", "Database Config"},
 	}
 
 	var groups []*spb.ConfigGroup
