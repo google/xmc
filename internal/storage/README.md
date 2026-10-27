@@ -107,7 +107,7 @@ type TxRepository struct {
 }
 ```
 
-PostgreSQL repository subpackages (`internal/storage/postgres/<entity>/`) follow the same split: `NewRepository(pool)` binds the shared `*pgxpool.Pool`, and `Repository.WithTx(tx)` binds the active `pgx.Tx` through the `pgdb.DBTX` interface. `DBTX` and the SQLSTATE error helpers live in the leaf package [`postgres/pgdb/`](postgres/pgdb/), so repository subpackages can import them without an import cycle with `internal/storage/postgres`.
+PostgreSQL repository subpackages (`internal/storage/postgres/<entity>/`) follow the same split: `NewRepository(pool)` binds the shared `*pgxpool.Pool`, and `Repository.WithTx(tx)` (on repositories that participate in `storage.Transaction`) binds the active `pgx.Tx` through the `pgdb.DBTX` interface, while standalone transactional repositories such as [`postgres/operation/`](postgres/operation/) hold `*pgxpool.Pool` and invoke `pgdb.RunInTx` directly. `DBTX`, the retrying `RunInTx` helper, and the SQLSTATE error helpers live in the leaf package [`postgres/pgdb/`](postgres/pgdb/), and row structs / protobuf converters live in [`postgres/data/`](postgres/data/) (mirroring [`spanner/data/`](spanner/data/)), so repository subpackages can import them without an import cycle with `internal/storage/postgres`.
 
 Methods that only buffer mutations into an active read-write transaction (such as `SaveWorkUnitExecution`, `UpdateCurrentWorkUnitExecution`, and `UpdateExperimentStatus`) are declared on `*TxRepository` rather than `*Repository`, so they cannot be called outside `RunInTransaction`.
 
@@ -123,7 +123,7 @@ Cloud Spanner may abort and re-run the `RunInTransaction` callback when a transa
 
 - **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried.
 - **Spanner integration tests**: Tests under `internal/storage/spanner/...` run against the Spanner emulator to test SQL queries, mutations, and schema constraints.
-- **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/pausestate/`](postgres/pausestate/) holds the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
+- **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/operation/`](postgres/operation/) and [`postgres/pausestate/`](postgres/pausestate/) hold the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
 
 ```bash
 # Unit tests (MockStorage)

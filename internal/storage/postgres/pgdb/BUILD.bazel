@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "dbtx.go",
         "errors.go",
+        "tx.go",
     ],
     importpath = "xmanager_cloud/internal/storage/postgres/pgdb",
     visibility = ["//:__subpackages__"],
@@ -37,6 +38,7 @@ go_test(
     srcs = [
         "dbtx_test.go",
         "errors_test.go",
+        "tx_test.go",
     ],
     embed = [":pgdb"],
     deps = [

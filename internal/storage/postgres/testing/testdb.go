@@ -333,3 +333,30 @@ func applySchema(ctx context.Context, t *testing.T, pool *pgxpool.Pool, s schema
 		t.Fatalf("failed to stamp %s schema version %d: %v", s.name, s.version, err)
 	}
 }
+
+// SeedExperiment inserts a minimal Experiment row for foreign-key-dependent repository tests.
+func SeedExperiment(ctx context.Context, t testing.TB, pool *pgxpool.Pool, xid int64) {
+	t.Helper()
+	const seedExpSQL = `INSERT INTO Experiments (
+		Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, ActiveState, LaunchState, CreateTime, UpdateTime
+	) VALUES ($1, 'test', 'user', 0, '{}', '{}', '', '{}', '\x', 0, 0, now(), now())
+	ON CONFLICT (Xid) DO NOTHING`
+	if _, err := pool.Exec(ctx, seedExpSQL, xid); err != nil {
+		t.Fatalf("seed Experiments(%d) failed: %v", xid, err)
+	}
+}
+
+// SeedWorkUnit inserts minimal parent Experiment and WorkUnit rows for foreign-key-dependent repository tests.
+func SeedWorkUnit(ctx context.Context, t testing.TB, pool *pgxpool.Pool, xid, wid int64) {
+	t.Helper()
+	SeedExperiment(ctx, t, pool, xid)
+	const seedWUSQL = `INSERT INTO WorkUnits (
+		Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable,
+		ExecutionCreateTime, ExecutionUpdateTime, ExecutionId, ExecutionMetadata, WorkUnitStatus,
+		QueueName, ExecutionState, CreateTime, UpdateTime
+	) VALUES ($1, $2, 0, 0, '{}', '{}', '', '\x', now(), now(), 1, '\x', '\x', 'default', 0, now(), now())
+	ON CONFLICT (Xid, WorkUnitId) DO NOTHING`
+	if _, err := pool.Exec(ctx, seedWUSQL, xid, wid); err != nil {
+		t.Fatalf("seed WorkUnits(%d, %d) failed: %v", xid, wid, err)
+	}
+}
