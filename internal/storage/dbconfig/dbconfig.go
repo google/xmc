@@ -108,7 +108,7 @@ func Load() (Config, error) {
 
 func loadSpanner() Spanner {
 	return Spanner{
-		EssDatabase:    spannerSetting("SPANNER_ESS_DATABASE", "ess_spanner_database_name", "spanner_database_name"),
+		EssDatabase:    spannerSetting("SPANNER_ESS_DATABASE", "ess_spanner_database_name", "dashboard_spanner_database_name", "spanner_database_name"),
 		XidDatabase:    spannerSetting("SPANNER_XID_DATABASE", "xid_spanner_database_name"),
 		QuotaProjectID: spannerSetting("SPANNER_QUOTA_PROJECT_ID", "ess_quota_project_id", "xid_quota_project_id", "quota_project_id"),
 	}
