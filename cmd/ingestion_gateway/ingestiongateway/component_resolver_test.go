@@ -588,6 +588,24 @@ func TestEnsureEndpointPort(t *testing.T) {
 		want     string
 	}{
 		{
+			name:     "empty endpoint returns empty string",
+			endpoint: "",
+			port:     "9092",
+			want:     "",
+		},
+		{
+			name:     "whitespace endpoint returns empty string",
+			endpoint: "   ",
+			port:     "9092",
+			want:     "",
+		},
+		{
+			name:     "empty brackets endpoint returns empty string",
+			endpoint: "[]",
+			port:     "9092",
+			want:     "",
+		},
+		{
 			name:     "empty port returns endpoint unchanged",
 			endpoint: "redpanda-0.redpanda.xmc.svc.cluster.local",
 			port:     "",
