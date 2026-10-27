@@ -22,6 +22,7 @@ import (
 	apipb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/experiment"
@@ -54,10 +55,11 @@ type WorkUnitActuator interface {
 
 // baseHandler encapsulates common infrastructure dependencies shared across domain handlers.
 type baseHandler struct {
-	cfg       *config.Config
-	storage   storage.Storage
-	auth      auth.AuthorizerInterface
-	xidClient xidgrpcpb.XidServiceClient
+	cfg               *config.Config
+	storage           storage.Storage
+	auth              auth.AuthorizerInterface
+	xidClient         xidgrpcpb.XidServiceClient
+	artifactLifecycle *artifactlifecycle.Registry
 }
 
 // ExperimentHandler handles experiment lifecycle operations.
@@ -128,6 +130,7 @@ type Params struct {
 	XidClient         xidgrpcpb.XidServiceClient
 	WorkUnitActuator  WorkUnitActuator
 	ArtifactObservers []ArtifactObserver
+	ArtifactLifecycle *artifactlifecycle.Registry
 }
 
 // New creates a new instance of the Experiment State Server.
@@ -148,11 +151,17 @@ func New(p Params) (*Server, error) {
 		return nil, fmt.Errorf("server.New: WorkUnitActuator is required")
 	}
 
+	lifecycle := p.ArtifactLifecycle
+	if lifecycle == nil {
+		lifecycle = artifactlifecycle.NewRegistry()
+	}
+
 	base := baseHandler{
-		cfg:       p.Config,
-		storage:   p.Storage,
-		auth:      p.Authorizer,
-		xidClient: p.XidClient,
+		cfg:               p.Config,
+		storage:           p.Storage,
+		auth:              p.Authorizer,
+		xidClient:         p.XidClient,
+		artifactLifecycle: lifecycle,
 	}
 
 	s := &Server{}
@@ -161,4 +170,12 @@ func New(p Params) (*Server, error) {
 	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
+}
+
+// ArtifactLifecycle returns the registered artifact lifecycle registry.
+func (s *Server) ArtifactLifecycle() *artifactlifecycle.Registry {
+	if s == nil || s.WorkUnitHandler == nil {
+		return nil
+	}
+	return s.WorkUnitHandler.artifactLifecycle
 }

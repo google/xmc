@@ -64,8 +64,12 @@ spec:
         {{- $auth := default (dict) .Values.auth }}
         {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- $remoteK8s := default (dict) .Values.remoteK8s }}
-        {{- if or $gac $remoteK8s.enabled }}
         env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
         {{- if $gac }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: {{ $gac | quote }}
@@ -73,7 +77,6 @@ spec:
         {{- if $remoteK8s.enabled }}
         - name: KUBECONFIG
           value: "/etc/remote-k8s/kubeconfig"
-        {{- end }}
         {{- end }}
         resources:
           requests:

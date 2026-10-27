@@ -17,6 +17,9 @@ package constants
 import "time"
 
 const (
+	// NotifyWhenAnnotation is the annotation used to filter WorkUnitExecution state transitions.
+	NotifyWhenAnnotation = "xmc.google.com/notify-when"
+
 	// AuthorAnnotation is the annotation used to identify the author of a JobSet.
 	AuthorAnnotation = "xmc.google.com/author"
 

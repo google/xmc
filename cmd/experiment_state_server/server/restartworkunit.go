@@ -70,6 +70,14 @@ func (h *WorkUnitHandler) RestartWorkUnit(ctx context.Context, req *msgpb.Restar
 		return nil, fmt.Errorf("failed to restart work unit executions: %w: %w", grpcerr.ErrInternal, err)
 	}
 
+	if h.artifactLifecycle != nil {
+		if _, _, oldEID, err := validator.ValidateWorkUnitExecutionName(oldExecutionName); err == nil {
+			if err := h.artifactLifecycle.HandleExecutionSuperseded(ctx, h.storage, xid, wid, oldEID); err != nil {
+				logging.Warn(ctx, "Failed to finalize superseded execution artifact lifecycle", "error", err)
+			}
+		}
+	}
+
 	// 5.1. Extract the restarted work unit execution and patch the work unit with it.
 	restartedExecution := restartedExecutions[wid]
 	if restartedExecution == nil {

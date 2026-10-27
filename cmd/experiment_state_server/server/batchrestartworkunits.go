@@ -74,6 +74,8 @@ func (h *WorkUnitHandler) BatchRestartWorkUnits(ctx context.Context, req *msgpb.
 	if err != nil {
 		logging.Error(ctx, "Failed to restart work unit executions", "error", err)
 		multiErr = errors.Join(multiErr, fmt.Errorf("failed to restart work unit executions: %w: %w", grpcerr.ErrInternal, err))
+	} else {
+		h.finalizeSupersededExecutions(ctx, xid, workUnits)
 	}
 
 	// 7. Get the experiment priority for this experiment.
@@ -215,4 +217,23 @@ func (h *WorkUnitHandler) authorizeBatchRestart(ctx context.Context, xid int64, 
 		return fmt.Errorf("user %s is not authorized to restart work units for XID %d: %w", email, xid, grpcerr.ErrPermissionDenied)
 	}
 	return nil
+}
+
+func (h *WorkUnitHandler) finalizeSupersededExecutions(ctx context.Context, xid int64, workUnits []*msgpb.WorkUnit) {
+	if h.artifactLifecycle == nil {
+		return
+	}
+	for _, wu := range workUnits {
+		cur := wu.GetCurrentWorkUnitExecution()
+		if cur == nil {
+			continue
+		}
+		_, wid, oldEID, err := validator.ValidateWorkUnitExecutionName(cur.GetName())
+		if err != nil {
+			continue
+		}
+		if err := h.artifactLifecycle.HandleExecutionSuperseded(ctx, h.storage, xid, wid, oldEID); err != nil {
+			logging.Warn(ctx, "Failed to finalize superseded execution artifact lifecycle", "wid", wid, "error", err)
+		}
+	}
 }

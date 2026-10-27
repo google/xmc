@@ -23,17 +23,20 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
+	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	dashboard_pb "xmanager_cloud/api/protos/dashboard"
 	apipb "xmanager_cloud/api/protos/experiment"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/resumption"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/hypercomputeclient"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
@@ -264,6 +267,10 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, obsCleanup)
 
+	mlClient := initMLRunClient(ctx, cfg)
+	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, cfg.MLRunProject, cfg.MLRunLocation)
+	lifecycleRegistry := artifactlifecycle.NewRegistry(managedXprofRule)
+
 	srv, err := New(Params{
 		Config:            cfg,
 		Storage:           storage,
@@ -271,6 +278,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		XidClient:         xidClient,
 		WorkUnitActuator:  taskQueueClient,
 		ArtifactObservers: observers,
+		ArtifactLifecycle: lifecycleRegistry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
@@ -305,4 +313,39 @@ func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue 
 	}
 	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
+}
+
+func initMLRunClient(ctx context.Context, cfg *config.Config) artifactlifecycle.MLRunClient {
+	project := cfg.MLRunProject
+	if project == "" {
+		project = cfg.ProjectID
+	}
+	env := cfg.MLDiagnosticsEnvironment
+	if env == "" {
+		env = "prod"
+	}
+	location := cfg.MLRunLocation
+	if location == "" {
+		location = "us-central1"
+	}
+
+	var opts []hypercomputeclient.Option
+	if cfg.MLRunImpersonateSA != "" {
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: cfg.MLRunImpersonateSA,
+			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+		})
+		if err != nil {
+			logging.Error(ctx, "Failed to create impersonated token source for ESS MLRun client", "targetSA", cfg.MLRunImpersonateSA, "error", err)
+			return nil
+		}
+		opts = append(opts, hypercomputeclient.WithTokenSource(ts))
+	}
+
+	client, err := hypercomputeclient.NewControlPlaneClient(ctx, project, env, location, opts...)
+	if err != nil {
+		logging.Warn(ctx, "Failed to initialize ESS MLRun control plane client", "error", err)
+		return nil
+	}
+	return client
 }

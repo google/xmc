@@ -100,7 +100,20 @@ func (h *ArtifactHandler) enrichArtifactOutputFields(ctx context.Context, artifa
 // enrichManagedXprof enriches the artifact with MLRun URL if it is a ManagedXprof payload.
 func (h *ArtifactHandler) enrichManagedXprof(ctx context.Context, artifact *msgpb.Artifact) {
 	xprof := artifact.GetPayload().GetManagedXprof()
-	if xprof == nil || xprof.GetXprof().GetXprofUrl() != "" {
+	if xprof == nil {
+		return
+	}
+	if xprofURL := xprof.GetXprof().GetXprofUrl(); xprofURL != "" {
+		if artifact.Url == nil {
+			artifact.Url = &msgpb.Url{}
+		}
+		if artifact.Url.Url == "" {
+			artifact.Url.Url = xprofURL
+		}
+		return
+	}
+	if artifact.GetUrl().GetUrl() != "" {
+		updateXprofURL(xprof, artifact.GetUrl().GetUrl())
 		return
 	}
 
