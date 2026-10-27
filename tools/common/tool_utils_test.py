@@ -624,6 +624,8 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertEqual(parse_semver_prefix("v3.14.2+g0a1b2c"), (3, 14, 2))
         self.assertEqual(parse_semver_prefix("v3.14"), (3, 14, 0))
         self.assertEqual(parse_semver_prefix("3"), (3, 0, 0))
+        self.assertEqual(parse_semver_prefix("v3.14-rc1"), (3, 14, 0))
+        self.assertEqual(parse_semver_prefix("v3.14+build2"), (3, 14, 0))
         with self.assertRaises(ValueError):
             parse_semver_prefix("invalid")
 

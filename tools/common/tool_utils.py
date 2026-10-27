@@ -467,7 +467,8 @@ def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
     Raises:
         ValueError: If raw contains no numeric version segments.
     """
-    parts = [int(p) for p in re.findall(r"\d+", raw)[:3]]
+    version_part = raw.split("+")[0].split("-")[0]
+    parts = [int(p) for p in re.findall(r"\d+", version_part)[:3]]
     if not parts:
         raise ValueError(f"Could not parse semantic version from '{raw}'.")
     while len(parts) < 3:
