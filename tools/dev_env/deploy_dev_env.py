@@ -870,6 +870,9 @@ def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
         resume_cmd += "--skip-migrations "
     if getattr(args, "skip_verification", False):
         resume_cmd += "--skip-verification "
+    if getattr(args, "enable_components", None) is not None:
+        flag = "--enable-components" if args.enable_components else "--no-enable-components"
+        resume_cmd += f"{flag} "
     if getattr(args, "profile_values", None):
         resume_cmd += f"--profile-values {shlex.quote(args.profile_values)} "
     if args.only:

@@ -476,16 +476,11 @@ def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
     return parts[0], parts[1], parts[2]
 
 
-def verify_helm_min_version(
-    min_version: str = MIN_HELM_VERSION,
-    *,
-    stream: TextIO | None = None,
-) -> str:
+def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
     """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values).
 
     Args:
         min_version: Minimum required semantic version string.
-        stream: Optional text stream forwarded to run_command for logging.
 
     Returns:
         Detected raw Helm CLI version string.
@@ -498,38 +493,33 @@ def verify_helm_min_version(
         ["helm", "version", "--template={{.Version}}"],
         capture_output=True,
         log_cmd=False,
-        stream=stream,
+        log_on_error=False,
     ).stdout.strip()
     if parse_semver_prefix(out) < parse_semver_prefix(min_version):
         raise RuntimeError(f"Helm version must be >= {min_version} (found: {out}).")
     return out
 
 
-def deploy_component_profile(
-    config: DeploymentConfig,
-    values_file: str | None = None,
-) -> None:
+def deploy_component_profile(config: DeploymentConfig) -> None:
     """Deploys default XMC component profile (stable-2026a) when components are enabled.
 
     Args:
         config: Loaded DeploymentConfig instance.
-        values_file: Optional path overriding config.profile_values for helm -f.
 
     Raises:
-        FileNotFoundError: If an effective profile values file is specified and missing.
+        FileNotFoundError: If config.profile_values is specified and missing.
     """
     if not config.enable_components:
         return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
-    effective_values = values_file if values_file is not None else config.profile_values
     cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
-    if effective_values:
-        if not Path(effective_values).is_file():
+    if config.profile_values:
+        if not Path(config.profile_values).is_file():
             raise FileNotFoundError(
-                f"Profile values file '{effective_values}' does not exist or is not a file."
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
             )
-        cmd.extend(["-f", effective_values])
+        cmd.extend(["-f", config.profile_values])
     cmd.extend(["-n", ns, "--wait"])
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
     run_command(cmd)

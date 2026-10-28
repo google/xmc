@@ -14,10 +14,13 @@
 
 """Unit tests for tools.dev_env.upgrade_dev_env."""
 
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -374,8 +377,6 @@ class TestStepSubprocesses(unittest.TestCase):
     @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_app_with_components(self, mock_run, mock_compile, mock_profile, _mock_dir):
-        from dataclasses import replace
-
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -439,39 +440,45 @@ class TestStepSubprocesses(unittest.TestCase):
         parsed = upgrade_dev_env.parse_args(["--profile-values", "/tmp/pv.yaml"])
         self.assertEqual(parsed.profile_values, "/tmp/pv.yaml")
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.log_error")
     @mock.patch(
         "tools.dev_env.upgrade_dev_env.verify_helm_min_version",
         side_effect=RuntimeError("Helm version must be >= 3.14.0"),
     )
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
-    def test_step_check_fails_old_helm_when_components_enabled(self, _mock_which, _mock_helm):
-        from dataclasses import replace
-
+    def test_step_check_fails_old_helm_when_components_enabled(
+        self, _mock_which, _mock_helm, mock_log_error
+    ):
         cfg = replace(self.config, enable_components=True)
         with self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.step_check(cfg)
         self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with(
+            "Failed Helm version check: Helm version must be >= 3.14.0"
+        )
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.log_error")
     @mock.patch(
         "tools.dev_env.upgrade_dev_env.verify_helm_min_version",
         side_effect=PermissionError("helm not executable"),
     )
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
-    def test_step_check_fails_helm_oserror_when_components_enabled(self, _mock_which, _mock_helm):
-        from dataclasses import replace
-
+    def test_step_check_fails_helm_oserror_when_components_enabled(
+        self, _mock_which, _mock_helm, mock_log_error
+    ):
         cfg = replace(self.config, enable_components=True)
         with self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.step_check(cfg)
         self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Failed Helm version check: helm not executable")
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.log_error")
+    @mock.patch("tools.dev_env.upgrade_dev_env.Path.is_file", return_value=False)
     @mock.patch("tools.dev_env.upgrade_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
     def test_step_check_fails_missing_profile_values_when_components_enabled(
-        self, _mock_which, _mock_helm
+        self, _mock_which, _mock_helm, _mock_is_file, mock_log_error
     ):
-        from dataclasses import replace
-
         cfg = replace(
             self.config,
             enable_components=True,
@@ -480,6 +487,9 @@ class TestStepSubprocesses(unittest.TestCase):
         with self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.step_check(cfg)
         self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with(
+            "Profile values file '/tmp/nonexistent-profile-values-1429.yaml' does not exist or is not a file."
+        )
 
     @mock.patch(
         "tools.dev_env.upgrade_dev_env.execute_step",
@@ -488,12 +498,9 @@ class TestStepSubprocesses(unittest.TestCase):
     def test_run_pipeline_catches_oserror_and_quotes_profile_values_in_recovery_cmd(
         self, _mock_exec
     ):
-        import io
-        from contextlib import redirect_stdout
-        from dataclasses import replace
-
         parsed = upgrade_dev_env.parse_args(
             [
+                "--run-migrations",
                 "--enable-components",
                 "--profile-values",
                 "/tmp/my dir/profile values.yaml",
@@ -503,6 +510,7 @@ class TestStepSubprocesses(unittest.TestCase):
         )
         cfg = replace(
             self.config,
+            run_migrations=True,
             enable_components=True,
             profile_values="/tmp/my dir/profile values.yaml",
         )
@@ -511,6 +519,7 @@ class TestStepSubprocesses(unittest.TestCase):
             upgrade_dev_env.run_pipeline(parsed, cfg, upgrade_dev_env.STEPS)
         self.assertEqual(cm.exception.code, 1)
         out = buf.getvalue()
+        self.assertIn("--run-migrations", out)
         self.assertIn("--enable-components", out)
         self.assertIn("--profile-values '/tmp/my dir/profile values.yaml'", out)
         self.assertIn("--start-from app", out)

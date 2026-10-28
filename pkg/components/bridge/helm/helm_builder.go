@@ -15,6 +15,7 @@
 package helm
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -102,6 +104,8 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 		compValues["drainTimeoutSeconds"] = opts.DrainTimeoutSeconds
 		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + terminationGracePeriodBufferSeconds
 	}
+	// parameters["image"] is a full image ref (repo:tag or repo@digest) used verbatim;
+	// parameters["imageRepository"] is a tagless registry/repo path combined with effectiveTag.
 	hasImgOverride := strings.TrimSpace(opts.Parameters["image"]) != "" || strings.TrimSpace(opts.Parameters["imageRepository"]) != ""
 	if effectiveTag != "" || hasImgOverride || defaultEnvImg != "" {
 		compValues["image"] = ResolveImage(opts.Ref.Name, effectiveTag, opts.Parameters)
@@ -121,8 +125,40 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 	return compValues
 }
 
+func defaultComponentEnvImageVar(componentName string) string {
+	return "DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"
+}
+
 func defaultComponentEnvImage(componentName string) string {
-	return strings.TrimSpace(os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"))
+	return strings.TrimSpace(os.Getenv(defaultComponentEnvImageVar(componentName)))
+}
+
+// warnMissingEnvFallbacks logs structured warnings during 1P component actuation when bridge environment
+// defaults (PROJECT_ID or DEFAULT_<COMPONENT>_IMAGE) are unset and the Component spec provides no override.
+func warnMissingEnvFallbacks(ctx context.Context, ref ComponentRef, opts HelmComponentOptions, values map[string]any) {
+	if !opts.Enabled {
+		return
+	}
+	compValues, _ := values[ComponentNameToHelmKey(ref.Name)].(map[string]any)
+	projVal, hasProj := compValues["projectId"]
+	if !hasProj || projVal == nil || strings.TrimSpace(fmt.Sprint(projVal)) == "" {
+		logging.Warn(ctx, "PROJECT_ID is not set and component has no projectId override; deploying with empty projectId",
+			"name", ref.Name, "namespace", ref.Namespace)
+	}
+	hasParamImg := strings.TrimSpace(opts.Parameters["image"]) != "" || strings.TrimSpace(opts.Parameters["imageRepository"]) != ""
+	if defaultComponentEnvImage(ref.Name) == "" && !hasParamImg && !hasNonEmptyRawValue(opts.RawValues, "image", "imageRepository") {
+		logging.Warn(ctx, "Default component image env var is not set and component has no image override; falling back to default chart repository",
+			"name", ref.Name, "namespace", ref.Namespace, "envVar", defaultComponentEnvImageVar(ref.Name), "defaultRepository", DefaultComponentRepository(ref.Name))
+	}
+}
+
+func hasNonEmptyRawValue(raw map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if s, ok := raw[k].(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // repositoryFromImageRef strips any @digest or :tag suffix from a container image reference.
