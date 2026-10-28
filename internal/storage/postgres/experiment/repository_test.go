@@ -24,6 +24,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -498,6 +500,7 @@ func seedListExperimentsFixture(ctx context.Context, t *testing.T, pool *pgxpool
 	t1 := baseTime
 	t2 := baseTime.Add(time.Minute)
 	t3 := baseTime.Add(2 * time.Minute)
+	t4 := baseTime.Add(3 * time.Minute)
 	exps := []*essmsgpb.Experiment{
 		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
 			e.Name = "experiments/1"
@@ -510,8 +513,8 @@ func seedListExperimentsFixture(ctx context.Context, t *testing.T, pool *pgxpool
 				ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
 				LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
 			}
-			e.CreateTime = timestamppb.New(t1)
-			e.UpdateTime = timestamppb.New(t3)
+			e.CreateTime = timestamppb.New(t2)
+			e.UpdateTime = timestamppb.New(t1)
 			e.CompleteTime = nil
 		}),
 		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
@@ -525,8 +528,8 @@ func seedListExperimentsFixture(ctx context.Context, t *testing.T, pool *pgxpool
 				ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
 				LaunchState: essmsgpb.ExperimentStatus_COMPLETED,
 			}
-			e.CreateTime = timestamppb.New(t2)
-			e.UpdateTime = timestamppb.New(t2)
+			e.CreateTime = timestamppb.New(t3)
+			e.UpdateTime = timestamppb.New(t4)
 			e.CompleteTime = timestamppb.New(t2)
 		}),
 		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
@@ -540,9 +543,24 @@ func seedListExperimentsFixture(ctx context.Context, t *testing.T, pool *pgxpool
 				ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
 				LaunchState: essmsgpb.ExperimentStatus_FAILED,
 			}
-			e.CreateTime = timestamppb.New(t3)
-			e.UpdateTime = timestamppb.New(t1)
+			e.CreateTime = timestamppb.New(t1)
+			e.UpdateTime = timestamppb.New(t2)
 			e.CompleteTime = timestamppb.New(t3)
+		}),
+		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+			e.Name = "experiments/4"
+			e.Title = "Delta Audio"
+			e.Creator = "carol@example.com"
+			e.Priority = 1
+			e.Tags = []string{"delta"}
+			e.Notes = "fourth note"
+			e.Status = &essmsgpb.ExperimentStatus{
+				ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+				LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+			}
+			e.CreateTime = timestamppb.New(t4)
+			e.UpdateTime = timestamppb.New(t3)
+			e.CompleteTime = nil
 		}),
 	}
 	for _, exp := range exps {
@@ -564,23 +582,23 @@ func TestListExperiments_FilterAndOrderBy(t *testing.T) {
 		want    []*essmsgpb.Experiment
 	}{
 		{
-			name: "default order created asc",
-			want: []*essmsgpb.Experiment{exps[0], exps[1], exps[2]},
+			name: "default order xid asc",
+			want: []*essmsgpb.Experiment{exps[0], exps[1], exps[2], exps[3]},
 		},
 		{
 			name:    "order by xid desc",
 			orderBy: "xid desc",
-			want:    []*essmsgpb.Experiment{exps[2], exps[1], exps[0]},
+			want:    []*essmsgpb.Experiment{exps[3], exps[2], exps[1], exps[0]},
 		},
 		{
 			name:    "order by created desc",
 			orderBy: "created desc",
-			want:    []*essmsgpb.Experiment{exps[2], exps[1], exps[0]},
+			want:    []*essmsgpb.Experiment{exps[3], exps[1], exps[0], exps[2]},
 		},
 		{
 			name:    "order by updated desc",
 			orderBy: "updated desc",
-			want:    []*essmsgpb.Experiment{exps[0], exps[1], exps[2]},
+			want:    []*essmsgpb.Experiment{exps[1], exps[3], exps[2], exps[0]},
 		},
 		{
 			name:   "filter by full text search on title",
@@ -595,7 +613,7 @@ func TestListExperiments_FilterAndOrderBy(t *testing.T) {
 		{
 			name:   "filter by active_state enum name",
 			filter: `active_state = "ACTIVE"`,
-			want:   []*essmsgpb.Experiment{exps[0]},
+			want:   []*essmsgpb.Experiment{exps[0], exps[3]},
 		},
 		{
 			name:   "filter by launch_state enum name",
@@ -631,13 +649,23 @@ func TestListExperiments_MultiPagePaginationAndErrors(t *testing.T) {
 	repo := NewRepository(essPool)
 	exps := seedListExperimentsFixture(ctx, t, essPool)
 
-	for _, orderBy := range []string{"", "created asc", "completed desc", "completed asc"} {
+	orderCases := []struct {
+		orderBy string
+		want    []*essmsgpb.Experiment
+	}{
+		{orderBy: "", want: []*essmsgpb.Experiment{exps[0], exps[1], exps[2], exps[3]}},
+		{orderBy: "created asc", want: []*essmsgpb.Experiment{exps[2], exps[0], exps[1], exps[3]}},
+		{orderBy: "completed desc", want: []*essmsgpb.Experiment{exps[2], exps[1], exps[0], exps[3]}},
+		{orderBy: "completed asc", want: []*essmsgpb.Experiment{exps[0], exps[3], exps[1], exps[2]}},
+	}
+
+	for _, tc := range orderCases {
 		var collected []*essmsgpb.Experiment
 		pageToken := ""
-		for page := 0; page < 4; page++ {
-			got, nextToken, err := repo.ListExperiments(ctx, 1, pageToken, "", orderBy, 0)
+		for page := 0; page < len(exps)+1; page++ {
+			got, nextToken, err := repo.ListExperiments(ctx, 1, pageToken, "", tc.orderBy, 0)
 			if err != nil {
-				t.Fatalf("ListExperiments(orderBy=%q, page=%d) failed: %v", orderBy, page, err)
+				t.Fatalf("ListExperiments(orderBy=%q, page=%d) failed: %v", tc.orderBy, page, err)
 			}
 			collected = append(collected, got...)
 			pageToken = nextToken
@@ -645,22 +673,25 @@ func TestListExperiments_MultiPagePaginationAndErrors(t *testing.T) {
 				break
 			}
 		}
-		if len(collected) != len(exps) {
-			t.Errorf("ListExperiments(orderBy=%q) collected %d items across pages, want %d", orderBy, len(collected), len(exps))
+		if diff := cmp.Diff(tc.want, collected, protocmp.Transform()); diff != "" {
+			t.Errorf("ListExperiments(orderBy=%q) paginated diff (-want +got):\n%s", tc.orderBy, diff)
 		}
 	}
 
+	if _, _, err := repo.ListExperiments(ctx, 0, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListExperiments(pageSize=0) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
 	if _, _, err := repo.ListExperiments(ctx, -1, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListExperiments(pageSize=-1) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 	if _, _, err := repo.ListExperiments(ctx, 10, "bad-token", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListExperiments(bad token) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
-	if _, _, err := repo.ListExperiments(ctx, 10, "", "unknown_field = 1", "", 0); err == nil {
-		t.Error("ListExperiments(bad filter) error = nil, want error")
+	if _, _, err := repo.ListExperiments(ctx, 10, "", "unknown_field = 1", "", 0); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ListExperiments(bad filter) code = %v (%v), want %v", status.Code(err), err, codes.InvalidArgument)
 	}
-	if _, _, err := repo.ListExperiments(ctx, 10, "", "", "unknown_field asc", 0); err == nil {
-		t.Error("ListExperiments(bad orderBy) error = nil, want error")
+	if _, _, err := repo.ListExperiments(ctx, 10, "", "", "unknown_field asc", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListExperiments(bad orderBy) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 
@@ -743,7 +774,16 @@ func TestFetchDriftedComponents(t *testing.T) {
 		t.Errorf("FetchDriftedComponents(inactive) = (%v, %v), want empty", diffs, err)
 	}
 
-	// 5. Missing catalog row mapping (all nullable fields unset).
+	// 5. Active experiment with no snapshots and non-existent XID both return empty without error.
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) { e.Name = "experiments/1005" }))
+	if diffs, err := repo.FetchDriftedComponents(ctx, 1005, 0); err != nil || len(diffs) != 0 {
+		t.Errorf("FetchDriftedComponents(no snapshots) = (%v, %v), want empty", diffs, err)
+	}
+	if diffs, err := repo.FetchDriftedComponents(ctx, 99999, 0); err != nil || len(diffs) != 0 {
+		t.Errorf("FetchDriftedComponents(non-existent) = (%v, %v), want empty", diffs, err)
+	}
+
+	// 6. Missing catalog row mapping (all nullable fields unset).
 	missingDiff := toComponentDiff(driftedComponentRow{ComponentID: 204, LockedGeneration: 3})
 	if missingDiff.Name != nil || missingDiff.ObservedGeneration != nil || missingDiff.State != nil {
 		t.Errorf("toComponentDiff(missing) = %+v, want nil pointers", missingDiff)

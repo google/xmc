@@ -129,8 +129,8 @@ func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*ess
 
 // ListExperiments retrieves a list of experiments matching the given filter.
 func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, _ time.Duration) ([]*essmsgpb.Experiment, string, error) {
-	if pageSize < 0 {
-		return nil, "", fmt.Errorf("page_size cannot be negative: %w", grpcerr.ErrInvalidArgument)
+	if pageSize <= 0 {
+		return nil, "", fmt.Errorf("page_size must be positive: %w", grpcerr.ErrInvalidArgument)
 	}
 	return pgdb.List(ctx, r.db, entityName, pageToken, liststatement.ListParams{
 		PageSize:              pageSize,
