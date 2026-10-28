@@ -130,6 +130,38 @@ class GitRepoTest(unittest.TestCase):
         self.assertEqual(data["staged"], ["staged.py"])
         self.assertEqual(list(data["unstaged_hashes"]), ["other.py"])
 
+    def test_restages_many_paths_literally(self):
+        # Paths travel over stdin; "*" must not match sibling files as a glob.
+        names = [f"many_{i:04d}_{'x' * 100}.py" for i in range(1000)] + ["glob*.py"]
+        self._write("globber.py", "x=1\n")
+        self._git("add", "globber.py")
+        self._git("commit", "-q", "--no-verify", "-m", "add globber")
+        for name in names:
+            self._write(name, "x=1\n")
+        self._git("add", *names)
+
+        self._run("snapshot")
+        for name in names + ["globber.py"]:
+            self._write(name, "x = 1\n")
+        with self.assertRaises(HandledError) as ctx:
+            self._run("restage")
+
+        details = ctx.exception.details
+        assert details is not None
+        self.assertEqual(details["blocked"], ["globber.py"])
+        self.assertEqual(sorted(details["restaged"]), sorted(names))
+        self.assertEqual(self._staged_content("glob*.py"), "x = 1\n")
+
+    def test_restage_without_snapshot_raises_handled_error(self):
+        with self.assertRaisesRegex(HandledError, "Cannot read pre-commit snapshot state"):
+            self._run("restage")
+
+    def test_restage_with_empty_snapshot_raises_handled_error(self):
+        self.state.write_text("", encoding="utf-8")
+
+        with self.assertRaisesRegex(HandledError, "Cannot read pre-commit snapshot state"):
+            self._run("restage")
+
 
 if __name__ == "__main__":
     unittest.main()

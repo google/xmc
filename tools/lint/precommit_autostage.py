@@ -97,9 +97,9 @@ def plan_restage(
     return RestagePlan(tuple(restage), tuple(blocked))
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, stdin: str | None = None) -> str:
     return subprocess.run(
-        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True, input=stdin
     ).stdout
 
 
@@ -110,11 +110,23 @@ def _diff_names(repo: Path, *args: str) -> frozenset[str]:
 
 def _worktree_hashes(repo: Path, paths: Iterable[str]) -> dict[str, str | None]:
     hashes: dict[str, str | None] = dict.fromkeys(paths)
-    existing = sorted(path for path in hashes if (repo / path).is_file())
+    # Paths go over stdin so repo-wide fixer changes cannot exceed ARG_MAX.
+    existing = sorted(path for path in hashes if "\n" not in path and (repo / path).is_file())
     if existing:
-        output = _git(repo, "hash-object", "--", *existing)
+        output = _git(repo, "hash-object", "--stdin-paths", stdin="\n".join(existing) + "\n")
         hashes.update(zip(existing, output.split(), strict=True))
     return hashes
+
+
+def _stage(repo: Path, paths: Iterable[str]) -> None:
+    _git(
+        repo,
+        "--literal-pathspecs",
+        "add",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+        stdin="\0".join(paths),
+    )
 
 
 def take_snapshot(repo: Path) -> Snapshot:
@@ -129,11 +141,23 @@ def restage_fixes(repo: Path, snapshot: Snapshot) -> RestagePlan:
     current = _worktree_hashes(repo, modified & snapshot.unstaged_hashes.keys())
     plan = plan_restage(snapshot, modified, current)
     if plan.restage:
-        _git(repo, "add", "--", *plan.restage)
+        _stage(repo, plan.restage)
         print("--> Restaged formatter fixes to staged files:", file=sys.stderr)
         for path in plan.restage:
             print(f"      {path}", file=sys.stderr)
     return plan
+
+
+def load_snapshot(state: Path) -> Snapshot:
+    """Reads the snapshot state file written by the snapshot subcommand."""
+    try:
+        return Snapshot.from_json(json.loads(state.read_text(encoding="utf-8")))
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise HandledError(
+            f"Cannot read pre-commit snapshot state {state}: {e}",
+            "Run the snapshot subcommand before restage; .githooks/pre-commit does this "
+            "automatically. Set XMC_PRECOMMIT_NO_AUTOSTAGE=1 to bypass auto-restaging.",
+        ) from e
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -145,8 +169,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         state.write_text(json.dumps(snapshot.to_json()), encoding="utf-8")
         return {"staged": len(snapshot.staged), "unstaged": len(snapshot.unstaged_hashes)}
 
-    snapshot = Snapshot.from_json(json.loads(state.read_text(encoding="utf-8")))
-    plan = restage_fixes(repo, snapshot)
+    plan = restage_fixes(repo, load_snapshot(state))
     result = {"restaged": list(plan.restage), "blocked": list(plan.blocked)}
     if plan.blocked:
         raise HandledError(
