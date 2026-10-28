@@ -34,3 +34,20 @@ py_test(
         "//tools/common:tool_utils",
     ],
 )
+
+py_library(
+    name = "precommit_autostage_lib",
+    srcs = ["precommit_autostage.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "precommit_autostage_test",
+    srcs = ["precommit_autostage_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":precommit_autostage_lib",
+        "//tools/common:tool_utils",
+    ],
+)
