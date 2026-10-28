@@ -51,6 +51,15 @@ func ValidateTopicTopologyWithRetry(
 	if topicName == "" {
 		return errors.New("topicName cannot be empty")
 	}
+	if querier == nil {
+		return errors.New("querier cannot be nil")
+	}
+	if timeout <= 0 {
+		return errors.New("timeout must be greater than 0")
+	}
+	if interval <= 0 {
+		return errors.New("interval must be greater than 0")
+	}
 	retryCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -74,6 +83,9 @@ func ValidateTopicTopologyWithRetry(
 func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicName string, minPartitions, minReplicas int) error {
 	if topicName == "" {
 		return errors.New("topicName cannot be empty")
+	}
+	if querier == nil {
+		return errors.New("querier cannot be nil")
 	}
 
 	details, err := querier.ListTopics(ctx, topicName)

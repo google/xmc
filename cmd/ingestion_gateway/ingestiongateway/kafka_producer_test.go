@@ -255,6 +255,41 @@ func TestValidateTopicTopologyWithRetry(t *testing.T) {
 			wantErr:   true,
 		},
 		{
+			name:      "Fails immediately on nil querier",
+			querier:   nil,
+			topicName: "xmc-metrics",
+			timeout:   50 * time.Millisecond,
+			interval:  5 * time.Millisecond,
+			wantCalls: 0,
+			wantErr:   true,
+		},
+		{
+			name: "Fails immediately on non-positive timeout",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{details: validDetails},
+				},
+			},
+			topicName: "xmc-metrics",
+			timeout:   0,
+			interval:  5 * time.Millisecond,
+			wantCalls: 0,
+			wantErr:   true,
+		},
+		{
+			name: "Fails immediately on non-positive interval",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{details: validDetails},
+				},
+			},
+			topicName: "xmc-metrics",
+			timeout:   50 * time.Millisecond,
+			interval:  0,
+			wantCalls: 0,
+			wantErr:   true,
+		},
+		{
 			name: "Fails when retry timeout expires",
 			querier: &sequenceTopologyQuerier{
 				responses: []mockTopologyQuerier{
@@ -264,15 +299,20 @@ func TestValidateTopicTopologyWithRetry(t *testing.T) {
 			topicName: "xmc-metrics",
 			timeout:   25 * time.Millisecond,
 			interval:  10 * time.Millisecond,
+			wantCalls: -1,
 			wantErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var querier TopologyQuerier
+			if tt.querier != nil {
+				querier = tt.querier
+			}
 			err := ValidateTopicTopologyWithRetry(
 				context.Background(),
-				tt.querier,
+				querier,
 				tt.topicName,
 				128,
 				1,
@@ -282,7 +322,7 @@ func TestValidateTopicTopologyWithRetry(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ValidateTopicTopologyWithRetry() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if tt.wantCalls > 0 && tt.querier.calls != tt.wantCalls {
+			if tt.querier != nil && tt.wantCalls >= 0 && tt.querier.calls != tt.wantCalls {
 				t.Errorf("querier calls = %d, want %d", tt.querier.calls, tt.wantCalls)
 			}
 		})

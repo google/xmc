@@ -85,6 +85,7 @@ class SchemaConsistencyTest(unittest.TestCase):
         self.assertIn("CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS", manifest)
         self.assertIn("/docker-entrypoint-initdb.d/init.sql", manifest)
         self.assertIn("name: clickhouse-init-scripts", manifest)
+        self.assertNotIn("optional: true", manifest)
         self.assertIn("rpk topic create xmc-metrics --partitions 128 --replicas 1", manifest)
         self.assertIn("publishNotReadyAddresses: true", manifest)
         self.assertIn("kubectl create configmap clickhouse-init-scripts", setup_script)
