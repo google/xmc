@@ -55,8 +55,10 @@ CORE_INFRA_FILES: set[str] = {
     "tools/benchmark/resolve_test_scope.py",
     "tools/common/changed_files.py",
     "tools/common/tool_utils.py",
-    # Generates the dev_binary_guard_test for every container image.
+    # Generates and runs the dev_binary_guard_test for every container image. The runner is
+    # exported via exports_files, which `//tools/lint:all` rdeps discovery does not match.
     "oci.bzl",
+    "tools/lint/dev_binary_guard.py",
 }
 
 # The Helm chart suite (.github/actions/run-chart-tests) renders templates with a host helm
