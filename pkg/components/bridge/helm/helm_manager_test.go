@@ -15,10 +15,12 @@
 package helm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -31,6 +33,8 @@ import (
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
+
+	"xmanager_cloud/internal/logging"
 )
 
 type mockHelmActionRunner struct {
@@ -914,5 +918,39 @@ func TestK8sHelmManager_ForgetComponentEvictsAllIncarnations(t *testing.T) {
 	}
 	if got := incarnationStateKeys(mgr, keep.Namespace, keep.Name); len(got) != 1 {
 		t.Errorf("state keys of unrelated component %q = %v, want its single incarnation kept", keep.Name, got)
+	}
+}
+
+func TestK8sHelmManager_EnsureLogsMissingEnvWarningsOnlyOnUpgrade(t *testing.T) {
+	t.Setenv("PROJECT_ID", "")
+	t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", "")
+
+	var buf bytes.Buffer
+	ctx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	mgr := NewK8sHelmManager(fake.NewClientset(), "xmc", "xmanager-cloud", WithActionRunner(&mockHelmActionRunner{}), WithSyncExecution(true))
+	defer mgr.Close()
+
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway", UID: "eeeeeeee-0000-4000-8000-00000000000e"}
+	opts := HelmComponentOptions{Ref: ref, Enabled: true}
+
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("initial Ensure1PComponent failed: %v", err)
+	}
+	if got := strings.Count(buf.String(), "PROJECT_ID is not set"); got != 1 {
+		t.Errorf("initial PROJECT_ID warning count = %d, want 1 (logs: %q)", got, buf.String())
+	}
+	if got := strings.Count(buf.String(), "Default component image env var is not set"); got != 1 {
+		t.Errorf("initial image env warning count = %d, want 1 (logs: %q)", got, buf.String())
+	}
+
+	// Steady-state no-op reconcile should return early without re-emitting warnings.
+	if err := mgr.Ensure1PComponent(ctx, ref, opts); err != nil {
+		t.Fatalf("second Ensure1PComponent failed: %v", err)
+	}
+	if got := strings.Count(buf.String(), "PROJECT_ID is not set"); got != 1 {
+		t.Errorf("steady-state PROJECT_ID warning count = %d, want 1", got)
+	}
+	if got := strings.Count(buf.String(), "Default component image env var is not set"); got != 1 {
+		t.Errorf("steady-state image env warning count = %d, want 1", got)
 	}
 }
