@@ -30,13 +30,16 @@ go_library(
 
 go_test(
     name = "statushistory_test",
-    srcs = ["statushistory_test.go"],
+    srcs = [
+        "conformance_test.go",
+        "statushistory_test.go",
+    ],
     embed = [":statushistory"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/storage",
-        "//internal/storage/spanner/data",
+        "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
-        "@com_google_cloud_go_spanner//:spanner",
+        "//internal/storage/storagetest",
     ],
 )

@@ -15,7 +15,6 @@
 package statushistory
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"testing"
@@ -33,64 +32,7 @@ import (
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 )
 
-const resourceTypeCPU = "CPU"
-
-var (
-	ignoreHistoryIDAndCreateTime = cmpopts.IgnoreFields(postgresdata.WorkUnitStatusHistoryRow{}, "HistoryID", "CreateTime")
-	sortQueueMetricRowsOpt       = cmpopts.SortSlices(func(a, b storage.QueueMetricRow) int {
-		if c := cmp.Compare(a.QueueName, b.QueueName); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.ResourceType, b.ResourceType)
-	})
-)
-
-type mockHistoryItem struct {
-	xid       int64
-	wid       int64
-	eid       *int64
-	queueName string
-	offset    time.Duration
-	prevState *essmsgpb.WorkUnitStatus_WorkUnitState
-	newState  essmsgpb.WorkUnitStatus_WorkUnitState
-	resources map[string]int64
-}
-
-func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.WorkUnitStatus_WorkUnitState, resType string, units int64) mockHistoryItem {
-	eid := wid
-	return mockHistoryItem{
-		xid:       1,
-		wid:       wid,
-		eid:       &eid,
-		queueName: queue,
-		offset:    offset,
-		newState:  state,
-		resources: map[string]int64{resType: units},
-	}
-}
-
-func insertMockItems(ctx context.Context, t *testing.T, pool *pgxpool.Pool, repo *Repository, items []mockHistoryItem) {
-	t.Helper()
-	if len(items) == 0 {
-		return
-	}
-	baseTime := time.Now()
-	err := pgdb.RunInTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
-		txRepo := repo.WithTx(tx)
-		for _, item := range items {
-			state := item.newState
-			if err := txRepo.SaveWorkUnitStatusHistory(
-				ctx, item.xid, item.wid, item.eid, item.queueName, item.prevState, &state, item.resources, baseTime.Add(item.offset),
-			); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("insertMockItems() failed: %v", err)
-	}
-}
+var ignoreHistoryIDAndCreateTime = cmpopts.IgnoreFields(postgresdata.WorkUnitStatusHistoryRow{}, "HistoryID", "CreateTime")
 
 func queryStoredHistoryRows(ctx context.Context, t *testing.T, pool *pgxpool.Pool) []postgresdata.WorkUnitStatusHistoryRow {
 	t.Helper()
@@ -106,13 +48,6 @@ ORDER BY Xid, WorkUnitId, ResourceType`
 		t.Fatalf("pgx.CollectRows() failed: %v", err)
 	}
 	return got
-}
-
-func compareQueueMetricRows(t *testing.T, got, want []storage.QueueMetricRow) {
-	t.Helper()
-	if diff := gocmp.Diff(want, got, sortQueueMetricRowsOpt, cmpopts.EquateEmpty()); diff != "" {
-		t.Errorf("QueueMetricRow mismatch (-want +got):\n%s", diff)
-	}
 }
 
 func TestNewRepository_BindsPoolAndTx(t *testing.T) {
@@ -258,173 +193,6 @@ func TestTxRepository_SaveWorkUnitStatusHistory_Persistence(t *testing.T) {
 	}
 	if !got[0].CreateTime.Equal(fixedTime) {
 		t.Errorf("row[0].CreateTime = %v, want %v", got[0].CreateTime, fixedTime)
-	}
-}
-
-func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
-	tests := []struct {
-		name       string
-		queueNames []string
-		window     time.Duration
-		mockItems  []mockHistoryItem
-		want       []storage.QueueMetricRow
-	}{
-		{
-			name:       "TransitionStateFiltering",
-			queueNames: []string{"q1"},
-			window:     1 * time.Hour,
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
-				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
-				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, resourceTypeCPU, 30),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
-			},
-		},
-		{
-			name:       "LookbackCutoffWindowFiltering",
-			queueNames: []string{"q1"},
-			window:     30 * time.Minute,
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
-				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
-			},
-		},
-		{
-			name:       "QueueNameFiltering",
-			queueNames: []string{"q1"},
-			window:     1 * time.Hour,
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
-				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
-			},
-		},
-		{
-			name:       "MultiResourceAndMultiQueueAggregation",
-			queueNames: []string{"q1", "q2"},
-			window:     1 * time.Hour,
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
-				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
-				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "GPU", 4),
-				newMockItem(201, "q2", -4*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "TPU", 8),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: resourceTypeCPU},
-				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
-				{QueueName: "q2", Count: 1, TotalUnits: 8, ResourceType: "TPU"},
-			},
-		},
-		{
-			name:       "EmptyQueueNames",
-			queueNames: []string{},
-			window:     1 * time.Hour,
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
-			},
-			want: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := t.Context()
-			_, essPool := postgrestest.Setup(ctx, t)
-			repo := NewRepository(essPool)
-			insertMockItems(ctx, t, essPool, repo, tt.mockItems)
-
-			got, err := repo.FetchBatchQueueVelocity(ctx, tt.queueNames, tt.window)
-			if err != nil {
-				t.Fatalf("FetchBatchQueueVelocity() failed: %v", err)
-			}
-			compareQueueMetricRows(t, got, tt.want)
-		})
-	}
-}
-
-func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
-	tests := []struct {
-		name       string
-		queueNames []string
-		mockItems  []mockHistoryItem
-		want       []storage.QueueMetricRow
-	}{
-		{
-			name:       "TransitionStateFiltering",
-			queueNames: []string{"q1"},
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
-				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
-			},
-		},
-		{
-			name:       "LatestStateTransition",
-			queueNames: []string{"q1"},
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -20*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, resourceTypeCPU, 10),
-			},
-			want: nil,
-		},
-		{
-			name:       "QueueNameFiltering",
-			queueNames: []string{"q1"},
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
-				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
-			},
-		},
-		{
-			name:       "MultiResourceAndMultiQueueAggregation",
-			queueNames: []string{"q1", "q2"},
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
-				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
-				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "GPU", 4),
-				newMockItem(201, "q2", -4*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "TPU", 8),
-			},
-			want: []storage.QueueMetricRow{
-				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: resourceTypeCPU},
-				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
-				{QueueName: "q2", Count: 1, TotalUnits: 8, ResourceType: "TPU"},
-			},
-		},
-		{
-			name:       "EmptyQueueNames",
-			queueNames: []string{},
-			mockItems: []mockHistoryItem{
-				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
-			},
-			want: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := t.Context()
-			_, essPool := postgrestest.Setup(ctx, t)
-			repo := NewRepository(essPool)
-			insertMockItems(ctx, t, essPool, repo, tt.mockItems)
-
-			got, err := repo.FetchBatchPendingQueueMetrics(ctx, tt.queueNames)
-			if err != nil {
-				t.Fatalf("FetchBatchPendingQueueMetrics() failed: %v", err)
-			}
-			compareQueueMetricRows(t, got, tt.want)
-		})
 	}
 }
 
