@@ -1060,7 +1060,12 @@ def _http_get(
     req = urllib.request.Request(url, headers=headers or {}, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            content = resp.read().decode("utf-8")
+            raw_content = resp.read()
+            content = (
+                raw_content.decode("utf-8")
+                if isinstance(raw_content, bytes)
+                else str(raw_content or "")
+            )
             if not content.strip():
                 return None
             try:
@@ -1068,7 +1073,12 @@ def _http_get(
             except json.JSONDecodeError:
                 return content.strip()
     except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace") if err.fp else ""
+        raw_body = err.read() if err.fp else b""
+        body = (
+            raw_body.decode("utf-8", errors="replace")
+            if isinstance(raw_body, bytes)
+            else str(raw_body or "")
+        )
         if "data engine is not configured" in body.lower():
             raise AssertionError(
                 f"Dashboard Service returned 'data engine is not configured' for {url}: {body}"
