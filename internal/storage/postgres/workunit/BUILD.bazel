@@ -54,6 +54,7 @@ go_test(
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

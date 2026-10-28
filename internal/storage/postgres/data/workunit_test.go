@@ -169,13 +169,25 @@ func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
 	if defaultRow.PositionInQueue != math.MaxInt64 || len(defaultRow.Tags) != 0 || defaultRow.Tags == nil {
 		t.Errorf("defaultRow = (pos=%d, tags=%v), want MaxInt64 and non-nil empty slice", defaultRow.PositionInQueue, defaultRow.Tags)
 	}
+	defaultRow.Tags = nil
+	gotEmptyWU, err := WorkUnitRowToProto(defaultRow)
+	if err != nil {
+		t.Fatalf("WorkUnitRowToProto(defaultRow) failed: %v", err)
+	}
+	if gotEmptyWU.Tags == nil || len(gotEmptyWU.Tags) != 0 {
+		t.Errorf("gotEmptyWU.Tags = %v, want non-nil empty slice", gotEmptyWU.Tags)
+	}
 
 	updateRow, err := WorkUnitProtoToUpdateRow(wu)
 	if err != nil {
 		t.Fatalf("WorkUnitProtoToUpdateRow() failed: %v", err)
 	}
-	if updateRow.Xid != 123 || updateRow.WorkUnitID != 456 || updateRow.Notes != "updated" {
-		t.Errorf("WorkUnitProtoToUpdateRow() = %+v", updateRow)
+	wantUpdateRow := WorkUnitRow{
+		Xid: 123, WorkUnitID: 456, Priority: 10,
+		Urls: [][]byte{}, Tags: []string{}, Notes: "updated", UpdateTime: testWUTime,
+	}
+	if diff := cmp.Diff(wantUpdateRow, updateRow); diff != "" {
+		t.Errorf("WorkUnitProtoToUpdateRow() mismatch (-want +got):\n%s", diff)
 	}
 
 	exec := sampleWorkUnitProto().CurrentWorkUnitExecution

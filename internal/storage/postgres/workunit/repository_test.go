@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -292,23 +293,41 @@ func TestRepository_CRUDAndExecutions(t *testing.T) {
 		mustInsertWorkUnit(t, essPool, repo, blankWorkUnitProto(xid, 1, baseTestTime))
 		mustInsertWorkUnit(t, essPool, repo, blankWorkUnitProto(xid, 2, baseTestTime))
 
-		err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
-			txRepo := repo.WithTx(tx)
-			empty, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, nil)
-			if err != nil || len(empty) != 0 {
-				t.Fatalf("FetchUpdatingWorkUnits(nil) = (%v, %v), want empty", empty, err)
-			}
-			got, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, []int64{2, 1, 999})
-			if err != nil {
-				return err
-			}
-			if len(got) != 2 || got[1] == nil || got[2] == nil {
-				t.Fatalf("FetchUpdatingWorkUnits() returned %v, want keys 1 and 2", got)
-			}
-			return nil
-		})
+		holdTx, err := essPool.Begin(ctx)
 		if err != nil {
-			t.Fatalf("FetchUpdatingWorkUnits failed: %v", err)
+			t.Fatalf("essPool.Begin() failed: %v", err)
+		}
+		defer func() { _ = holdTx.Rollback(context.Background()) }()
+
+		txRepo := repo.WithTx(holdTx)
+		empty, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, nil)
+		if err != nil || len(empty) != 0 {
+			t.Fatalf("FetchUpdatingWorkUnits(nil) = (%v, %v), want empty", empty, err)
+		}
+		got, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, []int64{2, 1, 999})
+		if err != nil {
+			t.Fatalf("FetchUpdatingWorkUnits() failed: %v", err)
+		}
+		want := map[int64]*essmsgpb.WorkUnit{}
+		for _, wid := range []int64{1, 2} {
+			full := blankWorkUnitProto(xid, wid, baseTestTime)
+			exec := proto.Clone(full.CurrentWorkUnitExecution).(*essmsgpb.WorkUnitExecution)
+			exec.State = essmsgpb.WorkUnitExecution_INACTIVE
+			want[wid] = &essmsgpb.WorkUnit{Name: full.Name, Executable: full.Executable, CurrentWorkUnitExecution: exec}
+		}
+		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+			t.Errorf("FetchUpdatingWorkUnits() mismatch (-want +got):\n%s", diff)
+		}
+
+		for _, wid := range []int64{1, 2} {
+			_, lockErr := essPool.Exec(ctx, "SELECT 1 FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2 FOR NO KEY UPDATE NOWAIT", xid, wid)
+			var pgErr *pgconn.PgError
+			if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
+				t.Errorf("concurrent FOR NO KEY UPDATE NOWAIT on wid=%d err = %v, want SQLSTATE 55P03", wid, lockErr)
+			}
+			if _, err := essPool.Exec(ctx, "SELECT 1 FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2 FOR KEY SHARE NOWAIT", xid, wid); err != nil {
+				t.Errorf("concurrent FOR KEY SHARE NOWAIT on wid=%d failed (must lock with FOR NO KEY UPDATE, not FOR UPDATE): %v", wid, err)
+			}
 		}
 	})
 }
@@ -341,8 +360,21 @@ func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
 	if diff := cmp.Diff(created, res.Original, protocmp.Transform()); diff != "" {
 		t.Errorf("Original mismatch (-want +got):\n%s", diff)
 	}
-	if res.Updated.GetNotes() != "new-notes" || !res.Updated.GetUpdateTime().AsTime().After(created.GetUpdateTime().AsTime()) {
-		t.Errorf("Updated = %v, want new-notes and newer UpdateTime", res.Updated)
+	want := proto.Clone(created).(*essmsgpb.WorkUnit)
+	want.Priority, want.Notes, want.Tags = 2, "new-notes", []string{"tag3"}
+	want.Urls = []*essmsgpb.Url{{Url: "http://new.com"}}
+	if diff := cmp.Diff(want, res.Updated, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.WorkUnit{}, "update_time")); diff != "" {
+		t.Errorf("Updated mismatch (-want +got):\n%s", diff)
+	}
+	if !res.Updated.GetUpdateTime().AsTime().After(created.GetUpdateTime().AsTime()) {
+		t.Errorf("Updated.UpdateTime = %v, want after %v", res.Updated.GetUpdateTime(), created.GetUpdateTime())
+	}
+	gotWU, err := repo.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		t.Fatalf("FetchWorkUnit() failed: %v", err)
+	}
+	if diff := cmp.Diff(res.Updated, gotWU, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchWorkUnit() after update mismatch (-want +got):\n%s", diff)
 	}
 
 	noopRes, err := repo.UpdateWorkUnit(ctx, update)
@@ -378,26 +410,40 @@ func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
 		t.Errorf("UpdateWorkUnit(missing) = %v, want ErrNotFound", err)
 	}
 
-	var wg sync.WaitGroup
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("essPool.Begin() failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(context.Background()) }()
+	if _, err := holdTx.Exec(ctx, lockWorkUnitSQL.String(), xid, wid); err != nil {
+		t.Fatalf("holdTx lock failed: %v", err)
+	}
+
+	var started, done sync.WaitGroup
 	errs := make(chan error, 2)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	started.Add(2)
+	done.Go(func() {
+		started.Done()
 		_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
 			XID: xid, WID: wid, WorkUnit: &essmsgpb.WorkUnit{Notes: "concurrent-notes"},
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
 		})
 		errs <- err
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	done.Go(func() {
+		started.Done()
 		_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
 			XID: xid, WID: wid, WorkUnit: &essmsgpb.WorkUnit{Tags: []string{"concurrent-tag"}},
 			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
 		})
 		errs <- err
-	}()
-	wg.Wait()
+	})
+	started.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("holdTx.Commit() failed: %v", err)
+	}
+	done.Wait()
 	close(errs)
 	for err := range errs {
 		if err != nil {
@@ -408,8 +454,11 @@ func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchWorkUnit() after concurrent updates failed: %v", err)
 	}
-	if finalWU.GetNotes() != "concurrent-notes" || !slices.Equal(finalWU.GetTags(), []string{"concurrent-tag"}) {
-		t.Errorf("finalWU = (notes=%q, tags=%v), want both concurrent updates preserved", finalWU.GetNotes(), finalWU.GetTags())
+	wantFinal := proto.Clone(res.Updated).(*essmsgpb.WorkUnit)
+	wantFinal.Notes = "concurrent-notes"
+	wantFinal.Tags = []string{"concurrent-tag"}
+	if diff := cmp.Diff(wantFinal, finalWU, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.WorkUnit{}, "update_time")); diff != "" {
+		t.Errorf("FetchWorkUnit() after concurrent updates mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -455,6 +504,39 @@ func TestRepository_IDAllocationAndConcurrentInserts(t *testing.T) {
 	wantIDs := []int64{1, 2, 3, 4, 5, 6, 7, 8}
 	if !slices.Equal(allocated, wantIDs) {
 		t.Errorf("concurrent allocated WIDs = %v, want %v", allocated, wantIDs)
+	}
+
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("essPool.Begin() failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(context.Background()) }()
+	if err := repo.WithTx(holdTx).InsertWorkUnit(ctx, blankWorkUnitProto(xid, workers+1, baseTestTime)); err != nil {
+		t.Fatalf("InsertWorkUnit(caller-supplied wid) failed: %v", err)
+	}
+	var gotID int64
+	var started sync.WaitGroup
+	started.Add(1)
+	done := make(chan error, 1)
+	go func() {
+		started.Done()
+		done <- pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+			txRepo := repo.WithTx(tx)
+			id, err := txRepo.FetchNextWorkUnitID(ctx, xid)
+			if err != nil {
+				return err
+			}
+			gotID = id
+			return txRepo.InsertWorkUnit(ctx, blankWorkUnitProto(xid, id, baseTestTime))
+		})
+	}()
+	started.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("holdTx.Commit() failed: %v", err)
+	}
+	if err := <-done; err != nil || gotID != workers+2 {
+		t.Errorf("allocator after caller-supplied insert = (%d, %v), want (%d, nil)", gotID, err, workers+2)
 	}
 }
 

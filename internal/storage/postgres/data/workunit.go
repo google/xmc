@@ -83,6 +83,14 @@ func (r WorkUnitRow) GetCurrentExecutionUpdateArgs() pgx.StrictNamedArgs {
 	}
 }
 
+func (r WorkUnitRow) currentExecutionRow() WorkUnitExecutionRow {
+	return WorkUnitExecutionRow{
+		Xid: r.Xid, WorkUnitID: r.WorkUnitID, ExecutionID: r.ExecutionID,
+		ExecutionMetadata: r.ExecutionMetadata, WorkUnitStatus: r.WorkUnitStatus,
+		CreateTime: r.ExecutionCreateTime, UpdateTime: r.ExecutionUpdateTime, CompleteTime: r.ExecutionCompleteTime,
+	}
+}
+
 // WorkUnitExecutionRow represents a row in the PostgreSQL WorkUnitExecutions table.
 type WorkUnitExecutionRow struct {
 	Xid               int64      `db:"xid"`
@@ -135,11 +143,7 @@ func WorkUnitExecutionRowToProto(row WorkUnitExecutionRow) (*essmsgpb.WorkUnitEx
 // from the stored ExecutionUpdateTime and ExecutionCompleteTime columns (rather than Spanner
 // WorkUnitCurrentExecutionRowToProto, which sets UpdateTime from Status.UpdateTime and omits CompleteTime).
 func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExecution, error) {
-	wue, err := WorkUnitExecutionRowToProto(WorkUnitExecutionRow{
-		Xid: row.Xid, WorkUnitID: row.WorkUnitID, ExecutionID: row.ExecutionID,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	})
+	wue, err := WorkUnitExecutionRowToProto(row.currentExecutionRow())
 	if err != nil {
 		return nil, err
 	}
@@ -153,11 +157,7 @@ func UpdatingWorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
 	}
-	wue, err := WorkUnitExecutionRowToProto(WorkUnitExecutionRow{
-		Xid: row.Xid, WorkUnitID: row.WorkUnitID, ExecutionID: row.ExecutionID,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	})
+	wue, err := WorkUnitExecutionRowToProto(row.currentExecutionRow())
 	if err != nil {
 		return nil, err
 	}
@@ -279,11 +279,7 @@ func WorkUnitExecutionProtoToRow(execution *essmsgpb.WorkUnitExecution) (WorkUni
 	if err != nil {
 		return WorkUnitExecutionRow{}, err
 	}
-	return WorkUnitExecutionRow{
-		Xid: xid, WorkUnitID: wid, ExecutionID: eid,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	}, nil
+	return row.currentExecutionRow(), nil
 }
 
 func populateDerivedStatusFields(row *WorkUnitRow, status *essmsgpb.WorkUnitStatus) {
