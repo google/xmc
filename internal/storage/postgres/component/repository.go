@@ -17,17 +17,22 @@ package component
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/pkg/components/store"
 )
 
-var _ storage.ComponentRepository = (*Repository)(nil)
+var (
+	_ storage.ComponentRepository   = (*Repository)(nil)
+	_ storage.ComponentTxRepository = (*Repository)(nil)
+)
 
 // Repository manages persistence for component catalog records in PostgreSQL.
 type Repository struct {
@@ -57,4 +62,39 @@ func (r *Repository) GetComponentByID(ctx context.Context, componentID int64) (*
 // ListActiveComponents retrieves all non-deleted components keyed by canonical name.
 func (r *Repository) ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error) {
 	return nil, status.Error(codes.Unimplemented, "postgres component store: ListActiveComponents is not implemented")
+}
+
+// GetComponentWithFence retrieves the active component record and ownership fence in one snapshot.
+func (r *Repository) GetComponentWithFence(ctx context.Context, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error) {
+	return nil, nil, status.Error(codes.Unimplemented, "postgres component store: GetComponentWithFence is not implemented")
+}
+
+// GetSnapshotByID resolves a historical component snapshot by ComponentId and generation.
+func (r *Repository) GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	return nil, nil, status.Error(codes.Unimplemented, "postgres component store: GetSnapshotByID is not implemented")
+}
+
+// GetSnapshotByName resolves a historical component snapshot by canonical name and generation.
+func (r *Repository) GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+	return nil, nil, status.Error(codes.Unimplemented, "postgres component store: GetSnapshotByName is not implemented")
+}
+
+// ReadOwnershipGauges reads the ownership fence and counts stale component owners.
+func (r *Repository) ReadOwnershipGauges(ctx context.Context, cutoff time.Time) (store.OwnershipGauges, error) {
+	return store.OwnershipGauges{}, status.Error(codes.Unimplemented, "postgres component store: ReadOwnershipGauges is not implemented")
+}
+
+// ReadFence reads the current ownership fence holder within the transaction.
+func (r *Repository) ReadFence(ctx context.Context) (*store.ClusterIdentity, error) {
+	return nil, status.Error(codes.Unimplemented, "postgres component store: ReadFence is not implemented")
+}
+
+// WriteFence writes the ownership fence holder within the transaction.
+func (r *Repository) WriteFence(ctx context.Context, prevFence *store.ClusterIdentity, cluster store.ClusterIdentity, refreshed bool) error {
+	return status.Error(codes.Unimplemented, "postgres component store: WriteFence is not implemented")
+}
+
+// ReassignOwnedComponents reassigns active owned components to the declaring cluster.
+func (r *Repository) ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error) {
+	return 0, status.Error(codes.Unimplemented, "postgres component store: ReassignOwnedComponents is not implemented")
 }

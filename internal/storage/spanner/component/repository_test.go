@@ -162,6 +162,45 @@ func TestRepository_ReadsAndWithTx(t *testing.T) {
 			t.Fatalf("ReadWriteTransaction() failed: %v", err)
 		}
 	})
+
+	t.Run("FenceAndSnapshots", func(t *testing.T) {
+		cluster := store.ClusterIdentity{UID: "c-uid", Name: "prod", Epoch: 2}
+		if _, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if f, err := txRepo.ReadFence(ctx); err != nil || f != nil {
+				t.Fatalf("ReadFence() = %v, %v, want nil, nil", f, err)
+			}
+			if _, err := txRepo.ReassignOwnedComponents(ctx, cluster.UID, cluster.Epoch); err != nil {
+				return err
+			}
+			return txRepo.WriteFence(ctx, nil, cluster, false)
+		}); err != nil {
+			t.Fatalf("WriteFence() failed: %v", err)
+		}
+
+		gotRec, gotFence, err := repo.GetComponentWithFence(ctx, "app")
+		if err != nil {
+			t.Fatalf("GetComponentWithFence(app) failed: %v", err)
+		}
+		if diff := cmp.Diff(wantApp, gotRec, protocmp.Transform()); diff != "" {
+			t.Errorf("GetComponentWithFence(app) rec mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(&cluster, gotFence); diff != "" {
+			t.Errorf("GetComponentWithFence(app) fence mismatch (-want +got):\n%s", diff)
+		}
+
+		gauges, err := repo.ReadOwnershipGauges(ctx, baseTime)
+		if err != nil || !gauges.FenceDeclared || gauges.FenceEpoch != 2 {
+			t.Errorf("ReadOwnershipGauges() = %+v, %v, want FenceDeclared=true, FenceEpoch=2", gauges, err)
+		}
+
+		if _, _, err := repo.GetSnapshotByID(ctx, 1, 99, "app", baseTime, baseTime); err == nil {
+			t.Errorf("GetSnapshotByID(missing) = nil, want NotFound error")
+		}
+		if _, _, err := repo.GetSnapshotByName(ctx, "app", 99); err == nil {
+			t.Errorf("GetSnapshotByName(missing) = nil, want NotFound error")
+		}
+	})
 }
 
 // componentRowColumns lists the columns of ComponentColumnsSQL in order.
@@ -280,7 +319,8 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 	ro := client.ReadOnlyTransaction()
 	defer ro.Close()
 
-	got, err := NewRepository(client).WithTx(ro).GetComponentByID(ctx, wantApp.ComponentID)
+	txRepo := NewRepository(client).WithTx(ro)
+	got, err := txRepo.GetComponentByID(ctx, wantApp.ComponentID)
 	if err != nil {
 		t.Fatalf("WithTx(ReadOnlyTransaction).GetComponentByID(%d) failed: %v", wantApp.ComponentID, err)
 	}
@@ -289,22 +329,49 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 	}
 }
 
-// TestRepository_NilClientOrTransaction checks that a read without a client, or through WithTx
-// without a transaction, fails instead of dereferencing nil.
+// TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
+// WithTx without the required transaction, fail instead of dereferencing nil.
 func TestRepository_NilClientOrTransaction(t *testing.T) {
-	repos := map[string]interface {
+	ctx := context.Background()
+	nilRepo := NewRepository(nil)
+	nilTxRepo := nilRepo.WithTx(nil)
+
+	for name, r := range map[string]interface {
 		GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
 		ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
+		GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
+		GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
 	}{
-		"NewRepository(nil)": NewRepository(nil),
-		"WithTx(nil)":        NewRepository(nil).WithTx(nil),
-	}
-	for name, r := range repos {
-		if _, err := r.GetActiveComponent(context.Background(), "app"); err == nil {
+		"NewRepository(nil)": nilRepo,
+		"WithTx(nil)":        nilTxRepo,
+	} {
+		if _, err := r.GetActiveComponent(ctx, "app"); err == nil {
 			t.Errorf("%s.GetActiveComponent() error = nil, want an error", name)
 		}
-		if _, err := r.ListActiveComponents(context.Background()); err == nil {
+		if _, err := r.ListActiveComponents(ctx); err == nil {
 			t.Errorf("%s.ListActiveComponents() error = nil, want an error", name)
 		}
+		if _, _, err := r.GetSnapshotByID(ctx, 1, 1, "app", baseTime, baseTime); err == nil {
+			t.Errorf("%s.GetSnapshotByID() error = nil, want an error", name)
+		}
+		if _, _, err := r.GetSnapshotByName(ctx, "app", 1); err == nil {
+			t.Errorf("%s.GetSnapshotByName() error = nil, want an error", name)
+		}
+	}
+
+	if _, _, err := nilRepo.GetComponentWithFence(ctx, "app"); err == nil {
+		t.Errorf("NewRepository(nil).GetComponentWithFence() error = nil, want an error")
+	}
+	if _, err := nilRepo.ReadOwnershipGauges(ctx, baseTime); err == nil {
+		t.Errorf("NewRepository(nil).ReadOwnershipGauges() error = nil, want an error")
+	}
+	if _, err := nilTxRepo.ReadFence(ctx); err == nil {
+		t.Errorf("WithTx(nil).ReadFence() error = nil, want an error")
+	}
+	if err := nilTxRepo.WriteFence(ctx, nil, store.ClusterIdentity{}, false); err == nil {
+		t.Errorf("WithTx(nil).WriteFence() error = nil, want an error")
+	}
+	if _, err := nilTxRepo.ReassignOwnedComponents(ctx, "uid", 1); err == nil {
+		t.Errorf("WithTx(nil).ReassignOwnedComponents() error = nil, want an error")
 	}
 }

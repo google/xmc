@@ -17,12 +17,14 @@ package component
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	"xmanager_cloud/pkg/components/store"
 )
 
 func TestRepository_Unimplemented(t *testing.T) {
@@ -30,6 +32,7 @@ func TestRepository_Unimplemented(t *testing.T) {
 	txRepo := repo.WithTx(nil)
 
 	ctx := context.Background()
+	now := time.Now()
 	tests := []struct {
 		name string
 		call func() error
@@ -56,23 +59,50 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "TxRepository.GetActiveComponent",
+			name: "Repository.GetComponentWithFence",
 			call: func() error {
-				_, err := txRepo.GetActiveComponent(ctx, "app")
+				_, _, err := repo.GetComponentWithFence(ctx, "app")
 				return err
 			},
 		},
 		{
-			name: "TxRepository.GetComponentByID",
+			name: "Repository.GetSnapshotByID",
 			call: func() error {
-				_, err := txRepo.GetComponentByID(ctx, 1)
+				_, _, err := repo.GetSnapshotByID(ctx, 1, 1, "app", now, now)
 				return err
 			},
 		},
 		{
-			name: "TxRepository.ListActiveComponents",
+			name: "Repository.GetSnapshotByName",
 			call: func() error {
-				_, err := txRepo.ListActiveComponents(ctx)
+				_, _, err := repo.GetSnapshotByName(ctx, "app", 1)
+				return err
+			},
+		},
+		{
+			name: "Repository.ReadOwnershipGauges",
+			call: func() error {
+				_, err := repo.ReadOwnershipGauges(ctx, now)
+				return err
+			},
+		},
+		{
+			name: "TxRepository.ReadFence",
+			call: func() error {
+				_, err := txRepo.ReadFence(ctx)
+				return err
+			},
+		},
+		{
+			name: "TxRepository.WriteFence",
+			call: func() error {
+				return txRepo.WriteFence(ctx, nil, store.ClusterIdentity{}, false)
+			},
+		},
+		{
+			name: "TxRepository.ReassignOwnedComponents",
+			call: func() error {
+				_, err := txRepo.ReassignOwnedComponents(ctx, "uid", 1)
 				return err
 			},
 		},
