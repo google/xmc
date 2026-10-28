@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/clilogincode"
+	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
@@ -66,6 +67,7 @@ type Storage struct {
 	pauseStateRepository   *PauseStateRepository
 	pausedTaskRepository   *PausedTaskRepository
 	cliLoginCodeRepository *CLILoginCodeRepository
+	componentRepository    *component.Repository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
@@ -83,6 +85,7 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
 			PauseState:     s.pauseStateRepository.WithTx(spannerTx),
 			PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
+			Components:     s.componentRepository.WithTx(spannerTx),
 		}
 		return fn(txCtx, tx)
 	})
@@ -105,6 +108,11 @@ func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 // CLILoginCodes returns the repository for one-time CLI login codes.
 func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
 	return s.cliLoginCodeRepository
+}
+
+// Components returns the repository for component catalog persistence.
+func (s *Storage) Components() storage.ComponentRepository {
+	return s.componentRepository
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -178,5 +186,6 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 		pauseStateRepository:    pauseStateRepo,
 		pausedTaskRepository:    pausedTaskRepo,
 		cliLoginCodeRepository:  cliLoginCodeRepo,
+		componentRepository:     component.NewRepository(client),
 	}, nil
 }

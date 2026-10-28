@@ -26,6 +26,7 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
+        "//internal/storage/spanner/component",
         "//pkg/components/naming",
         "//pkg/components/semver",
         "//pkg/components/store",
@@ -60,6 +61,7 @@ go_test(
         "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
         "//internal/storage/data",
+        "//internal/storage/spanner/component",
         "//internal/storage/spanner/data",
         "//internal/storage/spanner/emulator",
         "//pkg/components/store",

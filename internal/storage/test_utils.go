@@ -236,9 +236,10 @@ type MockStorage struct {
 	PauseStateRepository   PauseStateRepository
 	PausedTaskRepository   PausedTaskRepository
 	CLILoginCodeRepository CLILoginCodeRepository
+	ComponentRepository    ComponentRepository
 	// Transaction optionally overrides Transaction.XIDs, Transaction.StatusMessages,
-	// Transaction.StatusHistory, Transaction.PauseState, and Transaction.PausedTasks
-	// passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction.StatusHistory, Transaction.PauseState, Transaction.PausedTasks, and
+	// Transaction.Components passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 }
 
@@ -391,6 +392,7 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	}
 	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
 	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
+	componentsTx, _ := s.ComponentRepository.(ComponentTxRepository)
 	xidsTx := s.XidTxRepository
 	if xidsTx == nil {
 		xidsTx = &MockXidTxRepository{FetchErr: s.FetchErr}
@@ -411,6 +413,7 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		StatusHistory:  statusHistTx,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
+		Components:     componentsTx,
 	}
 	applyTransactionOverrides(tx, s.Transaction)
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
@@ -440,6 +443,9 @@ func applyTransactionOverrides(tx, overrides *Transaction) {
 	if overrides.PausedTasks != nil {
 		tx.PausedTasks = overrides.PausedTasks
 	}
+	if overrides.Components != nil {
+		tx.Components = overrides.Components
+	}
 }
 
 // PauseState returns the configured pause state repository (nil if unset).
@@ -455,6 +461,11 @@ func (s *MockStorage) PausedTasks() PausedTaskRepository {
 // CLILoginCodes returns the configured CLI login code repository (nil if unset).
 func (s *MockStorage) CLILoginCodes() CLILoginCodeRepository {
 	return s.CLILoginCodeRepository
+}
+
+// Components returns the configured component repository (nil if unset).
+func (s *MockStorage) Components() ComponentRepository {
+	return s.ComponentRepository
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.
