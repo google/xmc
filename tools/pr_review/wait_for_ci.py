@@ -168,7 +168,12 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     if repo:
         cmd += ["--repo", repo]
     res = subprocess.run(
-        cmd, capture_output=True, text=True, check=True, timeout=GH_COMMAND_TIMEOUT_SECONDS
+        cmd,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=True,
+        timeout=GH_COMMAND_TIMEOUT_SECONDS,
     )
     return [classify_check(entry) for entry in parse_rollup(res.stdout)]
 
@@ -183,7 +188,12 @@ def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
     cmd = ["gh", "api", f"repos/{run_repo}/actions/jobs/{job_id}/logs"]
     try:
         res = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, timeout=GH_COMMAND_TIMEOUT_SECONDS
+            cmd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+            timeout=GH_COMMAND_TIMEOUT_SECONDS,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return f"<gh api job logs failed: {e}>"
