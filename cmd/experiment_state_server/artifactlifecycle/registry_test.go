@@ -25,40 +25,13 @@ import (
 	"xmanager_cloud/internal/storage"
 )
 
-type fakeRule struct {
-	name              string
-	matchesFn         func(a *essmsgpb.Artifact) bool
-	targetStates      []essmsgpb.WorkUnitStatus_WorkUnitState
-	stateChangedCalls int
-	supersededCalls   int
-}
-
-func (f *fakeRule) Name() string { return f.name }
-func (f *fakeRule) Matches(a *essmsgpb.Artifact) bool {
-	if f.matchesFn != nil {
-		return f.matchesFn(a)
-	}
-	return false
-}
-func (f *fakeRule) TargetExecutionStates() []essmsgpb.WorkUnitStatus_WorkUnitState {
-	return f.targetStates
-}
-func (f *fakeRule) OnExecutionStateChanged(_ context.Context, _ storage.Storage, _ *taskqueuepb.ArtifactLifecycleEvent, _ *essmsgpb.Artifact) error {
-	f.stateChangedCalls++
-	return nil
-}
-func (f *fakeRule) OnExecutionSuperseded(_ context.Context, _ storage.Storage, _, _, _ int64, _ *essmsgpb.Artifact) error {
-	f.supersededCalls++
-	return nil
-}
-
 func TestRequiredNotifyWhenAnnotation(t *testing.T) {
-	rule := &fakeRule{
-		name: "test-rule",
-		matchesFn: func(a *essmsgpb.Artifact) bool {
+	rule := artifactlifecycle.LifecycleRule{
+		Name: "test-rule",
+		Matches: func(a *essmsgpb.Artifact) bool {
 			return a.GetPayload().GetManagedXprof() != nil
 		},
-		targetStates: []essmsgpb.WorkUnitStatus_WorkUnitState{
+		TargetExecutionStates: []essmsgpb.WorkUnitStatus_WorkUnitState{
 			essmsgpb.WorkUnitStatus_STARTING,
 			essmsgpb.WorkUnitStatus_RUNNING,
 			essmsgpb.WorkUnitStatus_COMPLETED,
@@ -102,10 +75,19 @@ func TestRequiredNotifyWhenAnnotation(t *testing.T) {
 
 func TestRegistryDispatch(t *testing.T) {
 	ctx := context.Background()
-	rule := &fakeRule{
-		name: "test-rule",
-		matchesFn: func(a *essmsgpb.Artifact) bool {
+	var stateChangedCalls, supersededCalls int
+	rule := artifactlifecycle.LifecycleRule{
+		Name: "test-rule",
+		Matches: func(a *essmsgpb.Artifact) bool {
 			return a.GetPayload().GetManagedXprof() != nil
+		},
+		OnExecutionStateChanged: func(_ context.Context, _ storage.Storage, _ *taskqueuepb.ArtifactLifecycleEvent, _ *essmsgpb.Artifact) error {
+			stateChangedCalls++
+			return nil
+		},
+		OnExecutionSuperseded: func(_ context.Context, _ storage.Storage, _, _, _ int64, _ *essmsgpb.Artifact) error {
+			supersededCalls++
+			return nil
 		},
 	}
 	reg := artifactlifecycle.NewRegistry(rule)
@@ -133,14 +115,14 @@ func TestRegistryDispatch(t *testing.T) {
 	if err := reg.HandleExecutionStateChanged(ctx, mockStore, event); err != nil {
 		t.Fatalf("HandleExecutionStateChanged failed: %v", err)
 	}
-	if rule.stateChangedCalls != 1 {
-		t.Errorf("stateChangedCalls = %d, want 1", rule.stateChangedCalls)
+	if stateChangedCalls != 1 {
+		t.Errorf("stateChangedCalls = %d, want 1", stateChangedCalls)
 	}
 
 	if err := reg.HandleExecutionSuperseded(ctx, mockStore, 1, 2, 3); err != nil {
 		t.Fatalf("HandleExecutionSuperseded failed: %v", err)
 	}
-	if rule.supersededCalls != 1 {
-		t.Errorf("supersededCalls = %d, want 1", rule.supersededCalls)
+	if supersededCalls != 1 {
+		t.Errorf("supersededCalls = %d, want 1", supersededCalls)
 	}
 }

@@ -26,44 +26,44 @@ import (
 	"xmanager_cloud/internal/storage"
 )
 
-// Rule defines an artifact lifecycle policy for an artifact type.
-type Rule interface {
-	// Name returns a human-readable identifier for the rule.
-	Name() string
+// LifecycleRule declaratively defines an artifact lifecycle policy for an artifact type.
+type LifecycleRule struct {
+	// Name is a human-readable identifier for the rule.
+	Name string
 
 	// Matches returns true if this rule governs the given artifact.
-	Matches(artifact *essmsgpb.Artifact) bool
+	Matches func(artifact *essmsgpb.Artifact) bool
 
-	// TargetExecutionStates returns the set of WorkUnitExecution states that require notification.
-	TargetExecutionStates() []essmsgpb.WorkUnitStatus_WorkUnitState
+	// TargetExecutionStates is the set of WorkUnitExecution states that require notification.
+	TargetExecutionStates []essmsgpb.WorkUnitStatus_WorkUnitState
 
 	// OnExecutionStateChanged handles a matching state transition event.
-	OnExecutionStateChanged(ctx context.Context, store storage.Storage, event *taskqueuepb.ArtifactLifecycleEvent, artifact *essmsgpb.Artifact) error
+	OnExecutionStateChanged func(ctx context.Context, store storage.Storage, event *taskqueuepb.ArtifactLifecycleEvent, artifact *essmsgpb.Artifact) error
 
 	// OnExecutionSuperseded is invoked when RestartWorkUnit advances to EID+1
 	// to cleanly finalize external resources associated with the superseded execution.
-	OnExecutionSuperseded(ctx context.Context, store storage.Storage, xid, wid, oldEID int64, artifact *essmsgpb.Artifact) error
+	OnExecutionSuperseded func(ctx context.Context, store storage.Storage, xid, wid, oldEID int64, artifact *essmsgpb.Artifact) error
 }
 
 // Registry manages the set of registered artifact lifecycle rules.
 type Registry struct {
-	rules []Rule
+	rules []LifecycleRule
 }
 
 // NewRegistry creates a new Registry with the provided rules.
-func NewRegistry(rules ...Rule) *Registry {
+func NewRegistry(rules ...LifecycleRule) *Registry {
 	return &Registry{rules: rules}
 }
 
 // Register adds a rule to the registry.
-func (r *Registry) Register(rule Rule) {
-	if rule != nil {
+func (r *Registry) Register(rule LifecycleRule) {
+	if rule.Matches != nil {
 		r.rules = append(r.rules, rule)
 	}
 }
 
 // Rules returns all registered rules.
-func (r *Registry) Rules() []Rule {
+func (r *Registry) Rules() []LifecycleRule {
 	return r.rules
 }
 
@@ -78,8 +78,8 @@ func (r *Registry) RequiredNotifyWhenAnnotation(artifacts []*essmsgpb.Artifact) 
 	stateSet := make(map[essmsgpb.WorkUnitStatus_WorkUnitState]bool)
 	for _, art := range artifacts {
 		for _, rule := range r.rules {
-			if rule.Matches(art) {
-				for _, state := range rule.TargetExecutionStates() {
+			if rule.Matches != nil && rule.Matches(art) {
+				for _, state := range rule.TargetExecutionStates {
 					stateSet[state] = true
 				}
 			}
@@ -118,9 +118,9 @@ func (r *Registry) HandleExecutionStateChanged(ctx context.Context, store storag
 
 	for _, art := range artifacts {
 		for _, rule := range r.rules {
-			if rule.Matches(art) {
+			if rule.Matches != nil && rule.Matches(art) && rule.OnExecutionStateChanged != nil {
 				if err := rule.OnExecutionStateChanged(ctx, store, event, art); err != nil {
-					logging.Error(ctx, "Lifecycle rule OnExecutionStateChanged failed", "rule", rule.Name(), "error", err)
+					logging.Error(ctx, "Lifecycle rule OnExecutionStateChanged failed", "rule", rule.Name, "error", err)
 					return err
 				}
 			}
@@ -142,9 +142,9 @@ func (r *Registry) HandleExecutionSuperseded(ctx context.Context, store storage.
 
 	for _, art := range artifacts {
 		for _, rule := range r.rules {
-			if rule.Matches(art) {
+			if rule.Matches != nil && rule.Matches(art) && rule.OnExecutionSuperseded != nil {
 				if err := rule.OnExecutionSuperseded(ctx, store, xid, wid, oldEID, art); err != nil {
-					logging.Error(ctx, "Lifecycle rule OnExecutionSuperseded failed", "rule", rule.Name(), "error", err)
+					logging.Error(ctx, "Lifecycle rule OnExecutionSuperseded failed", "rule", rule.Name, "error", err)
 					return err
 				}
 			}

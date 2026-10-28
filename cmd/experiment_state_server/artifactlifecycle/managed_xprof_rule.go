@@ -87,21 +87,29 @@ type ManagedXprofRule struct {
 	location    string
 }
 
-// NewManagedXprofRule constructs a new ManagedXprofRule.
-func NewManagedXprofRule(mlRunClient MLRunClient, projectID, location string) *ManagedXprofRule {
+// NewManagedXprofRule constructs a declarative LifecycleRule for ManagedXprof artifacts.
+func NewManagedXprofRule(mlRunClient MLRunClient, projectID, location string) LifecycleRule {
 	if location == "" {
 		location = "us-central1"
 	}
-	return &ManagedXprofRule{
+	r := &ManagedXprofRule{
 		mlRunClient: mlRunClient,
 		projectID:   projectID,
 		location:    location,
 	}
-}
-
-// Name returns the rule name.
-func (r *ManagedXprofRule) Name() string {
-	return "ManagedXprofRule"
+	return LifecycleRule{
+		Name:    "ManagedXprofRule",
+		Matches: r.Matches,
+		TargetExecutionStates: []essmsgpb.WorkUnitStatus_WorkUnitState{
+			essmsgpb.WorkUnitStatus_STARTING,
+			essmsgpb.WorkUnitStatus_RUNNING,
+			essmsgpb.WorkUnitStatus_COMPLETED,
+			essmsgpb.WorkUnitStatus_FAILED,
+			essmsgpb.WorkUnitStatus_STOPPED,
+		},
+		OnExecutionStateChanged: r.OnExecutionStateChanged,
+		OnExecutionSuperseded:   r.OnExecutionSuperseded,
+	}
 }
 
 // Matches returns true if the artifact contains a ManagedXprof payload.
@@ -110,17 +118,6 @@ func (r *ManagedXprofRule) Matches(artifact *essmsgpb.Artifact) bool {
 		return false
 	}
 	return artifact.GetPayload().GetManagedXprof() != nil
-}
-
-// TargetExecutionStates returns the states requiring notifications.
-func (r *ManagedXprofRule) TargetExecutionStates() []essmsgpb.WorkUnitStatus_WorkUnitState {
-	return []essmsgpb.WorkUnitStatus_WorkUnitState{
-		essmsgpb.WorkUnitStatus_STARTING,
-		essmsgpb.WorkUnitStatus_RUNNING,
-		essmsgpb.WorkUnitStatus_COMPLETED,
-		essmsgpb.WorkUnitStatus_FAILED,
-		essmsgpb.WorkUnitStatus_STOPPED,
-	}
 }
 
 // OnExecutionStateChanged handles state transitions for ManagedXprof artifacts.
