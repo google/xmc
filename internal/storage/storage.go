@@ -383,18 +383,13 @@ type ComponentRepository interface {
 	// GetComponentWithFence returns the active record of canonicalName and the ownership fence holder (nil before
 	// the first declaration) from one snapshot.
 	GetComponentWithFence(ctx context.Context, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error)
-	// GetSnapshotByID returns the snapshot of componentID at generation stamped with createTime and updateTime
-	// (Dependencies nil), or codes.NotFound when missing.
-	GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
-	// GetSnapshotByName returns the snapshot at generation of the newest component named canonicalName (including
-	// deleted ones), stamped with that component's timestamps, or codes.NotFound when missing.
-	GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
 	// ReadOwnershipGauges reads the fence and counts active owned components last seen at or before cutoff in one snapshot.
 	ReadOwnershipGauges(ctx context.Context, cutoff time.Time) (store.OwnershipGauges, error)
 }
 
-// ComponentTxRepository defines component catalog operations scoped to a read-write transaction.
-// Reads hold what they return (including an absent fence row) until commit so concurrent transactions cannot change it.
+// ComponentTxRepository defines transactional component catalog operations. A read-only binding supports only
+// catalog and snapshot reads; in a read-write transaction, reads hold what they return (including an absent fence
+// row, e.g. via a seeded singleton row locked with FOR UPDATE in PostgreSQL) until commit.
 type ComponentTxRepository interface {
 	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
@@ -402,15 +397,18 @@ type ComponentTxRepository interface {
 	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
 	// ListActiveComponents returns every non-deleted record keyed by canonical name with its active dependencies.
 	ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
-	// GetSnapshotByID returns the snapshot of componentID at generation stamped with createTime and updateTime.
+	// GetSnapshotByID returns the snapshot of componentID at generation stamped with createTime and updateTime
+	// (Dependencies nil), or codes.NotFound when missing.
 	GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
-	// GetSnapshotByName returns the snapshot at generation of the newest component named canonicalName.
+	// GetSnapshotByName returns the snapshot at generation of the newest component named canonicalName (including
+	// deleted ones), stamped with that component's timestamps, or codes.NotFound when missing.
 	GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
 	// ReadFence returns the ownership fence holder, or nil before the first declaration.
 	ReadFence(ctx context.Context) (*store.ClusterIdentity, error)
-	// WriteFence records an accepted declaration by cluster over prevFence. A refresh updates only LastSeenTime
-	// and a changed name; otherwise it writes the full fence with DeclaredTime and LastSeenTime at commit time.
-	WriteFence(ctx context.Context, prevFence *store.ClusterIdentity, cluster store.ClusterIdentity, refreshed bool) error
+	// RefreshFence updates LastSeenTime to the commit time and, when newName is non-nil, ActiveClusterName.
+	RefreshFence(ctx context.Context, newName *string) error
+	// ReplaceFence writes cluster as the fence holder with DeclaredTime and LastSeenTime at commit time.
+	ReplaceFence(ctx context.Context, cluster store.ClusterIdentity) error
 	// ReassignOwnedComponents moves every active owned component to clusterUID at epoch with no owner UID,
 	// sets SourceLastSeenTime to the commit time, leaves UpdateTime unchanged, and returns the count.
 	ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error)

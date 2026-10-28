@@ -66,16 +66,16 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "Repository.GetSnapshotByID",
+			name: "TxRepository.GetSnapshotByID",
 			call: func() error {
-				_, _, err := repo.GetSnapshotByID(ctx, 1, 1, "app", now, now)
+				_, _, err := txRepo.GetSnapshotByID(ctx, 1, 1, "app", now, now)
 				return err
 			},
 		},
 		{
-			name: "Repository.GetSnapshotByName",
+			name: "TxRepository.GetSnapshotByName",
 			call: func() error {
-				_, _, err := repo.GetSnapshotByName(ctx, "app", 1)
+				_, _, err := txRepo.GetSnapshotByName(ctx, "app", 1)
 				return err
 			},
 		},
@@ -94,9 +94,15 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "TxRepository.WriteFence",
+			name: "TxRepository.RefreshFence",
 			call: func() error {
-				return txRepo.WriteFence(ctx, nil, store.ClusterIdentity{}, false)
+				return txRepo.RefreshFence(ctx, nil)
+			},
+		},
+		{
+			name: "TxRepository.ReplaceFence",
+			call: func() error {
+				return txRepo.ReplaceFence(ctx, store.ClusterIdentity{})
 			},
 		},
 		{

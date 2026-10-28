@@ -186,24 +186,6 @@ func (r *Repository) GetComponentWithFence(ctx context.Context, canonicalName st
 	return rec, fence, nil
 }
 
-// GetSnapshotByID resolves a historical component snapshot by ComponentId and generation.
-func (r *Repository) GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	q, err := r.single()
-	if err != nil {
-		return nil, nil, err
-	}
-	return getSnapshotByID(ctx, q, componentID, generation, canonicalName, createTime, updateTime)
-}
-
-// GetSnapshotByName resolves a historical component snapshot by canonical name and generation.
-func (r *Repository) GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	q, err := r.single()
-	if err != nil {
-		return nil, nil, err
-	}
-	return getSnapshotByName(ctx, q, canonicalName, generation)
-}
-
 // ReadOwnershipGauges reads the ownership fence and counts active components whose owner last-seen
 // timestamp is at or before cutoff in one snapshot. Records reassigned by a takeover count only once
 // the adoption grace period that starts at the takeover commit has ended.
@@ -245,12 +227,29 @@ func (r *TxRepository) ListActiveComponents(ctx context.Context) (map[string]*st
 
 // GetSnapshotByID resolves a historical component snapshot by ComponentId and generation within the transaction.
 func (r *TxRepository) GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	return getSnapshotByID(ctx, r.q, componentID, generation, canonicalName, createTime, updateTime)
+	stmt := spanner.Statement{SQL: selectSnapshotByComponentIDAndGenSQL, Params: map[string]any{"id": componentID, "gen": generation}}
+	row, err := querySnapshotRow(ctx, r.q, stmt, canonicalName, generation)
+	if err != nil {
+		return nil, nil, err
+	}
+	return decodeSnapshotRecord(row, canonicalName, createTime, updateTime)
 }
 
 // GetSnapshotByName resolves a historical component snapshot by canonical name and generation within the transaction.
 func (r *TxRepository) GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	return getSnapshotByName(ctx, r.q, canonicalName, generation)
+	stmt := spanner.Statement{SQL: selectSnapshotByNameAndGenSQL, Params: map[string]any{"name": canonicalName, "gen": generation}}
+	row, err := querySnapshotRow(ctx, r.q, stmt, canonicalName, generation)
+	if err != nil {
+		return nil, nil, err
+	}
+	var createTime, updateTime time.Time
+	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read CreateTime: %w", err)
+	}
+	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
+		return nil, nil, fmt.Errorf("failed to read UpdateTime: %w", err)
+	}
+	return decodeSnapshotRecord(row, canonicalName, createTime, updateTime)
 }
 
 // ReadFence returns the current ownership fence holder within the transaction, or nil before the first declaration.
@@ -272,18 +271,23 @@ func (r *TxRepository) ReadFence(ctx context.Context) (*store.ClusterIdentity, e
 	return &fence, nil
 }
 
-// WriteFence buffers the write of an accepted declaration by cluster over prevFence. A refresh
-// updates only LastSeenTime (and any changed name) so it takes no write lock on Epoch or UID.
-func (r *TxRepository) WriteFence(_ context.Context, prevFence *store.ClusterIdentity, cluster store.ClusterIdentity, refreshed bool) error {
+// RefreshFence updates LastSeenTime to the commit time and, when newName is non-nil, ActiveClusterName,
+// taking no write lock on Epoch or ActiveClusterUid.
+func (r *TxRepository) RefreshFence(_ context.Context, newName *string) error {
 	if r.tx == nil {
-		return fmt.Errorf("cannot write the ownership fence without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+		return fmt.Errorf("cannot refresh the ownership fence without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
 	}
-	if refreshed {
-		cols := map[string]any{"FenceId": fenceID, "LastSeenTime": spanner.CommitTimestamp}
-		if prevFence != nil && prevFence.Name != cluster.Name {
-			cols["ActiveClusterName"] = cluster.Name
-		}
-		return r.tx.BufferWrite([]*spanner.Mutation{spanner.UpdateMap(fenceTable, cols)})
+	cols := map[string]any{"FenceId": fenceID, "LastSeenTime": spanner.CommitTimestamp}
+	if newName != nil {
+		cols["ActiveClusterName"] = *newName
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{spanner.UpdateMap(fenceTable, cols)})
+}
+
+// ReplaceFence writes cluster as the fence holder with DeclaredTime and LastSeenTime at commit time.
+func (r *TxRepository) ReplaceFence(_ context.Context, cluster store.ClusterIdentity) error {
+	if r.tx == nil {
+		return fmt.Errorf("cannot replace the ownership fence without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
 	}
 	return r.tx.BufferWrite([]*spanner.Mutation{spanner.InsertOrUpdateMap(fenceTable, map[string]any{
 		"FenceId": fenceID, "ActiveClusterUid": cluster.UID, "ActiveClusterName": cluster.Name,
@@ -389,31 +393,6 @@ func attachActiveDependencies(ctx context.Context, q Queryable, componentsByID m
 		}
 		return nil
 	})
-}
-
-func getSnapshotByID(ctx context.Context, q Queryable, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	stmt := spanner.Statement{SQL: selectSnapshotByComponentIDAndGenSQL, Params: map[string]any{"id": componentID, "gen": generation}}
-	row, err := querySnapshotRow(ctx, q, stmt, canonicalName, generation)
-	if err != nil {
-		return nil, nil, err
-	}
-	return decodeSnapshotRecord(row, canonicalName, createTime, updateTime)
-}
-
-func getSnapshotByName(ctx context.Context, q Queryable, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	stmt := spanner.Statement{SQL: selectSnapshotByNameAndGenSQL, Params: map[string]any{"name": canonicalName, "gen": generation}}
-	row, err := querySnapshotRow(ctx, q, stmt, canonicalName, generation)
-	if err != nil {
-		return nil, nil, err
-	}
-	var createTime, updateTime time.Time
-	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
-		return nil, nil, fmt.Errorf("failed to read CreateTime: %w", err)
-	}
-	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
-		return nil, nil, fmt.Errorf("failed to read UpdateTime: %w", err)
-	}
-	return decodeSnapshotRecord(row, canonicalName, createTime, updateTime)
 }
 
 // querySnapshotRow returns the first snapshot row matched by stmt, or a NotFound status error when

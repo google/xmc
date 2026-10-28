@@ -62,12 +62,19 @@ func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txn *spanner.R
 		return nil, err
 	}
 	res := &store.DeclarationResult{Outcome: outcome, Active: cluster}
+	if outcome == store.DeclarationRefreshed {
+		var newName *string
+		if fence.Name != cluster.Name {
+			newName = &cluster.Name
+		}
+		return res, txRepo.RefreshFence(ctx, newName)
+	}
 	if outcome == store.DeclarationTakeover {
 		if res.RecordsReassigned, err = txRepo.ReassignOwnedComponents(ctx, cluster.UID, cluster.Epoch); err != nil {
 			return nil, err
 		}
 	}
-	return res, txRepo.WriteFence(ctx, fence, cluster, outcome == store.DeclarationRefreshed)
+	return res, txRepo.ReplaceFence(ctx, cluster)
 }
 
 // checkFence reads the fence within txn and returns the rejection of src by CheckClusterFence.

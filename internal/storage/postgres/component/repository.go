@@ -89,9 +89,14 @@ func (r *Repository) ReadFence(ctx context.Context) (*store.ClusterIdentity, err
 	return nil, status.Error(codes.Unimplemented, "postgres component store: ReadFence is not implemented")
 }
 
-// WriteFence writes the ownership fence holder within the transaction.
-func (r *Repository) WriteFence(ctx context.Context, prevFence *store.ClusterIdentity, cluster store.ClusterIdentity, refreshed bool) error {
-	return status.Error(codes.Unimplemented, "postgres component store: WriteFence is not implemented")
+// RefreshFence updates the ownership fence LastSeenTime (and optional name) within the transaction.
+func (r *Repository) RefreshFence(ctx context.Context, newName *string) error {
+	return status.Error(codes.Unimplemented, "postgres component store: RefreshFence is not implemented")
+}
+
+// ReplaceFence writes the ownership fence holder within the transaction.
+func (r *Repository) ReplaceFence(ctx context.Context, cluster store.ClusterIdentity) error {
+	return status.Error(codes.Unimplemented, "postgres component store: ReplaceFence is not implemented")
 }
 
 // ReassignOwnedComponents reassigns active owned components to the declaring cluster.
