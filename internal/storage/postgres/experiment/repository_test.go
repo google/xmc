@@ -24,8 +24,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -35,6 +33,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
+	"xmanager_cloud/internal/validator"
 )
 
 var (
@@ -93,11 +92,14 @@ func TestRepository_ValidationAndNilHandle(t *testing.T) {
 	if _, err := nilRepo.FetchExperimentStatus(ctx, 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilRepo.FetchExperimentStatus(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
-	if _, _, err := nilRepo.ListExperiments(ctx, 10, "", "", "", 0); status.Code(err) != codes.Unimplemented {
-		t.Errorf("ListExperiments() code = %v, want %v", status.Code(err), codes.Unimplemented)
+	if _, err := nilRepo.FetchDriftedComponents(ctx, 0, 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("FetchDriftedComponents(0) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
-	if _, err := nilRepo.FetchDriftedComponents(ctx, 1, 0); status.Code(err) != codes.Unimplemented {
-		t.Errorf("FetchDriftedComponents() code = %v, want %v", status.Code(err), codes.Unimplemented)
+	if _, err := nilRepo.FetchDriftedComponents(ctx, 1, 0); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("nilRepo.FetchDriftedComponents(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, _, err := nilRepo.ListExperiments(ctx, 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("nilRepo.ListExperiments() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 	if _, err := nilRepo.UpdateExperiment(ctx, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilRepo.UpdateExperiment() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
@@ -119,6 +121,30 @@ func TestRepository_ValidationAndNilHandle(t *testing.T) {
 	}
 	if err := nilTxRepo.UpdateExperimentResources(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("UpdateExperimentResources(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+}
+
+func TestExtractExperimentCursor(t *testing.T) {
+	if _, err := ExtractExperimentCursor(nil); err == nil {
+		t.Error("ExtractExperimentCursor(nil) = nil, want error")
+	}
+	if _, err := ExtractExperimentCursor(&essmsgpb.Experiment{Name: "bad"}); err == nil {
+		t.Error("ExtractExperimentCursor(bad) = nil, want error")
+	}
+
+	completeTime := baseTime.Add(time.Hour)
+	exp := prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.CompleteTime = timestamppb.New(completeTime)
+	})
+	cursor, err := ExtractExperimentCursor(exp)
+	if err != nil {
+		t.Fatalf("ExtractExperimentCursor() failed: %v", err)
+	}
+	if _, hasBitRev := cursor["bit_reversed_xid"]; hasBitRev {
+		t.Error("ExtractExperimentCursor() included bit_reversed_xid, want omitted for PostgreSQL")
+	}
+	if cursor["xid"] != int64(100) || cursor["completed"] != completeTime {
+		t.Errorf("ExtractExperimentCursor() = %v, want xid=100 and completed=%v", cursor, completeTime)
 	}
 }
 
@@ -402,5 +428,262 @@ func TestTxRepository_StatusAndResourcesUpdates(t *testing.T) {
 	})
 	if !errors.Is(err, grpcerr.ErrNotFound) {
 		t.Errorf("UpdateExperimentResources(missing) error = %v, want %v", err, grpcerr.ErrNotFound)
+	}
+}
+
+func seedListExperimentsFixture(ctx context.Context, t *testing.T, pool *pgxpool.Pool) []*essmsgpb.Experiment {
+	t.Helper()
+	t1 := baseTime
+	t2 := baseTime.Add(time.Minute)
+	t3 := baseTime.Add(2 * time.Minute)
+	exps := []*essmsgpb.Experiment{
+		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+			e.Name = "experiments/1"
+			e.Title = "Alpha Search"
+			e.Creator = "alice@example.com"
+			e.Priority = 1
+			e.Tags = []string{"alpha", "prod"}
+			e.Notes = "first note"
+			e.Status = &essmsgpb.ExperimentStatus{
+				ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
+				LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
+			}
+			e.CreateTime = timestamppb.New(t1)
+			e.UpdateTime = timestamppb.New(t3)
+			e.CompleteTime = nil
+		}),
+		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+			e.Name = "experiments/2"
+			e.Title = "Beta Vision"
+			e.Creator = "bob@example.com"
+			e.Priority = 3
+			e.Tags = []string{"beta"}
+			e.Notes = "second note"
+			e.Status = &essmsgpb.ExperimentStatus{
+				ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
+				LaunchState: essmsgpb.ExperimentStatus_COMPLETED,
+			}
+			e.CreateTime = timestamppb.New(t2)
+			e.UpdateTime = timestamppb.New(t2)
+			e.CompleteTime = timestamppb.New(t2)
+		}),
+		prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+			e.Name = "experiments/3"
+			e.Title = "Gamma Ranking"
+			e.Creator = "alice@example.com"
+			e.Priority = 2
+			e.Tags = []string{"gamma", "prod"}
+			e.Notes = "third note"
+			e.Status = &essmsgpb.ExperimentStatus{
+				ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
+				LaunchState: essmsgpb.ExperimentStatus_FAILED,
+			}
+			e.CreateTime = timestamppb.New(t3)
+			e.UpdateTime = timestamppb.New(t1)
+			e.CompleteTime = timestamppb.New(t3)
+		}),
+	}
+	for _, exp := range exps {
+		seedExperiment(ctx, t, pool, exp)
+	}
+	return exps
+}
+
+func TestListExperiments_FilterAndOrderBy(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+	exps := seedListExperimentsFixture(ctx, t, essPool)
+
+	tests := []struct {
+		name    string
+		filter  string
+		orderBy string
+		want    []*essmsgpb.Experiment
+	}{
+		{
+			name: "default order created asc",
+			want: []*essmsgpb.Experiment{exps[0], exps[1], exps[2]},
+		},
+		{
+			name:    "order by xid desc",
+			orderBy: "xid desc",
+			want:    []*essmsgpb.Experiment{exps[2], exps[1], exps[0]},
+		},
+		{
+			name:    "order by created desc",
+			orderBy: "created desc",
+			want:    []*essmsgpb.Experiment{exps[2], exps[1], exps[0]},
+		},
+		{
+			name:    "order by updated desc",
+			orderBy: "updated desc",
+			want:    []*essmsgpb.Experiment{exps[0], exps[1], exps[2]},
+		},
+		{
+			name:   "filter by full text search on title",
+			filter: "Vision",
+			want:   []*essmsgpb.Experiment{exps[1]},
+		},
+		{
+			name:   "filter by creator and tag",
+			filter: `creator = "alice@example.com" AND tags:"prod"`,
+			want:   []*essmsgpb.Experiment{exps[0], exps[2]},
+		},
+		{
+			name:   "filter by active_state enum name",
+			filter: `active_state = "ACTIVE"`,
+			want:   []*essmsgpb.Experiment{exps[0]},
+		},
+		{
+			name:   "filter by launch_state enum name",
+			filter: `launch_state = "FAILED"`,
+			want:   []*essmsgpb.Experiment{exps[2]},
+		},
+		{
+			name:   "filter by priority comparison",
+			filter: "priority >= 2",
+			want:   []*essmsgpb.Experiment{exps[1], exps[2]},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, nextToken, err := repo.ListExperiments(ctx, 10, "", tc.filter, tc.orderBy, 0)
+			if err != nil {
+				t.Fatalf("ListExperiments() failed: %v", err)
+			}
+			if nextToken != "" {
+				t.Errorf("nextPageToken = %q, want empty", nextToken)
+			}
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("ListExperiments() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestListExperiments_MultiPagePaginationAndErrors(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+	exps := seedListExperimentsFixture(ctx, t, essPool)
+
+	for _, orderBy := range []string{"", "created asc", "completed desc", "completed asc"} {
+		var collected []*essmsgpb.Experiment
+		pageToken := ""
+		for page := 0; page < 4; page++ {
+			got, nextToken, err := repo.ListExperiments(ctx, 1, pageToken, "", orderBy, 0)
+			if err != nil {
+				t.Fatalf("ListExperiments(orderBy=%q, page=%d) failed: %v", orderBy, page, err)
+			}
+			collected = append(collected, got...)
+			pageToken = nextToken
+			if pageToken == "" {
+				break
+			}
+		}
+		if len(collected) != len(exps) {
+			t.Errorf("ListExperiments(orderBy=%q) collected %d items across pages, want %d", orderBy, len(collected), len(exps))
+		}
+	}
+
+	if _, _, err := repo.ListExperiments(ctx, -1, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListExperiments(pageSize=-1) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if _, _, err := repo.ListExperiments(ctx, 10, "bad-token", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListExperiments(bad token) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if _, _, err := repo.ListExperiments(ctx, 10, "", "unknown_field = 1", "", 0); err == nil {
+		t.Error("ListExperiments(bad filter) error = nil, want error")
+	}
+	if _, _, err := repo.ListExperiments(ctx, 10, "", "", "unknown_field asc", 0); err == nil {
+		t.Error("ListExperiments(bad orderBy) error = nil, want error")
+	}
+}
+
+func seedComponentAndSnapshot(ctx context.Context, t *testing.T, pool *pgxpool.Pool, xid, componentID int64, name string, state, generation int64, observedGen *int64, lockedGen int64) {
+	t.Helper()
+	_, err := pool.Exec(ctx,
+		"INSERT INTO Components (ComponentId, Name, ComponentClass, ConfigProto, State, Generation, ObservedGeneration, CreateTime, UpdateTime) "+
+			"VALUES ($1, $2, 'storage', $3, $4, $5, $6, NOW(), NOW()) "+
+			"ON CONFLICT (ComponentId) DO UPDATE SET State = EXCLUDED.State, Generation = EXCLUDED.Generation, ObservedGeneration = EXCLUDED.ObservedGeneration",
+		componentID, name, []byte{}, state, generation, observedGen,
+	)
+	if err != nil {
+		t.Fatalf("insert Components(%d) failed: %v", componentID, err)
+	}
+	_, err = pool.Exec(ctx,
+		"INSERT INTO ExperimentComponentSnapshots (Xid, ComponentId, LockedGeneration, ConfigProto) VALUES ($1, $2, $3, $4)",
+		xid, componentID, lockedGen, []byte{},
+	)
+	if err != nil {
+		t.Fatalf("insert ExperimentComponentSnapshots(%d, %d) failed: %v", xid, componentID, err)
+	}
+}
+
+func TestFetchDriftedComponents(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	// 1. Active experiment with consistent snapshot -> no drift.
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) { e.Name = "experiments/1001" }))
+	obs1 := int64(1)
+	seedComponentAndSnapshot(ctx, t, essPool, 1001, 201, "clickhouse", 1, 1, &obs1, 1)
+	if diffs, err := repo.FetchDriftedComponents(ctx, 1001, 0); err != nil || len(diffs) != 0 {
+		t.Errorf("FetchDriftedComponents(consistent) = (%v, %v), want empty", diffs, err)
+	}
+
+	// 2. Active experiment with diverged generation and soft-deleted component.
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) { e.Name = "experiments/1002" }))
+	obs2 := int64(2)
+	seedComponentAndSnapshot(ctx, t, essPool, 1002, 202, "redpanda", 1, 2, &obs2, 1)
+	seedComponentAndSnapshot(ctx, t, essPool, 1002, 203, "deleted-comp", storage.ComponentStateDeleted, 2, &obs2, 1)
+
+	diffs, err := repo.FetchDriftedComponents(ctx, 1002, 0)
+	if err != nil {
+		t.Fatalf("FetchDriftedComponents(1002) failed: %v", err)
+	}
+	delName := "deleted-comp"
+	redName := "redpanda"
+	activeState := int64(1)
+	deletedState := int64(storage.ComponentStateDeleted)
+	wantDiffs := []storage.ComponentDiff{
+		{ComponentID: 203, Name: &delName, LockedGeneration: 1, ObservedGeneration: &obs2, State: &deletedState},
+		{ComponentID: 202, Name: &redName, LockedGeneration: 1, ObservedGeneration: &obs2, State: &activeState},
+	}
+	if diff := cmp.Diff(wantDiffs, diffs); diff != "" {
+		t.Errorf("FetchDriftedComponents(1002) diff (-want +got):\n%s", diff)
+	}
+
+	// Limit = 1 returns only the first entry sorted by Name ASC.
+	limited, err := repo.FetchDriftedComponents(ctx, 1002, 1)
+	if err != nil || len(limited) != 1 || limited[0].ComponentID != 203 {
+		t.Errorf("FetchDriftedComponents(limit=1) = (%v, %v), want [ComponentID=203]", limited, err)
+	}
+
+	// 3. Pending reconciliation (ObservedGeneration IS NULL) is not drifted.
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) { e.Name = "experiments/1003" }))
+	seedComponentAndSnapshot(ctx, t, essPool, 1003, 205, "pending-comp", 1, 1, nil, 1)
+	if diffs, err := repo.FetchDriftedComponents(ctx, 1003, 0); err != nil || len(diffs) != 0 {
+		t.Errorf("FetchDriftedComponents(pending) = (%v, %v), want empty", diffs, err)
+	}
+
+	// 4. Terminal (INACTIVE) experiment is excluded from drift detection.
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.Name = "experiments/1004"
+		e.Status = &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_INACTIVE}
+	}))
+	seedComponentAndSnapshot(ctx, t, essPool, 1004, 206, "terminal-comp", 1, 2, &obs2, 1)
+	xid1004, _ := validator.ValidateExperimentName("experiments/1004")
+	if diffs, err := repo.FetchDriftedComponents(ctx, xid1004, 0); err != nil || len(diffs) != 0 {
+		t.Errorf("FetchDriftedComponents(inactive) = (%v, %v), want empty", diffs, err)
+	}
+
+	// 5. Missing catalog row mapping (all nullable fields unset).
+	missingDiff := toComponentDiff(driftedComponentRow{ComponentID: 204, LockedGeneration: 3})
+	if missingDiff.Name != nil || missingDiff.ObservedGeneration != nil || missingDiff.State != nil {
+		t.Errorf("toComponentDiff(missing) = %+v, want nil pointers", missingDiff)
 	}
 }
