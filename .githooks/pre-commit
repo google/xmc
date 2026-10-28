@@ -144,6 +144,20 @@ check_examples_coverage() {
   fi
 }
 
+check_agent_doc_paths() {
+  # In fix mode, only run when agent docs are staged to keep the hook fast.
+  if [ "$MODE" = "fix" ]; then
+    local agent_docs
+    agent_docs=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^\.agents/.*\.md$|(^|/)AGENTS\.md$' || true)
+    if [ -z "$agent_docs" ]; then return; fi
+  fi
+  echo "--> Checking Agent Doc Path References..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_agent_doc_paths.py >/dev/null; then
+    echo "❌ Agent docs reference non-existent repository paths (see JSON error above)."
+    FAILED=1
+  fi
+}
+
 
 check_ui() {
   local ui_files
@@ -468,6 +482,7 @@ main() {
   check_go
   check_legacy_imports
   check_examples_coverage
+  check_agent_doc_paths
   check_ui
   check_license
   check_python

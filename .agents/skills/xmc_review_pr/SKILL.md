@@ -42,7 +42,7 @@ When invoking helper CLI scripts under `tools/pr_review/` (`review_pr_generate_a
 2. **Inspect parameters via `--help`**: Run tools with `--help` to inspect parameter schemas and usage flags.
 3. **Parse Structured JSON Output**: Tools output structured JSON with exit code 0 for success, 1 for handled errors, and 2 for unhandled errors.
 4. **Store Artifacts strictly inside Conversation Directory (`--conv-id`)**: All generated markdown audit checklists and reports must default to the conversation artifact directory (`<appDataDir>/brain/<conv_id>/`) rather than the workspace root to prevent accidental git repository commits.
-5. **Virtual Environment & Execution Safety**: Per [Python Guidelines](../../rules/languages/python.md#4-virtual-environments--execution-safety), invoke tools via `./tools/venv/bin/python3` when the local virtual environment is active. Note that all `review_pr_*.py` tools rely **strictly on standard library modules (`argparse`, `pathlib`, `json`, `re`, `subprocess`, `urllib`) + `gh` CLI**, so they execute deterministically in any Python environment.
+5. **Virtual Environment & Execution Safety**: Invoke tools with plain `python3`. All `review_pr_*.py` tools rely **strictly on standard library modules (`argparse`, `pathlib`, `json`, `re`, `subprocess`, `urllib`) + `gh` CLI**, so they execute deterministically in any Python environment and need no virtual environment (see [Python Guidelines](../../rules/languages/python.md#4-virtual-environments--execution-safety) for tools that do).
 6. **Arbitrary Long Comment File Safety (`-f` / `--message-file`)**: Always write proposed inline review comments containing markdown diff blocks or detailed explanations to a file and pass `-f message_file.md` to prevent bash escaping errors or length truncation.
 
 ---
@@ -55,7 +55,7 @@ Before launching deep code analysis or subagent review panels, the agent must in
 
 1. **Run Initial Audit Script**:
    ```bash
-   tools/venv/bin/python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
+   python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
    *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
 

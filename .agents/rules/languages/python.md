@@ -22,10 +22,9 @@ This document outlines coding standards, style guidelines, and best practices fo
 - **Mandatory Bazel Test Execution**: Because Python packages in this repository rely on Bazel-generated Protobuf bindings (`api.protos...`), tests MUST be run using Bazel. ALWAYS execute unit tests via `./tools/run_affected_tests.py` or `bazel test <target>`. Do NOT attempt direct system `python3 -m unittest` or `pip install` invocations outside of Bazel.
 
 ## 4. Virtual Environments & Execution Safety
-- **Python Virtual Environment**: Before executing or developing CLI tools under `tools/` or `deploy/`, ensure the local Python virtual environment is initialized and activated. Virtual environments must be explicitly created using **Python 3.13.14**:
+- **Python Virtual Environment**: Before executing or developing CLI tools under `tools/` or `deploy/`, ensure the local Python virtual environment is initialized and activated. Virtual environments must be explicitly created using **Python 3.13.14** via the setup script, which targets the same `tools/common/venv` directory that `tools/common/tool_utils.py` auto-bootstraps and re-executes into:
   ```bash
-  python3.13 -m venv ./tools/venv
-  source ./tools/venv/bin/activate
-  pip install -r ./tools/requirements.txt
+  python3.13 ./tools/common/setup_venv.py --venv-dir ./tools/common/venv --requirements ./tools/common/requirements.txt
+  source ./tools/common/venv/bin/activate
   ```
 - **Standalone Script Files Over `python3 -c`**: Always write Python code to dedicated `.py` files on disk using `write_to_file` rather than invoking inline commands via `python3 -c "..."` to prevent shell expansion and backtick command substitution errors.
