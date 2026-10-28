@@ -103,3 +103,38 @@ func (r *Repository) ReplaceFence(ctx context.Context, cluster store.ClusterIden
 func (r *Repository) ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error) {
 	return 0, status.Error(codes.Unimplemented, "postgres component store: ReassignOwnedComponents is not implemented")
 }
+
+// WithReadOnlySnapshot runs fn against a consistent read-only snapshot.
+func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.ComponentTxRepository) error) error {
+	return status.Error(codes.Unimplemented, "postgres component store: WithReadOnlySnapshot is not implemented")
+}
+
+// InsertComponent inserts a new component record and its dependencies.
+func (r *Repository) InsertComponent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
+	return status.Error(codes.Unimplemented, "postgres component store: InsertComponent is not implemented")
+}
+
+// UpdateComponentIntent updates an existing component's intent and replaces its dependencies.
+func (r *Repository) UpdateComponentIntent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
+	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentIntent is not implemented")
+}
+
+// UpdateComponentState updates a component's state and access status payload.
+func (r *Repository) UpdateComponentState(ctx context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error {
+	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentState is not implemented")
+}
+
+// UpdateComponentObservation updates a component's observed generation, access status, and optional state.
+func (r *Repository) UpdateComponentObservation(ctx context.Context, rec *store.ComponentRecord, updateState bool) error {
+	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentObservation is not implemented")
+}
+
+// SoftDeleteComponent marks a component as DELETED and optionally updates its owner columns.
+func (r *Repository) SoftDeleteComponent(ctx context.Context, rec *store.ComponentRecord, owner *store.SourceOwner) error {
+	return status.Error(codes.Unimplemented, "postgres component store: SoftDeleteComponent is not implemented")
+}
+
+// WriteComponentOwner updates a component's source owner columns.
+func (r *Repository) WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error {
+	return status.Error(codes.Unimplemented, "postgres component store: WriteComponentOwner is not implemented")
+}
