@@ -196,6 +196,12 @@ class PrepareTests(unittest.TestCase):
         with mock.patch.dict("sys.modules", {"yaml": None}):
             self.assertTrue(migrate._serialize_yaml({"components": {}}).startswith("{"))
 
+        absent_hpa = migrate._build_gateway_values(
+            {}, {"enabled": True, "replicas": 2}, enabled=True
+        )
+        self.assertFalse(absent_hpa["parameters"]["hpaEnabled"])
+        self.assertEqual(absent_hpa["parameters"]["replicas"], 2)
+
     def test_scalar_and_json_helpers_reject_malformed_inputs(self) -> None:
         for bad_scalar in (True, False, ["rp:9092"], {"repo": "x"}):
             with self.assertRaises(HandledError):

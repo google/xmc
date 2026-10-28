@@ -146,7 +146,7 @@ def _build_clickhouse_values(ch: Mapping[str, Any], *, enabled: bool) -> dict[st
 def _apply_gateway_scaling_and_security(ig: Mapping[str, Any], params: dict[str, Any]) -> None:
     """Populates HPA/replicas, resource requests/limits, SASL, and TLS gateway parameters."""
     hpa = _mapping(ig, "hpa")
-    if ("hpa" in ig and not hpa) or ("enabled" in hpa and not parse_bool_flag(hpa.get("enabled"))):
+    if not hpa or ("enabled" in hpa and not parse_bool_flag(hpa.get("enabled"))):
         params["hpaEnabled"] = False
         if (replicas := _opt_int(ig.get("replicas"), "replicas")) is not None:
             params["replicas"] = replicas
