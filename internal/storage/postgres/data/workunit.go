@@ -108,6 +108,10 @@ func WorkUnitExecutionRowToProto(row WorkUnitExecutionRow) (*essmsgpb.WorkUnitEx
 }
 
 // WorkUnitCurrentExecutionRowToProto converts a WorkUnitRow containing current execution columns into an active WorkUnitExecution proto.
+//
+// Note: This intentionally follows Spanner WorkUnitRowToProto by populating UpdateTime and CompleteTime
+// from the stored ExecutionUpdateTime and ExecutionCompleteTime columns (rather than Spanner
+// WorkUnitCurrentExecutionRowToProto, which sets UpdateTime from Status.UpdateTime and omits CompleteTime).
 func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExecution, error) {
 	wue, err := WorkUnitExecutionRowToProto(WorkUnitExecutionRow{
 		Xid: row.Xid, WorkUnitID: row.WorkUnitID, ExecutionID: row.ExecutionID,

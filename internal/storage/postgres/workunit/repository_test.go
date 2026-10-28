@@ -32,6 +32,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
+	postgresdata "xmanager_cloud/internal/storage/postgres/data"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	"xmanager_cloud/internal/validator"
@@ -136,16 +137,46 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 	t.Run("FetchWorkUnit and FetchCurrentWorkUnitExecution", func(t *testing.T) {
 		const xid, wid = 101, 1
 		wantExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
+		wantURL := &essmsgpb.Url{Url: "http://test.com", Icon: "test-icon", DisplayName: "test-display-name"}
+		urlBytes, err := postgresdata.MarshalProto(wantURL)
+		if err != nil {
+			t.Fatalf("MarshalProto(Url) failed: %v", err)
+		}
+		wantExecutable := &essmsgpb.Executable{
+			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "batch-queue"},
+			Type: &essmsgpb.Executable_Jobset{
+				Jobset: &essmsgpb.JobSetExecutable{Jobs: []*essmsgpb.KubernetesJob{{Name: "test-job"}}},
+			},
+		}
+		execBytes, err := postgresdata.MarshalProto(wantExecutable)
+		if err != nil {
+			t.Fatalf("MarshalProto(Executable) failed: %v", err)
+		}
+		createTime := baseTestTime.Add(-time.Hour)
+		updateTime := baseTestTime.Add(5 * time.Minute)
+		const populateWorkUnitSQL = `UPDATE WorkUnits SET WorkUnitType = $1, Priority = $2, Urls = $3, Tags = $4, Notes = $5, Executable = $6, CreateTime = $7, UpdateTime = $8 WHERE Xid = $9 AND WorkUnitId = $10`
+		if _, err := essPool.Exec(ctx, populateWorkUnitSQL, int64(essmsgpb.WorkUnit_STANDARD), int64(200), [][]byte{urlBytes}, []string{"tag-a", "tag-b"}, "unit-notes", execBytes, createTime, updateTime, xid, wid); err != nil {
+			t.Fatalf("populate WorkUnits(%d, %d) failed: %v", xid, wid, err)
+		}
+		wantWU := &essmsgpb.WorkUnit{
+			Name:                     validator.ConstructWorkUnitName(xid, wid),
+			WorkUnitType:             essmsgpb.WorkUnit_STANDARD,
+			Priority:                 200,
+			Urls:                     []*essmsgpb.Url{wantURL},
+			Tags:                     []string{"tag-a", "tag-b"},
+			Notes:                    "unit-notes",
+			Executable:               wantExecutable,
+			CurrentWorkUnitExecution: wantExec,
+			CreateTime:               timestamppb.New(createTime),
+			UpdateTime:               timestamppb.New(updateTime),
+		}
 
 		gotWU, err := repo.FetchWorkUnit(ctx, xid, wid)
 		if err != nil {
 			t.Fatalf("FetchWorkUnit() failed: %v", err)
 		}
-		if gotWU.GetName() != validator.ConstructWorkUnitName(xid, wid) {
-			t.Errorf("FetchWorkUnit().Name = %q, want %q", gotWU.GetName(), validator.ConstructWorkUnitName(xid, wid))
-		}
-		if diff := cmp.Diff(wantExec, gotWU.GetCurrentWorkUnitExecution(), protocmp.Transform()); diff != "" {
-			t.Errorf("CurrentWorkUnitExecution mismatch (-want +got):\n%s", diff)
+		if diff := cmp.Diff(wantWU, gotWU, protocmp.Transform()); diff != "" {
+			t.Errorf("FetchWorkUnit() mismatch (-want +got):\n%s", diff)
 		}
 
 		err = pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
@@ -153,7 +184,7 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			if diff := cmp.Diff(gotWU, txWU, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(wantWU, txWU, protocmp.Transform()); diff != "" {
 				t.Errorf("TxRepository.FetchWorkUnit() mismatch (-want +got):\n%s", diff)
 			}
 			return nil
@@ -241,6 +272,9 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 	})
 }
 
+// Concurrent restart transactions on the same WorkUnit must not lose executions:
+// TxRepository.FetchWorkUnit locks the row with FOR NO KEY UPDATE, serializing concurrent writers
+// without conflicting with FOR KEY SHARE foreign-key checks.
 func TestTxRepository_ConcurrentExecutionRestartsNoLostUpdate(t *testing.T) {
 	ctx := t.Context()
 	_, essPool := postgrestest.Setup(ctx, t)
@@ -248,6 +282,7 @@ func TestTxRepository_ConcurrentExecutionRestartsNoLostUpdate(t *testing.T) {
 
 	const xid, wid, workers = 104, 1, 4
 	firstExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
+	assertNoKeyUpdateCompatibleWithKeyShare(t, essPool, repo, xid, wid)
 
 	holdTx, err := essPool.Begin(ctx)
 	if err != nil {
@@ -329,5 +364,28 @@ func TestTxRepository_ConcurrentExecutionRestartsNoLostUpdate(t *testing.T) {
 	wantExecs = append(wantExecs, archivedFirst)
 	if diff := cmp.Diff(wantExecs, gotExecs, protocmp.Transform()); diff != "" {
 		t.Errorf("ListWorkUnitExecutions() after concurrent restarts mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func assertNoKeyUpdateCompatibleWithKeyShare(t *testing.T, pool *pgxpool.Pool, repo *Repository, xid, wid int64) {
+	t.Helper()
+	ctx := t.Context()
+	keyShareTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("pool.Begin() for FOR KEY SHARE failed: %v", err)
+	}
+	defer func() { _ = keyShareTx.Rollback(context.Background()) }()
+	if _, err := keyShareTx.Exec(ctx, "SELECT 1 FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2 FOR KEY SHARE", xid, wid); err != nil {
+		t.Fatalf("FOR KEY SHARE lock failed: %v", err)
+	}
+	err = pgdb.RunInTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "SET LOCAL lock_timeout = '500ms'"); err != nil {
+			return err
+		}
+		_, err := repo.WithTx(tx).FetchWorkUnit(ctx, xid, wid)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("TxRepository.FetchWorkUnit() blocked by FOR KEY SHARE (must use FOR NO KEY UPDATE, not FOR UPDATE): %v", err)
 	}
 }

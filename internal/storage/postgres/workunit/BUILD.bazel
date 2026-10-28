@@ -43,6 +43,7 @@ go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
+        "//internal/storage/postgres/data",
         "//internal/storage/postgres/pgdb",
         "//internal/storage/postgres/testing",
         "//internal/validator",
