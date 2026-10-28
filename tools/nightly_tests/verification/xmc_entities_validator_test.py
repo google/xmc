@@ -1130,6 +1130,49 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 )
             self.assertIn("verification failed after 0s", str(ctx.exception))
 
+    def test_http_get_bytes_and_str_payloads(self) -> None:
+        # 1. Successful response returning bytes
+        mock_resp_bytes = mock.MagicMock()
+        mock_resp_bytes.read.return_value = b'{"status": "ok_bytes"}'
+        mock_resp_bytes.__enter__.return_value = mock_resp_bytes
+        with mock.patch("urllib.request.urlopen", return_value=mock_resp_bytes):
+            res = xmc_entities_validator._http_get("http://localhost:8080/test")
+            self.assertEqual(res, {"status": "ok_bytes"})
+
+        # 2. Successful response returning str
+        mock_resp_str = mock.MagicMock()
+        mock_resp_str.read.return_value = '{"status": "ok_str"}'
+        mock_resp_str.__enter__.return_value = mock_resp_str
+        with mock.patch("urllib.request.urlopen", return_value=mock_resp_str):
+            res = xmc_entities_validator._http_get("http://localhost:8080/test")
+            self.assertEqual(res, {"status": "ok_str"})
+
+        # 3. HTTPError with bytes fp
+        err_bytes = urllib.error.HTTPError(
+            "http://localhost:8080/test",
+            500,
+            "Internal Server Error",
+            mock.MagicMock(),
+            io.BytesIO(b"failed with bytes"),
+        )
+        with mock.patch("urllib.request.urlopen", side_effect=err_bytes):
+            with self.assertRaises(RuntimeError) as ctx:
+                xmc_entities_validator._http_get("http://localhost:8080/test")
+            self.assertIn("failed with bytes", str(ctx.exception))
+
+        # 4. HTTPError with str fp (e.g. io.StringIO or None fp in Python)
+        err_str = urllib.error.HTTPError(
+            "http://localhost:8080/test",
+            500,
+            "Internal Server Error",
+            mock.MagicMock(),
+            io.StringIO("failed with str"),  # type: ignore[arg-type]
+        )
+        with mock.patch("urllib.request.urlopen", side_effect=err_str):
+            with self.assertRaises(RuntimeError) as ctx:
+                xmc_entities_validator._http_get("http://localhost:8080/test")
+            self.assertIn("failed with str", str(ctx.exception))
+
     def test_validate_dashboard_retry_on_assertion_error_success(self) -> None:
         attempts = 0
 
