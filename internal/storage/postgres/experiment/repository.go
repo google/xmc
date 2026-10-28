@@ -212,8 +212,10 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 	if err != nil {
 		return storage.UpdatedExperiments{}, err
 	}
-	protoDiff := diff.Diff(prototext.Format(res.Original), prototext.Format(res.Updated))
-	logging.Info(ctx, fmt.Sprintf("Updated experiment: %s", protoDiff), "experiment", res.Updated)
+	if !proto.Equal(res.Original, res.Updated) {
+		protoDiff := diff.Diff(prototext.Format(res.Original), prototext.Format(res.Updated))
+		logging.Info(ctx, fmt.Sprintf("Updated experiment: %s", protoDiff), "experiment", res.Updated)
+	}
 	return res, nil
 }
 
