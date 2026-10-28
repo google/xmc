@@ -368,18 +368,82 @@ class DashboardClientTest(unittest.TestCase):
         )
 
         self.mock_stub.GetDashboard.reset_mock()
-        with patch.dict(
-            "os.environ",
-            {
-                "XMC_AUTH_TOKEN": "",
-                "AUTH_TOKEN": "",
-                "XMC_CLIENT_SA": "",
-                "IAP_CLIENT_ID": "",
-            },
-            clear=False,
+        with (
+            patch("xdash.client.load_cached_cli_token", return_value=None),
+            patch.dict(
+                "os.environ",
+                {
+                    "XMC_AUTH_TOKEN": "",
+                    "AUTH_TOKEN": "",
+                    "XMC_CLIENT_SA": "",
+                    "IAP_CLIENT_ID": "",
+                },
+                clear=False,
+            ),
         ):
             self.client.get_dashboard("dashboards/123")
         self.assertEqual(self.mock_stub.GetDashboard.call_args.kwargs, {})
+
+    def test_execute_rpc_uses_cached_cli_token_before_iam_fallback(self) -> None:
+        expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
+        self.mock_stub.GetDashboard.return_value = expected
+        client = DashboardClient(endpoint="grpc.xmc.example.com:443", stub=self.mock_stub)
+
+        with (
+            patch(
+                "xdash.client.load_cached_cli_token", return_value="cached-cli-jwt"
+            ) as mock_cli_tok,
+            patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
+            patch.dict(
+                "os.environ",
+                {
+                    "XMC_AUTH_TOKEN": "",
+                    "AUTH_TOKEN": "",
+                    "XMC_CLIENT_SA": "sa@project.iam.gserviceaccount.com",
+                    "IAP_CLIENT_ID": "client-id.apps.googleusercontent.com",
+                },
+                clear=False,
+            ),
+        ):
+            client.get_dashboard("dashboards/123")
+        mock_cli_tok.assert_called_once_with("grpc.xmc.example.com:443", secure=True)
+        mock_fetch_iam.assert_not_called()
+        self.assertEqual(
+            self.mock_stub.GetDashboard.call_args.kwargs,
+            {"metadata": (("authorization", "Bearer cached-cli-jwt"),)},
+        )
+
+    def test_execute_rpc_whitespace_auth_token_raises_xdash_error(self) -> None:
+        with (
+            patch.dict("os.environ", {"XMC_AUTH_TOKEN": "   "}, clear=False),
+            self.assertRaisesRegex(XDashError, "XMC_AUTH_TOKEN must not be whitespace-only"),
+        ):
+            self.client.get_dashboard("dashboards/123")
+        self.mock_stub.GetDashboard.assert_not_called()
+
+    def test_injected_channel_without_endpoint_does_not_assume_loopback_or_tls(self) -> None:
+        mock_channel = MagicMock()
+        with (
+            patch("xdash.client.grpc"),
+            patch("xdash.client.DashboardServiceStub"),
+            patch("xdash.client.load_cached_cli_token") as mock_cli_tok,
+            patch.dict(
+                "os.environ",
+                {
+                    "XMC_DASHBOARD_ENDPOINT": "",
+                    "XMC_AUTH_TOKEN": "",
+                    "AUTH_TOKEN": "",
+                    "XMC_CLIENT_SA": "",
+                    "IAP_CLIENT_ID": "",
+                },
+                clear=False,
+            ),
+        ):
+            client = DashboardClient(channel=mock_channel)
+            self.assertEqual(client._endpoint, "")
+            self.assertFalse(client._secure)
+            self.assertEqual(client._resolve_auth_token(), "")
+            mock_cli_tok.assert_not_called()
 
     def test_execute_rpc_iam_token_fallback_and_caching(self) -> None:
         expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
@@ -392,6 +456,7 @@ class DashboardClientTest(unittest.TestCase):
         }
         with (
             patch.dict("os.environ", env, clear=False),
+            patch("xdash.client.load_cached_cli_token", return_value=None),
             patch(
                 "xdash.client._fetch_iam_id_token",
                 side_effect=["iam-token-1", "iam-token-2"],
@@ -439,6 +504,7 @@ class DashboardClientTest(unittest.TestCase):
         ):
             with (
                 patch.dict("os.environ", partial_env, clear=False),
+                patch("xdash.client.load_cached_cli_token", return_value=None),
                 self.assertRaises(XDashError) as cm,
             ):
                 self.client.get_dashboard("dashboards/123")
