@@ -13,7 +13,57 @@
 // limitations under the License.
 package auth
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	xpb "xmanager_cloud/api/protos/xid"
+)
+
+func TestNormalizeACLs(t *testing.T) {
+	allUsers := &xpb.XidAcls_Role{Principal: &xpb.XidAcls_Role_AllAuthenticatedUsers{AllAuthenticatedUsers: true}}
+
+	testCases := []struct {
+		name string
+		acls *xpb.XidAcls
+		want *xpb.XidAcls
+	}{
+		{name: "nil", acls: nil, want: nil},
+		{name: "empty", acls: &xpb.XidAcls{}, want: &xpb.XidAcls{}},
+		{
+			name: "all principal types in all roles",
+			acls: &xpb.XidAcls{
+				Owners:  []*xpb.XidAcls_Role{userRole(" Owner@Example.com "), saRole("SA@Project.iam.gserviceaccount.com")},
+				Writers: []*xpb.XidAcls_Role{groupRole("Team@Example.com")},
+				Readers: []*xpb.XidAcls_Role{domainRole("Example.COM"), allUsers},
+			},
+			want: &xpb.XidAcls{
+				Owners:  []*xpb.XidAcls_Role{userRole("owner@example.com"), saRole("sa@project.iam.gserviceaccount.com")},
+				Writers: []*xpb.XidAcls_Role{groupRole("team@example.com")},
+				Readers: []*xpb.XidAcls_Role{domainRole("example.com"), allUsers},
+			},
+		},
+		{
+			name: "non-ASCII is not folded",
+			acls: &xpb.XidAcls{Owners: []*xpb.XidAcls_Role{userRole("\u212Aate@Corp.com")}},
+			want: &xpb.XidAcls{Owners: []*xpb.XidAcls_Role{userRole("\u212Aate@corp.com")}},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			original := proto.Clone(tc.acls)
+			got := NormalizeACLs(tc.acls)
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("NormalizeACLs() mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(original, proto.Message(tc.acls), protocmp.Transform()); diff != "" {
+				t.Errorf("NormalizeACLs() modified its input (-before +after):\n%s", diff)
+			}
+		})
+	}
+}
 
 func TestCanonicalEmail(t *testing.T) {
 	testCases := []struct {

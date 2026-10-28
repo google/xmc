@@ -134,18 +134,18 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
-	// Create an entry whose owner ACL spells the user's email with different casing.
-	mixedCaseOwnerEntryReq := &msgpb.CreateXidEntryRequest{
-		XidEntry: &msgpb.XidEntry{
-			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
-			Acls: &msgpb.XidAcls{
-				Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
-			},
+	// Seed a legacy entry, stored before principals were normalized on write, whose owner ACL
+	// spells the user's email with different casing. It bypasses CreateXidEntry to keep read-path
+	// coverage of unnormalized stored ACLs.
+	mixedCaseOwnerEntry, err := server.storage.CreateXidEntry(ctx, &msgpb.XidEntry{
+		Creator: proto.String("Test@Example.com"),
+		Origin:  &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
+		Acls: &msgpb.XidAcls{
+			Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
 		},
-	}
-	mixedCaseOwnerEntry, err := server.CreateXidEntry(ctx, mixedCaseOwnerEntryReq)
+	})
 	if err != nil {
-		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
+		t.Fatalf("storage.CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
 	testCases := []struct {

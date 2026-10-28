@@ -61,7 +61,7 @@ Each experiment has an ACL with three roles. Each role includes the ones below i
 
 A role can name a `user`, a `group`, a `service_account`, a `domain`, or `all_authenticated_users`.
 
-**Matching:** principals match case-insensitively for ASCII letters, so `Alice@Example.com` and `alice@example.com` name the same user. Authenticated emails must be plain ASCII addresses: letters, digits, and `.` `_` `%` `+` `'` `-` before the `@`, with a dotted domain. XMC rejects requests from identities whose email doesn't conform, for example one with a display name, surrounding whitespace, or non-ASCII characters.
+**Matching:** principals match case-insensitively for ASCII letters, so `Alice@Example.com` and `alice@example.com` name the same user. Authenticated emails must be plain ASCII addresses: letters, digits, and `.` `_` `%` `+` `'` `-` before the `@`, with a dotted domain. XMC rejects requests from identities whose email doesn't conform, for example one with a display name, surrounding whitespace, or non-ASCII characters. XMC stores ACL principals trimmed and lowercased.
 
 **Default:** if you create an experiment without ACLs, XMC makes you, the creator, its only owner. The [examples](../examples/) rely on this default.
 
