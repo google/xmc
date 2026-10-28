@@ -209,7 +209,7 @@ def run_prepare(args: argparse.Namespace) -> dict[str, Any]:
     ns, rel = args.namespace, args.release
     _validate_identifiers(ns, rel)
     try:
-        verify_helm_min_version(stream=sys.stderr)
+        verify_helm_min_version()
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         raise HandledError(str(exc), "Install Helm >= 3.14.0 before running migration.") from exc
     values = _get_helm_values(ns, rel)

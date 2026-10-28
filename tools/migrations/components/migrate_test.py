@@ -119,6 +119,7 @@ class PrepareTests(unittest.TestCase):
             with (
                 mock.patch(
                     "tools.migrations.components.migrate.verify_helm_min_version",
+                    autospec=True,
                     return_value="v3.15.0",
                 ),
                 mock.patch("tools.migrations.components.migrate.run_command", side_effect=fake_run),
@@ -161,6 +162,7 @@ class PrepareTests(unittest.TestCase):
             with (
                 mock.patch(
                     "tools.migrations.components.migrate.verify_helm_min_version",
+                    autospec=True,
                     return_value="v3.14.0",
                 ),
                 mock.patch(
@@ -180,6 +182,7 @@ class PrepareTests(unittest.TestCase):
             with (
                 mock.patch(
                     "tools.migrations.components.migrate.verify_helm_min_version",
+                    autospec=True,
                     return_value="v3.14.0",
                 ),
                 mock.patch(
