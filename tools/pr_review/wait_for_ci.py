@@ -63,6 +63,10 @@ _RUN_URL_PATTERN = re.compile(r"github\.com/([^/]+/[^/]+)/actions/runs/(\d+)(?:/
 _ERROR_MARKER = "##[error]"
 
 
+class MalformedResponseError(ValueError):
+    """Raised when gh returns well-formed JSON with an unexpected shape."""
+
+
 @dataclasses.dataclass(frozen=True)
 class CheckResult:
     """Normalized view of a CheckRun or legacy StatusContext entry."""
@@ -88,14 +92,14 @@ def classify_check(entry: dict[str, Any]) -> CheckResult:
             state = PENDING
         else:
             state = PASSED if raw == "SUCCESS" else FAILED
-        return CheckResult(entry.get("context", ""), state, raw, entry.get("targetUrl") or "")
+        return CheckResult(entry.get("context") or "", state, raw, entry.get("targetUrl") or "")
 
     conclusion = (entry.get("conclusion") or "").upper()
     if (entry.get("status") or "").upper() != "COMPLETED":
         state = PENDING
     else:
         state = PASSED if conclusion in _PASSING_CONCLUSIONS else FAILED
-    return CheckResult(entry.get("name", ""), state, conclusion, entry.get("detailsUrl") or "")
+    return CheckResult(entry.get("name") or "", state, conclusion, entry.get("detailsUrl") or "")
 
 
 def parse_run_reference(details_url: str) -> tuple[str, str, str | None] | None:
@@ -119,12 +123,21 @@ def trim_job_log(text: str, max_lines: int) -> str:
 
 
 def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
-    """Fetches and normalizes the PR's status check rollup via gh."""
+    """Fetches and normalizes the PR's status check rollup via gh.
+
+    Raises:
+      subprocess.CalledProcessError: When gh exits non-zero.
+      json.JSONDecodeError: When gh prints invalid JSON.
+      MalformedResponseError: When gh prints JSON that is not an object.
+    """
     cmd = ["gh", "pr", "view", pr, "--json", "statusCheckRollup"]
     if repo:
         cmd += ["--repo", repo]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    rollup = json.loads(res.stdout).get("statusCheckRollup") or []
+    data = json.loads(res.stdout)
+    if not isinstance(data, dict):
+        raise MalformedResponseError(f"expected a JSON object, got {type(data).__name__}")
+    rollup = data.get("statusCheckRollup") or []
     return [classify_check(entry) for entry in rollup]
 
 
@@ -179,7 +192,7 @@ def _poll_once(args: argparse.Namespace, gh_errors: int) -> tuple[list[CheckResu
     """Fetches checks once, tolerating up to MAX_CONSECUTIVE_GH_ERRORS transient errors."""
     try:
         return fetch_checks(args.pr, args.repo), 0
-    except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+    except (subprocess.CalledProcessError, json.JSONDecodeError, MalformedResponseError) as e:
         gh_errors += 1
         stderr = getattr(e, "stderr", "") or str(e)
         if gh_errors >= MAX_CONSECUTIVE_GH_ERRORS:
@@ -269,9 +282,10 @@ def wait_for_ci(
                 return _report_result(args, checks)
             previous_names = current_names
             log_info(f"PR {args.pr} checks: {summarize_counts(checks)}", stream=sys.stderr)
-        if clock() + interval > deadline:
+        remaining = deadline - clock()
+        if remaining <= 0:
             _raise_timeout(args, checks)
-        sleep(interval)
+        sleep(min(interval, remaining))
         interval = min(interval * 2, max(MAX_INTERVAL_SECONDS, args.interval))
 
 

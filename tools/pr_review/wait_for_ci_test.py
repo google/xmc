@@ -125,6 +125,13 @@ class TestClassifyCheck(unittest.TestCase):
         entry = _check_run("x", status="IN_PROGRESS", conclusion=None, url=None)
         self.assertEqual(classify_check(entry), CheckResult("x", PENDING, "", ""))
 
+    def test_null_names_become_empty_strings(self):
+        """Explicit JSON null names/contexts normalize to empty strings."""
+        run = _check_run(None)
+        context = {"__typename": "StatusContext", "context": None, "state": "SUCCESS"}
+        self.assertEqual(classify_check(run).name, "")
+        self.assertEqual(classify_check(context).name, "")
+
 
 class TestHelpers(unittest.TestCase):
     """Tests for small pure helpers."""
@@ -225,6 +232,16 @@ class TestWaitForCI(unittest.TestCase):
         self.assertIn("No CI checks were reported", ctx.exception.message)
         self.assertEqual(ctx.exception.details, {"outcome": "timeout"})
 
+    def test_timeout_uses_full_budget_with_final_poll_at_deadline(self, mock_run):
+        """The last sleep is capped to the remaining time and a final poll runs."""
+        self.args.timeout = 25
+        mock_run.return_value = _rollup()
+        with self.assertRaises(HandledError):
+            self._run()
+        self.assertEqual(self.clock.sleeps, [10, 15])
+        self.assertEqual(self.clock.now, 25)
+        self.assertEqual(mock_run.call_count, 3)
+
     def test_timeout_with_pending_checks(self, mock_run):
         """Timeout lists still-pending checks."""
         self.args.timeout = 25
@@ -284,6 +301,23 @@ class TestWaitForCI(unittest.TestCase):
         err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
         mock_run.side_effect = [err, _rollup(_check_run("a")), err, _rollup(_check_run("a"))]
         self.assertEqual(self._run()["outcome"], "success")
+
+    def test_non_object_json_is_retried_as_transient(self, mock_run):
+        """A non-object JSON response is retried like a transient gh error."""
+        mock_run.side_effect = [
+            _completed("[]"),
+            _rollup(_check_run("a")),
+            _rollup(_check_run("a")),
+        ]
+        self.assertEqual(self._run()["outcome"], "success")
+
+    def test_repeated_non_object_json_raises(self, mock_run):
+        """Persistent non-object JSON responses raise a HandledError."""
+        mock_run.return_value = _completed("null")
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        self.assertIn("expected a JSON object, got NoneType", ctx.exception.message)
+        self.assertEqual(mock_run.call_count, wait_for_ci.MAX_CONSECUTIVE_GH_ERRORS)
 
     def test_repeated_gh_errors_raise(self, mock_run):
         """Consecutive gh failures beyond the limit raise a HandledError."""
