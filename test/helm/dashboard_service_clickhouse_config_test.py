@@ -271,8 +271,24 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
         self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+
+    def test_components_rbac_grants_bigquery_component_get(self) -> None:
+        """The Role also covers the bigquery Component the data engine probes at startup.
+
+        The dashboard counts a forbidden Component lookup as a configured store, so without this
+        grant a release with neither ClickHouse nor BigQuery picks BigQuery and never turns ready.
+        """
+        manifest = render_template(
+            DASHBOARD_SERVICEACCOUNT,
+            {
+                "dashboardServiceDeployment.enabled": "true",
+                "componentsDeployment.enabled": "true",
+                "metrics.enabled": "false",
+            },
+        )
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
 
     def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
         """Without CSI, the Role grants get on the clickhouse Component CR and password Secret."""
@@ -286,7 +302,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
         self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
         self.assertIn(
             'resourceNames: ["custom-ch-secret"]',
@@ -313,7 +329,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             },
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertNotIn('resources: ["secrets"]', manifest)
 
 
