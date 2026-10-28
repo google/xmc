@@ -24,7 +24,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
@@ -43,6 +42,9 @@ var (
   @xid, @workunitid, @historyid, @executionid, @queuename, @previousstate, @newstate, @resourcetype, @resourceunits, @createtime
 )`)
 
+	// The queue metric queries below mirror FetchBatchQueueVelocity and FetchBatchPendingQueueMetrics in
+	// internal/storage/spanner/statushistory/statushistory.go. Keep them in sync; the parameterized tests in
+	// both packages share the same cases and expected rows.
 	selectBatchQueueVelocitySQL = safesql.New(`WITH Admitted AS (
   SELECT QueueName, Xid, WorkUnitId, ResourceType, ResourceUnits
   FROM WorkUnitStatusHistory
@@ -159,15 +161,7 @@ func (r *TxRepository) SaveWorkUnitStatusHistory(ctx context.Context, xid, wid i
 }
 
 func (r *Repository) queryQueueMetrics(ctx context.Context, query safesql.TrustedSQLString, args ...any) ([]storage.QueueMetricRow, error) {
-	rows, err := r.db.Query(ctx, query.String(), args...)
-	if err != nil {
-		return nil, pgdb.TranslateError(err, entityName)
-	}
-	metrics, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[storage.QueueMetricRow])
-	if err != nil {
-		return nil, pgdb.TranslateError(err, entityName)
-	}
-	return metrics, nil
+	return pgdb.QueryRows[storage.QueueMetricRow](ctx, r.db, query.String(), entityName, args...)
 }
 
 func (r *TxRepository) validateSaveContext(ctx context.Context) error {

@@ -26,7 +26,6 @@ go_library(
         "//internal/storage",
         "//internal/storage/postgres/data",
         "//internal/storage/postgres/pgdb",
-        "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgxpool",
     ],
 )
