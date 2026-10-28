@@ -47,7 +47,6 @@ type WorkUnitRow struct {
 	PositionInQueue                int64      `db:"positioninqueue"`
 	CreateTime                     time.Time  `db:"createtime"`
 	UpdateTime                     time.Time  `db:"updatetime"`
-	Creator                        string     `db:"creator"`
 }
 
 // GetCurrentExecutionUpdateArgs returns the strict named arguments required to update the current execution on WorkUnits.
@@ -119,9 +118,6 @@ func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExec
 		return nil, err
 	}
 	wue.State = essmsgpb.WorkUnitExecution_ACTIVE
-	if wue.Status.GetUpdateTime() != nil {
-		wue.UpdateTime = wue.Status.UpdateTime
-	}
 	return wue, nil
 }
 

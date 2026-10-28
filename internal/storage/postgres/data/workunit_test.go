@@ -47,13 +47,13 @@ func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 			},
 		},
 		CreateTime: timestamppb.New(testWUTime),
-		UpdateTime: timestamppb.New(testWUTime),
+		UpdateTime: timestamppb.New(testWUTime.Add(time.Minute)),
 		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:  "experiments/123/workUnits/456/executions/789",
 			State: essmsgpb.WorkUnitExecution_ACTIVE,
 			Status: &essmsgpb.WorkUnitStatus{
 				State:      essmsgpb.WorkUnitStatus_RUNNING,
-				UpdateTime: timestamppb.New(testWUTime),
+				UpdateTime: timestamppb.New(testWUTime.Add(2 * time.Minute)),
 				SystemMessage: &essmsgpb.StructuredMessage{
 					Severity:       essmsgpb.StructuredMessage_WARNING,
 					UserFacingText: "sys warning",
@@ -74,8 +74,8 @@ func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 				ManagementCluster: &essmsgpb.ClusterInfo{Project: "p", Location: "l", ClusterName: "c"},
 				ResourceName:      "test-resource-name",
 			},
-			CreateTime:   timestamppb.New(testWUTime),
-			UpdateTime:   timestamppb.New(testWUTime),
+			CreateTime:   timestamppb.New(testWUTime.Add(3 * time.Minute)),
+			UpdateTime:   timestamppb.New(testWUTime.Add(4 * time.Minute)),
 			CompleteTime: timestamppb.New(testWUCompleteTime),
 		},
 	}
@@ -109,8 +109,8 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 	row.Tags = wu.Tags
 	row.Notes = wu.Notes
 	row.Executable = execBytes
-	row.CreateTime = testWUTime
-	row.UpdateTime = testWUTime
+	row.CreateTime = wu.CreateTime.AsTime()
+	row.UpdateTime = wu.UpdateTime.AsTime()
 
 	gotWU, err := WorkUnitRowToProto(row)
 	if err != nil {

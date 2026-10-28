@@ -217,5 +217,11 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 		if _, err := repo.ListWorkUnitExecutions(ctx, xid, 999); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("ListWorkUnitExecutions(missing) = %v, want ErrNotFound", err)
 		}
+		if err := repo.WithTx(essPool).UpdateCurrentWorkUnitExecution(ctx, xid, 999, 1, firstExec); !errors.Is(err, grpcerr.ErrNotFound) {
+			t.Errorf("UpdateCurrentWorkUnitExecution(missing) = %v, want ErrNotFound", err)
+		}
+		if got := status.Code(repo.WithTx(essPool).SaveWorkUnitExecution(ctx, &essmsgpb.WorkUnitExecution{Name: "invalid"})); got != codes.Internal {
+			t.Errorf("SaveWorkUnitExecution(invalid) code = %v, want Internal", got)
+		}
 	})
 }
