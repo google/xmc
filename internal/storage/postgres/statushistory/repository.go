@@ -42,9 +42,6 @@ var (
   @xid, @workunitid, @historyid, @executionid, @queuename, @previousstate, @newstate, @resourcetype, @resourceunits, @createtime
 )`)
 
-	// The queue metric queries below mirror FetchBatchQueueVelocity and FetchBatchPendingQueueMetrics in
-	// internal/storage/spanner/statushistory/statushistory.go. Keep them in sync; the parameterized tests in
-	// both packages share the same cases and expected rows.
 	selectBatchQueueVelocitySQL = safesql.New(`WITH Admitted AS (
   SELECT QueueName, Xid, WorkUnitId, ResourceType, ResourceUnits
   FROM WorkUnitStatusHistory
