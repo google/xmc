@@ -22,7 +22,7 @@ import os
 import pathlib
 import stat
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,7 @@ def _extract_valid_deployment_token(data: Any, origin: str, creds_path: pathlib.
         return None
     if not isinstance(expires_at, (int, float)) or not math.isfinite(expires_at):
         return None
-    if expires_at <= datetime.now(timezone.utc).timestamp() + CLI_TOKEN_EXPIRY_BUFFER_SEC:
+    if expires_at <= datetime.now(UTC).timestamp() + CLI_TOKEN_EXPIRY_BUFFER_SEC:
         logger.warning("Cached XMC CLI token for %s is expired; run 'xmanager login'.", origin)
         return None
     return token.strip()

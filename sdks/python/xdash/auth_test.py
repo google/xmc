@@ -20,7 +20,7 @@ import os
 import pathlib
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from xdash.auth import (
@@ -59,7 +59,7 @@ class AuthTest(unittest.TestCase):
         expires_offset_sec: float = 3600.0,
     ) -> dict[str, object]:
         """Builds a baseline v1 credentials.json payload."""
-        now_utc = datetime.now(timezone.utc).timestamp()
+        now_utc = datetime.now(UTC).timestamp()
         return {
             "version": 1,
             "deployments": {
