@@ -108,11 +108,9 @@ func ExperimentRowToProto(row ExperimentRow) (*essmsgpb.Experiment, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Resources: %w", err)
 	}
-	var status *essmsgpb.ExperimentStatus
-	if row.Status != nil {
-		if status, err = UnmarshalProto[essmsgpb.ExperimentStatus](row.Status); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Status: %w", err)
-		}
+	status, err := UnmarshalProto[essmsgpb.ExperimentStatus](row.Status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Status: %w", err)
 	}
 	exp := &essmsgpb.Experiment{
 		Name:       validator.ConstructExperimentName(row.Xid),
@@ -147,17 +145,13 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 	if err != nil {
 		return ExperimentRow{}, fmt.Errorf("failed to marshal Resources: %w", err)
 	}
-	statusBytes, err := MarshalNullableProto(exp.GetStatus())
+	statusBytes, err := MarshalProto(exp.GetStatus())
 	if err != nil {
 		return ExperimentRow{}, fmt.Errorf("failed to marshal Status: %w", err)
 	}
 	tags := slices.Clone(exp.GetTags())
 	if tags == nil {
 		tags = []string{}
-	}
-	updateTime := exp.GetStatus().GetUpdateTime().AsTime()
-	if ut := exp.GetUpdateTime(); ut != nil {
-		updateTime = ut.AsTime()
 	}
 	var completeTime pgtype.Timestamptz
 	if exp.GetCompleteTime() != nil {
@@ -176,7 +170,7 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 		ActiveState:  int64(exp.GetStatus().GetActiveState()),
 		LaunchState:  int64(exp.GetStatus().GetLaunchState()),
 		CreateTime:   exp.GetCreateTime().AsTime(),
-		UpdateTime:   updateTime,
+		UpdateTime:   exp.GetUpdateTime().AsTime(),
 		CompleteTime: completeTime,
 	}, nil
 }
