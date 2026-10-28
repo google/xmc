@@ -298,11 +298,32 @@ class TestWaitForCI(unittest.TestCase):
         self.assertIsNone(failed["log_tail"])
         self.assertEqual(mock_run.call_count, 2)
 
+    def test_failure_with_run_only_url_skips_log_fetch(self, mock_run):
+        """A run URL without a job segment reports the run ID but fetches no log."""
+        entry = _check_run(
+            "unit", conclusion="FAILURE", url="https://github.com/google/xmc/actions/runs/77"
+        )
+        mock_run.side_effect = [_rollup(entry), _rollup(entry)]
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        failed = _details(ctx)["failed_checks"][0]
+        self.assertEqual((failed["run_id"], failed["job_id"]), ("77", None))
+        self.assertIsNone(failed["log_tail"])
+        self.assertEqual(mock_run.call_count, 2)
+
     def test_transient_gh_errors_are_retried(self, mock_run):
         """Isolated gh failures are retried and do not abort polling."""
         err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
-        mock_run.side_effect = [err, _rollup(_check_run("a")), err, _rollup(_check_run("a"))]
+        mock_run.side_effect = [err, _rollup(_check_run("a")), _rollup(_check_run("a"))]
         self.assertEqual(self._run()["outcome"], "success")
+
+    def test_failed_poll_resets_settlement(self, mock_run):
+        """Complete -> gh error -> complete is not two consecutive complete polls."""
+        err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        complete = _rollup(_check_run("a"))
+        mock_run.side_effect = [complete, err, complete, complete]
+        self.assertEqual(self._run()["outcome"], "success")
+        self.assertEqual(mock_run.call_count, 4)
 
     def test_non_object_json_is_retried_as_transient(self, mock_run):
         """A non-object JSON response is retried like a transient gh error."""

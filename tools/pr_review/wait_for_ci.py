@@ -275,7 +275,9 @@ def wait_for_ci(
     checks, previous_names = None, None
     while True:
         polled, gh_errors = _poll_once(args, gh_errors)
-        if polled is not None:
+        if polled is None:
+            previous_names = None  # A failed poll breaks the "consecutive" chain.
+        else:
             checks = polled
             current_names = _completed_names(checks)
             if _is_settled(current_names, previous_names):
