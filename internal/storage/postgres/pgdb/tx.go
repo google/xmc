@@ -35,6 +35,7 @@ const (
 
 type txBeginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 }
 
 type txRetryConfig struct {
@@ -57,6 +58,15 @@ func RunInTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Contex
 		return WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	return runInTx(ctx, pool, defaultTxRetryConfig, fn)
+}
+
+// RunInReadOnlyTx executes fn inside a REPEATABLE READ READ ONLY PostgreSQL transaction,
+// releasing the snapshot via a detached-context Rollback when fn returns or panics.
+func RunInReadOnlyTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	if pool == nil {
+		return WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return runInReadOnlyTx(ctx, pool, fn)
 }
 
 func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn func(ctx context.Context, tx pgx.Tx) error) error {
@@ -93,9 +103,7 @@ func runTxAttempt(ctx context.Context, beginner txBeginner, fn func(ctx context.
 		if committed {
 			return
 		}
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
-		defer cancel()
-		_ = tx.Rollback(rollbackCtx)
+		rollbackDetached(tx)
 	}()
 	if err := fn(ctx, tx); err != nil {
 		return err
@@ -105,6 +113,27 @@ func runTxAttempt(ctx context.Context, beginner txBeginner, fn func(ctx context.
 	}
 	committed = true
 	return nil
+}
+
+func runInReadOnlyTx(ctx context.Context, beginner txBeginner, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	if fn == nil {
+		return WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tx, err := beginner.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return TranslateError(err, "transaction")
+	}
+	defer rollbackDetached(tx)
+	return fn(ctx, tx)
+}
+
+func rollbackDetached(tx pgx.Tx) {
+	rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+	defer cancel()
+	_ = tx.Rollback(rollbackCtx)
 }
 
 func waitBackoff(ctx context.Context, d time.Duration) error {

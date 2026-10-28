@@ -33,10 +33,7 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-const (
-	entityName      = "work unit"
-	rollbackTimeout = 5 * time.Second
-)
+const entityName = "work unit"
 
 var (
 	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
@@ -98,7 +95,7 @@ func (r *Repository) FetchCurrentWorkUnitExecution(ctx context.Context, xid int6
 func (r *Repository) ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error) {
 	ctx = logging.WithWorkUnitName(ctx, validator.ConstructWorkUnitName(xid, wid))
 	var executions []*essmsgpb.WorkUnitExecution
-	err := r.runInReadOnlyTx(ctx, func(tx pgx.Tx) error {
+	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
 		current, err := queryCurrentExecution(ctx, tx, xid, wid)
 		if err != nil {
 			return err
@@ -185,22 +182,6 @@ func (r *TxRepository) UpdateCurrentWorkUnitExecution(ctx context.Context, xid, 
 // ListWorkUnitMessagesBySeverity retrieves work unit status messages matching a given severity level within the transaction.
 func (r *TxRepository) ListWorkUnitMessagesBySeverity(ctx context.Context, xid int64, severity essmsgpb.StructuredMessage_Severity) ([]*essmsgpb.StructuredMessage, error) {
 	return nil, status.Error(codes.Unimplemented, "postgres TxRepository.ListWorkUnitMessagesBySeverity is not implemented")
-}
-
-func (r *Repository) runInReadOnlyTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
-	if r.pool == nil {
-		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
-	}
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return pgdb.TranslateError(err, entityName)
-	}
-	defer func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
-		defer cancel()
-		_ = tx.Rollback(rollbackCtx)
-	}()
-	return fn(tx)
 }
 
 func requireDB(db pgdb.DBTX) error {

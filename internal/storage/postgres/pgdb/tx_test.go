@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/grpc/codes"
@@ -49,8 +50,14 @@ func (f *fakeTx) Rollback(_ context.Context) error {
 
 type fakeBeginner struct {
 	txs      []*fakeTx
+	txOpts   []pgx.TxOptions
 	beginErr error
 	begins   int
+}
+
+func (b *fakeBeginner) BeginTx(ctx context.Context, opts pgx.TxOptions) (pgx.Tx, error) {
+	b.txOpts = append(b.txOpts, opts)
+	return b.Begin(ctx)
 }
 
 func (b *fakeBeginner) Begin(_ context.Context) (pgx.Tx, error) {
@@ -253,5 +260,57 @@ func TestRunInTxContextAndPanicHandling(t *testing.T) {
 		_ = runInTx(context.Background(), beginner, fastRetryConfig(), func(context.Context, pgx.Tx) error {
 			panic("unexpected panic in tx")
 		})
+	})
+}
+
+func TestRunInReadOnlyTx(t *testing.T) {
+	if err := RunInReadOnlyTx(context.Background(), nil, func(context.Context, pgx.Tx) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("RunInReadOnlyTx(nil pool) = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	cbErr := errors.New("query failed")
+	wantOpts := []pgx.TxOptions{{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}}
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name     string
+		ctx      context.Context
+		beginErr error
+		fn       func(context.Context, pgx.Tx) error
+		wantErr  error
+		wantOpts []pgx.TxOptions
+		wantRB   int
+	}{
+		{name: "nil callback", ctx: context.Background(), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "canceled context", ctx: canceledCtx, fn: func(context.Context, pgx.Tx) error { return nil }, wantErr: context.Canceled},
+		{name: "BeginTx error translated", ctx: context.Background(), beginErr: &pgconn.PgError{Code: SQLStateSerializationFailure}, fn: func(context.Context, pgx.Tx) error { return nil }, wantErr: grpcerr.ErrAborted, wantOpts: wantOpts},
+		{name: "success rolls back snapshot", ctx: context.Background(), fn: func(context.Context, pgx.Tx) error { return nil }, wantOpts: wantOpts, wantRB: 1},
+		{name: "callback error rolls back snapshot", ctx: context.Background(), fn: func(context.Context, pgx.Tx) error { return cbErr }, wantErr: cbErr, wantOpts: wantOpts, wantRB: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tx := &fakeTx{}
+			beginner := &fakeBeginner{txs: []*fakeTx{tx}, beginErr: tt.beginErr}
+			if err := runInReadOnlyTx(tt.ctx, beginner, tt.fn); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("runInReadOnlyTx() = %v, want %v", err, tt.wantErr)
+			}
+			if diff := cmp.Diff(tt.wantOpts, beginner.txOpts); diff != "" {
+				t.Errorf("txOpts mismatch (-want +got):\n%s", diff)
+			}
+			if tx.rolledBack != tt.wantRB || tx.committed != 0 {
+				t.Errorf("rolledBack=%d committed=%d, want %d/0", tx.rolledBack, tx.committed, tt.wantRB)
+			}
+		})
+	}
+
+	t.Run("panic rolls back and re-panics", func(t *testing.T) {
+		tx := &fakeTx{}
+		beginner := &fakeBeginner{txs: []*fakeTx{tx}}
+		defer func() {
+			if r := recover(); r != "boom" || tx.rolledBack != 1 || tx.committed != 0 {
+				t.Errorf("recover=%v rolledBack=%d committed=%d, want boom/1/0", r, tx.rolledBack, tx.committed)
+			}
+		}()
+		_ = runInReadOnlyTx(context.Background(), beginner, func(context.Context, pgx.Tx) error { panic("boom") })
 	})
 }
