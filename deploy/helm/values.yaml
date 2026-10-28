@@ -347,10 +347,12 @@ database:
   experimentalPostgres: false
   postgres:
     # host, user, essDatabase and xidDatabase are required when backend is "postgres".
-    # No password: db-config is a plain ConfigMap.
+    # No password in db-config: the password is delivered via the postgres-secret Secret.
     host: ""
     port: 5432
     user: ""
+    # Delivered to workloads via the postgres-secret Secret (POSTGRES_PASSWORD).
+    password: ""
     essDatabase: ""
     xidDatabase: ""
     # libpq sslmode. Plaintext ("disable") must be chosen explicitly.

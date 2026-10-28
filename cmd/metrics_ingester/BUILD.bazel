@@ -24,7 +24,6 @@ go_library(
     deps = [
         "//cmd/metrics_ingester/metricsingester",
         "//internal/logging",
-        "//pkg/clickhouse",
         "@com_google_cloud_go_pubsub//:pubsub",
     ],
 )

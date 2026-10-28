@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "operation.go",
         "proto.go",
+        "statusmessage.go",
         "xid.go",
     ],
     importpath = "xmanager_cloud/internal/storage/postgres/data",
@@ -28,6 +29,7 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",
@@ -40,6 +42,7 @@ go_test(
     name = "data_test",
     srcs = [
         "operation_test.go",
+        "statusmessage_test.go",
         "xid_test.go",
     ],
     embed = [":data"],
@@ -47,6 +50,8 @@ go_test(
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//proto",

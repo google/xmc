@@ -93,3 +93,4 @@ spec:
         - name: IAP_EXPECTED_GRPC_AUDIENCE
           value: {{ .Values.experimentStateServer.iap.grpcAudience | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}

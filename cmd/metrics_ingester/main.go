@@ -29,38 +29,52 @@ import (
 	"cloud.google.com/go/pubsub"
 	"xmanager_cloud/cmd/metrics_ingester/metricsingester"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/pkg/clickhouse"
 )
 
 func main() {
+	os.Exit(mainExitCode())
+}
+
+func mainExitCode() int {
 	flags := metricsingester.RegisterFlags(flag.CommandLine)
 	flag.Parse()
 
 	cfg, err := metricsingester.LoadConfig(flags)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to load config: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
-	logging.Info(ctx, "Initializing Metrics Ingester service", "project", cfg.ProjectID, "subscription", cfg.SubscriptionID,
-		"batch_size", cfg.BatchSize, "batch_interval", cfg.BatchInterval)
+	logging.Info(ctx, "Initializing Metrics Ingester service",
+		"project", cfg.ProjectID,
+		"subscription", cfg.SubscriptionID,
+		"metrics_store", cfg.MetricsStore,
+		"batch_size", cfg.BatchSize,
+		"batch_interval", cfg.BatchInterval,
+	)
 
 	if err := run(ctx, cfg); err != nil {
-		logging.Fatal(ctx, "Metrics Ingester stopped", "error", err)
+		logging.Error(ctx, "Metrics Ingester stopped", "error", err)
+		return 1
 	}
+	return 0
 }
 
 // run connects both ends of the pipeline and ingests until SIGINT/SIGTERM or a permanent receive
 // failure. Dependencies are checked up front so misconfiguration fails at startup.
 func run(ctx context.Context, cfg *metricsingester.Config) error {
-	chConn, err := clickhouse.Connect(ctx)
+	store, err := metricsingester.OpenRuntimeStore(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to connect to clickhouse: %w", err)
+		return err
 	}
-	defer chConn.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			logging.Error(ctx, "Metrics store close error", "error", err)
+		}
+	}()
 
 	psClient, err := pubsub.NewClient(ctx, cfg.ProjectID)
 	if err != nil {
@@ -73,8 +87,8 @@ func run(ctx context.Context, cfg *metricsingester.Config) error {
 		return err
 	}
 
-	ingester := metricsingester.NewIngester(sub, metricsingester.NewClickHouseWriter(chConn), cfg)
-	server := startHealthServer(ctx, cfg.Port, metricsingester.NewHealthMux(ingester, chConn))
+	ingester := metricsingester.NewIngester(sub, store.Writer(), cfg)
+	server := startHealthServer(ctx, cfg.Port, metricsingester.NewHealthMux(ingester, store.Pinger()))
 	defer shutdownHealthServer(ctx, server)
 
 	runCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
