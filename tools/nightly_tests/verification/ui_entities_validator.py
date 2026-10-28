@@ -24,6 +24,11 @@ from typing import TYPE_CHECKING, Any
 
 from tools.nightly_tests.verification import endpoint_resolution, verifier_cli
 
+try:
+    from sdks.python.xdash import auth as xdash_auth
+except ImportError:
+    from xdash import auth as xdash_auth  # type: ignore[no-redef]
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
@@ -73,7 +78,12 @@ class XMCUIBrowserSession:
             screenshots_dir: Directory path where diagnostic screenshots are saved.
         """
         self.ui_base_url = ui_base_url.rstrip("/")
-        self.auth_token = auth_token or os.environ.get("XMC_AUTH_TOKEN")
+        cli_token = (
+            xdash_auth.load_cached_cli_token(self.ui_base_url)
+            if self.ui_base_url.lower().startswith(("http://", "https://"))
+            else None
+        )
+        self.auth_token = auth_token or xdash_auth.resolve_env_auth_token() or cli_token
         self.session_token = session_token or os.environ.get("XMC_SESSION_TOKEN")
         self.allow_insecure_tls = allow_insecure_tls
         self.headless = headless

@@ -56,12 +56,13 @@ The CLI exposes the same override as `--insecure`.
 
 ### Authentication
 
-When connecting to an IAP-protected XMC deployment, `DashboardClient` attaches an `authorization: Bearer <token>` gRPC metadata header using the following precedence:
+When connecting to an IAP-protected XMC deployment, `DashboardClient` (and the `resolve_auth_headers` helper for REST callers) attaches an `authorization: Bearer <token>` header using the following precedence:
 
-1. **Static Bearer Token (`XMC_AUTH_TOKEN` or `AUTH_TOKEN`)**: Uses a pre-minted token directly from the environment. To sign in as yourself, run `xmanager login`, then `export XMC_AUTH_TOKEN=$(xmanager login --print-token)`.
-2. **Automatic IAM OIDC Token Generation (`XMC_CLIENT_SA` + `IAP_CLIENT_ID`)**: When `XMC_AUTH_TOKEN` and `AUTH_TOKEN` are unset and both `XMC_CLIENT_SA` and `IAP_CLIENT_ID` are set in the environment, `DashboardClient` automatically mints an OIDC ID token via the IAM Credentials `generateIdToken` API (using Application Default Credentials) and caches it across RPC calls for 55 minutes. Use this for CI; the service account must be admitted to the deployment.
+1. **Static Bearer Token (`XMC_AUTH_TOKEN` or `AUTH_TOKEN`)**: Uses an explicit token directly from the environment.
+2. **Cached `xmanager login` Token (`~/.config/xmc/credentials.json`)**: Automatically loads the per-deployment session token written by `xmanager login` (checking `$XMC_CREDENTIALS_FILE`, `$XDG_CONFIG_HOME/xmc/credentials.json`, and `~/.config/xmc/credentials.json` with `0600` permission, UID ownership, origin-binding, and a 30-second expiry buffer over TLS or loopback).
+3. **Automatic IAM OIDC Token Generation (`XMC_CLIENT_SA` + `IAP_CLIENT_ID`)**: When no explicit or cached CLI token is present and both `XMC_CLIENT_SA` and `IAP_CLIENT_ID` are set in the environment, `DashboardClient` automatically mints an OIDC ID token via the IAM Credentials `generateIdToken` API (using Application Default Credentials) and caches it across RPC calls for 55 minutes. Use this for CI; the service account must be admitted to the deployment.
 
-See [Authentication and Experiment Access](../../../docs/authentication.md) for both paths.
+See [Authentication and Experiment Access](../../../docs/authentication.md) for interactive and CI workflows.
 
 ### Building Custom Charts and Plots
 

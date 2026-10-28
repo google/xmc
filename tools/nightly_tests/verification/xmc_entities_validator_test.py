@@ -1437,6 +1437,20 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 with self.assertRaisesRegex(AssertionError, err_pat):
                     xmc_entities_validator.validate_multikueue_k8s_delegation("50")
 
+    def test_build_dashboard_headers_uses_cached_cli_token_fallback(self) -> None:
+        url = "https://xmc.example.com/v1/dashboards/d1"
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(
+                xmc_entities_validator.xdash_auth,
+                "load_cached_cli_token",
+                return_value="cached-cli-tok",
+            ) as mock_cli_tok,
+        ):
+            headers = xmc_entities_validator._build_dashboard_headers(url)
+        mock_cli_tok.assert_called_once_with(url)
+        self.assertEqual(headers["Authorization"], "Bearer cached-cli-tok")
+
 
 if __name__ == "__main__":
     unittest.main()

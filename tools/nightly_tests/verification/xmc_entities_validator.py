@@ -34,6 +34,11 @@ from types import SimpleNamespace
 from typing import Any
 
 try:
+    from sdks.python.xdash import auth as xdash_auth
+except ImportError:
+    from xdash import auth as xdash_auth  # type: ignore[no-redef]
+
+try:
     import dotenv
 
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
@@ -1162,10 +1167,11 @@ def validate_clickhouse_metrics(
     return {"total_rows": 0, "metrics": [], "skipped": True}
 
 
-def _build_dashboard_headers() -> dict[str, str]:
+def _build_dashboard_headers(url: str | None = None) -> dict[str, str]:
     """Builds HTTP request headers for Dashboard Service REST calls."""
     headers = {"Accept": "application/json", "User-Agent": "xmc-validator/1.0"}
-    if token := (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip():
+    token = xdash_auth.resolve_env_auth_token() or xdash_auth.load_cached_cli_token(url)
+    if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
@@ -1174,7 +1180,7 @@ def query_dashboard_http(url: str, timeout_sec: int = 10) -> dict[str, Any]:
     """Executes an HTTP GET request against the Dashboard Service REST gateway."""
     return _http_get(
         url,
-        headers=_build_dashboard_headers(),
+        headers=_build_dashboard_headers(url),
         timeout_sec=timeout_sec,
         service_name="Dashboard",
     )
