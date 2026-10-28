@@ -80,9 +80,9 @@ class ManagedXprofArtifactRegressionTest(parameterized.TestCase):
 
         # Read back the artifact and verify its payload fields.
         timeout = datetime.timedelta(seconds=_TIMEOUT_SECONDS)
-        start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_time = datetime.datetime.now(datetime.UTC)
         got_artifact = None
-        while datetime.datetime.now(datetime.timezone.utc) - start_time < timeout and (
+        while datetime.datetime.now(datetime.UTC) - start_time < timeout and (
             got_artifact is None or not got_artifact.payload.HasField("managed_xprof")
         ):
             try:

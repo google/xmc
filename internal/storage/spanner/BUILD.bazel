@@ -30,6 +30,7 @@ go_library(
         "//internal/storage",
         "//internal/storage/spanner/artifact",
         "//internal/storage/spanner/clilogincode",
+        "//internal/storage/spanner/component",
         "//internal/storage/spanner/dashboard",
         "//internal/storage/spanner/experiment",
         "//internal/storage/spanner/operation",

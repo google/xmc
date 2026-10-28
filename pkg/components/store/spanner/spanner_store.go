@@ -34,6 +34,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
 	"xmanager_cloud/pkg/components/store"
@@ -46,12 +48,7 @@ import (
 var _ store.Store = (*SpannerStore)(nil)
 
 const (
-	selectComponentByActiveNameSQL = `SELECT ` + componentColumnsSQL + `
-FROM Components
-WHERE ActiveName = @name
-LIMIT 1`
-
-	selectComponentWithActiveDependenciesSQL = `SELECT ` + componentColumnsSQL + `,
+	selectComponentWithActiveDependenciesSQL = `SELECT ` + component.ComponentColumnsSQL + `,
   ARRAY(
     SELECT dep.Name
     FROM ComponentDependencies cd
@@ -63,32 +60,6 @@ LIMIT 1`
 FROM Components c
 WHERE c.ActiveName = @name
 LIMIT 1`
-
-	selectComponentByIDSQL = `SELECT ` + componentColumnsSQL + `
-FROM Components
-WHERE ComponentId = @id AND State != 5
-LIMIT 1`
-
-	selectAllActiveComponentsSQL = `SELECT ` + componentColumnsSQL + `
-FROM Components
-WHERE ActiveName IS NOT NULL
-ORDER BY Name ASC`
-
-	// componentColumnsSQL lists the Components columns that rowToComponentRecord reads.
-	componentColumnsSQL = `ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, ObservedGeneration, CreateTime, UpdateTime, SourceUid, SourceGeneration, SourceNamespace, SourceClusterUid, SourceEpoch, SourceLastSeenTime`
-
-	selectDependenciesByComponentIDSQL = `SELECT dep.Name
-FROM ComponentDependencies cd
-JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
-WHERE cd.ComponentId = @id AND dep.ActiveName IS NOT NULL
-ORDER BY dep.Name ASC`
-
-	selectAllActiveDependenciesSQL = `SELECT cd.ComponentId, dep.Name
-FROM ComponentDependencies cd
-JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
-JOIN Components parent ON cd.ComponentId = parent.ComponentId
-WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL
-ORDER BY cd.ComponentId, dep.Name ASC`
 
 	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
 FROM ExperimentComponentSnapshots
@@ -107,62 +78,26 @@ type spannerQueryable interface {
 	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
 }
 
-func queryComponentWithDeps(ctx context.Context, queryable spannerQueryable, canonicalName string) (*store.ComponentRecord, error) {
-	stmt := spanner.Statement{
-		SQL: selectComponentByActiveNameSQL,
-		Params: map[string]any{
-			"name": canonicalName,
-		},
-	}
-
-	iter := queryable.Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return nil, store.ErrComponentNotFound
-		}
-		return nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
-	}
-
-	rec, err := rowToComponentRecord(row)
-	if err != nil {
-		return nil, err
-	}
-
-	depStmt := spanner.Statement{
-		SQL: selectDependenciesByComponentIDSQL,
-		Params: map[string]any{
-			"id": rec.ComponentID,
-		},
-	}
-	depIter := queryable.Query(ctx, depStmt)
-	defer depIter.Stop()
-
-	deps, err := fetchDependencies(depIter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch dependencies for component %q: %w", canonicalName, err)
-	}
-	rec.Dependencies = deps
-	rec.Etag = store.GenerateEtag(rec)
-
-	return rec, nil
-}
-
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
 type SpannerStore struct {
-	client *spanner.Client
+	client  *spanner.Client
+	storage storage.Storage
+	// TODO: Replace repo and the Spanner-specific component helpers with storage and
+	// RunInTransaction once the remaining Spanner reads and transactions move out of this store.
+	repo *component.Repository
 	// beforeIntentWrite, when non-nil, runs before SetComponentIntent falls back to its read-write
 	// transaction. Tests use it to count fallbacks and to inject concurrent writes.
 	beforeIntentWrite func()
 }
 
-// NewSpannerStore creates a new Spanner-backed component store.
-func NewSpannerStore(client *spanner.Client) *SpannerStore {
-	return &SpannerStore{
-		client: client,
+// NewSpannerStore creates a new Spanner-backed component store. st must be the Spanner storage for
+// the same database as client: top-level reads go through st.Components(), while writes and reads
+// inside transactions still use client directly until they move behind storage.TransactionRunner.
+func NewSpannerStore(client *spanner.Client, st storage.Storage) (*SpannerStore, error) {
+	if st == nil {
+		return nil, errors.New("spannerstore: storage.Storage must not be nil")
 	}
+	return &SpannerStore{client: client, storage: st, repo: component.NewRepository(client)}, nil
 }
 
 // SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose
@@ -256,7 +191,7 @@ func queryComponentWithActiveDependencies(ctx context.Context, queryable spanner
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
 	}
-	rec, err := rowToComponentRecord(row)
+	rec, err := component.RowToComponentRecord(row)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -322,7 +257,7 @@ func (s *SpannerStore) applyIntentTx(
 	if err := checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
 	if err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
@@ -546,10 +481,7 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*store.Co
 		return nil, err
 	}
 
-	txn := s.client.ReadOnlyTransaction()
-	defer txn.Close()
-
-	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
+	rec, err := s.storage.Components().GetActiveComponent(ctx, canonicalName)
 	if err != nil {
 		return nil, err
 	}
@@ -563,57 +495,17 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
 	}
 
-	txn := s.client.ReadOnlyTransaction()
-	defer txn.Close()
-
-	stmt := spanner.Statement{
-		SQL: selectComponentByIDSQL,
-		Params: map[string]any{
-			"id": componentID,
-		},
-	}
-
-	iter := txn.Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return nil, store.ErrComponentNotFound
-		}
-		return nil, fmt.Errorf("failed to query component by ID %d: %w", componentID, err)
-	}
-
-	rec, err := rowToComponentRecord(row)
+	rec, err := s.storage.Components().GetComponentByID(ctx, componentID)
 	if err != nil {
 		return nil, err
 	}
-
-	depStmt := spanner.Statement{
-		SQL: selectDependenciesByComponentIDSQL,
-		Params: map[string]any{
-			"id": rec.ComponentID,
-		},
-	}
-	depIter := txn.Query(ctx, depStmt)
-	defer depIter.Stop()
-
-	deps, err := fetchDependencies(depIter)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch dependencies for component ID %d: %w", componentID, err)
-	}
-	rec.Dependencies = deps
-	rec.Etag = store.GenerateEtag(rec)
 
 	return store.CloneRecord(rec), nil
 }
 
 // ListComponents returns all non-deleted components in the catalog sorted by name.
 func (s *SpannerStore) ListComponents(ctx context.Context) ([]*store.ComponentRecord, error) {
-	txn := s.client.ReadOnlyTransaction()
-	defer txn.Close()
-
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.storage.Components().ListActiveComponents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -682,7 +574,7 @@ func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.R
 	if err := checkFence(ctx, txn, operation, src); err != nil {
 		return nil, nil, err
 	}
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -820,7 +712,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 		if err := checkFence(ctx, txn, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
 		}
-		rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
+		rec, err := s.repo.WithTx(txn).GetActiveComponent(ctx, canonicalName)
 		if err != nil {
 			return err
 		}
@@ -999,7 +891,7 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 	txn := s.client.ReadOnlyTransaction()
 	defer txn.Close()
 
-	rec, err := queryComponentWithDeps(ctx, txn, canonicalName)
+	rec, err := s.repo.WithTx(txn).GetActiveComponent(ctx, canonicalName)
 	if err != nil {
 		if errors.Is(err, store.ErrComponentNotFound) && generation > 0 {
 			return s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
@@ -1090,10 +982,10 @@ func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, u
 		CreateTime:  createTime,
 		UpdateTime:  updateTime,
 	}
-	if err := unmarshalConfigProto(d.configProto, snapRec); err != nil {
+	if err := component.UnmarshalConfigProto(d.configProto, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
 	}
-	if err := unmarshalAccessStatus(d.accessPayload, snapRec); err != nil {
+	if err := component.UnmarshalAccessStatus(d.accessPayload, snapRec); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
 	}
 	if snapRec.Status != nil {
@@ -1192,215 +1084,6 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (s *SpannerStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in SpannerStore")
-}
-
-func (s *SpannerStore) loadActiveCatalog(ctx context.Context, queryable spannerQueryable) (map[string]*store.ComponentRecord, error) {
-	compIter := queryable.Query(ctx, spanner.Statement{SQL: selectAllActiveComponentsSQL})
-	defer compIter.Stop()
-
-	componentsByName := make(map[string]*store.ComponentRecord)
-	componentsByID := make(map[int64]*store.ComponentRecord)
-
-	if err := compIter.Do(func(row *spanner.Row) error {
-		rec, err := rowToComponentRecord(row)
-		if err != nil {
-			return err
-		}
-		componentsByName[rec.Name] = rec
-		componentsByID[rec.ComponentID] = rec
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list active components: %w", err)
-	}
-
-	depIter := queryable.Query(ctx, spanner.Statement{SQL: selectAllActiveDependenciesSQL})
-	defer depIter.Stop()
-
-	if err := depIter.Do(func(row *spanner.Row) error {
-		var (
-			compID  int64
-			depName string
-		)
-		if err := row.ColumnByName("ComponentId", &compID); err != nil {
-			return err
-		}
-		if err := row.ColumnByName("Name", &depName); err != nil {
-			return err
-		}
-		if rec, ok := componentsByID[compID]; ok {
-			rec.Dependencies = append(rec.Dependencies, depName)
-		}
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list component dependencies: %w", err)
-	}
-
-	for _, rec := range componentsByName {
-		rec.Etag = store.GenerateEtag(rec)
-	}
-
-	return componentsByName, nil
-}
-
-type componentRowData struct {
-	componentID    int64
-	name           string
-	componentClass spanner.NullString
-	configProto    []byte
-	accessPayload  []byte
-	state          int64
-	generation     int64
-	observedGen    spanner.NullInt64
-	createTime     time.Time
-	updateTime     time.Time
-	sourceLastSeen spanner.NullTime
-}
-
-func scanComponentRow(row *spanner.Row) (*componentRowData, error) {
-	var d componentRowData
-	if err := row.ColumnByName("ComponentId", &d.componentID); err != nil {
-		return nil, fmt.Errorf("failed to read ComponentId: %w", err)
-	}
-	if err := row.ColumnByName("Name", &d.name); err != nil {
-		return nil, fmt.Errorf("failed to read Name: %w", err)
-	}
-	if err := row.ColumnByName("ComponentClass", &d.componentClass); err != nil {
-		return nil, fmt.Errorf("failed to read ComponentClass: %w", err)
-	}
-	if err := row.ColumnByName("ConfigProto", &d.configProto); err != nil {
-		return nil, fmt.Errorf("failed to read ConfigProto: %w", err)
-	}
-	if err := row.ColumnByName("AccessPayload", &d.accessPayload); err != nil {
-		return nil, fmt.Errorf("failed to read AccessPayload: %w", err)
-	}
-	if err := row.ColumnByName("State", &d.state); err != nil {
-		return nil, fmt.Errorf("failed to read State: %w", err)
-	}
-	if err := row.ColumnByName("Generation", &d.generation); err != nil {
-		return nil, fmt.Errorf("failed to read Generation: %w", err)
-	}
-	if err := row.ColumnByName("ObservedGeneration", &d.observedGen); err != nil {
-		return nil, fmt.Errorf("failed to read ObservedGeneration: %w", err)
-	}
-	if err := row.ColumnByName("CreateTime", &d.createTime); err != nil {
-		return nil, fmt.Errorf("failed to read CreateTime: %w", err)
-	}
-	if err := row.ColumnByName("UpdateTime", &d.updateTime); err != nil {
-		return nil, fmt.Errorf("failed to read UpdateTime: %w", err)
-	}
-	if err := row.ColumnByName("SourceLastSeenTime", &d.sourceLastSeen); err != nil {
-		return nil, fmt.Errorf("failed to read SourceLastSeenTime: %w", err)
-	}
-	return &d, nil
-}
-
-func rowToComponentRecord(row *spanner.Row) (*store.ComponentRecord, error) {
-	d, err := scanComponentRow(row)
-	if err != nil {
-		return nil, err
-	}
-
-	rec := &store.ComponentRecord{
-		ComponentID:        d.componentID,
-		Name:               d.name,
-		State:              componentspb.ComponentState(d.state),
-		Generation:         d.generation,
-		CreateTime:         d.createTime,
-		UpdateTime:         d.updateTime,
-		SourceLastSeenTime: d.sourceLastSeen.Time, // Zero when NULL.
-	}
-
-	if d.observedGen.Valid {
-		gen := d.observedGen.Int64
-		rec.ObservedGeneration = &gen
-	}
-	if rec.Owner, err = scanSourceOwner(row); err != nil {
-		return nil, err
-	}
-
-	if err := unmarshalConfigProto(d.configProto, rec); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal config proto: %w", err)
-	}
-	if err := unmarshalAccessStatus(d.accessPayload, rec); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal access status: %w", err)
-	}
-
-	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		t := d.updateTime
-		rec.DeleteTime = &t
-	}
-
-	rec.Etag = store.GenerateEtag(rec)
-	return rec, nil
-}
-
-// scanSourceOwner reads the recorded owner of a component row, or nil when SourceClusterUid is NULL.
-func scanSourceOwner(row *spanner.Row) (*store.SourceOwner, error) {
-	var uid, namespace, clusterUID spanner.NullString
-	var generation, epoch spanner.NullInt64
-	for _, col := range [...]struct {
-		name string
-		dst  any
-	}{ // An array, unlike a map, does not allocate per row.
-		{"SourceUid", &uid}, {"SourceGeneration", &generation}, {"SourceNamespace", &namespace}, {"SourceClusterUid", &clusterUID}, {"SourceEpoch", &epoch},
-	} {
-		if err := row.ColumnByName(col.name, col.dst); err != nil {
-			return nil, fmt.Errorf("failed to read %s: %w", col.name, err)
-		}
-	}
-	if !clusterUID.Valid {
-		return nil, nil
-	}
-	return &store.SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}, nil
-}
-
-func unmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
-	if len(configBytes) == 0 {
-		return nil
-	}
-	var comp componentspb.Component
-	if err := proto.Unmarshal(configBytes, &comp); err == nil && (comp.Spec != nil || len(comp.Labels) > 0) {
-		rec.Spec = comp.Spec
-		if len(comp.Labels) > 0 {
-			rec.Labels = store.CopyMap(comp.Labels)
-		}
-		return nil
-	}
-	var spec componentspb.ComponentSpec
-	if err := proto.Unmarshal(configBytes, &spec); err != nil {
-		return err
-	}
-	rec.Spec = &spec
-	return nil
-}
-
-func unmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
-	if len(accessBytes) == 0 {
-		rec.Status = nil
-		return nil
-	}
-	var statusProto componentspb.ComponentAccessStatus
-	if err := proto.Unmarshal(accessBytes, &statusProto); err != nil {
-		return err
-	}
-	rec.Status = &statusProto
-	return nil
-}
-
-func fetchDependencies(iter *spanner.RowIterator) ([]string, error) {
-	var deps []string
-	err := iter.Do(func(row *spanner.Row) error {
-		var depName string
-		if err := row.Column(0, &depName); err != nil {
-			return err
-		}
-		deps = append(deps, depName)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return deps, nil
 }
 
 func generateRandomID() (int64, error) {
