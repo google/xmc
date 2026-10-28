@@ -65,7 +65,7 @@ def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
 def _is_local_endpoint(endpoint: str) -> bool:
     """Reports whether a gRPC target addresses a local, plaintext service."""
     host = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
-    return host.strip("[]").lower() in _LOCAL_HOSTS
+    return not host or host.strip("[]").lower() in _LOCAL_HOSTS
 
 
 def _reject_doubly_attached_charts(
@@ -197,8 +197,6 @@ class DashboardClient:
         )
         if secure is not None:
             self._secure = bool(secure)
-        elif channel is not None and stub is None:
-            self._secure = credentials is not None
         else:
             self._secure = credentials is not None or not _is_local_endpoint(self._endpoint)
 

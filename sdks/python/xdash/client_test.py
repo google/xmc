@@ -445,6 +445,11 @@ class DashboardClientTest(unittest.TestCase):
             self.assertEqual(client._resolve_auth_token(), "")
             mock_cli_tok.assert_not_called()
 
+            remote_client = DashboardClient(
+                endpoint="grpc.xmc.example.com:443", channel=mock_channel
+            )
+            self.assertTrue(remote_client._secure)
+
     def test_execute_rpc_iam_token_fallback_and_caching(self) -> None:
         expected = messages_pb2.Dashboard(name="dashboards/123", title="Test Dash")
         self.mock_stub.GetDashboard.return_value = expected

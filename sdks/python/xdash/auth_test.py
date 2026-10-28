@@ -230,6 +230,9 @@ class AuthTest(unittest.TestCase):
             self.assertIsNone(load_cached_cli_token("grpc.xmc.example.com:443"))
         self.assertTrue(any("xmanager login" in msg for msg in log_cm.output))
 
+    @unittest.skipUnless(
+        os.name == "posix", "POSIX permissions and UID checks are not supported on Windows"
+    )
     def test_load_cached_cli_token_rejects_bad_permissions_and_uid(self) -> None:
         self._write_credentials(self._valid_payload(), mode=0o644)
         with (

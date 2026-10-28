@@ -175,7 +175,7 @@ def _verify_credentials_file_stat(st: os.stat_result, creds_path: pathlib.Path) 
             os.getuid(),
         )
         return False
-    if (st.st_mode & 0o077) != 0:
+    if os.name == "posix" and (st.st_mode & 0o077) != 0:
         logger.warning(
             "Ignoring XMC credentials file %s: permissions %s are too open (expected 0600).",
             creds_path,
