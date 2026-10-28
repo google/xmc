@@ -15,12 +15,17 @@
 package helm
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 func TestBuildHelmValues(t *testing.T) {
@@ -461,6 +466,79 @@ func TestDefaultComponentRepository(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := DefaultComponentRepository(tt.component); got != tt.wantRepo {
 				t.Errorf("DefaultComponentRepository(%q) = %q, want %q", tt.component, got, tt.wantRepo)
+			}
+		})
+	}
+}
+
+func TestWarnMissingEnvFallbacks(t *testing.T) {
+	ref := ComponentRef{Namespace: "xmc", Name: "ingestion-gateway"}
+	tests := []struct {
+		name          string
+		projectEnv    string
+		defaultEnvImg string
+		opts          HelmComponentOptions
+		wantProjWarn  bool
+		wantImgWarn   bool
+	}{
+		{
+			name:         "missing PROJECT_ID and DEFAULT_INGESTION_GATEWAY_IMAGE without overrides warns for both",
+			opts:         HelmComponentOptions{Ref: ref, Enabled: true},
+			wantProjWarn: true,
+			wantImgWarn:  true,
+		},
+		{
+			name:          "env vars set suppress both warnings",
+			projectEnv:    "my-gcp-project",
+			defaultEnvImg: "us-docker.pkg.dev/my-gcp-project/xmc/ingestion-gateway:v1",
+			opts:          HelmComponentOptions{Ref: ref, Enabled: true},
+			wantProjWarn:  false,
+			wantImgWarn:   false,
+		},
+		{
+			name: "parameter overrides for projectId and image suppress warnings when env vars unset",
+			opts: HelmComponentOptions{
+				Ref:        ref,
+				Enabled:    true,
+				Parameters: map[string]string{"projectId": "override-proj", "image": "custom.io/ig:v2"},
+			},
+			wantProjWarn: false,
+			wantImgWarn:  false,
+		},
+		{
+			name: "rawValues imageRepository suppresses image warning when env var unset",
+			opts: HelmComponentOptions{
+				Ref:       ref,
+				Enabled:   true,
+				RawValues: map[string]any{"projectId": "raw-proj", "imageRepository": "custom.io/ig"},
+			},
+			wantProjWarn: false,
+			wantImgWarn:  false,
+		},
+		{
+			name:         "disabled component suppresses warnings",
+			opts:         HelmComponentOptions{Ref: ref, Enabled: false},
+			wantProjWarn: false,
+			wantImgWarn:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("PROJECT_ID", tt.projectEnv)
+			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
+
+			var buf bytes.Buffer
+			ctx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+			values := BuildHelmValues(tt.opts)
+			warnMissingEnvFallbacks(ctx, ref, tt.opts, values)
+
+			out := buf.String()
+			if got := strings.Contains(out, "PROJECT_ID is not set"); got != tt.wantProjWarn {
+				t.Errorf("PROJECT_ID warning present = %v, want %v (logs: %q)", got, tt.wantProjWarn, out)
+			}
+			if got := strings.Contains(out, "Default component image env var is not set"); got != tt.wantImgWarn {
+				t.Errorf("DEFAULT_INGESTION_GATEWAY_IMAGE warning present = %v, want %v (logs: %q)", got, tt.wantImgWarn, out)
 			}
 		})
 	}

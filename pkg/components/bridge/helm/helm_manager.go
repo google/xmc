@@ -360,6 +360,7 @@ func (m *K8sHelmManager) Ensure1PComponent(ctx context.Context, ref ComponentRef
 	if repair {
 		m.recordRepairAttempt(ctx, ref)
 	}
+	warnMissingEnvFallbacks(ctx, ref, opts, values)
 	if err := m.triggerUpgrade(ctx, ref, values); err != nil {
 		return err
 	}
