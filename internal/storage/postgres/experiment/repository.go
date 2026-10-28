@@ -65,7 +65,8 @@ var (
 			"WHERE v.Xid = $1 " +
 			"AND NOT v.IsExperimentConsistent " +
 			"AND (c.ComponentId IS NULL OR c.State = $2 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration)) " +
-			"ORDER BY c.Name ASC NULLS FIRST, s.ComponentId ASC",
+			"ORDER BY c.Name ASC NULLS FIRST, s.ComponentId ASC " +
+			"LIMIT (CASE WHEN $3 > 0 THEN $3 END)",
 	)
 )
 
@@ -157,6 +158,8 @@ func ExtractExperimentCursor(exp *essmsgpb.Experiment) (map[string]any, error) {
 	}
 	cursorValues := map[string]any{
 		"xid":       xid,
+		"created":   nil,
+		"updated":   nil,
 		"completed": nil,
 	}
 	if exp.GetCreateTime() != nil {
@@ -228,12 +231,9 @@ func (r *Repository) FetchDriftedComponents(ctx context.Context, xid int64, limi
 	if xid == 0 {
 		return nil, fmt.Errorf("experiment ID cannot be 0: %w", grpcerr.ErrInvalidArgument)
 	}
-	rows, err := pgdb.QueryRows[driftedComponentRow](ctx, r.db, fetchDriftedComponentsSQL.String(), entityName, xid, int64(storage.ComponentStateDeleted))
+	rows, err := pgdb.QueryRows[driftedComponentRow](ctx, r.db, fetchDriftedComponentsSQL.String(), entityName, xid, int64(storage.ComponentStateDeleted), limit)
 	if err != nil {
 		return nil, err
-	}
-	if limit > 0 && len(rows) > limit {
-		rows = rows[:limit]
 	}
 	diffs := make([]storage.ComponentDiff, len(rows))
 	for i, row := range rows {
