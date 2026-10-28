@@ -97,6 +97,9 @@ func TestRepository_ValidationAndNilHandle(t *testing.T) {
 	if _, err := nilRepo.FetchDriftedComponents(ctx, 0, 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("FetchDriftedComponents(0) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
+	if _, err := nilRepo.FetchDriftedComponents(ctx, -1, 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("FetchDriftedComponents(-1) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
 	if _, err := nilRepo.FetchDriftedComponents(ctx, 1, 0); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilRepo.FetchDriftedComponents(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}

@@ -223,8 +223,8 @@ type driftedComponentRow struct {
 // FetchDriftedComponents retrieves components whose live catalog entry diverges from the experiment's snapshot.
 func (r *Repository) FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]storage.ComponentDiff, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	if xid == 0 {
-		return nil, fmt.Errorf("experiment ID cannot be 0: %w", grpcerr.ErrInvalidArgument)
+	if xid <= 0 {
+		return nil, fmt.Errorf("experiment ID must be positive: %w", grpcerr.ErrInvalidArgument)
 	}
 	rows, err := pgdb.QueryRows[driftedComponentRow](ctx, r.db, fetchDriftedComponentsSQL.String(), entityName, xid, int64(storage.ComponentStateDeleted), limit)
 	if err != nil {
