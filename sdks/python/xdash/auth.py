@@ -226,16 +226,19 @@ def load_cached_cli_token(endpoint: str | None = None, *, secure: bool = True) -
         logger.warning("Failed to open XMC credentials file %s: %s", creds_path, err)
         return None
 
+    fd_owned = False
     try:
-        st = os.fstat(fd)
-        if not _verify_credentials_file_stat(st, creds_path):
-            os.close(fd)
+        if not _verify_credentials_file_stat(os.fstat(fd), creds_path):
             return None
         with os.fdopen(fd, "rb") as cred_file:
+            fd_owned = True
             data = json.load(cred_file)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as err:
         logger.warning("Failed to read XMC credentials file %s: %s", creds_path, err)
         return None
+    finally:
+        if not fd_owned:
+            os.close(fd)
     return _extract_valid_deployment_token(data, origin, creds_path)
 
 

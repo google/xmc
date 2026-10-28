@@ -291,6 +291,17 @@ class AuthTest(unittest.TestCase):
             ):
                 self.assertIsNone(load_cached_cli_token("grpc.xmc.example.com:443"))
 
+        # OSError during fstat closes the opened file descriptor
+        with (
+            patch("os.open", return_value=999),
+            patch("os.fstat", side_effect=OSError("fstat failed")),
+            patch("os.close") as mock_close,
+            patch.dict("os.environ", {"XMC_CREDENTIALS_FILE": str(self.creds_path)}, clear=True),
+            self.assertLogs("xdash.auth", level="WARNING"),
+        ):
+            self.assertIsNone(load_cached_cli_token("grpc.xmc.example.com:443"))
+            mock_close.assert_called_once_with(999)
+
     def test_resolve_auth_headers_precedence_and_oidc_fallback(self) -> None:
         self._write_credentials(self._valid_payload("https://xmc.example.com", "cli-cached-token"))
 
