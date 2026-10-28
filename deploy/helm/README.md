@@ -172,8 +172,8 @@ and performs no authentication. A caller is admitted when it matches, in order:
 Human users and service accounts that call gRPC directly, such as CI runners or workloads using
 their own ID token, need one of these entries. The Component Manager Service additionally admits
 `gcpServiceAccount`, the account `xmc-bridge` runs as; no other service admits it by identity.
-`auth.disableAuthentication: true` skips admission on gRPC; it works only in binaries built with
-`gotags = ["mockauth"]` on local development clusters (see
+`auth.disableAuthentication: true` skips admission on both HTTP and gRPC; it works only in
+binaries built with `gotags = ["mockauth"]` on local development clusters (see
 [Disabling authentication](#disabling-authentication)).
 
 ---
