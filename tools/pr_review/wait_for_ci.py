@@ -52,6 +52,7 @@ DEFAULT_INTERVAL_SECONDS = 30
 MAX_INTERVAL_SECONDS = 120
 DEFAULT_LOG_LINES = 80
 MAX_CONSECUTIVE_GH_ERRORS = 3
+GH_COMMAND_TIMEOUT_SECONDS = 60
 
 PENDING = "pending"
 PASSED = "passed"
@@ -103,7 +104,16 @@ def classify_check(entry: dict[str, Any]) -> CheckResult:
 
 
 def parse_run_reference(details_url: str) -> tuple[str, str, str | None] | None:
-    """Extracts `(owner/repo, run_id, job_id)` from a GitHub Actions details URL."""
+    """Extracts the repository, run ID, and job ID from a GitHub Actions URL.
+
+    Args:
+      details_url: A check's details URL, e.g.
+        `https://github.com/<owner>/<repo>/actions/runs/<run_id>/job/<job_id>`.
+
+    Returns:
+      `(owner/repo, run_id, job_id)` with `job_id` None when the URL has no
+      job segment, or None when the URL is not a GitHub Actions run URL.
+    """
     match = _RUN_URL_PATTERN.search(details_url)
     if not match:
         return None
@@ -122,33 +132,61 @@ def trim_job_log(text: str, max_lines: int) -> str:
     return "\n".join(lines[max(0, end - max_lines) : end])
 
 
+def parse_rollup(stdout: str) -> list[dict[str, Any]]:
+    """Parses `gh pr view --json statusCheckRollup` output into rollup entries.
+
+    Args:
+      stdout: Raw JSON printed by gh.
+
+    Returns:
+      The list of rollup entry dicts (empty when no checks are reported).
+
+    Raises:
+      json.JSONDecodeError: When stdout is not valid JSON.
+      MalformedResponseError: When the JSON does not have the expected shape.
+    """
+    data = json.loads(stdout)
+    if not isinstance(data, dict):
+        raise MalformedResponseError(f"expected a JSON object, got {type(data).__name__}")
+    rollup = data.get("statusCheckRollup") or []
+    if not isinstance(rollup, list) or not all(isinstance(e, dict) for e in rollup):
+        raise MalformedResponseError("expected statusCheckRollup to be a list of objects")
+    return rollup
+
+
 def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     """Fetches and normalizes the PR's status check rollup via gh.
 
     Raises:
+      FileNotFoundError: When the gh binary is not installed.
       subprocess.CalledProcessError: When gh exits non-zero.
+      subprocess.TimeoutExpired: When gh does not finish in time.
       json.JSONDecodeError: When gh prints invalid JSON.
-      MalformedResponseError: When gh prints JSON that is not an object.
+      MalformedResponseError: When gh prints JSON with an unexpected shape.
     """
     cmd = ["gh", "pr", "view", pr, "--json", "statusCheckRollup"]
     if repo:
         cmd += ["--repo", repo]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    data = json.loads(res.stdout)
-    if not isinstance(data, dict):
-        raise MalformedResponseError(f"expected a JSON object, got {type(data).__name__}")
-    rollup = data.get("statusCheckRollup") or []
-    return [classify_check(entry) for entry in rollup]
+    res = subprocess.run(
+        cmd, capture_output=True, text=True, check=True, timeout=GH_COMMAND_TIMEOUT_SECONDS
+    )
+    return [classify_check(entry) for entry in parse_rollup(res.stdout)]
 
 
 def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
     """Returns a bounded, error-anchored tail of one Actions job's log.
 
     Uses the REST job-logs endpoint because `gh run view --log-failed` silently
-    prints nothing on some gh releases (observed on gh 2.46).
+    prints nothing on some gh releases (observed on gh 2.46). Failures to fetch
+    the log are reported as a `<...>` placeholder string instead of raising.
     """
     cmd = ["gh", "api", f"repos/{run_repo}/actions/jobs/{job_id}/logs"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        res = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=GH_COMMAND_TIMEOUT_SECONDS
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return f"<gh api job logs failed: {e}>"
     if res.returncode != 0:
         return f"<gh api job logs failed (exit {res.returncode}): {res.stderr.strip()}>"
     return trim_job_log(res.stdout, max_lines)
@@ -163,7 +201,16 @@ def summarize_counts(checks: list[CheckResult]) -> dict[str, int]:
 
 
 def describe_failed_check(check: CheckResult, max_lines: int) -> dict[str, Any]:
-    """Describes one failed check, including its run/job IDs and log tail."""
+    """Describes one failed check, including its run/job IDs and log tail.
+
+    Args:
+      check: A check whose state is FAILED.
+      max_lines: Maximum number of job-log lines to include.
+
+    Returns:
+      A JSON-serializable dict with `name`, `conclusion`, `details_url`,
+      `run_id`, `job_id`, and `log_tail` (None for non-Actions checks).
+    """
     ref = parse_run_reference(check.details_url)
     run_id: str | None = None
     job_id: str | None = None
@@ -188,20 +235,40 @@ def build_failure_details(checks: list[CheckResult], max_lines: int) -> dict[str
     return {"outcome": "failure", "failed_checks": failed}
 
 
+_TRANSIENT_GH_ERRORS = (
+    subprocess.CalledProcessError,
+    subprocess.TimeoutExpired,
+    json.JSONDecodeError,
+    MalformedResponseError,
+)
+
+
+def _error_text(error: Exception) -> str:
+    """Returns gh's stderr for a failed call when available, else the error message."""
+    stderr = getattr(error, "stderr", None)
+    text = stderr if isinstance(stderr, str) and stderr.strip() else str(error)
+    return text.strip()
+
+
 def _poll_once(args: argparse.Namespace, gh_errors: int) -> tuple[list[CheckResult] | None, int]:
     """Fetches checks once, tolerating up to MAX_CONSECUTIVE_GH_ERRORS transient errors."""
     try:
         return fetch_checks(args.pr, args.repo), 0
-    except (subprocess.CalledProcessError, json.JSONDecodeError, MalformedResponseError) as e:
+    except FileNotFoundError as e:
+        raise HandledError(
+            "gh CLI not found on PATH.",
+            "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`.",
+        ) from e
+    except _TRANSIENT_GH_ERRORS as e:
         gh_errors += 1
-        stderr = getattr(e, "stderr", "") or str(e)
+        message = _error_text(e)
         if gh_errors >= MAX_CONSECUTIVE_GH_ERRORS:
             raise HandledError(
-                f"gh pr view failed {gh_errors} times in a row: {stderr.strip()}",
+                f"gh pr view failed {gh_errors} times in a row: {message}",
                 "Verify the PR identifier, --repo value, and `gh auth status`.",
             ) from e
         log_info(
-            f"Transient gh error ({gh_errors}/{MAX_CONSECUTIVE_GH_ERRORS}): {stderr.strip()}",
+            f"Transient gh error ({gh_errors}/{MAX_CONSECUTIVE_GH_ERRORS}): {message}",
             stream=sys.stderr,
         )
         return None, gh_errors
@@ -284,9 +351,24 @@ def wait_for_ci(
             log_info(f"PR {args.pr} checks: {summarize_counts(checks)}", stream=sys.stderr)
         remaining = deadline - clock()
         if remaining <= 0:
+            if previous_names is not None:
+                # Deadline hit before a confirming poll: report the complete
+                # (but unconfirmed) result rather than a misleading timeout.
+                return _report_result(args, checks or [])
             _raise_timeout(args, checks)
         sleep(min(interval, remaining))
         interval = min(interval * 2, max(MAX_INTERVAL_SECONDS, args.interval))
+
+
+def positive_int(value: str) -> int:
+    """argparse type that accepts only integers >= 1."""
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f"invalid integer: {value!r}") from e
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {parsed}")
+    return parsed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -297,24 +379,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pr", help="PR number, branch, or full GitHub PR URL.")
     parser.add_argument("--repo", help="Repository in owner/name form (default: current repo).")
     parser.add_argument(
-        "--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="Max seconds to wait."
+        "--timeout", type=positive_int, default=DEFAULT_TIMEOUT_SECONDS, help="Max seconds to wait."
     )
     parser.add_argument(
         "--interval",
-        type=int,
+        type=positive_int,
         default=DEFAULT_INTERVAL_SECONDS,
         help=f"Initial poll interval in seconds; doubles up to {MAX_INTERVAL_SECONDS}s.",
     )
     parser.add_argument(
         "--log-lines",
-        type=int,
+        type=positive_int,
         default=DEFAULT_LOG_LINES,
         help="Max log lines printed per failed job.",
     )
     return parser
 
 
-def main():
+def main() -> None:
     """Main entrypoint for wait_for_ci tool."""
     run_tool(build_parser(), wait_for_ci)
 
