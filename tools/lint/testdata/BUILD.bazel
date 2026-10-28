@@ -29,3 +29,17 @@ dev_binary_guard_test(
     binary = ":mockauth_tagged_binary",
     expect_dev_binary = True,
 )
+
+# An untagged binary with a _dev suffix proves the guard's name clause on its own.
+go_binary(
+    name = "untagged_fixture_dev",
+    testonly = True,
+    srcs = ["main.go"],
+    pure = "on",
+)
+
+dev_binary_guard_test(
+    name = "dev_suffix_binary_detected_test",
+    binary = ":untagged_fixture_dev",
+    expect_dev_binary = True,
+)
