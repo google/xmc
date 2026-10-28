@@ -20,13 +20,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 readonly XMC_NAMESPACE="xmc"
 readonly METRICS_NAMESPACE="xmc-metrics"
 
-echo "--> 1. Ensuring namespace '${METRICS_NAMESPACE}' exists..."
+echo "--> 1. Ensuring namespaces '${XMC_NAMESPACE}' and '${METRICS_NAMESPACE}' exist..."
+kubectl create namespace "${XMC_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 kubectl create namespace "${METRICS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
-echo "--> 2. Creating ClickHouse format schema ConfigMap from api/protos/metrics/metrics.proto..."
+echo "--> 2. Creating ClickHouse format schema and init SQL ConfigMaps..."
 kubectl create configmap clickhouse-format-schemas \
   --namespace="${METRICS_NAMESPACE}" \
   --from-file="metrics.proto=${REPO_ROOT}/api/protos/metrics/metrics.proto" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl create configmap clickhouse-init-scripts \
+  --namespace="${METRICS_NAMESPACE}" \
+  --from-file="init.sql=${REPO_ROOT}/deploy/clickhouse/schema.sql" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "--> 3. Deploying lightweight metrics addons (Redpanda and ClickHouse)..."

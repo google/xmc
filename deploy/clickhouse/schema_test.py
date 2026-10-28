@@ -77,6 +77,18 @@ class SchemaConsistencyTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "not found"):
             _view_select(self.sql, "no_such_view")
 
+    def test_metrics_addons_manifest_mounts_init_scripts_and_redpanda_poststart(self):
+        addons_dir = _SCHEMA_PATH.parent.parent / "addons" / "metrics"
+        manifest = (addons_dir / "manifests" / "metrics-addons.yaml").read_text()
+        setup_script = (addons_dir / "setup_metrics_addons.sh").read_text()
+
+        self.assertIn("CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS", manifest)
+        self.assertIn("/docker-entrypoint-initdb.d/init.sql", manifest)
+        self.assertIn("name: clickhouse-init-scripts", manifest)
+        self.assertIn("rpk topic create xmc-metrics --partitions 128 --replicas 1", manifest)
+        self.assertIn("publishNotReadyAddresses: true", manifest)
+        self.assertIn("kubectl create configmap clickhouse-init-scripts", setup_script)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,24 @@ func (m *mockTopologyQuerier) ListTopics(ctx context.Context, topics ...string) 
 	return m.details, nil
 }
 
+type sequenceTopologyQuerier struct {
+	responses []mockTopologyQuerier
+	calls     int
+}
+
+func (s *sequenceTopologyQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {
+	idx := s.calls
+	s.calls++
+	if len(s.responses) == 0 {
+		return kadm.TopicDetails{}, nil
+	}
+	if idx >= len(s.responses) {
+		idx = len(s.responses) - 1
+	}
+	resp := s.responses[idx]
+	return resp.ListTopics(ctx, topics...)
+}
+
 func createMockPartitions(numPartitions, replicasPerPartition int) kadm.PartitionDetails {
 	parts := make(kadm.PartitionDetails)
 	for i := 0; i < numPartitions; i++ {
@@ -180,6 +198,99 @@ func TestValidateTopicTopology(t *testing.T) {
 			err := ValidateTopicTopology(context.Background(), tt.querier, tt.topicName, tt.minPartitions, tt.minReplicas)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidateTopicTopology() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateTopicTopologyWithRetry(t *testing.T) {
+	validDetails := kadm.TopicDetails{
+		"xmc-metrics": kadm.TopicDetail{
+			Topic:      "xmc-metrics",
+			Partitions: createMockPartitions(128, 1),
+		},
+	}
+
+	tests := []struct {
+		name      string
+		querier   *sequenceTopologyQuerier
+		topicName string
+		timeout   time.Duration
+		interval  time.Duration
+		wantCalls int
+		wantErr   bool
+	}{
+		{
+			name: "Succeeds immediately on first attempt",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{details: validDetails},
+				},
+			},
+			topicName: "xmc-metrics",
+			timeout:   100 * time.Millisecond,
+			interval:  5 * time.Millisecond,
+			wantCalls: 1,
+			wantErr:   false,
+		},
+		{
+			name: "Succeeds after transient missing topic and broker error",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{err: errors.New("broker starting")},
+					{details: kadm.TopicDetails{}},
+					{details: validDetails},
+				},
+			},
+			topicName: "xmc-metrics",
+			timeout:   200 * time.Millisecond,
+			interval:  5 * time.Millisecond,
+			wantCalls: 3,
+			wantErr:   false,
+		},
+		{
+			name: "Fails immediately on empty topic name without polling",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{details: validDetails},
+				},
+			},
+			topicName: "",
+			timeout:   50 * time.Millisecond,
+			interval:  5 * time.Millisecond,
+			wantCalls: 0,
+			wantErr:   true,
+		},
+		{
+			name: "Fails when retry timeout expires",
+			querier: &sequenceTopologyQuerier{
+				responses: []mockTopologyQuerier{
+					{details: kadm.TopicDetails{}},
+				},
+			},
+			topicName: "xmc-metrics",
+			timeout:   25 * time.Millisecond,
+			interval:  10 * time.Millisecond,
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateTopicTopologyWithRetry(
+				context.Background(),
+				tt.querier,
+				tt.topicName,
+				128,
+				1,
+				tt.timeout,
+				tt.interval,
+			)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateTopicTopologyWithRetry() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantCalls > 0 && tt.querier.calls != tt.wantCalls {
+				t.Errorf("querier calls = %d, want %d", tt.querier.calls, tt.wantCalls)
 			}
 		})
 	}
