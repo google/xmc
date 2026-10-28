@@ -43,10 +43,7 @@ const managedXprofArtifactFilter = `payload_type = "managed_xprof"`
 // Extracted into a standalone helper so that creation time formatting and zero-value
 // handling are independently testable and isolated from the MLRun creation flow.
 func formatCreationTime(t metav1.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format(constants.MLRunCreationTimeFormat)
+	return hypercomputeclient.FormatWorkloadCreateTime(t.Time)
 }
 
 // consoleProject and consoleLocation return the target project and location

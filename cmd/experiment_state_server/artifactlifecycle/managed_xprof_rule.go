@@ -130,9 +130,9 @@ func (r *ManagedXprofRule) handleActiveState(
 	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 ) error {
-	mlCtx, ok := buildMLRunContext(event)
-	if !ok {
-		logging.Warn(ctx, "Skipping MLRun creation; lifecycle event lacks JobSet runtime context", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
+	mlCtx, skipReason := buildMLRunContext(event, artifact)
+	if skipReason != "" {
+		logging.Warn(ctx, "Skipping MLRun creation; "+skipReason, "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
 		return nil
 	}
 	xprofURL, err := r.getOrCreateMLRun(ctx, mlCtx)
@@ -157,8 +157,8 @@ func (r *ManagedXprofRule) handleTerminalState(
 	artifact *essmsgpb.Artifact,
 ) error {
 	phase := terminalRunPhase(event.GetNewState())
-	mlCtx, ok := buildMLRunContext(event)
-	if !ok {
+	mlCtx, skipReason := buildMLRunContext(event, artifact)
+	if skipReason != "" {
 		return r.finalizeRecordedMLRun(ctx, store, event, phase)
 	}
 	xprofURL, err := r.getOrCreateMLRun(ctx, mlCtx)
@@ -376,48 +376,55 @@ func (r *ManagedXprofRule) adoptExistingMLRun(ctx context.Context, createErr err
 	return r.mlRunURL(res, existingID), nil
 }
 
-// buildMLRunContext derives the MLRun identity and create options from the event's
-// JobSet runtime context. It reports false when the context (or its JobSet name) is
-// missing, because the MLRun id cannot then be derived consistently with the reconciler.
-func buildMLRunContext(event *taskqueuepb.ArtifactLifecycleEvent) (mlRunContext, bool) {
+// buildMLRunContext derives the MLRun identity and create request from the event's
+// JobSet runtime context, matching the legacy reconciler's request. Display name and
+// run group come from the JobSet env, falling back to the ManagedXprof artifact. It
+// returns a non-empty skip reason when the JobSet name, the GCS folder, the display
+// name or the run group is missing (the legacy reconciler skips MLRun creation then).
+func buildMLRunContext(event *taskqueuepb.ArtifactLifecycleEvent, artifact *essmsgpb.Artifact) (mlRunContext, string) {
 	rt := event.GetJobSetRuntimeContext()
-	jobSetName := rt.GetJobSetName()
-	if jobSetName == "" {
-		return mlRunContext{}, false
+	if rt.GetJobSetName() == "" {
+		return mlRunContext{}, "lifecycle event lacks JobSet runtime context"
 	}
+	envVars := rt.GetEnvironmentVariables()
+	gcsPath := envVars[constants.XmcEnvVarManagedXprofGCSObjectFolder]
+	displayName := firstNonEmpty(envVars[constants.XmcEnvVarManagedXprofDisplayName], artifact.GetPayload().GetManagedXprof().GetDisplayName())
+	runGroup := firstNonEmpty(envVars[constants.XmcEnvVarManagedXprofRunGroup], artifact.GetPayload().GetManagedXprof().GetRunGroup())
+	if gcsPath == "" || displayName == "" || runGroup == "" {
+		return mlRunContext{}, "ManagedXprof GCS folder, display name or run group is missing"
+	}
+	workload := managedXprofWorkload(rt)
+	return mlRunContext{
+		mlRunID:     hypercomputeclient.ConstructMLRunID(workload.ClusterPath, workload.Namespace, "JobSet", workload.JobSetName, workload.CreationTime),
+		displayName: displayName,
+		runGroup:    runGroup,
+		createOpts: hypercomputeclient.BuildManagedXprofCreateOptions(workload, runGroup,
+			hypercomputeclient.BuildMLRunLabels(event.GetExperimentId(), event.GetWorkUnitId()),
+			hypercomputeclient.ManagedXprofArtifacts(gcsPath)),
+	}, ""
+}
+
+// managedXprofWorkload maps the JobSet runtime context onto MLRun workload details.
+func managedXprofWorkload(rt *taskqueuepb.JobSetRuntimeContext) hypercomputeclient.ManagedXprofWorkload {
 	var creationTime time.Time
 	if rt.GetCreationTime() != nil {
 		creationTime = rt.GetCreationTime().AsTime()
 	}
-
-	envVars := rt.GetEnvironmentVariables()
-	displayName := envVars[constants.XmcEnvVarManagedXprofDisplayName]
-	if displayName == "" {
-		displayName = jobSetName
+	return hypercomputeclient.ManagedXprofWorkload{
+		ClusterPath:  rt.GetCluster(),
+		Namespace:    rt.GetNamespace(),
+		JobSetName:   rt.GetJobSetName(),
+		CreationTime: creationTime,
 	}
-	runGroup := envVars[constants.XmcEnvVarManagedXprofRunGroup]
-	artifacts := make(map[string]string)
-	if folder := envVars[constants.XmcEnvVarManagedXprofGCSObjectFolder]; folder != "" {
-		artifacts["xprof_gcs_path"] = folder
-	}
+}
 
-	return mlRunContext{
-		mlRunID:     hypercomputeclient.ConstructMLRunID(rt.GetCluster(), rt.GetNamespace(), "JobSet", jobSetName, creationTime),
-		displayName: displayName,
-		runGroup:    runGroup,
-		createOpts: &hypercomputeclient.CreateMLRunOptions{
-			RunGroup:     runGroup,
-			Labels:       hypercomputeclient.BuildMLRunLabels(event.GetExperimentId(), event.GetWorkUnitId()),
-			Artifacts:    artifacts,
-			Orchestrator: "GKE",
-			WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
-				ID:        jobSetName,
-				Kind:      "JobSet",
-				Cluster:   rt.GetCluster(),
-				Namespace: rt.GetNamespace(),
-			},
-		},
-	}, true
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func (r *ManagedXprofRule) mlRunURL(mlRun map[string]any, mlRunID string) string {

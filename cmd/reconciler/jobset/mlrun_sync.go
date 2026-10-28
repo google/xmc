@@ -16,8 +16,6 @@ package jobset
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -68,28 +66,14 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	return mlRunURL
 }
 
-func resolveClusterPath(clusterName, project, location string) string {
-	if !strings.HasPrefix(clusterName, "projects/") && project != "" && location != "" {
-		return fmt.Sprintf("projects/%s/locations/%s/clusters/%s", project, location, clusterName)
-	}
-	return clusterName
-}
-
 func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup string, labels, artifacts map[string]string) *hypercomputeclient.CreateMLRunOptions {
-	return &hypercomputeclient.CreateMLRunOptions{
-		RunGroup:     runGroup,
-		Tools:        []map[string]any{{"xprof": map[string]any{}}},
-		Labels:       labels,
-		Artifacts:    artifacts,
-		Orchestrator: "GKE",
-		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
-			Kind:       "JobSet",
-			Cluster:    clusterPath,
-			Namespace:  jobSet.Namespace,
-			ID:         jobSet.Name,
-			CreateTime: formatCreationTime(jobSet.CreationTimestamp),
-		},
+	workload := hypercomputeclient.ManagedXprofWorkload{
+		ClusterPath:  clusterPath,
+		Namespace:    jobSet.Namespace,
+		JobSetName:   jobSet.Name,
+		CreationTime: jobSet.CreationTimestamp.Time,
 	}
+	return hypercomputeclient.BuildManagedXprofCreateOptions(workload, runGroup, labels, artifacts)
 }
 
 // ensureMLRunCreated creates (or, on conflict, upserts) the single MLRun tracking
@@ -106,9 +90,9 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	}
 
 	mlRunID := hypercomputeclient.ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
-	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
+	clusterPath := hypercomputeclient.ResolveClusterPath(r.ClusterName, r.Project, r.Location)
 	labels := hypercomputeclient.BuildMLRunLabels(xid, wid)
-	artifacts := map[string]string{"gcs_path": gcsPath}
+	artifacts := hypercomputeclient.ManagedXprofArtifacts(gcsPath)
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)
 
 	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)

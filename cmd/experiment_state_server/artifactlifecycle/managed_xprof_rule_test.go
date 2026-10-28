@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
@@ -54,6 +55,13 @@ type fakeMLRunClient struct {
 	createdRuns    map[string]string
 	updatedRuns    map[string]string
 	labeledRuns    []string
+	lastCreate     *recordedCreate
+}
+
+// recordedCreate captures the last CreateMLRun request.
+type recordedCreate struct {
+	displayName string
+	opts        *hypercomputeclient.CreateMLRunOptions
 }
 
 func newFakeMLRunClient() *fakeMLRunClient {
@@ -63,7 +71,8 @@ func newFakeMLRunClient() *fakeMLRunClient {
 	}
 }
 
-func (f *fakeMLRunClient) CreateMLRun(_ context.Context, name, _, runPhase string, _ *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
+func (f *fakeMLRunClient) CreateMLRun(_ context.Context, name, displayName, runPhase string, opts *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
+	f.lastCreate = &recordedCreate{displayName: displayName, opts: opts}
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
@@ -99,7 +108,7 @@ func (f *fakeMLRunClient) UpdateMLRun(_ context.Context, name string, opts *hype
 }
 
 func managedXprofArtifact(xprofURL string) *essmsgpb.Artifact {
-	mx := &essmsgpb.ManagedXprofArtifact{}
+	mx := &essmsgpb.ManagedXprofArtifact{DisplayName: "persisted-display-name", RunGroup: "persisted-run-group"}
 	if xprofURL != "" {
 		mx.Xprof = &essmsgpb.XProfUIInstance{XprofUrl: xprofURL}
 	}
@@ -140,12 +149,15 @@ func executionWithMLRunURL(eid, mlRunURL string) *essmsgpb.WorkUnitExecution {
 	}
 }
 
+const testGCSFolder = "gs://bucket/xmc-10-20-1"
+
 func runtimeContext() *taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext {
 	return &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
 		JobSetRuntimeContext: &taskqueuepb.JobSetRuntimeContext{
-			Cluster:    proto.String("cluster-1"),
-			Namespace:  proto.String("default"),
-			JobSetName: proto.String("xmc-wu-20-1"),
+			Cluster:              proto.String("cluster-1"),
+			Namespace:            proto.String("default"),
+			JobSetName:           proto.String("xmc-wu-20-1"),
+			EnvironmentVariables: map[string]string{"XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER": testGCSFolder},
 		},
 	}
 }
@@ -165,6 +177,97 @@ func lifecycleEvent(state essmsgpb.WorkUnitStatus_WorkUnitState, withRuntime boo
 
 // expectedMLRunID is the id the reconciler derives for runtimeContext().
 var expectedMLRunID = hypercomputeclient.ConstructMLRunID("cluster-1", "default", "JobSet", "xmc-wu-20-1", time.Time{})
+
+// TestManagedXprofRule_CreateRequestMatchesLegacy pins the CreateMLRun request to
+// what the legacy reconciler on main sends (cmd/reconciler/jobset/mlrun_sync.go):
+// artifacts {"gcs_path": <folder>}, the xprof tool, BuildMLRunLabels labels, GKE
+// JobSet workload details, and display name / run group from env or the artifact.
+func TestManagedXprofRule_CreateRequestMatchesLegacy(t *testing.T) {
+	created := time.Date(2026, 10, 28, 16, 26, 5, 0, time.UTC)
+	event := lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, true)
+	rt := event.GetJobSetRuntimeContext()
+	rt.Cluster = proto.String("projects/p/locations/us-central1/clusters/cluster-1")
+	rt.CreationTime = timestamppb.New(created)
+	mlClient := newFakeMLRunClient()
+	rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+
+	if err := rule.OnExecutionStateChanged(context.Background(), storeWithCurrentEID("1"), event, managedXprofArtifact("")); err != nil {
+		t.Fatalf("OnExecutionStateChanged() error = %v", err)
+	}
+	want := &recordedCreate{
+		displayName: "persisted-display-name",
+		opts: &hypercomputeclient.CreateMLRunOptions{
+			RunGroup:     "persisted-run-group",
+			Tools:        []map[string]any{{"xprof": map[string]any{}}},
+			Labels:       map[string]string{"experiment_id": "10", "workunit_id": "20", "created_by": "xmanager"},
+			Artifacts:    map[string]string{"gcs_path": testGCSFolder},
+			Orchestrator: "GKE",
+			WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
+				Kind:       "JobSet",
+				Cluster:    "projects/p/locations/us-central1/clusters/cluster-1",
+				Namespace:  "default",
+				ID:         "xmc-wu-20-1",
+				CreateTime: "2026-10-28T16:26:05Z",
+			},
+		},
+	}
+	if diff := cmp.Diff(want, mlClient.lastCreate, cmp.AllowUnexported(recordedCreate{})); diff != "" {
+		t.Errorf("CreateMLRun request mismatch (-want +got):\n%s", diff)
+	}
+	wantID := hypercomputeclient.ConstructMLRunID("cluster-1", "default", "JobSet", "xmc-wu-20-1", created)
+	if diff := cmp.Diff(map[string]string{wantID: "ACTIVE"}, mlClient.createdRuns); diff != "" {
+		t.Errorf("created runs mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestManagedXprofRule_CreateGating mirrors the legacy reconciler's gating: no MLRun
+// without a GCS folder, display name and run group; env values win over the artifact.
+func TestManagedXprofRule_CreateGating(t *testing.T) {
+	tests := []struct {
+		name            string
+		env             map[string]string
+		artifact        *essmsgpb.Artifact
+		wantCreate      bool
+		wantDisplayName string
+		wantRunGroup    string
+	}{
+		{name: "missing GCS folder skips", env: map[string]string{}, artifact: managedXprofArtifact("")},
+		{
+			name: "missing display name and run group skips", env: map[string]string{"XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER": testGCSFolder},
+			artifact: &essmsgpb.Artifact{Name: artifactName, Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: &essmsgpb.ManagedXprofArtifact{}}}},
+		},
+		{
+			name: "env display name and run group win over the artifact",
+			env: map[string]string{
+				"XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER": testGCSFolder,
+				"XMC_MANAGED_XPROF_DISPLAY_NAME":      "env-display",
+				"XMC_MANAGED_XPROF_RUN_GROUP":         "env-group",
+			},
+			artifact: managedXprofArtifact(""), wantCreate: true, wantDisplayName: "env-display", wantRunGroup: "env-group",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			event := lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, true)
+			event.GetJobSetRuntimeContext().EnvironmentVariables = tc.env
+			mlClient := newFakeMLRunClient()
+			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+
+			if err := rule.OnExecutionStateChanged(context.Background(), storeWithCurrentEID("1"), event, tc.artifact); err != nil {
+				t.Fatalf("OnExecutionStateChanged() error = %v", err)
+			}
+			if got := mlClient.lastCreate != nil; got != tc.wantCreate {
+				t.Fatalf("CreateMLRun called = %v, want %v", got, tc.wantCreate)
+			}
+			if !tc.wantCreate {
+				return
+			}
+			if mlClient.lastCreate.displayName != tc.wantDisplayName || mlClient.lastCreate.opts.RunGroup != tc.wantRunGroup {
+				t.Errorf("display name, run group = %q, %q; want %q, %q", mlClient.lastCreate.displayName, mlClient.lastCreate.opts.RunGroup, tc.wantDisplayName, tc.wantRunGroup)
+			}
+		})
+	}
+}
 
 func TestManagedXprofRule_Matches(t *testing.T) {
 	rule := artifactlifecycle.NewManagedXprofRule(nil, testProject, testLocation)

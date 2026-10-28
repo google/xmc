@@ -36,6 +36,7 @@ import (
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/shared"
+	"xmanager_cloud/internal/hypercomputeclient"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
 	"xmanager_cloud/internal/kubernetes/common/notifywhen"
@@ -395,7 +396,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	var hints shared.LifecycleHints
 	if r.ArtifactLifecycleEnabled {
-		hints = ExtractLifecycleHints(jobSet, r.ClusterName)
+		hints = ExtractLifecycleHints(jobSet, hypercomputeclient.ResolveClusterPath(r.ClusterName, r.Project, r.Location))
 		hints.ForceNotify = r.checkNotifyWhenUpdate(jobSet)
 	} else {
 		mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
