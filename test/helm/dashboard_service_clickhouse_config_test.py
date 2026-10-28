@@ -189,6 +189,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             {"metrics.enabled": "true", "metrics.clickhouse.password": "s3cret"},
         )
 
+        self.assertRegex(manifest, r"(?m)^apiVersion: v1$")
         self.assertIn("name: clickhouse-secret", manifest)
         self.assertIn('clickhouse-password: "s3cret"', manifest)
 
