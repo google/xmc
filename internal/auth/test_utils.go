@@ -154,26 +154,24 @@ func (m *MockAuth) IsUserAuthorized(ctx context.Context, user string, acls *xpb.
 	if !m.CheckACLs || acls == nil {
 		return false, nil
 	}
-	for _, owner := range acls.GetOwners() {
-		if owner.GetUser() == user {
-			return true, nil
+	if hasUserPrincipal(acls.GetOwners(), user) {
+		return true, nil
+	}
+	if (role == Writer || role == Reader) && hasUserPrincipal(acls.GetWriters(), user) {
+		return true, nil
+	}
+	return role == Reader && hasUserPrincipal(acls.GetReaders(), user), nil
+}
+
+// hasUserPrincipal reports whether roles contains user as a user principal, compared
+// case-insensitively like the real Authorizer.
+func hasUserPrincipal(roles []*xpb.XidAcls_Role, user string) bool {
+	for _, r := range roles {
+		if principalsMatch(r.GetUser(), user) {
+			return true
 		}
 	}
-	if role == Writer || role == Reader {
-		for _, writer := range acls.GetWriters() {
-			if writer.GetUser() == user {
-				return true, nil
-			}
-		}
-	}
-	if role == Reader {
-		for _, reader := range acls.GetReaders() {
-			if reader.GetUser() == user {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
+	return false
 }
 
 // IsUserAuthorizedForChart mocks user authorization for RLS.

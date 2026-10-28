@@ -134,6 +134,20 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
 	}
 
+	// Create an entry whose owner ACL spells the user's email with different casing.
+	mixedCaseOwnerEntryReq := &msgpb.CreateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
+			Acls: &msgpb.XidAcls{
+				Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
+			},
+		},
+	}
+	mixedCaseOwnerEntry, err := server.CreateXidEntry(ctx, mixedCaseOwnerEntryReq)
+	if err != nil {
+		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
+	}
+
 	testCases := []struct {
 		name           string
 		req            *msgpb.CheckUserAuthorizationRequest
@@ -224,6 +238,14 @@ func TestCheckUserAuthorization_HappyPath(t *testing.T) {
 			req: &msgpb.CheckUserAuthorizationRequest{
 				Name:     proto.String(noParentOwnerEntry.GetName()),
 				RoleType: msgpb.XidAcls_READER.Enum(),
+			},
+			wantAuthorized: true,
+		},
+		{
+			name: "mixed_case_owner_acl_matches_lowercase_user",
+			req: &msgpb.CheckUserAuthorizationRequest{
+				Name:     proto.String(mixedCaseOwnerEntry.GetName()),
+				RoleType: msgpb.XidAcls_OWNER.Enum(),
 			},
 			wantAuthorized: true,
 		},

@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net/mail"
-	"strings"
 	"time"
 
 	xpb "xmanager_cloud/api/protos/xid"
@@ -32,10 +31,9 @@ func (a *Authorizer) IsUserAuthorized(ctx context.Context, user string, acls *xp
 		return false, fmt.Errorf("invalid user email: %w", err)
 	}
 
-	var domain string
-	if components := strings.Split(user, "@"); len(components) == 2 {
-		domain = components[1]
-	}
+	// Principals are compared in canonical form because email addresses are case-insensitive.
+	user = NormalizePrincipal(user)
+	domain := emailDomain(user)
 
 	// All roles check Owners
 	if a.isPrincipalInList(ctx, user, domain, acls.GetOwners()) {
@@ -65,46 +63,60 @@ func (a *Authorizer) IsUserAuthorizedForChart(ctx context.Context, user string, 
 	return a.IsUserAuthorized(ctx, user, acls, Reader)
 }
 
-// isPrincipalInList checks if a user is in a list of authorized principals.
+// isPrincipalInList checks if a user is in a list of authorized principals. Principals are
+// compared case-insensitively.
 func (a *Authorizer) isPrincipalInList(ctx context.Context, user, domain string, authorizedUsers []*xpb.XidAcls_Role) bool {
 	for _, authorizedUser := range authorizedUsers {
-		if user == authorizedUser.GetUser() {
-			logging.Info(ctx, "User is authorized", "user", user, "authorized_user", authorizedUser.GetUser())
+		if matchesIdentityPrincipal(ctx, user, domain, authorizedUser) {
 			return true
 		}
-
-		if groupEmail := authorizedUser.GetGroup(); groupEmail != "" {
-			isMember, err := a.isUserInGroup(ctx, user, groupEmail)
-
-			// Log an error, but continue checking for other auths. This is to avoid a single group
-			// causing the entire authorization check to fail.
-			if err != nil {
-				logging.Warn(ctx, "Group check failed", "user", user, "group", groupEmail, "error", err)
-				continue
-			}
-			if isMember {
-				logging.Info(ctx, "User is authorized via group", "user", user, "group", groupEmail)
-				return true
-			}
-		}
-
-		if domain != "" && domain == authorizedUser.GetDomain() {
-			logging.Info(ctx, "User is authorized via domain", "user", user, "domain", authorizedUser.GetDomain())
-			return true
-		}
-
-		if user == authorizedUser.GetServiceAccount() {
-			logging.Info(ctx, "User is authorized as service account", "user", user, "service_account", authorizedUser.GetServiceAccount())
-			return true
-		}
-
-		if authorizedUser.GetAllAuthenticatedUsers() {
-			logging.Info(ctx, "All authenticated users are authorized")
+		if a.matchesGroupPrincipal(ctx, user, authorizedUser) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// matchesIdentityPrincipal reports whether an ACL entry grants access to the user directly: by
+// user, service account, domain, or all authenticated users.
+func matchesIdentityPrincipal(ctx context.Context, user, domain string, authorizedUser *xpb.XidAcls_Role) bool {
+	if principalsMatch(authorizedUser.GetUser(), user) {
+		logging.Info(ctx, "User is authorized", "user", user, "authorized_user", authorizedUser.GetUser())
+		return true
+	}
+	if principalsMatch(authorizedUser.GetDomain(), domain) {
+		logging.Info(ctx, "User is authorized via domain", "user", user, "domain", authorizedUser.GetDomain())
+		return true
+	}
+	if principalsMatch(authorizedUser.GetServiceAccount(), user) {
+		logging.Info(ctx, "User is authorized as service account", "user", user, "service_account", authorizedUser.GetServiceAccount())
+		return true
+	}
+	if authorizedUser.GetAllAuthenticatedUsers() {
+		logging.Info(ctx, "All authenticated users are authorized")
+		return true
+	}
+	return false
+}
+
+// matchesGroupPrincipal reports whether an ACL entry grants access to the user via membership in
+// a group. Group check failures are logged and treated as non-matches so that a single failing
+// group does not fail the entire authorization check.
+func (a *Authorizer) matchesGroupPrincipal(ctx context.Context, user string, authorizedUser *xpb.XidAcls_Role) bool {
+	groupEmail := authorizedUser.GetGroup()
+	if groupEmail == "" {
+		return false
+	}
+	isMember, err := a.isUserInGroup(ctx, user, groupEmail)
+	if err != nil {
+		logging.Warn(ctx, "Group check failed", "user", user, "group", groupEmail, "error", err)
+		return false
+	}
+	if isMember {
+		logging.Info(ctx, "User is authorized via group", "user", user, "group", groupEmail)
+	}
+	return isMember
 }
 
 // isUserInGroup checks if a user is a member of a group.
@@ -114,7 +126,10 @@ func (a *Authorizer) isUserInGroup(ctx context.Context, userEmail, groupEmail st
 		return false, fmt.Errorf("invalid group email: %w", err)
 	}
 
-	// The cache key is a simple combination of user and group.
+	// Canonicalize both principals up front so the cache key and the membership API query use the
+	// same form, and differently-cased spellings of the same principals share one cache entry.
+	userEmail = NormalizePrincipal(userEmail)
+	groupEmail = NormalizePrincipal(groupEmail)
 	cacheKey := userEmail + ":" + groupEmail
 
 	// --- Step 1: Check the cache (Read Lock) ---
