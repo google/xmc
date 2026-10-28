@@ -132,6 +132,8 @@ class PrepareTests(unittest.TestCase):
                 "hpa": False,
                 "replicas": 0,
                 "redpandaBrokers": "rp:9092",
+                "topicName": None,
+                "serviceAccountName": None,
             },
         }
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,7 +156,10 @@ class PrepareTests(unittest.TestCase):
                 if raw.lstrip().startswith("{")
                 else __import__("yaml").safe_load(raw)
             )
-            self.assertEqual(doc["components"]["ingestion-gateway"]["parameters"]["replicas"], 0)
+            ig_params = doc["components"]["ingestion-gateway"]["parameters"]
+            self.assertEqual(ig_params["replicas"], 0)
+            self.assertNotIn("topicName", ig_params)
+            self.assertNotIn("serviceAccountName", ig_params)
 
             with (
                 mock.patch(

@@ -162,8 +162,8 @@ def _build_gateway_values(
     values: Mapping[str, Any], ig: Mapping[str, Any], *, enabled: bool
 ) -> dict[str, Any]:
     """Builds stable-2026a components.ingestion-gateway overrides from umbrella values."""
-    all_keys = (*_GW_KEYS, "serviceAccountName")
-    params: dict[str, Any] = {k: ig[k] for k in all_keys if str(ig.get(k, "")).strip() != ""}
+    keys = (*_GW_KEYS, "serviceAccountName")
+    params: dict[str, Any] = {k: v for k in keys if (v := ig.get(k)) is not None and str(v).strip()}
     if (proj := str(values.get("projectId") or "").strip()) and _PLACEHOLDER not in proj:
         params["projectId"] = proj
     raw_img = str(ig.get("image") or values.get("ingestion_gateway_custom_image") or "").strip()
