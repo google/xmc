@@ -89,17 +89,13 @@ func (r *Repository) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.
 	return fetchExperiment(ctx, r.db, fetchExperimentSQL, xid)
 }
 
-type experimentStatusRow struct {
-	Status []byte `db:"status"`
-}
-
 // FetchExperimentStatus retrieves only the status of an experiment by its unique ID.
 func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*essmsgpb.ExperimentStatus, error) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	if xid == 0 {
 		return nil, fmt.Errorf("experiment ID cannot be 0: %w", grpcerr.ErrInvalidArgument)
 	}
-	row, err := pgdb.QueryRow[experimentStatusRow](ctx, r.db, fetchExperimentStatusSQL.String(), entityName, xid)
+	row, err := pgdb.QueryRow[postgresdata.ExperimentRow](ctx, r.db, fetchExperimentStatusSQL.String(), entityName, xid)
 	if err != nil {
 		return nil, err
 	}
@@ -117,9 +113,6 @@ func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageTo
 
 // UpdateExperiment updates an experiment with the given update mask.
 func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.ExperimentUpdate) (storage.UpdatedExperiments, error) {
-	if r.pool == nil {
-		return storage.UpdatedExperiments{}, pgdb.WrapStatusError("postgres database handle must not be nil", grpcerr.ErrFailedPrecondition, nil)
-	}
 	if err := validateExperimentUpdate(update); err != nil {
 		return storage.UpdatedExperiments{}, err
 	}
@@ -136,7 +129,7 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 			return err
 		}
 		if proto.Equal(originalExp, updatedExp) {
-			res = storage.UpdatedExperiments{Original: originalExp, Updated: originalExp}
+			res = storage.UpdatedExperiments{Original: originalExp, Updated: updatedExp}
 			return nil
 		}
 		updatedExp.UpdateTime = timestamppb.New(time.Now().UTC().Truncate(time.Microsecond))
@@ -185,6 +178,9 @@ func (r *TxRepository) UpdateExperimentStatus(ctx context.Context, exp *essmsgpb
 	row, err := toExperimentRow(exp)
 	if err != nil {
 		return err
+	}
+	if st := exp.GetStatus().GetUpdateTime(); st != nil && (exp.GetUpdateTime() == nil || st.AsTime().After(row.UpdateTime)) {
+		row.UpdateTime = st.AsTime()
 	}
 	return execExperimentStatement(ctx, r.tx, updateExperimentStatusSQL, row.GetStatusUpdateArgs(), true)
 }

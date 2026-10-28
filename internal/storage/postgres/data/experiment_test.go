@@ -71,9 +71,10 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 	}
 
 	tests := []struct {
-		name    string
-		exp     *essmsgpb.Experiment
-		wantRow ExperimentRow
+		name      string
+		exp       *essmsgpb.Experiment
+		wantRow   ExperimentRow
+		wantProto *essmsgpb.Experiment
 	}{
 		{
 			name: "experiment with all fields",
@@ -91,6 +92,7 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 				UpdateTime:   testExpTime,
 				CompleteTime: pgtype.Timestamptz{Time: testExpCompleteTime, Valid: true},
 			},
+			wantProto: fullExp,
 		},
 		{
 			name: "experiment with optional fields unset",
@@ -102,6 +104,14 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 				Tags:       []string{},
 				CreateTime: testExpTime,
 				UpdateTime: testExpTime,
+			},
+			wantProto: &essmsgpb.Experiment{
+				Name:       "experiments/456",
+				Title:      "Minimal Experiment",
+				Creator:    "minimal-user",
+				Status:     &essmsgpb.ExperimentStatus{},
+				CreateTime: timestamppb.New(testExpTime),
+				UpdateTime: timestamppb.New(testExpTime),
 			},
 		},
 	}
@@ -115,14 +125,14 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 			if diff := cmp.Diff(tc.wantRow, row, cmpopts.IgnoreFields(ExperimentRow{}, "Urls", "Resources", "Status")); diff != "" {
 				t.Errorf("ExperimentProtoToRow() row diff (-want +got):\n%s", diff)
 			}
-			if row.Urls == nil || row.Resources == nil || row.Tags == nil {
-				t.Errorf("ExperimentProtoToRow() produced nil slice for NOT NULL array column: Urls=%v Resources=%v Tags=%v", row.Urls != nil, row.Resources != nil, row.Tags != nil)
+			if row.Urls == nil || row.Resources == nil || row.Tags == nil || row.Status == nil {
+				t.Errorf("ExperimentProtoToRow() produced nil slice for NOT NULL column: Urls=%v Resources=%v Tags=%v Status=%v", row.Urls != nil, row.Resources != nil, row.Tags != nil, row.Status != nil)
 			}
 			got, err := ExperimentRowToProto(row)
 			if err != nil {
 				t.Fatalf("ExperimentRowToProto() failed: %v", err)
 			}
-			if diff := cmp.Diff(tc.exp, got, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(tc.wantProto, got, protocmp.Transform()); diff != "" {
 				t.Errorf("ExperimentRowToProto() diff (-want +got):\n%s", diff)
 			}
 		})
@@ -131,16 +141,16 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 
 func TestExperimentRowNamedArgs(t *testing.T) {
 	exp := &essmsgpb.Experiment{
-		Name:   "experiments/123",
-		Title:  "Title",
-		Status: &essmsgpb.ExperimentStatus{UpdateTime: timestamppb.New(testExpTime)},
+		Name:       "experiments/123",
+		Title:      "Title",
+		UpdateTime: timestamppb.New(testExpTime),
 	}
 	row, err := ExperimentProtoToRow(exp)
 	if err != nil {
 		t.Fatalf("ExperimentProtoToRow() failed: %v", err)
 	}
 	if !row.UpdateTime.Equal(testExpTime) {
-		t.Errorf("row.UpdateTime = %v, want %v from Status.UpdateTime", row.UpdateTime, testExpTime)
+		t.Errorf("row.UpdateTime = %v, want %v", row.UpdateTime, testExpTime)
 	}
 	if args := row.GetInsertArgs(); len(args) != 14 || args["xid"] != int64(123) {
 		t.Errorf("GetInsertArgs() = %v, want 14 entries with xid=123", args)

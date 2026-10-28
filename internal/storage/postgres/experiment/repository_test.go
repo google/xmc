@@ -99,8 +99,16 @@ func TestRepository_ValidationAndNilHandle(t *testing.T) {
 	if _, err := nilRepo.FetchDriftedComponents(ctx, 1, 0); status.Code(err) != codes.Unimplemented {
 		t.Errorf("FetchDriftedComponents() code = %v, want %v", status.Code(err), codes.Unimplemented)
 	}
-	if _, err := nilRepo.UpdateExperiment(ctx, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("nilRepo.UpdateExperiment() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	if _, err := nilRepo.UpdateExperiment(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("nilRepo.UpdateExperiment(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	validUpdate := &storage.ExperimentUpdate{
+		XID:        1,
+		Experiment: &essmsgpb.Experiment{Title: "t"},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+	}
+	if _, err := nilRepo.UpdateExperiment(ctx, validUpdate); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("nilRepo.UpdateExperiment(valid) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 	if _, err := nilTxRepo.FetchExperiment(ctx, 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilTxRepo.FetchExperiment(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
@@ -151,6 +159,23 @@ func TestInsertAndFetchExperiment(t *testing.T) {
 	})
 	if !errors.Is(err, grpcerr.ErrAlreadyExists) {
 		t.Errorf("duplicate InsertExperiment error = %v, want %v", err, grpcerr.ErrAlreadyExists)
+	}
+
+	// Nil Status must serialize to empty NOT NULL bytea and round-trip as an empty ExperimentStatus.
+	nilStatusExp := prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.Name = "experiments/101"
+		e.Status = nil
+	})
+	seedExperiment(ctx, t, essPool, nilStatusExp)
+	gotNilStatus, err := repo.FetchExperiment(ctx, 101)
+	if err != nil {
+		t.Fatalf("FetchExperiment(101) failed: %v", err)
+	}
+	wantNilStatus := prototest.Modify(nilStatusExp, func(e *essmsgpb.Experiment) {
+		e.Status = &essmsgpb.ExperimentStatus{}
+	})
+	if diff := cmp.Diff(wantNilStatus, gotNilStatus, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchExperiment(101) nil Status diff (-want +got):\n%s", diff)
 	}
 
 	if _, err := repo.FetchExperiment(ctx, 99999); !errors.Is(err, grpcerr.ErrNotFound) {
@@ -208,10 +233,13 @@ func TestUpdateExperiment(t *testing.T) {
 		t.Errorf("FetchExperiment(100) after update diff (-want +got):\n%s", diff)
 	}
 
-	// No-op update must preserve UpdateTime.
+	// No-op update must preserve UpdateTime and return distinct pointers.
 	noopRes, err := repo.UpdateExperiment(ctx, update)
 	if err != nil {
 		t.Fatalf("no-op UpdateExperiment() failed: %v", err)
+	}
+	if noopRes.Original == noopRes.Updated {
+		t.Error("no-op UpdateExperiment returned aliased Original and Updated pointers")
 	}
 	if diff := cmp.Diff(res.Updated, noopRes.Updated, protocmp.Transform()); diff != "" {
 		t.Errorf("no-op UpdateExperiment diff (-want +got):\n%s", diff)
@@ -289,6 +317,15 @@ func TestUpdateExperiment_Concurrent(t *testing.T) {
 
 	seedExperiment(ctx, t, essPool, baseExperiment)
 
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin holdTx failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(ctx) }()
+	if _, err := holdTx.Exec(ctx, "SELECT 1 FROM Experiments WHERE Xid = $1 FOR NO KEY UPDATE", 100); err != nil {
+		t.Fatalf("lock row in holdTx failed: %v", err)
+	}
+
 	updates := []*storage.ExperimentUpdate{
 		{
 			XID:        100,
@@ -311,6 +348,10 @@ func TestUpdateExperiment_Concurrent(t *testing.T) {
 			_, errs[idx] = repo.UpdateExperiment(ctx, upd)
 		}(i, u)
 	}
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("Commit holdTx failed: %v", err)
+	}
 	wg.Wait()
 
 	for i, err := range errs {
@@ -323,11 +364,14 @@ func TestUpdateExperiment_Concurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchExperiment(100) failed: %v", err)
 	}
-	if got.GetTitle() != "Concurrent Title" || got.GetNotes() != "Concurrent Notes" || got.GetPriority() != 9 {
-		t.Errorf("FetchExperiment(100) after concurrent updates = %+v, want both updates applied", got)
-	}
-	if diff := cmp.Diff([]string{"concurrent-tag"}, got.GetTags()); diff != "" {
-		t.Errorf("Tags diff (-want +got):\n%s", diff)
+	want := prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.Title = "Concurrent Title"
+		e.Notes = "Concurrent Notes"
+		e.Priority = 9
+		e.Tags = []string{"concurrent-tag"}
+	})
+	if diff := cmp.Diff(want, got, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.Experiment{}, "update_time")); diff != "" {
+		t.Errorf("FetchExperiment(100) after concurrent updates diff (-want +got):\n%s", diff)
 	}
 }
 
@@ -338,8 +382,9 @@ func TestTxRepository_StatusAndResourcesUpdates(t *testing.T) {
 
 	seedExperiment(ctx, t, essPool, baseExperiment)
 
+	statusUpdateTime := baseTime.Add(time.Hour)
+	resourcesUpdateTime := baseTime.Add(90 * time.Minute)
 	completeTime := baseTime.Add(2 * time.Hour)
-	updateTime := baseTime.Add(time.Hour)
 	newResources := []*essmsgpb.ResourceSet{
 		{
 			Resources: &essmsgpb.ResourceSet_CpuResources{
@@ -348,6 +393,7 @@ func TestTxRepository_StatusAndResourcesUpdates(t *testing.T) {
 		},
 	}
 
+	// UpdateExperimentStatus without bumping exp.UpdateTime must advance UpdateTime from Status.UpdateTime.
 	err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
 		txRepo := NewTxRepository(tx)
 		exp, err := txRepo.FetchExperiment(ctx, 100)
@@ -357,18 +403,34 @@ func TestTxRepository_StatusAndResourcesUpdates(t *testing.T) {
 		exp.Status = &essmsgpb.ExperimentStatus{
 			ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
 			LaunchState: essmsgpb.ExperimentStatus_COMPLETED,
-			UpdateTime:  timestamppb.New(updateTime),
+			UpdateTime:  timestamppb.New(statusUpdateTime),
 		}
-		exp.UpdateTime = timestamppb.New(updateTime)
 		exp.CompleteTime = timestamppb.New(completeTime)
-		if err := txRepo.UpdateExperimentStatus(ctx, exp); err != nil {
+		return txRepo.UpdateExperimentStatus(ctx, exp)
+	})
+	if err != nil {
+		t.Fatalf("UpdateExperimentStatus failed: %v", err)
+	}
+	afterStatus, err := repo.FetchExperiment(ctx, 100)
+	if err != nil {
+		t.Fatalf("FetchExperiment(100) after status update failed: %v", err)
+	}
+	if !afterStatus.GetUpdateTime().AsTime().Equal(statusUpdateTime) {
+		t.Errorf("UpdateTime after status update = %v, want %v", afterStatus.GetUpdateTime().AsTime(), statusUpdateTime)
+	}
+
+	err = pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+		txRepo := NewTxRepository(tx)
+		exp, err := txRepo.FetchExperiment(ctx, 100)
+		if err != nil {
 			return err
 		}
 		exp.Resources = newResources
+		exp.UpdateTime = timestamppb.New(resourcesUpdateTime)
 		return txRepo.UpdateExperimentResources(ctx, exp)
 	})
 	if err != nil {
-		t.Fatalf("TxRepository updates failed: %v", err)
+		t.Fatalf("UpdateExperimentResources failed: %v", err)
 	}
 
 	got, err := repo.FetchExperiment(ctx, 100)
@@ -379,10 +441,10 @@ func TestTxRepository_StatusAndResourcesUpdates(t *testing.T) {
 		e.Status = &essmsgpb.ExperimentStatus{
 			ActiveState: essmsgpb.ExperimentStatus_INACTIVE,
 			LaunchState: essmsgpb.ExperimentStatus_COMPLETED,
-			UpdateTime:  timestamppb.New(updateTime),
+			UpdateTime:  timestamppb.New(statusUpdateTime),
 		}
 		e.Resources = newResources
-		e.UpdateTime = timestamppb.New(updateTime)
+		e.UpdateTime = timestamppb.New(resourcesUpdateTime)
 		e.CompleteTime = timestamppb.New(completeTime)
 	})
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
