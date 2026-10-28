@@ -155,9 +155,9 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 	if tags == nil {
 		tags = []string{}
 	}
-	updateTime := exp.GetUpdateTime().AsTime()
-	if exp.GetUpdateTime() == nil {
-		updateTime = exp.GetStatus().GetUpdateTime().AsTime()
+	updateTime := exp.GetStatus().GetUpdateTime().AsTime()
+	if ut := exp.GetUpdateTime(); ut != nil {
+		updateTime = ut.AsTime()
 	}
 	var completeTime pgtype.Timestamptz
 	if exp.GetCompleteTime() != nil {
