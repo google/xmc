@@ -91,13 +91,24 @@ ALLOWLIST: dict[str, str] = {
     "tools/parse_x.py": "Routing table example in xmc_iterative_reflection/SKILL.md.",
 }
 
-# A path token must not be preceded by characters that make it part of a larger
-# path, URL, Bazel label, or identifier (e.g. `github.com/x/pkg/foo`, `//tools:x`).
-_PATH_TOKEN_RE = re.compile(
-    r"(?<![\w./@~}-])(?:\./)?((?:"
-    + "|".join(re.escape(root) for root in PATH_ROOTS)
-    + r")/[\w./<*{}$\[\]-]*)"
-)
+
+def build_path_token_re(roots: Iterable[str]) -> re.Pattern[str]:
+    """Compiles the path-token pattern for the given top-level roots.
+
+    A token must not be preceded by characters that make it part of a larger
+    path, URL, Bazel label, or identifier (e.g. `github.com/x/pkg/foo`,
+    `//tools:x`). Root order does not matter: the mandatory `/` after the
+    alternation makes the engine backtrack past a shorter root that prefixes a
+    longer one.
+    """
+    return re.compile(
+        r"(?<![\w./@~}-])(?:\./)?((?:"
+        + "|".join(re.escape(root) for root in roots)
+        + r")/[\w./<*{}$\[\]-]*)"
+    )
+
+
+_PATH_TOKEN_RE = build_path_token_re(PATH_ROOTS)
 _INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _PLACEHOLDER_RE = re.compile(r"[<{$*\[]|\.\.\.")

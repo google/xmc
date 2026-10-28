@@ -94,6 +94,10 @@ class ExtractPathTokensTest(unittest.TestCase):
             ["tools/a.py", "deploy/b.yaml", "cmd/ui"],
         )
 
+    def test_shorter_root_listed_first_does_not_shadow_longer_root(self):
+        pattern = cli.build_path_token_re(["tool", "tools"])
+        self.assertEqual(pattern.findall("tools/a.py tool/b.py"), ["tools/a.py", "tool/b.py"])
+
     def test_stops_at_shell_redirects_and_punctuation(self):
         self.assertEqual(
             cli.extract_path_tokens("python3 tools/x.py>/dev/null (see tools/y.py), tools/z.py;"),
