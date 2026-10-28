@@ -41,7 +41,9 @@ def dev_binary_guard_test(name, binary, expect_dev_binary = False):
     ]
     native.genquery(
         name = query,
-        expression = "let bins = kind(go_binary, deps({label})) in {clauses}".format(
+        # Quote the label: target names may contain characters (e.g. `+`, `=`)
+        # that are query operators when unquoted.
+        expression = "let bins = kind(go_binary, deps(\"{label}\")) in {clauses}".format(
             label = label,
             clauses = " + ".join(clauses),
         ),
