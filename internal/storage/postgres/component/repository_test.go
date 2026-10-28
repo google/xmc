@@ -49,6 +49,13 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
+			name: "Repository.ListActiveComponents",
+			call: func() error {
+				_, err := repo.ListActiveComponents(ctx)
+				return err
+			},
+		},
+		{
 			name: "TxRepository.GetActiveComponent",
 			call: func() error {
 				_, err := txRepo.GetActiveComponent(ctx, "app")
@@ -59,6 +66,13 @@ func TestRepository_Unimplemented(t *testing.T) {
 			name: "TxRepository.GetComponentByID",
 			call: func() error {
 				_, err := txRepo.GetComponentByID(ctx, 1)
+				return err
+			},
+		},
+		{
+			name: "TxRepository.ListActiveComponents",
+			call: func() error {
+				_, err := txRepo.ListActiveComponents(ctx)
 				return err
 			},
 		},

@@ -44,6 +44,7 @@ import (
 	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
+	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
@@ -115,7 +116,7 @@ func main() {
 		if err != nil {
 			logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
 		}
-		stopCMS := initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
+		stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), prodServer.SpannerClient(), cmsAuth)
 		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
 		// Spanner client is closed.
 		defer stopCMS()
@@ -227,14 +228,18 @@ func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms
 
 // initCMS registers CMS on s and starts its ownership metrics collector. The returned stop
 // function cancels the collector and waits for it to exit.
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) (stop func()) {
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, st storage.Storage, spannerClient *spanner.Client, auth cms.CallerAuthorizer) (stop func()) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
 	var cmsStore interface {
 		store.Store
 		store.OwnershipGaugeReader
 	}
-	if spannerClient != nil {
-		cmsStore = spannerstore.NewSpannerStore(spannerClient)
+	if st != nil && spannerClient != nil {
+		spannerStore, err := spannerstore.NewSpannerStore(spannerClient, st)
+		if err != nil {
+			logging.Fatal(ctx, "failed to create SpannerStore for Component Manager Service", "error", err)
+		}
+		cmsStore = spannerStore
 		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
 	} else {
 		cmsStore = memory.NewMemoryStore()

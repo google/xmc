@@ -98,7 +98,7 @@ func TestRepository_ReadsAndWithTx(t *testing.T) {
 	ctx := context.Background()
 	_, client := emulator.Setup(ctx, t)
 	repo := NewRepository(client)
-	wantApp, _ := seedCatalog(t, client)
+	wantApp, wantDB := seedCatalog(t, client)
 
 	t.Run("GetActiveComponent", func(t *testing.T) {
 		got, err := repo.GetActiveComponent(ctx, "app")
@@ -130,14 +130,31 @@ func TestRepository_ReadsAndWithTx(t *testing.T) {
 		}
 	})
 
-	t.Run("WithTx", func(t *testing.T) {
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
-			got, err := repo.WithTx(tx).GetActiveComponent(ctx, "app")
+	t.Run("ListActiveComponents and WithTx", func(t *testing.T) {
+		wantCatalog := map[string]*store.ComponentRecord{"app": wantApp, "auth": buildRecord(4, "auth", componentspb.ComponentState_COMPONENT_STATE_ENABLED), "db": wantDB}
+		gotCatalog, err := repo.ListActiveComponents(ctx)
+		if err != nil {
+			t.Fatalf("ListActiveComponents() failed: %v", err)
+		}
+		if diff := cmp.Diff(wantCatalog, gotCatalog, protocmp.Transform()); diff != "" {
+			t.Errorf("ListActiveComponents() mismatch (-want +got):\n%s", diff)
+		}
+
+		_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			gotApp, err := txRepo.GetActiveComponent(ctx, "app")
 			if err != nil {
 				return err
 			}
-			if diff := cmp.Diff(wantApp, got, protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(wantApp, gotApp, protocmp.Transform()); diff != "" {
 				t.Errorf("WithTx().GetActiveComponent(app) mismatch (-want +got):\n%s", diff)
+			}
+			txCatalog, err := txRepo.ListActiveComponents(ctx)
+			if err != nil {
+				return err
+			}
+			if diff := cmp.Diff(wantCatalog, txCatalog, protocmp.Transform()); diff != "" {
+				t.Errorf("WithTx().ListActiveComponents() mismatch (-want +got):\n%s", diff)
 			}
 			return nil
 		})
@@ -277,6 +294,7 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 func TestRepository_NilClientOrTransaction(t *testing.T) {
 	repos := map[string]interface {
 		GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+		ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
 	}{
 		"NewRepository(nil)": NewRepository(nil),
 		"WithTx(nil)":        NewRepository(nil).WithTx(nil),
@@ -284,6 +302,9 @@ func TestRepository_NilClientOrTransaction(t *testing.T) {
 	for name, r := range repos {
 		if _, err := r.GetActiveComponent(context.Background(), "app"); err == nil {
 			t.Errorf("%s.GetActiveComponent() error = nil, want an error", name)
+		}
+		if _, err := r.ListActiveComponents(context.Background()); err == nil {
+			t.Errorf("%s.ListActiveComponents() error = nil, want an error", name)
 		}
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	health "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/storage"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 	"xmanager_cloud/pkg/components/summary"
@@ -57,7 +58,7 @@ type HealthServiceLazySpannerWrapper struct {
 	essClient          *spanner.Client
 	essHealthClient    health.SpannerHealthClient
 	componentsProvider summary.CustomComponentsInfoProvider
-	storage            PauseSchedulingStorage
+	storage            storage.Storage
 
 	xidMu           sync.Mutex
 	xidClosed       bool
@@ -127,8 +128,15 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
+	st, err := w.ensureEssStorageLocked(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	compStore := spannerstore.NewSpannerStore(client)
+	compStore, err := spannerstore.NewSpannerStore(client, st)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create component store: %w", err)
+	}
 	provider, err := summary.NewStoreComponentsProvider(compStore)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create custom components info provider: %w", err)
@@ -143,6 +151,10 @@ func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (PauseSch
 	w.essMu.Lock()
 	defer w.essMu.Unlock()
 
+	return w.ensureEssStorageLocked(ctx)
+}
+
+func (w *HealthServiceLazySpannerWrapper) ensureEssStorageLocked(ctx context.Context) (storage.Storage, error) {
 	if w.storage != nil {
 		return w.storage, nil
 	}

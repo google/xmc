@@ -34,6 +34,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
@@ -60,18 +61,6 @@ FROM Components c
 WHERE c.ActiveName = @name
 LIMIT 1`
 
-	selectAllActiveComponentsSQL = `SELECT ` + component.ComponentColumnsSQL + `
-FROM Components
-WHERE ActiveName IS NOT NULL
-ORDER BY Name ASC`
-
-	selectAllActiveDependenciesSQL = `SELECT cd.ComponentId, dep.Name
-FROM ComponentDependencies cd
-JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
-JOIN Components parent ON cd.ComponentId = parent.ComponentId
-WHERE parent.ActiveName IS NOT NULL AND dep.ActiveName IS NOT NULL
-ORDER BY cd.ComponentId, dep.Name ASC`
-
 	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
 FROM ExperimentComponentSnapshots
 WHERE ComponentId = @id AND LockedGeneration = @gen
@@ -91,8 +80,9 @@ type spannerQueryable interface {
 
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
 type SpannerStore struct {
-	client *spanner.Client
-	// TODO: Replace repo and the Spanner-specific component helpers with storage.Storage and
+	client  *spanner.Client
+	storage storage.Storage
+	// TODO: Replace repo and the Spanner-specific component helpers with storage and
 	// RunInTransaction once the remaining Spanner reads and transactions move out of this store.
 	repo *component.Repository
 	// beforeIntentWrite, when non-nil, runs before SetComponentIntent falls back to its read-write
@@ -100,9 +90,14 @@ type SpannerStore struct {
 	beforeIntentWrite func()
 }
 
-// NewSpannerStore creates a new Spanner-backed component store.
-func NewSpannerStore(client *spanner.Client) *SpannerStore {
-	return &SpannerStore{client: client, repo: component.NewRepository(client)}
+// NewSpannerStore creates a new Spanner-backed component store. st must be the Spanner storage for
+// the same database as client: top-level reads go through st.Components(), while writes and reads
+// inside transactions still use client directly until they move behind storage.TransactionRunner.
+func NewSpannerStore(client *spanner.Client, st storage.Storage) (*SpannerStore, error) {
+	if st == nil {
+		return nil, errors.New("spannerstore: storage.Storage must not be nil")
+	}
+	return &SpannerStore{client: client, storage: st, repo: component.NewRepository(client)}, nil
 }
 
 // SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose
@@ -262,7 +257,7 @@ func (s *SpannerStore) applyIntentTx(
 	if err := checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
 	if err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
@@ -486,7 +481,7 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*store.Co
 		return nil, err
 	}
 
-	rec, err := s.repo.GetActiveComponent(ctx, canonicalName)
+	rec, err := s.storage.Components().GetActiveComponent(ctx, canonicalName)
 	if err != nil {
 		return nil, err
 	}
@@ -500,7 +495,7 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
 	}
 
-	rec, err := s.repo.GetComponentByID(ctx, componentID)
+	rec, err := s.storage.Components().GetComponentByID(ctx, componentID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,10 +505,7 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 
 // ListComponents returns all non-deleted components in the catalog sorted by name.
 func (s *SpannerStore) ListComponents(ctx context.Context) ([]*store.ComponentRecord, error) {
-	txn := s.client.ReadOnlyTransaction()
-	defer txn.Close()
-
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.storage.Components().ListActiveComponents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +574,7 @@ func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.R
 	if err := checkFence(ctx, txn, operation, src); err != nil {
 		return nil, nil, err
 	}
-	catalog, err := s.loadActiveCatalog(ctx, txn)
+	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1092,54 +1084,6 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (s *SpannerStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in SpannerStore")
-}
-
-func (s *SpannerStore) loadActiveCatalog(ctx context.Context, queryable spannerQueryable) (map[string]*store.ComponentRecord, error) {
-	compIter := queryable.Query(ctx, spanner.Statement{SQL: selectAllActiveComponentsSQL})
-	defer compIter.Stop()
-
-	componentsByName := make(map[string]*store.ComponentRecord)
-	componentsByID := make(map[int64]*store.ComponentRecord)
-
-	if err := compIter.Do(func(row *spanner.Row) error {
-		rec, err := component.RowToComponentRecord(row)
-		if err != nil {
-			return err
-		}
-		componentsByName[rec.Name] = rec
-		componentsByID[rec.ComponentID] = rec
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list active components: %w", err)
-	}
-
-	depIter := queryable.Query(ctx, spanner.Statement{SQL: selectAllActiveDependenciesSQL})
-	defer depIter.Stop()
-
-	if err := depIter.Do(func(row *spanner.Row) error {
-		var (
-			compID  int64
-			depName string
-		)
-		if err := row.ColumnByName("ComponentId", &compID); err != nil {
-			return err
-		}
-		if err := row.ColumnByName("Name", &depName); err != nil {
-			return err
-		}
-		if rec, ok := componentsByID[compID]; ok {
-			rec.Dependencies = append(rec.Dependencies, depName)
-		}
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to list component dependencies: %w", err)
-	}
-
-	for _, rec := range componentsByName {
-		rec.Etag = store.GenerateEtag(rec)
-	}
-
-	return componentsByName, nil
 }
 
 func generateRandomID() (int64, error) {
