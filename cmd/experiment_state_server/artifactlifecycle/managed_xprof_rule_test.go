@@ -39,6 +39,7 @@ const (
 var (
 	errHypercompute = errors.New("hypercompute unavailable")
 	errAlreadyExist = &hypercomputeclient.APIError{StatusCode: http.StatusConflict}
+	errMLRunGone    = &hypercomputeclient.APIError{StatusCode: http.StatusNotFound}
 )
 
 // fakeMLRunClient returns MLRun resources without a "url" field, so the rule falls
@@ -209,6 +210,14 @@ func TestManagedXprofRule_ActiveState(t *testing.T) {
 			withRuntime: true,
 			setup:       func(f *fakeMLRunClient) { f.phaseErr = errHypercompute },
 			wantErr:     errHypercompute,
+			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "superseded close of a run deleted outside XManager succeeds",
+			currentEID:  "2",
+			withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.phaseErr = errMLRunGone },
 			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
 			wantUpdated: map[string]string{},
 		},
@@ -425,6 +434,11 @@ func TestManagedXprofRule_TerminalState(t *testing.T) {
 			wantUpdated: map[string]string{},
 		},
 		{
+			name: "phase update of a run deleted outside XManager succeeds", state: essmsgpb.WorkUnitStatus_COMPLETED, withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.phaseErr = errMLRunGone },
+			wantUpdated: map[string]string{},
+		},
+		{
 			name: "no runtime context finalizes MLRun recorded on the event execution", state: essmsgpb.WorkUnitStatus_COMPLETED,
 			executions: []*essmsgpb.WorkUnitExecution{
 				executionWithMLRunURL("2", hypercomputeclient.ConsoleURL(testLocation, "other-eid-run", testProject)),
@@ -504,6 +518,12 @@ func TestManagedXprofRule_OnExecutionSuperseded(t *testing.T) {
 			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("1", hypercomputeclient.ConsoleURL(testLocation, "old-eid-run", testProject))},
 			phaseErr:    errHypercompute,
 			wantErr:     errHypercompute,
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "close of a run deleted outside XManager succeeds",
+			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("1", hypercomputeclient.ConsoleURL(testLocation, "old-eid-run", testProject))},
+			phaseErr:    errMLRunGone,
 			wantUpdated: map[string]string{},
 		},
 	}

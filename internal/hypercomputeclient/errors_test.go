@@ -43,3 +43,26 @@ func TestIsAlreadyExists(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "other error", err: errors.New("deadline exceeded"), want: false},
+		{name: "http 404", err: &APIError{StatusCode: http.StatusNotFound}, want: true},
+		{name: "http 409", err: &APIError{StatusCode: http.StatusConflict}, want: false},
+		{name: "lro not found", err: &OperationError{Code: CodeNotFound}, want: true},
+		{name: "lro already exists", err: &OperationError{Code: CodeAlreadyExists}, want: false},
+		{name: "wrapped http 404", err: fmt.Errorf("update failed: %w", &APIError{StatusCode: http.StatusNotFound}), want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsNotFound(tc.err); got != tc.want {
+				t.Errorf("IsNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}

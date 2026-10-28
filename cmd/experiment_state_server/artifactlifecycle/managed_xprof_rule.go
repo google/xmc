@@ -193,13 +193,20 @@ func terminalRunPhase(state essmsgpb.WorkUnitStatus_WorkUnitState) string {
 	return runPhaseFailed
 }
 
-// updateRunPhase sets the MLRun phase. Re-applying the current phase and the client's
-// terminal-to-ACTIVE downgrade guard are no-ops that succeed, so retries are safe.
+// updateRunPhase closes the MLRun by setting a terminal phase. Re-applying the current
+// phase and the client's terminal-to-ACTIVE downgrade guard are no-ops that succeed,
+// so retries are safe. A NotFound means the run was deleted outside XManager, so there
+// is nothing to close and it is treated as success.
 func (r *ManagedXprofRule) updateRunPhase(ctx context.Context, mlRunID, phase string) error {
-	if _, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{RunPhase: phase}); err != nil {
-		return fmt.Errorf("update MLRun %q to phase %s: %w", mlRunID, phase, err)
+	_, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{RunPhase: phase})
+	if err == nil {
+		return nil
 	}
-	return nil
+	if hypercomputeclient.IsNotFound(err) {
+		logging.Info(ctx, "MLRun not found while closing; it was deleted outside XManager, nothing to close", "mlRunID", mlRunID, "phase", phase)
+		return nil
+	}
+	return fmt.Errorf("update MLRun %q to phase %s: %w", mlRunID, phase, err)
 }
 
 // OnExecutionSuperseded closes exactly the MLRun recorded on the superseded

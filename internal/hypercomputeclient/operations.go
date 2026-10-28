@@ -34,6 +34,10 @@ const (
 	// the control plane embeds in a long-running-operation error when the target
 	// resource already exists.
 	CodeAlreadyExists = 6
+	// CodeNotFound is the google.rpc.Code (mirrors gRPC codes.NotFound = 5) the
+	// control plane embeds in a long-running-operation error when the target
+	// resource does not exist.
+	CodeNotFound = 5
 )
 
 // OperationError is returned when a long-running operation completes with an error.

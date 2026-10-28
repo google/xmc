@@ -35,3 +35,17 @@ func IsAlreadyExists(err error) bool {
 	}
 	return false
 }
+
+// IsNotFound reports whether err is the control plane's NotFound response: an HTTP
+// 404 or a long-running-operation failure carrying google.rpc.Code NotFound (5).
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == http.StatusNotFound
+	}
+	var opErr *OperationError
+	if errors.As(err, &opErr) {
+		return opErr.Code == CodeNotFound
+	}
+	return false
+}
