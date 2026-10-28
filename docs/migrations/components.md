@@ -1,0 +1,124 @@
+# Migrating Legacy Metrics Workloads to XMC Components (`stable-2026a`)
+
+This runbook guides platform operators through the one-time, zero-downtime migration of an existing XMC installation from legacy umbrella-managed metrics workloads (`enable_components: false` / `componentsDeployment.enabled=false`) to the `stable-2026a` Component profile (`enable_components: true` / `componentsDeployment.enabled=true`).
+
+> [!IMPORTANT]
+> Complete this migration in Release `N` before upgrading to Release `N+1`, where legacy non-component metrics templates are slated for removal.
+
+---
+
+## Prerequisites
+
+- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` with cluster admin access to the target namespace (default: `xmc`).
+- Updated XMC container images (including `xmc-bridge` and `ingestion-gateway`) built and pushed to your registry (see [INSTALL.md](../../INSTALL.md#step-2-build-and-push-updated-container-images)).
+
+---
+
+## Step-by-Step Cutover
+
+### Step 1: Generate and Validate `profile-values.yaml`
+
+Extract your live umbrella Helm values into a `stable-2026a` profile values file and validate it against [`deploy/profiles/stable-2026a/values.schema.json`](../../deploy/profiles/stable-2026a/values.schema.json):
+
+```bash
+./tools/migrations/components/migrate.py prepare \
+  -n xmc \
+  -r xmc \
+  -o profile-values.yaml
+```
+
+Inspect `profile-values.yaml` and confirm image tags, broker/ClickHouse endpoints, HPA bounds, and secret names match your environment. Optionally run the static component linter against the rendered `Component` CRs:
+
+```bash
+mkdir -p /tmp/xmc-rendered-profile
+helm template xmc-profile deploy/profiles/stable-2026a -n xmc -f profile-values.yaml > /tmp/xmc-rendered-profile/profile.yaml
+bazel run //cmd/component-linter -- \
+  --manifests-dir=/tmp/xmc-rendered-profile \
+  --rules-config="$(pwd)/deploy/profiles/stable-2026a/rules.yaml"
+```
+
+### Step 2: Hand Off Live `ingestion-gateway` Helm Ownership
+
+Before upgrading the umbrella release with `enable_components=true`, stamp `helm.sh/resource-policy=keep` and transfer `meta.helm.sh/release-name` to `xmc-cmp-ingestion-gateway` on the live `Deployment`, `Service`, and optional `HorizontalPodAutoscaler` (while keeping `<release>-ingestion-gateway-network-policy` in place until replacement):
+
+```bash
+./tools/migrations/components/migrate.py handoff -n xmc -r xmc
+```
+
+*(If you need to abort before Step 3, run `./tools/migrations/components/migrate.py handoff --undo -n xmc -r xmc`.)*
+
+### Step 3: Upgrade the XMC Umbrella Release (`enable_components=true`)
+
+Upgrade your XMC umbrella deployment so `xmc-bridge` starts and `ess`, `dashboard-service`, and `ingestion-gateway` enable component discovery without pruning your live gateway pods:
+
+- **Cluster Toolkit (`gcluster`) / `dev_env.py`**: Set `enable_components: true` and `profile_values: "<absolute-path-to>/profile-values.yaml"` in your deployment YAML, then run your upgrade (note: `deploy_component_profile` also executes Step 4 automatically when `profile_values` is configured).
+- **Direct Helm**:
+  ```bash
+  helm upgrade --install xmc ./deploy/helm \
+    -n xmc \
+    -f my-values.yaml \
+    --set componentsDeployment.enabled=true \
+    --wait
+  ```
+
+### Step 4: Install the `stable-2026a` Component Profile
+
+If you upgraded via direct Helm in Step 3 (rather than automated `deploy_component_profile`), install or upgrade `xmc-profile` so `xmc-bridge` reconciles `redpanda`, `clickhouse`, and `ingestion-gateway` and adopts `xmc-cmp-ingestion-gateway`:
+
+```bash
+helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a \
+  -n xmc \
+  -f profile-values.yaml \
+  --wait
+```
+
+### Step 5: Finalize Cutover and Verify Ingestion
+
+Wait for `Component/ingestion-gateway` to report `Ready` and `Synced`, verify `xmc-cmp-ingestion-gateway` is `deployed`, strip the temporary `helm.sh/resource-policy=keep` annotations, and delete the superseded `<release>-ingestion-gateway-network-policy`:
+
+```bash
+./tools/migrations/components/migrate.py finalize -n xmc -r xmc
+```
+
+Optionally verify live gateway readiness via a local port-forward:
+
+```bash
+kubectl port-forward -n xmc svc/ingestion-gateway-service 18080:8080 &
+PF_PID=$!
+sleep 2
+curl -fsS http://127.0.0.1:18080/readyz
+kill "${PF_PID}"
+```
+
+---
+
+## Rollback Procedure
+
+To revert back to legacy umbrella ownership without dropping live `ingestion-gateway` pods:
+
+1. **Orphan workloads and remove `Component` CRs**:
+   ```bash
+   helm upgrade xmc-profile ./deploy/profiles/stable-2026a \
+     -n xmc \
+     -f profile-values.yaml \
+     --set components.ingestion-gateway.deletionPolicy=Orphan \
+     --set components.ingestion-gateway.deletionProtection=false \
+     --set components.redpanda.deletionProtection=false \
+     --set components.clickhouse.deletionProtection=false \
+     --wait
+   helm uninstall xmc-profile -n xmc
+   ```
+
+2. **Restore umbrella Helm ownership annotations** (this keeps live pods running while removing the orphaned `xmc-cmp-ingestion-gateway` Helm release record):
+   ```bash
+   ./tools/migrations/components/migrate.py handoff --undo -n xmc -r xmc
+   ```
+
+3. **Re-enable legacy umbrella management**:
+   ```bash
+   helm upgrade xmc ./deploy/helm \
+     -n xmc \
+     -f my-values.yaml \
+     --set componentsDeployment.enabled=false \
+     --wait
+   ```
