@@ -16,27 +16,52 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "pausedtask",
-    srcs = ["repository.go"],
+    srcs = [
+        "repository.go",
+        "workunitrow.go",
+    ],
     importpath = "xmanager_cloud/internal/storage/postgres/pausedtask",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue",
+        "//internal/grpcerr",
+        "//internal/safesql",
         "//internal/storage",
         "//internal/storage/postgres/pgdb",
+        "//internal/validator",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
 go_test(
     name = "pausedtask_test",
-    srcs = ["repository_test.go"],
+    srcs = [
+        "repository_integration_test.go",
+        "repository_test.go",
+    ],
     embed = [":pausedtask"],
+    tags = ["local"],
     deps = [
+        "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue",
+        "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/postgres/pgdb",
+        "//internal/storage/postgres/testing",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
