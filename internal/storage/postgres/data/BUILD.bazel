@@ -19,6 +19,7 @@ go_library(
     srcs = [
         "artifact.go",
         "operation.go",
+        "pausedtask.go",
         "proto.go",
         "statusmessage.go",
         "xid.go",
@@ -27,7 +28,9 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
+        "//internal/storage",
         "//internal/storage/data",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
@@ -45,14 +48,17 @@ go_test(
     srcs = [
         "artifact_test.go",
         "operation_test.go",
+        "pausedtask_test.go",
         "statusmessage_test.go",
         "xid_test.go",
     ],
     embed = [":data"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
         "//internal/prototest",
+        "//internal/storage",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_jackc_pgx_v5//pgtype",

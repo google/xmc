@@ -18,7 +18,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+# Lowest runtime in the repo: the Bazel hermetic rules_python toolchain (3.11),
+# which is also the published SDKs' requires-python minimum. Venv/CI tooling
+# uses 3.13.
+target-version = "py311"
 
 [tool.ruff.lint]
 select = [
@@ -30,7 +33,7 @@ select = [
     "B",       # flake8-bugbear (bug prevention & exception handling)
     "PERF",    # perflint (performance anti-patterns & loop allocations)
     "RET",     # flake8-return (early returns & linear control flow)
-    "UP",      # pyupgrade (Python 3.10+ syntax modernization)
+    "UP",      # pyupgrade (syntax modernization up to target-version)
     "SIM",     # flake8-simplify (code simplification)
     "C4",      # flake8-comprehensions (better list/dict comprehensions)
     "PLW1510", # Pylint: Subprocess run without check=True
@@ -73,6 +76,8 @@ convention = "google"
 "sdks/python/xmc/buffer.py" = ["TID251"]
 "sdks/python/xmc/buffer_test.py" = ["TID251"]
 "test/e2e/*" = ["TID251"]
+# TODO: migrate to StrEnum
+"test/e2e/lib/config.py" = ["UP042"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.time".msg = "Use time.monotonic() for measuring intervals, deadlines, and elapsed time."
