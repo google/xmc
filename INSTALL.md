@@ -595,4 +595,3 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
 | `enable_components` | No | `false` | Enables `xmc-bridge` and Component CR actuation (`componentsDeployment.enabled`) |
-| `profile_values` | No | - | Optional path to `stable-2026a` profile overrides YAML passed to `deploy_component_profile` |

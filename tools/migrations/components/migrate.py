@@ -14,7 +14,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import (
+if str(_ROOT := Path(__file__).resolve().parents[3]) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from tools.common.tool_utils import (  # noqa: E402
     HandledError,
     parse_bool_flag,
     run_command,
@@ -24,7 +27,7 @@ from tools.common.tool_utils import (
 
 COMPONENT_RELEASE = "xmc-cmp-ingestion-gateway"
 PROFILE_RELEASE = "xmc-profile"
-DEFAULT_PROFILE_CHART = Path(__file__).resolve().parents[3] / "deploy" / "profiles" / "stable-2026a"
+DEFAULT_PROFILE_CHART = _ROOT / "deploy" / "profiles" / "stable-2026a"
 PRIMARY_WORKLOADS = ("deployment/ingestion-gateway-deployment", "service/ingestion-gateway-service")
 HPA_RESOURCE = "horizontalpodautoscaler/ingestion-gateway-hpa"
 COMPONENT_RESOURCE = "components.xmc.dev/ingestion-gateway"
@@ -49,6 +52,31 @@ def _mapping(parent: Mapping[str, Any], key: str) -> dict[str, Any]:
     return dict(val) if isinstance(val, Mapping) else {}
 
 
+def _opt_str(val: Any, key: str) -> str:
+    """Extracts a stripped string from a scalar Helm value, rejecting bools and containers."""
+    if val is None or (isinstance(val, (str, int, float)) and not isinstance(val, bool)):
+        return "" if val is None else str(val).strip()
+    raise HandledError(f"Invalid scalar value for '{key}': {val!r}.", "Check Helm values.")
+
+
+def _opt_int(val: Any, key: str) -> int | None:
+    """Extracts an optional integer from a Helm value, rejecting bools, floats, and bad strings."""
+    if not isinstance(val, float) and re.fullmatch(r"([+-]?[0-9]+)?", raw := _opt_str(val, key)):
+        return int(raw) if raw else None
+    raise HandledError(f"Invalid integer value for '{key}': {val!r}.", "Check Helm values.")
+
+
+def _loads_obj(raw: str | None, src: str, *, null_ok: bool = False) -> dict[str, Any]:
+    """Parses CLI stdout as a JSON object, raising HandledError on malformed payloads."""
+    try:
+        val = json.loads(raw or "{}")
+    except json.JSONDecodeError as exc:
+        raise HandledError(f"Malformed JSON from {src}.", "Inspect CLI stdout.") from exc
+    if isinstance(val, Mapping) or (val is None and null_ok):
+        return dict(val or {})
+    raise HandledError(f"Expected JSON object from {src}.", "Inspect CLI stdout.")
+
+
 def _exec(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
     """Executes an external CLI command and wraps OS or subprocess failures in HandledError."""
     kw: dict[str, Any] = {"capture_output": True, "log_on_error": False, "log_cmd": False}
@@ -70,8 +98,8 @@ def _annotate(ns: str, resource: str, *specs: str) -> None:
 def _set_helm_owner(ns: str, resource: str, owner: str, *, keep: bool) -> None:
     """Sets Helm release ownership annotations and sets or removes resource-policy=keep."""
     pol = "helm.sh/resource-policy=keep" if keep else "helm.sh/resource-policy-"
-    rel_ann = f"meta.helm.sh/release-name={owner}"
-    _annotate(ns, resource, pol, rel_ann, f"meta.helm.sh/release-namespace={ns}")
+    rel_a, ns_a = f"meta.helm.sh/release-name={owner}", f"meta.helm.sh/release-namespace={ns}"
+    _annotate(ns, resource, pol, rel_a, ns_a)
 
 
 def _get_k8s_json(ns: str, resource: str) -> dict[str, Any] | None:
@@ -81,98 +109,88 @@ def _get_k8s_json(ns: str, resource: str) -> dict[str, Any] | None:
         err = (res.stderr or res.stdout or "").strip()
         if any(m in err.lower() for m in _ABSENT):
             return None
-        info = {"resource": resource, "stderr": err}
-        raise HandledError(f"Cannot inspect '{resource}'.", "Check KUBECONFIG/RBAC.", info)
-    parsed = json.loads(res.stdout or "{}")
-    return dict(parsed) if isinstance(parsed, Mapping) else None
+        msg = f"Cannot inspect '{resource}'."
+        raise HandledError(msg, "Check KUBECONFIG/RBAC.", {"stderr": err})
+    return _loads_obj(res.stdout, f"kubectl get {resource}")
 
 
 def _get_helm_values(ns: str, rel: str) -> dict[str, Any]:
     """Returns merged Helm values (`helm get values -a`) for an existing release."""
     out = _exec(["helm", "get", "values", "-a", "-n", ns, "-o", "json", "--", rel]).stdout
-    parsed = json.loads(out or "{}")
-    return dict(parsed) if isinstance(parsed, Mapping) else {}
+    return _loads_obj(out, f"helm get values {rel}", null_ok=True)
 
 
 def _build_redpanda_values(ig: Mapping[str, Any], *, enabled: bool) -> dict[str, Any]:
     """Builds stable-2026a components.redpanda overrides from umbrella gateway values."""
     params: dict[str, Any] = {}
-    if brokers := str(ig.get("redpandaBrokers") or "").strip():
+    if brokers := _opt_str(ig.get("redpandaBrokers"), "redpandaBrokers"):
         params["brokerEndpoints"] = brokers
-        if port_m := re.search(r"(?:\]:|^[^:\[\]]+:)(\d+)\Z", brokers.split(",")[0].strip()):
+        if port_m := re.search(r"(?:\]:|^[^:\[\]]+:)([0-9]+)\Z", brokers.split(",")[0].strip()):
             params["kafkaPort"] = int(port_m.group(1))
-    if topic := str(ig.get("topicName") or "").strip():
+    if topic := _opt_str(ig.get("topicName"), "topicName"):
         params["defaultTopic"] = topic
     return {"enabled": enabled, **({"parameters": params} if params else {})}
 
 
-def _build_clickhouse_values(
-    ch: Mapping[str, Any], csi: Mapping[str, Any], *, enabled: bool
-) -> dict[str, Any]:
+def _build_clickhouse_values(ch: Mapping[str, Any], *, enabled: bool) -> dict[str, Any]:
     """Builds stable-2026a components.clickhouse overrides from umbrella metrics values."""
     params: dict[str, Any] = {}
-    if host := str(ch.get("host") or "").strip():
-        params["host"] = host
-    if raw_port := str(ch.get("port") or "").strip():
-        params["nativePort"] = int(raw_port) if raw_port.isdigit() else raw_port
-    for src_k, dst_k in (("database", "defaultDatabase"), ("user", "user")):
-        if val := str(ch.get(src_k) or "").strip():
-            params[dst_k] = val
-    csi_on = parse_bool_flag(csi.get("enabled", False))
-    csi_sec = csi.get("clickhousePasswordSecretName") if csi_on else None
-    if secret := str(csi_sec or ch.get("secretName") or "").strip():
-        params["secretName"] = secret
+    if (port := _opt_int(ch.get("port"), "clickhouse.port")) is not None:
+        params["nativePort"] = port
+    for k in ("host", "database", "user", "secretName"):
+        if val := _opt_str(ch.get(k), f"clickhouse.{k}"):
+            params["defaultDatabase" if k == "database" else k] = val
     return {"enabled": enabled, **({"parameters": params} if params else {})}
 
 
 def _apply_gateway_scaling_and_security(ig: Mapping[str, Any], params: dict[str, Any]) -> None:
     """Populates HPA/replicas, resource requests/limits, SASL, and TLS gateway parameters."""
     hpa = _mapping(ig, "hpa")
-    if ig.get("hpa") is False or ("enabled" in hpa and not parse_bool_flag(hpa.get("enabled"))):
+    if ("hpa" in ig and not hpa) or ("enabled" in hpa and not parse_bool_flag(hpa.get("enabled"))):
         params["hpaEnabled"] = False
-        if ig.get("replicas") is not None and not isinstance(ig.get("replicas"), bool):
-            params["replicas"] = int(ig["replicas"])
+        if (replicas := _opt_int(ig.get("replicas"), "replicas")) is not None:
+            params["replicas"] = replicas
     else:
-        if hpa.get("minReplicas") is not None:
-            params["hpaMinReplicas"] = int(hpa["minReplicas"])
-        if hpa.get("maxReplicas") is not None:
-            params["hpaMaxReplicas"] = int(hpa["maxReplicas"])
+        for src_k, dst_k in (("minReplicas", "hpaMinReplicas"), ("maxReplicas", "hpaMaxReplicas")):
+            if (bound := _opt_int(hpa.get(src_k), f"hpa.{src_k}")) is not None:
+                params[dst_k] = bound
     res = _mapping(ig, "resources")
-    reqs, lims = _mapping(res, "requests"), _mapping(res, "limits")
-    for src, prefix in ((reqs, "Request"), (lims, "Limit")):
+    for src, prefix in ((_mapping(res, "requests"), "Request"), (_mapping(res, "limits"), "Limit")):
         for res_k in ("cpu", "memory"):
-            if src.get(res_k):
-                params[f"{res_k}{prefix}"] = str(src[res_k])
-    sasl, tls = _mapping(ig, "sasl"), _mapping(ig, "tls")
-    if parse_bool_flag(sasl.get("enabled", False)) or sasl.get("secretName"):
-        params["saslEnabled"] = parse_bool_flag(sasl.get("enabled", False))
-        params["saslMechanism"] = str(sasl.get("mechanism") or "SCRAM-SHA-256")
-        if sasl.get("secretName"):
-            params["saslSecretName"] = str(sasl["secretName"])
-    if parse_bool_flag(tls.get("enabled", False)) or tls.get("secretName"):
-        params["tlsEnabled"] = parse_bool_flag(tls.get("enabled", False))
-        if tls.get("secretName"):
-            params["tlsSecretName"] = str(tls["secretName"])
-
-
-_GW_KEYS = ("port", "redpandaBrokers", "topicName", "minPartitions", "minReplicas")
+            if val := _opt_str(src.get(res_k), f"resources.{res_k}"):
+                params[f"{res_k}{prefix}"] = val
+    for key in ("sasl", "tls"):
+        cfg = _mapping(ig, key)
+        sec = _opt_str(cfg.get("secretName"), f"{key}.secretName")
+        on = parse_bool_flag(cfg.get("enabled", False))
+        if on or sec:
+            params[f"{key}Enabled"] = on
+            if key == "sasl":
+                mech = _opt_str(cfg.get("mechanism"), "sasl.mechanism")
+                params["saslMechanism"] = mech or "SCRAM-SHA-256"
+            if sec:
+                params[f"{key}SecretName"] = sec
 
 
 def _build_gateway_values(
     values: Mapping[str, Any], ig: Mapping[str, Any], *, enabled: bool
 ) -> dict[str, Any]:
     """Builds stable-2026a components.ingestion-gateway overrides from umbrella values."""
-    keys = (*_GW_KEYS, "serviceAccountName")
-    params: dict[str, Any] = {k: v for k in keys if (v := ig.get(k)) is not None and str(v).strip()}
-    if (proj := str(values.get("projectId") or "").strip()) and _PLACEHOLDER not in proj:
+    params: dict[str, Any] = {}
+    for k in ("port", "minPartitions", "minReplicas"):
+        if (iv := _opt_int(ig.get(k), k)) is not None:
+            params[k] = iv
+    for k in ("redpandaBrokers", "topicName", "serviceAccountName"):
+        if sv := _opt_str(ig.get(k), k):
+            params[k] = sv
+    if (proj := _opt_str(values.get("projectId"), "projectId")) and _PLACEHOLDER not in proj:
         params["projectId"] = proj
-    raw_img = str(ig.get("image") or values.get("ingestion_gateway_custom_image") or "").strip()
-    if raw_img and _PLACEHOLDER not in raw_img:
-        params["image"] = raw_img
+    fb_img = _opt_str(values.get("ingestion_gateway_custom_image"), "custom_image")
+    if (img := _opt_str(ig.get("image"), "image") or fb_img) and _PLACEHOLDER not in img:
+        params["image"] = img
     _apply_gateway_scaling_and_security(ig, params)
-    out: dict[str, Any] = {"enabled": enabled}
-    if tag := str(values.get("imageTag") or "").strip():
-        out["imageTag"] = tag
+    tag = _opt_str(values.get("imageTag"), "imageTag")
+    out: dict[str, Any] = {"enabled": enabled, **({"imageTag": tag} if tag else {})}
     return {**out, **({"parameters": params} if params else {})}
 
 
@@ -196,20 +214,17 @@ def run_prepare(args: argparse.Namespace) -> dict[str, Any]:
         raise HandledError(str(exc), "Install Helm >= 3.14.0 before running migration.") from exc
     values = _get_helm_values(ns, rel)
     ig, metrics = _mapping(values, "ingestionGatewayDeployment"), _mapping(values, "metrics")
-    csi, ch = _mapping(_mapping(values, "secrets"), "csi"), _mapping(metrics, "clickhouse")
     ig_on = parse_bool_flag(ig.get("enabled", False))
     ch_on = parse_bool_flag(metrics.get("enabled", False)) or ig_on
-    doc = {
-        "components": {
-            "redpanda": _build_redpanda_values(ig, enabled=ig_on),
-            "clickhouse": _build_clickhouse_values(ch, csi, enabled=ch_on),
-            "ingestion-gateway": _build_gateway_values(values, ig, enabled=ig_on),
-        }
+    comps = {
+        "redpanda": _build_redpanda_values(ig, enabled=ig_on),
+        "clickhouse": _build_clickhouse_values(_mapping(metrics, "clickhouse"), enabled=ch_on),
+        "ingestion-gateway": _build_gateway_values(values, ig, enabled=ig_on),
     }
     out_path, chart = Path(args.output), str(args.profile_chart)
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(_serialize_yaml(doc), encoding="utf-8")
+        out_path.write_text(_serialize_yaml({"components": comps}), encoding="utf-8")
     except OSError as exc:
         raise HandledError(f"Cannot write '{out_path}': {exc}", "Check permissions.") from exc
     try:
@@ -233,15 +248,13 @@ def _verify_helm_owner(obj: Mapping[str, Any], resource: str, ns: str, allowed: 
 
 def _collect_gateway_workloads(ns: str, allowed: set[str]) -> list[str]:
     """Discovers live ingestion-gateway workloads and validates their Helm ownership."""
-    candidates = (*PRIMARY_WORKLOADS, HPA_RESOURCE)
-    found = {r: obj for r in candidates if (obj := _get_k8s_json(ns, r)) is not None}
+    all_res = (*PRIMARY_WORKLOADS, HPA_RESOURCE)
+    found = {r: o for r in all_res if (o := _get_k8s_json(ns, r)) is not None}
     present = [r for r in PRIMARY_WORKLOADS if r in found]
     if len(present) == 1:
         missing = next(r for r in PRIMARY_WORKLOADS if r not in found)
         raise HandledError(f"Partial gateway state: missing '{missing}'.", "Restore workloads.")
-    if not present:
-        return []
-    workloads = [*present, *([HPA_RESOURCE] if HPA_RESOURCE in found else [])]
+    workloads = [*present, *([HPA_RESOURCE] if present and HPA_RESOURCE in found else [])]
     for resource in workloads:
         _verify_helm_owner(found[resource], resource, ns, allowed)
     return workloads
@@ -254,14 +267,11 @@ def _undo_handoff(ns: str, rel: str) -> dict[str, Any]:
         raise HandledError(f"Cannot undo while '{COMPONENT_RESOURCE}' exists in '{ns}'.", hint)
     umbrella_vals = _get_helm_values(ns, rel)
     workloads = _collect_gateway_workloads(ns, {rel, COMPONENT_RELEASE})
-    cmp_cmd = ["helm", "status", "-n", ns, "-o", "json", "--", COMPONENT_RELEASE]
-    cmp_res = _exec(cmp_cmd, check=False)
-    uninstalled = False
-    if cmp_res.returncode == 0:
-        for resource in workloads:
-            _annotate(ns, resource, "helm.sh/resource-policy=keep")
-        _exec(["helm", "uninstall", "-n", ns, "--", COMPONENT_RELEASE])
-        uninstalled = True
+    cmd = ["helm", "status", "-n", ns, "-o", "json", "--", COMPONENT_RELEASE]
+    cmp_res = _exec(cmd, check=False)
+    if uninstalled := (cmp_res.returncode == 0):
+        sel = f"owner=helm,name={COMPONENT_RELEASE}"
+        _exec(["kubectl", "delete", "secret", "--ignore-not-found", "-n", ns, "-l", sel])
     elif "not found" not in (cmp_res.stderr or cmp_res.stdout or "").lower():
         raise HandledError(f"Failed to check '{COMPONENT_RELEASE}' status.", "Verify Helm access.")
     for resource in workloads:
@@ -315,18 +325,20 @@ def run_finalize(args: argparse.Namespace) -> dict[str, Any]:
     spec = _mapping(comp, "spec")
     legacy_np = f"networkpolicy/{rel}-ingestion-gateway-network-policy"
     if not parse_bool_flag(spec.get("enabled", False)):
+        if _get_k8s_json(ns, PRIMARY_WORKLOADS[0]) is not None:
+            raise HandledError("Gateway pods exist while Component is disabled.", "Enable it.")
         _exec(["kubectl", "delete", "--ignore-not-found", "-n", ns, "--", legacy_np])
         return {"command": "finalize", "ingestion_gateway_enabled": False}
     wait = f"--timeout={args.timeout_seconds}s"
     for cond in ("Ready", "Synced"):
-        cond_arg = f"--for=condition={cond}"
-        _exec(["kubectl", "wait", "-n", ns, wait, cond_arg, "--", COMPONENT_RESOURCE])
+        flag = f"--for=condition={cond}"
+        _exec(["kubectl", "wait", "-n", ns, wait, flag, "--", COMPONENT_RESOURCE])
     _exec(["kubectl", "rollout", "status", "-n", ns, wait, "--", PRIMARY_WORKLOADS[0]])
     st_out = _exec(["helm", "status", "-n", ns, "-o", "json", "--", COMPONENT_RELEASE]).stdout
-    if (st := _mapping(json.loads(st_out or "{}"), "info").get("status")) != "deployed":
+    if (st := _mapping(_loads_obj(st_out, "helm status"), "info").get("status")) != "deployed":
         raise HandledError(f"Release '{COMPONENT_RELEASE}' is '{st}'.", "Inspect xmc-bridge logs.")
-    hpa_on = parse_bool_flag(_mapping(spec, "parameters").get("hpaEnabled", True))
-    finalized = _finalize_workloads(ns, hpa_on=hpa_on)
+    hpa_s = "" if (v := _mapping(spec, "parameters").get("hpaEnabled")) is None else str(v).strip()
+    finalized = _finalize_workloads(ns, hpa_on=hpa_s.lower() in ("", "true", "1"))
     if _get_k8s_json(ns, COMPONENT_NETPOL) is None:
         raise HandledError(f"Missing '{COMPONENT_NETPOL}'.", "Keep legacy NetworkPolicy.")
     _exec(["kubectl", "delete", "--ignore-not-found", "-n", ns, "--", legacy_np])

@@ -18,7 +18,7 @@ This runbook guides platform operators through the one-time, zero-downtime migra
 
 ### Step 1: Generate and Validate `profile-values.yaml`
 
-Extract your live umbrella Helm values into a `stable-2026a` profile values file and validate it against [`deploy/profiles/stable-2026a/values.schema.json`](../../deploy/profiles/stable-2026a/values.schema.json):
+Extract your live umbrella Helm values into a `stable-2026a` profile values file and validate it against [`deploy/profiles/stable-2026a/values.schema.json`](../../deploy/profiles/stable-2026a/values.schema.json) (replace `-r xmc` throughout with `xmc-<deployment_name>-<environment>` when your deployment was created via Cluster Toolkit):
 
 ```bash
 ./tools/migrations/components/migrate.py prepare \
@@ -51,7 +51,8 @@ Before upgrading the umbrella release with `enable_components=true`, stamp `helm
 
 Upgrade your XMC umbrella deployment so `xmc-bridge` starts and `ess`, `dashboard-service`, and `ingestion-gateway` enable component discovery without pruning your live gateway pods:
 
-- **Cluster Toolkit (`gcluster`) / `dev_env.py`**: Set `enable_components: true` and `profile_values: "<absolute-path-to>/profile-values.yaml"` in your deployment YAML, then run your upgrade (note: `deploy_component_profile` also executes Step 4 automatically when `profile_values` is configured).
+- **`dev_env.py gke-upgrade`**: Set `enable_components: true` in your deployment YAML, then pass `--profile-values "<absolute-path-to>/profile-values.yaml"` to `python3 ./tools/dev_env/dev_env.py gke-upgrade -c <deployment.yaml> --enable-components --profile-values "<absolute-path-to>/profile-values.yaml"` (this automatically executes Step 4 via `deploy_component_profile`).
+- **Standalone Cluster Toolkit (`gcluster`)**: Set `enable_components: true` in your deployment YAML, re-render and run `./cluster-toolkit/gcluster deploy ... --only xmc_app`, then execute Step 4 manually.
 - **Direct Helm**:
   ```bash
   helm upgrade --install xmc ./deploy/helm \
@@ -63,7 +64,7 @@ Upgrade your XMC umbrella deployment so `xmc-bridge` starts and `ess`, `dashboar
 
 ### Step 4: Install the `stable-2026a` Component Profile
 
-If you upgraded via direct Helm in Step 3 (rather than automated `deploy_component_profile`), install or upgrade `xmc-profile` so `xmc-bridge` reconciles `redpanda`, `clickhouse`, and `ingestion-gateway` and adopts `xmc-cmp-ingestion-gateway`:
+If you upgraded via standalone `gcluster` or direct Helm in Step 3 (rather than `dev_env.py gke-upgrade --profile-values`), install or upgrade `xmc-profile` so `xmc-bridge` reconciles `redpanda`, `clickhouse`, and `ingestion-gateway` and adopts `xmc-cmp-ingestion-gateway`:
 
 ```bash
 helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a \
@@ -106,7 +107,7 @@ To revert back to legacy umbrella ownership without dropping live `ingestion-gat
      --set components.redpanda.deletionProtection=false \
      --set components.clickhouse.deletionProtection=false \
      --wait
-   helm uninstall xmc-profile -n xmc
+   helm uninstall xmc-profile -n xmc --wait
    ```
 
 2. **Restore umbrella Helm ownership annotations** (this keeps live pods running while removing the orphaned `xmc-cmp-ingestion-gateway` Helm release record):
@@ -114,11 +115,15 @@ To revert back to legacy umbrella ownership without dropping live `ingestion-gat
    ./tools/migrations/components/migrate.py handoff --undo -n xmc -r xmc
    ```
 
-3. **Re-enable legacy umbrella management**:
+3. **Re-enable legacy umbrella management and clean up component-only RBAC/NetworkPolicy**:
    ```bash
    helm upgrade xmc ./deploy/helm \
      -n xmc \
      -f my-values.yaml \
      --set componentsDeployment.enabled=false \
      --wait
+   kubectl delete -n xmc --ignore-not-found \
+     role/ingestion-gateway-components-reader \
+     rolebinding/ingestion-gateway-components-reader-binding \
+     networkpolicy/ingestion-gateway-network-policy
    ```

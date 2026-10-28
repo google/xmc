@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 from tools.common.tool_utils import HandledError
@@ -38,10 +40,28 @@ def _done(
     return subprocess.CompletedProcess(cmd, returncode=rc, stdout=stdout, stderr=stderr)
 
 
-class PrepareTests(unittest.TestCase):
-    """Tests for `migrate.py prepare` value mapping and validation."""
+def _parse_doc(raw: str) -> dict[str, Any]:
+    """Parses serialized profile-values YAML or JSON output in unit tests."""
+    if raw.lstrip().startswith("{"):
+        return dict(json.loads(raw))
+    import yaml
 
-    def test_validate_identifiers_rejects_invalid_names_and_newlines(self) -> None:
+    return dict(yaml.safe_load(raw))
+
+
+class PrepareTests(unittest.TestCase):
+    """Tests for `migrate.py prepare` value mapping, CLI bootstrap, and validation."""
+
+    def test_direct_script_invocation_and_identifier_validation(self) -> None:
+        script_path = Path(migrate.__file__).resolve()
+        help_res = subprocess.run(
+            [sys.executable, str(script_path), "--help"],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+        self.assertIn("prepare", help_res.stdout)
+
         for bad_ns in ("", "-bad", "UPPER", "xmc\n", "a" * 64):
             with self.assertRaises(HandledError):
                 migrate._validate_identifiers(bad_ns, "xmc")
@@ -54,7 +74,7 @@ class PrepareTests(unittest.TestCase):
             "projectId": "prod-proj-1",
             "imageTag": "v2026.10.28",
             "ingestion_gateway_custom_image": "us-docker.pkg.dev/prod-proj-1/xmc/ig:v1",
-            "secrets": {"csi": {"enabled": True, "clickhousePasswordSecretName": "csi-ch-secret"}},
+            "secrets": {"csi": {"enabled": True, "clickhousePasswordSecretName": "gsm-ch-secret"}},
             "metrics": {
                 "enabled": True,
                 "clickhouse": {
@@ -62,10 +82,12 @@ class PrepareTests(unittest.TestCase):
                     "port": "9000",
                     "database": "mdb",
                     "user": "muser",
+                    "secretName": "k8s-ch-secret",
                 },
             },
             "ingestionGatewayDeployment": {
                 "enabled": True,
+                "image": "   ",
                 "port": 8088,
                 "redpandaBrokers": "[2001:db8::20]:9094,rp-1:9094",
                 "topicName": "custom-metrics",
@@ -77,7 +99,7 @@ class PrepareTests(unittest.TestCase):
                     "requests": {"cpu": "250m", "memory": "512Mi"},
                     "limits": {"cpu": "1", "memory": "1Gi"},
                 },
-                "sasl": {"enabled": True, "mechanism": "SCRAM-SHA-512", "secretName": "rp-sasl"},
+                "sasl": {"enabled": True, "mechanism": "   ", "secretName": "rp-sasl"},
                 "tls": {"enabled": True, "secretName": "rp-tls"},
             },
         }
@@ -103,33 +125,29 @@ class PrepareTests(unittest.TestCase):
             ):
                 summary = migrate.run_prepare(args)
             self.assertTrue(summary["ingestion_gateway_enabled"])
-            raw = out_path.read_text(encoding="utf-8")
-            try:
-                import yaml
-
-                doc = yaml.safe_load(raw)
-            except ImportError:
-                doc = json.loads(raw)
+            doc = _parse_doc(out_path.read_text(encoding="utf-8"))
 
         self.assertEqual(doc["components"]["redpanda"]["parameters"]["kafkaPort"], 9094)
         self.assertEqual(
-            doc["components"]["clickhouse"]["parameters"]["secretName"], "csi-ch-secret"
+            doc["components"]["clickhouse"]["parameters"]["secretName"], "k8s-ch-secret"
         )
         ig = doc["components"]["ingestion-gateway"]
         self.assertEqual(ig["imageTag"], "v2026.10.28")
         self.assertEqual(ig["parameters"]["projectId"], "prod-proj-1")
+        self.assertEqual(ig["parameters"]["image"], "us-docker.pkg.dev/prod-proj-1/xmc/ig:v1")
         self.assertEqual(ig["parameters"]["hpaMinReplicas"], 4)
         self.assertEqual(ig["parameters"]["memoryLimit"], "1Gi")
+        self.assertEqual(ig["parameters"]["saslMechanism"], "SCRAM-SHA-256")
         self.assertEqual(ig["parameters"]["saslSecretName"], "rp-sasl")
         self.assertEqual(ig["parameters"]["tlsSecretName"], "rp-tls")
 
-    def test_prepare_static_zero_replicas_and_validation_cleanup(self) -> None:
+    def test_prepare_null_hpa_zero_replicas_and_validation_cleanup(self) -> None:
         umbrella = {
             "projectId": "YOUR_GCP_PROJECT_ID",
             "metrics": "corrupted-scalar",
             "ingestionGatewayDeployment": {
                 "enabled": False,
-                "hpa": False,
+                "hpa": None,
                 "replicas": 0,
                 "redpandaBrokers": "rp:9092",
                 "topicName": None,
@@ -150,13 +168,10 @@ class PrepareTests(unittest.TestCase):
                 ),
             ):
                 migrate.run_prepare(args)
-            raw = out_path.read_text(encoding="utf-8")
-            doc = (
-                json.loads(raw)
-                if raw.lstrip().startswith("{")
-                else __import__("yaml").safe_load(raw)
-            )
-            ig_params = doc["components"]["ingestion-gateway"]["parameters"]
+            ig_params = _parse_doc(out_path.read_text(encoding="utf-8"))["components"][
+                "ingestion-gateway"
+            ]["parameters"]
+            self.assertFalse(ig_params["hpaEnabled"])
             self.assertEqual(ig_params["replicas"], 0)
             self.assertNotIn("topicName", ig_params)
             self.assertNotIn("serviceAccountName", ig_params)
@@ -169,7 +184,7 @@ class PrepareTests(unittest.TestCase):
                 mock.patch(
                     "tools.migrations.components.migrate.run_command",
                     side_effect=[
-                        _done(["helm"], stdout="{}"),
+                        _done(["helm"], stdout="null"),
                         subprocess.CalledProcessError(1, ["helm"], stderr="bad"),
                     ],
                 ),
@@ -180,6 +195,18 @@ class PrepareTests(unittest.TestCase):
 
         with mock.patch.dict("sys.modules", {"yaml": None}):
             self.assertTrue(migrate._serialize_yaml({"components": {}}).startswith("{"))
+
+    def test_scalar_and_json_helpers_reject_malformed_inputs(self) -> None:
+        for bad_scalar in (True, False, ["rp:9092"], {"repo": "x"}):
+            with self.assertRaises(HandledError):
+                migrate._opt_str(bad_scalar, "field")
+        for bad_int in (True, 2.5, "abc", "²", ["8080"]):
+            with self.assertRaises(HandledError):
+                migrate._opt_int(bad_int, "port")
+        self.assertEqual(migrate._loads_obj("null", "helm get values", null_ok=True), {})
+        for bad_json in ("{truncated", "null", "[]"):
+            with self.assertRaises(HandledError):
+                migrate._loads_obj(bad_json, "kubectl get")
 
 
 class HandoffAndFinalizeTests(unittest.TestCase):
@@ -223,7 +250,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
         ):
             migrate.run_handoff(args)
 
-    def test_handoff_undo_guards_and_restores_umbrella_owner(self) -> None:
+    def test_handoff_undo_deletes_release_secrets_without_deleting_workloads(self) -> None:
         args = migrate.build_parser().parse_args(["handoff", "--undo"])
         with (
             mock.patch(
@@ -253,42 +280,69 @@ class HandoffAndFinalizeTests(unittest.TestCase):
         with mock.patch("tools.migrations.components.migrate.run_command", side_effect=undo_run):
             res = migrate.run_handoff(args)
         self.assertTrue(res["uninstalled_component_release"])
-        uninstall_i = next(i for i, c in enumerate(recorded) if c[:2] == ["helm", "uninstall"])
-        self.assertEqual(
-            len([c for c in recorded[:uninstall_i] if c[:2] == ["kubectl", "annotate"]]), 3
+        self.assertFalse(any(c[:2] == ["helm", "uninstall"] for c in recorded))
+        self.assertTrue(
+            any(
+                c[:3] == ["kubectl", "delete", "secret"]
+                and f"owner=helm,name={migrate.COMPONENT_RELEASE}" in c
+                for c in recorded
+            )
         )
 
-    def test_finalize_waits_prunes_retired_hpa_and_handles_disabled_component(self) -> None:
-        recorded: list[list[str]] = []
-        comp = {"spec": {"enabled": True, "parameters": {"hpaEnabled": "false"}}}
+    def test_finalize_waits_prunes_or_keeps_hpa_and_guards_disabled_component(self) -> None:
+        args = migrate.build_parser().parse_args(["finalize", "--timeout-seconds", "60"])
+        for hpa_val, expect_hpa_delete in (("false", True), ("", False)):
+            recorded: list[list[str]] = []
+            comp = {"spec": {"enabled": True, "parameters": {"hpaEnabled": hpa_val}}}
 
-        def fin_run(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-            recorded.append(cmd)
-            if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
-                return _done(cmd, stdout=json.dumps(comp))
+            def fin_run(
+                cmd: list[str], _rec: list[list[str]] = recorded, _comp: object = comp, **_: object
+            ) -> subprocess.CompletedProcess[str]:
+                _rec.append(cmd)
+                if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
+                    return _done(cmd, stdout=json.dumps(_comp))
+                if cmd[:2] == ["kubectl", "get"]:
+                    return _done(
+                        cmd, stdout=json.dumps(_helm_obj("ig", release=migrate.COMPONENT_RELEASE))
+                    )
+                if cmd[:2] == ["helm", "status"]:
+                    return _done(cmd, stdout=json.dumps({"info": {"status": "deployed"}}))
+                return _done(cmd)
+
+            with mock.patch("tools.migrations.components.migrate.run_command", side_effect=fin_run):
+                res = migrate.run_finalize(args)
+            self.assertTrue(res["ingestion_gateway_enabled"])
+            deletes = [c[-1] for c in recorded if c[:2] == ["kubectl", "delete"]]
+            self.assertEqual(migrate.HPA_RESOURCE in deletes, expect_hpa_delete)
+            self.assertIn("networkpolicy/xmc-ingestion-gateway-network-policy", deletes)
+
+        def disabled_with_live_deploy(
+            cmd: list[str], **_: object
+        ) -> subprocess.CompletedProcess[str]:
+            if cmd[-1] == migrate.COMPONENT_RESOURCE:
+                return _done(cmd, stdout=json.dumps({"spec": {"enabled": False}}))
+            return _done(cmd, stdout=json.dumps(_helm_obj("ig")))
+
+        with (
+            mock.patch(
+                "tools.migrations.components.migrate.run_command",
+                side_effect=disabled_with_live_deploy,
+            ),
+            self.assertRaises(HandledError),
+        ):
+            migrate.run_finalize(args)
+
+        def disabled_without_deploy(
+            cmd: list[str], **_: object
+        ) -> subprocess.CompletedProcess[str]:
+            if cmd[-1] == migrate.COMPONENT_RESOURCE:
+                return _done(cmd, stdout=json.dumps({"spec": {"enabled": False}}))
             if cmd[:2] == ["kubectl", "get"]:
-                return _done(
-                    cmd, stdout=json.dumps(_helm_obj("ig", release=migrate.COMPONENT_RELEASE))
-                )
-            if cmd[:2] == ["helm", "status"]:
-                return _done(cmd, stdout=json.dumps({"info": {"status": "deployed"}}))
+                return _done(cmd, rc=1, stderr="NotFound")
             return _done(cmd)
 
-        args = migrate.build_parser().parse_args(["finalize", "--timeout-seconds", "60"])
-        with mock.patch("tools.migrations.components.migrate.run_command", side_effect=fin_run):
-            res = migrate.run_finalize(args)
-        self.assertTrue(res["ingestion_gateway_enabled"])
-        deletes = [c[-1] for c in recorded if c[:2] == ["kubectl", "delete"]]
-        self.assertIn(migrate.HPA_RESOURCE, deletes)
-        self.assertIn("networkpolicy/xmc-ingestion-gateway-network-policy", deletes)
-
         with mock.patch(
-            "tools.migrations.components.migrate.run_command",
-            side_effect=lambda c, **_: (
-                _done(c, stdout=json.dumps({"spec": {"enabled": False}}))
-                if c[:2] == ["kubectl", "get"]
-                else _done(c)
-            ),
+            "tools.migrations.components.migrate.run_command", side_effect=disabled_without_deploy
         ):
             self.assertFalse(migrate.run_finalize(args)["ingestion_gateway_enabled"])
 
