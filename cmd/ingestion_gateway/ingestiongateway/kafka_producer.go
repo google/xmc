@@ -54,21 +54,18 @@ func ValidateTopicTopologyWithRetry(
 	retryCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var lastErr error
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
 	for {
-		lastErr = ValidateTopicTopology(retryCtx, querier, topicName, minPartitions, minReplicas)
-		if lastErr == nil {
-			return nil
+		err := ValidateTopicTopology(retryCtx, querier, topicName, minPartitions, minReplicas)
+		if err == nil || retryCtx.Err() != nil {
+			return err
 		}
-		if retryCtx.Err() != nil {
-			return lastErr
-		}
-		timer := time.NewTimer(interval)
 		select {
 		case <-retryCtx.Done():
-			timer.Stop()
-			return lastErr
-		case <-timer.C:
+			return err
+		case <-ticker.C:
 		}
 	}
 }

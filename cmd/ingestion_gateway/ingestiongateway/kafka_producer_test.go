@@ -45,16 +45,9 @@ type sequenceTopologyQuerier struct {
 }
 
 func (s *sequenceTopologyQuerier) ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error) {
-	idx := s.calls
+	idx := min(s.calls, len(s.responses)-1)
 	s.calls++
-	if len(s.responses) == 0 {
-		return kadm.TopicDetails{}, nil
-	}
-	if idx >= len(s.responses) {
-		idx = len(s.responses) - 1
-	}
-	resp := s.responses[idx]
-	return resp.ListTopics(ctx, topics...)
+	return s.responses[idx].ListTopics(ctx, topics...)
 }
 
 func createMockPartitions(numPartitions, replicasPerPartition int) kadm.PartitionDetails {
