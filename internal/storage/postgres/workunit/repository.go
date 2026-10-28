@@ -194,22 +194,7 @@ func requireDB(db pgdb.DBTX) error {
 	return nil
 }
 
-func queryRows[T any](ctx context.Context, db pgdb.DBTX, sql string, args ...any) ([]T, error) {
-	rows, err := db.Query(ctx, sql, args...)
-	if err != nil {
-		return nil, pgdb.TranslateError(err, entityName)
-	}
-	rawRows, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[T])
-	if err != nil {
-		return nil, pgdb.TranslateError(err, entityName)
-	}
-	return rawRows, nil
-}
-
 func queryWorkUnit(ctx context.Context, db pgdb.DBTX, query safesql.TrustedSQLString, xid, wid int64) (*essmsgpb.WorkUnit, error) {
-	if err := requireDB(db); err != nil {
-		return nil, err
-	}
 	row, err := pgdb.QueryRow[postgresdata.WorkUnitRow](ctx, db, query.String(), entityName, xid, wid)
 	if err != nil {
 		return nil, err
@@ -218,9 +203,6 @@ func queryWorkUnit(ctx context.Context, db pgdb.DBTX, query safesql.TrustedSQLSt
 }
 
 func queryCurrentExecution(ctx context.Context, db pgdb.DBTX, xid, wid int64) (*essmsgpb.WorkUnitExecution, error) {
-	if err := requireDB(db); err != nil {
-		return nil, err
-	}
 	row, err := pgdb.QueryRow[postgresdata.WorkUnitRow](ctx, db, selectCurrentExecutionSQL.String(), entityName, xid, wid)
 	if err != nil {
 		return nil, err
@@ -229,7 +211,7 @@ func queryCurrentExecution(ctx context.Context, db pgdb.DBTX, xid, wid int64) (*
 }
 
 func queryHistoricalExecutions(ctx context.Context, db pgdb.DBTX, xid, wid int64) ([]*essmsgpb.WorkUnitExecution, error) {
-	rawRows, err := queryRows[postgresdata.WorkUnitExecutionRow](ctx, db, listWorkUnitExecutionsSQL.String(), xid, wid)
+	rawRows, err := pgdb.QueryRows[postgresdata.WorkUnitExecutionRow](ctx, db, listWorkUnitExecutionsSQL.String(), entityName, xid, wid)
 	if err != nil {
 		return nil, err
 	}
