@@ -45,14 +45,12 @@ func ComponentIntentUpdateMutations(rec *store.ComponentRecord, depIDs map[strin
 		return nil, err
 	}
 	compClass := data.DetermineComponentClass(rec.Spec)
-	mutations := []*spanner.Mutation{
-		spanner.UpdateMap("Components", map[string]any{
-			"ComponentId": rec.ComponentID, "ComponentClass": spanner.NullString{StringVal: compClass, Valid: compClass != ""},
-			"ConfigProto": configBytes, "AccessPayload": accessBytes, "State": int64(rec.State), "Generation": rec.Generation, "UpdateTime": spanner.CommitTimestamp,
-		}),
-		spanner.Delete("ComponentDependencies", spanner.KeyRange{Start: spanner.Key{rec.ComponentID}, End: spanner.Key{rec.ComponentID}, Kind: spanner.ClosedClosed}),
-	}
-	return appendDependencyMutations(mutations, rec.ComponentID, rec.Dependencies, depIDs)
+	update := spanner.UpdateMap("Components", map[string]any{
+		"ComponentId": rec.ComponentID, "ComponentClass": spanner.NullString{StringVal: compClass, Valid: compClass != ""},
+		"ConfigProto": configBytes, "AccessPayload": accessBytes, "State": int64(rec.State), "Generation": rec.Generation, "UpdateTime": spanner.CommitTimestamp,
+	})
+	delDeps := spanner.Delete("ComponentDependencies", spanner.KeyRange{Start: spanner.Key{rec.ComponentID}, End: spanner.Key{rec.ComponentID}, Kind: spanner.ClosedClosed})
+	return appendDependencyMutations([]*spanner.Mutation{update, delDeps}, rec.ComponentID, rec.Dependencies, depIDs)
 }
 
 // ComponentStateUpdateMutation builds a Spanner mutation to update componentID's state and access payload.
@@ -61,9 +59,7 @@ func ComponentStateUpdateMutation(componentID int64, state componentspb.Componen
 	if err != nil {
 		return nil, err
 	}
-	return spanner.UpdateMap("Components", map[string]any{
-		"ComponentId": componentID, "State": int64(state), "AccessPayload": accessBytes, "UpdateTime": spanner.CommitTimestamp,
-	}), nil
+	return spanner.UpdateMap("Components", map[string]any{"ComponentId": componentID, "State": int64(state), "AccessPayload": accessBytes, "UpdateTime": spanner.CommitTimestamp}), nil
 }
 
 // ComponentObservationUpdateMutation builds a Spanner mutation to update rec's observed generation, access payload, and optional state.
@@ -91,10 +87,7 @@ func ComponentSoftDeleteMutation(rec *store.ComponentRecord, owner *store.Source
 	if err != nil {
 		return nil, err
 	}
-	cols := map[string]any{
-		"ComponentId": rec.ComponentID, "ConfigProto": configBytes, "AccessPayload": accessBytes,
-		"State": int64(componentspb.ComponentState_COMPONENT_STATE_DELETED), "UpdateTime": spanner.CommitTimestamp,
-	}
+	cols := map[string]any{"ComponentId": rec.ComponentID, "ConfigProto": configBytes, "AccessPayload": accessBytes, "State": int64(componentspb.ComponentState_COMPONENT_STATE_DELETED), "UpdateTime": spanner.CommitTimestamp}
 	if owner != nil {
 		maps.Copy(cols, ownerColumns(owner))
 	}
@@ -123,9 +116,5 @@ func appendDependencyMutations(mutations []*spanner.Mutation, componentID int64,
 }
 
 func ownerColumns(owner *store.SourceOwner) map[string]any {
-	return map[string]any{
-		"SourceUid": owner.UID, "SourceGeneration": owner.Generation,
-		"SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch,
-		"SourceLastSeenTime": spanner.CommitTimestamp,
-	}
+	return map[string]any{"SourceUid": owner.UID, "SourceGeneration": owner.Generation, "SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch, "SourceLastSeenTime": spanner.CommitTimestamp}
 }

@@ -122,6 +122,9 @@ func (r *Repository) WithTx(q Queryable) *TxRepository {
 
 // WithReadOnlySnapshot runs fn against a consistent read-only snapshot.
 func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.ComponentTxRepository) error) error {
+	if fn == nil {
+		return fmt.Errorf("callback function must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
 	ro, err := r.readOnlyTransaction()
 	if err != nil {
 		return err

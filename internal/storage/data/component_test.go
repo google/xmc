@@ -32,6 +32,12 @@ func TestComponentPayloadRoundTrip(t *testing.T) {
 	if _, _, err := MarshalComponentPayloads(nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Fatalf("MarshalComponentPayloads(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
+	if err := UnmarshalConfigProto(nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Fatalf("UnmarshalConfigProto(nil, nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if err := UnmarshalAccessStatus(nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Fatalf("UnmarshalAccessStatus(nil, nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -137,6 +143,8 @@ func TestDetermineComponentClass(t *testing.T) {
 }
 
 func TestFinalizeComponentRecord(t *testing.T) {
+	FinalizeComponentRecord(nil)
+
 	ts := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	active := &store.ComponentRecord{ComponentID: 1, Name: "app", State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, UpdateTime: ts}
 	FinalizeComponentRecord(active)

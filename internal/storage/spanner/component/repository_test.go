@@ -30,6 +30,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/store"
@@ -519,8 +520,11 @@ func TestRepository_NilClientOrTransaction(t *testing.T) {
 	if _, err := nilRepo.ReadOwnershipGauges(ctx, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("NewRepository(nil).ReadOwnershipGauges() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
-	if err := nilRepo.WithReadOnlySnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("NewRepository(nil).WithReadOnlySnapshot() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	if err := nilRepo.WithReadOnlySnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("NewRepository(nil).WithReadOnlySnapshot(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if err := nilRepo.WithReadOnlySnapshot(ctx, func(context.Context, storage.ComponentTxRepository) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("NewRepository(nil).WithReadOnlySnapshot(fn) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 	if _, _, err := nilTxRepo.GetSnapshotByID(ctx, 1, 1, "app", baseTime, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("WithTx(nil).GetSnapshotByID() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)

@@ -53,6 +53,9 @@ func MarshalAccessStatus(access *componentspb.ComponentAccessStatus) ([]byte, er
 
 // UnmarshalConfigProto decodes a serialized Component or legacy ComponentSpec proto into rec.Spec and rec.Labels.
 func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
+	if rec == nil {
+		return fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
 	if len(configBytes) == 0 {
 		return nil
 	}
@@ -67,6 +70,9 @@ func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error 
 
 // UnmarshalAccessStatus decodes a serialized ComponentAccessStatus proto into rec.Status.
 func UnmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
+	if rec == nil {
+		return fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
 	rec.Status = nil
 	if len(accessBytes) == 0 {
 		return nil
@@ -91,6 +97,9 @@ func DetermineComponentClass(spec *componentspb.ComponentSpec) string {
 
 // FinalizeComponentRecord populates DeleteTime (from UpdateTime when DELETED) and derives Etag.
 func FinalizeComponentRecord(rec *store.ComponentRecord) {
+	if rec == nil {
+		return
+	}
 	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
 		t := rec.UpdateTime
 		rec.DeleteTime = &t
