@@ -158,7 +158,7 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     """Fetches and normalizes the PR's status check rollup via gh.
 
     Raises:
-      FileNotFoundError: When the gh binary is not installed.
+      OSError: When the gh binary is missing or cannot be executed.
       subprocess.CalledProcessError: When gh exits non-zero.
       subprocess.TimeoutExpired: When gh does not finish in time.
       json.JSONDecodeError: When gh prints invalid JSON.
@@ -195,7 +195,7 @@ def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
             check=False,
             timeout=GH_COMMAND_TIMEOUT_SECONDS,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+    except (OSError, subprocess.TimeoutExpired) as e:
         return f"<gh api job logs failed: {e}>"
     if res.returncode != 0:
         return f"<gh api job logs failed (exit {res.returncode}): {res.stderr.strip()}>"
@@ -264,10 +264,11 @@ def _poll_once(args: argparse.Namespace, gh_errors: int) -> tuple[list[CheckResu
     """Fetches checks once, tolerating up to MAX_CONSECUTIVE_GH_ERRORS transient errors."""
     try:
         return fetch_checks(args.pr, args.repo), 0
-    except FileNotFoundError as e:
+    except OSError as e:
         raise HandledError(
-            "gh CLI not found on PATH.",
-            "Install the GitHub CLI (https://cli.github.com) and run `gh auth login`.",
+            f"gh CLI could not be executed: {e}",
+            "Install the GitHub CLI (https://cli.github.com), check PATH and file"
+            " permissions, and run `gh auth login`.",
         ) from e
     except _TRANSIENT_GH_ERRORS as e:
         gh_errors += 1

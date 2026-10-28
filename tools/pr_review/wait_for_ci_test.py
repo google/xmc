@@ -377,13 +377,16 @@ class TestWaitForCI(unittest.TestCase):
         self._run()
         self.assertNotIn("--repo", mock_run.call_args.args[0])
 
-    def test_missing_gh_binary_raises_immediately(self, mock_run):
-        """A missing gh binary is a non-retryable HandledError."""
-        mock_run.side_effect = FileNotFoundError("gh")
-        with self.assertRaises(HandledError) as ctx:
-            self._run()
-        self.assertIn("gh CLI not found", ctx.exception.message)
-        self.assertEqual(mock_run.call_count, 1)
+    def test_unexecutable_gh_binary_raises_immediately(self, mock_run):
+        """A missing or non-executable gh binary is a non-retryable HandledError."""
+        for error in (FileNotFoundError("gh"), PermissionError("gh")):
+            with self.subTest(error=type(error).__name__):
+                mock_run.reset_mock()
+                mock_run.side_effect = error
+                with self.assertRaises(HandledError) as ctx:
+                    self._run()
+                self.assertIn("gh CLI could not be executed", ctx.exception.message)
+                self.assertEqual(mock_run.call_count, 1)
 
     def test_gh_timeout_is_retried_as_transient(self, mock_run):
         """A hung gh call (TimeoutExpired) is retried like other transient errors."""
@@ -402,7 +405,11 @@ class TestWaitForCI(unittest.TestCase):
     def test_job_log_fetch_errors_become_placeholders(self, mock_run):
         """Missing gh or a hung log download yields a placeholder, not a crash."""
         failing = _check_run("unit", conclusion="FAILURE")
-        for error in (FileNotFoundError("gh"), subprocess.TimeoutExpired("gh", 60)):
+        for error in (
+            FileNotFoundError("gh"),
+            PermissionError("gh"),
+            subprocess.TimeoutExpired("gh", 60),
+        ):
             with self.subTest(error=type(error).__name__):
                 mock_run.reset_mock()
                 mock_run.side_effect = [_rollup(failing), _rollup(failing), error]
