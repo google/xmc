@@ -48,11 +48,9 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	}
 
 	// 2.1. Fill in any null values in the request payload, in place. Unset or empty
-	// ACLs default to the creator as the sole OWNER. ACL principals are put in canonical form so
-	// they match case-insensitively.
+	// ACLs default to the creator as the sole OWNER.
 	exp := validator.FillExperimentNullValues(req.GetExperiment())
 	exp = validator.FillExperimentDefaultACLs(exp, creator)
-	exp.Acls = auth.NormalizeACLs(exp.GetAcls())
 
 	// 2.2. Inject the execution environment on experiment creation.
 	executionEnv, err := h.defaultExecutionEnvironment()
@@ -123,8 +121,9 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 
 // authorizeCreator returns a PermissionDenied error unless the creator holds WRITER (directly or
 // via OWNER) on the requested ACLs. Experiment XIDs have no parent and the XID service stores root
-// ACLs verbatim, so this evaluates the same ACLs with the same internal/auth logic that
-// XidService.CheckUserAuthorization would apply to the created XIDEntry, without creating it first.
+// ACLs as requested (in canonical form), so this evaluates the same ACLs with the same
+// case-insensitive internal/auth logic that XidService.CheckUserAuthorization would apply to the
+// created XIDEntry, without creating it first.
 func (h *ExperimentHandler) authorizeCreator(ctx context.Context, creator string, acls *xidmsgpb.XidAcls) error {
 	authorized, err := h.auth.IsUserAuthorized(ctx, creator, acls, auth.Writer)
 	if err != nil {

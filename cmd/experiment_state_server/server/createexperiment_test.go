@@ -307,7 +307,7 @@ func TestCreateExperiment_CreatorAuthorization(t *testing.T) {
 		wantXidACLs        *xidmsgpb.XidAcls
 	}{
 		{name: "creator_owner", req: baseReq, wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
-		{name: "mixed_case_creator_owner_normalized", req: withACLs(mixedCaseCreatorOwner), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorOwner},
+		{name: "mixed_case_creator_owner_authorized", req: withACLs(mixedCaseCreatorOwner), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: mixedCaseCreatorOwner},
 		{name: "creator_writer", req: withACLs(creatorWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: creatorWriter},
 		{name: "creator_domain_writer", req: withACLs(domainWriter), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: domainWriter},
 		{name: "all_authenticated_users_owner", req: withACLs(allAuthenticatedOwner), wantCode: codes.OK, wantCreateXidCalls: 1, wantXidACLs: allAuthenticatedOwner},
