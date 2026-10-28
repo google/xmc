@@ -178,8 +178,7 @@ spec:
               mountPath: /var/lib/clickhouse/format_schemas/metrics.proto
               subPath: metrics.proto
             - name: init-scripts
-              mountPath: /docker-entrypoint-initdb.d/init.sql
-              subPath: init.sql
+              mountPath: /docker-entrypoint-initdb.d
       volumes:
         - name: format-schemas
           configMap:

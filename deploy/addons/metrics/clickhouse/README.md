@@ -26,7 +26,7 @@ To provision the lightweight in-cluster ClickHouse and Redpanda metrics stack, c
 ```
 
 > [!NOTE]
-> The lightweight StatefulSets in [`deploy/addons/metrics/manifests/metrics-addons.yaml`](../manifests/metrics-addons.yaml) are configured for self-healing across pod rescheduling onto new nodes: `clickhouse` mounts `clickhouse-init-scripts` into `/docker-entrypoint-initdb.d/init.sql` with `CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS=1`, and `redpanda` ensures the `xmc-metrics` topic exists via a container `postStart` lifecycle hook.
+> The lightweight StatefulSets in [`deploy/addons/metrics/manifests/metrics-addons.yaml`](../manifests/metrics-addons.yaml) are configured for self-healing across pod rescheduling onto new nodes: `clickhouse` mounts `clickhouse-init-scripts` into `/docker-entrypoint-initdb.d` with `CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS=1`, and `redpanda` ensures the `xmc-metrics` topic exists via a container `postStart` lifecycle hook.
 
 ### 1. Connect to the Target GKE Cluster
 
