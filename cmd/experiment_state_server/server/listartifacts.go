@@ -16,7 +16,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -26,7 +25,6 @@ import (
 	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -114,21 +112,21 @@ func (h *ArtifactHandler) fetchACLsForArtifacts(ctx context.Context, artifacts [
 		return nil
 	}
 	// Generate a filter that will return the same artifacts, but in the form of XIDs.
-	var xidFilter []string
+	xids := make([]int64, 0, len(artifacts))
 	for _, artifact := range artifacts {
 		xid, err := validator.ValidateArtifactName(artifact.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate artifact name", "error", err)
 			return fmt.Errorf("failed to validate artifact name: %w", grpcerr.ErrInternal)
 		}
-		xidFilter = append(xidFilter, fmt.Sprintf("bit_reversed_xid=%d", data.ReverseBits(xid)))
+		xids = append(xids, xid)
 	}
 
 	// Call the XID service to get the XID entries.
 	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidpb.ListXidEntriesRequest{
 		PageSize: proto.Int32(pageSize),
 		// page sizes.
-		Filter: proto.String(strings.Join(xidFilter, " OR ")),
+		Filter: proto.String(xidLookupFilter(xids)),
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to list XIDs", "error", err)

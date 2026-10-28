@@ -44,6 +44,7 @@ go_library(
         "updateexperimentlaunchstate.go",
         "updateworkunit.go",
         "utils.go",
+        "xidfilter.go",
     ],
     importpath = "xmanager_cloud/cmd/experiment_state_server/server",
     visibility = ["//visibility:public"],
@@ -127,6 +128,7 @@ go_test(
         "updateexperimentlaunchstate_test.go",
         "updateworkunit_test.go",
         "utils_test.go",
+        "xidfilter_test.go",
     ],
     embed = [":server"],
     # Shard across 10 parallel executors to distribute extensive server RPC
