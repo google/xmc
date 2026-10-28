@@ -559,6 +559,8 @@ def _build_resume_cmd(args: argparse.Namespace, config: UpgradeConfig, step: str
         Shell-safe command string for resuming or re-running the step.
     """
     cmd = f"python3 tools/dev_env/upgrade_dev_env.py --config {shlex.quote(config.config_path)}"
+    if getattr(args, "run_migrations", False):
+        cmd += " --run-migrations"
     if getattr(args, "enable_components", None) is not None:
         flag = "--enable-components" if args.enable_components else "--no-enable-components"
         cmd += f" {flag}"
