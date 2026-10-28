@@ -110,8 +110,7 @@ func ExperimentRowToProto(row ExperimentRow) (*essmsgpb.Experiment, error) {
 	}
 	var status *essmsgpb.ExperimentStatus
 	if row.Status != nil {
-		status, err = UnmarshalProto[essmsgpb.ExperimentStatus](row.Status)
-		if err != nil {
+		if status, err = UnmarshalProto[essmsgpb.ExperimentStatus](row.Status); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal Status: %w", err)
 		}
 	}
@@ -152,29 +151,34 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 	if err != nil {
 		return ExperimentRow{}, fmt.Errorf("failed to marshal Status: %w", err)
 	}
+	tags := slices.Clone(exp.GetTags())
+	if tags == nil {
+		tags = []string{}
+	}
+	updateTime := exp.GetUpdateTime().AsTime()
+	if exp.GetUpdateTime() == nil {
+		updateTime = exp.GetStatus().GetUpdateTime().AsTime()
+	}
+	var completeTime pgtype.Timestamptz
+	if exp.GetCompleteTime() != nil {
+		completeTime = pgtype.Timestamptz{Time: exp.GetCompleteTime().AsTime(), Valid: true}
+	}
 	return ExperimentRow{
 		Xid:          xid,
 		Title:        exp.GetTitle(),
 		Creator:      exp.GetCreator(),
 		Priority:     int64(exp.GetPriority()),
 		Urls:         urls,
-		Tags:         nonNilStrings(exp.GetTags()),
+		Tags:         tags,
 		Notes:        exp.GetNotes(),
 		Resources:    resources,
 		Status:       statusBytes,
 		ActiveState:  int64(exp.GetStatus().GetActiveState()),
 		LaunchState:  int64(exp.GetStatus().GetLaunchState()),
 		CreateTime:   exp.GetCreateTime().AsTime(),
-		UpdateTime:   experimentUpdateTime(exp),
-		CompleteTime: nullableTimestamptz(exp.GetCompleteTime()),
+		UpdateTime:   updateTime,
+		CompleteTime: completeTime,
 	}, nil
-}
-
-func experimentUpdateTime(exp *essmsgpb.Experiment) time.Time {
-	if exp.GetUpdateTime() != nil {
-		return exp.GetUpdateTime().AsTime()
-	}
-	return exp.GetStatus().GetUpdateTime().AsTime()
 }
 
 func marshalProtoSlice[T any, PT ProtoPointer[T]](items []PT) ([][]byte, error) {
@@ -202,18 +206,4 @@ func unmarshalProtoSlice[T any, PT ProtoPointer[T]](raw [][]byte) ([]PT, error) 
 		out[i] = msg
 	}
 	return out, nil
-}
-
-func nonNilStrings(items []string) []string {
-	if len(items) == 0 {
-		return []string{}
-	}
-	return slices.Clone(items)
-}
-
-func nullableTimestamptz(ts *timestamppb.Timestamp) pgtype.Timestamptz {
-	if ts == nil {
-		return pgtype.Timestamptz{}
-	}
-	return pgtype.Timestamptz{Time: ts.AsTime(), Valid: true}
 }

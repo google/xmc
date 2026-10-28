@@ -70,10 +70,7 @@ type TxRepository struct {
 
 // NewRepository creates a new PostgreSQL Experiment repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{
-		pool: pool,
-		db:   pgdb.FromPool(pool),
-	}
+	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
 }
 
 // WithTx returns a wrapper bound to the read-write transaction tx.
@@ -143,7 +140,11 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 			return nil
 		}
 		updatedExp.UpdateTime = timestamppb.New(time.Now().UTC().Truncate(time.Microsecond))
-		if err := updateExperimentRow(ctx, tx, updatedExp); err != nil {
+		row, err := toExperimentRow(updatedExp)
+		if err != nil {
+			return err
+		}
+		if err := execExperimentStatement(ctx, tx, updateExperimentSQL, row.GetUpdateArgs(), true); err != nil {
 			return err
 		}
 		res = storage.UpdatedExperiments{Original: originalExp, Updated: updatedExp}
@@ -208,14 +209,6 @@ func fetchExperiment(ctx context.Context, db pgdb.DBTX, sql safesql.TrustedSQLSt
 		return nil, pgdb.WrapStatusError("failed to convert experiment row to proto", grpcerr.ErrInternal, err)
 	}
 	return exp, nil
-}
-
-func updateExperimentRow(ctx context.Context, db pgdb.DBTX, exp *essmsgpb.Experiment) error {
-	row, err := toExperimentRow(exp)
-	if err != nil {
-		return err
-	}
-	return execExperimentStatement(ctx, db, updateExperimentSQL, row.GetUpdateArgs(), true)
 }
 
 func toExperimentRow(exp *essmsgpb.Experiment) (postgresdata.ExperimentRow, error) {
