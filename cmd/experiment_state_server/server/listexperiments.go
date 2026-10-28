@@ -16,7 +16,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -26,7 +25,6 @@ import (
 	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -106,20 +104,20 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 		return nil
 	}
 	// Generate a filter that will return the same experiments, but in the form of XIDs.
-	var xidFilter []string
+	xids := make([]int64, 0, len(experiments))
 	for _, exp := range experiments {
 		xid, err := validator.ValidateExperimentName(exp.GetName())
 		if err != nil {
 			logging.Error(ctx, "Failed to validate experiment name", "error", err)
 			return fmt.Errorf("failed to validate experiment name: %w", grpcerr.ErrInternal)
 		}
-		xidFilter = append(xidFilter, fmt.Sprintf("bit_reversed_xid=%d", data.ReverseBits(xid)))
+		xids = append(xids, xid)
 	}
 
 	// Call the XID service to get the XID entries.
 	xidListResponse, err := h.xidClient.ListXidEntries(propagateIAPJWT(ctx), &xidpb.ListXidEntriesRequest{
 		PageSize: proto.Int32(pageSize),
-		Filter:   proto.String(strings.Join(xidFilter, " OR ")),
+		Filter:   proto.String(xidLookupFilter(xids)),
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to list XIDs", "error", err)

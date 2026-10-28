@@ -1,0 +1,145 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Public entry point for an EKS island deployment: the KinD gateway proxy (test/e2e/manifests)
+# extended with a /dex route and an h2c gRPC listener, published through an AWS NLB.
+# Placeholders are filled by deploy_aws_eks.sh (step "expose"):
+#   __CLUSTER_DNS__    ClusterIP of kube-dns (nginx resolver)
+#   __SOURCE_RANGES__  YAML list items of client CIDRs allowed to reach the NLB
+#   __OWNER_TAG__      value of the user/owner tags on the load balancer
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-proxy-config
+  namespace: xmc
+data:
+  nginx.conf: |
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      resolver __CLUSTER_DNS__ valid=5s ipv6=off;
+      server {
+        listen 8080;
+        location /dex/ {
+          set $dex_backend http://dex.dex.svc.cluster.local:5556;
+          proxy_pass $dex_backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        location /api/ {
+          set $ess_backend http://http-service.xmc.svc.cluster.local:8080;
+          proxy_pass $ess_backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        location /v1/ {
+          set $ess_backend http://http-service.xmc.svc.cluster.local:8080;
+          proxy_pass $ess_backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        location /healthz {
+          set $ess_backend http://http-service.xmc.svc.cluster.local:8080;
+          proxy_pass $ess_backend;
+        }
+        location /readyz {
+          set $ess_backend http://http-service.xmc.svc.cluster.local:8080;
+          proxy_pass $ess_backend;
+        }
+        location / {
+          set $ui_backend http://ui-service.xmc.svc.cluster.local:80;
+          proxy_pass $ui_backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+        }
+      }
+      server {
+        listen 50051;
+        http2 on;
+        location / {
+          set $grpc_backend grpc://grpc-service.xmc.svc.cluster.local:50051;
+          grpc_pass $grpc_backend;
+          grpc_read_timeout 600s;
+          grpc_send_timeout 600s;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-proxy
+  namespace: xmc
+  labels:
+    app: gateway-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-proxy
+  template:
+    metadata:
+      labels:
+        app: gateway-proxy
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        - containerPort: 50051
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: config
+        configMap:
+          name: gateway-proxy-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-proxy-service
+  namespace: xmc
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "user=__OWNER_TAG__,owner=__OWNER_TAG__,purpose=xmc-postgres-island"
+spec:
+  type: LoadBalancer
+  # Only these client CIDRs may reach the NLB (plain HTTP + dev password behind it).
+  loadBalancerSourceRanges:
+__SOURCE_RANGES__
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: grpc
+    port: 50051
+    targetPort: 50051
+    protocol: TCP
+  selector:
+    app: gateway-proxy

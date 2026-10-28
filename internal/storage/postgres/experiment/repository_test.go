@@ -16,26 +16,57 @@ package experiment
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	pb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
-func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository(nil)
-	if repo == nil {
-		t.Fatal("NewRepository() returned nil")
+func TestNewRepository_BindsPoolAndTx(t *testing.T) {
+	pool := &pgxpool.Pool{}
+	repo := NewRepository(pool)
+	if repo.db != pool {
+		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
-	txRepo := repo.WithTx(nil)
-	if txRepo == nil {
-		t.Fatal("WithTx() returned nil")
+	if repo.pool != pool {
+		t.Errorf("NewRepository(pool).pool = %v, want %p", repo.pool, pool)
 	}
 
+	nilRepo := NewRepository(nil)
+	if nilRepo.db != nil {
+		t.Errorf("NewRepository(nil).db = %v, want nil", nilRepo.db)
+	}
+	if nilRepo.pool != nil {
+		t.Errorf("NewRepository(nil).pool = %v, want nil", nilRepo.pool)
+	}
+
+	txRepo := repo.WithTx(pool)
+	if txRepo.tx != pool {
+		t.Errorf("WithTx(pool).tx = %v, want %p", txRepo.tx, pool)
+	}
+}
+
+func TestLockExperimentSQL_UsesForNoKeyUpdate(t *testing.T) {
+	sql := lockExperimentSQL.String()
+	if !strings.HasSuffix(sql, "FOR NO KEY UPDATE") {
+		t.Errorf("lockExperimentSQL = %q, want suffix FOR NO KEY UPDATE", sql)
+	}
+}
+
+func TestRepository_NilPoolFailsPrecondition(t *testing.T) {
 	ctx := context.Background()
+	repo := NewRepository(nil)
+
 	tests := []struct {
 		name string
 		call func() error
@@ -55,16 +86,20 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "UpdateExperiment",
+			name: "ListExperiments",
 			call: func() error {
-				_, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{})
+				_, _, err := repo.ListExperiments(ctx, 10, "", "", "", 0)
 				return err
 			},
 		},
 		{
-			name: "ListExperiments",
+			name: "UpdateExperiment",
 			call: func() error {
-				_, _, err := repo.ListExperiments(ctx, 10, "", "", "", 0)
+				_, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+					XID:        1,
+					Experiment: &pb.Experiment{Title: "t"},
+					UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+				})
 				return err
 			},
 		},
@@ -75,54 +110,116 @@ func TestRepository_Unimplemented(t *testing.T) {
 				return err
 			},
 		},
-		{
-			name: "Tx_FetchExperiment",
-			call: func() error {
-				_, err := txRepo.FetchExperiment(ctx, 1)
-				return err
-			},
-		},
-		{
-			name: "Tx_InsertExperiment",
-			call: func() error {
-				return txRepo.InsertExperiment(ctx, nil)
-			},
-		},
-		{
-			name: "Tx_UpdateExperimentStatus",
-			call: func() error {
-				return txRepo.UpdateExperimentStatus(ctx, nil)
-			},
-		},
-		{
-			name: "Tx_UpdateExperimentResources",
-			call: func() error {
-				return txRepo.UpdateExperimentResources(ctx, nil)
-			},
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.call()
-			if got := status.Code(err); got != codes.Unimplemented {
-				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
+			if !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("%s error = %v (code %v), want %v (code %v)", tt.name, err, status.Code(err), grpcerr.ErrFailedPrecondition, codes.FailedPrecondition)
 			}
 		})
 	}
 }
 
-func TestNewRepository_BindsPoolAndTx(t *testing.T) {
-	pool := &pgxpool.Pool{}
-	repo := NewRepository(pool)
-	if repo.db != pool {
-		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
+func TestUpdateExperiment_NilInputValidation(t *testing.T) {
+	ctx := context.Background()
+	repo := NewRepository(nil)
+
+	if _, err := repo.UpdateExperiment(ctx, nil); err == nil {
+		t.Errorf("UpdateExperiment(nil) = nil, want non-nil error")
 	}
 
-	// Any DBTX implementation can stand in for the transaction handle.
-	var tx pgdb.DBTX = &pgxpool.Pool{}
-	txRepo := repo.WithTx(tx)
-	if txRepo.tx != tx {
-		t.Errorf("WithTx(tx).tx = %v, want %v", txRepo.tx, tx)
+	_, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        1,
+		Experiment: &pb.Experiment{Title: "t"},
+	})
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateExperiment(nil mask) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+}
+
+func TestTxRepository_NilExperimentAndNilTransaction(t *testing.T) {
+	ctx := context.Background()
+	r := &TxRepository{}
+	exp := &pb.Experiment{Name: "experiments/1001"}
+
+	if _, err := r.FetchExperiment(ctx, 1001); err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("FetchExperiment(nil tx) error = %v, want 'transaction must not be nil'", err)
+	}
+	if err := r.InsertExperiment(ctx, nil); err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("InsertExperiment(nil exp) error = %v, want 'experiment must not be nil'", err)
+	}
+	if err := r.InsertExperiment(ctx, exp); err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("InsertExperiment(nil tx) error = %v, want 'transaction must not be nil'", err)
+	}
+	if err := r.UpdateExperimentStatus(ctx, nil); err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("UpdateExperimentStatus(nil exp) error = %v, want 'experiment must not be nil'", err)
+	}
+	if err := r.UpdateExperimentStatus(ctx, exp); err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("UpdateExperimentStatus(nil tx) error = %v, want 'transaction must not be nil'", err)
+	}
+	if err := r.UpdateExperimentResources(ctx, nil); err == nil || err.Error() != "experiment must not be nil" {
+		t.Errorf("UpdateExperimentResources(nil exp) error = %v, want 'experiment must not be nil'", err)
+	}
+	if err := r.UpdateExperimentResources(ctx, exp); err == nil || err.Error() != "transaction must not be nil" {
+		t.Errorf("UpdateExperimentResources(nil tx) error = %v, want 'transaction must not be nil'", err)
+	}
+}
+
+func TestExtractExperimentCursor(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	nowProto := timestamppb.New(now)
+
+	testCases := []struct {
+		name    string
+		entry   *pb.Experiment
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name: "valid_experiment_entry",
+			entry: &pb.Experiment{
+				Name:         "experiments/123",
+				CreateTime:   nowProto,
+				UpdateTime:   nowProto,
+				CompleteTime: nowProto,
+			},
+			want: map[string]any{
+				"xid":       int64(123),
+				"created":   now,
+				"updated":   now,
+				"completed": now,
+			},
+		},
+		{
+			name: "valid_experiment_entry_no_timestamps",
+			entry: &pb.Experiment{
+				Name: "experiments/456",
+			},
+			want: map[string]any{
+				"xid":       int64(456),
+				"completed": nil,
+			},
+		},
+		{
+			name: "invalid_experiment_name",
+			entry: &pb.Experiment{
+				Name: "invalid/789",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ExtractExperimentCursor(tc.entry)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ExtractExperimentCursor(%v) error = %v, wantErr = %t", tc.entry, err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("ExtractExperimentCursor(%v) mismatch (-want +got):\n%s", tc.entry, diff)
+			}
+		})
 	}
 }
