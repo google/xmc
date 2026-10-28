@@ -29,63 +29,15 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 )
 
-const (
-	defaultTopologyValidationTimeout  = 30 * time.Second
-	defaultTopologyValidationInterval = 1 * time.Second
-)
-
 // TopologyQuerier abstracts Redpanda cluster metadata queries for topic validation.
 type TopologyQuerier interface {
 	ListTopics(ctx context.Context, topics ...string) (kadm.TopicDetails, error)
-}
-
-// ValidateTopicTopologyWithRetry polls ValidateTopicTopology until it succeeds or the retry window
-// (bounded by timeout and ctx) expires.
-func ValidateTopicTopologyWithRetry(
-	ctx context.Context,
-	querier TopologyQuerier,
-	topicName string,
-	minPartitions, minReplicas int,
-	timeout, interval time.Duration,
-) error {
-	if topicName == "" {
-		return errors.New("topicName cannot be empty")
-	}
-	if querier == nil {
-		return errors.New("querier cannot be nil")
-	}
-	if timeout <= 0 {
-		return errors.New("timeout must be greater than 0")
-	}
-	if interval <= 0 {
-		return errors.New("interval must be greater than 0")
-	}
-	retryCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for {
-		err := ValidateTopicTopology(retryCtx, querier, topicName, minPartitions, minReplicas)
-		if err == nil || retryCtx.Err() != nil {
-			return err
-		}
-		select {
-		case <-retryCtx.Done():
-			return err
-		case <-ticker.C:
-		}
-	}
 }
 
 // ValidateTopicTopology asserts topic existence, partition count >= minPartitions, and replication factor >= minReplicas.
 func ValidateTopicTopology(ctx context.Context, querier TopologyQuerier, topicName string, minPartitions, minReplicas int) error {
 	if topicName == "" {
 		return errors.New("topicName cannot be empty")
-	}
-	if querier == nil {
-		return errors.New("querier cannot be nil")
 	}
 
 	details, err := querier.ListTopics(ctx, topicName)
@@ -207,16 +159,7 @@ func newValidatedKafkaProducer(ctx context.Context, cfg *Config, gMetrics *Gatew
 	if err != nil {
 		return nil, fmt.Errorf("failed to create franz-go client: %w", err)
 	}
-	err = ValidateTopicTopologyWithRetry(
-		ctx,
-		kadm.NewClient(producer.client),
-		cfg.TopicName,
-		cfg.MinPartitions,
-		cfg.MinReplicas,
-		defaultTopologyValidationTimeout,
-		defaultTopologyValidationInterval,
-	)
-	if err != nil {
+	if err := ValidateTopicTopology(ctx, kadm.NewClient(producer.client), cfg.TopicName, cfg.MinPartitions, cfg.MinReplicas); err != nil {
 		producer.Close()
 		return nil, fmt.Errorf("topic topology validation failed: %w", err)
 	}
