@@ -70,14 +70,14 @@ def _strip_grpc_host_prefix(host: str) -> str:
 
 
 def _parse_url_origin(raw_url: str, *, allow_path: bool = True) -> str | None:
-    parts = urllib.parse.urlsplit(raw_url.strip())
+    try:
+        parts = urllib.parse.urlsplit(raw_url.strip())
+        port = parts.port
+    except ValueError:
+        return None
     if parts.username or parts.password or parts.query or parts.fragment:
         return None
     if not allow_path and parts.path not in ("", "/"):
-        return None
-    try:
-        port = parts.port
-    except ValueError:
         return None
     scheme, host = parts.scheme.lower(), _strip_grpc_host_prefix((parts.hostname or "").lower())
     if not host or scheme not in {"http", "https"}:

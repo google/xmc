@@ -195,8 +195,9 @@ class AuthTest(unittest.TestCase):
                 resolve_xmc_origin("xmc.example.com:443", secure=True),
                 "https://xmc.example.com",
             )
-            # URL with embedded credentials is rejected
+            # URL with embedded credentials or malformed IPv6 brackets is rejected
             self.assertIsNone(resolve_xmc_origin("https://user:pass@xmc.example.com/v1"))
+            self.assertIsNone(resolve_xmc_origin("https://[::1:8080/v1"))
 
     def test_load_cached_cli_token_success(self) -> None:
         self._write_credentials(self._valid_payload("https://xmc.example.com", "my-cli-token"))
