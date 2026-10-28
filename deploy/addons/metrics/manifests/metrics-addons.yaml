@@ -173,6 +173,12 @@ spec:
               name: http
             - containerPort: 9000
               name: tcp
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 2
           volumeMounts:
             - name: format-schemas
               mountPath: /var/lib/clickhouse/format_schemas/metrics.proto
