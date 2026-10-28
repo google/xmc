@@ -59,12 +59,45 @@ class IterCodeSegmentsTest(unittest.TestCase):
         text = "~~~\n```\ntools/x.py\n~~~\n"
         self.assertEqual(list(cli.iter_code_segments(text)), [(2, "```"), (3, "tools/x.py")])
 
+    def test_nested_shorter_fence_with_info_string_does_not_close_block(self):
+        text = "````md\n```bash\npython3 tools/nested.py\n```\n````\nprose tools/prose_word\n"
+        self.assertEqual(
+            list(cli.iter_code_segments(text)),
+            [(2, "```bash"), (3, "python3 tools/nested.py"), (4, "```")],
+        )
+
+    def test_indented_fence_in_list_item(self):
+        text = "1. Step:\n   ```bash\n   tools/a.py\n   ```\nafter tools/b.py\n"
+        self.assertEqual(list(cli.iter_code_segments(text)), [(3, "   tools/a.py")])
+
+
+class ClosesFenceTest(unittest.TestCase):
+    def test_closing_rules(self):
+        cases = {
+            ("```", "```"): True,
+            ("`````", "```"): True,
+            ("```  ", "```"): True,
+            ("```bash", "```"): False,
+            ("```", "````"): False,
+            ("~~~", "```"): False,
+            ("plain", "```"): False,
+        }
+        for (line, opening), want in cases.items():
+            with self.subTest(line=line, opening=opening):
+                self.assertEqual(cli.closes_fence(line, opening), want)
+
 
 class ExtractPathTokensTest(unittest.TestCase):
     def test_extracts_relative_and_dot_slash_paths(self):
         self.assertEqual(
             cli.extract_path_tokens("./tools/a.py --x=deploy/b.yaml && cd cmd/ui"),
             ["tools/a.py", "deploy/b.yaml", "cmd/ui"],
+        )
+
+    def test_stops_at_shell_redirects_and_punctuation(self):
+        self.assertEqual(
+            cli.extract_path_tokens("python3 tools/x.py>/dev/null (see tools/y.py), tools/z.py;"),
+            ["tools/x.py", "tools/y.py", "tools/z.py"],
         )
 
     def test_ignores_embedded_paths_urls_and_labels(self):
@@ -79,7 +112,6 @@ class ResolveCheckedPathTest(unittest.TestCase):
     def test_strips_trailing_punctuation_and_slash(self):
         self.assertEqual(cli.resolve_checked_path("tools/lint/"), "tools/lint")
         self.assertEqual(cli.resolve_checked_path("tools/a.py."), "tools/a.py")
-        self.assertEqual(cli.resolve_checked_path("tools/a.py>"), "tools/a.py")
 
     def test_reduces_placeholders_to_directory_prefix(self):
         cases = {
@@ -152,14 +184,20 @@ class CheckAgentDocPathsEndToEndTest(unittest.TestCase):
         path.write_text(content)
         subprocess.run(["git", "add", rel], cwd=self.root, check=True)
 
-    def _run(self):
-        with mock.patch.object(cli, "ALLOWLIST", {"tools/runtime": "created at runtime"}):
+    def _run(self, allowlist=None):
+        with mock.patch.object(cli, "ALLOWLIST", allowlist or {}):
             return cli.check_agent_doc_paths(argparse.Namespace(repo_root=str(self.root)))
 
-    def test_passes_and_reports_unused_allowlist(self):
-        self._write_and_track(".agents/skills/s/SKILL.md", "`tools/real.py`\n")
+    def test_passes_with_allowlisted_runtime_path(self):
+        self._write_and_track(".agents/skills/s/SKILL.md", "`tools/real.py` `tools/runtime/x`\n")
         self._write_and_track("pkg/AGENTS.md", "`./tools/real.py`\n")
-        self.assertEqual(self._run(), {"docs_scanned": 2, "unused_allowlist": ["tools/runtime"]})
+        self.assertEqual(self._run({"tools/runtime": "created at runtime"}), {"docs_scanned": 2})
+
+    def test_unused_allowlist_entry_fails(self):
+        self._write_and_track(".agents/skills/s/SKILL.md", "`tools/real.py`\n")
+        with self.assertRaises(HandledError) as ctx:
+            self._run({"tools/runtime": "created at runtime"})
+        self.assertEqual(ctx.exception.details, {"unused_allowlist": ["tools/runtime"]})
 
     def test_fails_with_violation_details(self):
         self._write_and_track(".agents/rules/r.md", "ok\n`tools/venv/bin/python3`\n")
@@ -189,6 +227,25 @@ class CheckAgentDocPathsEndToEndTest(unittest.TestCase):
         self._write_and_track(".agents/rules/r.md", "`tools/missing.py`\n")
         (self.root / ".agents/rules/r.md").unlink()
         self.assertEqual(self._run()["docs_scanned"], 1)
+
+    def test_non_utf8_file_name_and_doc_content_do_not_crash(self):
+        (self.root / b"bad\xff.txt".decode("utf-8", "surrogateescape")).write_bytes(b"")
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+        self._write_and_track(".agents/rules/r.md", "")
+        (self.root / ".agents/rules/r.md").write_bytes(b"\xff `tools/real.py`\n")
+        self.assertEqual(self._run(), {"docs_scanned": 1})
+
+
+class ListTrackedFilesTest(unittest.TestCase):
+    def test_outside_git_repository_raises_handled_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(HandledError, "git ls-files failed"):
+                cli.list_tracked_files(Path(tmp))
+
+    def test_missing_git_binary_raises_handled_error(self):
+        with mock.patch.object(cli.subprocess, "run", side_effect=FileNotFoundError("git")):
+            with self.assertRaisesRegex(HandledError, "git ls-files failed"):
+                cli.list_tracked_files(Path("."))
 
 
 class RepositoryDocsTest(unittest.TestCase):

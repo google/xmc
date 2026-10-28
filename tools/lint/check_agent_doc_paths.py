@@ -23,8 +23,12 @@ shell commands, so a stale path surfaces as `exit 127` mid-task.
 
 Placeholders are supported: a token containing `<...>`, `{...}`, `$`, `*`, `[`
 or `...` is truncated at the placeholder and only its directory prefix must
-exist. Paths created at runtime (virtual environments, generated output) are
-listed in ALLOWLIST with a justification.
+exist. Paths created at runtime (virtual environments, generated output) and
+illustrative examples are listed in ALLOWLIST with a justification; entries no
+doc references fail the check so the list cannot go stale.
+
+Docs are read from the working tree while existence is checked against the git
+index, matching the other repository lint hooks.
 """
 
 import argparse
@@ -92,12 +96,12 @@ ALLOWLIST: dict[str, str] = {
 _PATH_TOKEN_RE = re.compile(
     r"(?<![\w./@~}-])(?:\./)?((?:"
     + "|".join(re.escape(root) for root in PATH_ROOTS)
-    + r")/[\w./<>*{}$\[\]-]*)"
+    + r")/[\w./<*{}$\[\]-]*)"
 )
 _INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
-_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _PLACEHOLDER_RE = re.compile(r"[<{$*\[]|\.\.\.")
-_TRAILING_PUNCTUATION = ".,;:>"
+_TRAILING_PUNCTUATION = "."
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,21 +115,40 @@ class Violation:
 
 def is_agent_doc(path: str) -> bool:
     """Returns whether a repo-relative path is an agent doc in scope."""
-    return Path(path).name == "AGENTS.md" or (path.startswith(".agents/") and path.endswith(".md"))
+    return (
+        path == "AGENTS.md"
+        or path.endswith("/AGENTS.md")
+        or (path.startswith(".agents/") and path.endswith(".md"))
+    )
+
+
+def closes_fence(line: str, opening: str) -> bool:
+    """Returns whether a line closes a fenced block opened with `opening`.
+
+    Per CommonMark, the closing run uses the same character, is at least as
+    long as the opening run, and carries no info string, so a ```bash line
+    nested inside a ```` block does not close it.
+    """
+    fence = _FENCE_RE.match(line)
+    if not fence:
+        return False
+    run, rest = fence.group(1), fence.group(2)
+    return run[0] == opening[0] and len(run) >= len(opening) and not rest.strip()
 
 
 def iter_code_segments(text: str) -> Iterator[tuple[int, str]]:
     """Yields (1-based line number, code text) for code spans and fenced blocks."""
-    in_fence = False
-    fence_marker = ""
+    opening = ""
     for lineno, line in enumerate(text.splitlines(), start=1):
-        fence = _FENCE_RE.match(line)
-        if fence and (not in_fence or fence.group(1) == fence_marker):
-            in_fence = not in_fence
-            fence_marker = fence.group(1)
+        if opening:
+            if closes_fence(line, opening):
+                opening = ""
+            else:
+                yield lineno, line
             continue
-        if in_fence:
-            yield lineno, line
+        fence = _FENCE_RE.match(line)
+        if fence:
+            opening = fence.group(1)
             continue
         for match in _INLINE_CODE_RE.finditer(line):
             yield lineno, match.group(2)
@@ -154,7 +177,8 @@ def tracked_paths(files: Iterable[str]) -> frozenset[str]:
     paths: set[str] = set()
     for f in files:
         paths.add(f)
-        paths.update(p.as_posix() for p in Path(f).parents if p != Path("."))
+        parts = f.split("/")
+        paths.update("/".join(parts[:i]) for i in range(1, len(parts)))
     return frozenset(paths)
 
 
@@ -187,29 +211,48 @@ def find_violations(
 
 def list_tracked_files(repo_root: Path) -> list[str]:
     """Lists git-tracked files relative to the repository root."""
-    result = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
-    )
-    return [f for f in result.stdout.decode().split("\0") if f]
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        raise HandledError(
+            f"git ls-files failed in {repo_root}: {e}",
+            "Run from inside the repository with git on PATH, or pass --repo-root.",
+        ) from e
+    return [f for f in result.stdout.decode("utf-8", errors="replace").split("\0") if f]
 
 
-def check_agent_doc_paths(args: argparse.Namespace) -> dict[str, Any]:
-    """Scans all tracked agent docs and fails on non-existent path references."""
-    repo_root = Path(args.repo_root).resolve()
-    files = list_tracked_files(repo_root)
-    existing = tracked_paths(files)
-    docs = sorted(f for f in files if is_agent_doc(f))
+def scan_docs(
+    repo_root: Path, docs: list[str], existing: frozenset[str], allowlist: dict[str, str]
+) -> tuple[list[Violation], set[str]]:
+    """Returns violations across docs and the allowlist entries they used.
+
+    Tracked docs deleted from the working tree are skipped.
+    """
     violations: list[Violation] = []
     used: set[str] = set()
     for doc in docs:
         doc_path = repo_root / doc
         if not doc_path.is_file():
             continue
-        found, doc_used = find_violations(
-            doc, doc_path.read_text(encoding="utf-8"), existing, ALLOWLIST
-        )
+        text = doc_path.read_text(encoding="utf-8", errors="replace")
+        found, doc_used = find_violations(doc, text, existing, allowlist)
         violations.extend(found)
         used |= doc_used
+    return violations, used
+
+
+def check_agent_doc_paths(args: argparse.Namespace) -> dict[str, Any]:
+    """Scans all tracked agent docs and fails on non-existent path references.
+
+    Also fails on ALLOWLIST entries no doc references, so stale justifications
+    are removed together with the doc text that needed them.
+    """
+    repo_root = Path(args.repo_root).resolve()
+    files = list_tracked_files(repo_root)
+    docs = sorted(f for f in files if is_agent_doc(f))
+    violations, used = scan_docs(repo_root, docs, tracked_paths(files), ALLOWLIST)
     if violations:
         raise HandledError(
             f"{len(violations)} agent doc path reference(s) do not exist in the repository.",
@@ -218,7 +261,14 @@ def check_agent_doc_paths(args: argparse.Namespace) -> dict[str, Any]:
             "with a justification if it is created at runtime.",
             details={"violations": [dataclasses.asdict(v) for v in violations]},
         )
-    return {"docs_scanned": len(docs), "unused_allowlist": sorted(set(ALLOWLIST) - used)}
+    unused = sorted(set(ALLOWLIST) - used)
+    if unused:
+        raise HandledError(
+            f"{len(unused)} ALLOWLIST entry(ies) are no longer referenced by any agent doc.",
+            "Remove the stale entries from ALLOWLIST in tools/lint/check_agent_doc_paths.py.",
+            details={"unused_allowlist": unused},
+        )
+    return {"docs_scanned": len(docs)}
 
 
 def main() -> None:
