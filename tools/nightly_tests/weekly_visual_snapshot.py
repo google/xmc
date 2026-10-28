@@ -155,7 +155,7 @@ def build_manifest(
     generated_at: str | None = None,
 ) -> dict[str, Any]:
     """Constructs the structured manifest dictionary for the static visual gallery."""
-    ts = generated_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ts = generated_at or datetime.datetime.now(datetime.UTC).isoformat()
     clean_ui_url = str(ui_base_url or "").strip().rstrip("/")
     return {
         "generated_at": ts,
