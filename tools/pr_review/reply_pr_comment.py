@@ -32,6 +32,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAuthError,
     call_github_api,
     parse_comment_url,
+    resolve_review_thread,
 )
 
 
@@ -126,7 +127,7 @@ def reply_comment(args):
     payload = {"body": full_message, "in_reply_to": parsed["comment_id"]}
 
     try:
-        return call_github_api(
+        response = call_github_api(
             endpoint,
             method="POST",
             payload=payload,
@@ -144,6 +145,46 @@ def reply_comment(args):
             "Ensure the repository and comment ID exist, and that your"
             " credentials have write access permissions.",
         )
+
+    if getattr(args, "resolve", False) is not True:
+        return response
+    return _resolve_replied_thread(parsed, response)
+
+
+def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
+    """Resolves the review thread containing the replied-to comment.
+
+    Args:
+        parsed: Parsed comment URL components from `parse_comment_url`.
+        response: GitHub API response of the posted reply.
+
+    Returns:
+        The reply response with a `resolved_thread` entry added.
+
+    Raises:
+        HandledError: If the thread cannot be resolved. The reply is already
+            posted at that point, so the error details carry the reply ID.
+    """
+    try:
+        resolved = resolve_review_thread(
+            parsed["owner"],
+            parsed["repo"],
+            int(parsed["pull_number"]),
+            parsed["comment_id"],
+            user_agent="XMC-Comment-Replier-Agent",
+        )
+    except (GithubAuthError, GithubAPIError) as e:
+        reply_id = response.get("id") if isinstance(response, dict) else None
+        raise HandledError(
+            f"Reply posted but failed to resolve its review thread: {e}",
+            "Do NOT re-post the reply. Retry resolution only, via"
+            " './tools/pr_review/review_pr_post_inline_comment.py"
+            f" {parsed['owner']} {parsed['repo']} {parsed['pull_number']}"
+            f" --resolve-thread {parsed['comment_id']}', after verifying you have"
+            " permission to resolve review threads.",
+            details={"reply_id": reply_id, "comment_id": parsed["comment_id"]},
+        ) from e
+    return {**response, "resolved_thread": resolved}
 
 
 def main():
@@ -165,6 +206,11 @@ def main():
         "--message-file",
         dest="message_file",
         help="Path to a file containing the reply message.",
+    )
+    parser.add_argument(
+        "--resolve",
+        action="store_true",
+        help="After posting the reply, resolve the comment's review thread.",
     )
     run_tool(parser, reply_comment)
 

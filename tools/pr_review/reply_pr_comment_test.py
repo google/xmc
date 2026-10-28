@@ -422,5 +422,78 @@ class TestReplyPRComment(unittest.TestCase):
         )
 
 
+class TestReplyPRCommentResolve(unittest.TestCase):
+    """Test suite for reply_pr_comment --resolve."""
+
+    def setUp(self):
+        parse_patch = patch(
+            "tools.pr_review.reply_pr_comment.parse_comment_url",
+            return_value={
+                "type": "review_comment",
+                "owner": "google",
+                "repo": "xmc",
+                "pull_number": "29",
+                "comment_id": 1234,
+            },
+        )
+        call_patch = patch(
+            "tools.pr_review.reply_pr_comment.call_github_api",
+            side_effect=[{"login": "test_user"}, {"id": 5678}],
+        )
+        git_patch = patch(
+            "tools.pr_review.reply_pr_comment.subprocess.check_output",
+            return_value="mock_commit_id",
+        )
+        for p in (parse_patch, call_patch, git_patch):
+            p.start()
+            self.addCleanup(p.stop)
+        self.args = MagicMock()
+        self.args.comment_url = "https://github.com/google/xmc/pull/29#discussion_r1234"
+        self.args.message = "done"
+        self.args.message_file = None
+
+    @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
+    def test_resolve_flag_resolves_thread_after_reply(self, mock_resolve):
+        """Test --resolve resolves the replied comment's thread via github_utils."""
+        mock_resolve.return_value = {
+            "status": "success",
+            "thread_id": "PRRT_1",
+            "is_resolved": True,
+        }
+        self.args.resolve = True
+
+        res = reply_comment(self.args)
+
+        mock_resolve.assert_called_once_with(
+            "google", "xmc", 29, 1234, user_agent="XMC-Comment-Replier-Agent"
+        )
+        self.assertEqual(res["id"], 5678)
+        self.assertEqual(res["resolved_thread"]["thread_id"], "PRRT_1")
+
+    @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
+    def test_without_resolve_flag_does_not_resolve(self, mock_resolve):
+        """Test the thread is left untouched when --resolve is not set."""
+        self.args.resolve = False
+
+        res = reply_comment(self.args)
+
+        mock_resolve.assert_not_called()
+        self.assertEqual(res, {"id": 5678})
+
+    @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
+    def test_resolve_failure_reports_posted_reply(self, mock_resolve):
+        """Test a resolve failure raises HandledError carrying the posted reply ID."""
+        mock_resolve.side_effect = GithubAPIError("forbidden")
+        self.args.resolve = True
+
+        with self.assertRaises(HandledError) as ctx:
+            reply_comment(self.args)
+
+        self.assertIn("Reply posted but failed to resolve", ctx.exception.message)
+        self.assertIn("Do NOT re-post the reply", ctx.exception.instruction)
+        self.assertIn("--resolve-thread 1234", ctx.exception.instruction)
+        self.assertEqual(ctx.exception.details, {"reply_id": 5678, "comment_id": 1234})
+
+
 if __name__ == "__main__":
     unittest.main()

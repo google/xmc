@@ -256,5 +256,5 @@ Because the re-review analysis is saved as a markdown document in `<appDataDir>/
   > *"Please inspect `pr_rereview_audit_report.md`. Shall I proceed with posting recommended counter-replies and resolving verified threads on PR #<pr_number>? (Y/n)"*
 * For every confirmed thread:
   * If `[RESPOND]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
-  * If `[RESOLVE]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL.
+  * If `[RESOLVE]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL. To inspect current thread state (thread IDs, `path:line`, resolution, whether you replied), run `tools/pr_review/review_threads.py list <owner> <repo> <pr_number>`; never hand-write `gh api graphql` calls.
 * Run programmatic verification check (`tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> <checklist_file>`).

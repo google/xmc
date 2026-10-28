@@ -29,7 +29,8 @@ For detailed comment resolution workflows, including fetching comment context, g
 Key tools for PR comment processing:
 - **Generate Review Checklist Artifact**: `./tools/pr_review/generate_review_checklist.py <owner> <repo> <pull_number> [-o pr_review_checklist.md]`
 - **Fetch Inline Comment Context**: `./tools/pr_review/fetch_pr_comment.py "<comment_url>"`
-- **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>"`
+- **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>" [--resolve]` (`--resolve` also resolves the comment's review thread after replying)
+- **List / Resolve Review Threads**: `./tools/pr_review/review_threads.py list <owner> <repo> <pull_number> [--unresolved-only]` and `./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pull_number> [--dry-run]` (resolves only unresolved threads you have replied to). Never hand-write `gh api graphql` `resolveReviewThread` calls.
 - **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
 
 ---
