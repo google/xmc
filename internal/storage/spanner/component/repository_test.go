@@ -36,16 +36,19 @@ var baseTime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 func seedCatalog(t *testing.T, client *spanner.Client) (*store.ComponentRecord, *store.ComponentRecord) {
 	t.Helper()
-	app := buildRecord(1, "app", componentspb.ComponentState_COMPONENT_STATE_ENABLED, "db")
+	app := buildRecord(1, "app", componentspb.ComponentState_COMPONENT_STATE_ENABLED, "auth", "db")
 	db := buildRecord(2, "db", componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 	deleted := buildRecord(3, "cache", componentspb.ComponentState_COMPONENT_STATE_DELETED)
+	auth := buildRecord(4, "auth", componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 
 	mutations := []*spanner.Mutation{
 		insertComponentMutation(t, app),
 		insertComponentMutation(t, db),
 		insertComponentMutation(t, deleted),
+		insertComponentMutation(t, auth),
 		spanner.Insert("ComponentDependencies", []string{"ComponentId", "DependencyComponentId"}, []any{int64(1), int64(2)}),
 		spanner.Insert("ComponentDependencies", []string{"ComponentId", "DependencyComponentId"}, []any{int64(1), int64(3)}),
+		spanner.Insert("ComponentDependencies", []string{"ComponentId", "DependencyComponentId"}, []any{int64(1), int64(4)}),
 	}
 	if _, err := client.Apply(context.Background(), mutations); err != nil {
 		t.Fatalf("Apply() seed failed: %v", err)
