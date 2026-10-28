@@ -30,6 +30,7 @@ import (
 	"xmanager_cloud/internal/common/interfaces"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/task_queue/updatemask"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 
 	"github.com/google/uuid"
@@ -492,13 +493,13 @@ func (c *Client) createJwtToken(bodyHash string) (string, error) {
 }
 
 // CreateAction creates an action for the Actuator to create a WorkUnit.
-func CreateAction(experimentPriority essmsgpb.Priority, author string, notifyWhen ...string) *actuatortaskpb.Action {
+func CreateAction(experimentPriority essmsgpb.Priority, author, notifyWhen string) *actuatortaskpb.Action {
 	create := &actuatortaskpb.CreateAction{
 		ExperimentPriority: experimentPriority.Enum(),
 		Author:             proto.String(author),
 	}
-	if len(notifyWhen) > 0 && notifyWhen[0] != "" {
-		create.NotifyWhen = proto.String(notifyWhen[0])
+	if notifyWhen != "" {
+		create.NotifyWhen = proto.String(notifyWhen)
 	}
 	return &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Create{
@@ -517,13 +518,13 @@ func DeleteAction() *actuatortaskpb.Action {
 }
 
 // RestartAction creates an action for the Actuator to restart a WorkUnit.
-func RestartAction(experimentPriority essmsgpb.Priority, author string, notifyWhen ...string) *actuatortaskpb.Action {
+func RestartAction(experimentPriority essmsgpb.Priority, author, notifyWhen string) *actuatortaskpb.Action {
 	restart := &actuatortaskpb.RestartAction{
 		ExperimentPriority: experimentPriority.Enum(),
 		Author:             proto.String(author),
 	}
-	if len(notifyWhen) > 0 && notifyWhen[0] != "" {
-		restart.NotifyWhen = proto.String(notifyWhen[0])
+	if notifyWhen != "" {
+		restart.NotifyWhen = proto.String(notifyWhen)
 	}
 	return &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Restart{
@@ -537,7 +538,7 @@ func UpdateNotifyWhenAction(notifyWhen string) *actuatortaskpb.Action {
 	return &actuatortaskpb.Action{
 		Action: &actuatortaskpb.Action_Update{
 			Update: &actuatortaskpb.UpdateAction{
-				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notify_when"}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{updatemask.PathNotifyWhen}},
 				NotifyWhen: proto.String(notifyWhen),
 			},
 		},

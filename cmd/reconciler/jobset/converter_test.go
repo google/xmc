@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -27,6 +28,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	spb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
 
@@ -1019,10 +1022,6 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			time := time.Now()
 
-			if tc.want != nil && tc.want.RuntimeContext == nil {
-				tc.want.RuntimeContext = ExtractJobSetRuntimeContext(tc.jobSet, "test-cluster")
-			}
-
 			got := ConvertJobSetToWorkUnitExecutionUpdate(t.Context(), tc.jobSet, tc.wid, tc.eid, "test-project", "test-location", "test-cluster", tc.podErrorMsg, tc.startupWarningMsg)
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform(), protocmp.IgnoreFields(&spb.StructuredMessage{}, "create_time"), protocmp.IgnoreFields(&spb.WorkUnitStatus{}, "state_update_time")); diff != "" {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() returned diff (-want +got):\n%s", diff)
@@ -1034,6 +1033,111 @@ func TestConvertJobSetToWorkUnitExecutionUpdate(t *testing.T) {
 
 			if got.WorkUnitExecution.GetStatus().GetStateUpdateTime().AsTime().Before(time) {
 				t.Errorf("ConvertJobSetToWorkUnitExecutionUpdate() returned state_update_time %v, want after %v", got.WorkUnitExecution.GetStatus().GetStateUpdateTime().AsTime(), time)
+			}
+		})
+	}
+}
+
+func TestExtractJobSetRuntimeContext(t *testing.T) {
+	creation := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	tests := []struct {
+		name   string
+		jobSet *v1alpha2.JobSet
+		want   *taskqueuepb.JobSetRuntimeContext
+	}{
+		{
+			name: "nil JobSet",
+		},
+		{
+			name: "minimal JobSet",
+			jobSet: &v1alpha2.JobSet{
+				ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "ns"},
+			},
+			want: &taskqueuepb.JobSetRuntimeContext{
+				EnvironmentVariables: map[string]string{},
+				Cluster:              proto.String("test-cluster"),
+				Namespace:            proto.String("ns"),
+				JobSetName:           proto.String("js"),
+			},
+		},
+		{
+			name: "full JobSet skips empty env names and values",
+			jobSet: &v1alpha2.JobSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "js",
+					Namespace:         "ns",
+					CreationTimestamp: metav1.NewTime(creation),
+					Labels:            map[string]string{"xid": "1"},
+					Annotations:       map[string]string{constants.NotifyWhenAnnotation: "RUNNING"},
+				},
+				Spec: v1alpha2.JobSetSpec{
+					ReplicatedJobs: []v1alpha2.ReplicatedJob{{
+						Template: batchv1.JobTemplateSpec{Spec: batchv1.JobSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{Env: []corev1.EnvVar{{Name: "A", Value: "1"}, {Name: "EMPTY"}, {Value: "nameless"}}},
+								{Env: []corev1.EnvVar{{Name: "B", Value: "2"}}},
+							},
+						}}}},
+					}},
+				},
+			},
+			want: &taskqueuepb.JobSetRuntimeContext{
+				CreationTime:         timestamppb.New(creation),
+				EnvironmentVariables: map[string]string{"A": "1", "B": "2"},
+				Labels:               map[string]string{"xid": "1"},
+				Annotations:          map[string]string{constants.NotifyWhenAnnotation: "RUNNING"},
+				Cluster:              proto.String("test-cluster"),
+				Namespace:            proto.String("ns"),
+				JobSetName:           proto.String("js"),
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ExtractJobSetRuntimeContext(tc.jobSet, "test-cluster")
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("ExtractJobSetRuntimeContext() returned diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestExtractLifecycleHints(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        shared.LifecycleHints
+	}{
+		{
+			name: "no annotations",
+			want: shared.LifecycleHints{RuntimeContext: &taskqueuepb.JobSetRuntimeContext{
+				EnvironmentVariables: map[string]string{},
+				Cluster:              proto.String("test-cluster"),
+				Namespace:            proto.String("ns"),
+				JobSetName:           proto.String("js"),
+			}},
+		},
+		{
+			name:        "notify-when annotation",
+			annotations: map[string]string{constants.NotifyWhenAnnotation: "RUNNING.COMPLETED"},
+			want: shared.LifecycleHints{
+				NotifyWhen: "RUNNING.COMPLETED",
+				RuntimeContext: &taskqueuepb.JobSetRuntimeContext{
+					EnvironmentVariables: map[string]string{},
+					Annotations:          map[string]string{constants.NotifyWhenAnnotation: "RUNNING.COMPLETED"},
+					Cluster:              proto.String("test-cluster"),
+					Namespace:            proto.String("ns"),
+					JobSetName:           proto.String("js"),
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "ns", Annotations: tc.annotations}}
+			got := ExtractLifecycleHints(jobSet, "test-cluster")
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("ExtractLifecycleHints() returned diff (-want +got):\n%s", diff)
 			}
 		})
 	}

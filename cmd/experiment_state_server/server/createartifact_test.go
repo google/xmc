@@ -553,8 +553,8 @@ func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
 
 func TestCreateArtifact_SyncsNotifyWhen(t *testing.T) {
 	ctx := context.Background()
-	server, fakeActuator := createExperimentStateServer(ctx, t)
-	server.ArtifactLifecycle().Register(artifactlifecycle.NewManagedXprofRule(nil, "test-proj", "us-central1"))
+	registry := artifactlifecycle.NewRegistry(artifactlifecycle.NewManagedXprofRule(nil, "test-proj", "us-central1"))
+	server, fakeActuator := createExperimentStateServer(ctx, t, withArtifactLifecycle(registry))
 	exp := mustCreateExperiment(ctx, t, server, nil)
 	xid, err := validator.ValidateExperimentName(exp.GetName())
 	if err != nil {

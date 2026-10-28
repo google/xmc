@@ -27,11 +27,19 @@ import (
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
-var _ storage.ArtifactStore = (*Repository)(nil)
+var (
+	_ storage.ArtifactStore        = (*Repository)(nil)
+	_ storage.ArtifactTxRepository = (*TxRepository)(nil)
+)
 
 // Repository manages persistence for artifact entities in PostgreSQL.
 type Repository struct {
 	db pgdb.DBTX
+}
+
+// TxRepository manages artifact entities within a bound read-write transaction.
+type TxRepository struct {
+	tx pgdb.DBTX
 }
 
 // NewRepository creates a new PostgreSQL Artifact repository instance bound to pool.
@@ -39,9 +47,19 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{db: pgdb.FromPool(pool)}
 }
 
-// WithTx returns a transactional variant of the repository bound to the given transaction.
-func (r *Repository) WithTx(tx pgdb.DBTX) storage.ArtifactTxRepository {
-	return &Repository{db: tx}
+// WithTx returns a wrapper bound to the read-write transaction tx.
+func (r *Repository) WithTx(tx pgdb.DBTX) *TxRepository {
+	return &TxRepository{tx: tx}
+}
+
+// FetchArtifact retrieves an artifact by its unique ID within the transaction.
+func (r *TxRepository) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error) {
+	return nil, status.Error(codes.Unimplemented, "postgres artifact store: FetchArtifact is not implemented")
+}
+
+// UpdateArtifact updates an artifact with the given update mask within the transaction.
+func (r *TxRepository) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
+	return storage.UpdatedArtifacts{}, status.Error(codes.Unimplemented, "postgres artifact store: UpdateArtifact is not implemented")
 }
 
 // CreateArtifact creates a new artifact.

@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"google.golang.org/protobuf/proto"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,10 +35,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
-	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/labels"
+	"xmanager_cloud/internal/kubernetes/common/notifywhen"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
@@ -262,12 +261,7 @@ func (r *Reconciler) buildDeletionUpdate(ctx context.Context, jobSet *v1alpha2.J
 	case spb.WorkUnitStatus_COMPLETED, spb.WorkUnitStatus_FAILED:
 		return ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, "", "")
 	default:
-		update := createStoppedUpdate(wid, eid)
-		if jobSet.Annotations != nil {
-			update.NotifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
-		}
-		update.RuntimeContext = ExtractJobSetRuntimeContext(jobSet, r.ClusterName)
-		return update
+		return createStoppedUpdate(wid, eid)
 	}
 }
 
@@ -310,26 +304,31 @@ func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha
 		return nil
 	}
 	logging.Debug(ctx, "Persisted terminal status for deleting JobSet", "namespace", jobSet.Namespace)
-	if r.LifecycleNotifier != nil && update != nil && update.WorkUnitExecution != nil && update.WorkUnitExecution.Status != nil {
-		stoppedState := update.WorkUnitExecution.Status.State
-		if shared.MatchesNotifyWhen(stoppedState, update.NotifyWhen) {
-			event := &taskqueuepb.ArtifactLifecycleEvent{
-				ExperimentId:        proto.Int64(xid),
-				WorkUnitId:          proto.Int64(wid),
-				WorkUnitExecutionId: proto.Int64(eid),
-				OldState:            spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED.Enum(),
-				NewState:            stoppedState.Enum(),
-				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
-					JobSetRuntimeContext: update.RuntimeContext,
-				},
-			}
-			if notifyErr := r.LifecycleNotifier.NotifyLifecycleEvent(ctx, event); notifyErr != nil {
-				logging.Error(ctx, "Failed to publish artifact lifecycle event for stopped JobSet", "xid", xid, "wid", wid, "eid", eid, "error", notifyErr)
-			}
-		}
-	}
+	r.publishDeletionLifecycleEvent(ctx, jobSet, xid, update)
 	r.evictPendingJobSetUpdate(xid, wid, eid)
 	return nil
+}
+
+// publishDeletionLifecycleEvent publishes the terminal state persisted for a
+// deleting JobSet when it matches the JobSet's notify-when annotation. The
+// prior state is unknown on this synchronous path, so it is left unspecified.
+func (r *Reconciler) publishDeletionLifecycleEvent(ctx context.Context, jobSet *v1alpha2.JobSet, xid int64, update *storagepkg.WorkUnitExecutionUpdate) {
+	if r.LifecycleNotifier == nil || update.WorkUnitExecution.GetStatus() == nil {
+		return
+	}
+	hints := ExtractLifecycleHints(jobSet, r.ClusterName)
+	state := update.WorkUnitExecution.GetStatus().GetState()
+	if !notifywhen.Matches(state, hints.NotifyWhen) {
+		return
+	}
+	shared.PublishLifecycleEvent(ctx, r.LifecycleNotifier, shared.LifecycleEvent{
+		XID:            xid,
+		WID:            update.WID,
+		EID:            update.EID,
+		OldState:       spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED,
+		NewState:       state,
+		RuntimeContext: hints.RuntimeContext,
+	})
 }
 
 // handleStoppedWriteFailure either abandons a failed STOPPED write (returning nil
@@ -416,8 +415,10 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	}
 
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
+	var hints shared.LifecycleHints
 	if r.ArtifactLifecycleEnabled {
-		update.ForceNotify = r.checkNotifyWhenUpdate(jobSet)
+		hints = ExtractLifecycleHints(jobSet, r.ClusterName)
+		hints.ForceNotify = r.checkNotifyWhenUpdate(jobSet)
 	} else {
 		mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
 		setMLRunURL(update, mlRunURL)
@@ -427,7 +428,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	updatesSentTotal.WithLabelValues().Inc()
 	// This function CANNOT BE CALLED WITHOUT A STRIPPED CONTEXT. If it gets it's hand on an slog,
 	// it blocks the entire logging system for some reason.
-	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
+	r.Batcher.AddWithLifecycleHints(logging.Strip(ctx), xid, *update, hints, shared.JobsetSource)
 
 	return result, nil
 }
@@ -450,13 +451,13 @@ func (r *Reconciler) checkNotifyWhenUpdate(jobSet *v1alpha2.JobSet) bool {
 	curState := ToWorkUnitState(jobSet)
 	if !ok {
 		// First time seeing this JobSet with notify-when annotation set.
-		return shared.MatchesNotifyWhen(curState, currentNotifyWhen)
+		return notifywhen.Matches(curState, currentNotifyWhen)
 	}
 	lastSeen, _ := lastSeenVal.(string)
 	if lastSeen == currentNotifyWhen {
 		return false
 	}
-	return shared.MatchesNotifyWhen(curState, currentNotifyWhen) && !shared.MatchesNotifyWhen(curState, lastSeen)
+	return notifywhen.Matches(curState, currentNotifyWhen) && !notifywhen.Matches(curState, lastSeen)
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -55,6 +55,13 @@ func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid i
 	return m.updateRes, m.updateErr
 }
 
+// UpdateWorkUnitExecutionsWithTransitions records the call like
+// UpdateWorkUnitExecutions and reports no committed transitions.
+func (m *mockStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
+}
+
 func (m *mockStorageUpdater) clearCalls() {
 	m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
 }
@@ -132,13 +139,13 @@ func TestUpdateBatcherAdd(t *testing.T) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
 
-	want := map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
+	want := map[int64]map[int64]map[UpdateSource]PendingUpdate{
 		123: {
-			1: {JobsetSource: u1},
-			2: {JobsetSource: u2},
+			1: {JobsetSource: {WorkUnitExecutionUpdate: u1}},
+			2: {JobsetSource: {WorkUnitExecutionUpdate: u2}},
 		},
 		456: {
-			1: {WorkloadSource: u1},
+			1: {WorkloadSource: {WorkUnitExecutionUpdate: u1}},
 		},
 	}
 
@@ -189,7 +196,7 @@ func TestUpdateBatcherAdd_EIDOrdering(t *testing.T) {
 
 			b.UpdatesMu.Lock()
 			defer b.UpdatesMu.Unlock()
-			if diff := cmp.Diff(tc.want, b.Updates[xid][wid][JobsetSource], protocmp.Transform()); diff != "" {
+			if diff := cmp.Diff(tc.want, b.Updates[xid][wid][JobsetSource].WorkUnitExecutionUpdate, protocmp.Transform()); diff != "" {
 				t.Errorf("pending update mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -203,34 +210,34 @@ func TestUpdateBatcherRemove(t *testing.T) {
 		pending   *storagepkg.WorkUnitExecutionUpdate
 		other     *storagepkg.WorkUnitExecutionUpdate
 		removeEID int64
-		want      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+		want      map[int64]map[int64]map[UpdateSource]PendingUpdate
 	}{
 		{
 			name:      "no-op on empty batcher",
 			removeEID: 1,
-			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+			want:      map[int64]map[int64]map[UpdateSource]PendingUpdate{},
 		},
 		{
 			name:      "evicts equal EID and cleans up empty maps",
 			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 2},
 			removeEID: 2,
-			want:      map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{},
+			want:      map[int64]map[int64]map[UpdateSource]PendingUpdate{},
 		},
 		{
 			name:      "evicts lower pending EID and preserves sibling source",
 			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
 			other:     &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1},
 			removeEID: 2,
-			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
-				xid: {wid: {WorkloadSource: {WID: wid, EID: 1}}},
+			want: map[int64]map[int64]map[UpdateSource]PendingUpdate{
+				xid: {wid: {WorkloadSource: {WorkUnitExecutionUpdate: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1}}}},
 			},
 		},
 		{
 			name:      "preserves higher pending EID",
 			pending:   &storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 3},
 			removeEID: 2,
-			want: map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate{
-				xid: {wid: {JobsetSource: {WID: wid, EID: 3}}},
+			want: map[int64]map[int64]map[UpdateSource]PendingUpdate{
+				xid: {wid: {JobsetSource: {WorkUnitExecutionUpdate: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 3}}}},
 			},
 		},
 	}
@@ -457,6 +464,11 @@ type mockBlockingStorageUpdater struct {
 	mu          sync.Mutex
 }
 
+func (m *mockBlockingStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
+}
+
 func (m *mockBlockingStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	m.mu.Lock()
 	m.active++
@@ -611,88 +623,165 @@ func (m *mockTransitionStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(c
 
 type mockLifecycleNotifier struct {
 	events []*taskqueuepb.ArtifactLifecycleEvent
+	err    error
 }
 
 func (m *mockLifecycleNotifier) NotifyLifecycleEvent(ctx context.Context, event *taskqueuepb.ArtifactLifecycleEvent) error {
 	m.events = append(m.events, event)
-	return nil
+	return m.err
 }
 
+const allNotifyWhen = "STARTING.RUNNING.COMPLETED"
+
 func TestBatcher_NotifyLifecycleEvents(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mockStorage := &mockTransitionStorageUpdater{
 		transitions: map[int64]workunit.StateTransition{
-			1: {
-				OldState: essmsgpb.WorkUnitStatus_STARTING,
-				NewState: essmsgpb.WorkUnitStatus_RUNNING,
-			},
-			2: {
-				OldState: essmsgpb.WorkUnitStatus_RUNNING,
-				NewState: essmsgpb.WorkUnitStatus_RUNNING,
-			},
+			1: {OldState: essmsgpb.WorkUnitStatus_STARTING, NewState: essmsgpb.WorkUnitStatus_RUNNING},
+			2: {OldState: essmsgpb.WorkUnitStatus_RUNNING, NewState: essmsgpb.WorkUnitStatus_RUNNING},
 		},
 	}
 	notifier := &mockLifecycleNotifier{}
-	batcher := NewUpdateBatcher(ctx, &BatcherConfig{
-		TickDuration:           10 * time.Millisecond,
-		MaxParallelExperiments: 1,
-	}, mockStorage)
+	batcher := NewUpdateBatcher(ctx, &BatcherConfig{TickDuration: 10 * time.Millisecond, MaxParallelExperiments: 1}, mockStorage)
 	batcher.LifecycleNotifier = notifier
+	runtimeCtx := &taskqueuepb.JobSetRuntimeContext{JobSetName: proto.String("jobset-1")}
 
-	// WU 1: state transitioned STARTING -> RUNNING, notifyWhen includes RUNNING -> should notify
-	update1 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
-	update1.NotifyWhen = "STARTING.RUNNING.COMPLETED"
-	update1.RuntimeContext = &taskqueuepb.JobSetRuntimeContext{
-		JobSetName: proto.String("jobset-1"),
-	}
-
-	// WU 2: state did not transition (RUNNING -> RUNNING), ForceNotify false -> should NOT notify
-	update2 := testUpdate(2, 1, essmsgpb.WorkUnitStatus_RUNNING)
-	update2.NotifyWhen = "STARTING.RUNNING.COMPLETED"
-
-	// WU 3: state did not transition, but ForceNotify true -> should notify
-	update3 := testUpdate(3, 1, essmsgpb.WorkUnitStatus_RUNNING)
-	update3.NotifyWhen = "STARTING.RUNNING.COMPLETED"
-	update3.ForceNotify = true
-
-	batcher.Add(ctx, 100, update1, JobsetSource)
-	batcher.Add(ctx, 100, update2, JobsetSource)
-	batcher.Add(ctx, 100, update3, JobsetSource)
+	// WU 1: committed STARTING -> RUNNING, notify-when includes RUNNING -> notify.
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(1, 1, stateRunning), LifecycleHints{NotifyWhen: allNotifyWhen, RuntimeContext: runtimeCtx}, JobsetSource)
+	// WU 2: committed RUNNING -> RUNNING without ForceNotify -> no notify.
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(2, 1, stateRunning), LifecycleHints{NotifyWhen: allNotifyWhen}, JobsetSource)
+	// WU 3: no committed transition, but ForceNotify -> notify from the update's own state.
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(3, 1, stateRunning), LifecycleHints{NotifyWhen: allNotifyWhen, ForceNotify: true}, JobsetSource)
 
 	batcher.processBatches(ctx)
 
-	if len(notifier.events) != 2 {
-		t.Fatalf("expected 2 lifecycle events, got %d", len(notifier.events))
+	want := []*taskqueuepb.ArtifactLifecycleEvent{
+		{
+			ExperimentId:        proto.Int64(100),
+			WorkUnitId:          proto.Int64(1),
+			WorkUnitExecutionId: proto.Int64(1),
+			OldState:            essmsgpb.WorkUnitStatus_STARTING.Enum(),
+			NewState:            essmsgpb.WorkUnitStatus_RUNNING.Enum(),
+			Payload:             &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{JobSetRuntimeContext: runtimeCtx},
+		},
+		{
+			ExperimentId:        proto.Int64(100),
+			WorkUnitId:          proto.Int64(3),
+			WorkUnitExecutionId: proto.Int64(1),
+			OldState:            essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED.Enum(),
+			NewState:            essmsgpb.WorkUnitStatus_RUNNING.Enum(),
+			Payload:             &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{},
+		},
 	}
+	if diff := cmp.Diff(want, notifier.events, protocmp.Transform()); diff != "" {
+		t.Errorf("published lifecycle events mismatch (-want +got):\n%s", diff)
+	}
+}
 
-	if notifier.events[0].GetWorkUnitId() != 1 || notifier.events[0].GetNewState() != essmsgpb.WorkUnitStatus_RUNNING {
-		t.Errorf("unexpected event 0: %v", notifier.events[0])
+func TestLifecycleTransitionToPublish(t *testing.T) {
+	const wid = int64(1)
+	starting, running := essmsgpb.WorkUnitStatus_STARTING, essmsgpb.WorkUnitStatus_RUNNING
+	unspecified := essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED
+	tests := []struct {
+		name        string
+		entry       batchEntry
+		transitions map[int64]workunit.StateTransition
+		wantOld     workUnitState
+		wantNew     workUnitState
+		wantOK      bool
+	}{
+		{
+			name:        "changed transition matching notify-when",
+			entry:       batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "RUNNING"}},
+			transitions: map[int64]workunit.StateTransition{wid: {OldState: starting, NewState: running}},
+			wantOld:     starting,
+			wantNew:     running,
+			wantOK:      true,
+		},
+		{
+			name:        "changed transition not matching notify-when",
+			entry:       batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "COMPLETED"}},
+			transitions: map[int64]workunit.StateTransition{wid: {OldState: starting, NewState: running}},
+			wantOld:     starting,
+			wantNew:     running,
+		},
+		{
+			name:        "unchanged transition without ForceNotify",
+			entry:       batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "RUNNING"}},
+			transitions: map[int64]workunit.StateTransition{wid: {OldState: running, NewState: running}},
+			wantOld:     running,
+			wantNew:     running,
+		},
+		{
+			name:        "unchanged transition with ForceNotify",
+			entry:       batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "RUNNING", ForceNotify: true}},
+			transitions: map[int64]workunit.StateTransition{wid: {OldState: running, NewState: running}},
+			wantOld:     running,
+			wantNew:     running,
+			wantOK:      true,
+		},
+		{
+			name:    "no transition with ForceNotify uses update state",
+			entry:   batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "RUNNING", ForceNotify: true}},
+			wantOld: unspecified,
+			wantNew: running,
+			wantOK:  true,
+		},
+		{
+			name:  "no transition without ForceNotify",
+			entry: batchEntry{update: testUpdate(wid, 1, running), hints: LifecycleHints{NotifyWhen: "RUNNING"}},
+		},
+		{
+			name:  "no transition with ForceNotify but no status",
+			entry: batchEntry{update: storagepkg.WorkUnitExecutionUpdate{WID: wid, EID: 1}, hints: LifecycleHints{NotifyWhen: "RUNNING", ForceNotify: true}},
+		},
 	}
-	if notifier.events[0].GetJobSetRuntimeContext().GetJobSetName() != "jobset-1" {
-		t.Errorf("unexpected runtime context for event 0: %v", notifier.events[0].GetJobSetRuntimeContext())
-	}
-	if notifier.events[1].GetWorkUnitId() != 3 || notifier.events[1].GetNewState() != essmsgpb.WorkUnitStatus_RUNNING {
-		t.Errorf("unexpected event 1: %v", notifier.events[1])
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotOld, gotNew, gotOK := lifecycleTransitionToPublish(tc.entry, tc.transitions)
+			if gotOld != tc.wantOld || gotNew != tc.wantNew || gotOK != tc.wantOK {
+				t.Errorf("lifecycleTransitionToPublish() = (%v, %v, %v), want (%v, %v, %v)", gotOld, gotNew, gotOK, tc.wantOld, tc.wantNew, tc.wantOK)
+			}
+		})
 	}
 }
 
 func TestBatcher_PreservesForceNotifyOnSameEID(t *testing.T) {
-	ctx := context.Background()
-	batcher := NewUpdateBatcher(ctx, &BatcherConfig{
-		TickDuration:           10 * time.Millisecond,
-		MaxParallelExperiments: 1,
-	}, &mockStorageUpdater{})
+	ctx := t.Context()
+	batcher := NewUpdateBatcher(ctx, &BatcherConfig{TickDuration: 10 * time.Millisecond, MaxParallelExperiments: 1}, &mockStorageUpdater{})
 
-	u1 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
-	u1.ForceNotify = true
-	batcher.Add(ctx, 100, u1, JobsetSource)
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(1, 1, stateRunning), LifecycleHints{ForceNotify: true}, JobsetSource)
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(1, 1, stateRunning), LifecycleHints{NotifyWhen: allNotifyWhen}, JobsetSource)
 
-	u2 := testUpdate(1, 1, essmsgpb.WorkUnitStatus_RUNNING)
-	u2.ForceNotify = false
-	batcher.Add(ctx, 100, u2, JobsetSource)
+	want := LifecycleHints{NotifyWhen: allNotifyWhen, ForceNotify: true}
+	if diff := cmp.Diff(want, batcher.Updates[100][1][JobsetSource].Hints, protocmp.Transform()); diff != "" {
+		t.Errorf("pending hints mismatch (-want +got):\n%s", diff)
+	}
+}
 
-	pending := batcher.Updates[100][1][JobsetSource]
-	if !pending.ForceNotify {
-		t.Errorf("expected ForceNotify to remain true after subsequent update with ForceNotify: false for same EID")
+func TestBatcher_RetryCarriesLifecycleHints(t *testing.T) {
+	ctx := t.Context()
+	clock := &fakeClock{t: time.Unix(1000, 0)}
+	storage := &mockTransitionStorageUpdater{
+		mockStorageUpdater: mockStorageUpdater{updateErr: errors.New("transient")},
+		transitions:        map[int64]workunit.StateTransition{1: {OldState: essmsgpb.WorkUnitStatus_STARTING, NewState: essmsgpb.WorkUnitStatus_RUNNING}},
+	}
+	notifier := &mockLifecycleNotifier{}
+	batcher := NewUpdateBatcher(ctx, &BatcherConfig{TickDuration: retryTestTick, MaxParallelExperiments: 1}, storage)
+	batcher.now = clock.now
+	batcher.LifecycleNotifier = notifier
+	runtimeCtx := &taskqueuepb.JobSetRuntimeContext{JobSetName: proto.String("jobset-1")}
+	batcher.AddWithLifecycleHints(ctx, 100, testUpdate(1, 1, stateRunning), LifecycleHints{NotifyWhen: allNotifyWhen, RuntimeContext: runtimeCtx}, JobsetSource)
+
+	batcher.processBatches(ctx)
+	storage.updateErr = nil
+	clock.advance(maxRetryBackoff)
+	batcher.processBatches(ctx)
+
+	if len(notifier.events) != 1 {
+		t.Fatalf("published %d lifecycle events, want 1", len(notifier.events))
+	}
+	if diff := cmp.Diff(runtimeCtx, notifier.events[0].GetJobSetRuntimeContext(), protocmp.Transform()); diff != "" {
+		t.Errorf("retried event runtime context mismatch (-want +got):\n%s", diff)
 	}
 }

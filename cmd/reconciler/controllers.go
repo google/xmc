@@ -18,7 +18,6 @@ import (
 	"errors"
 	"fmt"
 
-	"google.golang.org/api/impersonate"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	spb "xmanager_cloud/api/protos/experiment"
@@ -29,10 +28,8 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/cmd/reconciler/workload"
 	"xmanager_cloud/internal/hypercomputeclient"
-	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/workunit"
 )
 
@@ -41,20 +38,12 @@ import (
 // initialization fails, so the reconciler's r.MLRunClient == nil guard is not
 // defeated by a non-nil interface that wraps a nil pointer.
 func newMLRunCreator(ctx context.Context, projectID, environment, location, impersonateSA string) jobset.MLRunCreator {
-	var opts []hypercomputeclient.Option
-	if impersonateSA != "" {
-		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-			TargetPrincipal: impersonateSA,
-			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
-		})
-		if err != nil {
-			logging.Error(ctx, "Failed to create impersonated token source for MLRun client", "targetSA", impersonateSA, "error", err)
-			return nil
-		}
-		logging.Info(ctx, "MLRun client will impersonate service account", "targetSA", impersonateSA)
-		opts = append(opts, hypercomputeclient.WithTokenSource(ts))
-	}
-	client, err := hypercomputeclient.NewControlPlaneClient(ctx, projectID, environment, location, opts...)
+	client, err := hypercomputeclient.NewControlPlaneClientFromConfig(ctx, hypercomputeclient.Config{
+		Project:                   projectID,
+		Environment:               environment,
+		Location:                  location,
+		ImpersonateServiceAccount: impersonateSA,
+	})
 	if err != nil {
 		logging.Error(ctx, "Failed to create MLRun control plane client", "error", err)
 		return nil
@@ -85,9 +74,11 @@ type controllerRegistrationParams struct {
 	k8sClient   *k8sclient.Client
 	cqCache     *clusterqueue.NameCache
 	mlRunClient jobset.MLRunCreator
-	projectID   string
-	location    string
-	clusterName string
+	// lifecycleNotifier publishes artifact lifecycle events; nil disables them.
+	lifecycleNotifier shared.LifecycleNotifier
+	projectID         string
+	location          string
+	clusterName       string
 }
 
 func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, error) {
@@ -110,15 +101,6 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
-	var lifecycleNotifier shared.LifecycleNotifier
-	if p.cfg.FeatureFlags.ArtifactLifecycleEnabled && p.cfg.RedisAddr != "" {
-		redisClient := redisclient.NewPublisher(
-			redisclient.Config{Addr: p.cfg.RedisAddr},
-			constants.RedisArtifactLifecycleStream,
-		)
-		lifecycleNotifier = jobset.NewRedisLifecycleNotifier(redisClient)
-	}
-
 	updater := workunit.NewUpdater(p.storage)
 	batcher := shared.NewUpdateBatcher(
 		ctx,
@@ -128,7 +110,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		},
 		updater,
 	)
-	batcher.LifecycleNotifier = lifecycleNotifier
+	batcher.LifecycleNotifier = p.lifecycleNotifier
 
 	jobsetReconciler, err := jobset.NewReconciler(jobset.Params{
 		Client:                   p.mgr.GetClient(),
@@ -143,7 +125,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
 		Storage:                  newJobSetStorage(p.storage, updater),
 		MLRunClient:              p.mlRunClient,
-		LifecycleNotifier:        lifecycleNotifier,
+		LifecycleNotifier:        p.lifecycleNotifier,
 		ArtifactLifecycleEnabled: p.cfg.FeatureFlags.ArtifactLifecycleEnabled,
 	})
 	if err != nil {

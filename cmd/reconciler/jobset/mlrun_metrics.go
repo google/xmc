@@ -93,7 +93,7 @@ func mlRunResultLabel(err error) string {
 	switch {
 	case err == nil:
 		return mlRunResultSuccess
-	case isMLRunAlreadyExistsError(err):
+	case hypercomputeclient.IsAlreadyExists(err):
 		return mlRunResultAlreadyExists
 	default:
 		return mlRunResultError

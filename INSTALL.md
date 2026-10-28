@@ -584,9 +584,9 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
 | `task_signature_ttl_seconds` | No | `86400` | Validity duration of task signature tokens |
 | `pause_scheduling_enabled` | No | `true` | Enables the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS |
-| `artifact_lifecycle_enabled` | No | `false` | Enables ESS-driven artifact lifecycle management (`XMC_ARTIFACT_LIFECYCLE_ENABLED`) and edge-triggered Reconciler notifications |
 | `health_scheduling_resume_batch_size` | No | `100` | Number of paused tasks replayed per batch from Spanner during unpause resumption |
 | `health_scheduling_resume_max_backlog` | No | `500` | Maximum unprocessed tasks in `xmc-tasks-stream` before resumption worker pauses replay |
+| `artifact_lifecycle_enabled` | No | `false` | Enables ESS-driven artifact lifecycle management (`XMC_ARTIFACT_LIFECYCLE_ENABLED`) and edge-triggered Reconciler notifications |
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |

@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"xmanager_cloud/internal/grpcerr"
 	storagepkg "xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 const (
@@ -54,6 +55,11 @@ type scriptedStorage struct {
 	onCall    func()
 	calls     [][]sentUpdate
 	callXIDs  []int64
+}
+
+func (s *scriptedStorage) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*workUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := s.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
 }
 
 func (s *scriptedStorage) UpdateWorkUnitExecutions(_ context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*workUnitExecution, error) {
@@ -94,7 +100,7 @@ type fakeClock struct{ t time.Time }
 func (c *fakeClock) now() time.Time          { return c.t }
 func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
-func newRetryTestBatcher(t *testing.T, storage StorageUpdater) (*UpdateBatcher, *fakeClock) {
+func newRetryTestBatcher(t *testing.T, storage TransitionStorageUpdater) (*UpdateBatcher, *fakeClock) {
 	t.Helper()
 	updatesDroppedTotal.Reset()
 	updatesRetriedTotal.Reset()

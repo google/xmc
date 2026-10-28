@@ -24,10 +24,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	taskqueuepb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/internal/kubernetes/common/notifywhen"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
@@ -125,19 +124,25 @@ var (
 		},
 		[]string{"xid"},
 	)
-
-	lifecycleEventsPublishedTotal = MetricsFactory.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "xmc_actuator_batcher_lifecycle_events_published_total",
-			Help: "Total number of artifact lifecycle events published to Redis.",
-		},
-		[]string{"state"},
-	)
 )
 
 // StorageUpdater defines the interface for updating work unit executions.
 type StorageUpdater interface {
 	UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error)
+}
+
+// TransitionStorageUpdater is a StorageUpdater that also reports the committed
+// state transitions, which the batcher needs to publish lifecycle events.
+type TransitionStorageUpdater interface {
+	StorageUpdater
+	UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]workunit.StateTransition, error)
+}
+
+// PendingUpdate is a storage update waiting to be flushed, together with the
+// lifecycle hints used to publish an event once it is committed.
+type PendingUpdate struct {
+	storagepkg.WorkUnitExecutionUpdate
+	Hints LifecycleHints
 }
 
 // BatcherConfig holds configuration for the UpdateBatcher.
@@ -148,13 +153,13 @@ type BatcherConfig struct {
 
 // UpdateBatcher is responsible for batching updates and processing them.
 type UpdateBatcher struct {
-	Updates map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	Updates map[int64]map[int64]map[UpdateSource]PendingUpdate
 	// UpdatesMu guards Updates and retries. Sharing one lock lets each tick
 	// snapshot pending updates and merge due retries atomically.
 	UpdatesMu              sync.Mutex
 	tickDuration           time.Duration
 	maxParallelExperiments int
-	Storage                StorageUpdater // Use an interface for testability
+	Storage                TransitionStorageUpdater // Use an interface for testability
 	LifecycleNotifier      LifecycleNotifier
 
 	// retries holds updates whose flush failed transiently, keyed by
@@ -167,30 +172,36 @@ type UpdateBatcher struct {
 }
 
 // NewUpdateBatcher creates a new UpdateBatcher.
-func NewUpdateBatcher(ctx context.Context, cfg *BatcherConfig, storage StorageUpdater) *UpdateBatcher {
+func NewUpdateBatcher(ctx context.Context, cfg *BatcherConfig, storage TransitionStorageUpdater) *UpdateBatcher {
 	maxParallelExperiments := cfg.MaxParallelExperiments
 	if maxParallelExperiments <= 0 {
 		logging.Warn(ctx, "MaxParallelExperiments was <= 0, defaulting to 1", "maxParallelExperiments", maxParallelExperiments)
 		maxParallelExperiments = 1
 	}
 	return &UpdateBatcher{
-		Updates:                make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate),
+		Updates:                make(map[int64]map[int64]map[UpdateSource]PendingUpdate),
 		tickDuration:           cfg.TickDuration,
 		maxParallelExperiments: maxParallelExperiments,
 		Storage:                storage,
 	}
 }
 
-// Add adds an update to the batch.
+// Add adds an update without lifecycle hints to the batch.
 func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.WorkUnitExecutionUpdate, source UpdateSource) {
+	b.AddWithLifecycleHints(ctx, xid, update, LifecycleHints{}, source)
+}
+
+// AddWithLifecycleHints adds an update to the batch together with the hints
+// used to publish a lifecycle event once the update is committed.
+func (b *UpdateBatcher) AddWithLifecycleHints(ctx context.Context, xid int64, update storagepkg.WorkUnitExecutionUpdate, hints LifecycleHints, source UpdateSource) {
 	updatesAddedTotal.WithLabelValues(fmt.Sprintf("%d", xid)).Inc()
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
 	if _, exists := b.Updates[xid]; !exists {
-		b.Updates[xid] = make(map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+		b.Updates[xid] = make(map[int64]map[UpdateSource]PendingUpdate)
 	}
 	if _, exists := b.Updates[xid][update.WID]; !exists {
-		b.Updates[xid][update.WID] = make(map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+		b.Updates[xid][update.WID] = make(map[UpdateSource]PendingUpdate)
 	}
 	// Storage skips updates whose EID is not the current execution, so letting a
 	// stale (lower-EID) update replace a pending newer one would silently drop the
@@ -199,11 +210,11 @@ func (b *UpdateBatcher) Add(ctx context.Context, xid int64, update storagepkg.Wo
 		if update.EID < pending.EID {
 			return
 		}
-		if update.EID == pending.EID && pending.ForceNotify {
-			update.ForceNotify = true
+		if update.EID == pending.EID && pending.Hints.ForceNotify {
+			hints.ForceNotify = true
 		}
 	}
-	b.Updates[xid][update.WID][source] = update
+	b.Updates[xid][update.WID][source] = PendingUpdate{WorkUnitExecutionUpdate: update, Hints: hints}
 }
 
 // Remove evicts any pending or queued-for-retry update for (xid, wid, source)
@@ -291,7 +302,7 @@ func (b *UpdateBatcher) processBatches(ctx context.Context) bool {
 	return true
 }
 
-func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) {
+func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64, widMap map[int64]map[UpdateSource]PendingUpdate, retries []batchEntry) {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 	xidStr := fmt.Sprintf("%d", xid)
 	if len(retries) > 0 {
@@ -311,14 +322,15 @@ func (b *UpdateBatcher) processExperimentUpdates(ctx context.Context, xid int64,
 	}
 
 	updatesPerBatch.WithLabelValues(xidStr).Observe(float64(len(batch)))
-	if err := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(batch)); err != nil {
+	if err := b.callUpdateWorkUnitExecutions(ctx, xid, batch); err != nil {
 		b.handleFlushFailure(ctx, xid, batch, err)
 	}
 }
 
-// callUpdateWorkUnitExecutions sends updatesToSend to storage, records call
-// metrics, and returns the storage error, if any.
-func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid int64, updatesToSend []*storagepkg.WorkUnitExecutionUpdate) error {
+// callUpdateWorkUnitExecutions sends the batch's updates to storage, records
+// call metrics, publishes lifecycle events for committed updates, and returns
+// the storage error, if any.
+func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid int64, batch []batchEntry) error {
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
 
 	xidStr := fmt.Sprintf("%d", xid)
@@ -328,15 +340,8 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 	taskCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	logging.Info(taskCtx, "Update work unit executions for xid", "xid", xid, "numUpdates", len(updatesToSend))
-	var res map[int64]*essmsgpb.WorkUnitExecution
-	var transitions map[int64]workunit.StateTransition
-	var err error
-	if tu, ok := b.Storage.(TransitionStorageUpdater); ok {
-		res, transitions, err = tu.UpdateWorkUnitExecutionsWithTransitions(taskCtx, xid, updatesToSend)
-	} else {
-		res, err = b.Storage.UpdateWorkUnitExecutions(taskCtx, xid, updatesToSend)
-	}
+	logging.Info(taskCtx, "Update work unit executions for xid", "xid", xid, "numUpdates", len(batch))
+	res, transitions, err := b.Storage.UpdateWorkUnitExecutionsWithTransitions(taskCtx, xid, updatePointers(batch))
 
 	duration := time.Since(storageCallStartTime).Seconds()
 	updateWorkUnitExecutionsDuration.WithLabelValues(xidStr).Observe(duration)
@@ -349,51 +354,46 @@ func (b *UpdateBatcher) callUpdateWorkUnitExecutions(ctx context.Context, xid in
 	logging.Info(taskCtx, "Updated work unit executions for xid", "xid", xid, "res", res)
 	updateWorkUnitExecutionsSuccess.WithLabelValues(xidStr).Inc()
 
-	b.notifyLifecycleEvents(taskCtx, xid, updatesToSend, transitions)
+	b.notifyLifecycleEvents(taskCtx, xid, batch, transitions)
 	return nil
 }
 
-func (b *UpdateBatcher) notifyLifecycleEvents(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate, transitions map[int64]workunit.StateTransition) {
+func (b *UpdateBatcher) notifyLifecycleEvents(ctx context.Context, xid int64, batch []batchEntry, transitions map[int64]workunit.StateTransition) {
 	if b.LifecycleNotifier == nil {
 		return
 	}
-	for _, update := range updates {
-		if update == nil {
+	for _, entry := range batch {
+		oldState, newState, ok := lifecycleTransitionToPublish(entry, transitions)
+		if !ok {
 			continue
 		}
-		trans, hasTrans := transitions[update.WID]
-		shouldNotify := false
-		var oldState, newState essmsgpb.WorkUnitStatus_WorkUnitState
-		if hasTrans {
-			oldState = trans.OldState
-			newState = trans.NewState
-			if (oldState != newState || update.ForceNotify) && MatchesNotifyWhen(newState, update.NotifyWhen) {
-				shouldNotify = true
-			}
-		} else if update.ForceNotify && update.WorkUnitExecution != nil && update.WorkUnitExecution.Status != nil && MatchesNotifyWhen(update.WorkUnitExecution.Status.State, update.NotifyWhen) {
-			shouldNotify = true
-			newState = update.WorkUnitExecution.Status.State
-		}
-
-		if shouldNotify {
-			event := &taskqueuepb.ArtifactLifecycleEvent{
-				ExperimentId:        proto.Int64(xid),
-				WorkUnitId:          proto.Int64(update.WID),
-				WorkUnitExecutionId: proto.Int64(update.EID),
-				OldState:            oldState.Enum(),
-				NewState:            newState.Enum(),
-				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
-					JobSetRuntimeContext: update.RuntimeContext,
-				},
-			}
-			lifecycleEventsPublishedTotal.WithLabelValues(newState.String()).Inc()
-			if notifyErr := b.LifecycleNotifier.NotifyLifecycleEvent(ctx, event); notifyErr != nil {
-				logging.Error(ctx, "Failed to publish artifact lifecycle event", "xid", xid, "wid", update.WID, "eid", update.EID, "error", notifyErr)
-			} else {
-				logging.Info(ctx, "Published artifact lifecycle event to Redis", "xid", xid, "wid", update.WID, "eid", update.EID, "oldState", oldState.String(), "newState", newState.String())
-			}
-		}
+		PublishLifecycleEvent(ctx, b.LifecycleNotifier, LifecycleEvent{
+			XID:            xid,
+			WID:            entry.update.WID,
+			EID:            entry.update.EID,
+			OldState:       oldState,
+			NewState:       newState,
+			RuntimeContext: entry.hints.RuntimeContext,
+		})
 	}
+}
+
+// lifecycleTransitionToPublish returns the (old, new) states to publish for a
+// committed entry, and whether an event should be published at all. A committed
+// transition is published when the state changed (or ForceNotify is set) and
+// the new state matches notify-when. Without a committed transition, only a
+// ForceNotify entry whose own state matches notify-when is published.
+func lifecycleTransitionToPublish(entry batchEntry, transitions map[int64]workunit.StateTransition) (oldState, newState essmsgpb.WorkUnitStatus_WorkUnitState, ok bool) {
+	hints := entry.hints
+	if trans, hasTrans := transitions[entry.update.WID]; hasTrans {
+		changed := trans.OldState != trans.NewState
+		return trans.OldState, trans.NewState, (changed || hints.ForceNotify) && notifywhen.Matches(trans.NewState, hints.NotifyWhen)
+	}
+	status := entry.update.WorkUnitExecution.GetStatus()
+	if !hints.ForceNotify || status == nil {
+		return oldState, newState, false
+	}
+	return essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED, status.GetState(), notifywhen.Matches(status.GetState(), hints.NotifyWhen)
 }
 
 // storageFailureReason returns the metric label for a storage error: its gRPC

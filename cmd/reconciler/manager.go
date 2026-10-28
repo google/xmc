@@ -40,6 +40,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/dbconfig"
 	dbfactory "xmanager_cloud/internal/storage/factory"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 // healthProbeBindAddress is the address on which the manager serves the
@@ -179,6 +180,18 @@ func initCtrlManager(ctx context.Context, cfg Config) (ctrl.Manager, error) {
 	return mgr, nil
 }
 
+// newLifecycleNotifier returns the Redis-backed artifact lifecycle notifier and
+// a cleanup that closes its publisher. When artifact lifecycle is disabled or no
+// Redis address is configured, it returns a nil notifier and a no-op cleanup.
+func newLifecycleNotifier(ctx context.Context, cfg Config) (shared.LifecycleNotifier, func() error) {
+	if !cfg.FeatureFlags.ArtifactLifecycleEnabled || cfg.RedisAddr == "" {
+		return nil, func() error { return nil }
+	}
+	publisher := redisclient.NewPublisher(redisclient.Config{Addr: cfg.RedisAddr}, constants.RedisArtifactLifecycleStream)
+	closePublisher := func() error { return publisher.Close(context.WithoutCancel(ctx)) }
+	return shared.NewRedisLifecycleNotifier(publisher), closePublisher
+}
+
 // NewManager constructs and initializes the production Manager along with all controllers,
 // batchers, storage, and infrastructure dependencies with automatic LIFO rollback on error.
 func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
@@ -230,16 +243,20 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 			newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
 	}
 
+	lifecycleNotifier, closeLifecycleNotifier := newLifecycleNotifier(ctx, cfg)
+	cleanups = append(cleanups, closeLifecycleNotifier)
+
 	batcher, err := registerControllers(ctx, controllerRegistrationParams{
-		mgr:         ctrlMgr,
-		cfg:         cfg,
-		storage:     storage,
-		k8sClient:   k8sClient,
-		cqCache:     cqCache,
-		mlRunClient: mlRunClient,
-		projectID:   gceMeta.ProjectID,
-		location:    gceMeta.Location,
-		clusterName: gceMeta.ClusterName,
+		mgr:               ctrlMgr,
+		cfg:               cfg,
+		storage:           storage,
+		k8sClient:         k8sClient,
+		cqCache:           cqCache,
+		mlRunClient:       mlRunClient,
+		lifecycleNotifier: lifecycleNotifier,
+		projectID:         gceMeta.ProjectID,
+		location:          gceMeta.Location,
+		clusterName:       gceMeta.ClusterName,
 	})
 	if err != nil {
 		return nil, err

@@ -17,11 +17,10 @@ package artifactlifecycle
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/internal/kubernetes/common/notifywhen"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 )
@@ -64,45 +63,38 @@ func (r *Registry) Register(rule LifecycleRule) {
 
 // Rules returns all registered rules.
 func (r *Registry) Rules() []LifecycleRule {
+	if r == nil {
+		return nil
+	}
 	return r.rules
 }
 
-// RequiredNotifyWhenAnnotation computes the dot-separated string (e.g. "STARTING.RUNNING.COMPLETED.FAILED.STOPPED")
-// of target execution states required by any matching rules for the given slice of artifacts.
-// Returns "" if no matching rules require notification.
+// RequiredNotifyWhenAnnotation returns the notify-when annotation value (see
+// notifywhen.Encode) for the union of target execution states required by rules
+// matching any of the given artifacts. Returns "" if no matching rule requires
+// notification.
 func (r *Registry) RequiredNotifyWhenAnnotation(artifacts []*essmsgpb.Artifact) string {
-	if r == nil || len(artifacts) == 0 {
+	if r == nil {
 		return ""
 	}
-
-	stateSet := make(map[essmsgpb.WorkUnitStatus_WorkUnitState]bool)
+	var states []essmsgpb.WorkUnitStatus_WorkUnitState
 	for _, art := range artifacts {
-		for _, rule := range r.rules {
-			if rule.Matches != nil && rule.Matches(art) {
-				for _, state := range rule.TargetExecutionStates {
-					stateSet[state] = true
-				}
-			}
+		for _, rule := range r.matchingRules(art) {
+			states = append(states, rule.TargetExecutionStates...)
 		}
 	}
-	if len(stateSet) == 0 {
-		return ""
-	}
+	return notifywhen.Encode(states)
+}
 
-	var states []string
-	canonicalOrder := []essmsgpb.WorkUnitStatus_WorkUnitState{
-		essmsgpb.WorkUnitStatus_STARTING,
-		essmsgpb.WorkUnitStatus_RUNNING,
-		essmsgpb.WorkUnitStatus_COMPLETED,
-		essmsgpb.WorkUnitStatus_FAILED,
-		essmsgpb.WorkUnitStatus_STOPPED,
-	}
-	for _, s := range canonicalOrder {
-		if stateSet[s] {
-			states = append(states, s.String())
+// matchingRules returns the registered rules that govern the artifact.
+func (r *Registry) matchingRules(artifact *essmsgpb.Artifact) []LifecycleRule {
+	var matched []LifecycleRule
+	for _, rule := range r.rules {
+		if rule.Matches != nil && rule.Matches(artifact) {
+			matched = append(matched, rule)
 		}
 	}
-	return strings.Join(states, ".")
+	return matched
 }
 
 // HandleExecutionStateChanged dispatches an event to all matching rules for the work unit's artifacts.
@@ -110,19 +102,18 @@ func (r *Registry) HandleExecutionStateChanged(ctx context.Context, store storag
 	if r == nil || event == nil {
 		return nil
 	}
-	parent := fmt.Sprintf("experiments/%d/workUnits/%d", event.GetExperimentId(), event.GetWorkUnitId())
-	artifacts, _, err := store.ListArtifacts(ctx, parent, 100, "", "", "", 0)
+	artifacts, err := ListWorkUnitArtifacts(ctx, store, event.GetExperimentId(), event.GetWorkUnitId())
 	if err != nil {
-		return fmt.Errorf("failed to list artifacts for %s: %w", parent, err)
+		return err
 	}
-
 	for _, art := range artifacts {
-		for _, rule := range r.rules {
-			if rule.Matches != nil && rule.Matches(art) && rule.OnExecutionStateChanged != nil {
-				if err := rule.OnExecutionStateChanged(ctx, store, event, art); err != nil {
-					logging.Error(ctx, "Lifecycle rule OnExecutionStateChanged failed", "rule", rule.Name, "error", err)
-					return err
-				}
+		for _, rule := range r.matchingRules(art) {
+			if rule.OnExecutionStateChanged == nil {
+				continue
+			}
+			if err := rule.OnExecutionStateChanged(ctx, store, event, art); err != nil {
+				logging.Error(ctx, "Lifecycle rule OnExecutionStateChanged failed", "rule", rule.Name, "error", err)
+				return err
 			}
 		}
 	}
@@ -134,19 +125,18 @@ func (r *Registry) HandleExecutionSuperseded(ctx context.Context, store storage.
 	if r == nil {
 		return nil
 	}
-	parent := fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)
-	artifacts, _, err := store.ListArtifacts(ctx, parent, 100, "", "", "", 0)
+	artifacts, err := ListWorkUnitArtifacts(ctx, store, xid, wid)
 	if err != nil {
-		return fmt.Errorf("failed to list artifacts for %s: %w", parent, err)
+		return err
 	}
-
 	for _, art := range artifacts {
-		for _, rule := range r.rules {
-			if rule.Matches != nil && rule.Matches(art) && rule.OnExecutionSuperseded != nil {
-				if err := rule.OnExecutionSuperseded(ctx, store, xid, wid, oldEID, art); err != nil {
-					logging.Error(ctx, "Lifecycle rule OnExecutionSuperseded failed", "rule", rule.Name, "error", err)
-					return err
-				}
+		for _, rule := range r.matchingRules(art) {
+			if rule.OnExecutionSuperseded == nil {
+				continue
+			}
+			if err := rule.OnExecutionSuperseded(ctx, store, xid, wid, oldEID, art); err != nil {
+				logging.Error(ctx, "Lifecycle rule OnExecutionSuperseded failed", "rule", rule.Name, "error", err)
+				return err
 			}
 		}
 	}

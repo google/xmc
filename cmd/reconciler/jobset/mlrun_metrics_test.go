@@ -73,7 +73,7 @@ func TestMLRunResultLabel(t *testing.T) {
 }
 
 // fmtWrap wraps err so tests exercise the errors.As unwrapping path used by
-// isMLRunAlreadyExistsError.
+// hypercomputeclient.IsAlreadyExists.
 func fmtWrap(err error) error {
 	return errWrapper{err}
 }

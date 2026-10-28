@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package jobset
+package shared
 
 import (
 	"context"
@@ -20,7 +20,6 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
-	"xmanager_cloud/cmd/reconciler/shared"
 )
 
 // RedisPublisher defines the Redis client interface for adding messages to a stream.
@@ -50,4 +49,4 @@ func (n *RedisLifecycleNotifier) NotifyLifecycleEvent(ctx context.Context, event
 	return n.publisher.AddMessage(ctx, string(data), "0")
 }
 
-var _ shared.LifecycleNotifier = (*RedisLifecycleNotifier)(nil)
+var _ LifecycleNotifier = (*RedisLifecycleNotifier)(nil)

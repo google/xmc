@@ -18,14 +18,21 @@ go_library(
     name = "hypercomputeclient",
     srcs = [
         "client.go",
+        "client_config.go",
+        "console_url.go",
+        "errors.go",
         "mlrun.go",
+        "mlrun_identity.go",
+        "mlrun_labels.go",
         "operations.go",
         "sanitize.go",
     ],
     importpath = "xmanager_cloud/internal/hypercomputeclient",
     visibility = ["//visibility:public"],
     deps = [
+        "//internal/kubernetes/common/constants",
         "//internal/logging",
+        "@org_golang_google_api//impersonate",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_oauth2//google",
     ],
@@ -34,11 +41,19 @@ go_library(
 go_test(
     name = "hypercomputeclient_test",
     srcs = [
+        "client_config_test.go",
         "client_test.go",
+        "console_url_test.go",
+        "errors_test.go",
+        "mlrun_identity_test.go",
+        "mlrun_labels_test.go",
         "mlrun_test.go",
         "operations_test.go",
         "sanitize_test.go",
     ],
     embed = [":hypercomputeclient"],
-    deps = ["@org_golang_x_oauth2//:oauth2"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
 )

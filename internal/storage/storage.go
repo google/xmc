@@ -25,7 +25,6 @@ import (
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/pkg/auth/oauth2"
 )
@@ -81,13 +80,6 @@ type WorkUnitExecutionUpdate struct {
 	DeferToExistingMessage bool
 	WorkUnitExecution      *essmsgpb.WorkUnitExecution
 	UpdateMask             *fmpb.FieldMask
-
-	// NotifyWhen specifies the execution states that trigger lifecycle notifications (from xmc.google.com/notify-when).
-	NotifyWhen string
-	// RuntimeContext carries runtime snapshot metadata for lifecycle notifications.
-	RuntimeContext *taskqueuepb.JobSetRuntimeContext
-	// ForceNotify forces a lifecycle notification even if OldState == NewState (e.g. when notify-when was newly added).
-	ForceNotify bool
 }
 
 // XidEntryUpdate represents an update to an XidEntry.

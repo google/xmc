@@ -16,15 +16,7 @@ package jobset
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,16 +26,6 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 )
-
-// createdByXManagerLabelValue marks an MLRun as owned by the XManager reconciler.
-// On a create conflict, a run carrying created_by equal to this value is treated as
-// our own (idempotent success); a run without it is adopted (updated) with our fields.
-const createdByXManagerLabelValue = "xmanager"
-
-// listExistingSessionsOnlyLabel tells Diagon to scan the run's GCS folder for profiles.
-// It is applied via UpdateMLRun post-creation because setting it at create time forces
-// the run directly to COMPLETED stage, preventing on-demand profiling.
-const listExistingSessionsOnlyLabel = "list_existing_sessions_only"
 
 // artifactListPageSize bounds the single ListArtifacts page read by
 // lookupManagedXprofArtifact. At most one ManagedXprof artifact is expected per
@@ -55,69 +37,6 @@ const artifactListPageSize = 10
 // longer fetches and discards unrelated artifact types while searching.
 const managedXprofArtifactFilter = `payload_type = "managed_xprof"`
 
-// mlRunResourceNameRE captures the MLRun id embedded in an AlreadyExists error's
-// resource name, e.g. "projects/p/locations/l/machineLearningRuns/some-id".
-var mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
-
-// buildMLRunLabels returns the labels stamped on every MLRun the reconciler owns.
-// Extracted so create and upsert apply an identical label set (including the
-// created_by marker that lets us detect ownership on a create conflict).
-func buildMLRunLabels(xid, wid int64) map[string]string {
-	return map[string]string{
-		"experiment_id": fmt.Sprintf("%d", xid),
-		"workunit_id":   fmt.Sprintf("%d", wid),
-		"created_by":    createdByXManagerLabelValue,
-	}
-}
-
-// normalizeClusterName extracts the short cluster name from either a bare name or a full GCP resource path.
-//
-// Extracted to isolate resource path parsing from identifier formatting and ensure parity with the
-// Python ML Diagnostics SDK's cluster name extraction.
-func normalizeClusterName(cluster string) string {
-	cluster = strings.TrimRight(cluster, "/")
-	if idx := strings.LastIndex(cluster, "/"); idx != -1 {
-		return cluster[idx+1:]
-	}
-	return cluster
-}
-
-// formatMLRunIdentifierTimestamp returns the creation timestamp formatted for the raw MLRun identifier,
-// or an empty string if uninitialized.
-//
-// Extracted so timestamp timezone normalization and zero-value handling can be tested independently
-// from hash computation.
-func formatMLRunIdentifierTimestamp(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format(constants.MLRunIdentifierTimeFormat)
-}
-
-// ConstructMLRunRawIdentifier assembles the deterministic raw identifier string for a GKE workload
-// following the format: clustername_namespace_kind_workloadid_YYYYMMDD-HHmmss.
-//
-// Extracted to allow verifying the unhashed raw string against the GKE ML Diagnostics SDK specification.
-// If the creation timestamp is uninitialized (zero), the timestamp segment is omitted to avoid a dangling separator.
-func ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
-	clusterName := normalizeClusterName(cluster)
-	timestamp := formatMLRunIdentifierTimestamp(creationTime)
-	if timestamp == "" {
-		return fmt.Sprintf("%s_%s_%s_%s", clusterName, namespace, kind, jobSetName)
-	}
-	return fmt.Sprintf("%s_%s_%s_%s_%s", clusterName, namespace, kind, jobSetName, timestamp)
-}
-
-// ConstructMLRunID deterministically constructs the SHA-256 hex digest of the raw workload identifier.
-//
-// Extracted into its own pure function so that ID construction is independently testable and
-// guaranteed idempotent when reconciliations are retried.
-func ConstructMLRunID(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
-	rawID := ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName, creationTime)
-	hash := sha256.Sum256([]byte(rawID))
-	return hex.EncodeToString(hash[:])
-}
-
 // formatCreationTime returns the timestamp formatted for MLRun workload creation times,
 // or an empty string if the timestamp is uninitialized.
 //
@@ -128,72 +47,6 @@ func formatCreationTime(t metav1.Time) string {
 		return ""
 	}
 	return t.UTC().Format(constants.MLRunCreationTimeFormat)
-}
-
-// isMLRunAlreadyExistsError reports whether err is the control plane's AlreadyExists
-// response. The control plane surfaces this two ways: an HTTP 409 Conflict from the
-// create call, and a long-running-operation failure carrying google.rpc.Code
-// AlreadyExists (6). We branch on the typed errors' codes rather than matching error
-// strings, which is brittle across message-wording changes.
-func isMLRunAlreadyExistsError(err error) bool {
-	var apiErr *hypercomputeclient.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.StatusCode == http.StatusConflict
-	}
-	var opErr *hypercomputeclient.OperationError
-	if errors.As(err, &opErr) {
-		return opErr.Code == hypercomputeclient.CodeAlreadyExists
-	}
-	return false
-}
-
-// parseExistingMLRunID extracts the conflicting run's id from an AlreadyExists
-// error. Because only one MLRun may exist per jobset, the control plane embeds the
-// existing run's resource name in the error, letting us locate a run created with a
-// different id than ours without a separate List call. Returns "" if not found.
-func parseExistingMLRunID(errText string) string {
-	m := mlRunResourceNameRE.FindStringSubmatch(errText)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
-
-// mlRunHasLabel reports whether an MLRun resource carries the specified key-value label pair.
-// Because a GET response decodes labels as map[string]any, it type-asserts defensively.
-func mlRunHasLabel(mlRun map[string]any, key, value string) bool {
-	labels, ok := mlRun["labels"].(map[string]any)
-	if !ok {
-		return false
-	}
-	v, ok := labels[key].(string)
-	return ok && v == value
-}
-
-// mlRunOwnedByXManager reports whether an MLRun resource carries our
-// created_by=xmanager label.
-func mlRunOwnedByXManager(mlRun map[string]any) bool {
-	return mlRunHasLabel(mlRun, "created_by", createdByXManagerLabelValue)
-}
-
-// ensureProfilesTab guarantees that an MLRun URL targets the profiles view in
-// Google Cloud Console / Diagon. The control plane API returns the base URL of the
-// run (defaulting to the overview tab), so we explicitly stamp the tab query
-// parameter so users clicking the profile action button land on the profiles view.
-// Pre-existing tab parameters are replaced, other query parameters are preserved,
-// and malformed URLs fall back to the original string.
-func ensureProfilesTab(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	q := parsed.Query()
-	q.Set("tab", "profiles")
-	parsed.RawQuery = q.Encode()
-	return parsed.String()
 }
 
 // consoleProject and consoleLocation return the target project and location
@@ -213,25 +66,10 @@ func (r *Reconciler) consoleLocation() string {
 	return r.Location
 }
 
-// mlRunURL returns the URL to surface for an MLRun: the API-provided url (with the
-// profiles tab preselected) when present, otherwise the deterministic Cloud
-// Console diagnostics URL for the id.
-func (r *Reconciler) mlRunURL(res map[string]any, mlRunID string) string {
-	if res != nil {
-		if urlVal, ok := res["url"].(string); ok && urlVal != "" {
-			return ensureProfilesTab(urlVal)
-		}
-	}
-	return constructDiagnosticsConsoleURL(r.consoleLocation(), mlRunID, r.consoleProject())
-}
-
-// constructDiagnosticsConsoleURL constructs the standard ML Diagnostics detail view
-// URL in Google Cloud Console with the profiles tab preselected.
-func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
-	if location == "" || mlRunID == "" || project == "" {
-		return ""
-	}
-	return fmt.Sprintf("https://console.cloud.google.com/kubernetes/aiml/run/%s/%s?project=%s&tab=profiles", location, mlRunID, project)
+// mlRunURL returns the URL to surface for an MLRun resource (see
+// hypercomputeclient.MLRunURL) in the reconciler's MLRun project and location.
+func (r *Reconciler) mlRunURL(mlRun map[string]any, mlRunID string) string {
+	return hypercomputeclient.MLRunURL(mlRun, r.consoleLocation(), mlRunID, r.consoleProject())
 }
 
 // lookupManagedXprofArtifact reads the ManagedXprof artifact attached to the work

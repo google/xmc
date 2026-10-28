@@ -203,7 +203,7 @@ func TestConstructJobSet(t *testing.T) {
 		},
 	}
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 
 	t.Run("Empty groupName when omitted", func(t *testing.T) {
-		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		jobSet, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 		if err != nil {
 			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 		}
@@ -233,7 +233,7 @@ func TestConstructJobSet_GroupName(t *testing.T) {
 		workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 			wu.Executable.GetJobset().Jobs[0].GroupName = "custom-group"
 		})
-		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+		jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 		if err != nil {
 			t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 		}
@@ -258,7 +258,7 @@ func TestConstructJobSet_PerJobCustomLabels(t *testing.T) {
 			"kueue.x-k8s.io/queue-name": "hacked-queue",
 		}
 	})
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestConstructJobSet_PerJobNodeSelector(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{head, worker}
 	})
 
-	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "test-author", "test-namespace", testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestConstructJobSet_PerJobNodeSelector(t *testing.T) {
 
 func TestConstructJobSet_TTLSecondsAfterFinished(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestConstructJobSet_LeaderWorker_Pathways(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{head, worker}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestConstructJobSet_ActiveDeadlineSeconds(t *testing.T) {
 	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].ActiveDeadlineSeconds = 3600
 	})
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestConstructJobSet_TerminationGracePeriodSeconds(t *testing.T) {
 			workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 				wu.Executable.GetJobset().Jobs[0].TerminationGracePeriodSeconds = tt.val
 			})
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}
@@ -455,7 +455,7 @@ func TestConstructJobSet_NoJobset(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{Name: "workUnit1", Executable: &esspb.Executable{}}
 
-	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}); err == nil {
+	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, ""); err == nil {
 		t.Errorf("constructJobSet() with no jobset succeeded, want error")
 	}
 }
@@ -464,7 +464,7 @@ func TestConstructJobSet_NoExecutable(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := &esspb.WorkUnit{Name: "workUnit1", Executable: nil}
 
-	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}); err == nil {
+	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, ""); err == nil {
 		t.Errorf("constructJobSet() with no executable succeeded, want error")
 	}
 }

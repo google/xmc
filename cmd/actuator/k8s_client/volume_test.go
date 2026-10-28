@@ -25,7 +25,7 @@ import (
 func TestConstructJobSet_CustomVolumesAndMounts(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := createWorkUnitWithVolumesAndMounts()
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-ns", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-ns", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}

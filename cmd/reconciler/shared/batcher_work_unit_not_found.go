@@ -47,7 +47,7 @@ func (b *UpdateBatcher) dropMissingWorkUnits(ctx context.Context, xid int64, bat
 	if len(remaining) == 0 {
 		return true
 	}
-	if resendErr := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(remaining)); resendErr != nil {
+	if resendErr := b.callUpdateWorkUnitExecutions(ctx, xid, remaining); resendErr != nil {
 		b.handleResendFailure(ctx, xid, remaining, resendErr)
 	}
 	return true

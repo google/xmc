@@ -16,9 +16,13 @@ package artifactlifecycle_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
@@ -73,6 +77,34 @@ func TestRequiredNotifyWhenAnnotation(t *testing.T) {
 	})
 }
 
+func TestRequiredNotifyWhenAnnotation_UnionOfMatchingRules(t *testing.T) {
+	xprofRule := artifactlifecycle.LifecycleRule{
+		Name:                  "xprof",
+		Matches:               func(a *essmsgpb.Artifact) bool { return a.GetPayload().GetManagedXprof() != nil },
+		TargetExecutionStates: []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_RUNNING},
+	}
+	textRule := artifactlifecycle.LifecycleRule{
+		Name:                  "text",
+		Matches:               func(a *essmsgpb.Artifact) bool { return a.GetPayload().GetText() != nil },
+		TargetExecutionStates: []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_FAILED, essmsgpb.WorkUnitStatus_RUNNING},
+	}
+	unmatchedRule := artifactlifecycle.LifecycleRule{
+		Name:                  "unmatched",
+		Matches:               func(*essmsgpb.Artifact) bool { return false },
+		TargetExecutionStates: []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_STOPPED},
+	}
+	reg := artifactlifecycle.NewRegistry(xprofRule, textRule, unmatchedRule)
+	arts := []*essmsgpb.Artifact{
+		{Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Text{Text: &essmsgpb.TextArtifact{}}}},
+		{Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: &essmsgpb.ManagedXprofArtifact{}}}},
+	}
+
+	const want = "RUNNING.FAILED"
+	if got := reg.RequiredNotifyWhenAnnotation(arts); got != want {
+		t.Errorf("RequiredNotifyWhenAnnotation() = %q, want %q", got, want)
+	}
+}
+
 func TestRegistryDispatch(t *testing.T) {
 	ctx := context.Background()
 	var stateChangedCalls, supersededCalls int
@@ -124,5 +156,45 @@ func TestRegistryDispatch(t *testing.T) {
 	}
 	if supersededCalls != 1 {
 		t.Errorf("supersededCalls = %d, want 1", supersededCalls)
+	}
+}
+
+// pagedArtifactStorage serves ListArtifacts from fixed pages keyed by page token.
+type pagedArtifactStorage struct {
+	storage.MockStorage
+	pages     map[string][]*essmsgpb.Artifact
+	nextToken map[string]string
+	gotTokens []string
+}
+
+func (p *pagedArtifactStorage) ListArtifacts(_ context.Context, _ string, _ int32, pageToken, _, _ string, _ time.Duration) ([]*essmsgpb.Artifact, string, error) {
+	p.gotTokens = append(p.gotTokens, pageToken)
+	return p.pages[pageToken], p.nextToken[pageToken], nil
+}
+
+func TestListWorkUnitArtifacts_FollowsPageTokens(t *testing.T) {
+	first := &essmsgpb.Artifact{Name: "artifacts/1"}
+	second := &essmsgpb.Artifact{Name: "artifacts/2"}
+	store := &pagedArtifactStorage{
+		pages:     map[string][]*essmsgpb.Artifact{"": {first}, "page-2": {second}},
+		nextToken: map[string]string{"": "page-2"},
+	}
+
+	got, err := artifactlifecycle.ListWorkUnitArtifacts(context.Background(), store, 1, 2)
+	if err != nil {
+		t.Fatalf("ListWorkUnitArtifacts() error = %v", err)
+	}
+	if diff := cmp.Diff([]*essmsgpb.Artifact{first, second}, got, protocmp.Transform()); diff != "" {
+		t.Errorf("ListWorkUnitArtifacts() mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"", "page-2"}, store.gotTokens); diff != "" {
+		t.Errorf("page tokens mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListWorkUnitArtifacts_PropagatesError(t *testing.T) {
+	store := &storage.MockStorage{ListArtifactsErr: errors.New("boom")}
+	if _, err := artifactlifecycle.ListWorkUnitArtifacts(context.Background(), store, 1, 2); err == nil {
+		t.Error("ListWorkUnitArtifacts() error = nil, want error")
 	}
 }

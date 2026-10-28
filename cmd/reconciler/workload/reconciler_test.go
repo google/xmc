@@ -43,12 +43,20 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 type mockStorageUpdater struct {
 	calls     map[int64][]*storagepkg.WorkUnitExecutionUpdate
 	updateErr error
 	updateRes map[int64]*spb.WorkUnitExecution
+}
+
+// UpdateWorkUnitExecutionsWithTransitions records the call like
+// UpdateWorkUnitExecutions and reports no committed transitions.
+func (m *mockStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {

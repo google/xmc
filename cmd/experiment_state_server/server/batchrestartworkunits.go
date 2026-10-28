@@ -181,7 +181,7 @@ func (h *WorkUnitHandler) enqueueWorkUnitRestart(ctx context.Context, oldExecuti
 
 	// 2. Enqueue the work unit for restarting.
 	logging.Info(ctx, "Add restart request for work unit to the queue")
-	notifyWhen := h.requiredNotifyWhen(ctx, newWU.GetName())
+	notifyWhen := h.requiredNotifyWhen(ctx, xid, wid)
 	err = h.actuator.EnqueueWorkUnitTask(ctx, oldExecutionName, newWU, client.RestartAction(experimentPriority, email, notifyWhen), operation.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to enqueue restart request for work unit", "error", err)
@@ -220,21 +220,18 @@ func (h *WorkUnitHandler) authorizeBatchRestart(ctx context.Context, xid int64, 
 	return nil
 }
 
+// finalizeSupersededExecutions runs superseded execution cleanup for every restarted work unit.
 func (h *WorkUnitHandler) finalizeSupersededExecutions(ctx context.Context, xid int64, workUnits []*msgpb.WorkUnit) {
-	if h.artifactLifecycle == nil {
-		return
-	}
 	for _, wu := range workUnits {
 		cur := wu.GetCurrentWorkUnitExecution()
 		if cur == nil {
 			continue
 		}
-		_, wid, oldEID, err := validator.ValidateWorkUnitExecutionName(cur.GetName())
+		_, wid, err := validator.ValidateWorkUnitName(wu.GetName())
 		if err != nil {
+			logging.Warn(ctx, "Skipping superseded execution finalization; invalid work unit name", "name", wu.GetName(), "error", err)
 			continue
 		}
-		if err := h.artifactLifecycle.HandleExecutionSuperseded(ctx, h.storage, xid, wid, oldEID); err != nil {
-			logging.Warn(ctx, "Failed to finalize superseded execution artifact lifecycle", "wid", wid, "error", err)
-		}
+		h.finalizeSupersededExecution(ctx, xid, wid, cur.GetName())
 	}
 }

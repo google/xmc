@@ -16,14 +16,7 @@ package artifactlifecycle
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
-	"regexp"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -38,39 +31,19 @@ import (
 )
 
 const (
-	createdByXManagerLabelValue   = "xmanager"
-	listExistingSessionsOnlyLabel = "list_existing_sessions_only"
-	runPhaseActive                = "ACTIVE"
-	runPhaseCompleted             = "COMPLETED"
-	runPhaseFailed                = "FAILED"
+	runPhaseActive    = "ACTIVE"
+	runPhaseCompleted = "COMPLETED"
+	runPhaseFailed    = "FAILED"
 )
 
-var (
-	mlRunResourceNameRE = regexp.MustCompile(`machineLearningRuns/([a-zA-Z0-9_-]+)`)
-	mlRunURLSegmentRE   = regexp.MustCompile(`/runs/([a-zA-Z0-9_-]+)`)
-)
-
-func parseMLRunIDFromArtifact(artifact *essmsgpb.Artifact) string {
-	if artifact == nil {
-		return ""
-	}
-	var rawURL string
-	if mx := artifact.GetPayload().GetManagedXprof(); mx != nil && mx.GetXprof() != nil {
-		rawURL = mx.GetXprof().GetXprofUrl()
-	}
-	if rawURL == "" && artifact.GetUrl() != nil {
+// storedMLRunID returns the MLRun id recorded on the artifact's xprof_url (or
+// url), or "" when no MLRun URL has been persisted yet.
+func storedMLRunID(artifact *essmsgpb.Artifact) string {
+	rawURL := artifact.GetPayload().GetManagedXprof().GetXprof().GetXprofUrl()
+	if rawURL == "" {
 		rawURL = artifact.GetUrl().GetUrl()
 	}
-	if rawURL == "" {
-		return ""
-	}
-	if m := mlRunURLSegmentRE.FindStringSubmatch(rawURL); len(m) >= 2 {
-		return m[1]
-	}
-	if m := mlRunResourceNameRE.FindStringSubmatch(rawURL); len(m) >= 2 {
-		return m[1]
-	}
-	return ""
+	return hypercomputeclient.ParseMLRunIDFromURL(rawURL)
 }
 
 // MLRunClient defines the external Hypercompute operations required by ManagedXprofRule.
@@ -88,10 +61,10 @@ type ManagedXprofRule struct {
 }
 
 // NewManagedXprofRule constructs a declarative LifecycleRule for ManagedXprof artifacts.
+//
+// projectID and location must be the resolved MLRun project and location (the same
+// values the MLRun client was built with); they are used to construct console URLs.
 func NewManagedXprofRule(mlRunClient MLRunClient, projectID, location string) LifecycleRule {
-	if location == "" {
-		location = "us-central1"
-	}
 	r := &ManagedXprofRule{
 		mlRunClient: mlRunClient,
 		projectID:   projectID,
@@ -155,82 +128,95 @@ func (r *ManagedXprofRule) handleActiveState(
 	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 ) error {
-	mlCtx := r.buildMLRunContext(event)
-	xprofURL := r.getOrCreateMLRun(ctx, mlCtx.mlRunID, mlCtx.displayName, mlCtx.runGroup, runPhaseActive, mlCtx.createOpts)
-
+	mlCtx, ok := buildMLRunContext(event)
+	if !ok {
+		logging.Warn(ctx, "Skipping MLRun creation; lifecycle event lacks JobSet runtime context", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
+		return nil
+	}
+	xprofURL := r.getOrCreateMLRun(ctx, mlCtx)
 	if xprofURL == "" {
 		return nil
 	}
-
-	return r.persistArtifactURL(ctx, store, event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId(), artifact, xprofURL)
+	return r.persistArtifactURL(ctx, store, event, artifact, xprofURL)
 }
 
-// handleTerminalState transitions the MLRun to COMPLETED or FAILED and backfills xprof_url if not yet stored.
+// handleTerminalState transitions the MLRun to COMPLETED or FAILED. When the event
+// carries the JobSet runtime context it also ensures the MLRun exists and backfills
+// xprof_url; otherwise it finalizes the MLRun recorded on the artifact, if any.
 func (r *ManagedXprofRule) handleTerminalState(
 	ctx context.Context,
 	store storage.Storage,
 	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 ) error {
-	mlCtx := r.buildMLRunContext(event)
-	xprofURL := r.getOrCreateMLRun(ctx, mlCtx.mlRunID, mlCtx.displayName, mlCtx.runGroup, runPhaseActive, mlCtx.createOpts)
-
-	if xprofURL != "" {
-		_ = r.persistArtifactURL(ctx, store, event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId(), artifact, xprofURL)
+	mlRunID := storedMLRunID(artifact)
+	if mlCtx, ok := buildMLRunContext(event); ok {
+		mlRunID = mlCtx.mlRunID
+		r.backfillArtifactURL(ctx, store, event, artifact, mlCtx)
 	}
-
-	terminalPhase := runPhaseFailed
-	if event.GetNewState() == essmsgpb.WorkUnitStatus_COMPLETED || event.GetNewState() == essmsgpb.WorkUnitStatus_STOPPED {
-		terminalPhase = runPhaseCompleted
+	if mlRunID == "" {
+		logging.Warn(ctx, "Skipping MLRun finalization; no runtime context and no stored MLRun URL", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
+		return nil
 	}
-
-	if r.mlRunClient != nil {
-		_, err := r.mlRunClient.UpdateMLRun(ctx, mlCtx.mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-			RunPhase: terminalPhase,
-		})
-		if err != nil {
-			logging.Warn(ctx, "Failed to update MLRun to terminal phase", "mlRunID", mlCtx.mlRunID, "phase", terminalPhase, "error", err)
-		}
-	}
-
+	r.updateRunPhase(ctx, mlRunID, terminalRunPhase(event.GetNewState()))
 	return nil
 }
 
-// OnExecutionSuperseded closes out the external MLRun for a superseded execution.
-func (r *ManagedXprofRule) OnExecutionSuperseded(
+// backfillArtifactURL ensures the MLRun exists and persists its URL, logging failures
+// so terminal-phase finalization still proceeds.
+func (r *ManagedXprofRule) backfillArtifactURL(
 	ctx context.Context,
 	store storage.Storage,
+	event *taskqueuepb.ArtifactLifecycleEvent,
+	artifact *essmsgpb.Artifact,
+	mlCtx mlRunContext,
+) {
+	xprofURL := r.getOrCreateMLRun(ctx, mlCtx)
+	if xprofURL == "" {
+		return
+	}
+	if err := r.persistArtifactURL(ctx, store, event, artifact, xprofURL); err != nil {
+		logging.Warn(ctx, "Failed to backfill xprof_url on terminal state", "artifact", artifact.GetName(), "error", err)
+	}
+}
+
+func terminalRunPhase(state essmsgpb.WorkUnitStatus_WorkUnitState) string {
+	if state == essmsgpb.WorkUnitStatus_COMPLETED || state == essmsgpb.WorkUnitStatus_STOPPED {
+		return runPhaseCompleted
+	}
+	return runPhaseFailed
+}
+
+func (r *ManagedXprofRule) updateRunPhase(ctx context.Context, mlRunID, phase string) {
+	if r.mlRunClient == nil {
+		return
+	}
+	_, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{RunPhase: phase})
+	if err != nil {
+		logging.Warn(ctx, "Failed to update MLRun phase", "mlRunID", mlRunID, "phase", phase, "error", err)
+	}
+}
+
+// OnExecutionSuperseded closes out the external MLRun recorded on the artifact for a
+// superseded execution. Artifacts without a stored MLRun URL are skipped: the MLRun
+// id cannot be derived without the superseded JobSet's runtime context.
+func (r *ManagedXprofRule) OnExecutionSuperseded(
+	ctx context.Context,
+	_ storage.Storage,
 	xid, wid, oldEID int64,
 	artifact *essmsgpb.Artifact,
 ) error {
 	if r.mlRunClient == nil {
 		return nil
 	}
-	mlRunID := parseMLRunIDFromArtifact(artifact)
+	mlRunID := storedMLRunID(artifact)
 	if mlRunID == "" {
-		jobSetName := fmt.Sprintf("xmc-wu-%d-%d", wid, oldEID)
-		mlRunID = ConstructMLRunID("", "", "JobSet", jobSetName, time.Time{})
+		logging.Info(ctx, "Skipping superseded execution MLRun finalization; artifact has no stored MLRun URL", "xid", xid, "wid", wid, "oldEID", oldEID, "artifact", artifact.GetName())
+		return nil
 	}
-
 	logging.Info(ctx, "Finalizing superseded execution MLRun", "xid", xid, "wid", wid, "oldEID", oldEID, "mlRunID", mlRunID)
-	_, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-		RunPhase: runPhaseCompleted,
-	})
-	if err != nil {
-		logging.Warn(ctx, "Failed to mark superseded MLRun as COMPLETED", "mlRunID", mlRunID, "error", err)
-	}
+	r.updateRunPhase(ctx, mlRunID, runPhaseCompleted)
 	return nil
-}
-
-func parseArtifactID(name string) (int64, error) {
-	aid, err := validator.ValidateArtifactName(name)
-	if err == nil {
-		return aid, nil
-	}
-	if idx := strings.LastIndex(name, "/artifacts/"); idx != -1 {
-		return validator.ValidateArtifactName(name[idx+1:])
-	}
-	return 0, err
 }
 
 // persistArtifactURL updates the shared Artifact row inside a Spanner RW transaction,
@@ -238,17 +224,17 @@ func parseArtifactID(name string) (int64, error) {
 func (r *ManagedXprofRule) persistArtifactURL(
 	ctx context.Context,
 	store storage.Storage,
-	xid, wid, eventEID int64,
+	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 	xprofURL string,
 ) error {
-	aid, err := parseArtifactID(artifact.GetName())
+	aid, err := validator.ParseArtifactIDFromName(artifact.GetName())
 	if err != nil {
 		return fmt.Errorf("invalid artifact name %q: %w", artifact.GetName(), err)
 	}
 
 	return store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		fenced, err := isExecutionSupersededInTx(ctx, tx, xid, wid, eventEID)
+		fenced, err := isExecutionSupersededInTx(ctx, tx, event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId())
 		if err != nil || fenced {
 			return err
 		}
@@ -270,20 +256,6 @@ func (r *ManagedXprofRule) persistArtifactURL(
 		_, err = tx.Artifacts.UpdateArtifact(ctx, update)
 		return err
 	})
-}
-
-func isExecutionSupersededInTx(ctx context.Context, tx *storage.Transaction, xid, wid, eventEID int64) (bool, error) {
-	wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
-	if err != nil {
-		return false, fmt.Errorf("failed to fetch work unit %d: %w", wid, err)
-	}
-	if cur := wu.GetCurrentWorkUnitExecution(); cur != nil {
-		if _, _, curEID, err := validator.ValidateWorkUnitExecutionName(cur.GetName()); err == nil && curEID != eventEID {
-			logging.Info(ctx, "Skipping artifact xprof_url update; execution is superseded", "eventEID", eventEID, "curEID", curEID)
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func buildArtifactWithXprofURL(currentArt *essmsgpb.Artifact, xprofURL string) *essmsgpb.Artifact {
@@ -317,211 +289,106 @@ func buildArtifactWithXprofURL(currentArt *essmsgpb.Artifact, xprofURL string) *
 	}
 }
 
-func (r *ManagedXprofRule) getOrCreateMLRun(
-	ctx context.Context,
-	mlRunID, displayName, runGroup, initialPhase string,
-	opts *hypercomputeclient.CreateMLRunOptions,
-) string {
+// getOrCreateMLRun creates the MLRun (or, on conflict, adopts the existing one) and
+// returns the URL to persist on the artifact.
+func (r *ManagedXprofRule) getOrCreateMLRun(ctx context.Context, mlCtx mlRunContext) string {
 	if r.mlRunClient == nil {
-		return r.mlRunURL(nil, mlRunID)
+		return r.mlRunURL(nil, mlCtx.mlRunID)
 	}
 
-	_, err := r.mlRunClient.CreateMLRun(ctx, mlRunID, displayName, initialPhase, opts)
+	_, err := r.mlRunClient.CreateMLRun(ctx, mlCtx.mlRunID, mlCtx.displayName, runPhaseActive, mlCtx.createOpts)
 	if err == nil {
-		// Stamp list_existing_sessions_only post-creation to preserve ACTIVE phase.
-		res, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-			Labels: map[string]string{listExistingSessionsOnlyLabel: "true"},
-		})
-		if err != nil {
-			logging.Warn(ctx, "Failed to stamp list_existing_sessions_only label on MLRun", "mlRunID", mlRunID, "error", err)
-		}
-		return r.mlRunURL(res, mlRunID)
+		return r.stampExistingSessionsOnlyLabel(ctx, mlCtx.mlRunID)
 	}
-
-	if isMLRunAlreadyExistsError(err) {
-		existingID := resolveExistingMLRunID(err, mlRunID)
-		existing, getErr := r.mlRunClient.GetMLRun(ctx, existingID)
-		if getErr != nil {
-			logging.Warn(ctx, "MLRun already exists but could not be fetched", "mlRunID", existingID, "error", getErr)
-			return r.mlRunURL(nil, existingID)
-		}
-		if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
-			return r.mlRunURL(existing, existingID)
-		}
-
-		updRes, updErr := r.mlRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
-			DisplayName: displayName,
-			RunGroup:    runGroup,
-			Labels:      map[string]string{listExistingSessionsOnlyLabel: "true", "created_by": createdByXManagerLabelValue},
-		})
-		if updErr != nil {
-			logging.Warn(ctx, "Failed to update existing MLRun", "mlRunID", existingID, "error", updErr)
-			return r.mlRunURL(existing, existingID)
-		}
-		return r.mlRunURL(updRes, existingID)
+	if hypercomputeclient.IsAlreadyExists(err) {
+		return r.adoptExistingMLRun(ctx, err, mlCtx)
 	}
-
-	logging.Error(ctx, "CreateMLRun failed", "mlRunID", mlRunID, "error", err)
-	return r.mlRunURL(nil, mlRunID)
+	logging.Error(ctx, "CreateMLRun failed", "mlRunID", mlCtx.mlRunID, "error", err)
+	return r.mlRunURL(nil, mlCtx.mlRunID)
 }
 
-func (r *ManagedXprofRule) buildMLRunContext(event *taskqueuepb.ArtifactLifecycleEvent) mlRunContext {
+// stampExistingSessionsOnlyLabel stamps list_existing_sessions_only post-creation to
+// preserve the ACTIVE phase (creating with it forces COMPLETED, blocking on-demand profiling).
+func (r *ManagedXprofRule) stampExistingSessionsOnlyLabel(ctx context.Context, mlRunID string) string {
+	res, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
+		Labels: map[string]string{hypercomputeclient.ListExistingSessionsOnlyLabel: "true"},
+	})
+	if err != nil {
+		logging.Warn(ctx, "Failed to stamp list_existing_sessions_only label on MLRun", "mlRunID", mlRunID, "error", err)
+	}
+	return r.mlRunURL(res, mlRunID)
+}
+
+// adoptExistingMLRun handles an MLRun create conflict: a run already owned by
+// XManager is returned as-is; any other run is updated with our ManagedXprof fields.
+func (r *ManagedXprofRule) adoptExistingMLRun(ctx context.Context, createErr error, mlCtx mlRunContext) string {
+	existingID := hypercomputeclient.ResolveExistingMLRunID(createErr, mlCtx.mlRunID)
+	existing, err := r.mlRunClient.GetMLRun(ctx, existingID)
+	if err != nil {
+		logging.Warn(ctx, "MLRun already exists but could not be fetched", "mlRunID", existingID, "error", err)
+		return r.mlRunURL(nil, existingID)
+	}
+	if hypercomputeclient.MLRunAdoptionComplete(existing) {
+		return r.mlRunURL(existing, existingID)
+	}
+
+	res, err := r.mlRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
+		DisplayName: mlCtx.displayName,
+		RunGroup:    mlCtx.runGroup,
+		Labels:      hypercomputeclient.WithExistingSessionsOnlyLabel(mlCtx.createOpts.Labels),
+		Artifacts:   mlCtx.createOpts.Artifacts,
+	})
+	if err != nil {
+		logging.Warn(ctx, "Failed to update existing MLRun", "mlRunID", existingID, "error", err)
+		return r.mlRunURL(existing, existingID)
+	}
+	return r.mlRunURL(res, existingID)
+}
+
+// buildMLRunContext derives the MLRun identity and create options from the event's
+// JobSet runtime context. It reports false when the context (or its JobSet name) is
+// missing, because the MLRun id cannot then be derived consistently with the reconciler.
+func buildMLRunContext(event *taskqueuepb.ArtifactLifecycleEvent) (mlRunContext, bool) {
 	rt := event.GetJobSetRuntimeContext()
-	cluster := rt.GetCluster()
-	namespace := rt.GetNamespace()
 	jobSetName := rt.GetJobSetName()
 	if jobSetName == "" {
-		jobSetName = fmt.Sprintf("xmc-wu-%d-%d", event.GetWorkUnitId(), event.GetWorkUnitExecutionId())
+		return mlRunContext{}, false
 	}
 	var creationTime time.Time
 	if rt.GetCreationTime() != nil {
 		creationTime = rt.GetCreationTime().AsTime()
 	}
 
-	mlRunID := ConstructMLRunID(cluster, namespace, "JobSet", jobSetName, creationTime)
 	envVars := rt.GetEnvironmentVariables()
-
 	displayName := envVars[constants.XmcEnvVarManagedXprofDisplayName]
 	if displayName == "" {
 		displayName = jobSetName
 	}
 	runGroup := envVars[constants.XmcEnvVarManagedXprofRunGroup]
-
-	labels := buildMLRunLabels(event.GetExperimentId(), event.GetWorkUnitId())
 	artifacts := make(map[string]string)
 	if folder := envVars[constants.XmcEnvVarManagedXprofGCSObjectFolder]; folder != "" {
 		artifacts["xprof_gcs_path"] = folder
 	}
 
-	opts := &hypercomputeclient.CreateMLRunOptions{
-		RunGroup:     runGroup,
-		Labels:       labels,
-		Artifacts:    artifacts,
-		Orchestrator: "GKE",
-		WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
-			ID:        jobSetName,
-			Kind:      "JobSet",
-			Cluster:   cluster,
-			Namespace: namespace,
-		},
-	}
 	return mlRunContext{
-		mlRunID:     mlRunID,
+		mlRunID:     hypercomputeclient.ConstructMLRunID(rt.GetCluster(), rt.GetNamespace(), "JobSet", jobSetName, creationTime),
 		displayName: displayName,
 		runGroup:    runGroup,
-		createOpts:  opts,
-	}
+		createOpts: &hypercomputeclient.CreateMLRunOptions{
+			RunGroup:     runGroup,
+			Labels:       hypercomputeclient.BuildMLRunLabels(event.GetExperimentId(), event.GetWorkUnitId()),
+			Artifacts:    artifacts,
+			Orchestrator: "GKE",
+			WorkloadDetails: &hypercomputeclient.GKEWorkloadDetails{
+				ID:        jobSetName,
+				Kind:      "JobSet",
+				Cluster:   rt.GetCluster(),
+				Namespace: rt.GetNamespace(),
+			},
+		},
+	}, true
 }
 
-func (r *ManagedXprofRule) mlRunURL(res map[string]any, mlRunID string) string {
-	if res != nil {
-		if meta, ok := res["metadata"].(map[string]any); ok {
-			if u, ok := meta["url"].(string); ok && u != "" {
-				return ensureProfilesTab(u)
-			}
-		}
-	}
-	return constructDiagnosticsConsoleURL(r.location, mlRunID, r.projectID)
-}
-
-func buildMLRunLabels(xid, wid int64) map[string]string {
-	return map[string]string{
-		"experiment_id": fmt.Sprintf("%d", xid),
-		"workunit_id":   fmt.Sprintf("%d", wid),
-		"created_by":    createdByXManagerLabelValue,
-	}
-}
-
-func normalizeClusterName(cluster string) string {
-	cluster = strings.TrimRight(cluster, "/")
-	if idx := strings.LastIndex(cluster, "/"); idx != -1 {
-		return cluster[idx+1:]
-	}
-	return cluster
-}
-
-func formatMLRunIdentifierTimestamp(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.UTC().Format(constants.MLRunIdentifierTimeFormat)
-}
-
-// ConstructMLRunRawIdentifier assembles the deterministic raw identifier string for a GKE workload.
-func ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
-	clusterName := normalizeClusterName(cluster)
-	timestamp := formatMLRunIdentifierTimestamp(creationTime)
-	if timestamp == "" {
-		return fmt.Sprintf("%s_%s_%s_%s", clusterName, namespace, kind, jobSetName)
-	}
-	return fmt.Sprintf("%s_%s_%s_%s_%s", clusterName, namespace, kind, jobSetName, timestamp)
-}
-
-// ConstructMLRunID deterministically constructs the SHA-256 hex digest of the raw workload identifier.
-func ConstructMLRunID(cluster, namespace, kind, jobSetName string, creationTime time.Time) string {
-	rawID := ConstructMLRunRawIdentifier(cluster, namespace, kind, jobSetName, creationTime)
-	hash := sha256.Sum256([]byte(rawID))
-	return hex.EncodeToString(hash[:])
-}
-
-func isMLRunAlreadyExistsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var apiErr *hypercomputeclient.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.StatusCode == http.StatusConflict
-	}
-	var opErr *hypercomputeclient.OperationError
-	if errors.As(err, &opErr) {
-		return opErr.Code == hypercomputeclient.CodeAlreadyExists
-	}
-	return false
-}
-
-func parseExistingMLRunID(errText string) string {
-	m := mlRunResourceNameRE.FindStringSubmatch(errText)
-	if len(m) < 2 {
-		return ""
-	}
-	return m[1]
-}
-
-func resolveExistingMLRunID(createErr error, fallbackID string) string {
-	if id := parseExistingMLRunID(createErr.Error()); id != "" {
-		return id
-	}
-	return fallbackID
-}
-
-func mlRunHasLabel(mlRun map[string]any, key, value string) bool {
-	labels, ok := mlRun["labels"].(map[string]any)
-	if !ok {
-		return false
-	}
-	v, ok := labels[key].(string)
-	return ok && v == value
-}
-
-func mlRunOwnedByXManager(mlRun map[string]any) bool {
-	return mlRunHasLabel(mlRun, "created_by", createdByXManagerLabelValue)
-}
-
-func ensureProfilesTab(rawURL string) string {
-	if rawURL == "" {
-		return ""
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	q := parsed.Query()
-	q.Set("tab", "profiles")
-	parsed.RawQuery = q.Encode()
-	return parsed.String()
-}
-
-func constructDiagnosticsConsoleURL(location, mlRunID, project string) string {
-	rawURL := fmt.Sprintf("https://console.cloud.google.com/cluster-director/locations/%s/runs/%s?project=%s", location, mlRunID, project)
-	return ensureProfilesTab(rawURL)
+func (r *ManagedXprofRule) mlRunURL(mlRun map[string]any, mlRunID string) string {
+	return hypercomputeclient.MLRunURL(mlRun, r.location, mlRunID, r.projectID)
 }

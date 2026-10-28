@@ -33,19 +33,13 @@ import (
 // FetchArtifact retrieves a single Artifact from storage by its unique numerical ID.
 func (r *Repository) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error) {
 	ctx = logging.WithArtifactName(ctx, validator.ConstructArtifactName(aid))
-	return r.FetchArtifactTransaction(ctx, aid, r.client.Single())
+	return fetchArtifactInTx(ctx, aid, r.client.Single())
 }
 
 // FetchArtifact retrieves a single Artifact from storage by its unique numerical ID within the bound transaction.
 func (r *TxRepository) FetchArtifact(ctx context.Context, aid int64) (*essmsgpb.Artifact, error) {
 	ctx = logging.WithArtifactName(ctx, validator.ConstructArtifactName(aid))
 	return fetchArtifactInTx(ctx, aid, r.tx)
-}
-
-// FetchArtifactTransaction retrieves a single Artifact from storage by its unique
-// numerical ID in a transaction.
-func (r *Repository) FetchArtifactTransaction(ctx context.Context, aid int64, txn spannerTransaction) (*essmsgpb.Artifact, error) {
-	return fetchArtifactInTx(ctx, aid, txn)
 }
 
 func fetchArtifactInTx(ctx context.Context, aid int64, txn spannerTransaction) (*essmsgpb.Artifact, error) {

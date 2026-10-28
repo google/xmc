@@ -38,6 +38,7 @@ import (
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/task_queue/updatemask"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -278,14 +279,14 @@ func (c *Client) UpdateWorkUnit(ctx context.Context, payload *actuatortaskpb.Act
 	update := payload.GetAction().GetUpdate()
 	paths := update.GetUpdateMask().GetPaths()
 
-	if slices.Contains(paths, "notify_when") || update.GetNotifyWhen() != "" {
+	if slices.Contains(paths, updatemask.PathNotifyWhen) {
 		if err := c.updateJobSetNotifyWhen(ctx, payload.GetWorkUnit(), payload.GetTarget(), update.GetNotifyWhen()); err != nil {
 			logging.Warn(ctx, "Failed to update JobSet notify-when for target", "target", payload.GetTarget(), "error", err)
 			return err
 		}
 	}
 
-	if len(paths) == 0 || slices.Contains(paths, "priority") {
+	if len(paths) == 0 || slices.Contains(paths, updatemask.PathPriority) {
 		priorities := Priorities{
 			WorkUnitPriority:   payload.GetWorkUnit().GetPriority(),
 			ExperimentPriority: update.GetExperimentPriority(),

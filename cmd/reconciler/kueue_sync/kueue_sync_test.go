@@ -46,6 +46,7 @@ import (
 	"xmanager_cloud/cmd/reconciler/shared"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 const (
@@ -329,6 +330,13 @@ type mockStorage struct {
 	calls map[int64][]*storagepkg.WorkUnitExecutionUpdate
 }
 
+// UpdateWorkUnitExecutionsWithTransitions records the call like
+// UpdateWorkUnitExecutions and reports no committed transitions.
+func (m *mockStorage) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
+}
+
 func (m *mockStorage) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, error) {
 	if m.calls == nil {
 		m.calls = make(map[int64][]*storagepkg.WorkUnitExecutionUpdate)
@@ -468,8 +476,8 @@ func TestUpdateWorkUnitNotesAboutPosition(t *testing.T) {
 	gotCalls := make(map[int64][]storagepkg.WorkUnitExecutionUpdate)
 	for xid, widMap := range updateBatcher.Updates {
 		for _, sourceMap := range widMap {
-			if update, ok := sourceMap[shared.KueueSyncSource]; ok {
-				gotCalls[xid] = append(gotCalls[xid], update)
+			if pending, ok := sourceMap[shared.KueueSyncSource]; ok {
+				gotCalls[xid] = append(gotCalls[xid], pending.WorkUnitExecutionUpdate)
 			}
 		}
 	}

@@ -32,7 +32,7 @@ func TestConstructJobSet_MetricsEnabled(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	client.RuntimeConfig.MetricsEnabled = true
 
-	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestConstructJobSet_CustomEnvVars(t *testing.T) {
 	})
 	namespace := "test-namespace"
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestConstructJobSet_ContainerDefaults(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestConstructJobSet_ArgsAndArgsList(t *testing.T) {
 		spec.ArgsList = []string{"positional_arg", "bare_key=val", "--gnu_flag=val"}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestConstructJobSet_SecurityContext(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestConstructJobSet_PrivilegedSecurityContext(t *testing.T) {
 			workUnit := proto.Clone(baseCPUWorkUnit).(*esspb.WorkUnit)
 			workUnit.GetExecutable().GetJobset().GetJobs()[0].GetSpec().Privileged = tt.specPrivileged
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}
@@ -376,7 +376,7 @@ func TestConstructJobSet_WithSidecars(t *testing.T) {
 		},
 	}
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestConstructJobSet_WithInitContainers(t *testing.T) {
 		},
 	}
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -474,7 +474,7 @@ func TestBuildContainerPorts_ExplicitAndDefault(t *testing.T) {
 		},
 	}
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -620,7 +620,7 @@ func TestConstructJobSet_NativeSidecarInitContainers(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}

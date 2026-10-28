@@ -31,7 +31,7 @@ func TestConstructJobSet_PodFailurePolicy(t *testing.T) {
 	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 	workUnit := baseCPUWorkUnit
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestConstructJobSet_PodFailurePolicy_Disabled(t *testing.T) {
 		wu.Executable.GetJobset().Jobs[0].DisablePodFailurePolicy = proto.Bool(true)
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestConstructJobSet_OnFailureRestartPolicy(t *testing.T) {
 				wu.Executable.GetJobset().Jobs[0].RetryLimit = tt.retryLimit
 			})
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}
@@ -180,7 +180,7 @@ func TestConstructJobSet_RestartPolicy(t *testing.T) {
 				wu.Executable.GetJobset().Jobs[0].RestartPolicy = tt.val
 			})
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}
@@ -225,7 +225,7 @@ func TestConstructJobSet_DependencyOrder(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2, job3, job4}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestConstructJobSet_DependencyOrder_PathwaysHeadAndWorker(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{head, worker}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestConstructJobSet_GPU_MultiReplica_WithCoordinator(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestConstructJobSet_DefaultNetworkMultiJob(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{job1, job2}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestConstructJobSet_SingleJobNoNetwork(t *testing.T) {
 		wu.Name = "workUnitSingle"
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -407,7 +407,7 @@ func TestConstructJobSet_ExplicitNetworkOverride(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestConstructJobSet_MultiReplicaNetwork(t *testing.T) {
 		wu.Executable.GetJobset().Jobs[0].Replicas = 2
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestConstructJobSet_SuccessPolicy(t *testing.T) {
 	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
 		wu.Executable.GetJobset().Jobs[0].Name = constants.PathwaysHeadJobName
 	})
-	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, "experiments/1/workUnits/1/executions/1", "user", "test-queue", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() unexpected error: %v", err)
 	}
@@ -559,7 +559,7 @@ func TestConstructJobSet_WithCoordinator(t *testing.T) {
 		wu.Executable.GetJobset().Jobs = []*esspb.KubernetesJob{headJob, workerJob}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestHostNetworkAndDNSPolicy(t *testing.T) {
 				job.DnsPolicy = tt.specDNSPolicy
 			}
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}

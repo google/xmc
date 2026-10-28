@@ -23,7 +23,6 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
-	"google.golang.org/api/impersonate"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -304,8 +303,9 @@ func initArtifactLifecycleRegistry(ctx context.Context, cfg *config.Config) *art
 	if cfg == nil || !cfg.FeatureFlags.ArtifactLifecycleEnabled {
 		return artifactlifecycle.NewRegistry()
 	}
-	mlClient := initMLRunClient(ctx, cfg)
-	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, cfg.MLRunProject, cfg.MLRunLocation)
+	mlRunCfg := resolveMLRunClientConfig(cfg)
+	mlClient := initMLRunClient(ctx, mlRunCfg)
+	managedXprofRule := artifactlifecycle.NewManagedXprofRule(mlClient, mlRunCfg.Project, mlRunCfg.Location)
 	return artifactlifecycle.NewRegistry(managedXprofRule)
 }
 
@@ -348,34 +348,33 @@ func startArtifactLifecycleConsumer(ctx context.Context, cfg *config.Config, sto
 	}, worker)
 }
 
-func initMLRunClient(ctx context.Context, cfg *config.Config) artifactlifecycle.MLRunClient {
-	project := cfg.MLRunProject
-	if project == "" {
-		project = cfg.ProjectID
+// resolveMLRunClientConfig applies the MLRun project, environment, and location
+// defaults once, so the MLRun client and the console URLs built by the lifecycle
+// rules target the same project and location.
+func resolveMLRunClientConfig(cfg *config.Config) hypercomputeclient.Config {
+	resolved := hypercomputeclient.Config{
+		Project:                   cfg.MLRunProject,
+		Environment:               cfg.MLDiagnosticsEnvironment,
+		Location:                  cfg.MLRunLocation,
+		ImpersonateServiceAccount: cfg.MLRunImpersonateSA,
 	}
-	env := cfg.MLDiagnosticsEnvironment
-	if env == "" {
-		env = "prod"
+	if resolved.Project == "" {
+		resolved.Project = cfg.ProjectID
 	}
-	location := cfg.MLRunLocation
-	if location == "" {
-		location = "us-central1"
+	if resolved.Environment == "" {
+		resolved.Environment = "prod"
 	}
+	if resolved.Location == "" {
+		resolved.Location = hypercomputeclient.DefaultLocation
+	}
+	return resolved
+}
 
-	var opts []hypercomputeclient.Option
-	if cfg.MLRunImpersonateSA != "" {
-		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-			TargetPrincipal: cfg.MLRunImpersonateSA,
-			Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
-		})
-		if err != nil {
-			logging.Error(ctx, "Failed to create impersonated token source for ESS MLRun client", "targetSA", cfg.MLRunImpersonateSA, "error", err)
-			return nil
-		}
-		opts = append(opts, hypercomputeclient.WithTokenSource(ts))
-	}
-
-	client, err := hypercomputeclient.NewControlPlaneClient(ctx, project, env, location, opts...)
+// initMLRunClient builds the MLRun control plane client. It returns a nil
+// MLRunClient interface (never a typed-nil *ControlPlaneClient) on failure, so the
+// rule's nil-client guard holds.
+func initMLRunClient(ctx context.Context, cfg hypercomputeclient.Config) artifactlifecycle.MLRunClient {
+	client, err := hypercomputeclient.NewControlPlaneClientFromConfig(ctx, cfg)
 	if err != nil {
 		logging.Warn(ctx, "Failed to initialize ESS MLRun control plane client", "error", err)
 		return nil

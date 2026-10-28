@@ -102,7 +102,7 @@ func createTestJobSet(ctx context.Context, t *testing.T, client *Client, namespa
 			},
 		},
 	}
-	jobSet, err := client.constructJobSet(ctx, workUnit, target, "test-author", namespace, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, target, "test-author", namespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}

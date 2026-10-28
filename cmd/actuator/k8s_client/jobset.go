@@ -56,11 +56,11 @@ var (
 	}
 )
 
-func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen ...string) error {
+func (c *Client) createJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen string) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)
 	namespace := getNamespaceFromWorkUnit(workUnit)
 
-	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities, notifyWhen...)
+	jobSet, err := c.constructJobSet(ctx, workUnit, target, author, namespace, operationTime, priorities, notifyWhen)
 	if err != nil {
 		logging.Warn(ctx, "Failed to construct JobSet manifest", "error", err)
 		return fmt.Errorf("failed to construct JobSet manifest: %w", err)
@@ -184,7 +184,7 @@ func (c *Client) waitForJobSetDeletion(ctx context.Context, namespace, jobSetNam
 	return nil
 }
 
-func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen ...string) error {
+func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target, author string, operationTime time.Time, priorities Priorities, notifyWhen string) error {
 	ctx = logging.WithWorkUnitExecutionName(ctx, target)
 
 	logging.Info(ctx, "Restart JobSet", "target", target)
@@ -208,7 +208,7 @@ func (c *Client) restartJobSet(ctx context.Context, workUnit *esspb.WorkUnit, ta
 	newTarget := workUnit.GetCurrentWorkUnitExecution().GetName()
 	ensureQueueName(workUnit, namespace)
 
-	if err := c.createJobSet(ctx, workUnit, newTarget, author, operationTime, priorities, notifyWhen...); err != nil {
+	if err := c.createJobSet(ctx, workUnit, newTarget, author, operationTime, priorities, notifyWhen); err != nil {
 		return fmt.Errorf("failed to create JobSet %q in Kubernetes during restart: %w", buildJobSetName(target), err)
 	}
 	logging.Info(ctx, "Restarted JobSet", "target", target)
@@ -279,7 +279,7 @@ func (c *Client) updateJobSetNotifyWhen(ctx context.Context, workUnit *esspb.Wor
 
 	namespace, err := c.getNamespaceFromWorkUnitWithFallback(ctx, workUnit, target)
 	if err != nil {
-		return err
+		return asNotifyWhenRetryable(err)
 	}
 
 	patchPayload := map[string]any{
@@ -296,10 +296,34 @@ func (c *Client) updateJobSetNotifyWhen(ctx context.Context, workUnit *esspb.Wor
 
 	if _, err := c.dynamicClient.Resource(JobSetGVR).Namespace(namespace).Patch(ctx, jobSetName, types.MergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
 		logging.Warn(ctx, "Failed to patch JobSet notify-when annotation", "namespace", namespace, "error", err)
-		return err
+		return asNotifyWhenRetryable(err)
 	}
 	logging.Info(ctx, "Updated JobSet notify-when annotation", "namespace", namespace, "notifyWhen", notifyWhen)
 	return nil
+}
+
+// jobSetNotYetVisibleError marks a JobSet NotFound during a notify-when update as transient.
+// The update can race the JobSet creation, so only this path retries NotFound; the task
+// handler retries any error whose Temporary method reports true.
+type jobSetNotYetVisibleError struct {
+	err error
+}
+
+func (e *jobSetNotYetVisibleError) Error() string {
+	return fmt.Sprintf("jobset not yet visible for notify-when update: %v", e.err)
+}
+
+func (e *jobSetNotYetVisibleError) Unwrap() error { return e.err }
+
+// Temporary reports that the notify-when update should be retried.
+func (e *jobSetNotYetVisibleError) Temporary() bool { return true }
+
+// asNotifyWhenRetryable wraps a JobSet NotFound error as retryable and returns other errors unchanged.
+func asNotifyWhenRetryable(err error) error {
+	if !apierrors.IsNotFound(err) {
+		return err
+	}
+	return &jobSetNotYetVisibleError{err: err}
 }
 
 func marshalPriorityPatchPayload(jobSetName, priorityClassName string) ([]byte, error) {

@@ -221,12 +221,14 @@ cluster reality into persisted work unit execution state.
 | ClusterQueue reconciler | [`clusterqueue`](../../cmd/reconciler/clusterqueue) | Maintains an in-memory cache of `ClusterQueue` names for the Kueue sync worker. |
 | Kueue sync worker | [`kueue_sync`](../../cmd/reconciler/kueue_sync) | Periodically polls Kueue's pending-workloads endpoint per cluster queue to surface queue position for jobs that have not been admitted. |
 | Batcher | [`shared`](../../cmd/reconciler/shared) | Coalesces updates from all sources, keyed `xid → wid → source`, and flushes them to Spanner on a tick. |
+| Lifecycle notifier | [`shared`](../../cmd/reconciler/shared) | When `XMC_ARTIFACT_LIFECYCLE_ENABLED` is enabled, publishes an `ArtifactLifecycleEvent` to `xmc-artifact-lifecycle-stream` after a flushed execution state transition matches the JobSet's notify-when annotation (format owned by [`internal/kubernetes/common/notifywhen`](../../internal/kubernetes/common/notifywhen)). |
 
 The batcher exists because a single scheduling event can produce updates from three sources at
 once; writing each one straight through would multiply Spanner write load and cause lost-update
 races between sources. See [Reconciliation Flows](../flows/reconciliation.md).
 
-**Depends on:** Kubernetes API (JobSet, Kueue `Workload` and `ClusterQueue`, Pods), Cloud Spanner.
+**Depends on:** Kubernetes API (JobSet, Kueue `Workload` and `ClusterQueue`, Pods), Cloud Spanner,
+Redis (when `XMC_ARTIFACT_LIFECYCLE_ENABLED`).
 
 ---
 

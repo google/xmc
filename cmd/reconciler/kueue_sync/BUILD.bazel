@@ -49,6 +49,7 @@ go_test(
         "//cmd/reconciler/shared",
         "//internal/kubernetes/common/constants",
         "//internal/storage",
+        "//internal/workunit",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",

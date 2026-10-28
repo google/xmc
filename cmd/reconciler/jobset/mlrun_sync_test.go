@@ -194,8 +194,8 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			if mock.lastOpts.WorkloadDetails.Cluster != wantCluster {
 				t.Errorf("WorkloadDetails.Cluster = %q, want %q", mock.lastOpts.WorkloadDetails.Cluster, wantCluster)
 			}
-			if !maps.Equal(buildMLRunLabels(10, 20), mock.lastOpts.Labels) {
-				t.Errorf("Labels = %v, want %v", mock.lastOpts.Labels, buildMLRunLabels(10, 20))
+			if !maps.Equal(hypercomputeclient.BuildMLRunLabels(10, 20), mock.lastOpts.Labels) {
+				t.Errorf("Labels = %v, want %v", mock.lastOpts.Labels, hypercomputeclient.BuildMLRunLabels(10, 20))
 			}
 			var wantCreateTime string
 			if tc.jobSet != nil {
@@ -211,7 +211,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				if mock.lastUpdateID != tc.wantID {
 					t.Errorf("lastUpdateID = %q, want %q", mock.lastUpdateID, tc.wantID)
 				}
-				wantUpdateLabels := map[string]string{listExistingSessionsOnlyLabel: "true"}
+				wantUpdateLabels := map[string]string{hypercomputeclient.ListExistingSessionsOnlyLabel: "true"}
 				if !maps.Equal(wantUpdateLabels, mock.lastUpdateOpts.Labels) {
 					t.Errorf("update Labels = %v, want %v", mock.lastUpdateOpts.Labels, wantUpdateLabels)
 				}
@@ -291,8 +291,8 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			name: "already exists, owned and has scan label is idempotent success",
 			client: &mockMLRunCreator{getRes: map[string]any{
 				"labels": map[string]any{
-					"created_by":                  createdByXManagerLabelValue,
-					listExistingSessionsOnlyLabel: "true",
+					"created_by": hypercomputeclient.CreatedByXManagerLabelValue,
+					hypercomputeclient.ListExistingSessionsOnlyLabel: "true",
 				},
 			}},
 			wantURLContains: "console.cloud.google.com",
@@ -303,7 +303,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 			name: "already exists, owned but missing scan label triggers update",
 			client: &mockMLRunCreator{
 				getRes: map[string]any{
-					"labels": map[string]any{"created_by": createdByXManagerLabelValue},
+					"labels": map[string]any{"created_by": hypercomputeclient.CreatedByXManagerLabelValue},
 				},
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
@@ -332,7 +332,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
-			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", hypercomputeclient.BuildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
 				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
 			}

@@ -19,9 +19,9 @@ metadata:
   labels:
     app: reconciler
 data:
+  redis_addr: {{ .Values.redisAddr | quote }}
   # Deprecated: retained for one-release rollout compatibility; reconciler reads db-config.
   # TODO: Remove spanner_database_name once all deployments run db-config images.
-  redis_addr: {{ .Values.redisAddr | quote }}
   spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   quota_project_id: {{ .Values.projectId | quote }}
   batcher_tick_duration: "250ms"
@@ -32,6 +32,15 @@ data:
   kube_api_burst: "200"
   metrics_port: {{ .Values.reconciler | default dict | dig "monitoring" "port" 8082 | quote }}
   reconciliation_timeout: "2m"
+  {{- $mlRun := .Values.mlRun | default dict }}
+  mldiagnostics_environment: {{ $mlRun.environment | default "prod" | quote }}
+  {{- with $mlRun.project }}
+  mlrun_project: {{ . | quote }}
+  {{- end }}
+  {{- with $mlRun.location }}
+  mlrun_location: {{ . | quote }}
+  {{- end }}
+  mlrun_impersonate_sa: {{ $mlRun.impersonateServiceAccount | default "" | quote }}
   {{- if .Values.isDevEnvironment }}
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}

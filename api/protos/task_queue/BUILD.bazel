@@ -21,7 +21,10 @@ package(default_visibility = ["//visibility:public"])
 
 proto_library(
     name = "task_proto",
-    srcs = ["task.proto"],
+    srcs = [
+        "artifact_lifecycle_event.proto",
+        "task.proto",
+    ],
     deps = [
         "//api/protos/experiment:experiment_messages_proto",
         "@com_google_googleapis//google/api:annotations_proto",

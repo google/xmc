@@ -47,6 +47,7 @@ go_library(
         "//internal/common/interfaces",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
+        "//internal/task_queue/updatemask",
         "//internal/task_queue_redis/redisclient",
         "@com_github_google_uuid//:uuid",
         "@com_github_tink_crypto_tink_go_v2//jwt",

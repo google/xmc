@@ -17,7 +17,9 @@ package artifactlifecycle_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
@@ -26,6 +28,14 @@ import (
 	"xmanager_cloud/internal/storage"
 )
 
+const (
+	testProject  = "test-proj"
+	testLocation = "us-central1"
+	artifactName = "experiments/10/workUnits/20/artifacts/30"
+)
+
+// fakeMLRunClient returns MLRun resources without a "url" field, so the rule falls
+// back to the deterministic console URL.
 type fakeMLRunClient struct {
 	createdRuns map[string]string
 	updatedRuns map[string]string
@@ -40,254 +50,238 @@ func newFakeMLRunClient() *fakeMLRunClient {
 
 func (f *fakeMLRunClient) CreateMLRun(_ context.Context, name, _, runPhase string, _ *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
 	f.createdRuns[name] = runPhase
-	return map[string]any{
-		"metadata": map[string]any{
-			"url": "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/" + name,
-		},
-	}, nil
+	return map[string]any{"name": name}, nil
 }
 
 func (f *fakeMLRunClient) GetMLRun(_ context.Context, name string) (map[string]any, error) {
-	return map[string]any{
-		"displayName": name,
-		"labels": map[string]any{
-			"created_by": "xmanager",
-		},
-	}, nil
+	return map[string]any{"name": name, "labels": map[string]any{"created_by": "xmanager"}}, nil
 }
 
 func (f *fakeMLRunClient) UpdateMLRun(_ context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error) {
 	if opts.RunPhase != "" {
 		f.updatedRuns[name] = opts.RunPhase
 	}
-	return map[string]any{
-		"metadata": map[string]any{
-			"url": "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/" + name,
-		},
-	}, nil
+	return map[string]any{"name": name}, nil
 }
 
-func TestManagedXprofRule(t *testing.T) {
-	ctx := context.Background()
+func managedXprofArtifact(xprofURL string) *essmsgpb.Artifact {
+	mx := &essmsgpb.ManagedXprofArtifact{}
+	if xprofURL != "" {
+		mx.Xprof = &essmsgpb.XProfUIInstance{XprofUrl: xprofURL}
+	}
+	return &essmsgpb.Artifact{
+		Name:    artifactName,
+		Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: mx}},
+	}
+}
 
-	t.Run("Matches", func(t *testing.T) {
-		rule := artifactlifecycle.NewManagedXprofRule(nil, "proj", "us-central1")
-		if !rule.Matches(&essmsgpb.Artifact{
-			Payload: &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: &essmsgpb.ManagedXprofArtifact{}},
-			},
-		}) {
-			t.Errorf("Matches() = false for ManagedXprof artifact")
-		}
-		if rule.Matches(&essmsgpb.Artifact{
-			Payload: &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_Text{Text: &essmsgpb.TextArtifact{}},
-			},
-		}) {
-			t.Errorf("Matches() = true for Text artifact")
-		}
-	})
-
-	t.Run("Active state creates MLRun and persists URL on matching EID", func(t *testing.T) {
-		mlClient := newFakeMLRunClient()
-		rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
-
-		mockStore := &storage.MockStorage{
-			WorkUnit: &essmsgpb.WorkUnit{
-				Name: "experiments/10/workUnits/20",
-				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-					Name: "experiments/10/workUnits/20/executions/1",
-				},
-			},
-			Artifact: &essmsgpb.Artifact{
-				Name: "experiments/10/workUnits/20/artifacts/30",
-				Payload: &essmsgpb.ArtifactPayload{
-					Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-							DisplayName: "persisted-display-name",
-							RunGroup:    "persisted-run-group",
-						},
-					},
-				},
-			},
-		}
-
-		event := &taskqueuepb.ArtifactLifecycleEvent{
-			ExperimentId:        proto.Int64(10),
-			WorkUnitId:          proto.Int64(20),
-			WorkUnitExecutionId: proto.Int64(1),
-			NewState:            essmsgpb.WorkUnitStatus_RUNNING.Enum(),
-			Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
-				JobSetRuntimeContext: &taskqueuepb.JobSetRuntimeContext{
-					Cluster:    proto.String("cluster-1"),
-					Namespace:  proto.String("default"),
-					JobSetName: proto.String("xmc-wu-20-1"),
-				},
-			},
-		}
-
-		art := &essmsgpb.Artifact{
-			Name: "experiments/10/workUnits/20/artifacts/30",
-			Payload: &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-				},
-			},
-		}
-
-		err := rule.OnExecutionStateChanged(ctx, mockStore, event, art)
-		if err != nil {
-			t.Fatalf("OnExecutionStateChanged failed: %v", err)
-		}
-
-		if len(mlClient.createdRuns) != 1 {
-			t.Errorf("createdRuns count = %d, want 1", len(mlClient.createdRuns))
-		}
-
-		if mockStore.LastArtifactUpdate == nil {
-			t.Fatal("expected LastArtifactUpdate to be set")
-		}
-		paths := mockStore.LastArtifactUpdate.UpdateMask.GetPaths()
-		if len(paths) != 2 || paths[0] != "url" || paths[1] != "payload" {
-			t.Errorf("expected UpdateMask [url, payload], got %v", paths)
-		}
-		if got := mockStore.LastArtifactUpdate.Artifact.GetPayload().GetManagedXprof().GetDisplayName(); got != "persisted-display-name" {
-			t.Errorf("expected preserved DisplayName 'persisted-display-name', got %q", got)
-		}
-		if got := mockStore.LastArtifactUpdate.Artifact.GetPayload().GetManagedXprof().GetRunGroup(); got != "persisted-run-group" {
-			t.Errorf("expected preserved RunGroup 'persisted-run-group', got %q", got)
-		}
-	})
-
-	t.Run("Active state skips persisting URL when execution is superseded", func(t *testing.T) {
-		mlClient := newFakeMLRunClient()
-		rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
-
-		mockStore := &storage.MockStorage{
-			WorkUnit: &essmsgpb.WorkUnit{
-				Name: "experiments/10/workUnits/20",
-				CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-					Name: "experiments/10/workUnits/20/executions/2", // Already advanced to 2
-				},
-			},
-			Artifact: &essmsgpb.Artifact{
-				Name: "experiments/10/workUnits/20/artifacts/30",
-				Payload: &essmsgpb.ArtifactPayload{
-					Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-					},
-				},
-			},
-		}
-
-		event := &taskqueuepb.ArtifactLifecycleEvent{
-			ExperimentId:        proto.Int64(10),
-			WorkUnitId:          proto.Int64(20),
-			WorkUnitExecutionId: proto.Int64(1), // Delayed event from old EID 1
-			NewState:            essmsgpb.WorkUnitStatus_RUNNING.Enum(),
-		}
-
-		art := &essmsgpb.Artifact{
-			Name: "experiments/10/workUnits/20/artifacts/30",
-			Payload: &essmsgpb.ArtifactPayload{
-				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-				},
-			},
-		}
-
-		err := rule.OnExecutionStateChanged(ctx, mockStore, event, art)
-		if err != nil {
-			t.Fatalf("OnExecutionStateChanged failed: %v", err)
-		}
-
-		// UpdateArtifact should NOT have been called because curEID (2) != eventEID (1)
-		if mockStore.UpdateArtifactResp != nil {
-			t.Errorf("UpdateArtifact was called unexpectedly for superseded execution")
-		}
-	})
-
-	t.Run("Terminal state transitions MLRun to COMPLETED for COMPLETED and STOPPED", func(t *testing.T) {
-		for _, termState := range []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_COMPLETED, essmsgpb.WorkUnitStatus_STOPPED} {
-			mlClient := newFakeMLRunClient()
-			rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
-
-			mockStore := &storage.MockStorage{
-				WorkUnit: &essmsgpb.WorkUnit{
-					Name: "experiments/10/workUnits/20",
-					CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-						Name: "experiments/10/workUnits/20/executions/1",
-					},
-				},
-				Artifact: &essmsgpb.Artifact{
-					Name: "experiments/10/workUnits/20/artifacts/30",
-					Payload: &essmsgpb.ArtifactPayload{
-						Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-							ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-						},
-					},
-				},
-			}
-
-			event := &taskqueuepb.ArtifactLifecycleEvent{
-				ExperimentId:        proto.Int64(10),
-				WorkUnitId:          proto.Int64(20),
-				WorkUnitExecutionId: proto.Int64(1),
-				NewState:            termState.Enum(),
-			}
-
-			art := &essmsgpb.Artifact{
-				Name: "experiments/10/workUnits/20/artifacts/30",
-				Payload: &essmsgpb.ArtifactPayload{
-					Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-						ManagedXprof: &essmsgpb.ManagedXprofArtifact{},
-					},
-				},
-			}
-
-			err := rule.OnExecutionStateChanged(ctx, mockStore, event, art)
-			if err != nil {
-				t.Fatalf("OnExecutionStateChanged failed for %v: %v", termState, err)
-			}
-
-			foundCompleted := false
-			for _, phase := range mlClient.updatedRuns {
-				if phase == "COMPLETED" {
-					foundCompleted = true
-					break
-				}
-			}
-			if !foundCompleted {
-				t.Errorf("updatedRuns missing COMPLETED phase for state %v: %v", termState, mlClient.updatedRuns)
-			}
-		}
-	})
-
-	t.Run("OnExecutionSuperseded finalizes old EID MLRun using artifact URL", func(t *testing.T) {
-		mlClient := newFakeMLRunClient()
-		rule := artifactlifecycle.NewManagedXprofRule(mlClient, "test-proj", "us-central1")
-
-		mockStore := &storage.MockStorage{}
-		art := &essmsgpb.Artifact{
-			Name: "experiments/10/workUnits/20/artifacts/30",
+func storeWithCurrentEID(eid string) *storage.MockStorage {
+	return &storage.MockStorage{
+		WorkUnit: &essmsgpb.WorkUnit{
+			Name:                     "experiments/10/workUnits/20",
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: "experiments/10/workUnits/20/executions/" + eid},
+		},
+		Artifact: &essmsgpb.Artifact{
+			Name: artifactName,
 			Payload: &essmsgpb.ArtifactPayload{
 				Type: &essmsgpb.ArtifactPayload_ManagedXprof{
 					ManagedXprof: &essmsgpb.ManagedXprofArtifact{
-						Xprof: &essmsgpb.XProfUIInstance{
-							XprofUrl: "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/real-active-mlrun-999?project=test-proj&tab=profiles",
-						},
+						DisplayName: "persisted-display-name",
+						RunGroup:    "persisted-run-group",
 					},
 				},
 			},
-		}
+		},
+	}
+}
 
-		err := rule.OnExecutionSuperseded(ctx, mockStore, 10, 20, 1, art)
-		if err != nil {
-			t.Fatalf("OnExecutionSuperseded failed: %v", err)
-		}
+func runtimeContext() *taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext {
+	return &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{
+		JobSetRuntimeContext: &taskqueuepb.JobSetRuntimeContext{
+			Cluster:    proto.String("cluster-1"),
+			Namespace:  proto.String("default"),
+			JobSetName: proto.String("xmc-wu-20-1"),
+		},
+	}
+}
 
-		if gotPhase, ok := mlClient.updatedRuns["real-active-mlrun-999"]; !ok || gotPhase != "COMPLETED" {
-			t.Errorf("expected real-active-mlrun-999 to be updated to COMPLETED, got map: %v", mlClient.updatedRuns)
+func lifecycleEvent(state essmsgpb.WorkUnitStatus_WorkUnitState, withRuntime bool) *taskqueuepb.ArtifactLifecycleEvent {
+	event := &taskqueuepb.ArtifactLifecycleEvent{
+		ExperimentId:        proto.Int64(10),
+		WorkUnitId:          proto.Int64(20),
+		WorkUnitExecutionId: proto.Int64(1),
+		NewState:            state.Enum(),
+	}
+	if withRuntime {
+		event.Payload = runtimeContext()
+	}
+	return event
+}
+
+// expectedMLRunID is the id the reconciler derives for runtimeContext().
+var expectedMLRunID = hypercomputeclient.ConstructMLRunID("cluster-1", "default", "JobSet", "xmc-wu-20-1", time.Time{})
+
+func TestManagedXprofRule_Matches(t *testing.T) {
+	rule := artifactlifecycle.NewManagedXprofRule(nil, testProject, testLocation)
+	if !rule.Matches(managedXprofArtifact("")) {
+		t.Errorf("Matches() = false for ManagedXprof artifact")
+	}
+	text := &essmsgpb.Artifact{Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Text{Text: &essmsgpb.TextArtifact{}}}}
+	if rule.Matches(text) {
+		t.Errorf("Matches() = true for Text artifact")
+	}
+}
+
+func TestManagedXprofRule_ActiveState(t *testing.T) {
+	wantURL := hypercomputeclient.ConsoleURL(testLocation, expectedMLRunID, testProject)
+	tests := []struct {
+		name        string
+		currentEID  string
+		withRuntime bool
+		wantCreated map[string]string
+		wantURL     string // "" means no artifact update expected.
+	}{
+		{
+			name:        "creates MLRun and persists console URL on matching EID",
+			currentEID:  "1",
+			withRuntime: true,
+			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantURL:     wantURL,
+		},
+		{
+			name:        "skips persisting URL when execution is superseded",
+			currentEID:  "2",
+			withRuntime: true,
+			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+		},
+		{
+			name:        "skips MLRun creation without runtime context",
+			currentEID:  "1",
+			withRuntime: false,
+			wantCreated: map[string]string{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mlClient := newFakeMLRunClient()
+			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+			store := storeWithCurrentEID(tc.currentEID)
+
+			if err := rule.OnExecutionStateChanged(context.Background(), store, lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, tc.withRuntime), managedXprofArtifact("")); err != nil {
+				t.Fatalf("OnExecutionStateChanged() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.wantCreated, mlClient.createdRuns); diff != "" {
+				t.Errorf("created runs mismatch (-want +got):\n%s", diff)
+			}
+			assertArtifactUpdate(t, store, tc.wantURL)
+		})
+	}
+}
+
+func assertArtifactUpdate(t *testing.T, store *storage.MockStorage, wantURL string) {
+	t.Helper()
+	update := store.LastArtifactUpdate
+	if wantURL == "" {
+		if update != nil {
+			t.Errorf("unexpected artifact update: %v", update)
 		}
-	})
+		return
+	}
+	if update == nil {
+		t.Fatal("expected an artifact update, got none")
+	}
+	if diff := cmp.Diff([]string{"url", "payload"}, update.UpdateMask.GetPaths()); diff != "" {
+		t.Errorf("update mask mismatch (-want +got):\n%s", diff)
+	}
+	mx := update.Artifact.GetPayload().GetManagedXprof()
+	if got := mx.GetXprof().GetXprofUrl(); got != wantURL {
+		t.Errorf("xprof_url = %q, want %q", got, wantURL)
+	}
+	if got := update.Artifact.GetUrl().GetUrl(); got != wantURL {
+		t.Errorf("url = %q, want %q", got, wantURL)
+	}
+	if mx.GetDisplayName() != "persisted-display-name" || mx.GetRunGroup() != "persisted-run-group" {
+		t.Errorf("display name/run group not preserved: %v", mx)
+	}
+}
+
+func TestManagedXprofRule_TerminalState(t *testing.T) {
+	storedURL := hypercomputeclient.ConsoleURL(testLocation, "stored-run-1", testProject)
+	tests := []struct {
+		name        string
+		state       essmsgpb.WorkUnitStatus_WorkUnitState
+		withRuntime bool
+		storedURL   string
+		wantUpdated map[string]string
+	}{
+		{
+			name: "COMPLETED finalizes derived MLRun", state: essmsgpb.WorkUnitStatus_COMPLETED, withRuntime: true,
+			wantUpdated: map[string]string{expectedMLRunID: "COMPLETED"},
+		},
+		{
+			name: "STOPPED finalizes derived MLRun as COMPLETED", state: essmsgpb.WorkUnitStatus_STOPPED, withRuntime: true,
+			wantUpdated: map[string]string{expectedMLRunID: "COMPLETED"},
+		},
+		{
+			name: "FAILED finalizes derived MLRun as FAILED", state: essmsgpb.WorkUnitStatus_FAILED, withRuntime: true,
+			wantUpdated: map[string]string{expectedMLRunID: "FAILED"},
+		},
+		{
+			name: "no runtime context finalizes stored MLRun", state: essmsgpb.WorkUnitStatus_COMPLETED, storedURL: storedURL,
+			wantUpdated: map[string]string{"stored-run-1": "COMPLETED"},
+		},
+		{
+			name: "no runtime context and no stored URL skips", state: essmsgpb.WorkUnitStatus_COMPLETED,
+			wantUpdated: map[string]string{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mlClient := newFakeMLRunClient()
+			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+
+			if err := rule.OnExecutionStateChanged(context.Background(), storeWithCurrentEID("1"), lifecycleEvent(tc.state, tc.withRuntime), managedXprofArtifact(tc.storedURL)); err != nil {
+				t.Fatalf("OnExecutionStateChanged() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.wantUpdated, mlClient.updatedRuns); diff != "" {
+				t.Errorf("updated runs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestManagedXprofRule_OnExecutionSuperseded(t *testing.T) {
+	tests := []struct {
+		name        string
+		storedURL   string
+		wantUpdated map[string]string
+	}{
+		{
+			name:        "finalizes MLRun from stored console URL",
+			storedURL:   hypercomputeclient.ConsoleURL(testLocation, "real-active-mlrun-999", testProject),
+			wantUpdated: map[string]string{"real-active-mlrun-999": "COMPLETED"},
+		},
+		{
+			name:        "finalizes MLRun from stored runs-segment URL",
+			storedURL:   "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/legacy-run-1?project=test-proj",
+			wantUpdated: map[string]string{"legacy-run-1": "COMPLETED"},
+		},
+		{
+			name:        "skips artifact without stored MLRun URL",
+			wantUpdated: map[string]string{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mlClient := newFakeMLRunClient()
+			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+
+			if err := rule.OnExecutionSuperseded(context.Background(), &storage.MockStorage{}, 10, 20, 1, managedXprofArtifact(tc.storedURL)); err != nil {
+				t.Fatalf("OnExecutionSuperseded() error = %v", err)
+			}
+			if diff := cmp.Diff(tc.wantUpdated, mlClient.updatedRuns); diff != "" {
+				t.Errorf("updated runs mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

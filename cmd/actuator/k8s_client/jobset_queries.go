@@ -20,7 +20,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	esspb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 )
@@ -44,7 +43,7 @@ func (c *Client) getNamespaceFromTarget(ctx context.Context, target string) (str
 
 	if len(jobSets.Items) == 0 {
 		logging.Warn(ctx, "No JobSet found for target")
-		return "", apierrors.NewNotFound(schema.GroupResource{Group: "jobset.x-k8s.io", Resource: "jobsets"}, jobSetName)
+		return "", apierrors.NewNotFound(JobSetGVR.GroupResource(), jobSetName)
 	}
 
 	if len(jobSets.Items) > 1 {

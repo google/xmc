@@ -123,7 +123,7 @@ func TestConstructJobSet_ComponentSnapshot_Success(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"metrics-collector": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestConstructJobSet_ComponentSnapshot_DisabledComponent(t *testing.T) {
 			client.SetManagerClient(createFakeManagerClient(compCR))
 
 			workUnit := createWorkUnitWithSnapshots(targetNS, `{"disabled-comp": 1}`)
-			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 			if err == nil || !apierrors.IsServiceUnavailable(err) || !strings.Contains(err.Error(), `required component "disabled-comp" is disabled`) {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -218,7 +218,7 @@ func TestConstructJobSet_ComponentSnapshot_UnhealthyComponent(t *testing.T) {
 			client.SetManagerClient(createFakeManagerClient(compCR))
 
 			workUnit := createWorkUnitWithSnapshots(targetNS, `{"unhealthy-comp": 1}`)
-			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 			if err == nil || !apierrors.IsServiceUnavailable(err) || !strings.Contains(err.Error(), tt.wantSub) {
 				t.Fatalf("unexpected error for %s: %v, want substring %q", tt.name, err, tt.wantSub)
 			}
@@ -239,7 +239,7 @@ func TestConstructJobSet_ComponentSnapshot_DriftWarning(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"drifted-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestConstructJobSet_ComponentSnapshot_MultipleDriftWarnings(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(comp1, comp2))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"comp-a": 1, "comp-b": 2}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestConstructJobSet_ComponentSnapshot_ZeroOrNegativeLockedGen(t *testing.T)
 	client.SetManagerClient(createFakeManagerClient(comp))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"unlocked-comp": 0}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestConstructJobSet_ComponentSnapshot_NotSyncedBlocksPlacement(t *testing.T
 			client.SetManagerClient(createFakeManagerClient(comp))
 
 			workUnit := createWorkUnitWithSnapshots(targetNS, `{"unsynced-comp": `+lockedGen+`}`)
-			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+			_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 			if err == nil || !apierrors.IsServiceUnavailable(err) || !strings.Contains(err.Error(), `required component "unsynced-comp" is not synced with CMS`) {
 				t.Fatalf("constructJobSet() error = %v, want ServiceUnavailable for an unsynced component", err)
 			}
@@ -321,7 +321,7 @@ func TestConstructJobSet_ComponentSnapshot_MalformedAnnotationJSON(t *testing.T)
 	targetNS := constants.XmcLabelValue
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `not-valid-json`)
-	_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err == nil || !strings.Contains(err.Error(), "failed to parse xmc.dev/component-snapshots annotation") {
 		t.Fatalf("expected malformed annotation error, got: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestConstructJobSet_ComponentSnapshot_ContextCanceled(t *testing.T) {
 	cancel()
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"metrics-collector": 1}`)
-	_, err := client.constructJobSet(canceledCtx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	_, err := client.constructJobSet(canceledCtx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestConstructJobSet_ComponentSnapshot_ClusterWideFallback(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"cluster-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestConstructJobSet_ComponentSnapshot_DynamicClientFallback(t *testing.T) {
 	}
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"dynamic-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed with dynamic client fallback: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestConstructJobSet_ComponentSnapshot_NormalWorkUnit(t *testing.T) {
 	targetNS := constants.XmcLabelValue
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, "")
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed for normal workunit: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestConstructJobSet_ComponentsDisabled_WithSnapshots_FailsFast(t *testing.T
 	targetNS := constants.XmcLabelValue
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"metrics-collector": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err == nil {
 		t.Fatalf("constructJobSet succeeded when EnableComponents=false, want non-retryable error")
 	}
@@ -645,7 +645,7 @@ func TestConstructJobSet_ComponentSnapshot_EnvVars_Injection(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"env-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}
@@ -731,7 +731,7 @@ func TestConstructJobSet_ComponentSnapshot_AccessExtraction_Error(t *testing.T) 
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"invalid-access-comp": 1}`)
-	_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	_, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err == nil || !strings.Contains(err.Error(), "failed to extract access configuration") {
 		t.Fatalf("expected access extraction error, got: %v", err)
 	}
@@ -750,7 +750,7 @@ func TestConstructJobSet_ComponentSnapshot_EmptyAccess(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"empty-access-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed with nil access: %v", err)
 	}
@@ -910,7 +910,7 @@ func TestConstructJobSet_ComponentSnapshot_SecretVolumeMounts(t *testing.T) {
 	client.SetManagerClient(createFakeManagerClient(compCR))
 
 	workUnit := createWorkUnitWithSnapshots(targetNS, `{"vol-comp": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
+	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet failed: %v", err)
 	}

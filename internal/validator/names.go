@@ -170,6 +170,21 @@ func ValidateArtifactName(name string) (int64, error) {
 	return ids[0], nil
 }
 
+// ParseArtifactIDFromName returns the AID of an artifact name in the canonical
+// "artifacts/{aid}" format or a parent-scoped "{parent}/artifacts/{aid}" format
+// (e.g. "experiments/{xid}/workUnits/{wid}/artifacts/{aid}").
+func ParseArtifactIDFromName(name string) (int64, error) {
+	aid, err := ValidateArtifactName(name)
+	if err == nil {
+		return aid, nil
+	}
+	idx := strings.LastIndex(name, "/artifacts/")
+	if idx == -1 {
+		return 0, err
+	}
+	return ValidateArtifactName(name[idx+1:])
+}
+
 // ValidateArtifactParent checks if a given artifact parent is valid.
 // It ensures that the parent is in the correct format and that the XID and WID are valid.
 // It returns the integer XID and WID if it is valid.

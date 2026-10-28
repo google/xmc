@@ -20,9 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	apipb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/featureflags"
+	"xmanager_cloud/internal/hypercomputeclient"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -174,4 +176,43 @@ func TestInitArtifactLifecycleRegistry(t *testing.T) {
 			t.Errorf("RequiredNotifyWhenAnnotation() with flag enabled = empty, want non-empty")
 		}
 	})
+}
+
+func TestResolveMLRunClientConfig(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want hypercomputeclient.Config
+	}{
+		{
+			name: "defaults applied from project id",
+			cfg:  &config.Config{ProjectID: "ess-proj"},
+			want: hypercomputeclient.Config{Project: "ess-proj", Environment: "prod", Location: "us-central1"},
+		},
+		{
+			name: "explicit MLRun settings win",
+			cfg: &config.Config{
+				ProjectID:                "ess-proj",
+				MLRunProject:             "mlrun-proj",
+				MLDiagnosticsEnvironment: "staging",
+				MLRunLocation:            "europe-west4",
+				MLRunImpersonateSA:       "sa@mlrun-proj.iam.gserviceaccount.com",
+			},
+			want: hypercomputeclient.Config{
+				Project:                   "mlrun-proj",
+				Environment:               "staging",
+				Location:                  "europe-west4",
+				ImpersonateServiceAccount: "sa@mlrun-proj.iam.gserviceaccount.com",
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if diff := cmp.Diff(tc.want, resolveMLRunClientConfig(tc.cfg)); diff != "" {
+				t.Errorf("resolveMLRunClientConfig() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
 }

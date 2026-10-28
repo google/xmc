@@ -173,23 +173,3 @@ func New(p Params) (*Server, error) {
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
 }
-
-// ArtifactLifecycle returns the registered artifact lifecycle registry.
-func (s *Server) ArtifactLifecycle() *artifactlifecycle.Registry {
-	if s == nil || s.WorkUnitHandler == nil {
-		return nil
-	}
-	return s.WorkUnitHandler.artifactLifecycle
-}
-
-// requiredNotifyWhen computes the required notify-when annotation value for the given work unit.
-func (h *baseHandler) requiredNotifyWhen(ctx context.Context, wuName string) string {
-	if h.artifactLifecycle == nil || h.storage == nil {
-		return ""
-	}
-	arts, _, err := h.storage.ListArtifacts(ctx, wuName, 100, "", "", "", 0)
-	if err != nil || len(arts) == 0 {
-		return ""
-	}
-	return h.artifactLifecycle.RequiredNotifyWhenAnnotation(arts)
-}

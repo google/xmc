@@ -37,6 +37,7 @@ import (
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	xidconfig "xmanager_cloud/cmd/xid_service/config"
 	xidserver "xmanager_cloud/cmd/xid_service/server"
@@ -129,6 +130,12 @@ func withXidClient(x xidmsgpb.XidServiceClient) testServerOpt {
 func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 	return func(p *Params) {
 		p.WorkUnitActuator = actuator
+	}
+}
+
+func withArtifactLifecycle(registry *artifactlifecycle.Registry) testServerOpt {
+	return func(p *Params) {
+		p.ArtifactLifecycle = registry
 	}
 }
 

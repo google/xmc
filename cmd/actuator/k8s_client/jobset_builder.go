@@ -211,7 +211,7 @@ func buildJobSetLabelsAndAnnotations(workUnit *esspb.WorkUnit, xid, wid, eid, au
 }
 
 // constructJobSet builds the complete JobSet manifest as a Go map suitable for the dynamic client.
-func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities, notifyWhen ...string) (*jobsetv1alpha2.JobSet, error) {
+func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, target string, author string, namespace string, operationTime time.Time, priorities Priorities, notifyWhen string) (*jobsetv1alpha2.JobSet, error) {
 	xidInt, widInt, eidInt, err := validator.ValidateWorkUnitExecutionName(target)
 	if err != nil {
 		return nil, err
@@ -220,11 +220,7 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	wid := strconv.FormatInt(widInt, 10)
 	eid := strconv.FormatInt(eidInt, 10)
 
-	var nw string
-	if len(notifyWhen) > 0 {
-		nw = notifyWhen[0]
-	}
-	meta := buildJobSetLabelsAndAnnotations(workUnit, xid, wid, eid, author, namespace, operationTime, priorities, nw)
+	meta := buildJobSetLabelsAndAnnotations(workUnit, xid, wid, eid, author, namespace, operationTime, priorities, notifyWhen)
 	xprofObjectPath := c.resolveManagedXprofObjectPath(ctx, xid, wid, operationTime)
 	replicatedJobs := c.buildReplicatedJobs(ctx, workUnit, meta.jobLabels, meta.defaultAnnotations, xprofObjectPath)
 	jobSet := buildBaseJobSet(workUnit, buildJobSetName(target), namespace, meta, replicatedJobs)

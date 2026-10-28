@@ -17,7 +17,6 @@ package jobset
 import (
 	"context"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
@@ -106,15 +105,15 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
-	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	mlRunID := hypercomputeclient.ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
 	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
-	labels := buildMLRunLabels(xid, wid)
+	labels := hypercomputeclient.BuildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)
 
 	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)
 	if _, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts); err != nil {
-		if isMLRunAlreadyExistsError(err) {
+		if hypercomputeclient.IsAlreadyExists(err) {
 			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
 		}
 		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
@@ -127,7 +126,7 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 // to preserve the ACTIVE phase (creating with it forces COMPLETED, blocking on-demand profiling).
 func (r *Reconciler) stampExistingSessionsOnlyLabel(ctx context.Context, mlRunID string) string {
 	res, err := r.MLRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
-		Labels: map[string]string{listExistingSessionsOnlyLabel: "true"},
+		Labels: map[string]string{hypercomputeclient.ListExistingSessionsOnlyLabel: "true"},
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to stamp list_existing_sessions_only on MLRun", "mlRunID", mlRunID, "error", err)
@@ -136,35 +135,19 @@ func (r *Reconciler) stampExistingSessionsOnlyLabel(ctx context.Context, mlRunID
 	return r.mlRunURL(res, mlRunID)
 }
 
-func resolveExistingMLRunID(createErr error, fallbackID string) string {
-	if id := parseExistingMLRunID(createErr.Error()); id != "" {
-		return id
-	}
-	return fallbackID
-}
-
-func withExistingSessionsOnlyLabel(labels map[string]string) map[string]string {
-	updateLabels := maps.Clone(labels)
-	if updateLabels == nil {
-		updateLabels = make(map[string]string, 1)
-	}
-	updateLabels[listExistingSessionsOnlyLabel] = "true"
-	return updateLabels
-}
-
 // upsertExistingMLRun handles an MLRun create conflict. It locates the existing run
 // (its id is carried in the conflict error, falling back to our deterministic id)
 // and, if the run is not one we own, updates it with our ManagedXprof fields so
 // enrichment is applied even to runs created by other producers. A run we already
 // own is returned as an idempotent success without an update.
 func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) string {
-	existingID := resolveExistingMLRunID(createErr, mlRunID)
+	existingID := hypercomputeclient.ResolveExistingMLRunID(createErr, mlRunID)
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		return r.mlRunURL(nil, existingID)
 	}
-	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
+	if hypercomputeclient.MLRunAdoptionComplete(existing) {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
 		return r.mlRunURL(existing, existingID)
 	}
@@ -173,12 +156,12 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	res, err := r.MLRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
 		DisplayName: displayName,
 		RunGroup:    runGroup,
-		Labels:      withExistingSessionsOnlyLabel(labels),
+		Labels:      hypercomputeclient.WithExistingSessionsOnlyLabel(labels),
 		Artifacts:   artifacts,
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		return r.mlRunURL(nil, existingID)
 	}
 	return r.mlRunURL(res, existingID)
 }

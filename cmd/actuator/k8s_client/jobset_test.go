@@ -14,12 +14,16 @@
 package k8sclient
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,8 +33,10 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	clientgotesting "k8s.io/client-go/testing"
 	esspb "xmanager_cloud/api/protos/experiment"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/prototest"
+	"xmanager_cloud/internal/task_queue/updatemask"
 )
 
 const testOperationName = "experiments/1/workUnits/1/operations/1"
@@ -195,7 +201,7 @@ func TestConstructJobSet_GPU_GKE(t *testing.T) {
 	})
 	namespace := "test-namespace"
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", namespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -242,7 +248,7 @@ func TestConstructJobSet_GPU_H100Mega(t *testing.T) {
 				}
 			})
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() for %q returned unexpected error: %v", gpuType, err)
 			}
@@ -267,7 +273,7 @@ func TestConstructJobSet_GPU_H100Mega(t *testing.T) {
 func TestCreateJobSet(t *testing.T) {
 	ctx, client, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
 
-	if err := client.createJobSet(ctx, testWorkUnitWithJob, testTarget, "test-author", testTime, Priorities{}); err != nil {
+	if err := client.createJobSet(ctx, testWorkUnitWithJob, testTarget, "test-author", testTime, Priorities{}, ""); err != nil {
 		t.Fatalf("createJobSet(%v, %q) returned unexpected error: %v", testWorkUnitWithJob, testTarget, err)
 	}
 
@@ -295,7 +301,7 @@ func TestCreateJobSet_CreationFails(t *testing.T) {
 		return true, nil, fmt.Errorf("simulated creation failure")
 	})
 
-	err := client.createJobSet(ctx, testWorkUnitWithJob, testTarget, "test-author", testTime, Priorities{})
+	err := client.createJobSet(ctx, testWorkUnitWithJob, testTarget, "test-author", testTime, Priorities{}, "")
 	if err == nil {
 		t.Fatalf("createJobSet(%v, %q) succeeded, want error", testWorkUnitWithJob, testTarget)
 	}
@@ -442,7 +448,7 @@ func TestRestartJobSet(t *testing.T) {
 		t.Fatalf("Expected 1 jobset to be created, but got %d", len(jobsets.Items))
 	}
 
-	if err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}); err != nil {
+	if err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}, ""); err != nil {
 		t.Fatalf("restartJobSet(%v, %q) returned unexpected error: %v", workUnit, testTarget, err)
 	}
 
@@ -467,7 +473,7 @@ func TestRestartJobSet_DeletionFails(t *testing.T) {
 		return true, nil, fmt.Errorf("simulated deletion failure")
 	})
 
-	err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{})
+	err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}, "")
 	if err == nil {
 		t.Fatalf("restartJobSet(%v, %q) succeeded, want error", workUnit, testTarget)
 	}
@@ -491,7 +497,7 @@ func TestRestartJobSet_RecreationFails(t *testing.T) {
 		return true, nil, fmt.Errorf("simulated creation failure")
 	})
 
-	err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{})
+	err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}, "")
 	if err == nil {
 		t.Fatalf("restartJobSet(%v, %q) succeeded, want error", workUnit, testTarget)
 	}
@@ -513,7 +519,7 @@ func TestRestartJobSet_PopulatesLastEdit(t *testing.T) {
 	workUnit := createTestWorkUnit(namespace)
 	workUnit.CurrentWorkUnitExecution = &esspb.WorkUnitExecution{Name: newTarget}
 
-	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, Priorities{}); err != nil {
+	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, Priorities{}, ""); err != nil {
 		t.Fatalf("restartJobSet(%v) returned unexpected error: %v", target, err)
 	}
 
@@ -543,7 +549,7 @@ func TestRestartJobSet_PopulatesPriority(t *testing.T) {
 		WorkUnitPriority:   esspb.Priority_HIGH,
 		ExperimentPriority: esspb.Priority_NORMAL,
 	}
-	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, priorities); err != nil {
+	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, priorities, ""); err != nil {
 		t.Fatalf("restartJobSet(%v) returned unexpected error: %v", target, err)
 	}
 
@@ -604,7 +610,7 @@ func TestRestartJobSet_whenValidatorRejectsTheRequest_ShouldDiscard(t *testing.T
 		t.Fatalf("Expected 1 jobset to be created, but got %d", len(jobsets.Items))
 	}
 
-	if err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}); err != nil {
+	if err := client.restartJobSet(ctx, workUnit, testTarget, "test-author", testTime, Priorities{}, ""); err != nil {
 		t.Fatalf("restartJobSet(%v, %q) returned unexpected error: %v", workUnit, testTarget, err)
 	}
 
@@ -631,7 +637,7 @@ func TestRestartJobSet_NamespaceFallback(t *testing.T) {
 	workUnit.Executable.SchedulingConstraints = nil
 	workUnit.CurrentWorkUnitExecution = &esspb.WorkUnitExecution{Name: newTarget}
 
-	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, Priorities{}); err != nil {
+	if err := client.restartJobSet(ctx, workUnit, target, "test-author", now, Priorities{}, ""); err != nil {
 		t.Fatalf("restartJobSet(%v) returned unexpected error: %v", target, err)
 	}
 
@@ -704,16 +710,96 @@ func TestUpdateJobSetNotifyWhen(t *testing.T) {
 	}
 }
 
-func TestUpdateJobSetNotifyWhen_NotFound(t *testing.T) {
-	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	target := "experiments/999/workUnits/888/executions/1"
-
-	err := client.updateJobSetNotifyWhen(ctx, baseCPUWorkUnit, target, "STARTING.RUNNING")
-	if err == nil {
-		t.Fatalf("expected error when JobSet does not exist, got nil")
+func TestUpdateJobSetNotFoundRetryability(t *testing.T) {
+	missingTarget := "experiments/999/workUnits/888/executions/1"
+	tests := []struct {
+		name          string
+		update        func(ctx context.Context, client *Client) error
+		wantTemporary bool
+	}{
+		{
+			name: "notify_when_not_found_is_retryable",
+			update: func(ctx context.Context, client *Client) error {
+				return client.updateJobSetNotifyWhen(ctx, baseCPUWorkUnit, missingTarget, "STARTING.RUNNING")
+			},
+			wantTemporary: true,
+		},
+		{
+			name: "priority_not_found_is_not_retryable",
+			update: func(ctx context.Context, client *Client) error {
+				return client.updateJobSetPriority(ctx, missingTarget, Priorities{})
+			},
+			wantTemporary: false,
+		},
 	}
-	if !apierrors.IsNotFound(err) {
-		t.Errorf("expected apierrors.IsNotFound(err) to be true, got %v", err)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+
+			err := tc.update(ctx, client)
+			if !apierrors.IsNotFound(err) {
+				t.Fatalf("update error = %v, want a NotFound error", err)
+			}
+			var tempErr interface{ Temporary() bool }
+			gotTemporary := errors.As(err, &tempErr) && tempErr.Temporary()
+			if gotTemporary != tc.wantTemporary {
+				t.Errorf("update error Temporary() = %v, want %v (error: %v)", gotTemporary, tc.wantTemporary, err)
+			}
+		})
+	}
+}
+
+func TestUpdateWorkUnit_DispatchesOnUpdateMask(t *testing.T) {
+	const notifyWhen = "STARTING.RUNNING"
+	tests := []struct {
+		name           string
+		paths          []string
+		wantAnnotation string
+	}{
+		{
+			name:           "notify_when_path_updates_annotation",
+			paths:          []string{updatemask.PathNotifyWhen},
+			wantAnnotation: notifyWhen,
+		},
+		{
+			name:           "priority_path_ignores_notify_when_value",
+			paths:          []string{updatemask.PathPriority},
+			wantAnnotation: "",
+		},
+		{
+			name:           "empty_mask_ignores_notify_when_value",
+			paths:          nil,
+			wantAnnotation: "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := "experiments/111/workUnits/222/executions/1"
+			client := setupPopulateTest(t, target).client
+			ctx := t.Context()
+			payload := &actuatortaskpb.ActuatorPayload{
+				Target:   proto.String(target),
+				WorkUnit: baseCPUWorkUnit,
+				Action: &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Update{Update: &actuatortaskpb.UpdateAction{
+					UpdateMask: &fieldmaskpb.FieldMask{Paths: tc.paths},
+					NotifyWhen: proto.String(notifyWhen),
+				}}},
+			}
+
+			if err := client.UpdateWorkUnit(ctx, payload); err != nil {
+				t.Fatalf("UpdateWorkUnit() returned unexpected error: %v", err)
+			}
+
+			jobSet, err := client.dynamicClient.Resource(JobSetGVR).Namespace(testNamespace).Get(ctx, buildJobSetName(target), metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Getting jobset after UpdateWorkUnit failed: %v", err)
+			}
+			if diff := cmp.Diff(tc.wantAnnotation, jobSet.GetAnnotations()[constants.NotifyWhenAnnotation]); diff != "" {
+				t.Errorf("notify-when annotation mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -766,7 +852,7 @@ func TestConstructJobSet_GPU_MultiReplica(t *testing.T) {
 		job.Replicas = 4
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -803,7 +889,7 @@ func TestConstructJobSet_GPU_DefaultReplica(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -837,7 +923,7 @@ func TestConstructJobSet_TPU_SingleHost(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -890,7 +976,7 @@ func TestConstructJobSet_TPU_MultiHost(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -939,7 +1025,7 @@ func TestConstructJobSet_TPU_MultiSlice(t *testing.T) {
 		job.Replicas = 2
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -984,7 +1070,7 @@ func TestConstructJobSet_PriorityClassName(t *testing.T) {
 		ExperimentPriority: esspb.Priority_HIGH,
 		WorkUnitPriority:   esspb.Priority_NORMAL,
 	}
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities)
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, priorities, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -1055,7 +1141,7 @@ func TestConstructJobSet_ManagedXprofGCSInjection(t *testing.T) {
 				},
 			}
 
-			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{})
+			got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}, "")
 			if err != nil {
 				t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 			}
@@ -1131,7 +1217,7 @@ func TestConstructJobSet_CustomAnnotationsAndLabels(t *testing.T) {
 		},
 	}
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}
@@ -1195,7 +1281,7 @@ func TestConstructJobSet_KubernetesJobAnnotationsPropagation(t *testing.T) {
 		}
 	})
 
-	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{})
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", testNamespace, testTime, Priorities{}, "")
 	if err != nil {
 		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
 	}

@@ -165,6 +165,20 @@ reconciler:
     port: 8082
     # Scrape interval for the PodMonitoring endpoint.
     interval: 60s
+
+# Hypercompute Cluster ML Run (Managed ML Diagnostics) client settings shared by the
+# ESS artifact lifecycle worker and the Reconciler.
+mlRun:
+  # ML Diagnostics control-plane environment: one of autopush, staging, or prod.
+  environment: "prod"
+  # Optional ML Run API project. Empty falls back to projectId.
+  project: ""
+  # Optional ML Run API location. Empty falls back to clusterLocation (ESS uses us-central1
+  # when both are unset; the Reconciler uses its cluster location).
+  location: ""
+  # Optional service account to impersonate for ML Run API calls. Empty uses the workload identity.
+  impersonateServiceAccount: ""
+
 redisAddr: "YOUR_REDIS_IP:6379"
 redisPassword: "YOUR_REDIS_PASSWORD"
 gcpServiceAccount: "YOUR_GCP_SERVICE_ACCOUNT_EMAIL"

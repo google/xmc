@@ -17,9 +17,6 @@ package jobset
 import (
 	"context"
 	"errors"
-	"fmt"
-	"maps"
-	"net/http"
 	"testing"
 	"time"
 
@@ -28,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/hypercomputeclient"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
@@ -117,165 +113,6 @@ func TestGetManagedXprofEnvs(t *testing.T) {
 	}
 }
 
-func TestNormalizeClusterName(t *testing.T) {
-	tests := []struct {
-		name    string
-		cluster string
-		want    string
-	}{
-		{name: "bare cluster name", cluster: "cluster-1", want: "cluster-1"},
-		{name: "full GCP resource path", cluster: "projects/my-proj/locations/us-central1/clusters/cluster-1", want: "cluster-1"},
-		{name: "cluster path with trailing slash", cluster: "projects/my-proj/locations/us-central1/clusters/cluster-1/", want: "cluster-1"},
-		{name: "empty cluster", cluster: "", want: ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := normalizeClusterName(tc.cluster); got != tc.want {
-				t.Errorf("normalizeClusterName(%q) = %q, want %q", tc.cluster, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestFormatMLRunIdentifierTimestamp(t *testing.T) {
-	tests := []struct {
-		name      string
-		timestamp time.Time
-		want      string
-	}{
-		{name: "zero timestamp returns empty string", timestamp: time.Time{}, want: ""},
-		{name: "standard UTC timestamp", timestamp: time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC), want: "20230328-104000"},
-		{name: "non-UTC timezone converted to UTC", timestamp: time.Date(2023, 3, 28, 6, 40, 0, 0, time.FixedZone("EDT", -4*3600)), want: "20230328-104000"},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := formatMLRunIdentifierTimestamp(tc.timestamp); got != tc.want {
-				t.Errorf("formatMLRunIdentifierTimestamp(%v) = %q, want %q", tc.timestamp, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestConstructMLRunRawIdentifier(t *testing.T) {
-	creationTime := time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC)
-	tests := []struct {
-		name         string
-		cluster      string
-		namespace    string
-		kind         string
-		jobSetName   string
-		creationTime time.Time
-		want         string
-	}{
-		{
-			name: "standard inputs", cluster: "cluster-1", namespace: "test-ns", kind: "JobSet",
-			jobSetName: "my-jobset", creationTime: creationTime, want: "cluster-1_test-ns_JobSet_my-jobset_20230328-104000",
-		},
-		{
-			name: "cluster resource path normalized to name", cluster: "projects/my-project/locations/us-central1/clusters/cluster-1",
-			namespace: "test-ns", kind: "JobSet", jobSetName: "my-jobset", creationTime: creationTime,
-			want: "cluster-1_test-ns_JobSet_my-jobset_20230328-104000",
-		},
-		{
-			name: "zero creation timestamp omits timestamp segment", cluster: "cluster-1", namespace: "test-ns",
-			kind: "JobSet", jobSetName: "my-jobset", creationTime: time.Time{}, want: "cluster-1_test-ns_JobSet_my-jobset",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ConstructMLRunRawIdentifier(tc.cluster, tc.namespace, tc.kind, tc.jobSetName, tc.creationTime)
-			if got != tc.want {
-				t.Errorf("ConstructMLRunRawIdentifier() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestConstructMLRunID(t *testing.T) {
-	utcTime := time.Date(2023, 3, 28, 10, 40, 0, 0, time.UTC)
-	edtTime := time.Date(2023, 3, 28, 6, 40, 0, 0, time.FixedZone("EDT", -4*3600))
-	const stdHash = "b8b90f4909350e43f6ac04e5a50e5f89d8f0514661af52f40ddea9b4ade00aa1"
-
-	tests := []struct {
-		name         string
-		cluster      string
-		namespace    string
-		kind         string
-		jobSetName   string
-		creationTime time.Time
-		want         string
-	}{
-		{
-			name: "standard inputs with UTC timestamp", cluster: "cluster-1", namespace: "test-ns",
-			kind: "JobSet", jobSetName: "my-jobset", creationTime: utcTime, want: stdHash,
-		},
-		{
-			name: "cluster resource path produces identical hash", cluster: "projects/my-project/locations/us-central1/clusters/cluster-1",
-			namespace: "test-ns", kind: "JobSet", jobSetName: "my-jobset", creationTime: utcTime, want: stdHash,
-		},
-		{
-			name: "cluster resource path with trailing slash", cluster: "projects/my-project/locations/us-central1/clusters/cluster-1/",
-			namespace: "test-ns", kind: "JobSet", jobSetName: "my-jobset", creationTime: utcTime, want: stdHash,
-		},
-		{
-			name: "non-UTC timezone converted to UTC yields same hash", cluster: "cluster-1", namespace: "test-ns",
-			kind: "JobSet", jobSetName: "my-jobset", creationTime: edtTime, want: stdHash,
-		},
-		{
-			name: "zero creation timestamp produces deterministic hash", cluster: "cluster-1", namespace: "test-ns",
-			kind: "JobSet", jobSetName: "my-jobset", creationTime: time.Time{},
-			want: "683e79a8574a045090201ce462b54b127e4cee94a9835f0d23c08d5ce89bc2ca",
-		},
-		{
-			name: "combined conditions: resource path, custom kind, non-UTC timestamp", cluster: "projects/p/locations/l/clusters/cluster-1",
-			namespace: "test-ns", kind: "JobSet", jobSetName: "my-jobset", creationTime: edtTime, want: stdHash,
-		},
-		{
-			name: "timestamp_1", cluster: "/projects/p/locations/l/clusters/test-cluster", namespace: "test-namespace",
-			kind: "test-kind", jobSetName: "test-id", creationTime: time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC),
-			want: "666cf6b4e2cbfd70c5db5b51e1e7d6873c56fe290188e5fe98ff42df8fb8e0e8",
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ConstructMLRunID(tc.cluster, tc.namespace, tc.kind, tc.jobSetName, tc.creationTime)
-			if got != tc.want {
-				t.Errorf("ConstructMLRunID() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestMLRunHasLabel(t *testing.T) {
-	tests := []struct {
-		name     string
-		mlRun    map[string]any
-		key      string
-		value    string
-		wantBool bool
-	}{
-		{name: "nil mlRun", mlRun: nil, key: "k", value: "v", wantBool: false},
-		{name: "missing labels entry", mlRun: map[string]any{}, key: "k", value: "v", wantBool: false},
-		{name: "non-map labels entry", mlRun: map[string]any{"labels": "not-a-map"}, key: "k", value: "v", wantBool: false},
-		{name: "missing key in labels", mlRun: map[string]any{"labels": map[string]any{"other": "v"}}, key: "k", value: "v", wantBool: false},
-		{name: "mismatched value in labels", mlRun: map[string]any{"labels": map[string]any{"k": "wrong"}}, key: "k", value: "v", wantBool: false},
-		{name: "matching key and value", mlRun: map[string]any{"labels": map[string]any{"k": "v"}}, key: "k", value: "v", wantBool: true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := mlRunHasLabel(tc.mlRun, tc.key, tc.value)
-			if got != tc.wantBool {
-				t.Errorf("mlRunHasLabel(%v, %q, %q) = %v, want %v", tc.mlRun, tc.key, tc.value, got, tc.wantBool)
-			}
-		})
-	}
-}
-
 func TestFormatCreationTime(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -292,66 +129,6 @@ func TestFormatCreationTime(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := formatCreationTime(tc.timestamp); got != tc.want {
 				t.Errorf("formatCreationTime(%v) = %q, want %q", tc.timestamp, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestParseExistingMLRunID(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want string
-	}{
-		{name: "no match", text: "some other error", want: ""},
-		{name: "match", text: `already exists: projects/p/locations/l/machineLearningRuns/xmc-abc-123`, want: "xmc-abc-123"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := parseExistingMLRunID(tc.text); got != tc.want {
-				t.Errorf("parseExistingMLRunID(%q) = %q, want %q", tc.text, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestIsMLRunAlreadyExistsError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{name: "nil", err: nil, want: false},
-		{name: "other error", err: errors.New("deadline exceeded"), want: false},
-		{name: "http 409 conflict", err: &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}, want: true},
-		{name: "http other status", err: &hypercomputeclient.APIError{StatusCode: http.StatusInternalServerError}, want: false},
-		{name: "lro already exists", err: &hypercomputeclient.OperationError{Code: hypercomputeclient.CodeAlreadyExists}, want: true},
-		{name: "lro other code", err: &hypercomputeclient.OperationError{Code: 3}, want: false},
-		{name: "wrapped http 409", err: fmt.Errorf("create failed: %w", &hypercomputeclient.APIError{StatusCode: http.StatusConflict}), want: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isMLRunAlreadyExistsError(tc.err); got != tc.want {
-				t.Errorf("isMLRunAlreadyExistsError(%v) = %v, want %v", tc.err, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestMLRunOwnedByXManager(t *testing.T) {
-	tests := []struct {
-		name  string
-		mlRun map[string]any
-		want  bool
-	}{
-		{name: "no labels", mlRun: map[string]any{}, want: false},
-		{name: "other owner", mlRun: map[string]any{"labels": map[string]any{"created_by": "someone"}}, want: false},
-		{name: "owned", mlRun: map[string]any{"labels": map[string]any{"created_by": createdByXManagerLabelValue}}, want: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := mlRunOwnedByXManager(tc.mlRun); got != tc.want {
-				t.Errorf("mlRunOwnedByXManager(%v) = %v, want %v", tc.mlRun, got, tc.want)
 			}
 		})
 	}
@@ -480,32 +257,6 @@ func TestLookupManagedXprofArtifact(t *testing.T) {
 	}
 }
 
-func TestConstructDiagnosticsConsoleURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		location string
-		mlRunID  string
-		project  string
-		want     string
-	}{
-		{
-			name: "valid parameters construct url with profiles tab", location: "us-central1", mlRunID: "xmc-test-run-123",
-			project: "test-project", want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/xmc-test-run-123?project=test-project&tab=profiles",
-		},
-		{name: "empty location returns empty string", location: "", mlRunID: "xmc-test-run-123", project: "test-project", want: ""},
-		{name: "empty mlRunID returns empty string", location: "us-central1", mlRunID: "", project: "test-project", want: ""},
-		{name: "empty project returns empty string", location: "us-central1", mlRunID: "xmc-test-run-123", project: "", want: ""},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := constructDiagnosticsConsoleURL(tc.location, tc.mlRunID, tc.project)
-			if got != tc.want {
-				t.Errorf("constructDiagnosticsConsoleURL(%q, %q, %q) = %q, want %q", tc.location, tc.mlRunID, tc.project, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestMLRunURL(t *testing.T) {
 	r := &Reconciler{Project: "test-project", Location: "us-central1"}
 
@@ -539,68 +290,5 @@ func TestMLRunURL(t *testing.T) {
 				t.Errorf("r.mlRunURL(%v, %q) = %q, want %q", tc.res, tc.mlRunID, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestEnsureProfilesTab(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{name: "empty url returns empty string", raw: "", want: ""},
-		{
-			name: "url without query params appends tab=profiles",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?tab=profiles",
-		},
-		{
-			name: "url with project param appends tab=profiles",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
-		},
-		{
-			name: "url with multiple query params preserves params and appends tab=profiles",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?authuser=1&project=test-project",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?authuser=1&project=test-project&tab=profiles",
-		},
-		{
-			name: "url already containing tab=profiles is idempotent",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
-		},
-		{
-			name: "url with different tab replaces tab with profiles",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=overview",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=test-project&tab=profiles",
-		},
-		{
-			name: "url with fragment preserves fragment",
-			raw:  "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=p#summary",
-			want: "https://console.cloud.google.com/kubernetes/aiml/run/us-central1/run-1?project=p&tab=profiles#summary",
-		},
-		{name: "malformed url returns raw input unchanged", raw: "http://invalid domain with spaces", want: "http://invalid domain with spaces"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ensureProfilesTab(tc.raw)
-			if got != tc.want {
-				t.Errorf("ensureProfilesTab(%q) = %q, want %q", tc.raw, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestBuildMLRunLabels verifies the reconciler stamps ownership and metadata labels
-// using snake_case keys (created_by, experiment_id, workunit_id).
-func TestBuildMLRunLabels(t *testing.T) {
-	got := buildMLRunLabels(12, 3)
-	want := map[string]string{
-		"experiment_id": "12",
-		"workunit_id":   "3",
-		"created_by":    createdByXManagerLabelValue,
-	}
-	if !maps.Equal(got, want) {
-		t.Errorf("buildMLRunLabels(12, 3) = %v, want %v", got, want)
 	}
 }

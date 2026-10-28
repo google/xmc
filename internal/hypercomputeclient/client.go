@@ -35,7 +35,8 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-const defaultLocation = "us-central1"
+// DefaultLocation is the MLRun location used when none is configured.
+const DefaultLocation = "us-central1"
 
 // ControlPlaneClient communicates with the Google Cloud Hypercompute Cluster
 // ML Run service.
@@ -76,7 +77,7 @@ func NewControlPlaneClient(ctx context.Context, projectID, environment, location
 
 	ts := o.tokenSource
 	if ts == nil {
-		ts, err = google.DefaultTokenSource(ctx, "https://www.googleapis.com/auth/cloud-platform")
+		ts, err = google.DefaultTokenSource(ctx, cloudPlatformScope)
 		if err != nil {
 			return nil, fmt.Errorf("get default token source: %w", err)
 		}
@@ -114,7 +115,7 @@ func resolveEndpoint(projectID, environment, location string) (endpointConfig, e
 	}
 
 	if location == "" {
-		location = defaultLocation
+		location = DefaultLocation
 	}
 
 	baseURL := "https://hypercomputecluster.googleapis.com/v1alpha"

@@ -60,9 +60,11 @@ type slotKey struct {
 	source   UpdateSource
 }
 
-// batchEntry is an update in a flush batch, tagged with its source and retry history.
+// batchEntry is an update in a flush batch, tagged with its source, lifecycle
+// hints, and retry history.
 type batchEntry struct {
 	update        storagepkg.WorkUnitExecutionUpdate
+	hints         LifecycleHints
 	source        UpdateSource
 	attempt       int       // number of failed flush attempts so far
 	firstFailedAt time.Time // zero if the update has never failed
@@ -83,17 +85,17 @@ func (b *UpdateBatcher) currentTime() time.Time {
 
 // takeSnapshots swaps out pending updates in O(1) when no retries are queued,
 // and otherwise drains due or piggybacking retries in O(|retries|) under UpdatesMu.
-func (b *UpdateBatcher) takeSnapshots() (map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, map[int64][]batchEntry) {
+func (b *UpdateBatcher) takeSnapshots() (map[int64]map[int64]map[UpdateSource]PendingUpdate, map[int64][]batchEntry) {
 	b.UpdatesMu.Lock()
 	defer b.UpdatesMu.Unlock()
 	clear(b.removed)
 	if len(b.Updates) == 0 && len(b.retries) == 0 {
 		return nil, nil
 	}
-	var pending map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate
+	var pending map[int64]map[int64]map[UpdateSource]PendingUpdate
 	if len(b.Updates) > 0 {
 		pending = b.Updates
-		b.Updates = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+		b.Updates = make(map[int64]map[int64]map[UpdateSource]PendingUpdate)
 	}
 	var retries map[int64][]batchEntry
 	if len(b.retries) > 0 {
@@ -126,7 +128,7 @@ func (b *UpdateBatcher) removeRetryLocked(key slotKey, eid int64) {
 
 // drainRetriesLocked resolves EID collisions with pending updates, then drains
 // due retries and retries piggybacking on an experiment flushing this tick.
-func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, now time.Time) map[int64][]batchEntry {
+func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[UpdateSource]PendingUpdate, now time.Time) map[int64][]batchEntry {
 	for key, retry := range b.retries {
 		if evictPendingUpTo(*pending, key, retry.entry.update.EID-1) {
 			delete(b.retries, key)
@@ -136,7 +138,7 @@ func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[Upda
 			continue
 		}
 		if *pending == nil {
-			*pending = make(map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate)
+			*pending = make(map[int64]map[int64]map[UpdateSource]PendingUpdate)
 		}
 		if _, ok := (*pending)[key.xid]; !ok {
 			(*pending)[key.xid] = nil
@@ -161,7 +163,7 @@ func (b *UpdateBatcher) drainRetriesLocked(pending *map[int64]map[int64]map[Upda
 
 // evictPendingUpTo deletes m[key] when its EID is <= maxEID (pruning empty
 // maps) and reports whether an entry with EID > maxEID remains in m.
-func evictPendingUpTo(m map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, key slotKey, maxEID int64) bool {
+func evictPendingUpTo(m map[int64]map[int64]map[UpdateSource]PendingUpdate, key slotKey, maxEID int64) bool {
 	u, ok := m[key.xid][key.wid][key.source]
 	if !ok {
 		return false
@@ -181,7 +183,7 @@ func evictPendingUpTo(m map[int64]map[int64]map[UpdateSource]storagepkg.WorkUnit
 
 // buildExperimentBatch combines an experiment's pending updates and drained
 // retries into a single slice ordered by (wid, source).
-func buildExperimentBatch(widMap map[int64]map[UpdateSource]storagepkg.WorkUnitExecutionUpdate, retries []batchEntry) []batchEntry {
+func buildExperimentBatch(widMap map[int64]map[UpdateSource]PendingUpdate, retries []batchEntry) []batchEntry {
 	count := len(retries)
 	for _, sourceMap := range widMap {
 		count += len(sourceMap)
@@ -189,8 +191,8 @@ func buildExperimentBatch(widMap map[int64]map[UpdateSource]storagepkg.WorkUnitE
 	batch := make([]batchEntry, 0, count)
 	batch = append(batch, retries...)
 	for _, sourceMap := range widMap {
-		for source, update := range sourceMap {
-			batch = append(batch, batchEntry{update: update, source: source})
+		for source, pending := range sourceMap {
+			batch = append(batch, batchEntry{update: pending.WorkUnitExecutionUpdate, hints: pending.Hints, source: source})
 		}
 	}
 	slices.SortFunc(batch, func(x, y batchEntry) int {
@@ -294,7 +296,7 @@ func (b *UpdateBatcher) isolatePermanentFailure(ctx context.Context, xid int64, 
 			b.requeue(cleanupCtx, xid, slices.Concat(groups[i:]...), ctx.Err())
 			return false
 		}
-		err := b.callUpdateWorkUnitExecutions(ctx, xid, updatePointers(group))
+		err := b.callUpdateWorkUnitExecutions(ctx, xid, group)
 		if err == nil {
 			consecutivePermanent = 0
 			continue

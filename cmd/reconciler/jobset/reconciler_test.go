@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,10 +38,12 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
+	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	storagepkg "xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/workunit"
 )
 
 type mockStorageUpdater struct {
@@ -77,6 +80,13 @@ func (m *mockStorageUpdater) ListArtifacts(ctx context.Context, parent string, p
 		return nil, "", m.listArtifactsErr
 	}
 	return m.listArtifacts, "", nil
+}
+
+// UpdateWorkUnitExecutionsWithTransitions records the call like
+// UpdateWorkUnitExecutions and reports no committed transitions.
+func (m *mockStorageUpdater) UpdateWorkUnitExecutionsWithTransitions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, map[int64]workunit.StateTransition, error) {
+	res, err := m.UpdateWorkUnitExecutions(ctx, xid, updates)
+	return res, nil, err
 }
 
 func (m *mockStorageUpdater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) (map[int64]*spb.WorkUnitExecution, error) {
@@ -850,7 +860,7 @@ func assertBatcherAfterFinalizer(t *testing.T, batcher *shared.UpdateBatcher, wa
 	if !ok || pending == nil {
 		t.Fatalf("batcher slot present = %v, pending = %v; want both", ok, pending)
 	}
-	if diff := cmp.Diff(*pending, got, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(*pending, got.WorkUnitExecutionUpdate, protocmp.Transform()); diff != "" {
 		t.Errorf("batcher slot mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -1102,5 +1112,85 @@ func TestSyncJobSetStatus_ArtifactLifecycleFlagCoexistence(t *testing.T) {
 		if mlRun.createCalls != 0 {
 			t.Errorf("legacy syncMLRun createCalls = %d, want 0 when ArtifactLifecycleEnabled is true", mlRun.createCalls)
 		}
+		got := batcher.Updates[10][20][shared.JobsetSource].Hints
+		if gotName := got.RuntimeContext.GetJobSetName(); gotName != "test-jobset" {
+			t.Errorf("pending hints RuntimeContext.JobSetName = %q, want %q", gotName, "test-jobset")
+		}
+		got.RuntimeContext = nil // Covered by TestExtractJobSetRuntimeContext.
+		want := shared.LifecycleHints{NotifyWhen: "STARTING.RUNNING", ForceNotify: true}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("pending lifecycle hints mismatch (-want +got):\n%s", diff)
+		}
 	})
+}
+
+func TestPublishDeletionLifecycleEvent(t *testing.T) {
+	stopped := createStoppedUpdate(20, 30)
+	tests := []struct {
+		name       string
+		notifyWhen string
+		notifier   *recordingLifecycleNotifier
+		wantEvents []*taskqueuepb.ArtifactLifecycleEvent
+	}{
+		{
+			name:       "no notifier",
+			notifyWhen: "STOPPED",
+		},
+		{
+			name:       "state not in notify-when",
+			notifyWhen: "RUNNING",
+			notifier:   &recordingLifecycleNotifier{},
+		},
+		{
+			name:       "state in notify-when",
+			notifyWhen: "RUNNING.STOPPED",
+			notifier:   &recordingLifecycleNotifier{},
+			wantEvents: []*taskqueuepb.ArtifactLifecycleEvent{{
+				ExperimentId:        proto.Int64(10),
+				WorkUnitId:          proto.Int64(20),
+				WorkUnitExecutionId: proto.Int64(30),
+				OldState:            spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED.Enum(),
+				NewState:            spb.WorkUnitStatus_STOPPED.Enum(),
+				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{JobSetRuntimeContext: &taskqueuepb.JobSetRuntimeContext{
+					EnvironmentVariables: map[string]string{},
+					Annotations:          map[string]string{constants.NotifyWhenAnnotation: "RUNNING.STOPPED"},
+					Cluster:              proto.String("test-cluster"),
+					Namespace:            proto.String("default"),
+					JobSetName:           proto.String("test-jobset"),
+				}},
+			}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{ClusterName: "test-cluster"}
+			if tc.notifier != nil {
+				r.LifecycleNotifier = tc.notifier
+			}
+			jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{
+				Namespace:   "default",
+				Name:        "test-jobset",
+				Annotations: map[string]string{constants.NotifyWhenAnnotation: tc.notifyWhen},
+			}}
+
+			r.publishDeletionLifecycleEvent(t.Context(), jobSet, 10, stopped)
+
+			var got []*taskqueuepb.ArtifactLifecycleEvent
+			if tc.notifier != nil {
+				got = tc.notifier.events
+			}
+			if diff := cmp.Diff(tc.wantEvents, got, protocmp.Transform()); diff != "" {
+				t.Errorf("published events mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+type recordingLifecycleNotifier struct {
+	events []*taskqueuepb.ArtifactLifecycleEvent
+}
+
+func (n *recordingLifecycleNotifier) NotifyLifecycleEvent(_ context.Context, event *taskqueuepb.ArtifactLifecycleEvent) error {
+	n.events = append(n.events, event)
+	return nil
 }

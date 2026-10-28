@@ -91,6 +91,7 @@ func registerConfigs() {
 	configutil.DurationEnv(&startupPodErrorCheckTime, "startup_pod_error_check_time", 2*time.Minute)
 	configutil.Float64Env(&kubeAPIQPS, "kube_api_qps", 100)
 	configutil.IntEnv(&kubeAPIBurst, "kube_api_burst", 200)
+	configutil.StringEnv(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod")
 	configutil.StringEnv(&mlRunProject, "mlrun_project", "")
 	configutil.StringEnv(&mlRunLocation, "mlrun_location", "")
 	configutil.StringEnv(&mlRunImpersonateSA, "mlrun_impersonate_sa", "")

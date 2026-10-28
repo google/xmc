@@ -648,6 +648,33 @@ func TestValidateArtifactName(t *testing.T) {
 	}
 }
 
+func TestParseArtifactIDFromName(t *testing.T) {
+	tests := []struct {
+		name    string
+		artName string
+		want    int64
+		wantErr error
+	}{
+		{name: "canonical_name", artName: "artifacts/123", want: 123},
+		{name: "work_unit_scoped_name", artName: "experiments/1/workUnits/2/artifacts/123", want: 123},
+		{name: "experiment_scoped_name", artName: "experiments/1/artifacts/7", want: 7},
+		{name: "invalid_format", artName: "invalid/123", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "scoped_invalid_aid", artName: "experiments/1/artifacts/abc", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty", artName: "", wantErr: grpcerr.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseArtifactIDFromName(tc.artName)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ParseArtifactIDFromName(%q) error = %v, want %v", tc.artName, err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("ParseArtifactIDFromName(%q) = %d, want %d", tc.artName, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestValidateArtifactParent(t *testing.T) {
 	tests := []struct {
 		name       string

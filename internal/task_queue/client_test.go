@@ -748,3 +748,12 @@ func TestActionsWithNotifyWhen(t *testing.T) {
 		t.Errorf("UpdateAction update_mask paths = %v, want ['notify_when']", upd.GetUpdateMask().GetPaths())
 	}
 }
+
+func TestActionsWithoutNotifyWhen(t *testing.T) {
+	if got := CreateAction(essmsgpb.Priority_HIGH, "test-user", "").GetCreate(); got.NotifyWhen != nil {
+		t.Errorf("CreateAction with empty notifyWhen set NotifyWhen = %q, want unset", got.GetNotifyWhen())
+	}
+	if got := RestartAction(essmsgpb.Priority_LOW, "test-user", "").GetRestart(); got.NotifyWhen != nil {
+		t.Errorf("RestartAction with empty notifyWhen set NotifyWhen = %q, want unset", got.GetNotifyWhen())
+	}
+}

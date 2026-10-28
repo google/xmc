@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	spb "xmanager_cloud/api/protos/experiment"
 	taskqueuepb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
 	"xmanager_cloud/internal/logging"
@@ -284,18 +285,10 @@ func ConvertJobSetToWorkUnitExecutionUpdate(ctx context.Context, jobSet *v1alpha
 		deferToExistingMessage = true
 	}
 
-	var notifyWhen string
-	if jobSet.Annotations != nil {
-		notifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
-	}
-	runtimeCtx := ExtractJobSetRuntimeContext(jobSet, clusterName)
-
 	return &storagepkg.WorkUnitExecutionUpdate{
 		WID:                    wid,
 		EID:                    eid,
 		DeferToExistingMessage: deferToExistingMessage,
-		NotifyWhen:             notifyWhen,
-		RuntimeContext:         runtimeCtx,
 		WorkUnitExecution: &spb.WorkUnitExecution{
 			Status: &spb.WorkUnitStatus{
 				State: state,
@@ -408,6 +401,15 @@ func setMLRunURL(update *storagepkg.WorkUnitExecutionUpdate, mlRunURL string) {
 	update.WorkUnitExecution.Metadata.MlrunUrl = mlRunURL
 	if update.UpdateMask != nil {
 		update.UpdateMask.Paths = append(update.UpdateMask.Paths, "metadata.mlrun_url")
+	}
+}
+
+// ExtractLifecycleHints returns the lifecycle hints derived from a JobSet: its
+// notify-when annotation and runtime snapshot. ForceNotify is left unset.
+func ExtractLifecycleHints(jobSet *v1alpha2.JobSet, clusterName string) shared.LifecycleHints {
+	return shared.LifecycleHints{
+		NotifyWhen:     jobSet.GetAnnotations()[constants.NotifyWhenAnnotation],
+		RuntimeContext: ExtractJobSetRuntimeContext(jobSet, clusterName),
 	}
 }
 

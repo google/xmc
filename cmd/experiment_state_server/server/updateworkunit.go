@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/task_queue/updatemask"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -116,7 +117,7 @@ func (h *WorkUnitHandler) shouldEnqueueWorkUnitTask(ctx context.Context, xid int
 	}
 
 	if originalWu.GetPriority() != returnedWu.GetPriority() {
-		updateAction.UpdateMask.Paths = append(updateAction.UpdateMask.Paths, "priority")
+		updateAction.UpdateMask.Paths = append(updateAction.UpdateMask.Paths, updatemask.PathPriority)
 
 		exp, err := h.storage.FetchExperiment(ctx, xid)
 		if err != nil {

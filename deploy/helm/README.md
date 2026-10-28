@@ -66,6 +66,18 @@ healthService:
   schedulingResumeMaxBacklog: 500
 ```
 
+### 3. ML Run (Managed ML Diagnostics) Settings
+
+The `mlRun` block configures the Hypercompute Cluster ML Run client shared by the ESS artifact lifecycle worker and the Reconciler:
+
+```yaml
+mlRun:
+  environment: "prod"            # ML Diagnostics control plane: autopush, staging, or prod (ESS)
+  project: ""                    # ML Run API project; empty falls back to projectId
+  location: ""                   # ML Run API location; empty falls back to clusterLocation
+  impersonateServiceAccount: ""  # Service account to impersonate for ML Run calls; empty uses workload identity
+```
+
 ---
 
 ## Login session lifetime
