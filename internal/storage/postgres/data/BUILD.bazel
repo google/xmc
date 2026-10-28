@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "data",
     srcs = [
+        "artifact.go",
         "operation.go",
         "proto.go",
         "statusmessage.go",
@@ -27,6 +28,7 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
+        "//internal/storage/data",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgtype",
@@ -41,6 +43,7 @@ go_library(
 go_test(
     name = "data_test",
     srcs = [
+        "artifact_test.go",
         "operation_test.go",
         "statusmessage_test.go",
         "xid_test.go",
@@ -49,6 +52,7 @@ go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
+        "//internal/prototest",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@com_github_jackc_pgx_v5//pgtype",
