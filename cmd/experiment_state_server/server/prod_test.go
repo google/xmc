@@ -197,13 +197,11 @@ func TestResolveMLRunClientConfig(t *testing.T) {
 				MLRunProject:             "mlrun-proj",
 				MLDiagnosticsEnvironment: "staging",
 				MLRunLocation:            "europe-west4",
-				MLRunImpersonateSA:       "sa@mlrun-proj.iam.gserviceaccount.com",
 			},
 			want: hypercomputeclient.Config{
-				Project:                   "mlrun-proj",
-				Environment:               "staging",
-				Location:                  "europe-west4",
-				ImpersonateServiceAccount: "sa@mlrun-proj.iam.gserviceaccount.com",
+				Project:     "mlrun-proj",
+				Environment: "staging",
+				Location:    "europe-west4",
 			},
 		},
 	}

@@ -17,7 +17,6 @@ package server
 import (
 	"context"
 
-	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/internal/logging"
 	client "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
@@ -27,15 +26,12 @@ import (
 // artifact lifecycle rules matching the work unit's artifacts, or "" when none apply.
 // Listing failures are logged and yield "" so work unit scheduling is never blocked.
 func (h *baseHandler) requiredNotifyWhen(ctx context.Context, xid, wid int64) string {
-	if len(h.artifactLifecycle.Rules()) == 0 {
-		return ""
-	}
-	arts, err := artifactlifecycle.ListWorkUnitArtifacts(ctx, h.storage, xid, wid)
+	notifyWhen, err := h.artifactLifecycle.RequiredNotifyWhenForWorkUnit(ctx, h.storage, xid, wid)
 	if err != nil {
 		logging.Warn(ctx, "Failed to list artifacts for notify-when computation", "xid", xid, "wid", wid, "error", err)
 		return ""
 	}
-	return h.artifactLifecycle.RequiredNotifyWhenAnnotation(arts)
+	return notifyWhen
 }
 
 // syncWorkUnitNotifyWhen computes the required notify-when annotation for the work unit

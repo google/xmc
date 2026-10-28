@@ -29,7 +29,7 @@ const workUnitArtifactsPageSize = 100
 
 // ListWorkUnitArtifacts returns every artifact attached to the work unit, following
 // ListArtifacts page tokens until the last page.
-func ListWorkUnitArtifacts(ctx context.Context, store storage.Storage, xid, wid int64) ([]*essmsgpb.Artifact, error) {
+func ListWorkUnitArtifacts(ctx context.Context, store storage.ArtifactStore, xid, wid int64) ([]*essmsgpb.Artifact, error) {
 	parent := validator.ConstructWorkUnitName(xid, wid)
 	var all []*essmsgpb.Artifact
 	pageToken := ""

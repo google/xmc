@@ -102,7 +102,7 @@ deployment_groups:
         "cloudresourcemanager.googleapis.com",
         "servicenetworking.googleapis.com",
         "certificatemanager.googleapis.com"
-      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
+      ], vars.enable_managed_mldiagnostics || vars.artifact_lifecycle_enabled ? ["hypercomputecluster.googleapis.com"] : []))'
 
 - group: primary
   modules:
@@ -139,6 +139,9 @@ deployment_groups:
       # predefined role that carries it. iam.securityReviewer, which xmc-hs-sa uses for the same
       # need, would additionally hand the actuator and the reconciler read access to the IAM
       # policies on Spanner, GCS and everything else in the project, which none of them require.
+      # hypercomputecluster.editor lets the reconciler (legacy path) and, with
+      # artifact_lifecycle_enabled, the experiment state server create, read and update ML Runs
+      # with this account's own identity; neither impersonates another account.
       project_roles: '$(concat([
         "logging.logWriter",
         "monitoring.metricWriter",
@@ -148,7 +151,7 @@ deployment_groups:
         "artifactregistry.reader",
         "serviceusage.serviceUsageConsumer",
         "browser"
-      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.editor"] : []))'
+      ], vars.enable_managed_mldiagnostics || vars.artifact_lifecycle_enabled ? ["hypercomputecluster.editor"] : []))'
 
   - id: workload_sa_token_creator
     source: ./deploy/ctk_v2/modules/self-token-creator

@@ -75,8 +75,14 @@ mlRun:
   environment: "prod"            # ML Diagnostics control plane: autopush, staging, or prod (ESS)
   project: ""                    # ML Run API project; empty falls back to projectId
   location: ""                   # ML Run API location; empty falls back to clusterLocation
-  impersonateServiceAccount: ""  # Service account to impersonate for ML Run calls; empty uses workload identity
+  impersonateServiceAccount: ""  # Reconciler legacy path only: service account to impersonate; empty uses workload identity
 ```
+
+With `featureFlags.artifact_lifecycle_enabled: true`, ESS creates, reads, and updates ML Runs with
+its own workload identity (`gcpServiceAccount`) and never impersonates another account, so that
+Google service account needs the Hypercompute Cluster ML Run permissions (the CTK blueprint grants
+`roles/hypercomputecluster.editor`). `impersonateServiceAccount` applies only to the Reconciler on
+the legacy path (`artifact_lifecycle_enabled: false`).
 
 ---
 

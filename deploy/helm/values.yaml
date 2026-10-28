@@ -176,7 +176,10 @@ mlRun:
   # Optional ML Run API location. Empty falls back to clusterLocation (ESS uses us-central1
   # when both are unset; the Reconciler uses its cluster location).
   location: ""
-  # Optional service account to impersonate for ML Run API calls. Empty uses the workload identity.
+  # Optional service account the Reconciler impersonates for ML Run API calls on the legacy
+  # path (featureFlags.artifact_lifecycle_enabled=false). Empty uses the Reconciler's workload
+  # identity. Never applied to ESS: with artifact lifecycle enabled, ESS calls ML Run with its own
+  # workload identity (gcpServiceAccount), which needs the Hypercompute Cluster ML Run permissions.
   impersonateServiceAccount: ""
 
 redisAddr: "YOUR_REDIS_IP:6379"

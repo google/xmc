@@ -39,5 +39,5 @@ data:
   mldiagnostics_environment: {{ $mlRun.environment | default "prod" | quote }}
   mlrun_project: {{ $mlRun.project | default .Values.projectId | quote }}
   mlrun_location: {{ $mlRun.location | default .Values.clusterLocation | default "us-central1" | quote }}
-  mlrun_impersonate_sa: {{ $mlRun.impersonateServiceAccount | default "" | quote }}
+  {{- /* ESS calls ML Run with its own workload identity; mlRun.impersonateServiceAccount is Reconciler-only. */}}
 {{- end }}

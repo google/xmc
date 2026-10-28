@@ -312,7 +312,7 @@ func initArtifactLifecycleRegistry(ctx context.Context, cfg *config.Config) *art
 func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Storage, taskQueueClient resumption.TaskQueue, lifecycleRegistry *artifactlifecycle.Registry) ([]func() error, error) {
 	var cleanups []func() error
 	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage, lifecycleRegistry)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
 		}
@@ -331,13 +331,25 @@ func initConsumers(ctx context.Context, cfg *config.Config, storage storage.Stor
 
 // startResumptionConsumer wires the resumption worker to the Redis trigger stream.
 // The Redis consumer also serves as the worker's ClaimExtender.
-func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage) (*resumption.Consumer, error) {
+func startResumptionConsumer(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage, lifecycleRegistry *artifactlifecycle.Registry) (*resumption.Consumer, error) {
 	redisConsumer, err := resumption.NewRedisConsumer(cfg.RedisAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resumption redis consumer: %w", err)
 	}
-	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer)
+	worker := resumption.NewResumptionWorker(storageClient, taskQueue, redisConsumer, resumptionWorkerOptions(storageClient, lifecycleRegistry)...)
 	return resumption.StartConsumer(ctx, resumption.ConsumerConfig{Client: redisConsumer}, worker)
+}
+
+// resumptionWorkerOptions makes replayed Create/Restart tasks carry notify-when
+// recomputed from the work unit's current artifacts. With no lifecycle rules
+// (artifact lifecycle disabled) it returns no options, so tasks replay as stored.
+func resumptionWorkerOptions(storageClient storage.Storage, lifecycleRegistry *artifactlifecycle.Registry) []resumption.WorkerOption {
+	if len(lifecycleRegistry.Rules()) == 0 {
+		return nil
+	}
+	return []resumption.WorkerOption{resumption.WithNotifyWhen(func(ctx context.Context, xid, wid int64) (string, error) {
+		return lifecycleRegistry.RequiredNotifyWhenForWorkUnit(ctx, storageClient, xid, wid)
+	})}
 }
 
 // startArtifactLifecycleConsumer wires the artifact lifecycle worker to the Redis trigger stream.
@@ -353,10 +365,9 @@ func startArtifactLifecycleConsumer(ctx context.Context, cfg *config.Config, sto
 // rules target the same project and location.
 func resolveMLRunClientConfig(cfg *config.Config) hypercomputeclient.Config {
 	resolved := hypercomputeclient.Config{
-		Project:                   cfg.MLRunProject,
-		Environment:               cfg.MLDiagnosticsEnvironment,
-		Location:                  cfg.MLRunLocation,
-		ImpersonateServiceAccount: cfg.MLRunImpersonateSA,
+		Project:     cfg.MLRunProject,
+		Environment: cfg.MLDiagnosticsEnvironment,
+		Location:    cfg.MLRunLocation,
 	}
 	if resolved.Project == "" {
 		resolved.Project = cfg.ProjectID

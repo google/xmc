@@ -104,16 +104,9 @@ func (h *ArtifactHandler) enrichManagedXprof(ctx context.Context, artifact *msgp
 		return
 	}
 	if xprofURL := xprof.GetXprof().GetXprofUrl(); xprofURL != "" {
-		if artifact.Url == nil {
-			artifact.Url = &msgpb.Url{}
+		if h.artifactLifecycleEnabled() {
+			mirrorXprofURLToArtifactURL(artifact, xprofURL)
 		}
-		if artifact.Url.Url == "" {
-			artifact.Url.Url = xprofURL
-		}
-		return
-	}
-	if artifact.GetUrl().GetUrl() != "" {
-		updateXprofURL(xprof, artifact.GetUrl().GetUrl())
 		return
 	}
 
@@ -152,6 +145,24 @@ func (h *ArtifactHandler) enrichManagedXprof(ctx context.Context, artifact *msgp
 			artifact.Url = &msgpb.Url{}
 		}
 		artifact.Url.Url = mlrunURL
+	}
+}
+
+// artifactLifecycleEnabled reports whether the artifact lifecycle feature flag is on.
+func (h *ArtifactHandler) artifactLifecycleEnabled() bool {
+	return h.cfg != nil && h.cfg.FeatureFlags.ArtifactLifecycleEnabled
+}
+
+// mirrorXprofURLToArtifactURL surfaces the stored xprof_url, which the artifact
+// lifecycle keeps current, on an unset top-level artifact URL. The stored value is
+// returned as-is across restarts until the new execution's lifecycle event
+// overwrites it.
+func mirrorXprofURLToArtifactURL(artifact *msgpb.Artifact, xprofURL string) {
+	if artifact.Url == nil {
+		artifact.Url = &msgpb.Url{}
+	}
+	if artifact.Url.Url == "" {
+		artifact.Url.Url = xprofURL
 	}
 }
 

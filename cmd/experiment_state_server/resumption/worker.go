@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/internal/kubernetes/common/constants"
@@ -84,11 +85,28 @@ type Store interface {
 	storage.PauseSchedulingStore
 }
 
+// NotifyWhenFunc returns the notify-when annotation required by the work unit's
+// current artifacts, or "" when none is required.
+type NotifyWhenFunc func(ctx context.Context, xid, wid int64) (string, error)
+
+// WorkerOption configures optional ResumptionWorker dependencies.
+type WorkerOption func(*ResumptionWorker)
+
+// WithNotifyWhen makes the worker recompute the notify-when annotation of replayed
+// Create and Restart actions with fn instead of replaying the value stored when the
+// task was buffered. Without it, actions are replayed exactly as stored.
+func WithNotifyWhen(fn NotifyWhenFunc) WorkerOption {
+	return func(w *ResumptionWorker) {
+		w.notifyWhen = fn
+	}
+}
+
 // ResumptionWorker coordinates the continuous batch replay of paused tasks.
 type ResumptionWorker struct {
 	store                 Store
 	taskQueue             TaskQueue
 	claimExtender         ClaimExtender
+	notifyWhen            NotifyWhenFunc
 	throttlePauseDuration time.Duration
 }
 
@@ -97,13 +115,18 @@ func NewResumptionWorker(
 	store Store,
 	taskQueue TaskQueue,
 	claimExtender ClaimExtender,
+	opts ...WorkerOption,
 ) *ResumptionWorker {
-	return &ResumptionWorker{
+	w := &ResumptionWorker{
 		store:                 store,
 		taskQueue:             taskQueue,
 		claimExtender:         claimExtender,
 		throttlePauseDuration: defaultThrottlePauseDuration,
 	}
+	for _, opt := range opts {
+		opt(w)
+	}
+	return w
 }
 
 // StartResumption executes the continuous batch replay loop.
@@ -332,7 +355,7 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 			continue
 		}
 
-		if err := w.taskQueue.EnqueueResumedWorkUnitTask(taskCtx, task.Target, task.WorkUnit, task.Action, task.OperationName, runID, resumptionTime); err != nil {
+		if err := w.taskQueue.EnqueueResumedWorkUnitTask(taskCtx, task.Target, task.WorkUnit, w.replayAction(taskCtx, task), task.OperationName, runID, resumptionTime); err != nil {
 			publishErr = fmt.Errorf("failed to enqueue work unit task %s: %w", task.TaskID, err)
 			break
 		}
@@ -363,6 +386,31 @@ func (w *ResumptionWorker) replayBatch(ctx context.Context, runID string, resump
 		}
 	}
 	return publishErr
+}
+
+// replayAction returns the action to enqueue for task. Create and Restart actions get
+// their notify-when recomputed from the work unit's current artifacts, because
+// artifacts created while the task was buffered are missing from the stored value.
+// Update actions are replayed as stored (see ReasonUpdateWhilePaused in filter.go).
+// A recompute failure is logged and the stored action is replayed, so artifact
+// metadata never blocks workload scheduling.
+func (w *ResumptionWorker) replayAction(ctx context.Context, task *storage.PausedTask) *actuatortaskpb.Action {
+	if w.notifyWhen == nil || (task.Action.GetCreate() == nil && task.Action.GetRestart() == nil) {
+		return task.Action
+	}
+	notifyWhen, err := w.notifyWhen(ctx, task.XID, task.WID)
+	if err != nil {
+		logging.Warn(ctx, "Failed to recompute notify-when for replayed task; replaying stored value",
+			"task_id", task.TaskID, "xid", task.XID, "wid", task.WID, "error", err)
+		return task.Action
+	}
+	action := proto.Clone(task.Action).(*actuatortaskpb.Action)
+	if create := action.GetCreate(); create != nil {
+		create.NotifyWhen = proto.String(notifyWhen)
+		return action
+	}
+	action.GetRestart().NotifyWhen = proto.String(notifyWhen)
+	return action
 }
 
 func taskActionLabel(action *actuatortaskpb.Action) string {

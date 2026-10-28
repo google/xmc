@@ -19,7 +19,10 @@ metadata:
   labels:
     app: reconciler
 data:
+  {{- if .Values.featureFlags.artifact_lifecycle_enabled }}
+  # Redis is only used to publish artifact lifecycle notifications.
   redis_addr: {{ .Values.redisAddr | quote }}
+  {{- end }}
   # Deprecated: retained for one-release rollout compatibility; reconciler reads db-config.
   # TODO: Remove spanner_database_name once all deployments run db-config images.
   spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}

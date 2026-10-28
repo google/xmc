@@ -24,7 +24,9 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
@@ -434,6 +436,60 @@ func TestIsWorkUnitExecutionNotFound(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := isWorkUnitExecutionNotFound(tc.err); got != tc.want {
 				t.Errorf("isWorkUnitExecutionNotFound(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEnrichManagedXprof_StoredXprofURL covers artifacts whose xprof_url is already
+// stored. With the artifact lifecycle disabled the read path matches main (nothing is
+// changed); enabled, the stored xprof_url is mirrored onto an unset top-level url and
+// is never replaced by the current execution's MLRun URL (e.g. right after a restart).
+func TestEnrichManagedXprof_StoredXprofURL(t *testing.T) {
+	const storedURL = "http://stored.mlrun.url"
+	stored := &msgpb.Artifact{
+		Parent: "experiments/1/workUnits/1",
+		Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_ManagedXprof{
+			ManagedXprof: &msgpb.ManagedXprofArtifact{Xprof: &msgpb.XProfUIInstance{XprofUrl: storedURL}},
+		}},
+	}
+	tests := []struct {
+		name     string
+		enabled  bool
+		artifact *msgpb.Artifact
+		want     *msgpb.Artifact
+	}{
+		{
+			name:     "disabled leaves stored artifact unchanged",
+			artifact: proto.Clone(stored).(*msgpb.Artifact),
+			want:     proto.Clone(stored).(*msgpb.Artifact),
+		},
+		{
+			name:     "enabled mirrors stored xprof_url onto empty url",
+			enabled:  true,
+			artifact: proto.Clone(stored).(*msgpb.Artifact),
+			want:     prototest.Modify(stored, func(a *msgpb.Artifact) { a.Url = &msgpb.Url{Url: storedURL} }),
+		},
+		{
+			name:     "enabled keeps an explicit url",
+			enabled:  true,
+			artifact: prototest.Modify(stored, func(a *msgpb.Artifact) { a.Url = &msgpb.Url{Url: "http://explicit.url"} }),
+			want:     prototest.Modify(stored, func(a *msgpb.Artifact) { a.Url = &msgpb.Url{Url: "http://explicit.url"} }),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// The current execution carries a different MLRun URL, as right after a restart.
+			store := &storage.MockStorage{WorkUnitExecution: &msgpb.WorkUnitExecution{
+				Metadata: &msgpb.WorkUnitExecutionMetadata{MlrunUrl: "http://new.execution.mlrun.url"},
+			}}
+			cfg := &config.Config{FeatureFlags: featureflags.Flags{ArtifactLifecycleEnabled: tc.enabled}}
+			s := newTestServer(t, withStorage(store), withConfig(cfg))
+
+			s.enrichManagedXprof(context.Background(), tc.artifact)
+
+			if diff := cmp.Diff(tc.want, tc.artifact, protocmp.Transform()); diff != "" {
+				t.Errorf("enrichManagedXprof() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

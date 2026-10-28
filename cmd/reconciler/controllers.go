@@ -125,7 +125,6 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		StartupPodErrorCheckTime: p.cfg.StartupPodErrorCheckTime,
 		Storage:                  newJobSetStorage(p.storage, updater),
 		MLRunClient:              p.mlRunClient,
-		LifecycleNotifier:        p.lifecycleNotifier,
 		ArtifactLifecycleEnabled: p.cfg.FeatureFlags.ArtifactLifecycleEnabled,
 	})
 	if err != nil {

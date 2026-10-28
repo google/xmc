@@ -86,6 +86,20 @@ func (r *Registry) RequiredNotifyWhenAnnotation(artifacts []*essmsgpb.Artifact) 
 	return notifywhen.Encode(states)
 }
 
+// RequiredNotifyWhenForWorkUnit lists the work unit's current artifacts and returns
+// the notify-when annotation they require (see RequiredNotifyWhenAnnotation). With no
+// registered rules (artifact lifecycle disabled) it returns "" without listing artifacts.
+func (r *Registry) RequiredNotifyWhenForWorkUnit(ctx context.Context, store storage.ArtifactStore, xid, wid int64) (string, error) {
+	if len(r.Rules()) == 0 {
+		return "", nil
+	}
+	arts, err := ListWorkUnitArtifacts(ctx, store, xid, wid)
+	if err != nil {
+		return "", err
+	}
+	return r.RequiredNotifyWhenAnnotation(arts), nil
+}
+
 // matchingRules returns the registered rules that govern the artifact.
 func (r *Registry) matchingRules(artifact *essmsgpb.Artifact) []LifecycleRule {
 	var matched []LifecycleRule

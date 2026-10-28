@@ -35,7 +35,10 @@ class MLRunConfigTest(unittest.TestCase):
         require_helm()
 
     def test_ess_configmap(self) -> None:
-        """ESS ConfigMap renders mlRun values, falling back to chart-level defaults."""
+        """ESS ConfigMap renders mlRun values, falling back to chart-level defaults.
+
+        ESS calls ML Run with its own workload identity, so mlrun_impersonate_sa is never rendered.
+        """
         cases: tuple[tuple[str, dict[str, str], tuple[str, ...]], ...] = (
             (
                 "defaults",
@@ -44,7 +47,6 @@ class MLRunConfigTest(unittest.TestCase):
                     'mldiagnostics_environment: "prod"',
                     'mlrun_project: "test-project"',
                     'mlrun_location: "us-central1"',
-                    'mlrun_impersonate_sa: ""',
                 ),
             ),
             (
@@ -59,7 +61,6 @@ class MLRunConfigTest(unittest.TestCase):
                     'mldiagnostics_environment: "staging"',
                     'mlrun_project: "mlrun-project"',
                     'mlrun_location: "europe-west4"',
-                    'mlrun_impersonate_sa: "mlrun@example.iam.gserviceaccount.com"',
                 ),
             ),
             (
@@ -70,7 +71,7 @@ class MLRunConfigTest(unittest.TestCase):
             (
                 "null mlRun block",
                 {"mlRun": "null"},
-                ('mldiagnostics_environment: "prod"', 'mlrun_impersonate_sa: ""'),
+                ('mldiagnostics_environment: "prod"',),
             ),
             (
                 "null reconciler block",
@@ -83,9 +84,10 @@ class MLRunConfigTest(unittest.TestCase):
                 manifest = render_template(ESS_CONFIGMAP, {**BASE_VALUES, **overrides})
                 for line in want_lines:
                     self.assertIn(line, manifest)
+                self.assertNotIn("mlrun_impersonate_sa", manifest)
 
     def test_reconciler_configmap(self) -> None:
-        """Reconciler ConfigMap renders the environment always and project/location only when set."""
+        """Reconciler ConfigMap renders the environment and legacy-path impersonation always, project/location only when set."""
         cases: tuple[tuple[str, dict[str, str], tuple[str, ...], tuple[str, ...]], ...] = (
             (
                 "defaults",

@@ -16,6 +16,8 @@ package artifactlifecycle_test
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -34,11 +36,23 @@ const (
 	artifactName = "experiments/10/workUnits/20/artifacts/30"
 )
 
+var (
+	errHypercompute = errors.New("hypercompute unavailable")
+	errAlreadyExist = &hypercomputeclient.APIError{StatusCode: http.StatusConflict}
+)
+
 // fakeMLRunClient returns MLRun resources without a "url" field, so the rule falls
-// back to the deterministic console URL.
+// back to the deterministic console URL. Errors are injected per operation; a label
+// error only fails label-stamping updates and a phase error only phase updates.
 type fakeMLRunClient struct {
-	createdRuns map[string]string
-	updatedRuns map[string]string
+	createErr      error
+	getErr         error
+	labelErr       error
+	phaseErr       error
+	adoptionLabels map[string]any
+	createdRuns    map[string]string
+	updatedRuns    map[string]string
+	labeledRuns    []string
 }
 
 func newFakeMLRunClient() *fakeMLRunClient {
@@ -49,17 +63,36 @@ func newFakeMLRunClient() *fakeMLRunClient {
 }
 
 func (f *fakeMLRunClient) CreateMLRun(_ context.Context, name, _, runPhase string, _ *hypercomputeclient.CreateMLRunOptions) (map[string]any, error) {
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
 	f.createdRuns[name] = runPhase
 	return map[string]any{"name": name}, nil
 }
 
 func (f *fakeMLRunClient) GetMLRun(_ context.Context, name string) (map[string]any, error) {
-	return map[string]any{"name": name, "labels": map[string]any{"created_by": "xmanager"}}, nil
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	labels := f.adoptionLabels
+	if labels == nil {
+		labels = map[string]any{"created_by": "xmanager"}
+	}
+	return map[string]any{"name": name, "labels": labels}, nil
 }
 
 func (f *fakeMLRunClient) UpdateMLRun(_ context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error) {
 	if opts.RunPhase != "" {
+		if f.phaseErr != nil {
+			return nil, f.phaseErr
+		}
 		f.updatedRuns[name] = opts.RunPhase
+	}
+	if len(opts.Labels) > 0 {
+		if f.labelErr != nil {
+			return nil, f.labelErr
+		}
+		f.labeledRuns = append(f.labeledRuns, name)
 	}
 	return map[string]any{"name": name}, nil
 }
@@ -75,11 +108,15 @@ func managedXprofArtifact(xprofURL string) *essmsgpb.Artifact {
 	}
 }
 
+func executionName(eid string) string {
+	return "experiments/10/workUnits/20/executions/" + eid
+}
+
 func storeWithCurrentEID(eid string) *storage.MockStorage {
 	return &storage.MockStorage{
 		WorkUnit: &essmsgpb.WorkUnit{
 			Name:                     "experiments/10/workUnits/20",
-			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: "experiments/10/workUnits/20/executions/" + eid},
+			CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: executionName(eid)},
 		},
 		Artifact: &essmsgpb.Artifact{
 			Name: artifactName,
@@ -92,6 +129,13 @@ func storeWithCurrentEID(eid string) *storage.MockStorage {
 				},
 			},
 		},
+	}
+}
+
+func executionWithMLRunURL(eid, mlRunURL string) *essmsgpb.WorkUnitExecution {
+	return &essmsgpb.WorkUnitExecution{
+		Name:     executionName(eid),
+		Metadata: &essmsgpb.WorkUnitExecutionMetadata{MlrunUrl: mlRunURL},
 	}
 }
 
@@ -138,44 +182,162 @@ func TestManagedXprofRule_ActiveState(t *testing.T) {
 		name        string
 		currentEID  string
 		withRuntime bool
+		setup       func(*fakeMLRunClient)
+		wantErr     error // nil means success; errAny means any error.
 		wantCreated map[string]string
-		wantURL     string // "" means no artifact update expected.
+		wantUpdated map[string]string
+		wantURL     string // "" means no artifact or execution write expected.
 	}{
 		{
-			name:        "creates MLRun and persists console URL on matching EID",
+			name:        "creates MLRun and persists URL on artifact and execution for matching EID",
 			currentEID:  "1",
 			withRuntime: true,
 			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantUpdated: map[string]string{},
 			wantURL:     wantURL,
 		},
 		{
-			name:        "skips persisting URL when execution is superseded",
+			name:        "closes MLRun and writes nothing when execution is superseded",
 			currentEID:  "2",
 			withRuntime: true,
 			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantUpdated: map[string]string{expectedMLRunID: "COMPLETED"},
+		},
+		{
+			name:        "superseded close failure is returned for retry",
+			currentEID:  "2",
+			withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.phaseErr = errHypercompute },
+			wantErr:     errHypercompute,
+			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantUpdated: map[string]string{},
 		},
 		{
 			name:        "skips MLRun creation without runtime context",
 			currentEID:  "1",
-			withRuntime: false,
 			wantCreated: map[string]string{},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "create failure is returned and no URL is persisted",
+			currentEID:  "1",
+			withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.createErr = errHypercompute },
+			wantErr:     errHypercompute,
+			wantCreated: map[string]string{},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "label stamp failure after create is returned and no URL is persisted",
+			currentEID:  "1",
+			withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.labelErr = errHypercompute },
+			wantErr:     errHypercompute,
+			wantCreated: map[string]string{expectedMLRunID: "ACTIVE"},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "AlreadyExists adopts a fully adopted run as success",
+			currentEID:  "1",
+			withRuntime: true,
+			setup: func(f *fakeMLRunClient) {
+				f.createErr = errAlreadyExist
+				f.adoptionLabels = map[string]any{"created_by": "xmanager", hypercomputeclient.ListExistingSessionsOnlyLabel: "true"}
+			},
+			wantCreated: map[string]string{},
+			wantUpdated: map[string]string{},
+			wantURL:     wantURL,
+		},
+		{
+			name:        "AlreadyExists get failure is returned and no URL is persisted",
+			currentEID:  "1",
+			withRuntime: true,
+			setup: func(f *fakeMLRunClient) {
+				f.createErr = errAlreadyExist
+				f.getErr = errHypercompute
+			},
+			wantErr:     errHypercompute,
+			wantCreated: map[string]string{},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "AlreadyExists adoption update failure is returned and no URL is persisted",
+			currentEID:  "1",
+			withRuntime: true,
+			setup: func(f *fakeMLRunClient) {
+				f.createErr = errAlreadyExist
+				f.labelErr = errHypercompute
+			},
+			wantErr:     errHypercompute,
+			wantCreated: map[string]string{},
+			wantUpdated: map[string]string{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mlClient := newFakeMLRunClient()
+			if tc.setup != nil {
+				tc.setup(mlClient)
+			}
 			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
 			store := storeWithCurrentEID(tc.currentEID)
 
-			if err := rule.OnExecutionStateChanged(context.Background(), store, lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, tc.withRuntime), managedXprofArtifact("")); err != nil {
-				t.Fatalf("OnExecutionStateChanged() error = %v", err)
+			err := rule.OnExecutionStateChanged(context.Background(), store, lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, tc.withRuntime), managedXprofArtifact(""))
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("OnExecutionStateChanged() error = %v, want %v", err, tc.wantErr)
 			}
 			if diff := cmp.Diff(tc.wantCreated, mlClient.createdRuns); diff != "" {
 				t.Errorf("created runs mismatch (-want +got):\n%s", diff)
 			}
+			if diff := cmp.Diff(tc.wantUpdated, mlClient.updatedRuns); diff != "" {
+				t.Errorf("updated run phases mismatch (-want +got):\n%s", diff)
+			}
 			assertArtifactUpdate(t, store, tc.wantURL)
+			assertExecutionMLRunURL(t, store, tc.wantURL)
 		})
 	}
+}
+
+// TestManagedXprofRule_RetryAfterLabelFailureIsIdempotent replays an event whose
+// first attempt created the MLRun but failed to stamp its label: the retry adopts
+// the run through AlreadyExists, re-stamps the label, and persists the URL.
+func TestManagedXprofRule_RetryAfterLabelFailureIsIdempotent(t *testing.T) {
+	mlClient := newFakeMLRunClient()
+	mlClient.labelErr = errHypercompute
+	rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+	store := storeWithCurrentEID("1")
+	event := lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, true)
+
+	if err := rule.OnExecutionStateChanged(context.Background(), store, event, managedXprofArtifact("")); !errors.Is(err, errHypercompute) {
+		t.Fatalf("first OnExecutionStateChanged() error = %v, want %v", err, errHypercompute)
+	}
+	mlClient.labelErr = nil
+	mlClient.createErr = errAlreadyExist
+	if err := rule.OnExecutionStateChanged(context.Background(), store, event, managedXprofArtifact("")); err != nil {
+		t.Fatalf("retried OnExecutionStateChanged() error = %v", err)
+	}
+	if diff := cmp.Diff([]string{expectedMLRunID}, mlClient.labeledRuns); diff != "" {
+		t.Errorf("labeled runs mismatch (-want +got):\n%s", diff)
+	}
+	wantURL := hypercomputeclient.ConsoleURL(testLocation, expectedMLRunID, testProject)
+	assertArtifactUpdate(t, store, wantURL)
+	assertExecutionMLRunURL(t, store, wantURL)
+}
+
+func TestManagedXprofRule_NilClientReturnsError(t *testing.T) {
+	rule := artifactlifecycle.NewManagedXprofRule(nil, testProject, testLocation)
+	store := storeWithCurrentEID("1")
+
+	err := rule.OnExecutionStateChanged(context.Background(), store, lifecycleEvent(essmsgpb.WorkUnitStatus_RUNNING, true), managedXprofArtifact(""))
+	if !errors.Is(err, artifactlifecycle.ErrMLRunClientUnavailable) {
+		t.Errorf("OnExecutionStateChanged() error = %v, want %v", err, artifactlifecycle.ErrMLRunClientUnavailable)
+	}
+	err = rule.OnExecutionSuperseded(context.Background(), store, 10, 20, 1, managedXprofArtifact(""))
+	if !errors.Is(err, artifactlifecycle.ErrMLRunClientUnavailable) {
+		t.Errorf("OnExecutionSuperseded() error = %v, want %v", err, artifactlifecycle.ErrMLRunClientUnavailable)
+	}
+	assertArtifactUpdate(t, store, "")
+	assertExecutionMLRunURL(t, store, "")
 }
 
 func assertArtifactUpdate(t *testing.T, store *storage.MockStorage, wantURL string) {
@@ -205,13 +367,37 @@ func assertArtifactUpdate(t *testing.T, store *storage.MockStorage, wantURL stri
 	}
 }
 
+// assertExecutionMLRunURL checks the metadata.mlrun_url written on the current
+// execution of work unit 20; "" means no execution write is expected.
+func assertExecutionMLRunURL(t *testing.T, store *storage.MockStorage, wantURL string) {
+	t.Helper()
+	exec, written := store.UpdatedWorkUnitExecutions[20]
+	if wantURL == "" {
+		if written {
+			t.Errorf("unexpected execution write: %v", exec)
+		}
+		return
+	}
+	if !written {
+		t.Fatal("expected an execution mlrun_url write, got none")
+	}
+	if got := exec.GetMetadata().GetMlrunUrl(); got != wantURL {
+		t.Errorf("execution mlrun_url = %q, want %q", got, wantURL)
+	}
+	if got := exec.GetName(); got != executionName("1") {
+		t.Errorf("execution name = %q, want %q", got, executionName("1"))
+	}
+}
+
 func TestManagedXprofRule_TerminalState(t *testing.T) {
-	storedURL := hypercomputeclient.ConsoleURL(testLocation, "stored-run-1", testProject)
+	recordedURL := hypercomputeclient.ConsoleURL(testLocation, "recorded-run-1", testProject)
 	tests := []struct {
 		name        string
 		state       essmsgpb.WorkUnitStatus_WorkUnitState
 		withRuntime bool
-		storedURL   string
+		executions  []*essmsgpb.WorkUnitExecution
+		setup       func(*fakeMLRunClient)
+		wantErr     error
 		wantUpdated map[string]string
 	}{
 		{
@@ -227,21 +413,44 @@ func TestManagedXprofRule_TerminalState(t *testing.T) {
 			wantUpdated: map[string]string{expectedMLRunID: "FAILED"},
 		},
 		{
-			name: "no runtime context finalizes stored MLRun", state: essmsgpb.WorkUnitStatus_COMPLETED, storedURL: storedURL,
-			wantUpdated: map[string]string{"stored-run-1": "COMPLETED"},
+			name: "create failure is returned before finalization", state: essmsgpb.WorkUnitStatus_COMPLETED, withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.createErr = errHypercompute },
+			wantErr:     errHypercompute,
+			wantUpdated: map[string]string{},
 		},
 		{
-			name: "no runtime context and no stored URL skips", state: essmsgpb.WorkUnitStatus_COMPLETED,
+			name: "phase update failure is returned", state: essmsgpb.WorkUnitStatus_COMPLETED, withRuntime: true,
+			setup:       func(f *fakeMLRunClient) { f.phaseErr = errHypercompute },
+			wantErr:     errHypercompute,
+			wantUpdated: map[string]string{},
+		},
+		{
+			name: "no runtime context finalizes MLRun recorded on the event execution", state: essmsgpb.WorkUnitStatus_COMPLETED,
+			executions: []*essmsgpb.WorkUnitExecution{
+				executionWithMLRunURL("2", hypercomputeclient.ConsoleURL(testLocation, "other-eid-run", testProject)),
+				executionWithMLRunURL("1", recordedURL),
+			},
+			wantUpdated: map[string]string{"recorded-run-1": "COMPLETED"},
+		},
+		{
+			name: "no runtime context and no recorded URL skips", state: essmsgpb.WorkUnitStatus_COMPLETED,
+			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("1", "")},
 			wantUpdated: map[string]string{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mlClient := newFakeMLRunClient()
+			if tc.setup != nil {
+				tc.setup(mlClient)
+			}
 			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+			store := storeWithCurrentEID("1")
+			store.ListWorkUnitExecutionsResp = tc.executions
 
-			if err := rule.OnExecutionStateChanged(context.Background(), storeWithCurrentEID("1"), lifecycleEvent(tc.state, tc.withRuntime), managedXprofArtifact(tc.storedURL)); err != nil {
-				t.Fatalf("OnExecutionStateChanged() error = %v", err)
+			err := rule.OnExecutionStateChanged(context.Background(), store, lifecycleEvent(tc.state, tc.withRuntime), managedXprofArtifact(""))
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("OnExecutionStateChanged() error = %v, want %v", err, tc.wantErr)
 			}
 			if diff := cmp.Diff(tc.wantUpdated, mlClient.updatedRuns); diff != "" {
 				t.Errorf("updated runs mismatch (-want +got):\n%s", diff)
@@ -253,31 +462,61 @@ func TestManagedXprofRule_TerminalState(t *testing.T) {
 func TestManagedXprofRule_OnExecutionSuperseded(t *testing.T) {
 	tests := []struct {
 		name        string
-		storedURL   string
+		executions  []*essmsgpb.WorkUnitExecution
+		listErr     error
+		phaseErr    error
+		wantErr     error
 		wantUpdated map[string]string
 	}{
 		{
-			name:        "finalizes MLRun from stored console URL",
-			storedURL:   hypercomputeclient.ConsoleURL(testLocation, "real-active-mlrun-999", testProject),
-			wantUpdated: map[string]string{"real-active-mlrun-999": "COMPLETED"},
+			name: "closes exactly the MLRun recorded on the archived execution",
+			executions: []*essmsgpb.WorkUnitExecution{
+				executionWithMLRunURL("2", hypercomputeclient.ConsoleURL(testLocation, "new-eid-run", testProject)),
+				executionWithMLRunURL("1", hypercomputeclient.ConsoleURL(testLocation, "old-eid-run", testProject)),
+			},
+			wantUpdated: map[string]string{"old-eid-run": "COMPLETED"},
 		},
 		{
-			name:        "finalizes MLRun from stored runs-segment URL",
-			storedURL:   "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/legacy-run-1?project=test-proj",
+			name: "closes MLRun from a runs-segment URL",
+			executions: []*essmsgpb.WorkUnitExecution{
+				executionWithMLRunURL("1", "https://console.cloud.google.com/cluster-director/locations/us-central1/runs/legacy-run-1?project=test-proj"),
+			},
 			wantUpdated: map[string]string{"legacy-run-1": "COMPLETED"},
 		},
 		{
-			name:        "skips artifact without stored MLRun URL",
+			name:        "skips execution without recorded MLRun URL",
+			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("1", "")},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "skips when the superseded execution is not found",
+			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("2", hypercomputeclient.ConsoleURL(testLocation, "new-eid-run", testProject))},
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "list executions failure is returned",
+			listErr:     errHypercompute,
+			wantErr:     errHypercompute,
+			wantUpdated: map[string]string{},
+		},
+		{
+			name:        "close failure is returned",
+			executions:  []*essmsgpb.WorkUnitExecution{executionWithMLRunURL("1", hypercomputeclient.ConsoleURL(testLocation, "old-eid-run", testProject))},
+			phaseErr:    errHypercompute,
+			wantErr:     errHypercompute,
 			wantUpdated: map[string]string{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mlClient := newFakeMLRunClient()
+			mlClient.phaseErr = tc.phaseErr
 			rule := artifactlifecycle.NewManagedXprofRule(mlClient, testProject, testLocation)
+			store := &storage.MockStorage{ListWorkUnitExecutionsResp: tc.executions, ListWorkUnitExecutionsErr: tc.listErr}
 
-			if err := rule.OnExecutionSuperseded(context.Background(), &storage.MockStorage{}, 10, 20, 1, managedXprofArtifact(tc.storedURL)); err != nil {
-				t.Fatalf("OnExecutionSuperseded() error = %v", err)
+			err := rule.OnExecutionSuperseded(context.Background(), store, 10, 20, 1, managedXprofArtifact(hypercomputeclient.ConsoleURL(testLocation, "shared-artifact-run", testProject)))
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("OnExecutionSuperseded() error = %v, want %v", err, tc.wantErr)
 			}
 			if diff := cmp.Diff(tc.wantUpdated, mlClient.updatedRuns); diff != "" {
 				t.Errorf("updated runs mismatch (-want +got):\n%s", diff)

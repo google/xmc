@@ -92,7 +92,6 @@ type Params struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	LifecycleNotifier        shared.LifecycleNotifier
 	ArtifactLifecycleEnabled bool
 }
 
@@ -110,9 +109,10 @@ type Reconciler struct {
 	StartupPodErrorCheckTime time.Duration
 	Storage                  ReconcilerStorage
 	MLRunClient              MLRunCreator
-	LifecycleNotifier        shared.LifecycleNotifier
 	ArtifactLifecycleEnabled bool
-	lastSeenNotifyWhen       sync.Map
+	// lastSeenNotifyWhen maps a notifyWhenKey to the last observed notify-when
+	// annotation value (string). It is in-memory only.
+	lastSeenNotifyWhen sync.Map
 
 	// now returns the current time; injectable so tests can control the
 	// STOPPED-write retry budget.
@@ -143,7 +143,6 @@ func NewReconciler(p Params) (*Reconciler, error) {
 		StartupPodErrorCheckTime: p.StartupPodErrorCheckTime,
 		Storage:                  p.Storage,
 		MLRunClient:              p.MLRunClient,
-		LifecycleNotifier:        p.LifecycleNotifier,
 		ArtifactLifecycleEnabled: p.ArtifactLifecycleEnabled,
 		now:                      time.Now,
 	}, nil
@@ -304,31 +303,8 @@ func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha
 		return nil
 	}
 	logging.Debug(ctx, "Persisted terminal status for deleting JobSet", "namespace", jobSet.Namespace)
-	r.publishDeletionLifecycleEvent(ctx, jobSet, xid, update)
 	r.evictPendingJobSetUpdate(xid, wid, eid)
 	return nil
-}
-
-// publishDeletionLifecycleEvent publishes the terminal state persisted for a
-// deleting JobSet when it matches the JobSet's notify-when annotation. The
-// prior state is unknown on this synchronous path, so it is left unspecified.
-func (r *Reconciler) publishDeletionLifecycleEvent(ctx context.Context, jobSet *v1alpha2.JobSet, xid int64, update *storagepkg.WorkUnitExecutionUpdate) {
-	if r.LifecycleNotifier == nil || update.WorkUnitExecution.GetStatus() == nil {
-		return
-	}
-	hints := ExtractLifecycleHints(jobSet, r.ClusterName)
-	state := update.WorkUnitExecution.GetStatus().GetState()
-	if !notifywhen.Matches(state, hints.NotifyWhen) {
-		return
-	}
-	shared.PublishLifecycleEvent(ctx, r.LifecycleNotifier, shared.LifecycleEvent{
-		XID:            xid,
-		WID:            update.WID,
-		EID:            update.EID,
-		OldState:       spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED,
-		NewState:       state,
-		RuntimeContext: hints.RuntimeContext,
-	})
 }
 
 // handleStoppedWriteFailure either abandons a failed STOPPED write (returning nil
@@ -349,6 +325,9 @@ func (r *Reconciler) handleStoppedWriteFailure(ctx context.Context, jobSet *v1al
 // STOPPING after the JobSet is gone.
 func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v1alpha2.JobSet) (ctrl.Result, error) {
 	ctx = logging.WithJobSetName(ctx, jobSet.Name, jobSet.Labels)
+	// A deleting JobSet is never synced again, so its notify-when tracking can be
+	// dropped regardless of whether this reconcile releases the finalizer.
+	r.lastSeenNotifyWhen.Delete(newNotifyWhenKey(jobSet))
 
 	finalizerIdx := slices.Index(jobSet.Finalizers, constants.JobSetFinalizer)
 	if finalizerIdx < 0 {
@@ -371,7 +350,6 @@ func (r *Reconciler) handleJobSetFinalizerRemoval(ctx context.Context, jobSet *v
 		return r.handlePatchError(ctx, jobSet, err)
 	}
 
-	r.lastSeenNotifyWhen.Delete(fmt.Sprintf("%s/%s", jobSet.Namespace, jobSet.Name))
 	logging.Debug(ctx, "Successfully patched finalizer from JobSet", "namespace", jobSet.Namespace)
 	return ctrl.Result{}, nil
 }
@@ -433,24 +411,34 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	return result, nil
 }
 
+// notifyWhenKey identifies one JobSet incarnation for notify-when tracking.
+// JobSet names are reused across executions of a work unit, so the key combines
+// the JobSet UID (distinct per re-created object) with its execution ID label.
+type notifyWhenKey struct {
+	uid types.UID
+	eid string
+}
+
+func newNotifyWhenKey(jobSet *v1alpha2.JobSet) notifyWhenKey {
+	return notifyWhenKey{uid: jobSet.UID, eid: jobSet.Labels[constants.ExecutionIDLabel]}
+}
+
+// checkNotifyWhenUpdate records the JobSet's current notify-when annotation and
+// reports whether its current state must be published immediately: either the
+// annotation is first observed for this JobSet incarnation, or it changed so
+// that it now matches the current state when the previous value did not.
 func (r *Reconciler) checkNotifyWhenUpdate(jobSet *v1alpha2.JobSet) bool {
 	if jobSet == nil {
 		return false
 	}
-	var currentNotifyWhen string
-	if jobSet.Annotations != nil {
-		currentNotifyWhen = jobSet.Annotations[constants.NotifyWhenAnnotation]
-	}
-	jobSetKey := fmt.Sprintf("%s/%s", jobSet.Namespace, jobSet.Name)
-	lastSeenVal, ok := r.lastSeenNotifyWhen.Load(jobSetKey)
-	r.lastSeenNotifyWhen.Store(jobSetKey, currentNotifyWhen)
-
+	currentNotifyWhen := jobSet.Annotations[constants.NotifyWhenAnnotation]
+	lastSeenVal, ok := r.lastSeenNotifyWhen.Swap(newNotifyWhenKey(jobSet), currentNotifyWhen)
 	if currentNotifyWhen == "" {
 		return false
 	}
 	curState := ToWorkUnitState(jobSet)
 	if !ok {
-		// First time seeing this JobSet with notify-when annotation set.
+		// First time seeing this JobSet incarnation with notify-when set.
 		return notifywhen.Matches(curState, currentNotifyWhen)
 	}
 	lastSeen, _ := lastSeenVal.(string)

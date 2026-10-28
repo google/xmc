@@ -24,6 +24,7 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/artifactlifecycle"
 	"xmanager_cloud/internal/storage"
+	tq "xmanager_cloud/internal/task_queue"
 )
 
 // pagedArtifactStorage serves ListArtifacts from fixed pages keyed by page token.
@@ -130,5 +131,99 @@ func TestFinalizeSupersededExecution(t *testing.T) {
 				t.Errorf("superseded EIDs mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// countingStorage counts the reads the artifact lifecycle hooks may issue.
+type countingStorage struct {
+	storage.MockStorage
+	listArtifactsCalls int
+	fetchWorkUnitCalls int
+}
+
+func (c *countingStorage) ListArtifacts(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Artifact, string, error) {
+	c.listArtifactsCalls++
+	return c.MockStorage.ListArtifacts(ctx, parent, pageSize, pageToken, filter, orderBy, staleness)
+}
+
+func (c *countingStorage) FetchWorkUnit(ctx context.Context, xid, wid int64) (*essmsgpb.WorkUnit, error) {
+	c.fetchWorkUnitCalls++
+	return c.MockStorage.FetchWorkUnit(ctx, xid, wid)
+}
+
+// TestArtifactLifecycleHooks_DisabledIssueNoReads asserts that with the artifact
+// lifecycle disabled (empty registry) the CreateWorkUnit, CreateArtifact,
+// RestartWorkUnit and BatchRestartWorkUnits hooks add no ListArtifacts or
+// FetchWorkUnit calls and enqueue no tasks.
+func TestArtifactLifecycleHooks_DisabledIssueNoReads(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(base baseHandler, actuator WorkUnitActuator)
+	}{
+		{
+			name: "CreateWorkUnit and RestartWorkUnit notify-when",
+			run: func(base baseHandler, _ WorkUnitActuator) {
+				if got := base.requiredNotifyWhen(context.Background(), 1, 2); got != "" {
+					t.Errorf("requiredNotifyWhen() = %q, want empty", got)
+				}
+			},
+		},
+		{
+			name: "CreateArtifact notify-when sync",
+			run: func(base baseHandler, actuator WorkUnitActuator) {
+				h := &ArtifactHandler{baseHandler: base, actuator: actuator}
+				h.syncWorkUnitNotifyWhen(context.Background(), 1, 2)
+			},
+		},
+		{
+			name: "RestartWorkUnit and BatchRestartWorkUnits superseded finalization",
+			run: func(base baseHandler, _ WorkUnitActuator) {
+				h := &WorkUnitHandler{baseHandler: base}
+				h.finalizeSupersededExecution(context.Background(), 1, 2, "experiments/1/workUnits/2/executions/3")
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &countingStorage{MockStorage: storage.MockStorage{
+				ListArtifactsResp: []*essmsgpb.Artifact{xprofArtifact()},
+				WorkUnit:          &essmsgpb.WorkUnit{CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: "experiments/1/workUnits/2/executions/3"}},
+			}}
+			actuator := &tq.FakeClient{}
+
+			tc.run(baseHandler{storage: store, artifactLifecycle: artifactlifecycle.NewRegistry()}, actuator)
+
+			if store.listArtifactsCalls != 0 || store.fetchWorkUnitCalls != 0 {
+				t.Errorf("reads = {ListArtifacts: %d, FetchWorkUnit: %d}, want none", store.listArtifactsCalls, store.fetchWorkUnitCalls)
+			}
+			if len(actuator.EnqueuedTasks) != 0 {
+				t.Errorf("enqueued tasks = %d, want 0", len(actuator.EnqueuedTasks))
+			}
+		})
+	}
+}
+
+// TestFinalizeSupersededExecution_RuleFailureDoesNotPropagate asserts that a failing
+// superseded hook (e.g. the MLRun close failed) is only logged: the finalization
+// returns normally so the restart RPC still succeeds.
+func TestFinalizeSupersededExecution_RuleFailureDoesNotPropagate(t *testing.T) {
+	var calls int
+	failing := artifactlifecycle.LifecycleRule{
+		Name:    "failing",
+		Matches: func(a *essmsgpb.Artifact) bool { return a.GetPayload().GetManagedXprof() != nil },
+		OnExecutionSuperseded: func(context.Context, storage.Storage, int64, int64, int64, *essmsgpb.Artifact) error {
+			calls++
+			return errors.New("close MLRun failed")
+		},
+	}
+	h := &WorkUnitHandler{baseHandler: baseHandler{
+		storage:           &storage.MockStorage{ListArtifactsResp: []*essmsgpb.Artifact{xprofArtifact()}},
+		artifactLifecycle: artifactlifecycle.NewRegistry(failing),
+	}}
+
+	h.finalizeSupersededExecution(context.Background(), 1, 2, "experiments/1/workUnits/2/executions/3")
+
+	if calls != 1 {
+		t.Errorf("OnExecutionSuperseded calls = %d, want 1", calls)
 	}
 }

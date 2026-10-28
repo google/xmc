@@ -16,6 +16,7 @@ package artifactlifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,16 +36,6 @@ const (
 	runPhaseCompleted = "COMPLETED"
 	runPhaseFailed    = "FAILED"
 )
-
-// storedMLRunID returns the MLRun id recorded on the artifact's xprof_url (or
-// url), or "" when no MLRun URL has been persisted yet.
-func storedMLRunID(artifact *essmsgpb.Artifact) string {
-	rawURL := artifact.GetPayload().GetManagedXprof().GetXprof().GetXprofUrl()
-	if rawURL == "" {
-		rawURL = artifact.GetUrl().GetUrl()
-	}
-	return hypercomputeclient.ParseMLRunIDFromURL(rawURL)
-}
 
 // MLRunClient defines the external Hypercompute operations required by ManagedXprofRule.
 type MLRunClient interface {
@@ -93,7 +84,14 @@ func (r *ManagedXprofRule) Matches(artifact *essmsgpb.Artifact) bool {
 	return artifact.GetPayload().GetManagedXprof() != nil
 }
 
+// ErrMLRunClientUnavailable is returned when the rule is registered (lifecycle flag
+// on) but the MLRun client failed to initialize. The event is retried and eventually
+// dead-lettered instead of being acknowledged with a fabricated, unbacked URL.
+var ErrMLRunClientUnavailable = errors.New("mlrun client is not configured")
+
 // OnExecutionStateChanged handles state transitions for ManagedXprof artifacts.
+// Hypercompute and storage failures are returned so the lifecycle worker retries the
+// event; every step is idempotent, so a retry safely re-runs the whole handler.
 func (r *ManagedXprofRule) OnExecutionStateChanged(
 	ctx context.Context,
 	store storage.Storage,
@@ -102,6 +100,9 @@ func (r *ManagedXprofRule) OnExecutionStateChanged(
 ) error {
 	if event == nil || artifact == nil {
 		return nil
+	}
+	if r.mlRunClient == nil {
+		return ErrMLRunClientUnavailable
 	}
 
 	switch event.GetNewState() {
@@ -121,7 +122,8 @@ type mlRunContext struct {
 	createOpts  *hypercomputeclient.CreateMLRunOptions
 }
 
-// handleActiveState initializes the MLRun and persists xprof_url onto the Artifact row.
+// handleActiveState ensures the execution's MLRun exists and records its URL. When the
+// event's execution is already superseded, the MLRun is closed immediately instead.
 func (r *ManagedXprofRule) handleActiveState(
 	ctx context.Context,
 	store storage.Storage,
@@ -133,51 +135,55 @@ func (r *ManagedXprofRule) handleActiveState(
 		logging.Warn(ctx, "Skipping MLRun creation; lifecycle event lacks JobSet runtime context", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
 		return nil
 	}
-	xprofURL := r.getOrCreateMLRun(ctx, mlCtx)
-	if xprofURL == "" {
-		return nil
+	xprofURL, err := r.getOrCreateMLRun(ctx, mlCtx)
+	if err != nil {
+		return err
 	}
-	return r.persistArtifactURL(ctx, store, event, artifact, xprofURL)
+	superseded, err := r.persistMLRunURL(ctx, store, event, artifact, xprofURL)
+	if err != nil || !superseded {
+		return err
+	}
+	logging.Info(ctx, "Closing MLRun of superseded execution", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId(), "mlRunID", mlCtx.mlRunID)
+	return r.updateRunPhase(ctx, mlCtx.mlRunID, runPhaseCompleted)
 }
 
 // handleTerminalState transitions the MLRun to COMPLETED or FAILED. When the event
-// carries the JobSet runtime context it also ensures the MLRun exists and backfills
-// xprof_url; otherwise it finalizes the MLRun recorded on the artifact, if any.
+// carries the JobSet runtime context it also ensures the MLRun exists and records its
+// URL; otherwise it finalizes the MLRun recorded on the event's execution, if any.
 func (r *ManagedXprofRule) handleTerminalState(
 	ctx context.Context,
 	store storage.Storage,
 	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 ) error {
-	mlRunID := storedMLRunID(artifact)
-	if mlCtx, ok := buildMLRunContext(event); ok {
-		mlRunID = mlCtx.mlRunID
-		r.backfillArtifactURL(ctx, store, event, artifact, mlCtx)
+	phase := terminalRunPhase(event.GetNewState())
+	mlCtx, ok := buildMLRunContext(event)
+	if !ok {
+		return r.finalizeRecordedMLRun(ctx, store, event, phase)
 	}
-	if mlRunID == "" {
-		logging.Warn(ctx, "Skipping MLRun finalization; no runtime context and no stored MLRun URL", "xid", event.GetExperimentId(), "wid", event.GetWorkUnitId(), "eid", event.GetWorkUnitExecutionId())
-		return nil
+	xprofURL, err := r.getOrCreateMLRun(ctx, mlCtx)
+	if err != nil {
+		return err
 	}
-	r.updateRunPhase(ctx, mlRunID, terminalRunPhase(event.GetNewState()))
-	return nil
+	if _, err := r.persistMLRunURL(ctx, store, event, artifact, xprofURL); err != nil {
+		return err
+	}
+	return r.updateRunPhase(ctx, mlCtx.mlRunID, phase)
 }
 
-// backfillArtifactURL ensures the MLRun exists and persists its URL, logging failures
-// so terminal-phase finalization still proceeds.
-func (r *ManagedXprofRule) backfillArtifactURL(
-	ctx context.Context,
-	store storage.Storage,
-	event *taskqueuepb.ArtifactLifecycleEvent,
-	artifact *essmsgpb.Artifact,
-	mlCtx mlRunContext,
-) {
-	xprofURL := r.getOrCreateMLRun(ctx, mlCtx)
-	if xprofURL == "" {
-		return
+// finalizeRecordedMLRun transitions the MLRun recorded on the event execution's
+// metadata.mlrun_url to phase. Executions without a recorded MLRun are skipped.
+func (r *ManagedXprofRule) finalizeRecordedMLRun(ctx context.Context, store storage.Storage, event *taskqueuepb.ArtifactLifecycleEvent, phase string) error {
+	xid, wid, eid := event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId()
+	mlRunID, err := executionMLRunID(ctx, store, xid, wid, eid)
+	if err != nil {
+		return err
 	}
-	if err := r.persistArtifactURL(ctx, store, event, artifact, xprofURL); err != nil {
-		logging.Warn(ctx, "Failed to backfill xprof_url on terminal state", "artifact", artifact.GetName(), "error", err)
+	if mlRunID == "" {
+		logging.Warn(ctx, "Skipping MLRun finalization; no runtime context and no recorded MLRun URL", "xid", xid, "wid", wid, "eid", eid)
+		return nil
 	}
+	return r.updateRunPhase(ctx, mlRunID, phase)
 }
 
 func terminalRunPhase(state essmsgpb.WorkUnitStatus_WorkUnitState) string {
@@ -187,75 +193,96 @@ func terminalRunPhase(state essmsgpb.WorkUnitStatus_WorkUnitState) string {
 	return runPhaseFailed
 }
 
-func (r *ManagedXprofRule) updateRunPhase(ctx context.Context, mlRunID, phase string) {
-	if r.mlRunClient == nil {
-		return
+// updateRunPhase sets the MLRun phase. Re-applying the current phase and the client's
+// terminal-to-ACTIVE downgrade guard are no-ops that succeed, so retries are safe.
+func (r *ManagedXprofRule) updateRunPhase(ctx context.Context, mlRunID, phase string) error {
+	if _, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{RunPhase: phase}); err != nil {
+		return fmt.Errorf("update MLRun %q to phase %s: %w", mlRunID, phase, err)
 	}
-	_, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{RunPhase: phase})
-	if err != nil {
-		logging.Warn(ctx, "Failed to update MLRun phase", "mlRunID", mlRunID, "phase", phase, "error", err)
-	}
-}
-
-// OnExecutionSuperseded closes out the external MLRun recorded on the artifact for a
-// superseded execution. Artifacts without a stored MLRun URL are skipped: the MLRun
-// id cannot be derived without the superseded JobSet's runtime context.
-func (r *ManagedXprofRule) OnExecutionSuperseded(
-	ctx context.Context,
-	_ storage.Storage,
-	xid, wid, oldEID int64,
-	artifact *essmsgpb.Artifact,
-) error {
-	if r.mlRunClient == nil {
-		return nil
-	}
-	mlRunID := storedMLRunID(artifact)
-	if mlRunID == "" {
-		logging.Info(ctx, "Skipping superseded execution MLRun finalization; artifact has no stored MLRun URL", "xid", xid, "wid", wid, "oldEID", oldEID, "artifact", artifact.GetName())
-		return nil
-	}
-	logging.Info(ctx, "Finalizing superseded execution MLRun", "xid", xid, "wid", wid, "oldEID", oldEID, "mlRunID", mlRunID)
-	r.updateRunPhase(ctx, mlRunID, runPhaseCompleted)
 	return nil
 }
 
-// persistArtifactURL updates the shared Artifact row inside a Spanner RW transaction,
-// enforcing Shared-Artifact Execution Fencing (event.EID == CurrentWorkUnitExecution.EID).
-func (r *ManagedXprofRule) persistArtifactURL(
+// OnExecutionSuperseded closes exactly the MLRun recorded on the superseded
+// execution's metadata.mlrun_url. Executions without a recorded MLRun are skipped.
+// The caller (the synchronous restart path) logs a returned error and never fails
+// the restart on it.
+func (r *ManagedXprofRule) OnExecutionSuperseded(
+	ctx context.Context,
+	store storage.Storage,
+	xid, wid, oldEID int64,
+	_ *essmsgpb.Artifact,
+) error {
+	if r.mlRunClient == nil {
+		return ErrMLRunClientUnavailable
+	}
+	mlRunID, err := executionMLRunID(ctx, store, xid, wid, oldEID)
+	if err != nil {
+		return err
+	}
+	if mlRunID == "" {
+		logging.Info(ctx, "Skipping superseded execution MLRun finalization; execution has no recorded MLRun URL", "xid", xid, "wid", wid, "oldEID", oldEID)
+		return nil
+	}
+	logging.Info(ctx, "Finalizing superseded execution MLRun", "xid", xid, "wid", wid, "oldEID", oldEID, "mlRunID", mlRunID)
+	if err := r.updateRunPhase(ctx, mlRunID, runPhaseCompleted); err != nil {
+		logging.Warn(ctx, "Failed to close superseded execution MLRun", "xid", xid, "wid", wid, "oldEID", oldEID, "mlRunID", mlRunID, "error", err)
+		return err
+	}
+	return nil
+}
+
+// persistMLRunURL records xprofURL inside one Spanner RW transaction. It reports
+// superseded=true, writing nothing, when the event's execution is no longer current
+// (Shared-Artifact Execution Fencing). Otherwise it records the URL on the event
+// execution's metadata.mlrun_url and on the shared Artifact row.
+func (r *ManagedXprofRule) persistMLRunURL(
 	ctx context.Context,
 	store storage.Storage,
 	event *taskqueuepb.ArtifactLifecycleEvent,
 	artifact *essmsgpb.Artifact,
 	xprofURL string,
-) error {
+) (bool, error) {
 	aid, err := validator.ParseArtifactIDFromName(artifact.GetName())
 	if err != nil {
-		return fmt.Errorf("invalid artifact name %q: %w", artifact.GetName(), err)
+		return false, fmt.Errorf("invalid artifact name %q: %w", artifact.GetName(), err)
 	}
+	xid, wid, eid := event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId()
 
-	return store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		fenced, err := isExecutionSupersededInTx(ctx, tx, event.GetExperimentId(), event.GetWorkUnitId(), event.GetWorkUnitExecutionId())
-		if err != nil || fenced {
-			return err
-		}
-
-		currentArt, err := tx.Artifacts.FetchArtifact(ctx, aid)
+	var superseded bool
+	err = store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
 		if err != nil {
-			return fmt.Errorf("failed to fetch artifact %d in transaction: %w", aid, err)
+			return fmt.Errorf("failed to fetch work unit %d: %w", wid, err)
 		}
-		if currentArt.GetUrl().GetUrl() == xprofURL &&
-			currentArt.GetPayload().GetManagedXprof().GetXprof().GetXprofUrl() == xprofURL {
+		superseded = isExecutionSuperseded(ctx, wu, eid)
+		if superseded {
 			return nil
 		}
-
-		update := &storage.ArtifactUpdate{
-			AID:        aid,
-			Artifact:   buildArtifactWithXprofURL(currentArt, xprofURL),
-			UpdateMask: &fmpb.FieldMask{Paths: []string{"url", "payload"}},
+		if err := recordExecutionMLRunURLInTx(ctx, tx, xid, wid, eid, wu.GetCurrentWorkUnitExecution(), xprofURL); err != nil {
+			return err
 		}
-		_, err = tx.Artifacts.UpdateArtifact(ctx, update)
-		return err
+		return writeArtifactXprofURLInTx(ctx, tx, aid, xprofURL)
 	})
+	return superseded, err
+}
+
+// writeArtifactXprofURLInTx sets the shared Artifact row's url and xprof_url,
+// skipping the write when both already hold xprofURL.
+func writeArtifactXprofURLInTx(ctx context.Context, tx *storage.Transaction, aid int64, xprofURL string) error {
+	currentArt, err := tx.Artifacts.FetchArtifact(ctx, aid)
+	if err != nil {
+		return fmt.Errorf("failed to fetch artifact %d in transaction: %w", aid, err)
+	}
+	if currentArt.GetUrl().GetUrl() == xprofURL &&
+		currentArt.GetPayload().GetManagedXprof().GetXprof().GetXprofUrl() == xprofURL {
+		return nil
+	}
+	_, err = tx.Artifacts.UpdateArtifact(ctx, &storage.ArtifactUpdate{
+		AID:        aid,
+		Artifact:   buildArtifactWithXprofURL(currentArt, xprofURL),
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"url", "payload"}},
+	})
+	return err
 }
 
 func buildArtifactWithXprofURL(currentArt *essmsgpb.Artifact, xprofURL string) *essmsgpb.Artifact {
@@ -289,13 +316,10 @@ func buildArtifactWithXprofURL(currentArt *essmsgpb.Artifact, xprofURL string) *
 	}
 }
 
-// getOrCreateMLRun creates the MLRun (or, on conflict, adopts the existing one) and
-// returns the URL to persist on the artifact.
-func (r *ManagedXprofRule) getOrCreateMLRun(ctx context.Context, mlCtx mlRunContext) string {
-	if r.mlRunClient == nil {
-		return r.mlRunURL(nil, mlCtx.mlRunID)
-	}
-
+// getOrCreateMLRun creates the MLRun (or, on AlreadyExists, adopts the existing one)
+// and returns the URL to persist. It returns an error, and never a URL, when the
+// MLRun could not be created or adopted.
+func (r *ManagedXprofRule) getOrCreateMLRun(ctx context.Context, mlCtx mlRunContext) (string, error) {
 	_, err := r.mlRunClient.CreateMLRun(ctx, mlCtx.mlRunID, mlCtx.displayName, runPhaseActive, mlCtx.createOpts)
 	if err == nil {
 		return r.stampExistingSessionsOnlyLabel(ctx, mlCtx.mlRunID)
@@ -303,33 +327,34 @@ func (r *ManagedXprofRule) getOrCreateMLRun(ctx context.Context, mlCtx mlRunCont
 	if hypercomputeclient.IsAlreadyExists(err) {
 		return r.adoptExistingMLRun(ctx, err, mlCtx)
 	}
-	logging.Error(ctx, "CreateMLRun failed", "mlRunID", mlCtx.mlRunID, "error", err)
-	return r.mlRunURL(nil, mlCtx.mlRunID)
+	return "", fmt.Errorf("create MLRun %q: %w", mlCtx.mlRunID, err)
 }
 
 // stampExistingSessionsOnlyLabel stamps list_existing_sessions_only post-creation to
-// preserve the ACTIVE phase (creating with it forces COMPLETED, blocking on-demand profiling).
-func (r *ManagedXprofRule) stampExistingSessionsOnlyLabel(ctx context.Context, mlRunID string) string {
+// preserve the ACTIVE phase (creating with it forces COMPLETED, blocking on-demand
+// profiling). On failure the retried event re-enters through CreateMLRun ->
+// AlreadyExists -> adoptExistingMLRun, which re-stamps the label because adoption is
+// incomplete until the label is present.
+func (r *ManagedXprofRule) stampExistingSessionsOnlyLabel(ctx context.Context, mlRunID string) (string, error) {
 	res, err := r.mlRunClient.UpdateMLRun(ctx, mlRunID, &hypercomputeclient.UpdateMLRunOptions{
 		Labels: map[string]string{hypercomputeclient.ListExistingSessionsOnlyLabel: "true"},
 	})
 	if err != nil {
-		logging.Warn(ctx, "Failed to stamp list_existing_sessions_only label on MLRun", "mlRunID", mlRunID, "error", err)
+		return "", fmt.Errorf("stamp %s label on MLRun %q: %w", hypercomputeclient.ListExistingSessionsOnlyLabel, mlRunID, err)
 	}
-	return r.mlRunURL(res, mlRunID)
+	return r.mlRunURL(res, mlRunID), nil
 }
 
 // adoptExistingMLRun handles an MLRun create conflict: a run already owned by
 // XManager is returned as-is; any other run is updated with our ManagedXprof fields.
-func (r *ManagedXprofRule) adoptExistingMLRun(ctx context.Context, createErr error, mlCtx mlRunContext) string {
+func (r *ManagedXprofRule) adoptExistingMLRun(ctx context.Context, createErr error, mlCtx mlRunContext) (string, error) {
 	existingID := hypercomputeclient.ResolveExistingMLRunID(createErr, mlCtx.mlRunID)
 	existing, err := r.mlRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
-		logging.Warn(ctx, "MLRun already exists but could not be fetched", "mlRunID", existingID, "error", err)
-		return r.mlRunURL(nil, existingID)
+		return "", fmt.Errorf("get existing MLRun %q: %w", existingID, err)
 	}
 	if hypercomputeclient.MLRunAdoptionComplete(existing) {
-		return r.mlRunURL(existing, existingID)
+		return r.mlRunURL(existing, existingID), nil
 	}
 
 	res, err := r.mlRunClient.UpdateMLRun(ctx, existingID, &hypercomputeclient.UpdateMLRunOptions{
@@ -339,10 +364,9 @@ func (r *ManagedXprofRule) adoptExistingMLRun(ctx context.Context, createErr err
 		Artifacts:   mlCtx.createOpts.Artifacts,
 	})
 	if err != nil {
-		logging.Warn(ctx, "Failed to update existing MLRun", "mlRunID", existingID, "error", err)
-		return r.mlRunURL(existing, existingID)
+		return "", fmt.Errorf("adopt existing MLRun %q: %w", existingID, err)
 	}
-	return r.mlRunURL(res, existingID)
+	return r.mlRunURL(res, existingID), nil
 }
 
 // buildMLRunContext derives the MLRun identity and create options from the event's

@@ -139,6 +139,38 @@ py_test(
 )
 
 py_test(
+    name = "reconciler_redis_secret_test",
+    srcs = ["reconciler_redis_secret_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "reconciler_redis_secret_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
+    name = "reconciler_redis_addr_test",
+    srcs = ["reconciler_redis_addr_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "reconciler_redis_addr_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "session_ttl_test",
     srcs = ["session_ttl_test.py"],
     data = ["//deploy/helm:chart"],

@@ -71,6 +71,10 @@ Responsibilities beyond CRUD:
   ([`cmd/experiment_state_server/artifactlifecycle`](../../cmd/experiment_state_server/artifactlifecycle))
   that evaluates registered `LifecycleRule` implementations (such as `ManagedXprofRule`) against
   edge-triggered work unit execution state transitions published by the Reconciler.
+  `ManagedXprofRule` creates, reads, and updates ML Runs through the Hypercompute Cluster API with
+  the ESS workload identity (no service account impersonation), so that Google service account
+  needs `roles/hypercomputecluster.editor`; the CTK blueprint grants it when
+  `artifact_lifecycle_enabled` is true.
 - **OAuth2 endpoints.** The application-level OAuth2 login, callback, and session handling live in
   [`pkg/auth/oauth2`](../../pkg/auth/oauth2) and are mounted by ESS.
 

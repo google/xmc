@@ -29,6 +29,9 @@ const (
 	// ReasonNewerExecutionExists indicates a newer execution exists on the parent WorkUnit.
 	ReasonNewerExecutionExists TaskFilterReason = "newer execution ID exists on work unit"
 	// ReasonUpdateWhilePaused indicates an update was buffered while the WorkUnit is in SCHEDULING_PAUSED state.
+	// Dropping a notify-when Update here is safe: the WorkUnit's buffered Create or
+	// Restart is replayed with notify-when recomputed from its current artifacts
+	// (see ResumptionWorker.replayAction), which supersedes the stale Update.
 	ReasonUpdateWhilePaused TaskFilterReason = "update action while work unit is in SCHEDULING_PAUSED state"
 	// ReasonStaleUpdatePriority indicates an update's priority does not match the live WorkUnit priority.
 	ReasonStaleUpdatePriority TaskFilterReason = "update action priority does not match work unit priority"

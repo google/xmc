@@ -57,7 +57,6 @@ type Config struct {
 	MLDiagnosticsEnvironment    string
 	MLRunProject                string
 	MLRunLocation               string
-	MLRunImpersonateSA          string
 }
 
 var cfg Config
@@ -76,7 +75,6 @@ func init() {
 	flag.StringVar(&cfg.MLDiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics control-plane environment: one of autopush, staging, or prod.")
 	flag.StringVar(&cfg.MLRunProject, "mlrun_project", "", "Optional target GCP project for the Hypercompute Cluster ML Run API.")
 	flag.StringVar(&cfg.MLRunLocation, "mlrun_location", "us-central1", "Optional target location for the Hypercompute Cluster ML Run API.")
-	flag.StringVar(&cfg.MLRunImpersonateSA, "mlrun_impersonate_sa", "", "Optional service account to impersonate for the Hypercompute Cluster ML Run API.")
 	cfg.registerConfigs()
 }
 
@@ -97,7 +95,6 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.MLDiagnosticsEnvironment, "mldiagnostics_environment", "prod")
 	configutil.StringEnv(&c.MLRunProject, "mlrun_project", "")
 	configutil.StringEnv(&c.MLRunLocation, "mlrun_location", "us-central1")
-	configutil.StringEnv(&c.MLRunImpersonateSA, "mlrun_impersonate_sa", "")
 	c.FeatureFlags = featureflags.Load()
 }
 

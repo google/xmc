@@ -586,7 +586,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `pause_scheduling_enabled` | No | `true` | Enables the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS |
 | `health_scheduling_resume_batch_size` | No | `100` | Number of paused tasks replayed per batch from Spanner during unpause resumption |
 | `health_scheduling_resume_max_backlog` | No | `500` | Maximum unprocessed tasks in `xmc-tasks-stream` before resumption worker pauses replay |
-| `artifact_lifecycle_enabled` | No | `false` | Enables ESS-driven artifact lifecycle management (`XMC_ARTIFACT_LIFECYCLE_ENABLED`) and edge-triggered Reconciler notifications |
+| `artifact_lifecycle_enabled` | No | `false` | Enables ESS-driven artifact lifecycle management (`XMC_ARTIFACT_LIFECYCLE_ENABLED`) and edge-triggered Reconciler notifications. ESS then calls the Hypercompute Cluster ML Run API with its own workload identity, so the blueprint also enables `hypercomputecluster.googleapis.com` and grants `roles/hypercomputecluster.editor` to the workload service account |
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |

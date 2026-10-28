@@ -22,7 +22,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +37,6 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
-	taskqueuepb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/kubernetes/common/constants"
@@ -973,14 +971,14 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 	}
 }
 
-func TestCheckNotifyWhenUpdate(t *testing.T) {
-	r := &Reconciler{}
-
-	// Case 1: JobSet initially has no annotations. Should record "" and return false.
+// notifyWhenJobSet returns a running JobSet for notify-when tracking tests.
+func notifyWhenJobSet(uid types.UID, eid, notifyWhen string) *v1alpha2.JobSet {
 	js := &v1alpha2.JobSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "default",
-			Name:      "test-jobset",
+			Name:      "xmc-operation-10-20",
+			UID:       uid,
+			Labels:    map[string]string{constants.ExecutionIDLabel: eid},
 		},
 		Spec: v1alpha2.JobSetSpec{
 			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
@@ -989,42 +987,98 @@ func TestCheckNotifyWhenUpdate(t *testing.T) {
 			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
 		},
 	}
-	if r.checkNotifyWhenUpdate(js) {
-		t.Errorf("expected false for initial JobSet without notify-when annotation")
+	if notifyWhen != "" {
+		js.Annotations = map[string]string{constants.NotifyWhenAnnotation: notifyWhen}
 	}
+	return js
+}
 
-	// Case 2: JobSet is patched with notify-when="STARTING.RUNNING". Should detect change from "" and return true.
-	js.Annotations = map[string]string{
-		constants.NotifyWhenAnnotation: "STARTING.RUNNING",
-	}
-	if !r.checkNotifyWhenUpdate(js) {
-		t.Errorf("expected true when notify-when is patched onto running JobSet")
-	}
-
-	// Case 3: Reconcile repeats without changes. Should return false.
-	if r.checkNotifyWhenUpdate(js) {
-		t.Errorf("expected false on repeated reconcile with identical notify-when annotation")
-	}
-
-	// Case 4: A new JobSet is seen for the first time with notify-when="STARTING.RUNNING" in running state.
-	// (e.g. reconciler restart or created with annotation). Should return true.
-	jsNew := &v1alpha2.JobSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "new-jobset",
-			Annotations: map[string]string{
-				constants.NotifyWhenAnnotation: "STARTING.RUNNING",
+func TestCheckNotifyWhenUpdate(t *testing.T) {
+	tests := []struct {
+		name string
+		// seq is observed in order; want holds the result for each observation.
+		seq  []*v1alpha2.JobSet
+		want []bool
+	}{
+		{
+			name: "annotation newly added to running JobSet",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", ""),
+				notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING"),
 			},
+			want: []bool{false, true},
 		},
-		Spec: v1alpha2.JobSetSpec{
-			ReplicatedJobs: []v1alpha2.ReplicatedJob{{Replicas: 1}},
+		{
+			name: "unchanged annotation",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING"),
+				notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING"),
+			},
+			want: []bool{true, false},
 		},
-		Status: v1alpha2.JobSetStatus{
-			ReplicatedJobsStatus: []v1alpha2.ReplicatedJobStatus{{Ready: 1, Active: 1}},
+		{
+			name: "annotation changed without adding current state",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", "RUNNING"),
+				notifyWhenJobSet("uid-1", "30", "RUNNING.COMPLETED"),
+			},
+			want: []bool{true, false},
+		},
+		{
+			name: "first-seen annotation not matching current state",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", "COMPLETED"),
+			},
+			want: []bool{false},
+		},
+		{
+			name: "same name different UID does not reuse state",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING"),
+				notifyWhenJobSet("uid-2", "30", "STARTING.RUNNING"),
+			},
+			want: []bool{true, true},
+		},
+		{
+			name: "same UID different EID does not reuse state",
+			seq: []*v1alpha2.JobSet{
+				notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING"),
+				notifyWhenJobSet("uid-1", "31", "STARTING.RUNNING"),
+			},
+			want: []bool{true, true},
+		},
+		{
+			name: "nil JobSet",
+			seq:  []*v1alpha2.JobSet{nil},
+			want: []bool{false},
 		},
 	}
-	if !r.checkNotifyWhenUpdate(jsNew) {
-		t.Errorf("expected true for first-seen JobSet matching notify-when")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{}
+			got := make([]bool, 0, len(tc.seq))
+			for _, js := range tc.seq {
+				got = append(got, r.checkNotifyWhenUpdate(js))
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("checkNotifyWhenUpdate() results mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestHandleJobSetFinalizerRemoval_ClearsNotifyWhenTracking(t *testing.T) {
+	r := &Reconciler{}
+	js := notifyWhenJobSet("uid-1", "30", "STARTING.RUNNING")
+	r.checkNotifyWhenUpdate(js)
+	js.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+
+	if _, err := r.handleJobSetFinalizerRemoval(t.Context(), js); err != nil {
+		t.Fatalf("handleJobSetFinalizerRemoval() error = %v", err)
+	}
+
+	if _, ok := r.lastSeenNotifyWhen.Load(newNotifyWhenKey(js)); ok {
+		t.Errorf("notify-when tracking entry still present after finalizer removal")
 	}
 }
 
@@ -1122,75 +1176,4 @@ func TestSyncJobSetStatus_ArtifactLifecycleFlagCoexistence(t *testing.T) {
 			t.Errorf("pending lifecycle hints mismatch (-want +got):\n%s", diff)
 		}
 	})
-}
-
-func TestPublishDeletionLifecycleEvent(t *testing.T) {
-	stopped := createStoppedUpdate(20, 30)
-	tests := []struct {
-		name       string
-		notifyWhen string
-		notifier   *recordingLifecycleNotifier
-		wantEvents []*taskqueuepb.ArtifactLifecycleEvent
-	}{
-		{
-			name:       "no notifier",
-			notifyWhen: "STOPPED",
-		},
-		{
-			name:       "state not in notify-when",
-			notifyWhen: "RUNNING",
-			notifier:   &recordingLifecycleNotifier{},
-		},
-		{
-			name:       "state in notify-when",
-			notifyWhen: "RUNNING.STOPPED",
-			notifier:   &recordingLifecycleNotifier{},
-			wantEvents: []*taskqueuepb.ArtifactLifecycleEvent{{
-				ExperimentId:        proto.Int64(10),
-				WorkUnitId:          proto.Int64(20),
-				WorkUnitExecutionId: proto.Int64(30),
-				OldState:            spb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED.Enum(),
-				NewState:            spb.WorkUnitStatus_STOPPED.Enum(),
-				Payload: &taskqueuepb.ArtifactLifecycleEvent_JobSetRuntimeContext{JobSetRuntimeContext: &taskqueuepb.JobSetRuntimeContext{
-					EnvironmentVariables: map[string]string{},
-					Annotations:          map[string]string{constants.NotifyWhenAnnotation: "RUNNING.STOPPED"},
-					Cluster:              proto.String("test-cluster"),
-					Namespace:            proto.String("default"),
-					JobSetName:           proto.String("test-jobset"),
-				}},
-			}},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			r := &Reconciler{ClusterName: "test-cluster"}
-			if tc.notifier != nil {
-				r.LifecycleNotifier = tc.notifier
-			}
-			jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{
-				Namespace:   "default",
-				Name:        "test-jobset",
-				Annotations: map[string]string{constants.NotifyWhenAnnotation: tc.notifyWhen},
-			}}
-
-			r.publishDeletionLifecycleEvent(t.Context(), jobSet, 10, stopped)
-
-			var got []*taskqueuepb.ArtifactLifecycleEvent
-			if tc.notifier != nil {
-				got = tc.notifier.events
-			}
-			if diff := cmp.Diff(tc.wantEvents, got, protocmp.Transform()); diff != "" {
-				t.Errorf("published events mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-type recordingLifecycleNotifier struct {
-	events []*taskqueuepb.ArtifactLifecycleEvent
-}
-
-func (n *recordingLifecycleNotifier) NotifyLifecycleEvent(_ context.Context, event *taskqueuepb.ArtifactLifecycleEvent) error {
-	n.events = append(n.events, event)
-	return nil
 }

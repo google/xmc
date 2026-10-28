@@ -16,29 +16,25 @@ package artifactlifecycle
 
 import (
 	"context"
-	"fmt"
 
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
 )
 
-// isExecutionSupersededInTx implements Shared-Artifact Execution Fencing: it reports
-// whether the work unit's current execution has advanced past eventEID, in which case
-// writes driven by the (stale) event must be skipped.
-func isExecutionSupersededInTx(ctx context.Context, tx *storage.Transaction, xid, wid, eventEID int64) (bool, error) {
-	wu, err := tx.WorkUnits.FetchWorkUnit(ctx, xid, wid)
-	if err != nil {
-		return false, fmt.Errorf("failed to fetch work unit %d: %w", wid, err)
-	}
+// isExecutionSuperseded implements Shared-Artifact Execution Fencing: it reports
+// whether the work unit's current execution is no longer eventEID, in which case
+// shared-artifact writes driven by the (stale) event must be skipped. Callers must
+// read wu inside the read-write transaction that performs the guarded writes.
+func isExecutionSuperseded(ctx context.Context, wu *essmsgpb.WorkUnit, eventEID int64) bool {
 	cur := wu.GetCurrentWorkUnitExecution()
 	if cur == nil {
-		return false, nil
+		return false
 	}
 	_, _, curEID, err := validator.ValidateWorkUnitExecutionName(cur.GetName())
 	if err != nil || curEID == eventEID {
-		return false, nil
+		return false
 	}
 	logging.Info(ctx, "Skipping artifact write; execution is superseded", "eventEID", eventEID, "curEID", curEID)
-	return true, nil
+	return true
 }
