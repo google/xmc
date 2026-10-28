@@ -331,6 +331,29 @@ class TestGithubUtils(unittest.TestCase):
         self.assertEqual(cursors, [None, "CUR_1"])
 
     @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_stops_when_end_cursor_missing(self, mock_api):
+        """Test pagination stops instead of re-fetching page 1 when endCursor is missing."""
+        mock_api.return_value = _threads_page([{"id": "PRRT_1"}], has_next=True, end_cursor=None)
+        threads = list_review_threads("google", "xmc", 7)
+        self.assertEqual([t["id"] for t in threads], ["PRRT_1"])
+        self.assertEqual(mock_api.call_count, 1)
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_resolve_review_thread_skips_threads_with_null_comments(self, mock_api):
+        """Test comment ID lookup tolerates GraphQL `comments: null` thread nodes."""
+        mock_api.side_effect = [
+            _threads_page(
+                [
+                    {"id": "PRRT_null", "comments": None},
+                    {"id": "PRRT_2", "comments": {"nodes": [{"databaseId": 2}]}},
+                ]
+            ),
+            {"data": {"resolveReviewThread": {"thread": {"id": "PRRT_2", "isResolved": True}}}},
+        ]
+        res = resolve_review_thread("google", "xmc", 7, 2)
+        self.assertEqual(res["thread_id"], "PRRT_2")
+
+    @patch("tools.pr_review.github_utils.call_github_api")
     def test_list_review_threads_query_error_raises(self, mock_api):
         """Test list_review_threads raises on GraphQL errors."""
         mock_api.return_value = {"errors": [{"message": "boom"}]}

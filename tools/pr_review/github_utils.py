@@ -251,9 +251,9 @@ def list_review_threads(
         review_threads = pull_request.get("reviewThreads") or {}
         threads.extend(review_threads.get("nodes") or [])
         page_info = review_threads.get("pageInfo") or {}
-        if not page_info.get("hasNextPage"):
-            return threads
         cursor = page_info.get("endCursor")
+        if not page_info.get("hasNextPage") or not cursor:
+            return threads
 
 
 def _lookup_thread_id_for_comment(
@@ -265,7 +265,7 @@ def _lookup_thread_id_for_comment(
 ) -> str:
     """Finds the GraphQL review thread node ID for a given comment database ID."""
     for thread in list_review_threads(owner, repo, pr_number, user_agent=user_agent):
-        for comment in thread.get("comments", {}).get("nodes", []):
+        for comment in (thread.get("comments") or {}).get("nodes") or []:
             if comment.get("databaseId") == comment_id:
                 thread_id = thread.get("id")
                 if thread_id:
