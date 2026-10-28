@@ -18,9 +18,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 100
-# Lowest runtime in the repo: the Bazel hermetic rules_python toolchain (3.11).
-# Venv/CI tooling uses 3.13. Published SDKs (sdks/python/*) override this with
-# their declared requires-python minimums.
+# Lowest runtime in the repo: the Bazel hermetic rules_python toolchain (3.11),
+# which is also the published SDKs' requires-python minimum. Venv/CI tooling
+# uses 3.13.
 target-version = "py311"
 
 [tool.ruff.lint]

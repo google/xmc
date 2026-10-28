@@ -5,7 +5,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 ---
 
 ## 1. Style & Conventions
-- **Python Version Policy**: Target Python 3.13 for venv/CI tooling; code must remain compatible with Python 3.11 (Bazel hermetic `rules_python` toolchain default); published SDKs keep their declared `requires-python` minimums (`sdks/python/*/pyproject.toml`). Ruff `target-version` in `pyproject.toml` encodes these minimums per tree. Leverage modern features available in the applicable minimum (enhanced typing, `pathlib` APIs, `datetime.UTC`).
+- **Python Version Policy**: Target Python 3.13 for venv/CI tooling; code must remain compatible with Python 3.11 (Bazel hermetic `rules_python` toolchain default), which is also the `requires-python` minimum of the published SDKs (`sdks/python/*/pyproject.toml`). Ruff `target-version` in the root `pyproject.toml` encodes this minimum. Leverage modern features available in the applicable minimum (enhanced typing, `pathlib` APIs, `datetime.UTC`).
 - **PEP 8 Style Guide**: Strictly follow standard Python style guidelines (PEP 8) and standard library best practices.
 - **Standard Library Preference**: Prefer built-in Python standard library modules (`pathlib`, `argparse`, `dataclasses`, `enum`, `subprocess`, `typing`) over third-party dependencies or custom utility wrappers.
 - **Prefer Python over Shell**: Write Python scripts instead of complex Shell scripts for automation, operational hooks, and CLI tools whenever procedural logic, JSON/YAML parsing, or conditional execution is required.

@@ -20,7 +20,7 @@ build-backend = "setuptools.build_meta"
 name = "xdash"
 version = "0.1.0"
 description = "XMC Python SDK and CLI for Metrics Dashboards & Charts"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
     { name = "XMC Team" }
@@ -29,7 +29,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -53,9 +52,3 @@ packages = ["xdash"]
 
 [tool.setuptools.package-data]
 "xdash" = ["py.typed"]
-
-# Inherit the repository Ruff config but lint against this SDK's declared
-# minimum (requires-python) so modernization rules never break supported users.
-[tool.ruff]
-extend = "../../../pyproject.toml"
-target-version = "py310"
