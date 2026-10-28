@@ -37,6 +37,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//internal/logging",
+        "//pkg/auth/principal",
         "@com_github_golang_jwt_jwt_v5//:jwt",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_rs_cors//:cors",

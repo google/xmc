@@ -29,6 +29,7 @@ import (
 
 	"golang.org/x/oauth2"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
 var randReader io.Reader = rand.Reader
@@ -77,13 +78,20 @@ func (a *Authenticator) verifyUserInfo(info *GoogleUserInfo) (loginIdentity, err
 		return loginIdentity{}, fmt.Errorf("%w: no userinfo", errNotAdmitted)
 	}
 	identity := loginIdentity{
-		email:   strings.ToLower(strings.TrimSpace(info.Email)),
 		name:    info.Name,
 		picture: info.Picture,
 	}
-	if identity.email == "" {
+	rawEmail := strings.TrimSpace(info.Email)
+	if rawEmail == "" {
 		return identity, fmt.Errorf("%w: userinfo has no email", errNotAdmitted)
 	}
+	// Admit only plain ASCII addresses so that login identities match what the gRPC services
+	// accept (internal/auth) and Unicode look-alikes cannot alias other principals.
+	email, err := principal.CanonicalEmail(rawEmail)
+	if err != nil {
+		return identity, fmt.Errorf("%w: %w", errNotAdmitted, err)
+	}
+	identity.email = email
 	if !info.EmailVerified {
 		return identity, fmt.Errorf("%w: email is not verified", errNotAdmitted)
 	}

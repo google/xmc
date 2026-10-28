@@ -26,20 +26,22 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/auth/jwks"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
 // validate is the function that validates the JWT. It is stubbed out for testing.
 var validate = idtoken.Validate
 
 // AuthenticateUserFromContext authenticates a user's identity from the context and then runs the
-// deployment admission check on it. The returned email is in canonical form (see canonicalEmail);
-// identities whose email is not a plain ASCII address are rejected as unauthenticated.
+// deployment admission check on it. The returned email is in canonical form (see
+// principal.CanonicalEmail); identities whose email is not a plain ASCII address are rejected as
+// unauthenticated.
 func (a *Authorizer) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	ident, err := a.resolveIdentity(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	email, err := canonicalEmail(ident.email)
+	email, err := principal.CanonicalEmail(ident.email)
 	if err != nil {
 		logging.Warn(ctx, "Rejecting identity with an unsupported email address", "error", err)
 		return "", "", fmt.Errorf("unsupported email address: %w", grpcerr.ErrUnauthenticated)
@@ -169,7 +171,7 @@ func (a *Authorizer) authenticateViaJWKS(ctx context.Context, jwt string) (*auth
 	userID := claims.Subject
 	if userID == "" {
 		// Match the canonical email that AuthenticateUserFromContext returns.
-		userID = asciiLower(email)
+		userID = principal.Normalize(email)
 	}
 	logging.Info(ctx, "Authenticated request via JWKS", "email", email, "user_id", userID)
 	return &authIdentity{email: email, userID: userID}, nil

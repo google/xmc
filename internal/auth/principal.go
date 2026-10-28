@@ -14,66 +14,15 @@
 package auth
 
 import (
-	"fmt"
-	"net/mail"
-	"regexp"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
 	xpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
-// plainEmailPattern is the conservative set of email addresses accepted as authenticated
-// identities. It covers Google account, Workspace (including apostrophes) and service account
-// emails, and is restricted to ASCII so that principals compare with ASCII-only case folding.
-var plainEmailPattern = regexp.MustCompile(`^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)
-
-// validatePlainEmail rejects emails that are not plain addresses (no display name, comment,
-// quoting or surrounding whitespace) within plainEmailPattern.
-func validatePlainEmail(email string) error {
-	addr, err := mail.ParseAddress(email)
-	if err != nil {
-		return fmt.Errorf("invalid email address: %w", err)
-	}
-	if addr.Name != "" || addr.Address != email {
-		return fmt.Errorf("email %q is not a plain address", email)
-	}
-	if !plainEmailPattern.MatchString(email) {
-		return fmt.Errorf("email %q contains unsupported characters", email)
-	}
-	return nil
-}
-
-// canonicalEmail returns the canonical form of an authenticated email: the address with ASCII
-// letters lowercased. Emails that are not plain ASCII addresses are rejected.
-func canonicalEmail(email string) (string, error) {
-	if err := validatePlainEmail(email); err != nil {
-		return "", err
-	}
-	return asciiLower(email), nil
-}
-
-// NormalizePrincipal returns the canonical form of an ACL principal (user, service account, group
-// or domain): surrounding whitespace removed and ASCII letters lowercased. Email addresses are
-// case-insensitive, so principals must be compared in this form. Non-ASCII characters are left
-// unchanged so that Unicode case folding (e.g. U+212A KELVIN SIGN to "k") cannot make distinct
-// principals match.
-func NormalizePrincipal(principal string) string {
-	return asciiLower(strings.TrimSpace(principal))
-}
-
-// asciiLower lowercases the ASCII letters A-Z in s and leaves every other rune unchanged.
-func asciiLower(s string) string {
-	return strings.Map(func(r rune) rune {
-		if 'A' <= r && r <= 'Z' {
-			return r + ('a' - 'A')
-		}
-		return r
-	}, s)
-}
-
 // NormalizeACLs returns a copy of acls with every user, service account, group and domain
-// principal in canonical form (see NormalizePrincipal). acls is not modified; nil returns nil.
+// principal in canonical form (see principal.Normalize). acls is not modified; nil returns nil.
 func NormalizeACLs(acls *xpb.XidAcls) *xpb.XidAcls {
 	if acls == nil {
 		return nil
@@ -92,21 +41,21 @@ func NormalizeACLs(acls *xpb.XidAcls) *xpb.XidAcls {
 func normalizeRolePrincipal(role *xpb.XidAcls_Role) {
 	switch p := role.GetPrincipal().(type) {
 	case *xpb.XidAcls_Role_User:
-		p.User = NormalizePrincipal(p.User)
+		p.User = principal.Normalize(p.User)
 	case *xpb.XidAcls_Role_ServiceAccount:
-		p.ServiceAccount = NormalizePrincipal(p.ServiceAccount)
+		p.ServiceAccount = principal.Normalize(p.ServiceAccount)
 	case *xpb.XidAcls_Role_Group:
-		p.Group = NormalizePrincipal(p.Group)
+		p.Group = principal.Normalize(p.Group)
 	case *xpb.XidAcls_Role_Domain:
-		p.Domain = NormalizePrincipal(p.Domain)
+		p.Domain = principal.Normalize(p.Domain)
 	}
 }
 
 // principalsMatch reports whether two principals are equal in canonical form. An empty principal
 // never matches, so an unset ACL field cannot authorize anyone.
 func principalsMatch(a, b string) bool {
-	canonical := NormalizePrincipal(a)
-	return canonical != "" && canonical == NormalizePrincipal(b)
+	canonical := principal.Normalize(a)
+	return canonical != "" && canonical == principal.Normalize(b)
 }
 
 // emailDomain returns the canonical domain of an email address, or "" if it has none.
@@ -115,5 +64,5 @@ func emailDomain(email string) string {
 	if at < 0 {
 		return ""
 	}
-	return NormalizePrincipal(email[at+1:])
+	return principal.Normalize(email[at+1:])
 }

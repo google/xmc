@@ -46,6 +46,7 @@ import (
 	"xmanager_cloud/internal/security/tlsutil"
 	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/auth/principal"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/memory"
@@ -188,12 +189,13 @@ func newCMSAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 }
 
 type cmsAdmissionChecker struct {
+	// invokerSA is in canonical form (see principal.Normalize).
 	invokerSA string
 	delegate  authz.AdmissionChecker
 }
 
 func (c cmsAdmissionChecker) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
-	if c.invokerSA != "" && strings.EqualFold(strings.TrimSpace(email), c.invokerSA) {
+	if c.invokerSA != "" && principal.Normalize(email) == c.invokerSA {
 		return true, nil
 	}
 	return c.delegate.IsUserAuthorized(ctx, email)
@@ -210,7 +212,7 @@ func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.Admiss
 		return nil
 	}
 	return cmsAdmissionChecker{
-		invokerSA: strings.TrimSpace(invokerSA),
+		invokerSA: principal.Normalize(invokerSA),
 		delegate:  delegate,
 	}
 }
