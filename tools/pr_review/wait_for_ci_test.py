@@ -195,6 +195,7 @@ class TestWaitForCI(unittest.TestCase):
             ["gh", "pr", "view", "148", "--json", "statusCheckRollup", "--repo", "google/xmc"],
             capture_output=True,
             text=True,
+            errors="replace",
             check=True,
         )
 
@@ -281,6 +282,7 @@ class TestWaitForCI(unittest.TestCase):
             ["gh", "api", "repos/google/xmc/actions/jobs/999/logs"],
             capture_output=True,
             text=True,
+            errors="replace",
             check=False,
         )
         self.assertEqual(mock_run.call_count, 4)

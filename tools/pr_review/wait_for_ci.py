@@ -133,7 +133,7 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     cmd = ["gh", "pr", "view", pr, "--json", "statusCheckRollup"]
     if repo:
         cmd += ["--repo", repo]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", check=True)
     data = json.loads(res.stdout)
     if not isinstance(data, dict):
         raise MalformedResponseError(f"expected a JSON object, got {type(data).__name__}")
@@ -148,7 +148,7 @@ def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
     prints nothing on some gh releases (observed on gh 2.46).
     """
     cmd = ["gh", "api", f"repos/{run_repo}/actions/jobs/{job_id}/logs"]
-    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", check=False)
     if res.returncode != 0:
         return f"<gh api job logs failed (exit {res.returncode}): {res.stderr.strip()}>"
     return trim_job_log(res.stdout, max_lines)
