@@ -135,6 +135,7 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(ig["imageTag"], "v2026.10.28")
         self.assertEqual(ig["parameters"]["projectId"], "prod-proj-1")
         self.assertEqual(ig["parameters"]["image"], "us-docker.pkg.dev/prod-proj-1/xmc/ig:v1")
+        self.assertTrue(ig["parameters"]["hpaEnabled"])
         self.assertEqual(ig["parameters"]["hpaMinReplicas"], 4)
         self.assertEqual(ig["parameters"]["memoryLimit"], "1Gi")
         self.assertEqual(ig["parameters"]["saslMechanism"], "SCRAM-SHA-256")
