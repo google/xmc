@@ -20,6 +20,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/postgres/component",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/components/v1alpha1",
         "//internal/storage",
         "//internal/storage/postgres/pgdb",
         "//pkg/components/store",
@@ -35,6 +36,7 @@ go_test(
     embed = [":component"],
     deps = [
         "//internal/storage/postgres/pgdb",
+        "//pkg/components/store",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
