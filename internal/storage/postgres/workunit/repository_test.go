@@ -17,6 +17,8 @@ package workunit
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -185,34 +187,47 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 			t.Fatalf("ListWorkUnitExecutions() = (%d, %v), want 1 execution", len(execs), err)
 		}
 
+		archivedFirst := proto.Clone(firstExec).(*essmsgpb.WorkUnitExecution)
+		archivedFirst.State = essmsgpb.WorkUnitExecution_INACTIVE
 		secondTime := timestamppb.New(baseTestTime.Add(time.Minute))
+		archivedSecond := &essmsgpb.WorkUnitExecution{
+			Name:       validator.ConstructWorkUnitExecutionName(xid, wid, 2),
+			State:      essmsgpb.WorkUnitExecution_INACTIVE,
+			Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
+			Status:     &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_FAILED, UpdateTime: secondTime},
+			CreateTime: secondTime,
+			UpdateTime: secondTime,
+		}
+		thirdTime := timestamppb.New(baseTestTime.Add(2 * time.Minute))
+		thirdExec := &essmsgpb.WorkUnitExecution{
+			Name:       validator.ConstructWorkUnitExecutionName(xid, wid, 3),
+			State:      essmsgpb.WorkUnitExecution_ACTIVE,
+			Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
+			Status:     &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, UpdateTime: thirdTime},
+			CreateTime: thirdTime,
+			UpdateTime: thirdTime,
+		}
 		err = pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
 			txRepo := repo.WithTx(tx)
-			archived := proto.Clone(firstExec).(*essmsgpb.WorkUnitExecution)
-			archived.State = essmsgpb.WorkUnitExecution_INACTIVE
-			if err := txRepo.SaveWorkUnitExecution(ctx, archived); err != nil {
+			if err := txRepo.SaveWorkUnitExecution(ctx, archivedFirst); err != nil {
 				return err
 			}
-			secondExec := &essmsgpb.WorkUnitExecution{
-				Name:       validator.ConstructWorkUnitExecutionName(xid, wid, 2),
-				State:      essmsgpb.WorkUnitExecution_ACTIVE,
-				Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
-				Status:     &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, UpdateTime: secondTime},
-				CreateTime: secondTime,
-				UpdateTime: secondTime,
+			if err := txRepo.SaveWorkUnitExecution(ctx, archivedSecond); err != nil {
+				return err
 			}
-			return txRepo.UpdateCurrentWorkUnitExecution(ctx, xid, wid, 2, secondExec)
+			return txRepo.UpdateCurrentWorkUnitExecution(ctx, xid, wid, 3, thirdExec)
 		})
 		if err != nil {
 			t.Fatalf("SaveWorkUnitExecution + UpdateCurrentWorkUnitExecution failed: %v", err)
 		}
 
 		execs, err = repo.ListWorkUnitExecutions(ctx, xid, wid)
-		if err != nil || len(execs) != 2 {
-			t.Fatalf("ListWorkUnitExecutions() after restart = (%d, %v), want 2", len(execs), err)
+		if err != nil {
+			t.Fatalf("ListWorkUnitExecutions() after restarts failed: %v", err)
 		}
-		if execs[0].GetState() != essmsgpb.WorkUnitExecution_ACTIVE || execs[1].GetState() != essmsgpb.WorkUnitExecution_INACTIVE {
-			t.Errorf("states = (%v, %v), want (ACTIVE, INACTIVE)", execs[0].GetState(), execs[1].GetState())
+		wantExecs := []*essmsgpb.WorkUnitExecution{thirdExec, archivedSecond, archivedFirst}
+		if diff := cmp.Diff(wantExecs, execs, protocmp.Transform()); diff != "" {
+			t.Errorf("ListWorkUnitExecutions() mismatch (-want +got):\n%s", diff)
 		}
 		if _, err := repo.ListWorkUnitExecutions(ctx, xid, 999); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("ListWorkUnitExecutions(missing) = %v, want ErrNotFound", err)
@@ -224,4 +239,95 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 			t.Errorf("SaveWorkUnitExecution(invalid) code = %v, want Internal", got)
 		}
 	})
+}
+
+func TestTxRepository_ConcurrentExecutionRestartsNoLostUpdate(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	const xid, wid, workers = 104, 1, 4
+	firstExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
+
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("essPool.Begin() failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(context.Background()) }()
+	if _, err := holdTx.Exec(ctx, lockWorkUnitSQL.String(), xid, wid); err != nil {
+		t.Fatalf("holdTx lock failed: %v", err)
+	}
+
+	errs := make([]error, workers)
+	var started, done sync.WaitGroup
+	for i := range workers {
+		started.Add(1)
+		done.Go(func() {
+			started.Done()
+			errs[i] = pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+				txRepo := repo.WithTx(tx)
+				wu, err := txRepo.FetchWorkUnit(ctx, xid, wid)
+				if err != nil {
+					return err
+				}
+				curExec := wu.GetCurrentWorkUnitExecution()
+				_, _, curEID, err := validator.ValidateWorkUnitExecutionName(curExec.GetName())
+				if err != nil {
+					return err
+				}
+				archived := proto.Clone(curExec).(*essmsgpb.WorkUnitExecution)
+				archived.State = essmsgpb.WorkUnitExecution_INACTIVE
+				if err := txRepo.SaveWorkUnitExecution(ctx, archived); err != nil {
+					return err
+				}
+				nextEID := curEID + 1
+				ts := timestamppb.New(baseTestTime.Add(time.Duration(nextEID) * time.Minute))
+				nextExec := &essmsgpb.WorkUnitExecution{
+					Name:       validator.ConstructWorkUnitExecutionName(xid, wid, nextEID),
+					State:      essmsgpb.WorkUnitExecution_ACTIVE,
+					Metadata:   &essmsgpb.WorkUnitExecutionMetadata{ResourceName: fmt.Sprintf("jobset-%d", nextEID)},
+					Status:     &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, UpdateTime: ts},
+					CreateTime: ts,
+					UpdateTime: ts,
+				}
+				return txRepo.UpdateCurrentWorkUnitExecution(ctx, xid, wid, nextEID, nextExec)
+			})
+		})
+	}
+	started.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("holdTx.Commit() failed: %v", err)
+	}
+	done.Wait()
+	if err := errors.Join(errs...); err != nil {
+		t.Fatalf("concurrent RunInTx() failed: %v", err)
+	}
+
+	gotExecs, err := repo.ListWorkUnitExecutions(ctx, xid, wid)
+	if err != nil {
+		t.Fatalf("ListWorkUnitExecutions() failed: %v", err)
+	}
+	archivedFirst := proto.Clone(firstExec).(*essmsgpb.WorkUnitExecution)
+	archivedFirst.State = essmsgpb.WorkUnitExecution_INACTIVE
+	wantExecs := make([]*essmsgpb.WorkUnitExecution, 0, workers+1)
+	for eid := int64(workers + 1); eid >= 2; eid-- {
+		ts := timestamppb.New(baseTestTime.Add(time.Duration(eid) * time.Minute))
+		state := essmsgpb.WorkUnitExecution_INACTIVE
+		if eid == int64(workers+1) {
+			state = essmsgpb.WorkUnitExecution_ACTIVE
+		}
+		wantExecs = append(wantExecs, &essmsgpb.WorkUnitExecution{
+			Name:       validator.ConstructWorkUnitExecutionName(xid, wid, eid),
+			State:      state,
+			Metadata:   &essmsgpb.WorkUnitExecutionMetadata{ResourceName: fmt.Sprintf("jobset-%d", eid)},
+			Status:     &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, UpdateTime: ts},
+			CreateTime: ts,
+			UpdateTime: ts,
+		})
+	}
+	wantExecs = append(wantExecs, archivedFirst)
+	if diff := cmp.Diff(wantExecs, gotExecs, protocmp.Transform()); diff != "" {
+		t.Errorf("ListWorkUnitExecutions() after concurrent restarts mismatch (-want +got):\n%s", diff)
+	}
 }
