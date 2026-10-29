@@ -362,6 +362,192 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 	}
 }
 
+func TestRepository_MutationsEdgeCases(t *testing.T) {
+	ctx := context.Background()
+	_, client := emulator.Setup(ctx, t)
+	repo := NewRepository(client)
+	_, wantDB := seedCatalog(t, client)
+
+	t.Run("missing dependency ID is rejected", func(t *testing.T) {
+		rec := buildRecord(10, "worker", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, "db")
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			return repo.WithTx(tx).InsertComponent(ctx, rec, nil)
+		})
+		if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("InsertComponent() with missing depID error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+		}
+		_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			return repo.WithTx(tx).UpdateComponentIntent(ctx, rec, map[string]int64{})
+		})
+		if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("UpdateComponentIntent() with missing depID error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+		}
+	})
+
+	t.Run("nil access status and nil observed generation", func(t *testing.T) {
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if err := txRepo.UpdateComponentState(ctx, wantDB.ComponentID, componentspb.ComponentState_COMPONENT_STATE_DISABLING, nil); err != nil {
+				return err
+			}
+			obsRec := &store.ComponentRecord{
+				ComponentID: wantDB.ComponentID,
+				State:       componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			}
+			return txRepo.UpdateComponentObservation(ctx, obsRec, true)
+		})
+		if err != nil {
+			t.Fatalf("UpdateComponentState/Observation with nil fields failed: %v", err)
+		}
+		got, err := repo.GetComponentByID(ctx, wantDB.ComponentID)
+		if err != nil {
+			t.Fatalf("GetComponentByID(%d) failed: %v", wantDB.ComponentID, err)
+		}
+		if got.ObservedGeneration != nil || got.Status != nil || got.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+			t.Errorf("got ObservedGeneration=%v, Status=%v, State=%v; want nil, nil, ENABLED", got.ObservedGeneration, got.Status, got.State)
+		}
+	})
+
+	t.Run("writes persist commit timestamps and nil records are rejected", func(t *testing.T) {
+		inserted := buildRecord(20, "hydrated", componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, "auth")
+		inserted.CreateTime, inserted.UpdateTime, inserted.Etag = time.Time{}, time.Time{}, ""
+		owner := &store.SourceOwner{UID: "u-1", Generation: 1, Namespace: "ns", ClusterUID: "c-1", Epoch: 1}
+
+		insertTs, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if err := txRepo.InsertComponent(ctx, nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("InsertComponent(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+			}
+			if err := txRepo.WriteComponentOwner(ctx, inserted.ComponentID, nil); err != nil {
+				t.Errorf("WriteComponentOwner(id, nil) error = %v, want nil", err)
+			}
+			if err := txRepo.InsertComponent(ctx, inserted, map[string]int64{"auth": 4}); err != nil {
+				return err
+			}
+			return txRepo.WriteComponentOwner(ctx, inserted.ComponentID, owner)
+		})
+		if err != nil {
+			t.Fatalf("InsertComponent + WriteComponentOwner failed: %v", err)
+		}
+
+		gotInserted, err := repo.GetComponentByID(ctx, inserted.ComponentID)
+		if err != nil {
+			t.Fatalf("GetComponentByID(%d) failed: %v", inserted.ComponentID, err)
+		}
+		if !gotInserted.CreateTime.Equal(insertTs) || !gotInserted.UpdateTime.Equal(insertTs) || !gotInserted.SourceLastSeenTime.Equal(insertTs) {
+			t.Errorf("stored timestamps = (%v, %v, %v), want all %v", gotInserted.CreateTime, gotInserted.UpdateTime, gotInserted.SourceLastSeenTime, insertTs)
+		}
+		wantInserted := store.CloneRecord(inserted)
+		wantInserted.CreateTime, wantInserted.UpdateTime, wantInserted.SourceLastSeenTime = insertTs, insertTs, insertTs
+		wantInserted.Owner = owner
+		wantInserted.Etag = store.GenerateEtag(wantInserted)
+		if diff := cmp.Diff(wantInserted, gotInserted, protocmp.Transform()); diff != "" {
+			t.Errorf("inserted record mismatch (-want +got):\n%s", diff)
+		}
+
+		intentRec := store.CloneRecord(wantInserted)
+		intentRec.Generation = 2
+		intentRec.Spec.Generation = 2
+		intentRec.Spec.Version = "v2.0.0"
+		intentRec.Dependencies = []string{"db"}
+		intentRec.Labels = map[string]string{"env": "staging"}
+		intentTs, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if err := txRepo.UpdateComponentIntent(ctx, nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("UpdateComponentIntent(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+			}
+			return txRepo.UpdateComponentIntent(ctx, intentRec, map[string]int64{"db": wantDB.ComponentID})
+		})
+		if err != nil {
+			t.Fatalf("UpdateComponentIntent failed: %v", err)
+		}
+		gotIntent, err := repo.GetComponentByID(ctx, inserted.ComponentID)
+		if err != nil {
+			t.Fatalf("GetComponentByID(%d) after UpdateComponentIntent failed: %v", inserted.ComponentID, err)
+		}
+		if !gotIntent.UpdateTime.Equal(intentTs) {
+			t.Errorf("UpdateComponentIntent UpdateTime = %v, want %v", gotIntent.UpdateTime, intentTs)
+		}
+		intentRec.UpdateTime = intentTs
+		intentRec.Etag = store.GenerateEtag(intentRec)
+		if diff := cmp.Diff(intentRec, gotIntent, protocmp.Transform()); diff != "" {
+			t.Errorf("record after UpdateComponentIntent mismatch (-want +got):\n%s", diff)
+		}
+
+		obsGen := int64(2)
+		obsInput := store.CloneRecord(intentRec)
+		obsInput.ObservedGeneration = &obsGen
+		obsInput.Status = &componentspb.ComponentAccessStatus{
+			State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			ObservedGeneration: 2,
+			HealthMessage:      "ready",
+		}
+		obsInput.State = componentspb.ComponentState_COMPONENT_STATE_ENABLED
+		obsTs, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if err := txRepo.UpdateComponentObservation(ctx, nil, false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("UpdateComponentObservation(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+			}
+			return txRepo.UpdateComponentObservation(ctx, obsInput, false)
+		})
+		if err != nil {
+			t.Fatalf("UpdateComponentObservation failed: %v", err)
+		}
+		gotObs, err := repo.GetComponentByID(ctx, inserted.ComponentID)
+		if err != nil {
+			t.Fatalf("GetComponentByID(%d) after UpdateComponentObservation failed: %v", inserted.ComponentID, err)
+		}
+		if !gotObs.UpdateTime.Equal(obsTs) {
+			t.Errorf("UpdateComponentObservation UpdateTime = %v, want %v", gotObs.UpdateTime, obsTs)
+		}
+		wantObs := store.CloneRecord(obsInput)
+		wantObs.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+		wantObs.UpdateTime = obsTs
+		wantObs.Etag = store.GenerateEtag(wantObs)
+		if diff := cmp.Diff(wantObs, gotObs, protocmp.Transform()); diff != "" {
+			t.Errorf("record after UpdateComponentObservation mismatch (-want +got):\n%s", diff)
+		}
+
+		deleteInput := store.CloneRecord(wantObs)
+		deleteInput.Spec.DeletionPolicy = componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN
+		deleteInput.Status = &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_DELETED}
+		nextOwner := &store.SourceOwner{UID: "u-2", Generation: 2, Namespace: "ns", ClusterUID: "c-1", Epoch: 1}
+		deleteTs, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if err := txRepo.SoftDeleteComponent(ctx, nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("SoftDeleteComponent(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+			}
+			return txRepo.SoftDeleteComponent(ctx, deleteInput, nextOwner)
+		})
+		if err != nil {
+			t.Fatalf("SoftDeleteComponent failed: %v", err)
+		}
+
+		stmt := spanner.Statement{SQL: `SELECT ` + ComponentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": inserted.ComponentID}}
+		var deletedRec *store.ComponentRecord
+		if err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
+			var err error
+			deletedRec, err = RowToComponentRecord(row)
+			return err
+		}); err != nil || deletedRec == nil {
+			t.Fatalf("query deleted component failed: rec=%v, err=%v", deletedRec, err)
+		}
+		if !deletedRec.UpdateTime.Equal(deleteTs) || !deletedRec.SourceLastSeenTime.Equal(deleteTs) {
+			t.Errorf("deleted timestamps = (%v, %v), want (%v, %v)", deletedRec.UpdateTime, deletedRec.SourceLastSeenTime, deleteTs, deleteTs)
+		}
+		wantDeleted := store.CloneRecord(deleteInput)
+		wantDeleted.Dependencies = nil
+		wantDeleted.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
+		wantDeleted.Owner = nextOwner
+		wantDeleted.UpdateTime, wantDeleted.SourceLastSeenTime = deleteTs, deleteTs
+		wantDeleted.DeleteTime = &deleteTs
+		wantDeleted.Etag = store.GenerateEtag(wantDeleted)
+		if diff := cmp.Diff(wantDeleted, deletedRec, protocmp.Transform()); diff != "" {
+			t.Errorf("deleted record mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
 // TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
 // WithTx without the required transaction, fail instead of dereferencing nil.
 func TestRepository_NilClientOrTransaction(t *testing.T) {
@@ -411,5 +597,23 @@ func TestRepository_NilClientOrTransaction(t *testing.T) {
 	}
 	if _, err := nilTxRepo.ReassignOwnedComponents(ctx, "uid", 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("WithTx(nil).ReassignOwnedComponents() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.InsertComponent(ctx, &store.ComponentRecord{}, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).InsertComponent() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.UpdateComponentIntent(ctx, &store.ComponentRecord{}, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).UpdateComponentIntent() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.UpdateComponentState(ctx, 1, 0, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).UpdateComponentState() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.UpdateComponentObservation(ctx, &store.ComponentRecord{}, false); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).UpdateComponentObservation() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.SoftDeleteComponent(ctx, &store.ComponentRecord{}, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).SoftDeleteComponent() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.WriteComponentOwner(ctx, 1, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).WriteComponentOwner() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 }

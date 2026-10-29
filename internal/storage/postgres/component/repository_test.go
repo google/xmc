@@ -112,6 +112,42 @@ func TestRepository_Unimplemented(t *testing.T) {
 				return err
 			},
 		},
+		{
+			name: "TxRepository.InsertComponent",
+			call: func() error {
+				return txRepo.InsertComponent(ctx, nil, nil)
+			},
+		},
+		{
+			name: "TxRepository.UpdateComponentIntent",
+			call: func() error {
+				return txRepo.UpdateComponentIntent(ctx, nil, nil)
+			},
+		},
+		{
+			name: "TxRepository.UpdateComponentState",
+			call: func() error {
+				return txRepo.UpdateComponentState(ctx, 1, 0, nil)
+			},
+		},
+		{
+			name: "TxRepository.UpdateComponentObservation",
+			call: func() error {
+				return txRepo.UpdateComponentObservation(ctx, nil, false)
+			},
+		},
+		{
+			name: "TxRepository.SoftDeleteComponent",
+			call: func() error {
+				return txRepo.SoftDeleteComponent(ctx, nil, nil)
+			},
+		},
+		{
+			name: "TxRepository.WriteComponentOwner",
+			call: func() error {
+				return txRepo.WriteComponentOwner(ctx, 1, nil)
+			},
+		},
 	}
 
 	for _, tt := range tests {

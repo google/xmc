@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"maps"
 	"sort"
 	"time"
 
@@ -35,7 +34,6 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/component"
-	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/semver"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dependency"
@@ -193,7 +191,8 @@ func (s *SpannerStore) applyIntentTx(
 	if err := s.checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
-	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
+	txRepo := s.repo.WithTx(txn)
+	catalog, err := txRepo.ListActiveComponents(ctx)
 	if err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
@@ -213,58 +212,47 @@ func (s *SpannerStore) applyIntentTx(
 	case plan.Write == ownership.WriteOwnerOnly:
 		rec = store.CloneRecord(existingRec)
 	case existingRec != nil:
-		rec, err = s.updateExistingIntentTx(txn, existingRec, canonicalName, spec, labels, deps, plan.Generation, depIDs)
+		rec, err = s.updateExistingIntentTx(ctx, txRepo, existingRec, canonicalName, spec, labels, deps, plan.Generation, depIDs)
 	default:
-		rec, err = s.createNewIntentTx(txn, canonicalName, spec, labels, deps, plan.Generation, depIDs)
+		rec, err = s.createNewIntentTx(ctx, txRepo, canonicalName, spec, labels, deps, plan.Generation, depIDs)
 	}
 	if err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
-	return rec, plan, recordOwnerTx(txn, rec, src)
+	return rec, plan, recordOwnerTx(ctx, txRepo, rec, src)
 }
 
 // recordOwnerTx buffers a write of src as the owner of rec, with SourceLastSeenTime at the commit
 // timestamp, and sets rec.Owner. A nil src keeps the recorded owner. SourceLastSeenTime is the
 // commit time of the last request accepted from the recorded owner; it only feeds owner-staleness
 // observability and never decides ownership.
-func recordOwnerTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, src *store.RequestSource) error {
+func recordOwnerTx(ctx context.Context, txRepo storage.ComponentTxRepository, rec *store.ComponentRecord, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	return writeOwnerColumnsTx(txn, rec, store.OwnerOf(*src))
+	return writeOwnerColumnsTx(ctx, txRepo, rec, store.OwnerOf(*src))
 }
 
-func recordNonIntentOwnerTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, src *store.RequestSource) error {
+func recordNonIntentOwnerTx(ctx context.Context, txRepo storage.ComponentTxRepository, rec *store.ComponentRecord, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	return writeOwnerColumnsTx(txn, rec, ownership.NonIntentOwner(rec.Owner, src))
+	return writeOwnerColumnsTx(ctx, txRepo, rec, ownership.NonIntentOwner(rec.Owner, src))
 }
 
 // writeOwnerColumnsTx buffers a write of owner into rec's source columns, with SourceLastSeenTime
 // at the commit timestamp, and sets rec.Owner. A nil owner is a no-op that keeps the recorded owner.
-func writeOwnerColumnsTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, owner *store.SourceOwner) error {
+func writeOwnerColumnsTx(ctx context.Context, txRepo storage.ComponentTxRepository, rec *store.ComponentRecord, owner *store.SourceOwner) error {
 	if owner == nil {
 		return nil
 	}
 	rec.Owner = owner
-	cols := ownerColumns(owner)
-	cols["ComponentId"] = rec.ComponentID
-	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", cols)})
-}
-
-// ownerColumns returns the Components owner columns for owner, with SourceLastSeenTime at the
-// commit timestamp.
-func ownerColumns(owner *store.SourceOwner) map[string]any {
-	return map[string]any{
-		"SourceUid": owner.UID, "SourceGeneration": owner.Generation,
-		"SourceNamespace": owner.Namespace, "SourceClusterUid": owner.ClusterUID, "SourceEpoch": owner.Epoch,
-		"SourceLastSeenTime": spanner.CommitTimestamp,
-	}
+	return txRepo.WriteComponentOwner(ctx, rec.ComponentID, owner)
 }
 
 func (s *SpannerStore) updateExistingIntentTx(
-	txn *spanner.ReadWriteTransaction,
+	ctx context.Context,
+	txRepo storage.ComponentTxRepository,
 	existingRec *store.ComponentRecord,
 	canonicalName string,
 	spec *componentspb.ComponentSpec,
@@ -276,16 +264,6 @@ func (s *SpannerStore) updateExistingIntentTx(
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = newGen
 
-	compProto := &componentspb.Component{
-		Name:   naming.FullComponentName(canonicalName),
-		Spec:   specClone,
-		Labels: store.CopyMap(labels),
-	}
-	configBytes, err := proto.Marshal(compProto)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal component proto: %w", err)
-	}
-
 	var statusProto *componentspb.ComponentAccessStatus
 	if existingRec.Status != nil {
 		statusProto = proto.Clone(existingRec.Status).(*componentspb.ComponentAccessStatus)
@@ -293,44 +271,8 @@ func (s *SpannerStore) updateExistingIntentTx(
 		statusProto = &componentspb.ComponentAccessStatus{}
 	}
 	statusProto.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	accessBytes, err := proto.Marshal(statusProto)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal access status proto: %w", err)
-	}
 
-	compClass := determineComponentClass(specClone)
-	updateMap := map[string]any{
-		"ComponentId":    existingRec.ComponentID,
-		"ComponentClass": spanner.NullString{StringVal: compClass, Valid: compClass != ""},
-		"ConfigProto":    configBytes,
-		"AccessPayload":  accessBytes,
-		"State":          int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION),
-		"Generation":     newGen,
-		"UpdateTime":     spanner.CommitTimestamp,
-	}
-
-	mutations := []*spanner.Mutation{
-		spanner.UpdateMap("Components", updateMap),
-		spanner.Delete("ComponentDependencies", spanner.KeyRange{
-			Start: spanner.Key{existingRec.ComponentID},
-			End:   spanner.Key{existingRec.ComponentID},
-			Kind:  spanner.ClosedClosed,
-		}),
-	}
-
-	for _, dep := range deps {
-		mutations = append(mutations, spanner.Insert(
-			"ComponentDependencies",
-			[]string{"ComponentId", "DependencyComponentId"},
-			[]any{existingRec.ComponentID, depIDs[dep]},
-		))
-	}
-
-	if err := txn.BufferWrite(mutations); err != nil {
-		return nil, err
-	}
-
-	return &store.ComponentRecord{
+	rec := &store.ComponentRecord{
 		ComponentID:        existingRec.ComponentID,
 		Name:               canonicalName,
 		Spec:               specClone,
@@ -343,11 +285,16 @@ func (s *SpannerStore) updateExistingIntentTx(
 		Labels:             store.CopyMap(labels),
 		Owner:              store.CloneSourceOwner(existingRec.Owner),
 		SourceLastSeenTime: existingRec.SourceLastSeenTime,
-	}, nil
+	}
+	if err := txRepo.UpdateComponentIntent(ctx, rec, depIDs); err != nil {
+		return nil, err
+	}
+	return rec, nil
 }
 
 func (s *SpannerStore) createNewIntentTx(
-	txn *spanner.ReadWriteTransaction,
+	ctx context.Context,
+	txRepo storage.ComponentTxRepository,
 	canonicalName string,
 	spec *componentspb.ComponentSpec,
 	labels map[string]string,
@@ -363,42 +310,11 @@ func (s *SpannerStore) createNewIntentTx(
 	specClone := proto.Clone(spec).(*componentspb.ComponentSpec)
 	specClone.Generation = gen
 
-	compProto := &componentspb.Component{
-		Name:   naming.FullComponentName(canonicalName),
-		Spec:   specClone,
-		Labels: store.CopyMap(labels),
-	}
-	configBytes, err := proto.Marshal(compProto)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal component proto: %w", err)
-	}
-
 	statusProto := &componentspb.ComponentAccessStatus{
 		State: componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
 	}
-	accessBytes, err := proto.Marshal(statusProto)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal access status proto: %w", err)
-	}
 
-	compClass := determineComponentClass(specClone)
-	insertCols := []string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "AccessPayload", "State", "Generation", "CreateTime", "UpdateTime"}
-	insertVals := []any{id, canonicalName, spanner.NullString{StringVal: compClass, Valid: compClass != ""}, configBytes, accessBytes, int64(componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION), gen, spanner.CommitTimestamp, spanner.CommitTimestamp}
-
-	mutations := []*spanner.Mutation{spanner.Insert("Components", insertCols, insertVals)}
-	for _, dep := range deps {
-		mutations = append(mutations, spanner.Insert(
-			"ComponentDependencies",
-			[]string{"ComponentId", "DependencyComponentId"},
-			[]any{id, depIDs[dep]},
-		))
-	}
-
-	if err := txn.BufferWrite(mutations); err != nil {
-		return nil, err
-	}
-
-	return &store.ComponentRecord{
+	rec := &store.ComponentRecord{
 		ComponentID:  id,
 		Name:         canonicalName,
 		Spec:         specClone,
@@ -407,7 +323,11 @@ func (s *SpannerStore) createNewIntentTx(
 		Generation:   gen,
 		Dependencies: deps,
 		Labels:       store.CopyMap(labels),
-	}, nil
+	}
+	if err := txRepo.InsertComponent(ctx, rec, depIDs); err != nil {
+		return nil, err
+	}
+	return rec, nil
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.
@@ -471,6 +391,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 	var prevOwner *store.SourceOwner
 
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		txRepo := s.repo.WithTx(txn)
 		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationPrepareDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
@@ -483,18 +404,11 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 		result = res
 
 		toTransition := collectDeactivationTargets(targetRec, catalog, res.CascadedDeactivations, requestCascade)
-		mutations, err := buildDisablingMutations(toTransition, time.Now().UTC())
-		if err != nil {
+		if err := transitionToDisablingTx(ctx, txRepo, toTransition, time.Now().UTC()); err != nil {
 			return err
 		}
-
-		if len(mutations) > 0 {
-			if err := txn.BufferWrite(mutations); err != nil {
-				return err
-			}
-		}
 		prevOwner = store.CloneSourceOwner(targetRec.Owner)
-		return recordNonIntentOwnerTx(txn, targetRec, reqSrc)
+		return recordNonIntentOwnerTx(ctx, txRepo, targetRec, reqSrc)
 	})
 
 	if err != nil {
@@ -537,8 +451,7 @@ func collectDeactivationTargets(targetRec *store.ComponentRecord, catalog map[st
 	return targets
 }
 
-func buildDisablingMutations(toTransition []*store.ComponentRecord, now time.Time) ([]*spanner.Mutation, error) {
-	var mutations []*spanner.Mutation
+func transitionToDisablingTx(ctx context.Context, txRepo storage.ComponentTxRepository, toTransition []*store.ComponentRecord, now time.Time) error {
 	for _, rec := range toTransition {
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLING || rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 			continue
@@ -553,19 +466,11 @@ func buildDisablingMutations(toTransition []*store.ComponentRecord, now time.Tim
 		statusProto.State = componentspb.ComponentState_COMPONENT_STATE_DISABLING
 		statusProto.LastTransitionTime = timestamppb.New(now)
 
-		accessBytes, err := proto.Marshal(statusProto)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal access status proto: %w", err)
+		if err := txRepo.UpdateComponentState(ctx, rec.ComponentID, componentspb.ComponentState_COMPONENT_STATE_DISABLING, statusProto); err != nil {
+			return err
 		}
-
-		mutations = append(mutations, spanner.UpdateMap("Components", map[string]any{
-			"ComponentId":   rec.ComponentID,
-			"State":         int64(componentspb.ComponentState_COMPONENT_STATE_DISABLING),
-			"AccessPayload": accessBytes,
-			"UpdateTime":    spanner.CommitTimestamp,
-		}))
 	}
-	return mutations, nil
+	return nil
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
@@ -577,6 +482,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 
 	var prevOwner *store.SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		txRepo := s.repo.WithTx(txn)
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
@@ -584,7 +490,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 
 		if rec.State == componentspb.ComponentState_COMPONENT_STATE_DISABLED {
 			prevOwner = store.CloneSourceOwner(rec.Owner)
-			return recordNonIntentOwnerTx(txn, rec, reqSrc)
+			return recordNonIntentOwnerTx(ctx, txRepo, rec, reqSrc)
 		}
 		if rec.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING {
 			return store.ErrInvalidStateTransition
@@ -607,22 +513,11 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 		statusProto.State = componentspb.ComponentState_COMPONENT_STATE_DISABLED
 		statusProto.LastTransitionTime = timestamppb.New(now)
 
-		accessBytes, err := proto.Marshal(statusProto)
-		if err != nil {
-			return fmt.Errorf("failed to marshal access status proto: %w", err)
-		}
-
-		mutation := spanner.UpdateMap("Components", map[string]any{
-			"ComponentId":   rec.ComponentID,
-			"State":         int64(componentspb.ComponentState_COMPONENT_STATE_DISABLED),
-			"AccessPayload": accessBytes,
-			"UpdateTime":    spanner.CommitTimestamp,
-		})
-		if err := txn.BufferWrite([]*spanner.Mutation{mutation}); err != nil {
+		if err := txRepo.UpdateComponentState(ctx, rec.ComponentID, componentspb.ComponentState_COMPONENT_STATE_DISABLED, statusProto); err != nil {
 			return err
 		}
 		prevOwner = store.CloneSourceOwner(rec.Owner)
-		return recordNonIntentOwnerTx(txn, rec, reqSrc)
+		return recordNonIntentOwnerTx(ctx, txRepo, rec, reqSrc)
 	})
 
 	if err != nil {
@@ -648,7 +543,8 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 		if err := s.checkFence(ctx, txn, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
 		}
-		rec, err := s.repo.WithTx(txn).GetActiveComponent(ctx, canonicalName)
+		txRepo := s.repo.WithTx(txn)
+		rec, err := txRepo.GetActiveComponent(ctx, canonicalName)
 		if err != nil {
 			return err
 		}
@@ -660,12 +556,12 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 		// sourced call, and keeps UpdateTime.
 		unchanged = !store.ApplyObservation(rec, observedGen, access, state, statusMsg)
 		if !unchanged {
-			if err := writeObservationTx(txn, rec, observedGen, state); err != nil {
+			if err := txRepo.UpdateComponentObservation(ctx, rec, state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED); err != nil {
 				return err
 			}
 		}
 		prevOwner = store.CloneSourceOwner(rec.Owner)
-		if err := recordNonIntentOwnerTx(txn, rec, reqSrc); err != nil {
+		if err := recordNonIntentOwnerTx(ctx, txRepo, rec, reqSrc); err != nil {
 			return err
 		}
 
@@ -692,30 +588,6 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 	return store.CloneRecord(finalRec), nil
 }
 
-// writeObservationTx buffers a write of rec's observed generation, access status and, unless
-// state is UNSPECIFIED, state, with UpdateTime at the commit timestamp.
-func writeObservationTx(txn *spanner.ReadWriteTransaction, rec *store.ComponentRecord, observedGen int64, state componentspb.ComponentState) error {
-	var accessBytes []byte
-	if rec.Status != nil {
-		bytes, err := proto.Marshal(rec.Status)
-		if err != nil {
-			return fmt.Errorf("failed to marshal access status proto: %w", err)
-		}
-		accessBytes = bytes
-	}
-
-	updateMap := map[string]any{
-		"ComponentId":        rec.ComponentID,
-		"ObservedGeneration": observedGen,
-		"AccessPayload":      accessBytes,
-		"UpdateTime":         spanner.CommitTimestamp,
-	}
-	if state != componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED {
-		updateMap["State"] = int64(state)
-	}
-	return txn.BufferWrite([]*spanner.Mutation{spanner.UpdateMap("Components", updateMap)})
-}
-
 // ExecuteDeletion deletes a component using the specified deletion policy.
 func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
 	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
@@ -725,6 +597,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 
 	var prevOwner *store.SourceOwner
 	_, err = s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+		txRepo := s.repo.WithTx(txn)
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, txn, store.OperationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
 			return err
@@ -741,11 +614,7 @@ func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy 
 			rec.Owner = owner
 		}
 		toDelete := collectDeletionTargets(rec, catalog, canonicalName, policy)
-		mutations, err := buildDeletionMutations(toDelete, policy, time.Now().UTC(), owner)
-		if err != nil {
-			return err
-		}
-		return txn.BufferWrite(mutations)
+		return softDeleteTargetsTx(ctx, txRepo, toDelete, policy, time.Now().UTC(), owner)
 	})
 
 	if err != nil {
@@ -768,10 +637,9 @@ func collectDeletionTargets(rec *store.ComponentRecord, catalog map[string]*stor
 	return toDelete
 }
 
-// buildDeletionMutations returns one Components update per target. A non-nil targetOwner is merged
-// into the mutation of toDelete[0] (the requested deletion target) so the row is written once.
-func buildDeletionMutations(toDelete []*store.ComponentRecord, policy componentspb.DeletionPolicy, now time.Time, targetOwner *store.SourceOwner) ([]*spanner.Mutation, error) {
-	mutations := make([]*spanner.Mutation, 0, len(toDelete))
+// softDeleteTargetsTx marks each target DELETED. A non-nil targetOwner is written with
+// toDelete[0] (the requested deletion target) so the row is written once.
+func softDeleteTargetsTx(ctx context.Context, txRepo storage.ComponentTxRepository, toDelete []*store.ComponentRecord, policy componentspb.DeletionPolicy, now time.Time, targetOwner *store.SourceOwner) error {
 	for i, target := range toDelete {
 		target.State = componentspb.ComponentState_COMPONENT_STATE_DELETED
 		if target.Status == nil {
@@ -784,34 +652,15 @@ func buildDeletionMutations(toDelete []*store.ComponentRecord, policy components
 			target.Spec.DeletionPolicy = policy
 		}
 
-		compProto := &componentspb.Component{
-			Name:   naming.FullComponentName(target.Name),
-			Spec:   target.Spec,
-			Labels: store.CopyMap(target.Labels),
+		var owner *store.SourceOwner
+		if i == 0 {
+			owner = targetOwner
 		}
-		configBytes, err := proto.Marshal(compProto)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal component proto: %w", err)
+		if err := txRepo.SoftDeleteComponent(ctx, target, owner); err != nil {
+			return err
 		}
-
-		accessBytes, err := proto.Marshal(target.Status)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal access status proto: %w", err)
-		}
-
-		cols := map[string]any{
-			"ComponentId":   target.ComponentID,
-			"ConfigProto":   configBytes,
-			"AccessPayload": accessBytes,
-			"State":         int64(componentspb.ComponentState_COMPONENT_STATE_DELETED),
-			"UpdateTime":    spanner.CommitTimestamp,
-		}
-		if i == 0 && targetOwner != nil {
-			maps.Copy(cols, ownerColumns(targetOwner))
-		}
-		mutations = append(mutations, spanner.UpdateMap("Components", cols))
 	}
-	return mutations, nil
+	return nil
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
@@ -918,17 +767,4 @@ func generateRandomID() (int64, error) {
 		id = 1
 	}
 	return id, nil
-}
-
-func determineComponentClass(spec *componentspb.ComponentSpec) string {
-	if spec == nil {
-		return ""
-	}
-	if spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER && spec.GetWrapperRef() != nil && spec.GetWrapperRef().GetCrdKind() != "" {
-		return spec.GetWrapperRef().GetCrdKind()
-	}
-	if spec.GetType() != componentspb.ComponentType_COMPONENT_TYPE_UNSPECIFIED {
-		return spec.GetType().String()
-	}
-	return ""
 }
