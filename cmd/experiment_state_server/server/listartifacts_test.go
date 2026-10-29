@@ -22,8 +22,10 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	apipb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -227,5 +229,41 @@ func TestListArtifacts_DependencyFailures(t *testing.T) {
 				t.Errorf("ListArtifacts() returned error %v, want %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestListArtifacts_XidFilterUsesLogicalXid(t *testing.T) {
+	ctx := context.Background()
+	wantAcls := &xidmsgpb.XidAcls{
+		Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "writer@example.com"}}},
+	}
+	mockStore := &storage.MockStorage{
+		ListArtifactsResp: []*apipb.Artifact{
+			{Name: "artifacts/100"},
+			{Name: "artifacts/200"},
+		},
+	}
+	mockXid := &mockXidClient{
+		listXidEntriesResp: &xidmsgpb.ListXidEntriesResponse{
+			XidEntries: []*xidmsgpb.XidEntry{
+				{Name: proto.String("xids/100"), Acls: wantAcls},
+				{Name: proto.String("xids/200"), Acls: wantAcls},
+			},
+		},
+	}
+	server := newTestServer(t, withStorage(mockStore), withXidClient(mockXid))
+
+	resp, err := server.ListArtifacts(ctx, &apipb.ListArtifactsRequest{PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListArtifacts() returned unexpected error: %v", err)
+	}
+	wantFilter := "xid=100 OR xid=200"
+	if got := mockXid.gotListXidEntriesReq.GetFilter(); got != wantFilter {
+		t.Errorf("ListXidEntries filter = %q, want %q", got, wantFilter)
+	}
+	for _, artifact := range resp.GetArtifacts() {
+		if diff := cmp.Diff(wantAcls, artifact.GetAcls(), protocmp.Transform()); diff != "" {
+			t.Errorf("Artifact %q ACLs diff (-want +got):\n%s", artifact.GetName(), diff)
+		}
 	}
 }

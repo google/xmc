@@ -15,8 +15,10 @@ package xid_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
@@ -26,6 +28,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	xidpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/spanner/xid"
@@ -167,6 +170,8 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 		t.Fatalf("CreateXidEntry failed: %v", err)
 	}
 	xid1, _ := validator.ValidateXIDName(entry1.GetName())
+	xid2, _ := validator.ValidateXIDName(entry2.GetName())
+	xid3, _ := validator.ValidateXIDName(entry3.GetName())
 
 	testCases := []struct {
 		name   string
@@ -196,6 +201,41 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 		{
 			name:   "xid",
 			filter: fmt.Sprintf("xid=%d", xid1),
+			want:   []*xidpb.XidEntry{entry1},
+		},
+		{
+			name:   "xid_or_chain",
+			filter: fmt.Sprintf("xid=%d OR xid=%d", xid1, xid3),
+			want:   []*xidpb.XidEntry{entry1, entry3},
+		},
+		{
+			name:   "xid_not_equals",
+			filter: fmt.Sprintf("xid != %d", xid2),
+			want:   []*xidpb.XidEntry{entry1, entry3},
+		},
+		{
+			name:   "xid_reversed_equals",
+			filter: fmt.Sprintf("%d = xid", xid2),
+			want:   []*xidpb.XidEntry{entry2},
+		},
+		{
+			name:   "xid_reversed_not_equals",
+			filter: fmt.Sprintf("%d != xid", xid1),
+			want:   []*xidpb.XidEntry{entry2, entry3},
+		},
+		{
+			name:   "xid_range_greater_than",
+			filter: fmt.Sprintf("xid > %d", xid1),
+			want:   []*xidpb.XidEntry{entry2, entry3},
+		},
+		{
+			name:   "xid_range_less_equals",
+			filter: fmt.Sprintf("xid <= %d", xid2),
+			want:   []*xidpb.XidEntry{entry1, entry2},
+		},
+		{
+			name:   "legacy_bit_reversed_xid",
+			filter: fmt.Sprintf("bit_reversed_xid=%d", spannerutils.ReverseBits(xid1)),
 			want:   []*xidpb.XidEntry{entry1},
 		},
 		{
@@ -419,6 +459,154 @@ func TestExtractXidEntryCursor(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("extractXidEntryCursor(%v) returned diff (-want +got):\n%s", tc.entry, diff)
+			}
+		})
+	}
+}
+
+func TestBuildListStatement_XidFilterRewrite(t *testing.T) {
+	ctx := context.Background()
+	xidClient, _ := emulator.Setup(ctx, t)
+	repo, err := xid.NewRepository(xidClient)
+	if err != nil {
+		t.Fatalf("xid.NewRepository() failed: %v", err)
+	}
+
+	testCases := []struct {
+		name           string
+		filter         string
+		wantSQLSubstr  string
+		wantForbidden  string
+		wantParams     map[string]any
+		wantInvalidArg bool
+	}{
+		{
+			name:          "single_xid_equals",
+			filter:        "xid = 10",
+			wantSQLSubstr: "(x.BitReversedXid = @fb0)",
+			wantForbidden: "x.Xid =",
+			wantParams:    map[string]any{"fb0": spannerutils.ReverseBits(10)},
+		},
+		{
+			name:          "xid_or_chain",
+			filter:        "xid = 10 OR xid = 20",
+			wantSQLSubstr: "((x.BitReversedXid = @fb0) OR (x.BitReversedXid = @fb1))",
+			wantForbidden: "x.Xid =",
+			wantParams: map[string]any{
+				"fb0": spannerutils.ReverseBits(10),
+				"fb1": spannerutils.ReverseBits(20),
+			},
+		},
+		{
+			name:          "xid_not_equals",
+			filter:        "xid != 10",
+			wantSQLSubstr: "(x.BitReversedXid != @fb0)",
+			wantForbidden: "x.Xid !=",
+			wantParams:    map[string]any{"fb0": spannerutils.ReverseBits(10)},
+		},
+		{
+			name:          "reversed_xid_equals",
+			filter:        "10 = xid",
+			wantSQLSubstr: "(x.BitReversedXid = @fb0)",
+			wantForbidden: "x.Xid =",
+			wantParams:    map[string]any{"fb0": spannerutils.ReverseBits(10)},
+		},
+		{
+			name:          "reversed_xid_not_equals",
+			filter:        "10 != xid",
+			wantSQLSubstr: "(x.BitReversedXid != @fb0)",
+			wantForbidden: "x.Xid !=",
+			wantParams:    map[string]any{"fb0": spannerutils.ReverseBits(10)},
+		},
+		{
+			name:          "xid_range_greater_than_stays_on_xid",
+			filter:        "xid > 10",
+			wantSQLSubstr: "(x.Xid > @fb0)",
+			wantForbidden: "x.BitReversedXid >",
+			wantParams:    map[string]any{"fb0": int64(10)},
+		},
+		{
+			name:          "xid_range_less_equals_stays_on_xid",
+			filter:        "xid <= 10",
+			wantSQLSubstr: "(x.Xid <= @fb0)",
+			wantForbidden: "x.BitReversedXid <=",
+			wantParams:    map[string]any{"fb0": int64(10)},
+		},
+		{
+			name:          "legacy_bit_reversed_xid_equals",
+			filter:        "bit_reversed_xid = 42",
+			wantSQLSubstr: "(x.BitReversedXid = @fb0)",
+			wantParams:    map[string]any{"fb0": int64(42)},
+		},
+		{
+			name:          "creator_equals_xid_string_literal",
+			filter:        `creator = "xid"`,
+			wantSQLSubstr: "(x.Creator = @fb0)",
+			wantParams:    map[string]any{"fb0": "xid"},
+		},
+		{
+			name:           "invalid_non_integer_literal_unquoted",
+			filter:         "xid = abc",
+			wantInvalidArg: true,
+		},
+		{
+			name:           "invalid_non_integer_literal_quoted",
+			filter:         `xid = "abc"`,
+			wantInvalidArg: true,
+		},
+		{
+			name:           "invalid_non_integer_literal_dotted",
+			filter:         "xid = 12.34",
+			wantInvalidArg: true,
+		},
+		{
+			name:           "invalid_non_integer_literal_reversed",
+			filter:         `"abc" = xid`,
+			wantInvalidArg: true,
+		},
+		{
+			name:           "invalid_non_integer_literal_range",
+			filter:         "xid > abc",
+			wantInvalidArg: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, err := repo.BuildListStatement(ctx, 10, "", tc.filter, "")
+			if tc.wantInvalidArg {
+				if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+					t.Fatalf("BuildListStatement(%q) error = %v, want %v", tc.filter, err, grpcerr.ErrInvalidArgument)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("BuildListStatement(%q) unexpected error: %v", tc.filter, err)
+			}
+			sql := stmt.Spanner().SQL
+			if !strings.Contains(sql, tc.wantSQLSubstr) {
+				t.Errorf("BuildListStatement(%q) SQL = %q, want substring %q", tc.filter, sql, tc.wantSQLSubstr)
+			}
+			if tc.wantForbidden != "" && strings.Contains(sql, tc.wantForbidden) {
+				t.Errorf("BuildListStatement(%q) SQL = %q, must not contain %q", tc.filter, sql, tc.wantForbidden)
+			}
+			if diff := cmp.Diff(tc.wantParams, stmt.Spanner().Params); diff != "" {
+				t.Errorf("BuildListStatement(%q) Params diff (-want +got):\n%s", tc.filter, diff)
+			}
+		})
+	}
+}
+
+func TestListXidEntries_InvalidFilters(t *testing.T) {
+	ctx := context.Background()
+	xidClient, _ := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(xidClient)
+
+	for _, filter := range []string{"xid = abc", `xid = "abc"`, "xid = 1.5", `"abc" = xid`, "xid > abc"} {
+		t.Run(filter, func(t *testing.T) {
+			_, _, err := storage.ListXidEntries(ctx, 10, "", filter, "", 0)
+			if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("ListXidEntries(filter=%q) error = %v, want %v", filter, err, grpcerr.ErrInvalidArgument)
 			}
 		})
 	}
