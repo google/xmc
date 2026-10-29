@@ -275,6 +275,27 @@ func TestUpdateExperiment(t *testing.T) {
 	if diff := cmp.Diff(res.Updated, noopRes.Updated, protocmp.Transform()); diff != "" {
 		t.Errorf("no-op UpdateExperiment diff (-want +got):\n%s", diff)
 	}
+
+	futureTime := time.Now().UTC().Truncate(time.Microsecond).Add(time.Minute)
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.Name = "experiments/102"
+		e.CreateTime = timestamppb.New(futureTime)
+		e.UpdateTime = timestamppb.New(futureTime)
+	}))
+	for i, note := range []string{"back-to-back-1", "back-to-back-2"} {
+		stepRes, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+			XID:        102,
+			Experiment: &essmsgpb.Experiment{Notes: note},
+			UpdateMask: &fmpb.FieldMask{Paths: []string{"notes"}},
+		})
+		if err != nil {
+			t.Fatalf("UpdateExperiment(back-to-back %d) failed: %v", i+1, err)
+		}
+		wantUpdateTime := futureTime.Add(time.Duration(i+1) * time.Microsecond)
+		if got := stepRes.Updated.GetUpdateTime().AsTime(); !got.Equal(wantUpdateTime) {
+			t.Errorf("UpdateExperiment(back-to-back %d) UpdateTime = %v, want %v", i+1, got, wantUpdateTime)
+		}
+	}
 }
 
 func TestUpdateExperiment_Errors(t *testing.T) {
