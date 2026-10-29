@@ -67,6 +67,7 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 		nil,
 		nil,
 		nil,
+		querytools.RestrictionRewriter(RewriteXidRestriction),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Xids query generator: %w", err)

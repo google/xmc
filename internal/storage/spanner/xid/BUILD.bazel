@@ -30,7 +30,6 @@ go_library(
         "//internal/grpcerr",
         "//internal/logging",
         "//internal/query_generator/dialect/spanner",
-        "//internal/query_generator/filter",
         "//internal/query_generator/liststatement",
         "//internal/query_generator/normalizer",
         "//internal/query_generator/querytools",
@@ -56,6 +55,7 @@ go_test(
         "listxidentries_test.go",
     ],
     deps = [
+        "//api/filter:filter_expression_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
         "//internal/storage",

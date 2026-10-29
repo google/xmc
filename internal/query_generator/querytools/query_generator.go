@@ -208,6 +208,13 @@ func (q *queryGen) translateRestriction(r *fpb.Restriction) *fpb.Restriction {
 }
 
 func (q *queryGen) translateRestrictionWithValidation(r *fpb.Restriction) (*fpb.Restriction, error) {
+	if q.options.restrictionRewriter != nil {
+		rewritten, err := q.options.restrictionRewriter(r)
+		if err != nil {
+			return r, err
+		}
+		r = rewritten
+	}
 	if len(q.options.rewrites) > 0 {
 		r = PhraseMap(q.options.rewrites)(r)
 	}
@@ -512,9 +519,13 @@ func (q *queryGen) Tables() []TableView {
 	return q.tables
 }
 
+// RestrictionRewriteFunc rewrites or validates a filter restriction before SQL generation.
+type RestrictionRewriteFunc func(r *fpb.Restriction) (*fpb.Restriction, error)
+
 type options struct {
-	rewrites           map[string]map[string]string
-	deduplicateSelects bool
+	rewrites            map[string]map[string]string
+	restrictionRewriter RestrictionRewriteFunc
+	deduplicateSelects  bool
 }
 
 // Option is an optional argument to generating queries.
@@ -532,6 +543,14 @@ func (o optionwrap) set(out *options) {
 func EnumRewrites(rewrites map[string]map[string]string) Option {
 	return optionwrap(func(out *options) {
 		out.rewrites = rewrites
+	})
+}
+
+// RestrictionRewriter registers a callback that rewrites or validates each filter restriction
+// before SQL generation. Returning an error rejects the filter.
+func RestrictionRewriter(rewriter RestrictionRewriteFunc) Option {
+	return optionwrap(func(out *options) {
+		out.restrictionRewriter = rewriter
 	})
 }
 
