@@ -1471,6 +1471,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			equalityFilters[a.Name] = true
 			return a.Type, nil
 		},
+		RestrictionTranslate: q.translateRestriction,
 	}
 	filtervisitor.Visit(&ev, userFilterExp)
 	return nil

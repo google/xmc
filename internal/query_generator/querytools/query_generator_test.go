@@ -1570,11 +1570,11 @@ func TestGeneratePostgresQuery(t *testing.T) {
 				}),
 			},
 			wantStmt: &postgresdialect.Statement{
-				SQL:  "SELECT a.AlbumTitle, a.SingerId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
+				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
 				Args: []any{int64(99)},
 			},
 			wantFieldToIdxMap: map[TableField]int{
-				SingerIDTableField: 1,
+				AlbumIDTableField: 1,
 			},
 		},
 		{
