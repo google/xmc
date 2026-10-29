@@ -98,11 +98,13 @@ func (h *ExperimentHandler) UpdateExperiment(ctx context.Context, req *msgpb.Upd
 			UpdateMask: updateMask,
 		}
 
-		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
+		updatedXidEntry, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request)
+		if err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
 			return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", grpcerr.ErrInternal, err)
 		}
-		returnedExp.Acls = xidEntryForUpdate.GetAcls()
+		// Return the ACLs as stored by the XID service, which normalizes principals.
+		returnedExp.Acls = updatedXidEntry.GetAcls()
 	} else {
 		// 6.1. Fetch the XID entry from the XID service if required.
 		// This is required to populate the ACLs in the response.

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
 	msgpb "xmanager_cloud/api/protos/xid"
 	xidpkg "xmanager_cloud/cmd/xid_service/xid"
 	"xmanager_cloud/internal/auth"
@@ -66,11 +67,14 @@ func (s *XIDServer) UpdateXidEntry(ctx context.Context, in *msgpb.UpdateXidEntry
 		return nil, fmt.Errorf("user is not authorized to update XID %d: %w", xid, grpcerr.ErrPermissionDenied)
 	}
 
-	// 4. Update the XidEntry in the storage layer.
+	// 4. Update the XidEntry in the storage layer, storing ACL principals in canonical form so they
+	// match case-insensitively. The request is copied rather than modified in place.
+	entry := proto.Clone(in.GetXidEntry()).(*msgpb.XidEntry)
+	entry.Acls = auth.NormalizeACLs(entry.GetAcls())
 	updatedEntry, err := xidpkg.UpdateXidEntry(ctx, s.storage, &storage.XidEntryUpdate{
 		XID:        xid,
 		Creator:    email,
-		XidEntry:   in.XidEntry,
+		XidEntry:   entry,
 		UpdateMask: in.UpdateMask,
 	})
 	if err != nil {

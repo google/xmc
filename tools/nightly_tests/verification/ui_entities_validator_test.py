@@ -31,6 +31,11 @@ class UIEntitiesValidatorTest(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.enterContext(mock.patch.object(os, "makedirs"))
+        self.enterContext(
+            mock.patch.object(
+                ui_entities_validator.xdash_auth, "load_cached_cli_token", return_value=None
+            )
+        )
 
     def _create_mock_playwright(self) -> tuple[Any, Any, Any, Any]:
         """Creates a mocked Playwright hierarchy with selector-aware mock page state."""
@@ -629,6 +634,32 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         self.assertEqual(s.auth_token, "tok-1")
         self.assertFalse(s.headless)
         self.assertEqual(s.screenshots_dir, "/tmp/s")
+
+    def test_session_init_falls_back_to_cached_cli_token(self) -> None:
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(
+                ui_entities_validator.xdash_auth,
+                "load_cached_cli_token",
+                return_value="cli-browser-tok",
+            ) as mock_cli_tok,
+        ):
+            s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com/")
+        mock_cli_tok.assert_called_once_with("https://xmc.example.com")
+        self.assertEqual(s.auth_token, "cli-browser-tok")
+
+        # Schemeless ui_base_url does not trigger CLI token auto-discovery
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(
+                ui_entities_validator.xdash_auth,
+                "load_cached_cli_token",
+                return_value="cli-browser-tok",
+            ) as mock_cli_tok_schemeless,
+        ):
+            s_no_scheme = ui_entities_validator.XMCUIBrowserSession("xmc.example.com")
+        mock_cli_tok_schemeless.assert_not_called()
+        self.assertIsNone(s_no_scheme.auth_token)
 
 
 if __name__ == "__main__":

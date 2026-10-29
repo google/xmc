@@ -51,7 +51,7 @@ flowchart TD
 2. **ClickHouse Addon Deployed**: ClickHouse deployed in the cluster (see `deploy/addons/metrics/clickhouse/README.md`).
 3. **Google Cloud CLI (`gcloud`) & Docker**: Authenticated to push container images to your project's Artifact Registry.
 4. **Python 3.11+**: Installed on your workstation.
-5. **Authentication**: After initializing and activating `.venv` (`./install_venv.sh && source .venv/bin/activate`), run `xmanager login` and `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` (used by the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
+5. **Authentication**: After initializing and activating `.venv` (`./install_venv.sh && source .venv/bin/activate`), run `xmanager login` (automatically used by both experiment launch and the `DashboardService` step). You own the experiments you launch. See [Authentication and Experiment Access](../../docs/authentication.md) for CI service accounts and sharing.
 
 ---
 
@@ -94,7 +94,6 @@ Run the automated setup script to create `.venv`, install required dependencies 
 ./install_venv.sh
 source .venv/bin/activate
 xmanager login
-export XMC_AUTH_TOKEN=$(xmanager login --print-token)
 ```
 
 ### 2. Build and Push the Worker Container Image

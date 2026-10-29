@@ -27,14 +27,16 @@ except ImportError:
     grpc = None  # type: ignore[assignment]
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.auth import (
+    LOCAL_HOSTS as _LOCAL_HOSTS,
+    load_cached_cli_token,
+    mint_iam_impersonated_token,
+    resolve_env_auth_token,
+)
 from xdash.builders import chart_id_from_name
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 _TOKEN_TTL_SEC = 3300.0
-
-# Hosts assumed to be a local development service, and therefore plaintext. Any other
-# host — notably cloud.xmanager.googleapis.com — requires TLS.
-_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
 
 
 def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
@@ -57,23 +59,13 @@ def _fetch_iam_id_token(client_sa: str, audience: str) -> str:
         ) from e
 
     credentials, _ = google.auth.default()
-    session = google_requests.AuthorizedSession(credentials)
-    try:
-        url = (
-            "https://iamcredentials.googleapis.com/v1/projects/-/"
-            f"serviceAccounts/{client_sa}:generateIdToken"
-        )
-        response = session.post(url, json={"audience": audience, "includeEmail": True}, timeout=10)
-        response.raise_for_status()
-        return str(response.json()["token"])
-    finally:
-        session.close()
+    return mint_iam_impersonated_token(credentials, google_requests, client_sa, audience)
 
 
 def _is_local_endpoint(endpoint: str) -> bool:
     """Reports whether a gRPC target addresses a local, plaintext service."""
     host = endpoint.rsplit(":", 1)[0] if ":" in endpoint else endpoint
-    return host.strip("[]").lower() in _LOCAL_HOSTS
+    return not host or host.strip("[]").lower() in _LOCAL_HOSTS
 
 
 def _reject_doubly_attached_charts(
@@ -197,6 +189,16 @@ class DashboardClient:
         self._owns_channel = False
         self._cached_iam_token: tuple[tuple[str, str], str, float] | None = None
         self._token_lock = threading.Lock()
+        env_ep = endpoint or os.environ.get("XMC_DASHBOARD_ENDPOINT")
+        self._endpoint = (
+            (env_ep or "")
+            if (channel is not None and stub is None)
+            else (env_ep or DEFAULT_DASHBOARD_ENDPOINT)
+        )
+        if secure is not None:
+            self._secure = bool(secure)
+        else:
+            self._secure = credentials is not None or not _is_local_endpoint(self._endpoint)
 
         if stub is not None:
             self._stub = stub
@@ -214,21 +216,16 @@ class DashboardClient:
         if channel is not None:
             self._channel = channel
         else:
-            resolved_endpoint = (
-                endpoint or os.environ.get("XMC_DASHBOARD_ENDPOINT") or DEFAULT_DASHBOARD_ENDPOINT
-            )
-            if secure is None:
-                secure = credentials is not None or not _is_local_endpoint(resolved_endpoint)
             try:
-                if secure:
+                if self._secure:
                     self._channel = grpc.secure_channel(
-                        resolved_endpoint, credentials or grpc.ssl_channel_credentials()
+                        self._endpoint, credentials or grpc.ssl_channel_credentials()
                     )
                 else:
-                    self._channel = grpc.insecure_channel(resolved_endpoint)
+                    self._channel = grpc.insecure_channel(self._endpoint)
             except Exception as e:
                 raise XDashConnectionError(
-                    f"Failed to create gRPC channel to {resolved_endpoint}: {e}"
+                    f"Failed to create gRPC channel to {self._endpoint}: {e}"
                 ) from e
             self._owns_channel = True
 
@@ -253,10 +250,17 @@ class DashboardClient:
         self.close()
 
     def _resolve_auth_token(self) -> str:
-        """Resolves the bearer token from env vars or IAM OIDC fallback."""
-        token = (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip()
-        if token:
-            return token
+        """Resolves the bearer token from env vars, cached CLI login, or IAM OIDC fallback."""
+        try:
+            env_token = resolve_env_auth_token()
+        except ValueError as err:
+            raise XDashError(str(err)) from err
+        if env_token:
+            return env_token
+        if self._endpoint and (
+            cli_token := load_cached_cli_token(self._endpoint, secure=self._secure)
+        ):
+            return cli_token
         client_sa = (os.environ.get("XMC_CLIENT_SA") or "").strip()
         audience = (os.environ.get("IAP_CLIENT_ID") or "").strip()
         if bool(client_sa) != bool(audience):

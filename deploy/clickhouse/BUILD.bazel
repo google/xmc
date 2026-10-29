@@ -19,5 +19,9 @@ exports_files(["schema.sql"])
 py_test(
     name = "schema_test",
     srcs = ["schema_test.py"],
-    data = ["schema.sql"],
+    data = [
+        "schema.sql",
+        "//deploy/addons/metrics:manifests/metrics-addons.yaml",
+        "//deploy/addons/metrics:setup_metrics_addons.sh",
+    ],
 )

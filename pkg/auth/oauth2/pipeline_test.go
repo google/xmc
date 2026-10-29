@@ -125,7 +125,7 @@ func TestIsUserAuthorizedForRoleViaIAM(t *testing.T) {
 		Bindings: []*iampb.Binding{
 			{
 				Role:    "roles/viewer",
-				Members: []string{"user:viewer@company.com"},
+				Members: []string{"user:viewer@company.com", "user:KATE@Company.com"},
 			},
 			{
 				Role:    "roles/owner",
@@ -174,6 +174,18 @@ func TestIsUserAuthorizedForRoleViaIAM(t *testing.T) {
 			role:    "roles/owner",
 			want:    false,
 			wantErr: false,
+		},
+		{
+			name:  "mixed-case IAM member matches ASCII case-insensitively",
+			email: "Kate@company.COM",
+			role:  "roles/viewer",
+			want:  true,
+		},
+		{
+			name:  "kelvin sign does not alias a k IAM member",
+			email: "\u212Aate@company.com",
+			role:  "roles/viewer",
+			want:  false,
 		},
 		{
 			name:    "owner email has owner role",
@@ -283,7 +295,7 @@ func TestEmailDomain(t *testing.T) {
 }
 
 func TestIsAllowedDomain(t *testing.T) {
-	a := NewAuthenticator(&Config{AllowedDomains: []string{" MyCompany.com ", "other.org"}})
+	a := NewAuthenticator(&Config{AllowedDomains: []string{" MyCompany.com ", "other.org", "kcorp.io"}})
 	tests := []struct {
 		name   string
 		domain string
@@ -292,6 +304,8 @@ func TestIsAllowedDomain(t *testing.T) {
 		{name: "allowlisted domain", domain: "mycompany.com", want: true},
 		{name: "case and spaces are ignored", domain: " MYCOMPANY.com", want: true},
 		{name: "second allowlisted domain", domain: "other.org", want: true},
+		{name: "mixed-case ASCII matches", domain: "KCorp.IO", want: true},
+		{name: "kelvin sign does not alias k", domain: "\u212Acorp.io", want: false},
 		{name: "other domain", domain: "example.com", want: false},
 		{name: "subdomain", domain: "eng.mycompany.com", want: false},
 		{name: "empty", domain: "", want: false},
