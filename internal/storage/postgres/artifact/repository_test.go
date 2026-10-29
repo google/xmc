@@ -86,15 +86,25 @@ func TestRepository_ValidationAndNilPoolErrors(t *testing.T) {
 	}{
 		{"CreateArtifact nil pool", func() error { return onlyErr(nilRepo.CreateArtifact(ctx, blankArtifactProto(1, 1))) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"CreateArtifact nil artifact", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, nil)) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"CreateArtifact invalid name", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "invalid", Parent: "experiments/1"})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"CreateArtifact invalid parent", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "artifacts/1", Parent: "invalid/1"})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"CreateArtifact invalid name", func() error {
+			return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "invalid", Parent: "experiments/1"}))
+		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"CreateArtifact invalid parent", func() error {
+			return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "artifacts/1", Parent: "invalid/1"}))
+		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
 		{"FetchArtifact nil pool", func() error { return onlyErr(nilRepo.FetchArtifact(ctx, 1)) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"ListArtifacts nil pool", func() error { _, _, err := nilRepo.ListArtifacts(ctx, "", 10, "", "", "", 0); return err }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"ListArtifacts invalid parent", func() error { _, _, err := nilRepo.ListArtifacts(ctx, "invalid/1", 10, "", "", "", 0); return err }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
 		{"UpdateArtifact nil update", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, nil)) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact nil artifact", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, UpdateMask: mask})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact empty mask", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: &fmpb.FieldMask{}})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact nil pool", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: mask})) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
+		{"UpdateArtifact nil artifact", func() error {
+			return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, UpdateMask: mask}))
+		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"UpdateArtifact empty mask", func() error {
+			return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: &fmpb.FieldMask{}}))
+		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"UpdateArtifact nil pool", func() error {
+			return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: mask}))
+		}, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"DeleteArtifact nil pool", func() error { return nilRepo.DeleteArtifact(ctx, 1) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 	}
 	for _, tc := range tests {
