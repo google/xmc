@@ -1645,22 +1645,20 @@ func TestGenerateQueryConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for g := range 16 {
-		wg.Add(1)
-		go func(id int) {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range 20 {
-				qc := cases[(id+i)%len(cases)]
+				qc := cases[(g+i)%len(cases)]
 				stmt := spannerdialect.NewStatement(nil)
 				if _, _, err := qg.GenerateQuery(stmt, []TableField{AlbumSingerIDTableField}, nil, nil, qc.exp, nil, 10, 0, nil, nil); err != nil {
-					t.Errorf("goroutine %d iter %d: GenerateQuery() failed: %v", id, i, err)
+					t.Errorf("goroutine %d iter %d: GenerateQuery() failed: %v", g, i, err)
 					return
 				}
 				if gotTable := selectedTableFromSQL(stmt.Spanner().SQL, AlbumsTables); gotTable != qc.wantTable {
-					t.Errorf("goroutine %d iter %d: selectedTableFromSQL(%q) = %q, want %q", id, i, stmt.Spanner().SQL, gotTable, qc.wantTable)
+					t.Errorf("goroutine %d iter %d: selectedTableFromSQL(%q) = %q, want %q", g, i, stmt.Spanner().SQL, gotTable, qc.wantTable)
 					return
 				}
 			}
-		}(g)
+		})
 	}
 	wg.Wait()
 }
