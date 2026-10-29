@@ -462,14 +462,19 @@ class TestInstallXmanager(unittest.TestCase):
             mock_run.assert_not_called()
 
     def test_resolve_module_origin(self) -> None:
-        """Test resolve_module_origin parses the venv-reported origin in isolated mode."""
+        """Test resolve_module_origin parses only the marked origin line in isolated mode."""
         venv_python = Path("/mock/venv/bin/python3")
+        marker = install_xmanager._MODULE_ORIGIN_MARKER
+        origin = "/repo/sdks/python/xdash/__init__.py"
         cases = (
-            ("/repo/sdks/python/xdash/__init__.py\n", Path("/repo/sdks/python/xdash/__init__.py")),
-            ("\n", None),
+            ("clean", f"{marker}{origin}\n", Path(origin)),
+            ("startup_noise_before", f"Warning: deprecated\n{marker}{origin}\n", Path(origin)),
+            ("noise_after", f"{marker}{origin}\nbye\n", Path(origin)),
+            ("not_found", f"{marker}\n", None),
+            ("no_marker", "Warning: deprecated\n", None),
         )
-        for stdout, expected in cases:
-            with self.subTest(stdout=stdout):
+        for name, stdout, expected in cases:
+            with self.subTest(name):
                 completed = subprocess.CompletedProcess(
                     args=[], returncode=0, stdout=stdout, stderr=""
                 )
