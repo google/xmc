@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package main is a fixture binary for the dev_binary_guard_test gotags regression check.
+// Package main is a fixture binary for the dev_binary_guard_test name and gotags regression checks.
 package main
 
 func main() {}
