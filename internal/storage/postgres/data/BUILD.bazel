@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "data",
     srcs = [
+        "experiment.go",
         "operation.go",
         "pausedtask.go",
         "proto.go",
@@ -44,6 +45,7 @@ go_library(
 go_test(
     name = "data_test",
     srcs = [
+        "experiment_test.go",
         "operation_test.go",
         "pausedtask_test.go",
         "statusmessage_test.go",
