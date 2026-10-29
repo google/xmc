@@ -14,11 +14,11 @@
 
 // Cross-backend parity tests for google.rpc.ErrorInfo details on Store rejections.
 // Production targets: error_info.go, graph_validator.go, deactivation_engine.go, memory_store.go,
-// and spanner_store.go.
+// and dbstore.go.
 // Test type: hermetic cross-backend unit/emulator suite (runs every rejection case against both
-// MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept separate from
+// MemoryStore and dbstore.Store backed by the in-process Spanner emulator). Kept separate from
 // error_info_test.go (which unit-tests the pure ErrorInfo constructor helpers in package store) so
-// end-to-end Store RPC rejection parity is verified in package store_test.
+// end-to-end Store RPC rejection parity is verified in package dbstore_test.
 package dbstore_test
 
 import (

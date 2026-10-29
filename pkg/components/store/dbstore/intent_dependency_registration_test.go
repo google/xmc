@@ -13,12 +13,12 @@
 // limitations under the License.
 
 // Cross-backend parity tests for Store.SetComponentIntent dependency registration checks.
-// Production targets: dependency_registration.go, memory_store.go, and spanner_store.go.
+// Production targets: dependency_registration.go, memory_store.go, and dbstore.go.
 // Test type: hermetic cross-backend unit/emulator suite (runs every table case against both
-// MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept separate from
+// MemoryStore and dbstore.Store backed by the in-process Spanner emulator). Kept separate from
 // dependency_registration_test.go (which unit-tests the pure MissingDependency helper in package
 // store) so end-to-end SetComponentIntent parity across both backends is verified in package
-// store_test.
+// dbstore_test.
 package dbstore_test
 
 import (

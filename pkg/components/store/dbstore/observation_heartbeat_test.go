@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Production targets: memory_store.go, spanner_store.go, and
+// Production targets: memory_store.go, dbstore.go, and
 // source_ownership.go (UpdateObservedGeneration, PrepareDeactivation, and
 // CompleteDeactivation).
 //
 // Test type: Hermetic cross-backend unit and emulator test suite (runs each
-// scenario against both MemoryStore and SpannerStore on the Spanner emulator).
+// scenario against both MemoryStore and dbstore.Store on the Spanner emulator).
 //
 // Why separate from store_test.go and source_ownership_test.go: Isolates
 // cross-backend parity tests for non-intent SourceGeneration adoption resets

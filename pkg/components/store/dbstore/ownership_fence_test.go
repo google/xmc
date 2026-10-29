@@ -36,7 +36,7 @@ const (
 	drClusterUID   = "7d3e2a10-8c4b-4f6e-b1a2-3c4d5e6f7a02"
 )
 
-// TestDeclareClusterEpoch_Parity runs one declaration sequence against MemoryStore and SpannerStore:
+// TestDeclareClusterEpoch_Parity runs one declaration sequence against MemoryStore and dbstore.Store:
 // the first owner keeps the fence, the active cluster refreshes (possibly renamed) or raises its
 // epoch, and only a strictly higher epoch from another cluster takes the fence over.
 func TestDeclareClusterEpoch_Parity(t *testing.T) {

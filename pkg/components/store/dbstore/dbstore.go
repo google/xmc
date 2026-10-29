@@ -39,7 +39,7 @@ import (
 	"xmanager_cloud/pkg/components/store/ownership"
 )
 
-// Ensure Store implements Store interface at compile time.
+// Ensure Store implements the store.Store interface at compile time.
 var _ store.Store = (*Store)(nil)
 
 // Store provides a storage.Storage-backed production implementation of store.Store.

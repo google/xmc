@@ -13,12 +13,12 @@
 // limitations under the License.
 
 // Cross-backend parity tests for RequestSource ownership (R1-R6) and cluster fence enforcement.
-// Production targets: source_ownership.go, ownership_fence.go, spanner_ownership_fence.go,
-// memory_store.go, and spanner_store.go.
+// Production targets: source_ownership.go, ownership/ownership_fence.go, dbstore/ownership_fence.go,
+// memory_store.go, and dbstore.go.
 // Test type: hermetic cross-backend unit/emulator suite (runs every ownership and fence case
-// against both MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept
+// against both MemoryStore and dbstore.Store backed by the in-process Spanner emulator). Kept
 // separate from source_ownership_test.go (which unit-tests the pure CheckSourceOwnership rules in
-// package store) so end-to-end Store RPC ownership parity is verified in package store_test.
+// package store) so end-to-end Store RPC ownership parity is verified in package dbstore_test.
 package dbstore_test
 
 import (

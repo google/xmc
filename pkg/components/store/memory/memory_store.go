@@ -411,7 +411,7 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 	now := time.Now().UTC()
 	if reqSrc != nil {
 		// Like recordOwnerInMemory, but with DeletionOwner: the deleting owner object keeps the
-		// larger SourceGeneration, matching SpannerStore.
+		// larger SourceGeneration, matching dbstore.Store.
 		prev := store.CloneSourceOwner(rec.Owner)
 		rec.Owner = ownership.DeletionOwner(rec.Owner, *reqSrc)
 		rec.SourceLastSeenTime = now
@@ -439,10 +439,10 @@ func (m *MemoryStore) ExecuteDeletion(ctx context.Context, name string, policy c
 }
 
 // dropEdgesToLocked removes every dependency edge to the soft-deleted components named in deleted.
-// SpannerStore stores edges by ComponentId and reads only edges to active components, so an edge to
+// dbstore.Store stores edges by ComponentId and reads only edges to active components, so an edge to
 // a soft-deleted component disappears and never matches a later re-registration of the same name.
 // MemoryStore stores edges by name, so it drops them at deletion to keep the same semantics. Like
-// SpannerStore, it leaves the specs, UpdateTime, and Etag of the dependents unchanged.
+// dbstore.Store, it leaves the specs, UpdateTime, and Etag of the dependents unchanged.
 func (m *MemoryStore) dropEdgesToLocked(deleted []string) {
 	isDeleted := func(dep string) bool { return slices.Contains(deleted, dep) }
 	for _, rec := range m.componentsByID {
