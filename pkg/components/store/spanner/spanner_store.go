@@ -50,7 +50,9 @@ type SpannerStore struct {
 	beforeIntentWrite func()
 }
 
-// NewSpannerStore creates a new Spanner-backed component store.
+// NewSpannerStore creates a component store over st. Every operation goes through st's
+// ComponentRepository and TransactionRunner (including RunInTransactionWithCommitTime), so st must
+// implement them; today only the Spanner backend does, and other backends return codes.Unimplemented.
 func NewSpannerStore(st storage.Storage) (*SpannerStore, error) {
 	if st == nil {
 		return nil, errors.New("spannerstore: storage.Storage must not be nil")

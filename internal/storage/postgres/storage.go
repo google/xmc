@@ -107,8 +107,8 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 	})
 }
 
-// RunInTransactionWithCommitTime is not yet implemented for PostgreSQL; it lands with PostgreSQL
-// component writes.
+// RunInTransactionWithCommitTime returns codes.Unimplemented on PostgreSQL.
+// TODO(#1416): implement with the PostgreSQL serializable-transaction follow-up.
 func (s *Storage) RunInTransactionWithCommitTime(context.Context, func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
 	return time.Time{}, status.Error(codes.Unimplemented, "postgres storage: RunInTransactionWithCommitTime is not implemented")
 }
