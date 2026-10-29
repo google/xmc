@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -64,29 +65,33 @@ func (c *BearerTokenCredentials) GetRequestMetadata(ctx context.Context, _ ...st
 // RequireTransportSecurity returns false to support cluster-internal gRPC connections.
 func (c *BearerTokenCredentials) RequireTransportSecurity() bool { return false }
 
-// NewCMSTokenCredentials resolves PerRPCCredentials for authenticating xmc-bridge to CMS.
-func NewCMSTokenCredentials(ctx context.Context) credentials.PerRPCCredentials {
+// NewCMSTokenCredentials resolves PerRPCCredentials for authenticating xmc-bridge to CMS. It fails
+// when the environment requests a non-production auth mode that this binary was not built with.
+func NewCMSTokenCredentials(ctx context.Context) (credentials.PerRPCCredentials, error) {
 	return newCMSTokenCredentialsWithFactory(ctx, idtoken.NewTokenSource)
 }
 
-func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idTokenSourceFactory) credentials.PerRPCCredentials {
+func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idTokenSourceFactory) (credentials.PerRPCCredentials, error) {
 	if os.Getenv("DISABLE_AUTHENTICATION") == "true" {
-		return NewBearerTokenCredentials(nil)
+		return NewBearerTokenCredentials(nil), nil
 	}
 	oauthCfg, err := xmcoauth.LoadConfig()
+	if errors.Is(err, xmcoauth.ErrDevAuthNotCompiledIn) {
+		return nil, err
+	}
 	if err != nil {
 		logging.Warn(ctx, "Failed to load OAuth config for CMS credentials; falling back to Google ID token", "error", err)
 	}
 	if oauthCfg != nil && oauthCfg.IsNonProdAuth() {
 		if fn := buildNonProdTokenFunc(oauthCfg); fn != nil {
-			return NewBearerTokenCredentials(fn)
+			return NewBearerTokenCredentials(fn), nil
 		}
 	}
 	aud := resolveCMSAudience(oauthCfg)
 	if aud == "placeholder-grpc-audience" {
 		logging.Warn(ctx, "No gRPC audience configured for CMS credentials; using placeholder. Production calls will likely fail.")
 	}
-	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, aud, newIDTokenSource))
+	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, aud, newIDTokenSource)), nil
 }
 
 func buildNonProdTokenFunc(oauthCfg *xmcoauth.Config) TokenSourceFunc {

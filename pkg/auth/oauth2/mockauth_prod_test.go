@@ -16,11 +16,36 @@
 
 package oauth2
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestNewAuthenticatorWithoutMockAuthTag(t *testing.T) {
 	a := NewAuthenticator(&Config{MockAuth: true})
 	if _, gotGoogle := a.OAuthProvider.(*GoogleOAuthProvider); !gotGoogle {
 		t.Errorf("NewAuthenticator() installed %T in a build without the mockauth tag, want *GoogleOAuthProvider", a.OAuthProvider)
+	}
+}
+
+func TestLoadConfigRejectsMockAuthWithoutMockAuthTag(t *testing.T) {
+	for _, value := range []string{"true", "1", "YES"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("MOCK_AUTH", value)
+			t.Setenv("JWT_SECRET", "this-is-a-sufficiently-long-jwt-secret-value")
+			cfg, err := LoadConfig()
+			if !errors.Is(err, ErrDevAuthNotCompiledIn) || cfg != nil {
+				t.Errorf("LoadConfig() with MOCK_AUTH=%q = (%v, %v), want (nil, %v)", value, cfg, err, ErrDevAuthNotCompiledIn)
+			}
+		})
+	}
+}
+
+func TestLoadConfigHasNoDevJWTSecretWithoutMockAuthTag(t *testing.T) {
+	t.Setenv("MOCK_AUTH", "false")
+	t.Setenv("DISABLE_AUTHENTICATION", "true")
+	t.Setenv("JWT_SECRET", "")
+	if cfg, err := LoadConfig(); err == nil {
+		t.Errorf("LoadConfig() = (%+v, nil), want an error because the dev-only JWT secret is not compiled in", cfg)
 	}
 }

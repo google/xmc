@@ -94,6 +94,7 @@ go_test(
         "components_rbac_test.go",
         "conditions_test.go",
         "coordinates_test.go",
+        "credentials_prod_test.go",
         "credentials_test.go",
         "dependency_readiness_test.go",
         "intent_generation_test.go",
@@ -116,6 +117,7 @@ go_test(
     embed = [":bridge"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//pkg/auth/oauth2",
         "//pkg/components/bridge/healthprobe",
         "//pkg/components/bridge/healthprobe/healthprobetest",
         "//pkg/components/bridge/helm",
@@ -159,6 +161,7 @@ go_test(
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_x_oauth2//:oauth2",

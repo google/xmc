@@ -191,6 +191,12 @@ is true.
 development only. The chart refuses to render it unless `isDevEnvironment` is
 true.
 
+Mock authentication is compiled only into Go binaries built with
+`gotags = ["mockauth"]` (for example `//cmd/experiment_state_server:experiment_state_server_dev`).
+Published images are always built from untagged binaries, so every service in them refuses to
+start when `MOCK_AUTH` is true instead of silently ignoring it. Use Dex for authentication on
+development clusters.
+
 ---
 
 ## Out-of-Cluster & Remote Kubernetes Configuration (`k8s.remote`)

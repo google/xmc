@@ -113,8 +113,9 @@ func TestGetEnvOrFile(t *testing.T) {
 
 func TestLoadConfig(t *testing.T) {
 	t.Setenv("PORT", "9090")
-	t.Setenv("MOCK_AUTH", "true")
+	t.Setenv("MOCK_AUTH", "false")
 	t.Setenv("DISABLE_AUTHENTICATION", "true")
+	t.Setenv("JWT_SECRET", "short-dev-secret")
 	t.Setenv("ALLOWED_DOMAINS", "company.com, google.com")
 	t.Setenv("ALLOWED_EMAILS", "a@b.com b@c.com")
 	t.Setenv("ALLOWED_ORIGINS", "http://org1.com,http://org2.com")
@@ -128,8 +129,8 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.Port != "9090" {
 		t.Errorf("Expected Port 9090, got %q", cfg.Port)
 	}
-	if !cfg.MockAuth {
-		t.Error("Expected MockAuth true")
+	if cfg.MockAuth {
+		t.Error("Expected MockAuth false")
 	}
 	if !cfg.DisableAuthentication {
 		t.Error("Expected DisableAuthentication true")
@@ -149,20 +150,20 @@ func TestLoadConfig_JWTSecretValidation(t *testing.T) {
 	const longSecret = "this-is-a-sufficiently-long-jwt-secret-value" // >= 32 bytes
 
 	tests := []struct {
-		name      string
-		mockAuth  string
-		jwtSecret string
-		wantErr   bool
+		name        string
+		disableAuth string
+		jwtSecret   string
+		wantErr     bool
 	}{
-		{name: "auth enabled, missing secret", mockAuth: "false", jwtSecret: "", wantErr: true},
-		{name: "auth enabled, secret too short", mockAuth: "false", jwtSecret: "short-secret", wantErr: true},
-		{name: "auth enabled, secret long enough", mockAuth: "false", jwtSecret: longSecret, wantErr: false},
-		{name: "dev mode, short secret allowed", mockAuth: "true", jwtSecret: "short-secret", wantErr: false},
+		{name: "auth enabled, missing secret", disableAuth: "false", jwtSecret: "", wantErr: true},
+		{name: "auth enabled, secret too short", disableAuth: "false", jwtSecret: "short-secret", wantErr: true},
+		{name: "auth enabled, secret long enough", disableAuth: "false", jwtSecret: longSecret, wantErr: false},
+		{name: "dev mode, short secret allowed", disableAuth: "true", jwtSecret: "short-secret", wantErr: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("MOCK_AUTH", tc.mockAuth)
-			t.Setenv("DISABLE_AUTHENTICATION", "false")
+			t.Setenv("MOCK_AUTH", "false")
+			t.Setenv("DISABLE_AUTHENTICATION", tc.disableAuth)
 			t.Setenv("CLIENT_SECRET", "client-secret")
 			t.Setenv("JWT_SECRET", tc.jwtSecret)
 			if _, err := LoadConfig(); (err != nil) != tc.wantErr {
@@ -469,7 +470,7 @@ func TestIsNonProdAuth(t *testing.T) {
 }
 
 func TestLoadConfigSessionTTL(t *testing.T) {
-	t.Setenv("MOCK_AUTH", "true")
+	t.Setenv("JWT_SECRET", "this-is-a-sufficiently-long-jwt-secret-value")
 	for _, tc := range []struct {
 		name    string
 		value   string
@@ -514,7 +515,7 @@ func TestLoadConfigSessionTTL(t *testing.T) {
 }
 
 func TestLoadConfigCLISessionTTL(t *testing.T) {
-	t.Setenv("MOCK_AUTH", "true")
+	t.Setenv("JWT_SECRET", "this-is-a-sufficiently-long-jwt-secret-value")
 	type result struct {
 		TTL time.Duration
 		Err bool

@@ -16,6 +16,7 @@ package oauth2
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,11 +26,10 @@ import (
 	"xmanager_cloud/internal/logging"
 )
 
-// devOnlyJWTSecret is a well-known, non-secret value used to sign session tokens
-// only in local/dev mode (MOCK_AUTH or DISABLE_AUTHENTICATION). It must never be
-// used when authentication is enabled: when JWT_SECRET is unset in that case,
-// LoadConfig fails fast instead of silently signing tokens with this known value.
-const devOnlyJWTSecret = "default-jwt-secret-for-local-dev-only-12345"
+// ErrDevAuthNotCompiledIn is returned by LoadConfig when a non-production auth mode is requested
+// in a binary built without the mockauth tag. Production binaries fail closed instead of
+// silently ignoring the setting.
+var ErrDevAuthNotCompiledIn = errors.New(`non-production auth mode requested but this binary was not built with gotags = ["mockauth"]`)
 
 // minJWTSecretLen is the minimum length (bytes) required for JWT_SECRET when
 // authentication is enabled, so operators cannot configure a weak, easily
@@ -82,6 +82,9 @@ func LoadConfig() (*Config, error) {
 	mockAuth := getEnvBool("MOCK_AUTH", false)
 	disableAuth := getEnvBool("DISABLE_AUTHENTICATION", false)
 
+	if err := validateAuthModes(mockAuth); err != nil {
+		return nil, err
+	}
 	if mockAuth || disableAuth {
 		logging.Warn(context.Background(), "Non-production auth mode enabled", "mock_auth", mockAuth, "disable_authentication", disableAuth)
 	}
@@ -183,17 +186,29 @@ func loadClientSecret() (string, error) {
 	return clientSecret, nil
 }
 
+// validateAuthModes fails closed when MOCK_AUTH is requested in a binary built without the
+// mockauth tag, so a misconfigured production deployment refuses to start.
+func validateAuthModes(mockAuth bool) error {
+	if mockAuth && !mockAuthCompiledIn {
+		return fmt.Errorf("MOCK_AUTH=true: %w", ErrDevAuthNotCompiledIn)
+	}
+	return nil
+}
+
 func loadJWTSecret(mockAuth, disableAuth bool) (string, error) {
 	jwtSecret, err := getEnvOrFile("JWT_SECRET", "")
 	if err != nil {
 		return "", fmt.Errorf("failed to load JWT_SECRET: %w", err)
 	}
 	if jwtSecret == "" {
-		if mockAuth || disableAuth {
-			logging.Warn(context.Background(), "Non-production auth active: using ephemeral dev-only JWT secret", "mock_auth", mockAuth, "disable_authentication", disableAuth)
-			return devOnlyJWTSecret, nil
+		if !mockAuth && !disableAuth {
+			return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
 		}
-		return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE) when authentication is enabled")
+		if devOnlyJWTSecret == "" {
+			return "", fmt.Errorf("jwt_secret must be set (via JWT_SECRET or JWT_SECRET_FILE): the dev-only fallback is compiled only into binaries built with the mockauth tag")
+		}
+		logging.Warn(context.Background(), "Non-production auth active: using ephemeral dev-only JWT secret", "mock_auth", mockAuth, "disable_authentication", disableAuth)
+		return devOnlyJWTSecret, nil
 	}
 	if !mockAuth && !disableAuth && len(jwtSecret) < minJWTSecretLen {
 		return "", fmt.Errorf("jwt_secret must be at least %d bytes when authentication is enabled", minJWTSecretLen)
