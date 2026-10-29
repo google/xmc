@@ -102,19 +102,20 @@ func (r spannerRows) SourceTimes(ctx context.Context, canonicalName string) (las
 }
 
 // ComponentRowTimestamps implements backendRows.
-func (r spannerRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (createTime, updateTime, lastSeenTime time.Time, err error) {
+func (r spannerRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (rowTimestamps, error) {
 	row, err := r.client.Single().ReadRow(ctx, "Components", spanner.Key{componentID}, []string{"CreateTime", "UpdateTime", "SourceLastSeenTime"})
 	if err != nil {
-		return time.Time{}, time.Time{}, time.Time{}, err
+		return rowTimestamps{}, err
 	}
+	var ts rowTimestamps
 	var nullLastSeen spanner.NullTime
-	if err := row.Columns(&createTime, &updateTime, &nullLastSeen); err != nil {
-		return time.Time{}, time.Time{}, time.Time{}, err
+	if err := row.Columns(&ts.Create, &ts.Update, &nullLastSeen); err != nil {
+		return rowTimestamps{}, err
 	}
 	if nullLastSeen.Valid {
-		lastSeenTime = nullLastSeen.Time
+		ts.LastSeen = nullLastSeen.Time
 	}
-	return createTime, updateTime, lastSeenTime, nil
+	return ts, nil
 }
 
 // ComponentRows implements backendRows.

@@ -468,11 +468,11 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 
 func readComponentRowTimestamps(ctx context.Context, t *testing.T, db backendRows, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
 	t.Helper()
-	createTime, updateTime, lastSeenTime, err := db.ComponentRowTimestamps(ctx, componentID)
+	ts, err := db.ComponentRowTimestamps(ctx, componentID)
 	if err != nil {
 		t.Fatalf("ComponentRowTimestamps(%d) failed: %v", componentID, err)
 	}
-	return createTime, updateTime, lastSeenTime
+	return ts.Create, ts.Update, ts.LastSeen
 }
 
 func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T) {

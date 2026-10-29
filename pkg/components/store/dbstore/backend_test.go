@@ -61,7 +61,7 @@ type backendRows interface {
 	// SourceTimes returns SourceLastSeenTime and UpdateTime of the active record canonicalName.
 	SourceTimes(ctx context.Context, canonicalName string) (lastSeen, update time.Time, err error)
 	// ComponentRowTimestamps returns CreateTime, UpdateTime, and SourceLastSeenTime of componentID.
-	ComponentRowTimestamps(ctx context.Context, componentID int64) (createTime, updateTime, lastSeenTime time.Time, err error)
+	ComponentRowTimestamps(ctx context.Context, componentID int64) (rowTimestamps, error)
 	// ComponentRows returns every record named name, deleted or not, in ComponentId order.
 	ComponentRows(ctx context.Context, name string) ([]componentRow, error)
 	// HardDeleteComponent deletes the row of componentID outright instead of soft-deleting it.
@@ -74,6 +74,11 @@ type backendRows interface {
 	FenceDeclaredTime(ctx context.Context) (time.Time, error)
 	// InsertFence inserts row into the ownership fence table, bypassing DeclareClusterEpoch.
 	InsertFence(ctx context.Context, row fenceRow) error
+}
+
+// rowTimestamps holds the timestamps of one Components row.
+type rowTimestamps struct {
+	Create, Update, LastSeen time.Time
 }
 
 // componentRow holds the lifecycle columns of one Components row.
