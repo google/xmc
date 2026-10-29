@@ -196,8 +196,13 @@ func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WorkUnitExecutionProtoToRow() failed: %v", err)
 	}
-	if len(execRow.GetInsertArgs()) != 8 {
-		t.Errorf("len(execRow.GetInsertArgs()) = %d, want 8", len(execRow.GetInsertArgs()))
+	wantInsertArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "executionid": int64(789),
+		"executionmetadata": mustMarshalProto(t, exec.GetMetadata()), "workunitstatus": mustMarshalProto(t, exec.GetStatus()),
+		"createtime": exec.GetCreateTime().AsTime(), "updatetime": exec.GetUpdateTime().AsTime(), "completetime": &testWUCompleteTime,
+	}
+	if diff := cmp.Diff(wantInsertArgs, map[string]any(execRow.GetInsertArgs())); diff != "" {
+		t.Errorf("GetInsertArgs() mismatch (-want +got):\n%s", diff)
 	}
 	gotExec, err := WorkUnitExecutionRowToProto(execRow)
 	if err != nil {
