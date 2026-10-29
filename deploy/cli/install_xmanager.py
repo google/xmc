@@ -81,11 +81,13 @@ LOCAL_SDKS: Mapping[str, Path] = MappingProxyType(
     }
 )
 
-# Prints the origin file of the module named in argv[1], or an empty line if absent.
+# Marks the origin line so interpreter startup noise on stdout cannot be mistaken for it.
+_MODULE_ORIGIN_MARKER = "XMC_MODULE_ORIGIN="
+# Prints the marked origin file of the module named in argv[1] (empty if absent).
 _MODULE_ORIGIN_SNIPPET = (
     "import importlib.util, sys; "
     "spec = importlib.util.find_spec(sys.argv[1]); "
-    "print(spec.origin if spec and spec.origin else '')"
+    f"print('{_MODULE_ORIGIN_MARKER}' + (spec.origin if spec and spec.origin else ''))"
 )
 
 
@@ -359,7 +361,9 @@ def resolve_module_origin(venv_python: Path, module: str) -> Path | None:
     """Resolve the file a module would be loaded from inside the virtualenv.
 
     Runs in isolated mode (-I) so that PYTHONPATH and the current working
-    directory cannot mask what the virtualenv itself resolves.
+    directory cannot mask what the virtualenv itself resolves. Only the
+    marker-prefixed stdout line is parsed, so startup noise (e.g. warnings
+    printed by `sitecustomize`) is ignored.
 
     Args:
         venv_python: Path to virtualenv python executable.
@@ -374,7 +378,12 @@ def resolve_module_origin(venv_python: Path, module: str) -> Path | None:
         capture_output=True,
         text=True,
     )
-    origin = result.stdout.strip()
+    marked = [
+        line.removeprefix(_MODULE_ORIGIN_MARKER).strip()
+        for line in result.stdout.splitlines()
+        if line.startswith(_MODULE_ORIGIN_MARKER)
+    ]
+    origin = marked[-1] if marked else ""
     return Path(origin) if origin else None
 
 
