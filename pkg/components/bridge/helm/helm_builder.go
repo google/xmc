@@ -15,6 +15,7 @@
 package helm
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/logging"
 )
 
 const (
@@ -64,6 +66,9 @@ type HelmComponentOptions struct {
 	Enabled bool
 	// ImageTag specifies an optional container image tag override.
 	ImageTag string
+	// ImageTagFromChartVersion indicates ImageTag was populated from the Component chart version
+	// (spec.version) rather than an explicit spec.imageTag override.
+	ImageTagFromChartVersion bool
 	// DrainTimeoutSeconds specifies graceful termination timeout in seconds.
 	DrainTimeoutSeconds int32
 	// Parameters contains key-value string configuration parameters.
@@ -75,45 +80,98 @@ type HelmComponentOptions struct {
 // BuildHelmValues converts HelmComponentOptions into a structured values map suitable for Helm upgrade.
 func BuildHelmValues(opts HelmComponentOptions) map[string]any {
 	values := make(map[string]any)
-	deploymentKey := ComponentNameToHelmKey(opts.Ref.Name)
+	if ns := strings.TrimSpace(opts.Ref.Namespace); ns != "" {
+		values["namespace"] = ns
+	}
 
-	compValues := make(map[string]any)
-	compValues["enabled"] = opts.Enabled
+	defaultEnvImg := defaultComponentEnvImage(opts.Ref.Name)
+	effectiveTag := strings.TrimSpace(opts.ImageTag)
+	if opts.ImageTagFromChartVersion {
+		effectiveTag = ""
+	}
+	if effectiveTag != "" {
+		values["global"] = map[string]any{"imageTag": effectiveTag}
+	}
 
+	compValues := buildComponentDeploymentValues(opts, effectiveTag, defaultEnvImg)
+	values[ComponentNameToHelmKey(opts.Ref.Name)] = compValues
+	return values
+}
+
+func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, defaultEnvImg string) map[string]any {
+	compValues := map[string]any{"enabled": opts.Enabled}
 	if opts.DrainTimeoutSeconds > 0 {
 		compValues["drainTimeoutSeconds"] = opts.DrainTimeoutSeconds
-	}
-
-	if opts.ImageTag != "" {
-		values["global"] = map[string]any{
-			"imageTag": opts.ImageTag,
-		}
-	}
-
-	defaultEnvImg := os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(opts.Ref.Name, "-", "_")) + "_IMAGE")
-	if opts.ImageTag != "" || opts.Parameters["image"] != "" || opts.Parameters["imageRepository"] != "" || defaultEnvImg != "" {
-		compValues["image"] = ResolveImage(opts.Ref.Name, opts.ImageTag, opts.Parameters)
-	}
-	if projID := os.Getenv("PROJECT_ID"); projID != "" {
-		compValues["projectId"] = projID
-	}
-	if opts.DrainTimeoutSeconds > 0 {
 		compValues["terminationGracePeriodSeconds"] = int64(opts.DrainTimeoutSeconds) + terminationGracePeriodBufferSeconds
 	}
-
+	// parameters["image"] is a full image ref (repo:tag or repo@digest) used verbatim;
+	// parameters["imageRepository"] is a tagless registry/repo path combined with effectiveTag.
+	hasImgOverride := strings.TrimSpace(opts.Parameters["image"]) != "" || strings.TrimSpace(opts.Parameters["imageRepository"]) != ""
+	if effectiveTag != "" || hasImgOverride || defaultEnvImg != "" {
+		compValues["image"] = ResolveImage(opts.Ref.Name, effectiveTag, opts.Parameters)
+	}
+	if projID := strings.TrimSpace(os.Getenv("PROJECT_ID")); projID != "" {
+		compValues["projectId"] = projID
+	}
 	for k, v := range opts.Parameters {
 		if k == "image" || k == "imageRepository" || k == "chartPath" {
 			continue
 		}
 		compValues[k] = parseParamValue(v)
 	}
-
 	for k, v := range opts.RawValues {
 		compValues[k] = v
 	}
+	return compValues
+}
 
-	values[deploymentKey] = compValues
-	return values
+func defaultComponentEnvImageVar(componentName string) string {
+	return "DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"
+}
+
+func defaultComponentEnvImage(componentName string) string {
+	return strings.TrimSpace(os.Getenv(defaultComponentEnvImageVar(componentName)))
+}
+
+// warnMissingEnvFallbacks logs structured warnings during 1P component actuation when bridge environment
+// defaults (PROJECT_ID or DEFAULT_<COMPONENT>_IMAGE) are unset and the Component spec provides no override.
+func warnMissingEnvFallbacks(ctx context.Context, ref ComponentRef, opts HelmComponentOptions, values map[string]any) {
+	if !opts.Enabled {
+		return
+	}
+	compValues, _ := values[ComponentNameToHelmKey(ref.Name)].(map[string]any)
+	projVal, hasProj := compValues["projectId"]
+	if !hasProj || projVal == nil || strings.TrimSpace(fmt.Sprint(projVal)) == "" {
+		logging.Warn(ctx, "PROJECT_ID is not set and component has no projectId override; deploying with empty projectId",
+			"name", ref.Name, "namespace", ref.Namespace)
+	}
+	hasParamImg := strings.TrimSpace(opts.Parameters["image"]) != "" || strings.TrimSpace(opts.Parameters["imageRepository"]) != ""
+	if defaultComponentEnvImage(ref.Name) == "" && !hasParamImg && !hasNonEmptyRawValue(opts.RawValues, "image", "imageRepository") {
+		logging.Warn(ctx, "Default component image env var is not set and component has no image override; falling back to default chart repository",
+			"name", ref.Name, "namespace", ref.Namespace, "envVar", defaultComponentEnvImageVar(ref.Name), "defaultRepository", DefaultComponentRepository(ref.Name))
+	}
+}
+
+func hasNonEmptyRawValue(raw map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if s, ok := raw[k].(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// repositoryFromImageRef strips any @digest or :tag suffix from a container image reference.
+func repositoryFromImageRef(imageRef string) string {
+	ref := strings.TrimSpace(imageRef)
+	if idx := strings.Index(ref, "@"); idx >= 0 {
+		ref = ref[:idx]
+	}
+	lastSlash := strings.LastIndex(ref, "/")
+	if lastColon := strings.LastIndex(ref, ":"); lastColon > lastSlash {
+		ref = ref[:lastColon]
+	}
+	return ref
 }
 
 // DefaultComponentRepository returns the standard default Google Artifact Registry repository
@@ -124,25 +182,28 @@ func DefaultComponentRepository(componentName string) string {
 	return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", componentName)
 }
 
-// ResolveImage resolves the container image following 4-tier precedence:
-// 1. Full image override (parameters["image"])
-// 2. Custom repository (parameters["imageRepository"]) + tag
-// 3. Default repository (DefaultComponentRepository) + tag override (imageTag)
-// 4. Default repository + ":latest"
+// ResolveImage resolves the container image following precedence:
+//  1. Full image override (parameters["image"])
+//  2. Custom repository (parameters["imageRepository"]) + tag
+//  3. Environment-configured default image (DEFAULT_<COMPONENT>_IMAGE) verbatim when imageTag is empty,
+//     or its repository + explicit imageTag override when imageTag is set
+//  4. Default repository (DefaultComponentRepository) + imageTag (or ":latest")
 func ResolveImage(componentName string, imageTag string, parameters map[string]string) string {
-	if img, ok := parameters["image"]; ok && img != "" {
+	if img := strings.TrimSpace(parameters["image"]); img != "" {
 		return img
 	}
-	repo := parameters["imageRepository"]
-	if repo == "" && (imageTag == "" || imageTag == "0.1.0") {
-		if envImg := os.Getenv("DEFAULT_" + strings.ToUpper(strings.ReplaceAll(componentName, "-", "_")) + "_IMAGE"); envImg != "" {
-			return envImg
-		}
+	repo := strings.TrimSpace(parameters["imageRepository"])
+	tag := strings.TrimSpace(imageTag)
+	envImg := defaultComponentEnvImage(componentName)
+	if repo == "" && tag == "" && envImg != "" {
+		return envImg
+	}
+	if repo == "" && envImg != "" {
+		repo = repositoryFromImageRef(envImg)
 	}
 	if repo == "" {
 		repo = DefaultComponentRepository(componentName)
 	}
-	tag := imageTag
 	if tag == "" {
 		tag = "latest"
 	}
@@ -201,7 +262,7 @@ func toCamelCase(s string) string {
 func ParseHelmComponentOptions(name, namespace string, specObj any, spec *componentspb.ComponentSpec) HelmComponentOptions {
 	opts := HelmComponentOptions{
 		Ref: ComponentRef{
-			Namespace: namespace,
+			Namespace: strings.TrimSpace(namespace),
 			Name:      name,
 		},
 		ReleaseName: DefaultHelmReleaseName,
@@ -220,11 +281,13 @@ func applyProtoSpec(opts *HelmComponentOptions, spec *componentspb.ComponentSpec
 	if spec == nil {
 		return
 	}
-	opts.ImageTag = spec.GetVersion()
+	if ver := strings.TrimSpace(spec.GetVersion()); ver != "" {
+		opts.ImageTag = ver
+	}
 	for k, v := range spec.GetParameters() {
 		opts.Parameters[k] = v
 	}
-	if cp := opts.Parameters["chartPath"]; cp != "" {
+	if cp := strings.TrimSpace(opts.Parameters["chartPath"]); cp != "" {
 		opts.ChartPath = cp
 	}
 	if lc := spec.GetLifecycleControl(); lc != nil && lc.GetDrainingTimeout() != nil {
@@ -239,17 +302,30 @@ func applyUnstructuredSpec(opts *HelmComponentOptions, specMap map[string]any) {
 	if dt := parseDrainingTimeout(specMap["lifecycleControl"]); dt > 0 {
 		opts.DrainTimeoutSeconds = dt
 	}
-	if rel, ok := specMap["releaseName"].(string); ok && rel != "" {
-		opts.ReleaseName = rel
+	if rel, ok := specMap["releaseName"].(string); ok && strings.TrimSpace(rel) != "" {
+		opts.ReleaseName = strings.TrimSpace(rel)
 	}
-	if tag, ok := specMap["imageTag"].(string); ok && tag != "" {
-		opts.ImageTag = tag
-	}
+	applyVersionAndImageTag(opts, specMap)
 	extractParams(specMap["parameters"], opts.Parameters)
-	if opts.Parameters["chartPath"] != "" {
-		opts.ChartPath = opts.Parameters["chartPath"]
+	if cp := strings.TrimSpace(opts.Parameters["chartPath"]); cp != "" {
+		opts.ChartPath = cp
 	}
 	extractRawValues(specMap["values"], opts.RawValues)
+}
+
+func applyVersionAndImageTag(opts *HelmComponentOptions, specMap map[string]any) {
+	chartVer, _ := specMap["chartVersion"].(string)
+	chartVer = strings.TrimSpace(chartVer)
+	if ver, ok := specMap["version"].(string); ok && strings.TrimSpace(ver) != "" && opts.ImageTag == "" {
+		opts.ImageTag = strings.TrimSpace(ver)
+	}
+	if chartVer != "" && opts.ImageTag == chartVer {
+		opts.ImageTagFromChartVersion = true
+	}
+	if tag, ok := specMap["imageTag"].(string); ok && strings.TrimSpace(tag) != "" {
+		opts.ImageTag = strings.TrimSpace(tag)
+		opts.ImageTagFromChartVersion = false
+	}
 }
 
 func extractParams(raw any, target map[string]string) {

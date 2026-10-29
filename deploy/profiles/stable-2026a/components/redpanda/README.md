@@ -28,7 +28,7 @@ The following fields are structural constants of the Redpanda blueprint hardcode
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `bool` | `false` | Enables or disables the Redpanda component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
-| `namespace` | `string` | `"xmc"` | Namespace where the `Component` CR is installed. |
+| `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `list[string]` | `[]` | Optional list of prerequisite XMC Component names that must be healthy before Redpanda is reconciled. |

@@ -17,7 +17,8 @@
 enabled: false
 
 # Target Kubernetes namespace where the Component CR and Redpanda resources reside.
-namespace: xmc
+# Defaults to .Release.Namespace when non-default, or "xmc".
+namespace: ""
 
 # Admission guard preventing accidental deletion of the active Component CR when enabled.
 deletionProtection: true
