@@ -120,6 +120,19 @@ func (r *Repository) WithTx(q Queryable) *TxRepository {
 	return &TxRepository{q: q, tx: tx}
 }
 
+// WithReadOnlySnapshot runs fn against a consistent read-only snapshot.
+func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.ComponentTxRepository) error) error {
+	if fn == nil {
+		return fmt.Errorf("callback function must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	ro, err := r.readOnlyTransaction()
+	if err != nil {
+		return err
+	}
+	defer ro.Close()
+	return fn(ctx, r.WithTx(ro))
+}
+
 // GetActiveComponent retrieves a non-deleted component record by canonical name, populated with active dependencies.
 func (r *Repository) GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error) {
 	ro, err := r.readOnlyTransaction()

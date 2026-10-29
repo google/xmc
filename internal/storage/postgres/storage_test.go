@@ -143,6 +143,20 @@ func TestStorage(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "RunInTransactionWithCommitTime unimplemented",
+			check: func(t *testing.T) {
+				ts, err := s.RunInTransactionWithCommitTime(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+					return nil
+				})
+				if got := status.Code(err); got != codes.Unimplemented {
+					t.Errorf("RunInTransactionWithCommitTime() code = %v, want %v (err: %v)", got, codes.Unimplemented, err)
+				}
+				if !ts.IsZero() {
+					t.Errorf("RunInTransactionWithCommitTime() timestamp = %v, want zero", ts)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -18,8 +18,7 @@ import (
 	"context"
 	"time"
 
-	"cloud.google.com/go/spanner"
-
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/ownership"
 )
@@ -31,9 +30,9 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster store.Cl
 		return nil, err
 	}
 	var res *store.DeclarationResult
-	_, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+	err := s.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
-		res, err = s.declareClusterEpochTx(ctx, txn, cluster)
+		res, err = s.declareClusterEpochTx(ctx, tx.Components, cluster)
 		return err
 	})
 	if err != nil {
@@ -50,9 +49,8 @@ func (s *SpannerStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (
 	return s.storage.Components().ReadOwnershipGauges(ctx, now.Add(-ownership.OwnerStaleThreshold))
 }
 
-// declareClusterEpochTx applies a declaration by cluster within txn.
-func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txn *spanner.ReadWriteTransaction, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
-	txRepo := s.repo.WithTx(txn)
+// declareClusterEpochTx applies a declaration by cluster within txRepo.
+func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txRepo storage.ComponentTxRepository, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
 	fence, err := txRepo.ReadFence(ctx)
 	if err != nil {
 		return nil, err
@@ -77,13 +75,13 @@ func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txn *spanner.R
 	return res, txRepo.ReplaceFence(ctx, cluster)
 }
 
-// checkFence reads the fence within txn and returns the rejection of src by CheckClusterFence.
+// checkFence reads the fence within txRepo and returns the rejection of src by CheckClusterFence.
 // Unsourced requests (nil src) skip the read.
-func (s *SpannerStore) checkFence(ctx context.Context, txn *spanner.ReadWriteTransaction, operation string, src *store.RequestSource) error {
+func (s *SpannerStore) checkFence(ctx context.Context, txRepo storage.ComponentTxRepository, operation string, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}
-	fence, err := s.repo.WithTx(txn).ReadFence(ctx)
+	fence, err := txRepo.ReadFence(ctx)
 	if err != nil {
 		return err
 	}

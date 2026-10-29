@@ -134,7 +134,7 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	other, err := spannerstore.NewSpannerStore(client, otherSt)
+	other, err := spannerstore.NewSpannerStore(otherSt)
 	if err != nil {
 		t.Fatalf("NewSpannerStore() failed: %v", err)
 	}

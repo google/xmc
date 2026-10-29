@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -50,8 +49,8 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	storage         storage.Storage
+	storageBackend  dbconfig.Backend
 	dbHealth        commonhealth.ReadinessChecker
-	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
 	bgTaskWG        *sync.WaitGroup
@@ -66,20 +65,20 @@ func (p *ProdServer) HealthCheckers() (commonhealth.ReadinessChecker, xidgrpcpb.
 	return p.dbHealth, p.xidClient, p.taskQueueClient
 }
 
-// SpannerClient returns the underlying Spanner client.
-func (p *ProdServer) SpannerClient() *spanner.Client {
-	if p == nil {
-		return nil
-	}
-	return p.spannerClient
-}
-
 // Storage returns the underlying storage implementation.
 func (p *ProdServer) Storage() storage.Storage {
 	if p == nil {
 		return nil
 	}
 	return p.storage
+}
+
+// StorageBackend returns the database backend configured for the server, or empty when unset.
+func (p *ProdServer) StorageBackend() dbconfig.Backend {
+	if p == nil {
+		return ""
+	}
+	return p.storageBackend
 }
 
 // Close closes all underlying production client connections.
@@ -287,8 +286,8 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	return &ProdServer{
 		Server:          srv,
 		storage:         storage,
+		storageBackend:  dbCfg.Backend,
 		dbHealth:        storage,
-		spannerClient:   storage.SpannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

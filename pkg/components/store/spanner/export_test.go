@@ -21,6 +21,7 @@ package spanner
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/spanner"
@@ -29,6 +30,18 @@ import (
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/memory"
 )
+
+var testClients sync.Map
+
+// RegisterTestClient associates client with s for raw Spanner test inspection helpers.
+func RegisterTestClient(s *SpannerStore, client *spanner.Client) {
+	testClients.Store(s, client)
+}
+
+// UnregisterTestClient removes s from the test client registry.
+func UnregisterTestClient(s *SpannerStore) {
+	testClients.Delete(s)
+}
 
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
 // read-only fast path and falls back to its read-write transaction.
@@ -43,9 +56,14 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
 	case *SpannerStore:
+		val, ok := testClients.Load(st)
+		if !ok {
+			return nil, fmt.Errorf("no test Spanner client registered for %p", st)
+		}
+		client := val.(*spanner.Client)
 		stmt := spanner.Statement{SQL: `SELECT ` + component.ComponentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
 		var owner *store.SourceOwner
-		err := st.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
+		err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
 			rec, err := component.RowToComponentRecord(row)
 			if err != nil {
 				return err
@@ -69,12 +87,13 @@ func SetSourceLastSeenTimeForTest(ctx context.Context, s store.Store, canonicalN
 		st.SetSourceLastSeenTimeForTest(canonicalName, seenAt)
 		return nil
 	case *SpannerStore:
-		_, err := st.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-			stmt := spanner.Statement{
-				SQL:    `UPDATE Components SET SourceLastSeenTime = @seenAt WHERE ActiveName = @name`,
-				Params: map[string]any{"seenAt": seenAt, "name": canonicalName},
-			}
-			_, err := txn.Update(ctx, stmt)
+		val, ok := testClients.Load(st)
+		if !ok {
+			return fmt.Errorf("no test Spanner client registered for %p", st)
+		}
+		client := val.(*spanner.Client)
+		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
+			_, err := txn.Update(ctx, spanner.Statement{SQL: `UPDATE Components SET SourceLastSeenTime = @seenAt WHERE ActiveName = @name`, Params: map[string]any{"seenAt": seenAt, "name": canonicalName}})
 			return err
 		})
 		return err

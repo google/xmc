@@ -104,6 +104,11 @@ func (r *Repository) ReassignOwnedComponents(ctx context.Context, clusterUID str
 	return 0, status.Error(codes.Unimplemented, "postgres component store: ReassignOwnedComponents is not implemented")
 }
 
+// WithReadOnlySnapshot runs fn against a consistent read-only snapshot.
+func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.ComponentTxRepository) error) error {
+	return status.Error(codes.Unimplemented, "postgres component store: WithReadOnlySnapshot is not implemented")
+}
+
 // InsertComponent inserts a new component record and its dependencies.
 func (r *Repository) InsertComponent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
 	return status.Error(codes.Unimplemented, "postgres component store: InsertComponent is not implemented")
