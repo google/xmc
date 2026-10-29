@@ -16,11 +16,54 @@
 
 package oauth2
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestNewAuthenticatorWithoutMockAuthTag(t *testing.T) {
 	a := NewAuthenticator(&Config{MockAuth: true})
 	if _, gotGoogle := a.OAuthProvider.(*GoogleOAuthProvider); !gotGoogle {
 		t.Errorf("NewAuthenticator() installed %T in a build without the mockauth tag, want *GoogleOAuthProvider", a.OAuthProvider)
+	}
+}
+
+func TestLoadConfigRejectsDevAuthModesWithoutMockAuthTag(t *testing.T) {
+	tests := []struct {
+		name        string
+		mockAuth    string
+		disableAuth string
+	}{
+		{name: "MOCK_AUTH=true", mockAuth: "true", disableAuth: "false"},
+		{name: "MOCK_AUTH=1", mockAuth: "1", disableAuth: "false"},
+		{name: "MOCK_AUTH=YES", mockAuth: "YES", disableAuth: "false"},
+		{name: "DISABLE_AUTHENTICATION=true", mockAuth: "false", disableAuth: "true"},
+		{name: "DISABLE_AUTHENTICATION=1", mockAuth: "false", disableAuth: "1"},
+		{name: "both", mockAuth: "true", disableAuth: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MOCK_AUTH", tt.mockAuth)
+			t.Setenv("DISABLE_AUTHENTICATION", tt.disableAuth)
+			t.Setenv("JWT_SECRET", "this-is-a-sufficiently-long-jwt-secret-value")
+			cfg, err := LoadConfig()
+			if !errors.Is(err, ErrDevAuthNotCompiledIn) || cfg != nil {
+				t.Errorf("LoadConfig() = (%v, %v), want (nil, %v)", cfg, err, ErrDevAuthNotCompiledIn)
+			}
+		})
+	}
+}
+
+func TestDisableAuthenticationNotHonoredWithoutMockAuthTag(t *testing.T) {
+	if DevAuthCompiledIn() {
+		t.Fatal("DevAuthCompiledIn() = true in a build without the mockauth tag")
+	}
+	a := NewAuthenticator(&Config{DisableAuthentication: true})
+	if got, err := a.IsUserAuthorized(context.Background(), "anyone@external.com"); got || err == nil {
+		t.Errorf("IsUserAuthorized() = (%v, %v), want (false, fail-closed error)", got, err)
+	}
+	if got, err := a.IsAdmin(context.Background(), "anyone@external.com"); got || !errors.Is(err, ErrAdminRoleNotConfigured) {
+		t.Errorf("IsAdmin() = (%v, %v), want (false, %v)", got, err, ErrAdminRoleNotConfigured)
 	}
 }

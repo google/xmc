@@ -91,13 +91,13 @@ func TestAdminRoleGuard_HasAdminRole(t *testing.T) {
 			wantErr:     false,
 		},
 		{
-			name: "disable authentication grants admin role",
+			name: "disable authentication grants admin role only with the mockauth tag",
 			params: AdminRoleGuardParams{
 				Authorizer:    &testAuthorizer{email: "dev@company.com", userID: "789"},
-				Authenticator: newTestAuthenticator("roles/owner", true, nil, nil),
+				Authenticator: newTestAuthenticator("roles/owner", true, adminPolicy, nil),
 			},
 			wantEmail:   "dev@company.com",
-			wantHasRole: true,
+			wantHasRole: oauth2.DevAuthCompiledIn(),
 			wantErr:     false,
 		},
 		{

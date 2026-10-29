@@ -25,6 +25,9 @@ import (
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
+	"google.golang.org/grpc/credentials"
+
+	xmcoauth "xmanager_cloud/pkg/auth/oauth2"
 )
 
 type staticTokenSource struct {
@@ -70,16 +73,18 @@ func TestBearerTokenCredentials(t *testing.T) {
 	}
 }
 
+// mustCMSTokenCredentials resolves CMS credentials with factory, failing the test on error.
+func mustCMSTokenCredentials(t *testing.T, factory idTokenSourceFactory) credentials.PerRPCCredentials {
+	t.Helper()
+	creds, err := newCMSTokenCredentialsWithFactory(context.Background(), factory)
+	if err != nil {
+		t.Fatalf("newCMSTokenCredentialsWithFactory() error = %v", err)
+	}
+	return creds
+}
+
 func TestNewCMSTokenCredentials(t *testing.T) {
 	ctx := context.Background()
-
-	t.Run("DISABLE_AUTHENTICATION=true returns no-op credentials", func(t *testing.T) {
-		t.Setenv("DISABLE_AUTHENTICATION", "true")
-		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
-		if err != nil || md != nil {
-			t.Fatalf("GetRequestMetadata() = (%v, %v), want (nil, nil)", md, err)
-		}
-	})
 
 	t.Run("non-prod OIDC token provider fetches ID token", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -98,23 +103,9 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 		t.Setenv("OIDC_USERNAME", "admin@xmc.local")
 		t.Setenv("OIDC_PASSWORD", "password")
 
-		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
+		md, err := mustCMSTokenCredentials(t, idtoken.NewTokenSource).GetRequestMetadata(ctx)
 		if err != nil || md["authorization"] != "Bearer dex-oidc-token" {
 			t.Fatalf("GetRequestMetadata() = (%v, %v), want Bearer dex-oidc-token", md, err)
-		}
-	})
-
-	t.Run("non-prod MOCK_AUTH=true mints session token even with default TOKEN_URL and CLIENT_ID", func(t *testing.T) {
-		t.Setenv("DISABLE_AUTHENTICATION", "false")
-		t.Setenv("MOCK_AUTH", "true")
-		t.Setenv("CLIENT_ID", "xmc-client")
-		t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
-		t.Setenv("OIDC_USERNAME", "admin@xmc.local")
-		t.Setenv("OIDC_PASSWORD", "password")
-
-		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
-		if err != nil || !strings.HasPrefix(md["authorization"], "Bearer ") {
-			t.Fatalf("GetRequestMetadata() = (%v, %v), expected Bearer token", md, err)
 		}
 	})
 
@@ -128,7 +119,7 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 		t.Setenv("OIDC_USERNAME", "")
 		t.Setenv("OIDC_PASSWORD", "")
 
-		md, err := NewCMSTokenCredentials(ctx).GetRequestMetadata(ctx)
+		md, err := mustCMSTokenCredentials(t, idtoken.NewTokenSource).GetRequestMetadata(ctx)
 		if err != nil || !strings.HasPrefix(md["authorization"], "Bearer ") {
 			t.Fatalf("GetRequestMetadata() = (%v, %v), expected Bearer token", md, err)
 		}
@@ -146,7 +137,7 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 			gotAudience = audience
 			return staticTokenSource{token: "gcp-wi-id-token"}, nil
 		}
-		md, err := newCMSTokenCredentialsWithFactory(ctx, factory).GetRequestMetadata(ctx)
+		md, err := mustCMSTokenCredentials(t, factory).GetRequestMetadata(ctx)
 		if err != nil || gotAudience != "https://ess-grpc-audience" || md["authorization"] != "Bearer gcp-wi-id-token" {
 			t.Fatalf("got (%v, %q, %v), want Bearer gcp-wi-id-token & https://ess-grpc-audience", md, gotAudience, err)
 		}
@@ -170,7 +161,7 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 			}
 			return staticTokenSource{token: "recovered-token"}, nil
 		}
-		creds := newCMSTokenCredentialsWithFactory(ctx, factory)
+		creds := mustCMSTokenCredentials(t, factory)
 		if _, err := creds.GetRequestMetadata(ctx); err == nil {
 			t.Fatal("expected error on first call when ID token source factory fails")
 		}
@@ -179,4 +170,20 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 			t.Fatalf("retry got (%v, %q, %v), want Bearer recovered-token & fallback-client-id", md, gotAudience, err)
 		}
 	})
+}
+
+// TestBuildNonProdTokenFuncMockAuth covers the mock auth branch directly: binaries without the
+// mockauth tag cannot reach it through LoadConfig, which rejects MOCK_AUTH.
+func TestBuildNonProdTokenFuncMockAuth(t *testing.T) {
+	fn := buildNonProdTokenFunc(&xmcoauth.Config{
+		MockAuth: true, TokenURL: "https://unused.example/token", ClientID: "xmc-client",
+		Username: "admin@xmc.local", Password: "password", JWTSecret: "0123456789abcdef0123456789abcdef",
+	})
+	if fn == nil {
+		t.Fatal("buildNonProdTokenFunc() = nil, want a session token minter")
+	}
+	tok, err := fn(context.Background())
+	if err != nil || tok == "" {
+		t.Fatalf("token func = (%q, %v), want a non-empty session token", tok, err)
+	}
 }

@@ -274,7 +274,7 @@ Developers can run the pre-commit hook locally in two modes:
   ```bash
   ./.githooks/pre-commit
   ```
-  Automatically formats files and adds missing headers.
+  Automatically formats files and adds missing headers. Formatter fixes to files that were fully staged before the hook ran are restaged automatically ([`tools/lint/precommit_autostage.py`](../tools/lint/precommit_autostage.py)); fixes to partially staged, unstaged, or unrelated files fail the hook so you can review and stage them. Set `XMC_PRECOMMIT_NO_AUTOSTAGE=1` to disable auto-restaging. Affected Bazel unit tests are skipped when every staged path is Markdown or under `docs/`.
 
 * **Check-only mode (mirrors CI validation)**:
   ```bash
