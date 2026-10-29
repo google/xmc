@@ -84,6 +84,18 @@ class SummarizeThreadTest(unittest.TestCase):
         self.assertEqual(len(snippet), 120)
         self.assertTrue(snippet.endswith("..."))
 
+    def test_handles_null_comment_nodes(self):
+        thread = _thread("PRRT_1", False, ["bot"])
+        thread["comments"]["nodes"] = [None, _comment(_ME)]
+        summary = summarize_thread(thread, _ME)
+        self.assertEqual(summary["first_comment_author"], "unknown")
+        self.assertTrue(summary["replied_by_me"])
+
+        thread["comments"]["nodes"] = [_comment("bot"), None, _comment(_ME)]
+        summary = summarize_thread(thread, _ME)
+        self.assertEqual(summary["first_comment_author"], "bot")
+        self.assertTrue(summary["replied_by_me"])
+
     def test_handles_missing_fields(self):
         summary = summarize_thread({"id": "PRRT_1", "comments": None, "path": None}, _ME)
         self.assertEqual(summary["location"], "Unknown:?")

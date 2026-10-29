@@ -77,10 +77,10 @@ def summarize_thread(thread: dict[str, Any], login: str) -> dict[str, Any]:
         the first comment.
     """
     comments = (thread.get("comments") or {}).get("nodes") or []
-    first = comments[0] if comments else {}
+    first = (comments[0] if comments else None) or {}
     first_author = (first.get("author") or {}).get("login", "unknown")
     replied_by_me = any(
-        (comment.get("author") or {}).get("login") == login for comment in comments[1:]
+        comment and (comment.get("author") or {}).get("login") == login for comment in comments[1:]
     )
     return {
         "thread_id": thread.get("id"),

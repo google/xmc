@@ -239,8 +239,8 @@ def list_review_threads(
     Returns:
         Raw GraphQL thread nodes (`id`, `isResolved`, `path`, `line`, and
         `comments.nodes` with `databaseId`, `body`, `url`, `author.login`), in
-        GitHub's thread order. Only the first 100 comments of each thread are
-        returned.
+        GitHub's thread order, with null thread nodes dropped. Only the first
+        100 comments of each thread are returned; comment nodes may be null.
 
     Raises:
         GithubAPIError: If the GraphQL query returns errors or no data.
@@ -269,7 +269,7 @@ def list_review_threads(
         repository = data["data"].get("repository") or {}
         pull_request = repository.get("pullRequest") or {}
         review_threads = pull_request.get("reviewThreads") or {}
-        threads.extend(review_threads.get("nodes") or [])
+        threads.extend(node for node in review_threads.get("nodes") or [] if node)
         page_info = review_threads.get("pageInfo") or {}
         cursor = page_info.get("endCursor")
         if not page_info.get("hasNextPage") or not cursor:
@@ -286,7 +286,7 @@ def _lookup_thread_id_for_comment(
     """Finds the GraphQL review thread node ID for a given comment database ID."""
     for thread in list_review_threads(owner, repo, pr_number, user_agent=user_agent):
         for comment in (thread.get("comments") or {}).get("nodes") or []:
-            if comment.get("databaseId") == comment_id:
+            if comment and comment.get("databaseId") == comment_id:
                 thread_id = thread.get("id")
                 if thread_id:
                     return str(thread_id)

@@ -369,6 +369,22 @@ class TestGithubUtils(unittest.TestCase):
         self.assertEqual(cursors, [None, "CUR_1"])
 
     @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_drops_null_thread_nodes(self, mock_api):
+        """Test list_review_threads filters out null thread nodes."""
+        mock_api.return_value = _threads_page([None, {"id": "PRRT_1"}, None])
+        self.assertEqual(list_review_threads("google", "xmc", 7), [{"id": "PRRT_1"}])
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_resolve_review_thread_skips_null_comment_nodes(self, mock_api):
+        """Test comment ID lookup tolerates null comment nodes inside a thread."""
+        mock_api.side_effect = [
+            _threads_page([{"id": "PRRT_2", "comments": {"nodes": [None, {"databaseId": 2}]}}]),
+            {"data": {"resolveReviewThread": {"thread": {"id": "PRRT_2", "isResolved": True}}}},
+        ]
+        res = resolve_review_thread("google", "xmc", 7, 2)
+        self.assertEqual(res["thread_id"], "PRRT_2")
+
+    @patch("tools.pr_review.github_utils.call_github_api")
     def test_list_review_threads_stops_when_end_cursor_missing(self, mock_api):
         """Test pagination stops instead of re-fetching page 1 when endCursor is missing."""
         mock_api.return_value = _threads_page([{"id": "PRRT_1"}], has_next=True, end_cursor=None)
