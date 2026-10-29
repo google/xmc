@@ -36,6 +36,7 @@ go_library(
         "//internal/security/keyreloader",
         "//internal/security/tlsutil",
         "//internal/storage",
+        "//internal/storage/dbconfig",
         "//internal/task_queue",
         "//pkg/auth/oauth2",
         "//pkg/auth/principal",
@@ -84,11 +85,14 @@ go_test(
         "//api/protos/components/v1alpha1",
         "//cmd/experiment_state_server/server",
         "//internal/storage",
+        "//internal/storage/dbconfig",
         "//pkg/components/cms",
         "//pkg/components/store",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//health",
+        "@org_golang_google_grpc//status",
     ],
 )
 
