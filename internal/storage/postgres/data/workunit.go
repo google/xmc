@@ -127,9 +127,9 @@ func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExec
 
 // WorkUnitRowToProto converts a scanned PostgreSQL WorkUnitRow into a WorkUnit proto.
 func WorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
-	urls, err := unmarshalUrls(row.Urls)
+	urls, err := unmarshalProtoSlice[essmsgpb.Url](row.Urls)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal Urls: %w", err)
 	}
 	execProto, err := UnmarshalProto[essmsgpb.Executable](row.Executable)
 	if err != nil {
@@ -202,18 +202,6 @@ func populateDerivedStatusFields(row *WorkUnitRow, status *essmsgpb.WorkUnitStat
 	if qi := status.GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); qi != nil {
 		row.PositionInQueue = int64(qi.GetPositionInQueue())
 	}
-}
-
-func unmarshalUrls(raw [][]byte) ([]*essmsgpb.Url, error) {
-	res := make([]*essmsgpb.Url, len(raw))
-	for i, b := range raw {
-		u, err := UnmarshalProto[essmsgpb.Url](b)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal Url[%d]: %w", i, err)
-		}
-		res[i] = u
-	}
-	return res, nil
 }
 
 func normalizeTags(tags []string) []string {
