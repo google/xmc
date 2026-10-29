@@ -174,6 +174,20 @@ func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
 	if defaultRow.PositionInQueue != math.MaxInt64 || len(defaultRow.Tags) != 0 || defaultRow.Tags == nil {
 		t.Errorf("defaultRow = (pos=%d, tags=%v), want MaxInt64 and non-nil empty slice", defaultRow.PositionInQueue, defaultRow.Tags)
 	}
+	wu.CurrentWorkUnitExecution.Status = &essmsgpb.WorkUnitStatus{
+		SchedulingInformation: &essmsgpb.StructuredMessage{
+			AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+				Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{QueueInfo: &essmsgpb.QueueInfo{PositionInQueue: 0}},
+			},
+		},
+	}
+	zeroQueuePosRow, err := WorkUnitProtoToRow(wu)
+	if err != nil {
+		t.Fatalf("WorkUnitProtoToRow(PositionInQueue=0) failed: %v", err)
+	}
+	if zeroQueuePosRow.PositionInQueue != math.MaxInt64 {
+		t.Errorf("zeroQueuePosRow.PositionInQueue = %d, want MaxInt64 (%d)", zeroQueuePosRow.PositionInQueue, int64(math.MaxInt64))
+	}
 	defaultRow.Tags = nil
 	gotEmptyWU, err := WorkUnitRowToProto(defaultRow)
 	if err != nil {

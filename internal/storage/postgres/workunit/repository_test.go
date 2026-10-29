@@ -328,6 +328,45 @@ func TestRepository_CRUDAndExecutions(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("PositionInQueue zero sentinel sorts after positive queue positions", func(t *testing.T) {
+		const (
+			xid       = 105
+			queueName = "queue-pos-sentinel-test"
+		)
+		postgrestest.SeedExperiment(ctx, t, essPool, xid)
+		for _, tc := range []struct {
+			wid int64
+			pos int32
+			ts  time.Time
+		}{
+			{wid: 1, pos: 0, ts: baseTestTime},
+			{wid: 2, pos: 1, ts: baseTestTime.Add(time.Minute)},
+		} {
+			wu := blankWorkUnitProto(xid, tc.wid, tc.ts)
+			wu.Executable.SchedulingConstraints.QueueName = queueName
+			wu.CurrentWorkUnitExecution.Status.State = essmsgpb.WorkUnitStatus_SCHEDULING
+			wu.CurrentWorkUnitExecution.Status.SchedulingInformation = &essmsgpb.StructuredMessage{
+				AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
+					Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{QueueInfo: &essmsgpb.QueueInfo{PositionInQueue: tc.pos}},
+				},
+			}
+			mustInsertWorkUnit(t, essPool, repo, wu)
+		}
+
+		activeRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{queueName}, 10, "")
+		if err != nil {
+			t.Fatalf("FetchActiveWorkUnitsByQueues() failed: %v", err)
+		}
+		var gotWIDs []int64
+		for _, item := range activeRes.WorkUnits {
+			_, wid, _ := validator.ValidateWorkUnitName(item.WorkUnit.GetName())
+			gotWIDs = append(gotWIDs, wid)
+		}
+		if diff := cmp.Diff([]int64{2, 1}, gotWIDs); diff != "" {
+			t.Errorf("FetchActiveWorkUnitsByQueues() WID order mismatch (-want +got):\n%s", diff)
+		}
+	})
 }
 
 func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
@@ -381,6 +420,24 @@ func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
 	}
 	if !noopRes.Updated.GetUpdateTime().AsTime().Equal(res.Updated.GetUpdateTime().AsTime()) {
 		t.Errorf("no-op UpdateWorkUnit changed UpdateTime: got %v, want %v", noopRes.Updated.GetUpdateTime(), res.Updated.GetUpdateTime())
+	}
+
+	futureTime := time.Now().UTC().Truncate(time.Microsecond).Add(time.Minute)
+	mustInsertWorkUnit(t, essPool, repo, blankWorkUnitProto(xid, 2, futureTime))
+	for i, note := range []string{"back-to-back-1", "back-to-back-2"} {
+		stepRes, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+			XID:        xid,
+			WID:        2,
+			WorkUnit:   &essmsgpb.WorkUnit{Notes: note},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+		})
+		if err != nil {
+			t.Fatalf("UpdateWorkUnit(back-to-back %d) failed: %v", i+1, err)
+		}
+		wantUpdateTime := futureTime.Add(time.Duration(i+1) * time.Microsecond)
+		if got := stepRes.Updated.GetUpdateTime().AsTime(); !got.Equal(wantUpdateTime) {
+			t.Errorf("UpdateWorkUnit(back-to-back %d) UpdateTime = %v, want %v", i+1, got, wantUpdateTime)
+		}
 	}
 
 	immutableUpdate := &storage.WorkUnitUpdate{
@@ -471,8 +528,8 @@ func TestRepository_IDAllocationAndConcurrentInserts(t *testing.T) {
 	err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
 		return repo.WithTx(tx).InsertWorkUnit(ctx, blankWorkUnitProto(99999, 1, baseTestTime))
 	})
-	if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("InsertWorkUnit(missing experiment) = %v, want ErrFailedPrecondition", err)
+	if !errors.Is(err, grpcerr.ErrNotFound) || status.Code(err) != codes.NotFound {
+		t.Errorf("InsertWorkUnit(missing experiment) = %v (code %v), want ErrNotFound", err, status.Code(err))
 	}
 
 	const workers = 8

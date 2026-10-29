@@ -174,8 +174,12 @@ func (r *TxRepository) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit
 	if err != nil {
 		return err
 	}
-	if _, err := r.tx.Exec(ctx, lockExperimentSQL.String(), row.Xid); err != nil {
+	tag, err := r.tx.Exec(ctx, lockExperimentSQL.String(), row.Xid)
+	if err != nil {
 		return pgdb.TranslateError(err, "experiment")
+	}
+	if tag.RowsAffected() == 0 {
+		return pgdb.TranslateError(pgx.ErrNoRows, "experiment")
 	}
 	_, err = r.tx.Exec(ctx, insertWorkUnitSQL.String(), row.GetInsertArgs())
 	return pgdb.TranslateError(err, entityName)
@@ -329,7 +333,7 @@ func applyWorkUnitUpdate(ctx context.Context, tx pgx.Tx, update *storage.WorkUni
 	if proto.Equal(originalWU, updatedWU) {
 		return res, false, nil
 	}
-	updatedWU.UpdateTime = timestamppb.New(time.Now().UTC().Truncate(time.Microsecond))
+	updatedWU.UpdateTime = timestamppb.New(postgresdata.MonotonicUpdateTime(time.Now(), originalWU.GetUpdateTime().AsTime()))
 	row, err := postgresdata.WorkUnitProtoToUpdateRow(updatedWU)
 	if err != nil {
 		return storage.UpdatedWorkUnits{}, false, err

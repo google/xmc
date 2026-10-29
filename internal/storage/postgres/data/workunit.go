@@ -286,7 +286,7 @@ func populateDerivedStatusFields(row *WorkUnitRow, status *essmsgpb.WorkUnitStat
 	row.ExecutionState = int64(status.GetState())
 	row.ExecutionStatusMessageSeverity = int64(max(status.GetSystemMessage().GetSeverity(), status.GetUserMessage().GetSeverity()))
 	row.PositionInQueue = math.MaxInt64
-	if qi := status.GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); qi != nil {
+	if qi := status.GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); qi.GetPositionInQueue() > 0 {
 		row.PositionInQueue = int64(qi.GetPositionInQueue())
 	}
 }
