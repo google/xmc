@@ -17,6 +17,7 @@
 
 import io
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -479,9 +480,9 @@ class TestInstallXmanager(unittest.TestCase):
                     args=[], returncode=0, stdout=stdout, stderr=""
                 )
                 with mock.patch("subprocess.run", return_value=completed) as mock_run:
-                    origin = install_xmanager.resolve_module_origin(venv_python, "xdash")
+                    resolved = install_xmanager.resolve_module_origin(venv_python, "xdash")
 
-                self.assertEqual(origin, expected)
+                self.assertEqual(resolved, expected)
                 mock_run.assert_called_once_with(
                     [
                         "/mock/venv/bin/python3",
@@ -612,6 +613,34 @@ class TestInstallXmanager(unittest.TestCase):
             Path("/mock/venv/bin/python3"),
             install_xmanager.REPO_ROOT,
         )
+
+    def test_main_checks_provenance_before_imports(self) -> None:
+        """Test main runs the provenance check before verify_imports for actionable errors."""
+        calls = mock.Mock()
+        with (
+            mock.patch(
+                "install_xmanager.setup_virtualenv",
+                return_value=Path("/mock/venv/bin/python3"),
+            ),
+            mock.patch("install_xmanager.install_xmanager_package"),
+            mock.patch("install_xmanager.compile_local_protos"),
+            mock.patch("install_xmanager.install_local_sdks"),
+            mock.patch("install_xmanager.verify_sdk_provenance", calls.provenance),
+            mock.patch("install_xmanager.verify_imports", calls.imports),
+            tempfile.TemporaryDirectory() as tmp_venv,
+        ):
+            install_xmanager.main(["--venv", tmp_venv])
+
+        self.assertEqual([c[0] for c in calls.mock_calls], ["provenance", "imports"])
+
+    def test_resolve_module_origin_with_real_interpreter(self) -> None:
+        """Test the origin probe snippet end-to-end with the current stdlib interpreter."""
+        python = Path(sys.executable)
+        json_origin = install_xmanager.resolve_module_origin(python, "json")
+        self.assertIsNotNone(json_origin)
+        assert json_origin is not None
+        self.assertEqual(json_origin.parent.name, "json")
+        self.assertIsNone(install_xmanager.resolve_module_origin(python, "no_such_module_xyz"))
 
     @mock.patch(
         "install_xmanager.verify_sdk_provenance",
