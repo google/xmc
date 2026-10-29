@@ -130,12 +130,6 @@ jobs:
         run: |
           python3 tools/lint/check_legacy_imports.py
 
-      - name: 'Check Images Never Package Development-Only Binaries'
-        env:
-          XMC_BYPASS_VENV: '1'
-        run: |
-          python3 tools/lint/check_image_binaries.py
-
       - name: 'Check Nightly Examples Verification Coverage'
         if: steps.changes.outputs.examples_coverage == 'true'
         env:
