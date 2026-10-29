@@ -53,6 +53,9 @@ _WORKFLOW = textwrap.dedent(
         steps:
           - name: 'Launch Example Workload'
             run: echo launch
+          - name: 'Step input sharing a matrix key name (must be ignored)'
+            with:
+              example_path: 'not/a/matrix/entry'
     """
 )
 
@@ -93,14 +96,15 @@ class ParseEntrypointsTest(unittest.TestCase):
         """Quoting style, key order, interleaved keys, and comments do not matter."""
         workflow = textwrap.dedent(
             """\
-            example:
-              - id: 'double_quoted'
-                example_path: "examples/a"
-                args: ''
-                entrypoint: "launch.py"
-              - entrypoint: create.py  # reordered and unquoted
-                id: 'reordered'
-                example_path: examples/b
+            matrix:
+              example:
+                - id: 'double_quoted'
+                  example_path: "examples/a"
+                  args: ''
+                  entrypoint: "launch.py"
+                - entrypoint: create.py  # reordered and unquoted
+                  id: 'reordered'
+                  example_path: examples/b
             """
         )
         self.assertEqual(

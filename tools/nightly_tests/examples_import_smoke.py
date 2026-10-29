@@ -37,7 +37,7 @@ import pathlib
 import re
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
@@ -103,11 +103,29 @@ def _flush_item(item: dict[str, str], entries: dict[Entrypoint, None]) -> None:
     entries[Entrypoint(path, entrypoint)] = None
 
 
+def _matrix_lines(workflow_text: str) -> Iterator[str]:
+    """Yield only lines nested under a `matrix:` key, using indentation to scope blocks."""
+    matrix_indent: int | None = None
+    for line in workflow_text.splitlines():
+        stripped = line.lstrip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(line) - len(stripped)
+        if matrix_indent is not None and indent <= matrix_indent:
+            matrix_indent = None
+        if matrix_indent is not None:
+            yield line
+        elif stripped.startswith("matrix:"):
+            matrix_indent = indent
+
+
 def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
     """Extract unique, non-empty example entrypoints from the nightly workflow.
 
-    Keys are grouped per YAML list item, so their order, quoting style (single,
-    double, or none), trailing comments, and interleaved keys do not matter.
+    Only lines under `matrix:` blocks are considered, so same-named keys in step
+    inputs or other jobs are ignored. Keys are grouped per YAML list item, so
+    their order, quoting style (single, double, or none), trailing comments, and
+    interleaved keys do not matter.
 
     Args:
         workflow_text: Contents of the nightly examples workflow YAML.
@@ -122,7 +140,7 @@ def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
     """
     entries: dict[Entrypoint, None] = {}
     item: dict[str, str] = {}
-    for line in workflow_text.splitlines():
+    for line in _matrix_lines(workflow_text):
         if _ITEM_START_RE.match(line):
             _flush_item(item, entries)
             item = {}
