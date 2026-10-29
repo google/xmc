@@ -13,12 +13,12 @@
 // limitations under the License.
 
 // Cross-backend parity tests for Store.SetComponentIntent idempotency and generation advancement.
-// Production targets: memory_store.go, spanner_store.go, and intent_change.go.
+// Production targets: memory_store.go, dbstore.go, and intent_change.go.
 // Test type: hermetic cross-backend unit/emulator suite (runs every table case against both
-// MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept in a dedicated file
-// rather than memory_store_test.go or spanner_store_test.go because each case asserts identical
+// MemoryStore and dbstore.Store backed by the in-process Spanner emulator). Kept in a dedicated file
+// rather than memory_store_test.go or dbstore_test.go because each case asserts identical
 // behavior across both Store implementations.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"
@@ -31,7 +31,7 @@ import (
 )
 
 // idempotencyDependency and idempotencyDependencyB are registered in every backend before the rows
-// run so rows can declare dependencies that SpannerStore accepts.
+// run so rows can declare dependencies that dbstore.Store accepts.
 const (
 	idempotencyDependency  = "intent-idempotency-dep"
 	idempotencyDependencyB = "intent-idempotency-dep-b"

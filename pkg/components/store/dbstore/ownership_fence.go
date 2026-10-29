@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package spanner
+package dbstore
 
 import (
 	"context"
@@ -23,9 +23,9 @@ import (
 	"xmanager_cloud/pkg/components/store/ownership"
 )
 
-// DeclareClusterEpoch declares cluster the writer of sourced intents within Spanner, reading the
+// DeclareClusterEpoch declares cluster the writer of sourced intents within storage, reading the
 // fence, reassigning owners on a takeover, and writing the fence in one read-write transaction.
-func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
+func (s *Store) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
 	if err := ownership.ValidateClusterIdentity(cluster); err != nil {
 		return nil, err
 	}
@@ -41,16 +41,16 @@ func (s *SpannerStore) DeclareClusterEpoch(ctx context.Context, cluster store.Cl
 	return res, nil
 }
 
-var _ store.OwnershipGaugeReader = (*SpannerStore)(nil)
+var _ store.OwnershipGaugeReader = (*Store)(nil)
 
-// ReadOwnershipGauges reads the fence and counts the stale owners in Spanner at now with one
-// single-use read, so the fence and the count come from one snapshot.
-func (s *SpannerStore) ReadOwnershipGauges(ctx context.Context, now time.Time) (store.OwnershipGauges, error) {
+// ReadOwnershipGauges reads the fence and counts the stale owners in storage at now with one
+// single read, so the fence and the count come from one snapshot.
+func (s *Store) ReadOwnershipGauges(ctx context.Context, now time.Time) (store.OwnershipGauges, error) {
 	return s.storage.Components().ReadOwnershipGauges(ctx, now.Add(-ownership.OwnerStaleThreshold))
 }
 
 // declareClusterEpochTx applies a declaration by cluster within txRepo.
-func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txRepo storage.ComponentTxRepository, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
+func (s *Store) declareClusterEpochTx(ctx context.Context, txRepo storage.ComponentTxRepository, cluster store.ClusterIdentity) (*store.DeclarationResult, error) {
 	fence, err := txRepo.ReadFence(ctx)
 	if err != nil {
 		return nil, err
@@ -77,7 +77,7 @@ func (s *SpannerStore) declareClusterEpochTx(ctx context.Context, txRepo storage
 
 // checkFence reads the fence within txRepo and returns the rejection of src by CheckClusterFence.
 // Unsourced requests (nil src) skip the read.
-func (s *SpannerStore) checkFence(ctx context.Context, txRepo storage.ComponentTxRepository, operation string, src *store.RequestSource) error {
+func (s *Store) checkFence(ctx context.Context, txRepo storage.ComponentTxRepository, operation string, src *store.RequestSource) error {
 	if src == nil {
 		return nil
 	}

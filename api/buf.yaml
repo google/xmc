@@ -21,5 +21,5 @@ breaking:
   # protos import; they are not owned here, and dropping an import must not fail.
   ignore: [google]
   # Off on purpose: components v1alpha1 messages are persisted with proto.Marshal
-  # (pkg/components/store/spanner_store.go), so unstable packages must stay compatible.
+  # (internal/storage/data/component.go), so unstable packages must stay compatible.
   ignore_unstable_packages: false

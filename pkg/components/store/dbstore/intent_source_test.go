@@ -13,13 +13,13 @@
 // limitations under the License.
 
 // Cross-backend parity tests for RequestSource ownership (R1-R6) and cluster fence enforcement.
-// Production targets: source_ownership.go, ownership_fence.go, spanner_ownership_fence.go,
-// memory_store.go, and spanner_store.go.
+// Production targets: source_ownership.go, ownership/ownership_fence.go, dbstore/ownership_fence.go,
+// memory_store.go, and dbstore.go.
 // Test type: hermetic cross-backend unit/emulator suite (runs every ownership and fence case
-// against both MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept
+// against both MemoryStore and dbstore.Store backed by the in-process Spanner emulator). Kept
 // separate from source_ownership_test.go (which unit-tests the pure CheckSourceOwnership rules in
-// package store) so end-to-end Store RPC ownership parity is verified in package store_test.
-package spanner_test
+// package store) so end-to-end Store RPC ownership parity is verified in package dbstore_test.
+package dbstore_test
 
 import (
 	"context"
@@ -36,8 +36,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/memory"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
 // ownerSource is the source that seeds owned rows; cases modify it with sourceWith. It comes from
@@ -627,7 +627,7 @@ func TestExecuteDeletion_OwnerNeverLowersSourceGeneration(t *testing.T) {
 					if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, del); err != nil {
 						t.Fatalf("ExecuteDeletion(generation %d) error = %v", tt.delGen, err)
 					}
-					owner, err := spannerstore.OwnerByIDForTest(ctx, s, seeded.ComponentID)
+					owner, err := dbstore.OwnerByIDForTest(ctx, s, seeded.ComponentID)
 					if err != nil {
 						t.Fatalf("OwnerByIDForTest() error = %v", err)
 					}

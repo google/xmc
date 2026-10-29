@@ -274,7 +274,7 @@ func TestInitCMS_StoreSelection(t *testing.T) {
 		}
 	})
 
-	t.Run("spanner backend wires SpannerStore", func(t *testing.T) {
+	t.Run("spanner backend wires dbstore.Store", func(t *testing.T) {
 		seeded := &store.ComponentRecord{
 			ComponentID: 42,
 			Name:        "spanner-backed-comp",
