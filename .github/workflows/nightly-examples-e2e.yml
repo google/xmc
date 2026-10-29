@@ -84,6 +84,8 @@ jobs:
   # Fast, cluster-free import check of every example entrypoint. Runs in parallel with
   # (and does not gate) the image builds so import regressions surface within minutes
   # without suppressing the per-example workload signal.
+  # NOTE: callers of this workflow via workflow_call must grant `pull-requests: read`,
+  # which the nested examples-smoke.yml job requests (permissions cannot escalate).
   examples-import-check:
     name: 'Examples Import Check'
     uses: ./.github/workflows/examples-smoke.yml
@@ -599,7 +601,7 @@ jobs:
     name: '3. Report Failure & Alert OWNERS'
     runs-on: 'ubuntu-latest'
     needs: [examples-import-check, build-example-images, run-and-verify-examples, aggregate-results]
-    if: always() && github.ref == 'refs/heads/main' && (needs.examples-import-check.result == 'failure' || needs.build-example-images.result == 'failure' || needs.build-example-images.result == 'cancelled' || needs.run-and-verify-examples.result == 'failure' || needs.run-and-verify-examples.result == 'cancelled' || needs.aggregate-results.result == 'failure' || needs.aggregate-results.result == 'cancelled')
+    if: always() && github.ref == 'refs/heads/main' && (needs.examples-import-check.result == 'failure' || needs.examples-import-check.result == 'cancelled' || needs.build-example-images.result == 'failure' || needs.build-example-images.result == 'cancelled' || needs.run-and-verify-examples.result == 'failure' || needs.run-and-verify-examples.result == 'cancelled' || needs.aggregate-results.result == 'failure' || needs.aggregate-results.result == 'cancelled')
 
     permissions:
       contents: read

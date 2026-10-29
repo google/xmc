@@ -29,6 +29,7 @@ const {
   findExistingNightlyFailureIssue,
   postOrUpdateAlertIssue,
   parseNeedsContext,
+  resolveTriggerOutcome,
   buildAlertParams,
   run,
 } = require('./nightly-failure-alert');
@@ -666,4 +667,46 @@ describe('run orchestrator', () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+});
+
+describe('resolveTriggerOutcome', () => {
+  const cases = [
+    {
+      name: 'surfaces a failed examples import check ahead of successful jobs',
+      needs: {
+        'examples-import-check': { result: 'failure' },
+        'build-example-images': { result: 'success' },
+        'run-and-verify-examples': { result: 'success' },
+      },
+      expected: 'failure (examples-import-check)',
+    },
+    {
+      name: 'surfaces a cancelled examples import check',
+      needs: { 'examples-import-check': { result: 'cancelled' } },
+      expected: 'cancelled (examples-import-check)',
+    },
+    {
+      name: 'surfaces image build failures when the import check passed',
+      needs: {
+        'examples-import-check': { result: 'success' },
+        'build-example-images': { result: 'failure' },
+      },
+      expected: 'failure (build-example-images)',
+    },
+    {
+      name: 'falls back to the workload trigger result',
+      needs: {
+        'examples-import-check': { result: 'success' },
+        'build-example-images': { result: 'success' },
+        'run-and-verify-examples': { result: 'failure' },
+      },
+      expected: 'failure',
+    },
+    { name: 'returns unknown for empty context', needs: {}, expected: 'unknown' },
+  ];
+  for (const { name, needs, expected } of cases) {
+    test(name, () => {
+      assert.equal(resolveTriggerOutcome(needs), expected);
+    });
+  }
 });

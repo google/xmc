@@ -23,6 +23,7 @@ import tempfile
 import textwrap
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from tools.nightly_tests import examples_import_smoke as smoke
 
@@ -46,13 +47,19 @@ _WORKFLOW = textwrap.dedent(
               - id: 'ui_only'
                 example_path: ''
                 entrypoint: ''
+        env:
+          EXAMPLE_PATH: '${{ matrix.example.example_path }}'
+          ENTRYPOINT: '${{ matrix.example.entrypoint }}'
+        steps:
+          - name: 'Launch Example Workload'
+            run: echo launch
     """
 )
 
 _OK_ENTRYPOINT = textwrap.dedent(
     """\
     import sys
-    import helper  # resolved via the example dir on PYTHONPATH
+    import job_flags  # resolved via the example dir on PYTHONPATH
     if sys.argv != ["launch.py"]:
         raise SystemExit(f"unexpected argv: {sys.argv}")
     if __name__ == "__main__":
@@ -110,6 +117,12 @@ class ParseEntrypointsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "examples/broken_job"):
             smoke.parse_entrypoints(broken)
 
+    def test_rejects_entrypoint_without_example_path(self) -> None:
+        """A matrix entry with an entrypoint but empty example_path fails loudly."""
+        broken = _WORKFLOW.replace("example_path: 'examples/broken_job'", "example_path: ''")
+        with self.assertRaisesRegex(ValueError, "create.py"):
+            smoke.parse_entrypoints(broken)
+
 
 class SmokeExecutionTest(unittest.TestCase):
     """Tests for smoke_entrypoint and main using real subprocesses."""
@@ -121,7 +134,7 @@ class SmokeExecutionTest(unittest.TestCase):
         ok_dir = self.repo / "examples" / "ok_job"
         ok_dir.mkdir(parents=True)
         (ok_dir / "launch.py").write_text(_OK_ENTRYPOINT, encoding="utf-8")
-        (ok_dir / "helper.py").write_text("", encoding="utf-8")
+        (ok_dir / "job_flags.py").write_text("", encoding="utf-8")
         broken_dir = self.repo / "examples" / "broken_job"
         broken_dir.mkdir(parents=True)
         (broken_dir / "create.py").write_text(_BROKEN_ENTRYPOINT, encoding="utf-8")
@@ -146,6 +159,42 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertIn("resolve_auth_headers", result.error)
         self.assertTrue(result.error.endswith("WARNING: trailing cleanup log"))
         self.assertLessEqual(len(result.error.splitlines()), smoke._STDERR_TAIL_LINES)
+
+    def test_missing_entrypoint_is_reported_per_entry(self) -> None:
+        """A renamed or deleted example directory fails that entry without crashing."""
+        result = smoke.smoke_entrypoint(
+            self.python, self.repo, smoke.Entrypoint("examples/renamed_job", "launch.py")
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("entrypoint not found", result.error)
+
+    def test_blocking_import_times_out(self) -> None:
+        """An entrypoint that blocks at import time fails with a timeout, not a hang."""
+        slow_dir = self.repo / "examples" / "slow_job"
+        slow_dir.mkdir(parents=True)
+        (slow_dir / "launch.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        with mock.patch.object(smoke, "_IMPORT_TIMEOUT_SECONDS", 1):
+            result = smoke.smoke_entrypoint(
+                self.python, self.repo, smoke.Entrypoint("examples/slow_job", "launch.py")
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("timed out after 1s", result.error)
+
+    def test_unstartable_interpreter_is_reported_per_entry(self) -> None:
+        """A bad --venv-python fails each entry cleanly instead of raising."""
+        result = smoke.smoke_entrypoint(
+            self.repo / "no_such_python",
+            self.repo,
+            smoke.Entrypoint("examples/ok_job", "launch.py"),
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("failed to start", result.error)
+
+    def test_relative_paths_are_anchored(self) -> None:
+        """Relative --repo-root/--venv-python are made absolute before cwd changes."""
+        args = smoke._parse_args(["--repo-root", ".", "--venv-python", "venv/bin/python3"])
+        self.assertEqual(args.repo_root, pathlib.Path.cwd().resolve())
+        self.assertEqual(args.venv_python, pathlib.Path.cwd() / "venv" / "bin" / "python3")
 
     def test_main_reports_json_and_exit_code(self) -> None:
         """main prints a JSON report and returns 1 when any entrypoint fails."""

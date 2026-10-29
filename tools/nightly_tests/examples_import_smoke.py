@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import json
 import os
 import pathlib
@@ -47,8 +48,11 @@ _KEY_RE = re.compile(r"^\s*(?:-\s+)?(?P<key>example_path|entrypoint):(?P<value>.
 _ITEM_START_RE = re.compile(r"^\s*-\s")
 # Number of trailing non-empty stderr lines kept as failure context.
 _STDERR_TAIL_LINES = 5
+# Per-entrypoint import budget, so one blocking import cannot hang the whole report.
+_IMPORT_TIMEOUT_SECONDS = 120
 # Executes the module body without triggering `if __name__ == "__main__"`. sys.argv is
-# reset to [script] so argv[0]-relative path logic behaves like `python3 <script>`.
+# reset to [script] so argv[0] matches `python3 <script>`; runpy keeps argv[0] equal to
+# the path it is given, so the script path is intentionally passed through relative.
 _RUN_SNIPPET = (
     "import runpy, sys; script = sys.argv[1]; sys.argv = [script]; "
     "runpy.run_path(script, run_name='__examples_smoke__')"
@@ -83,13 +87,19 @@ def _unquote(raw: str) -> str:
 
 
 def _flush_item(item: dict[str, str], entries: dict[Entrypoint, None]) -> None:
-    """Record a parsed list item as an entrypoint, rejecting incomplete items."""
+    """Record a parsed list item as an entrypoint, rejecting half-specified items.
+
+    Items with both keys empty or absent are UI-only checks and are skipped.
+    """
     path = item.get("example_path", "")
-    if not path:
-        return
     entrypoint = item.get("entrypoint", "")
-    if not entrypoint:
-        raise ValueError(f"example_path '{path}' has no 'entrypoint' in the same matrix entry")
+    if not path and not entrypoint:
+        return
+    if not path or not entrypoint:
+        raise ValueError(
+            f"matrix entry has example_path={path!r} and entrypoint={entrypoint!r}; "
+            "both must be set (or both empty for UI-only entries)"
+        )
     entries[Entrypoint(path, entrypoint)] = None
 
 
@@ -107,7 +117,7 @@ def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
         `example_path` (UI-only checks) are skipped.
 
     Raises:
-        ValueError: If a matrix entry has a non-empty `example_path` but no
+        ValueError: If a matrix entry sets only one of `example_path` and
             `entrypoint`, so matrix drift cannot silently drop examples.
     """
     entries: dict[Entrypoint, None] = {}
@@ -129,36 +139,49 @@ def _stderr_tail(text: str) -> str:
     return "\n".join(lines[-_STDERR_TAIL_LINES:])
 
 
+def _entrypoint_env(example_dir: pathlib.Path, repo_root: pathlib.Path) -> dict[str, str]:
+    """Return the environment mirroring the nightly launch step's PYTHONPATH."""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(example_dir), str(repo_root), env.get("PYTHONPATH", "")) if p
+    )
+    return env
+
+
 def smoke_entrypoint(
     venv_python: pathlib.Path, repo_root: pathlib.Path, entry: Entrypoint
 ) -> SmokeResult:
     """Execute one entrypoint's module body in an isolated subprocess.
 
     Args:
-        venv_python: Interpreter of the virtualenv built by install_xmanager.py.
-        repo_root: Repository root containing the examples.
+        venv_python: Absolute path of the virtualenv interpreter.
+        repo_root: Absolute repository root containing the examples.
         entry: Entrypoint to check.
 
     Returns:
-        The smoke result, carrying the last stderr line on failure.
+        The smoke result, carrying the stderr tail (or the reason) on failure.
     """
     example_dir = repo_root / entry.example_path
-    env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(
-        p for p in (str(example_dir), str(repo_root), env.get("PYTHONPATH", "")) if p
-    )
-    proc = subprocess.run(
-        [str(venv_python), "-c", _RUN_SNIPPET, entry.entrypoint],
-        cwd=example_dir,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    failed = functools.partial(SmokeResult, entry.example_path, entry.entrypoint, False)
+    if not (example_dir / entry.entrypoint).is_file():
+        return failed(f"entrypoint not found: {example_dir / entry.entrypoint}")
+    try:
+        proc = subprocess.run(
+            [str(venv_python), "-c", _RUN_SNIPPET, entry.entrypoint],
+            cwd=example_dir,
+            env=_entrypoint_env(example_dir, repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_IMPORT_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return failed(f"import timed out after {_IMPORT_TIMEOUT_SECONDS}s")
+    except OSError as err:
+        return failed(f"failed to start {venv_python}: {err}")
     if proc.returncode == 0:
         return SmokeResult(entry.example_path, entry.entrypoint, ok=True)
-    error = _stderr_tail(proc.stderr) or f"exit code {proc.returncode}"
-    return SmokeResult(entry.example_path, entry.entrypoint, ok=False, error=error)
+    return failed(_stderr_tail(proc.stderr) or f"exit code {proc.returncode}")
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -171,7 +194,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--repo-root", type=pathlib.Path, default=REPO_ROOT)
     parser.add_argument("--workflow", type=pathlib.Path, default=DEFAULT_WORKFLOW)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    # Subprocesses run with cwd=<example dir>, so relative paths must be anchored now.
+    # absolute() (not resolve()) keeps the venv's python symlink and its site-packages.
+    args.venv_python = args.venv_python.absolute()
+    args.repo_root = args.repo_root.resolve()
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:

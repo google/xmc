@@ -250,16 +250,25 @@ function parseNeedsContext(core) {
 }
 
 /**
+ * Upstream jobs whose non-success results take precedence in the trigger outcome,
+ * in reporting priority order.
+ */
+const PRECONDITION_JOBS = ['examples-import-check', 'build-example-images'];
+
+/**
  * Resolves the triggerOutcome field from GitHub Actions needsContext,
- * surfacing build-example-images failures when the image build step fails.
+ * surfacing precondition job failures (examples import check, image build)
+ * ahead of the workload trigger result.
  *
  * @param {Object} needsContext
  * @returns {string}
  */
 function resolveTriggerOutcome(needsContext) {
-  const buildResult = needsContext?.['build-example-images']?.result;
-  if (buildResult && buildResult !== 'success' && buildResult !== 'skipped') {
-    return `${buildResult} (build-example-images)`;
+  for (const job of PRECONDITION_JOBS) {
+    const result = needsContext?.[job]?.result;
+    if (result && result !== 'success' && result !== 'skipped') {
+      return `${result} (${job})`;
+    }
   }
   return (
     needsContext?.['run-and-verify-demo-workload']?.result ||
@@ -336,6 +345,7 @@ module.exports = {
   findExistingNightlyFailureIssue,
   postOrUpdateAlertIssue,
   parseNeedsContext,
+  resolveTriggerOutcome,
   buildAlertParams,
   run,
 };
