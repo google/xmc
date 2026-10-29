@@ -344,7 +344,7 @@ jobs:
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
             # --with-deps is omitted: arc-runner-set pre-bakes Chromium system libraries and
             # its unbounded apt-get update can hang until the job timeout.
-            timeout 300 "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium
+            timeout --kill-after=30 300 "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium
           fi
 
       - name: 'Mint XMC Identity Token'

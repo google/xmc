@@ -63,7 +63,7 @@ runs:
     - name: 'Install Playwright Browsers'
       if: steps.scope.outputs.run_ui == 'true'
       shell: bash
-      run: timeout 300 npx playwright install chromium
+      run: timeout --kill-after=30 300 npx playwright install chromium
       working-directory: ${{ inputs.working-directory }}
 
     - name: 'Build Angular Application'
