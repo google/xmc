@@ -25,6 +25,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 
+	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/memory"
 )
@@ -42,12 +43,15 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
 	case *SpannerStore:
-		stmt := spanner.Statement{SQL: `SELECT ` + componentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
+		stmt := spanner.Statement{SQL: `SELECT ` + component.ComponentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
 		var owner *store.SourceOwner
 		err := st.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-			var err error
-			owner, err = scanSourceOwner(row)
-			return err
+			rec, err := component.RowToComponentRecord(row)
+			if err != nil {
+				return err
+			}
+			owner = rec.Owner
+			return nil
 		})
 		if err == nil && owner == nil {
 			err = fmt.Errorf("component %d has no recorded owner", componentID)

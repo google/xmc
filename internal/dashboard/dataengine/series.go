@@ -68,10 +68,13 @@ func (e *DataEngine) fetchSeriesData(ctx context.Context, xid int64, wid int64, 
 
 	var query string
 	if bucketSize > 1 {
-		// Server-side downsampling using ClickHouse intDiv bucketing
+		divFunc := "intDiv"
+		if _, ok := e.activeBackend().(bigQueryBackend); ok {
+			divFunc = "DIV"
+		}
 		query = fmt.Sprintf(`
 			SELECT
-				intDiv(step, %d) * %d AS bucket_step,
+				%s(step, %d) * %d AS bucket_step,
 				avg(metric_value) AS avg_val,
 				min(metric_value) AS min_val,
 				max(metric_value) AS max_val,
@@ -83,7 +86,7 @@ func (e *DataEngine) fetchSeriesData(ctx context.Context, xid int64, wid int64, 
 			WHERE %s
 			GROUP BY bucket_step, metric_name, work_unit_id, xid
 			ORDER BY metric_name ASC, work_unit_id ASC, bucket_step ASC;
-		`, bucketSize, bucketSize, e.tableName, pred.whereClause)
+		`, divFunc, bucketSize, bucketSize, e.tableName, pred.whereClause)
 	} else {
 		// Raw identity series points
 		query = fmt.Sprintf(`
@@ -102,7 +105,7 @@ func (e *DataEngine) fetchSeriesData(ctx context.Context, xid int64, wid int64, 
 		`, e.tableName, pred.whereClause)
 	}
 
-	rows, err := e.conn.Query(ctx, query, pred.args...)
+	rows, err := e.activeBackend().Query(ctx, query, pred.args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query series data: %w", err)
 	}

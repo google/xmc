@@ -56,6 +56,7 @@ type Config struct {
 	GRPCPort            string
 	ProjectID           string
 	XidServiceAddr      string
+	MetricsStore        string
 	EnableComponents    bool
 	ComponentsNamespace string
 }

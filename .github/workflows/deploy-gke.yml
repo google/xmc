@@ -332,6 +332,17 @@ jobs:
             enable_metrics: ${ENABLE_METRICS}
           EOF_YAML
 
+      - name: 'Pre-Deploy Metrics Addons on Existing Cluster'
+        if: ${{ inputs.enable_metrics == true }}
+        run: |
+          # When upgrading an existing cluster, ensure Redpanda, ClickHouse, and the
+          # xmc-metrics topic are present BEFORE the xmc_app Helm release rolls out
+          # ingestion-gateway (which validates topic topology on startup).
+          if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
+            gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
+            ./deploy/addons/metrics/setup_metrics_addons.sh
+          fi
+
       - name: 'Execute GKE Deployment Pipeline'
         run: |
           # Defer verification to the downstream 'Run Environment Health Verification'
@@ -370,9 +381,20 @@ jobs:
           if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
             gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" || true
             kubectl get pods -n xmc -o wide > diagnostics/pods.txt || true
+            kubectl get pods -n xmc-metrics -o wide > diagnostics/pods-metrics.txt || true
             kubectl describe pods -n xmc > diagnostics/describe-pods.txt || true
+            kubectl describe pods -n xmc-metrics > diagnostics/describe-pods-metrics.txt || true
             kubectl get gateway,httproute -n xmc -o yaml > diagnostics/gateway.txt || true
-            kubectl logs -n xmc -l app.kubernetes.io/part-of=xmc --all-containers=true --tail=200 > diagnostics/logs.txt || true
+            for ns in xmc xmc-metrics; do
+              for pod in $(kubectl get pods -n "${ns}" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+                {
+                  echo "=== ${ns}/${pod} (current) ==="
+                  kubectl logs -n "${ns}" "${pod}" --all-containers=true --tail=200 2>&1 || true
+                  echo "=== ${ns}/${pod} (previous) ==="
+                  kubectl logs -n "${ns}" "${pod}" --all-containers=true --previous --tail=200 2>&1 || true
+                } >> diagnostics/logs.txt
+              done
+            done
           else
             echo "Cluster xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT} was not created or is not reachable in project ${PROJECT_ID}." > diagnostics/cluster-status.txt
           fi

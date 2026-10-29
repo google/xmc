@@ -81,6 +81,49 @@ func TestUpdateXidEntry_HappyPath(t *testing.T) {
 	}
 }
 
+func TestUpdateXidEntry_NormalizesACLPrincipals(t *testing.T) {
+	ctx := context.Background()
+	server := createXidServer(ctx, t)
+	createdEntry, err := server.CreateXidEntry(ctx, &msgpb.CreateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
+			Acls: &msgpb.XidAcls{
+				Owners: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
+	}
+
+	updateReq := &msgpb.UpdateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Name: createdEntry.Name,
+			Acls: &msgpb.XidAcls{
+				Owners:  []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
+				Readers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_Domain{Domain: " Example.COM "}}},
+			},
+		},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"acls"}},
+	}
+	originalReq := proto.Clone(updateReq)
+	want := &msgpb.XidAcls{
+		Owners:  []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Readers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_Domain{Domain: "example.com"}}},
+	}
+
+	updatedEntry, err := server.UpdateXidEntry(ctx, updateReq)
+	if err != nil {
+		t.Fatalf("UpdateXidEntry() returned an unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, updatedEntry.GetAcls(), protocmp.Transform()); diff != "" {
+		t.Errorf("UpdateXidEntry() returned unnormalized ACLs (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(originalReq, proto.Message(updateReq), protocmp.Transform()); diff != "" {
+		t.Errorf("UpdateXidEntry() modified its request (-before +after):\n%s", diff)
+	}
+}
+
 func TestUpdateXidEntry_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)

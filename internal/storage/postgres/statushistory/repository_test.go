@@ -15,60 +15,103 @@
 package statushistory
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	gocmp "github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/storage"
+	postgresdata "xmanager_cloud/internal/storage/postgres/data"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 )
 
-func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository(nil)
-	if repo == nil {
-		t.Fatal("NewRepository() returned nil")
-	}
-	txRepo := repo.WithTx(nil)
-	if txRepo == nil {
-		t.Fatal("WithTx() returned nil")
-	}
+const resourceTypeCPU = "CPU"
 
-	ctx := context.Background()
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{
-			name: "FetchBatchQueueVelocity",
-			call: func() error {
-				_, err := repo.FetchBatchQueueVelocity(ctx, []string{"q1"}, time.Hour)
-				return err
-			},
-		},
-		{
-			name: "FetchBatchPendingQueueMetrics",
-			call: func() error {
-				_, err := repo.FetchBatchPendingQueueMetrics(ctx, []string{"q1"})
-				return err
-			},
-		},
-		{
-			name: "Tx_SaveWorkUnitStatusHistory",
-			call: func() error {
-				return txRepo.SaveWorkUnitStatusHistory(ctx, 1, 1, nil, "q1", nil, nil, nil, time.Time{})
-			},
-		},
-	}
+var (
+	ignoreHistoryIDAndCreateTime = cmpopts.IgnoreFields(postgresdata.WorkUnitStatusHistoryRow{}, "HistoryID", "CreateTime")
+	sortQueueMetricRowsOpt       = cmpopts.SortSlices(func(a, b storage.QueueMetricRow) int {
+		if c := cmp.Compare(a.QueueName, b.QueueName); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ResourceType, b.ResourceType)
+	})
+)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.call()
-			if got := status.Code(err); got != codes.Unimplemented {
-				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
+type mockHistoryItem struct {
+	xid       int64
+	wid       int64
+	eid       *int64
+	queueName string
+	offset    time.Duration
+	prevState *essmsgpb.WorkUnitStatus_WorkUnitState
+	newState  essmsgpb.WorkUnitStatus_WorkUnitState
+	resources map[string]int64
+}
+
+func newMockItem(wid int64, queue string, offset time.Duration, state essmsgpb.WorkUnitStatus_WorkUnitState, resType string, units int64) mockHistoryItem {
+	eid := wid
+	return mockHistoryItem{
+		xid:       1,
+		wid:       wid,
+		eid:       &eid,
+		queueName: queue,
+		offset:    offset,
+		newState:  state,
+		resources: map[string]int64{resType: units},
+	}
+}
+
+func insertMockItems(ctx context.Context, t *testing.T, pool *pgxpool.Pool, repo *Repository, items []mockHistoryItem) {
+	t.Helper()
+	if len(items) == 0 {
+		return
+	}
+	baseTime := time.Now()
+	err := pgdb.RunInTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+		txRepo := repo.WithTx(tx)
+		for _, item := range items {
+			state := item.newState
+			if err := txRepo.SaveWorkUnitStatusHistory(
+				ctx, item.xid, item.wid, item.eid, item.queueName, item.prevState, &state, item.resources, baseTime.Add(item.offset),
+			); err != nil {
+				return err
 			}
-		})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("insertMockItems() failed: %v", err)
+	}
+}
+
+func queryStoredHistoryRows(ctx context.Context, t *testing.T, pool *pgxpool.Pool) []postgresdata.WorkUnitStatusHistoryRow {
+	t.Helper()
+	const q = `SELECT Xid, WorkUnitId, HistoryId, ExecutionId, QueueName, PreviousState, NewState, ResourceType, ResourceUnits, CreateTime
+FROM WorkUnitStatusHistory
+ORDER BY Xid, WorkUnitId, ResourceType`
+	rows, err := pool.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("pool.Query() failed: %v", err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[postgresdata.WorkUnitStatusHistoryRow])
+	if err != nil {
+		t.Fatalf("pgx.CollectRows() failed: %v", err)
+	}
+	return got
+}
+
+func compareQueueMetricRows(t *testing.T, got, want []storage.QueueMetricRow) {
+	t.Helper()
+	if diff := gocmp.Diff(want, got, sortQueueMetricRowsOpt, cmpopts.EquateEmpty()); diff != "" {
+		t.Errorf("QueueMetricRow mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -79,10 +122,324 @@ func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
 	}
 
-	// Any DBTX implementation can stand in for the transaction handle.
 	var tx pgdb.DBTX = &pgxpool.Pool{}
 	txRepo := repo.WithTx(tx)
 	if txRepo.tx != tx {
 		t.Errorf("WithTx(tx).tx = %v, want %v", txRepo.tx, tx)
+	}
+}
+
+func TestQueueMetricRow(t *testing.T) {
+	row := storage.QueueMetricRow{
+		QueueName:    "cq-gpu",
+		Count:        12,
+		TotalUnits:   96,
+		ResourceType: "GPU H100",
+	}
+	window := 1 * time.Hour
+	if rate := float64(row.Count) / window.Hours(); rate != 12.0 {
+		t.Errorf("rate = %f, want 12.0", rate)
+	}
+}
+
+func TestFetchBatchQueueMetrics_NilClient(t *testing.T) {
+	ctx := t.Context()
+	repo := NewRepository(nil)
+
+	batchVel, err := repo.FetchBatchQueueVelocity(ctx, []string{"cq-gpu"}, time.Hour)
+	if err != nil || len(batchVel) != 0 {
+		t.Errorf("FetchBatchQueueVelocity(nil pool) = (%+v, %v), want (empty, nil)", batchVel, err)
+	}
+
+	batchPending, err := repo.FetchBatchPendingQueueMetrics(ctx, []string{"cq-gpu"})
+	if err != nil || len(batchPending) != 0 {
+		t.Errorf("FetchBatchPendingQueueMetrics(nil pool) = (%+v, %v), want (empty, nil)", batchPending, err)
+	}
+}
+
+func TestTxRepository_SaveWorkUnitStatusHistory_Validation(t *testing.T) {
+	ctx := t.Context()
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	running := essmsgpb.WorkUnitStatus_RUNNING
+	eid := int64(1)
+	dummyTx := &pgxpool.Pool{}
+
+	tests := []struct {
+		name     string
+		tx       pgdb.DBTX
+		ctx      context.Context
+		newState *essmsgpb.WorkUnitStatus_WorkUnitState
+	}{
+		{name: "nil context", tx: dummyTx, ctx: nil, newState: &running},
+		{name: "nil transaction", tx: nil, ctx: ctx, newState: &running},
+		{name: "canceled context", tx: dummyTx, ctx: canceledCtx, newState: &running},
+		{name: "nil newState", tx: dummyTx, ctx: ctx, newState: nil},
+	}
+
+	repo := NewRepository(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := repo.WithTx(tt.tx).SaveWorkUnitStatusHistory(tt.ctx, 1, 1, &eid, "q1", nil, tt.newState, map[string]int64{"": 0}, time.Now())
+			if err == nil {
+				t.Fatalf("SaveWorkUnitStatusHistory(%s) succeeded, want error", tt.name)
+			}
+		})
+	}
+}
+
+func TestTxRepository_SaveWorkUnitStatusHistory_Persistence(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	eid := int64(7)
+	prevScheduling := essmsgpb.WorkUnitStatus_SCHEDULING
+	newRunning := essmsgpb.WorkUnitStatus_RUNNING
+	fixedTime := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+
+	err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+		txRepo := repo.WithTx(tx)
+		if err := txRepo.SaveWorkUnitStatusHistory(ctx, 10, 101, &eid, "q-gpu", &prevScheduling, &newRunning, map[string]int64{"CPU": 16, "GPU": 4}, fixedTime); err != nil {
+			return err
+		}
+		if err := txRepo.SaveWorkUnitStatusHistory(ctx, 10, 102, nil, "q-cpu", nil, &newRunning, map[string]int64{"": 0}, time.Time{}); err != nil {
+			return err
+		}
+		return txRepo.SaveWorkUnitStatusHistory(ctx, 10, 103, nil, "q-empty", nil, &newRunning, nil, fixedTime)
+	})
+	if err != nil {
+		t.Fatalf("SaveWorkUnitStatusHistory() in transaction failed: %v", err)
+	}
+
+	got := queryStoredHistoryRows(ctx, t, essPool)
+	want := []postgresdata.WorkUnitStatusHistoryRow{
+		{
+			Xid:           10,
+			WorkUnitID:    101,
+			ExecutionID:   pgtype.Int8{Int64: 7, Valid: true},
+			QueueName:     "q-gpu",
+			PreviousState: pgtype.Int8{Int64: int64(essmsgpb.WorkUnitStatus_SCHEDULING), Valid: true},
+			NewState:      int64(essmsgpb.WorkUnitStatus_RUNNING),
+			ResourceType:  "CPU",
+			ResourceUnits: 16,
+		},
+		{
+			Xid:           10,
+			WorkUnitID:    101,
+			ExecutionID:   pgtype.Int8{Int64: 7, Valid: true},
+			QueueName:     "q-gpu",
+			PreviousState: pgtype.Int8{Int64: int64(essmsgpb.WorkUnitStatus_SCHEDULING), Valid: true},
+			NewState:      int64(essmsgpb.WorkUnitStatus_RUNNING),
+			ResourceType:  "GPU",
+			ResourceUnits: 4,
+		},
+		{
+			Xid:           10,
+			WorkUnitID:    102,
+			ExecutionID:   pgtype.Int8{Valid: false},
+			QueueName:     "q-cpu",
+			PreviousState: pgtype.Int8{Valid: false},
+			NewState:      int64(essmsgpb.WorkUnitStatus_RUNNING),
+			ResourceType:  "",
+			ResourceUnits: 0,
+		},
+	}
+	if diff := gocmp.Diff(want, got, ignoreHistoryIDAndCreateTime); diff != "" {
+		t.Fatalf("stored WorkUnitStatusHistory rows mismatch (-want +got):\n%s", diff)
+	}
+	for i, r := range got {
+		if r.HistoryID <= 0 {
+			t.Errorf("row[%d].HistoryID = %d, want > 0", i, r.HistoryID)
+		}
+		if r.CreateTime.IsZero() {
+			t.Errorf("row[%d].CreateTime is zero", i)
+		}
+	}
+	if !got[0].CreateTime.Equal(fixedTime) {
+		t.Errorf("row[0].CreateTime = %v, want %v", got[0].CreateTime, fixedTime)
+	}
+}
+
+func TestFetchBatchQueueVelocity_Parameterized(t *testing.T) {
+	tests := []struct {
+		name       string
+		queueNames []string
+		window     time.Duration
+		mockItems  []mockHistoryItem
+		want       []storage.QueueMetricRow
+	}{
+		{
+			name:       "TransitionStateFiltering",
+			queueNames: []string{"q1"},
+			window:     1 * time.Hour,
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
+				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
+				newMockItem(103, "q1", -2*time.Minute, essmsgpb.WorkUnitStatus_INITIALIZING, resourceTypeCPU, 30),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
+			},
+		},
+		{
+			name:       "LookbackCutoffWindowFiltering",
+			queueNames: []string{"q1"},
+			window:     30 * time.Minute,
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
+				newMockItem(102, "q1", -45*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
+			},
+		},
+		{
+			name:       "QueueNameFiltering",
+			queueNames: []string{"q1"},
+			window:     1 * time.Hour,
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
+				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
+			},
+		},
+		{
+			name:       "MultiResourceAndMultiQueueAggregation",
+			queueNames: []string{"q1", "q2"},
+			window:     1 * time.Hour,
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
+				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
+				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "GPU", 4),
+				newMockItem(201, "q2", -4*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, "TPU", 8),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: resourceTypeCPU},
+				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
+				{QueueName: "q2", Count: 1, TotalUnits: 8, ResourceType: "TPU"},
+			},
+		},
+		{
+			name:       "EmptyQueueNames",
+			queueNames: []string{},
+			window:     1 * time.Hour,
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 10),
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			_, essPool := postgrestest.Setup(ctx, t)
+			repo := NewRepository(essPool)
+			insertMockItems(ctx, t, essPool, repo, tt.mockItems)
+
+			got, err := repo.FetchBatchQueueVelocity(ctx, tt.queueNames, tt.window)
+			if err != nil {
+				t.Fatalf("FetchBatchQueueVelocity() failed: %v", err)
+			}
+			compareQueueMetricRows(t, got, tt.want)
+		})
+	}
+}
+
+func TestFetchBatchPendingQueueMetrics_Parameterized(t *testing.T) {
+	tests := []struct {
+		name       string
+		queueNames []string
+		mockItems  []mockHistoryItem
+		want       []storage.QueueMetricRow
+	}{
+		{
+			name:       "TransitionStateFiltering",
+			queueNames: []string{"q1"},
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
+				newMockItem(102, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_STARTING, resourceTypeCPU, 20),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
+			},
+		},
+		{
+			name:       "LatestStateTransition",
+			queueNames: []string{"q1"},
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -20*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_RUNNING, resourceTypeCPU, 10),
+			},
+			want: nil,
+		},
+		{
+			name:       "QueueNameFiltering",
+			queueNames: []string{"q1"},
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
+				newMockItem(201, "q2", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 1, TotalUnits: 10, ResourceType: resourceTypeCPU},
+			},
+		},
+		{
+			name:       "MultiResourceAndMultiQueueAggregation",
+			queueNames: []string{"q1", "q2"},
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
+				newMockItem(102, "q1", -8*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 20),
+				newMockItem(103, "q1", -5*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "GPU", 4),
+				newMockItem(201, "q2", -4*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, "TPU", 8),
+			},
+			want: []storage.QueueMetricRow{
+				{QueueName: "q1", Count: 3, TotalUnits: 30, ResourceType: resourceTypeCPU},
+				{QueueName: "q1", Count: 3, TotalUnits: 4, ResourceType: "GPU"},
+				{QueueName: "q2", Count: 1, TotalUnits: 8, ResourceType: "TPU"},
+			},
+		},
+		{
+			name:       "EmptyQueueNames",
+			queueNames: []string{},
+			mockItems: []mockHistoryItem{
+				newMockItem(101, "q1", -10*time.Minute, essmsgpb.WorkUnitStatus_SCHEDULING, resourceTypeCPU, 10),
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			_, essPool := postgrestest.Setup(ctx, t)
+			repo := NewRepository(essPool)
+			insertMockItems(ctx, t, essPool, repo, tt.mockItems)
+
+			got, err := repo.FetchBatchPendingQueueMetrics(ctx, tt.queueNames)
+			if err != nil {
+				t.Fatalf("FetchBatchPendingQueueMetrics() failed: %v", err)
+			}
+			compareQueueMetricRows(t, got, tt.want)
+		})
+	}
+}
+
+func TestFetchBatchQueueMetrics_CanceledContext(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := repo.FetchBatchQueueVelocity(canceledCtx, []string{"q1"}, time.Hour); !errors.Is(err, context.Canceled) {
+		t.Errorf("FetchBatchQueueVelocity(canceled ctx) = %v, want %v", err, context.Canceled)
+	}
+	if _, err := repo.FetchBatchPendingQueueMetrics(canceledCtx, []string{"q1"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("FetchBatchPendingQueueMetrics(canceled ctx) = %v, want %v", err, context.Canceled)
 	}
 }

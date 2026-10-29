@@ -104,6 +104,7 @@ spec:
               name: redis-secret
               key: redis-password
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="

@@ -50,9 +50,9 @@ class WorkUnitRegressionTest(googletest.TestCase):
 
         # Wait for work units to be available in ESS with a timeout.
         timeout = datetime.timedelta(seconds=10)
-        start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_time = datetime.datetime.now(datetime.UTC)
         response = None
-        while datetime.datetime.now(datetime.timezone.utc) - start_time < timeout and (
+        while datetime.datetime.now(datetime.UTC) - start_time < timeout and (
             response is None or len(response.work_units) < 2
         ):
             time.sleep(1)

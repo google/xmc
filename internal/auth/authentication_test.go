@@ -184,6 +184,48 @@ func TestAuthenticateUserFromContext_Authenticated(t *testing.T) {
 			wantUserID: "userID",
 		},
 		{
+			name:     "Google ID token email is normalized",
+			metadata: metadata.Pairs("x-goog-iap-jwt-assertion", "jwt"),
+			validator: func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{
+					Issuer:  "https://cloud.google.com/iap",
+					Subject: "userID",
+					Claims:  map[string]any{"email": "First.Last@Example.COM"},
+				}, nil
+			},
+			wantEmail:  "first.last@example.com",
+			wantUserID: "userID",
+		},
+		{
+			name:      "Google ID token email with surrounding whitespace rejected",
+			metadata:  metadata.Pairs("x-goog-iap-jwt-assertion", "jwt"),
+			validator: iapPayloadWithEmail(" a@corp.com"),
+			wantCode:  codes.Unauthenticated,
+		},
+		{
+			name:      "Google ID token email with display name rejected",
+			metadata:  metadata.Pairs("x-goog-iap-jwt-assertion", "jwt"),
+			validator: iapPayloadWithEmail("Eve <a@corp.com>"),
+			wantCode:  codes.Unauthenticated,
+		},
+		{
+			name:      "Google ID token non-ASCII email rejected",
+			metadata:  metadata.Pairs("x-goog-iap-jwt-assertion", "jwt"),
+			validator: iapPayloadWithEmail("\u212Aate@corp.com"),
+			wantCode:  codes.Unauthenticated,
+		},
+		{
+			name:     "session token with quoted local part rejected",
+			metadata: metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, `"x@evil.com"@corp.com`, oauth2.CLIAudience)),
+			wantCode: codes.Unauthenticated,
+		},
+		{
+			name:       "session token email is normalized",
+			metadata:   metadata.Pairs("authorization", "Bearer "+signTestSessionToken(t, "CLI-User@MyCompany.com", oauth2.CLIAudience)),
+			wantEmail:  "cli-user@mycompany.com",
+			wantUserID: "CLI-User@MyCompany.com",
+		},
+		{
 			name: "custom session token authentication success",
 			metadata: func() metadata.MD {
 				tok, err := oauth2.GenerateSessionToken("custom-sa@mycompany.com", "Custom SA", "", 1*time.Hour, []byte("default-jwt-secret-for-local-dev-only-12345"))
@@ -279,6 +321,58 @@ func TestAuthenticateUserFromContext_JWKS(t *testing.T) {
 		}
 		if userID != "sub-12345" {
 			t.Errorf("got userID %q, want %q", userID, "sub-12345")
+		}
+	})
+
+	t.Run("JWKSEmailIsCanonicalized", func(t *testing.T) {
+		testCases := []struct {
+			name   string
+			claims *jwks.Claims
+			want   authOutcome
+		}{
+			{
+				name:   "mixed-case email with subject",
+				claims: &jwks.Claims{Email: "JWKS-User@Example.com", RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-12345"}},
+				want:   authOutcome{Email: "jwks-user@example.com", UserID: "sub-12345"},
+			},
+			{
+				name:   "user ID falls back to canonical email",
+				claims: &jwks.Claims{Email: "JWKS-User@Example.com"},
+				want:   authOutcome{Email: "jwks-user@example.com", UserID: "jwks-user@example.com"},
+			},
+			{
+				name:   "display-name subject fallback rejected",
+				claims: &jwks.Claims{RegisteredClaims: jwt.RegisteredClaims{Subject: "Eve <a@corp.com>"}},
+				want:   authOutcome{Code: codes.Unauthenticated},
+			},
+			{
+				name:   "kelvin sign email rejected",
+				claims: &jwks.Claims{Email: "\u212Aate@corp.com", RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-12345"}},
+				want:   authOutcome{Code: codes.Unauthenticated},
+			},
+			{
+				name:   "quoted local part rejected",
+				claims: &jwks.Claims{Email: `"x@evil.com"@corp.com`, RegisteredClaims: jwt.RegisteredClaims{Subject: "sub-12345"}},
+				want:   authOutcome{Code: codes.Unauthenticated},
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				a := &Authorizer{iapAudiences: []string{"test_audience"}, admission: &fakeAdmissionChecker{admitted: true}}
+				tc.claims.EmailVerified = true
+				a.SetJWKSValidator(&mockTokenValidator{
+					validateFn: func(ctx context.Context, tokenStr string, audiences []string) (*jwks.Claims, error) {
+						return tc.claims, nil
+					},
+				})
+
+				reqCtx := metadata.NewIncomingContext(ctx, metadata.Pairs("x-goog-iap-jwt-assertion", "valid-jwks-jwt"))
+				email, userID, err := a.AuthenticateUserFromContext(reqCtx)
+				got := authOutcome{Email: email, UserID: userID, Code: status.Code(err)}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("AuthenticateUserFromContext() mismatch (-want +got):\n%s\nerror: %v", diff, err)
+				}
+			})
 		}
 	})
 
@@ -585,4 +679,16 @@ func signTestSessionToken(t *testing.T, email, audience string) string {
 		t.Fatalf("SignedString() failed: %v", err)
 	}
 	return tok
+}
+
+// iapPayloadWithEmail returns an ID token validator stub that accepts any token as an IAP
+// assertion carrying email.
+func iapPayloadWithEmail(email string) func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+	return func(ctx context.Context, jwt, audience string) (*idtoken.Payload, error) {
+		return &idtoken.Payload{
+			Issuer:  "https://cloud.google.com/iap",
+			Subject: "userID",
+			Claims:  map[string]any{"email": email},
+		}, nil
+	}
 }

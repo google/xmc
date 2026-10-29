@@ -23,9 +23,8 @@ import (
 )
 
 type mockClickHouseConn struct {
-	queryFn    func(ctx context.Context, query string, args ...any) (driver.Rows, error)
-	queryRowFn func(ctx context.Context, query string, args ...any) driver.Row
-	pingFn     func(ctx context.Context) error
+	queryFn func(ctx context.Context, query string, args ...any) (driver.Rows, error)
+	pingFn  func(ctx context.Context) error
 }
 
 func (m *mockClickHouseConn) Query(ctx context.Context, query string, args ...any) (driver.Rows, error) {
@@ -35,38 +34,11 @@ func (m *mockClickHouseConn) Query(ctx context.Context, query string, args ...an
 	return nil, fmt.Errorf("queryFn not implemented")
 }
 
-func (m *mockClickHouseConn) QueryRow(ctx context.Context, query string, args ...any) driver.Row {
-	if m.queryRowFn != nil {
-		return m.queryRowFn(ctx, query, args...)
-	}
-	return &mockRow{err: fmt.Errorf("queryRowFn not implemented")}
-}
-
 func (m *mockClickHouseConn) Ping(ctx context.Context) error {
 	if m.pingFn != nil {
 		return m.pingFn(ctx)
 	}
 	return nil
-}
-
-type mockRow struct {
-	vals []any
-	err  error
-}
-
-func (r *mockRow) Scan(dest ...any) error {
-	if r.err != nil {
-		return r.err
-	}
-	return assignValues(dest, r.vals)
-}
-
-func (r *mockRow) ScanStruct(dest any) error {
-	return fmt.Errorf("ScanStruct not implemented in mock")
-}
-
-func (r *mockRow) Err() error {
-	return r.err
 }
 
 type mockRows struct {

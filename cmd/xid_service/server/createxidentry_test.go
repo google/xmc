@@ -91,6 +91,52 @@ func TestCreateXidEntry_HappyPath(t *testing.T) {
 	}
 }
 
+func TestCreateXidEntry_NormalizesACLPrincipals(t *testing.T) {
+	ctx := context.Background()
+	server := createXidServer(ctx, t)
+
+	req := &msgpb.CreateXidEntryRequest{
+		XidEntry: &msgpb.XidEntry{
+			Origin: &msgpb.OriginatingSystem{Endpoint: proto.String("http://testhost")},
+			Acls: &msgpb.XidAcls{
+				Owners:  []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: " Test@Example.com "}}},
+				Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_Group{Group: "Team@Example.com"}}},
+				Readers: []*msgpb.XidAcls_Role{
+					{Principal: &msgpb.XidAcls_Role_ServiceAccount{ServiceAccount: "SA@Project.iam.gserviceaccount.com"}},
+					{Principal: &msgpb.XidAcls_Role_Domain{Domain: "Example.COM"}},
+				},
+			},
+		},
+	}
+	want := &msgpb.XidAcls{
+		Owners:  []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_User{User: "test@example.com"}}},
+		Writers: []*msgpb.XidAcls_Role{{Principal: &msgpb.XidAcls_Role_Group{Group: "team@example.com"}}},
+		Readers: []*msgpb.XidAcls_Role{
+			{Principal: &msgpb.XidAcls_Role_ServiceAccount{ServiceAccount: "sa@project.iam.gserviceaccount.com"}},
+			{Principal: &msgpb.XidAcls_Role_Domain{Domain: "example.com"}},
+		},
+	}
+	originalReq := proto.Clone(req)
+
+	created, err := server.CreateXidEntry(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateXidEntry() returned an unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(originalReq, proto.Message(req), protocmp.Transform()); diff != "" {
+		t.Errorf("CreateXidEntry() modified its request (-before +after):\n%s", diff)
+	}
+	if diff := cmp.Diff(want, created.GetAcls(), protocmp.Transform()); diff != "" {
+		t.Errorf("CreateXidEntry() returned unnormalized ACLs (-want +got):\n%s", diff)
+	}
+	stored, err := server.GetXidEntry(ctx, &msgpb.GetXidEntryRequest{Name: created.Name})
+	if err != nil {
+		t.Fatalf("GetXidEntry() returned an unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, stored.GetAcls(), protocmp.Transform()); diff != "" {
+		t.Errorf("GetXidEntry() returned unnormalized ACLs (-want +got):\n%s", diff)
+	}
+}
+
 func TestCreateXidEntry_BadPaths(t *testing.T) {
 	ctx := context.Background()
 	server := createXidServer(ctx, t)

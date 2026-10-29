@@ -53,12 +53,9 @@ class WorkUnitRegressionTest(googletest.TestCase):
 
         # Wait for work unit to be available in ESS with a timeout.
         timeout = datetime.timedelta(seconds=10)
-        start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_time = datetime.datetime.now(datetime.UTC)
         work_unit = None
-        while (
-            datetime.datetime.now(datetime.timezone.utc) - start_time < timeout
-            and work_unit is None
-        ):
+        while datetime.datetime.now(datetime.UTC) - start_time < timeout and work_unit is None:
             try:
                 work_unit = self.examples.get_work_unit(work_unit_name)
 

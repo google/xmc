@@ -65,6 +65,7 @@ type Transaction struct {
     StatusHistory  StatusHistoryTxRepository
     PauseState     PauseStateTxRepository
     PausedTasks    PausedTaskTxRepository
+    Components     ComponentTxRepository
 }
 ```
 

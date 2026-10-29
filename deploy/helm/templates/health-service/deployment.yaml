@@ -112,6 +112,7 @@ spec:
               name: redis-secret
               key: redis-password
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
             name: health-config

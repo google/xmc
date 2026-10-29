@@ -121,16 +121,33 @@ func TestHandleCallbackCLIManualAsksForConfirmation(t *testing.T) {
 
 func TestHandleCallbackCLIManualEscapesIdentity(t *testing.T) {
 	a, _, provider := newCLITestAuthenticator(t, baseLoginConfig())
-	provider.userInfo.Email = "<script>alert(1)</script>@mycompany.com"
+	// Apostrophes are the only HTML-special character a plain ASCII email may contain.
+	provider.userInfo.Email = "o'brien@mycompany.com"
 	provider.userInfo.Name = "<script>alert(2)</script>"
 	got, body := readCLIPage(serveCallback(a, newCLICallbackRequest(idpCode, mustSealCLILoginTicket(t, a, baseCLIManualTicket(loginTestOAuthState)))))
 
-	want := cliPage(http.StatusOK, "Sign in to the XMC command-line tool as &lt;script&gt;alert(1)&lt;/script&gt;@mycompany.com?")
+	want := cliPage(http.StatusOK, "Sign in to the XMC command-line tool as o&#39;brien@mycompany.com?")
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("callback response mismatch (-want +got):\n%s", diff)
 	}
-	if strings.Contains(body, "<script") {
+	if strings.Contains(body, "<script") || strings.Contains(body, "o'brien") {
 		t.Errorf("interstitial reflects unescaped markup:\n%s", body)
+	}
+}
+
+func TestHandleCallbackCLIManualRejectsMarkupEmail(t *testing.T) {
+	a, store, provider := newCLITestAuthenticator(t, baseLoginConfig())
+	provider.userInfo.Email = "<script>alert(1)</script>@mycompany.com"
+	got, body := readCLIPage(serveCallback(a, newCLICallbackRequest(idpCode, mustSealCLILoginTicket(t, a, baseCLIManualTicket(loginTestOAuthState)))))
+
+	if got.Status != http.StatusForbidden {
+		t.Errorf("callback status = %d, want %d", got.Status, http.StatusForbidden)
+	}
+	if strings.Contains(body, "<script") {
+		t.Errorf("rejection page reflects unescaped markup:\n%s", body)
+	}
+	if len(store.codes) != 0 {
+		t.Errorf("store holds %d records after rejection, want 0", len(store.codes))
 	}
 }
 

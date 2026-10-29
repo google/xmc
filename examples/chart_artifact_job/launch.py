@@ -52,6 +52,7 @@ from xdash import (
     ChartBuilder,
     DashboardBuilder,
     DashboardClient,
+    resolve_auth_headers,
     scatter_plot,
     summary_kpi_plot,
 )
@@ -122,56 +123,6 @@ def _resolve_dashboard_endpoint() -> str:
 
     scheme = "http" if endpoint in {"localhost", "127.0.0.1", "::1", "0.0.0.0"} else "https"
     return f"{scheme}://{endpoint}/v1/dashboards"
-
-
-def _get_auth_headers() -> dict[str, str]:
-    """Generates authentication headers for HTTP requests to the XMC Gateway.
-
-    Attempts to fetch a Google OIDC ID token using IAM credentials impersonation
-    (XMC_CLIENT_SA and IAP_CLIENT_ID), direct id_token fetch, or an explicit
-    AUTH_TOKEN/XMC_AUTH_TOKEN environment variable.
-    """
-    headers = {"Content-Type": "application/json"}
-    if auth_token := os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN"):
-        headers["Authorization"] = f"Bearer {auth_token}"
-        return headers
-
-    iap_client_id = os.environ.get("IAP_CLIENT_ID") or os.environ.get("CLIENT_ID")
-    client_sa = os.environ.get("XMC_CLIENT_SA")
-
-    if not iap_client_id:
-        return headers
-
-    try:
-        import google.auth
-        from google.auth.transport import requests as google_requests
-
-        credentials, _ = google.auth.default()
-        if client_sa:
-            authed_session = google_requests.AuthorizedSession(credentials)
-            url = (
-                "https://iamcredentials.googleapis.com/v1/projects/-/"
-                f"serviceAccounts/{client_sa}:generateIdToken"
-            )
-            body = {"audience": iap_client_id, "includeEmail": True}
-            response = authed_session.post(url, json=body, timeout=10)
-            response.raise_for_status()
-            token = response.json().get("token")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                return headers
-        else:
-            from google.oauth2 import id_token
-
-            req = google_requests.Request()
-            token = id_token.fetch_id_token(req, iap_client_id)
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                return headers
-    except Exception as err:  # pylint: disable=broad-except
-        sys.stderr.write(f"⚠️ Warning: Could not retrieve OIDC ID token: {err}\n")
-
-    return headers
 
 
 def _resolve_ui_base_url() -> str:
@@ -332,7 +283,7 @@ def _publish_dashboard_over_rest(
     req = urllib.request.Request(
         dashboard_endpoint,
         data=json.dumps(payload).encode("utf-8"),
-        headers=_get_auth_headers(),
+        headers=resolve_auth_headers(dashboard_endpoint),
         method="POST",
     )
     try:

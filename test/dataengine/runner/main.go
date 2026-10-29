@@ -25,12 +25,13 @@ import (
 
 func main() {
 	var (
+		store        = flag.String("store", "", "Metrics storage backend: clickhouse or bigquery (default clickhouse or METRICS_STORE)")
 		envFile      = flag.String("env_file", ".env", "Path to .env file")
-		seedData     = flag.Bool("seed", true, "Seed dataset into ClickHouse before running tests")
-		cleanData    = flag.Bool("clean", false, "Clean up test metrics from ClickHouse after running tests")
+		seedData     = flag.Bool("seed", true, "Seed dataset into metrics store before running tests")
+		cleanData    = flag.Bool("clean", false, "Clean up test metrics after running tests")
 		updateGolden = flag.Bool("update_golden", false, "Update golden files with actual query output")
 		testCase     = flag.String("test_case", "", "Filter to run a specific test case ID")
-		tableName    = flag.String("table_name", "xmc_metrics", "Target ClickHouse metrics table")
+		tableName    = flag.String("table_name", "xmc_metrics", "Target metrics table")
 		seedFile     = flag.String("seed_file", "testdata/metrics_seed.json", "Path to seed metrics JSON file")
 		casesFile    = flag.String("test_cases", "testdata/test_cases.json", "Path to test cases JSON file")
 		goldenDir    = flag.String("golden_dir", "testdata/golden", "Path to golden output directory")
@@ -38,6 +39,7 @@ func main() {
 	flag.Parse()
 
 	opts := &dataenginetest.HarnessOptions{
+		Store:          *store,
 		EnvFile:        *envFile,
 		SeedData:       *seedData,
 		CleanData:      *cleanData,
@@ -70,6 +72,7 @@ func printHeader(opts *dataenginetest.HarnessOptions) {
 	fmt.Println("===============================================================")
 	fmt.Println("       XMC DataEngine & Grammar of Graphics E2E Runner        ")
 	fmt.Println("===============================================================")
+	fmt.Printf("Store:        %s\n", opts.Store)
 	fmt.Printf("Env file:     %s\n", opts.EnvFile)
 	fmt.Printf("Table:        %s\n", opts.TableName)
 	fmt.Printf("Seed data:    %t\n", opts.SeedData)

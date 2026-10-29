@@ -19,11 +19,14 @@ ClickHouse serves as the high-performance analytical database backend for XManag
 
 ### Automated GKE Metrics Addons Setup (Recommended for Dev / CI)
 
-To provision the lightweight in-cluster ClickHouse and Redpanda metrics stack, create the `clickhouse-format-schemas` ConfigMap from [`api/protos/metrics/metrics.proto`](../../../../api/protos/metrics/metrics.proto), initialize the `xmc-metrics` topic, and apply [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql) in a single command, run [`deploy/addons/metrics/setup_metrics_addons.sh`](../setup_metrics_addons.sh):
+To provision the lightweight in-cluster ClickHouse and Redpanda metrics stack, create the `clickhouse-format-schemas` ConfigMap from [`api/protos/metrics/metrics.proto`](../../../../api/protos/metrics/metrics.proto) and the `clickhouse-init-scripts` ConfigMap from [`deploy/clickhouse/schema.sql`](../../../clickhouse/schema.sql), initialize the `xmc-metrics` topic, and apply the ClickHouse schema in a single command, run [`deploy/addons/metrics/setup_metrics_addons.sh`](../setup_metrics_addons.sh):
 
 ```bash
 ./deploy/addons/metrics/setup_metrics_addons.sh
 ```
+
+> [!NOTE]
+> The lightweight StatefulSets in [`deploy/addons/metrics/manifests/metrics-addons.yaml`](../manifests/metrics-addons.yaml) are configured for self-healing across pod rescheduling onto new nodes: `clickhouse` mounts `clickhouse-init-scripts` into `/docker-entrypoint-initdb.d` with `CLICKHOUSE_ALWAYS_RUN_INITDB_SCRIPTS=1`, and `redpanda` ensures the `xmc-metrics` topic exists via a container `postStart` lifecycle hook.
 
 ### 1. Connect to the Target GKE Cluster
 

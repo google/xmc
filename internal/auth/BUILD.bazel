@@ -22,6 +22,8 @@ go_library(
         "auth.go",
         "authentication.go",
         "authorization.go",
+        "membership_query.go",
+        "principal.go",
         "test_utils.go",
     ],
     importpath = "xmanager_cloud/internal/auth",
@@ -32,20 +34,26 @@ go_library(
         "//internal/logging",
         "//pkg/auth/jwks",
         "//pkg/auth/oauth2",
+        "//pkg/auth/principal",
         "@org_golang_google_api//cloudidentity/v1beta1",
         "@org_golang_google_api//idtoken",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
 go_test(
     name = "auth_test",
     srcs = [
+        "acl_fixtures_test.go",
         "admission_test.go",
         "auth_test.go",
         "authentication_test.go",
         "authorization_test.go",
+        "membership_query_test.go",
+        "principal_test.go",
+        "test_utils_test.go",
     ],
     embed = [":auth"],
     deps = [
@@ -58,5 +66,7 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

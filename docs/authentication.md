@@ -14,6 +14,8 @@ A deployment admits an identity if one of these is true, checked in this order:
 
 The check applies to the web UI, to `xmanager login`, and to every gRPC request. See the [Configuration Reference](../INSTALL.md#configuration-reference) for how to set these values.
 
+Emails, domains, and IAM members match the same way as [ACL principals](#experiment-access-acls): surrounding whitespace is ignored and only ASCII letters are case-insensitive, so `Alice@Example.com` matches `alice@example.com`, but a non-ASCII look-alike such as the Kelvin sign (U+212A) never matches `k`. Sign-in through the Dashboard or CLI login also requires a [plain ASCII email address](#experiment-access-acls); other identities are not admitted.
+
 ## Interactive Use: `xmanager login`
 
 Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1` and XMC `>= 0.16.0`), installed via `pip install "xmanager>=0.8.5.post1"` or [`install_xmanager.py`](../deploy/cli/README.md):
@@ -22,12 +24,12 @@ Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1` 
 xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.
 ```
 
-`xmanager login` caches a per-deployment session token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`, mode `0600`). The XManager CLI (`xm_cloud`) loads this cached token automatically — once you're signed in, experiment and work unit calls don't need `XMC_AUTH_TOKEN`, `IAP_CLIENT_ID`, or `XMC_CLIENT_SA`, and experiments you create are attributed to you.
+`xmanager login` caches a per-deployment session token in `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json` (default `~/.config/xmc/credentials.json`, mode `0600`). The XManager CLI (`xm_cloud`), [`xdash`](../sdks/python/xdash/README.md), the dashboard-creating examples ([`chart_artifact_job`](../examples/chart_artifact_job/), [`clickhouse_metrics_job`](../examples/clickhouse_metrics_job/), [`metrics_dashboard_job`](../examples/metrics_dashboard_job/)), and the [nightly verification tools](../tools/nightly_tests/README.md) load this cached token automatically — once you're signed in, experiment, work unit, and `DashboardService` calls don't need `XMC_AUTH_TOKEN`, `IAP_CLIENT_ID`, or `XMC_CLIENT_SA`, and experiments you create are attributed to you.
 
 - Tokens last 12 hours by default. When yours expires, run `xmanager login` again.
 - Run `xmanager login --status` to see your account and expiry. `xmanager logout` removes the cached token for the current deployment (`xmanager logout --all` clears all deployments).
 - Over SSH or on a headless machine, `xmanager login` switches to a copy-and-paste flow on its own (or pass `--no-browser` explicitly).
-- For [`xdash`](../sdks/python/xdash/README.md) and the dashboard-creating examples ([`chart_artifact_job`](../examples/chart_artifact_job/), [`clickhouse_metrics_job`](../examples/clickhouse_metrics_job/), [`metrics_dashboard_job`](../examples/metrics_dashboard_job/)), which read `XMC_AUTH_TOKEN` directly for `DashboardService` calls, also run `export XMC_AUTH_TOKEN=$(xmanager login --print-token)` in your shell.
+- For custom scripts or `curl` commands that need the raw token string, run `xmanager login --print-token`.
 
 ## CI and Other Non-Interactive Use: A Service Account
 
@@ -60,6 +62,8 @@ Each experiment has an ACL with three roles. Each role includes the ones below i
 | `readers` | Viewing the experiment in the UI and through the API. |
 
 A role can name a `user`, a `group`, a `service_account`, a `domain`, or `all_authenticated_users`.
+
+**Matching:** principals match case-insensitively for ASCII letters, so `Alice@Example.com` and `alice@example.com` name the same user. Authenticated emails must be plain ASCII addresses: letters, digits, and `.` `_` `%` `+` `'` `-` before the `@`, with a dotted domain. XMC rejects requests from identities whose email doesn't conform, for example one with a display name, surrounding whitespace, or non-ASCII characters. XMC stores ACL principals trimmed and lowercased. Group-based access is checked with Cloud Identity using your authenticated email, so it also requires a conforming ASCII email address.
 
 **Default:** if you create an experiment without ACLs, XMC makes you, the creator, its only owner. The [examples](../examples/) rely on this default.
 

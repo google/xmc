@@ -1,0 +1,62 @@
+[
+  {
+    "name": "xid",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Experiment ID."
+  },
+  {
+    "name": "work_unit_id",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Work unit ID within the experiment."
+  },
+  {
+    "name": "execution_id",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Work unit execution attempt ID."
+  },
+  {
+    "name": "job_name",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Job name within the work unit."
+  },
+  {
+    "name": "replica_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Replica identifier (defaults to '0' when empty)."
+  },
+  {
+    "name": "metric_name",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Metric series name."
+  },
+  {
+    "name": "metric_value",
+    "type": "FLOAT64",
+    "mode": "REQUIRED",
+    "description": "Measured numeric metric value."
+  },
+  {
+    "name": "step",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Training or evaluation step index."
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Metric measurement UTC timestamp (microsecond precision; daily partition column)."
+  },
+  {
+    "name": "created_at",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Row ingestion UTC timestamp."
+  }
+]

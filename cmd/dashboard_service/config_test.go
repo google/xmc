@@ -39,6 +39,7 @@ func TestLoadConfig(t *testing.T) {
 		t.Cleanup(loadEnvConfig)
 		t.Setenv("enable_components", "true")
 		t.Setenv("components_namespace", "custom-ns")
+		t.Setenv("METRICS_STORE", "bigquery")
 
 		loadEnvConfig()
 
@@ -47,6 +48,9 @@ func TestLoadConfig(t *testing.T) {
 		}
 		if cfg.ComponentsNamespace != "custom-ns" {
 			t.Errorf("cfg.ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "custom-ns")
+		}
+		if got := LoadConfig().MetricsStore; got != "bigquery" {
+			t.Errorf("LoadConfig().MetricsStore = %q, want %q", got, "bigquery")
 		}
 	})
 }

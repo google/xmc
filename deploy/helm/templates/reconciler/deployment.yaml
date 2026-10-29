@@ -64,7 +64,8 @@ spec:
         {{- $auth := default (dict) .Values.auth }}
         {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- $remoteK8s := default (dict) .Values.remoteK8s }}
-        {{- if or $gac $remoteK8s.enabled }}
+        {{- $isPostgres := eq (include "xmanager-cloud.dbBackend" .) "postgres" }}
+        {{- if or $gac $remoteK8s.enabled $isPostgres }}
         env:
         {{- if $gac }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
@@ -74,6 +75,7 @@ spec:
         - name: KUBECONFIG
           value: "/etc/remote-k8s/kubeconfig"
         {{- end }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         {{- end }}
         resources:
           requests:

@@ -67,6 +67,7 @@ spec:
         {{- if (default (dict) .Values.metrics).enabled }}
         {{- include "xmanager-cloud.clickhouseEnv" . | nindent 8 }}
         {{- end }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
             name: dashboard-config

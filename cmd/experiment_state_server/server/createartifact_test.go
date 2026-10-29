@@ -110,6 +110,34 @@ func TestCreateArtifact_HappyPath(t *testing.T) {
 	}
 }
 
+func TestCreateArtifact_ReturnsNormalizedACLs(t *testing.T) {
+	ctx := context.Background()
+	server, _ := createExperimentStateServer(ctx, t)
+	exp := mustCreateExperiment(ctx, t, server, nil)
+
+	req := &msgpb.CreateArtifactRequest{
+		Parent: exp.GetName(),
+		Artifact: &msgpb.Artifact{
+			Acls: &xidmsgpb.XidAcls{
+				Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "Test@Example.com"}}},
+			},
+			Url:     &msgpb.Url{Url: "http://www.google.com"},
+			Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Url{Url: &msgpb.UrlArtifact{Url: "http://www.google.com"}}},
+		},
+	}
+	want := &xidmsgpb.XidAcls{
+		Writers: []*xidmsgpb.XidAcls_Role{{Principal: &xidmsgpb.XidAcls_Role_User{User: "test@example.com"}}},
+	}
+
+	got, err := server.CreateArtifact(ctx, req)
+	if err != nil {
+		t.Fatalf("CreateArtifact() returned an unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(want, got.GetAcls(), protocmp.Transform()); diff != "" {
+		t.Errorf("CreateArtifact() returned unnormalized ACLs (-want +got):\n%s", diff)
+	}
+}
+
 func TestCreateArtifact_FillNilValues(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)

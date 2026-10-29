@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -47,6 +48,8 @@ import (
 	"xmanager_cloud/internal/storage/dbconfig"
 	dbfactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/auth/oauth2"
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
+	bqconfig "xmanager_cloud/pkg/bigquery/componentconfig"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
 	"xmanager_cloud/pkg/components/crreader"
@@ -184,7 +187,72 @@ func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial
 	}
 }
 
-// initDataEngine prepares the chart data engine, for deployments that configure ClickHouse.
+const (
+	storeClickHouse = "clickhouse"
+	storeBigQuery   = "bigquery"
+)
+
+func resolveMetricsStore(cfg *server.Config) (string, error) {
+	raw := os.Getenv("METRICS_STORE")
+	if cfg != nil && cfg.MetricsStore != "" {
+		raw = cfg.MetricsStore
+	}
+	switch store := strings.ToLower(strings.TrimSpace(raw)); store {
+	case "", storeClickHouse, storeBigQuery:
+		return store, nil
+	default:
+		return "", fmt.Errorf("unsupported metrics_store %q: must be %q or %q", raw, storeClickHouse, storeBigQuery)
+	}
+}
+
+func buildBigQueryResolver(enableComponents bool, namespace, projectID string, customGetter crreader.Getter) dataengine.EngineResolver {
+	if !enableComponents {
+		return resolveBigQueryWithSource(bqconfig.Source{Enabled: false, FallbackProjectID: projectID})
+	}
+	var (
+		mu     sync.Mutex
+		getter = customGetter
+	)
+	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
+		mu.Lock()
+		if getter == nil {
+			g, err := crreader.NewK8sGetter()
+			if err != nil {
+				mu.Unlock()
+				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+			}
+			getter = g
+		}
+		g := getter
+		mu.Unlock()
+		src := bqconfig.Source{Enabled: true, Namespace: namespace, FallbackProjectID: projectID, Getter: g}
+		return resolveBigQueryWithSource(src)(ctx)
+	}
+}
+
+func resolveBigQueryWithSource(src bqconfig.Source) dataengine.EngineResolver {
+	return resolveBigQueryWithDialer(src, func(ctx context.Context, opts *xmcbigquery.Options) (xmcbigquery.Conn, error) {
+		return xmcbigquery.ConnectWithOptions(ctx, opts)
+	})
+}
+
+func resolveBigQueryWithDialer(src bqconfig.Source, dial func(context.Context, *xmcbigquery.Options) (xmcbigquery.Conn, error)) dataengine.EngineResolver {
+	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
+		opts, err := bqconfig.ResolveOptions(ctx, src)
+		if err != nil {
+			return "", nil, err
+		}
+		return bqconfig.OptionsFingerprint(opts), func(dialCtx context.Context) (*dataengine.DataEngine, error) {
+			conn, err := dial(dialCtx, opts)
+			if err != nil {
+				return nil, err
+			}
+			return dataengine.NewBigQuery(conn)
+		}, nil
+	}
+}
+
+// initDataEngine prepares the chart data engine, for deployments that configure ClickHouse or BigQuery.
 //
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
@@ -193,32 +261,43 @@ func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provide
 }
 
 func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGetter crreader.Getter) *dataengine.Provider {
-	enableComponents := false
-	componentsNamespace := "xmc"
+	store, err := resolveMetricsStore(cfg)
+	if err != nil {
+		logging.Error(ctx, "Invalid metrics store configuration", "error", err)
+		return nil
+	}
+	enableComponents, componentsNamespace, projectID := false, "xmc", ""
 	if cfg != nil {
-		enableComponents = cfg.EnableComponents
-		componentsNamespace = cfg.ComponentsNamespace
+		enableComponents, componentsNamespace, projectID = cfg.EnableComponents, cfg.ComponentsNamespace, cfg.ProjectID
+	}
+	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter)) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
 	}
 	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter))
+	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolver(enableComponents, componentsNamespace, customGetter)))
+}
+
+func warmProvider(ctx context.Context, name string, provider *dataengine.Provider) *dataengine.Provider {
 	dialCtx, cancel := context.WithTimeout(ctx, dataEngineStartupTimeout)
 	defer cancel()
 	if _, err := provider.Engine(dialCtx); err != nil {
-		logging.Warn(ctx, "ClickHouse connection not available at startup, the data engine is retried on demand", "error", err)
+		logging.Warn(ctx, name+" connection not available at startup, the data engine is retried on demand", "error", err)
 	}
 	return provider
 }
 
 func isClickHouseExpected(ctx context.Context, enableComponents bool, namespace string, customGetter crreader.Getter) bool {
-	if clickhouse.Configured() {
-		return true
-	}
-	if !enableComponents {
-		return false
-	}
+	return clickhouse.Configured() || (enableComponents && isComponentExpected(ctx, namespace, componentconfig.ClickHouseComponentName, customGetter))
+}
+
+func isBigQueryExpected(ctx context.Context, enableComponents bool, namespace string, customGetter crreader.Getter) bool {
+	return xmcbigquery.Configured() || (enableComponents && isComponentExpected(ctx, namespace, bqconfig.BigQueryComponentName, customGetter))
+}
+
+func isComponentExpected(ctx context.Context, namespace, componentName string, customGetter crreader.Getter) bool {
 	getter := customGetter
 	if getter == nil {
 		g, err := crreader.NewK8sGetter()
@@ -228,7 +307,7 @@ func isClickHouseExpected(ctx context.Context, enableComponents bool, namespace 
 		getter = g
 	}
 	ns := crreader.ResolveNamespace(namespace)
-	comp, err := getter.GetComponent(ctx, ns, componentconfig.ClickHouseComponentName)
+	comp, err := getter.GetComponent(ctx, ns, componentName)
 	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
 		return false
 	}
@@ -405,6 +484,10 @@ func run() int {
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
+	if _, err := resolveMetricsStore(cfg); err != nil {
+		logging.Error(ctx, "Failed to validate metrics store configuration", "error", err)
+		return 1
+	}
 
 	authenticator, oauthCfg, err := initAuthenticator(ctx, cfg.ProjectID)
 	if err != nil {
@@ -413,6 +496,9 @@ func run() int {
 	}
 	defer authenticator.Close()
 	de := initDataEngine(ctx, cfg)
+	if de != nil {
+		defer de.Close()
+	}
 
 	dbCfg, err := dbconfig.Load()
 	if err != nil {

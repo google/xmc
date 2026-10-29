@@ -115,6 +115,17 @@ func TestAuthorizer_AuthorizeMutating(t *testing.T) {
 			wantCode:  codes.OK,
 		},
 		{
+			name:      "authorized service account matches ASCII case-insensitively",
+			auth:      NewAuthorizer(AuthorizerConfig{Authenticator: &fakeUserAuthenticator{email: "Kube-Bridge@Proj.iam.gserviceaccount.com"}, AuthorizedServiceAccounts: []string{" KUBE-BRIDGE@proj.iam.gserviceaccount.com "}}),
+			wantEmail: "kube-bridge@proj.iam.gserviceaccount.com",
+			wantCode:  codes.OK,
+		},
+		{
+			name:     "kelvin sign does not alias an authorized service account",
+			auth:     NewAuthorizer(AuthorizerConfig{Authenticator: &fakeUserAuthenticator{email: "\u212Aube-bridge@proj.iam.gserviceaccount.com"}, AuthorizedServiceAccounts: []string{"kube-bridge@proj.iam.gserviceaccount.com"}}),
+			wantCode: codes.PermissionDenied,
+		},
+		{
 			name:      "platform admin via AdminChecker",
 			auth:      NewAuthorizer(AuthorizerConfig{Authenticator: &fakeUserAuthenticator{email: adminUser}, AdminChecker: &fakeAdminChecker{admins: map[string]bool{adminUser: true}}, AuthorizedServiceAccounts: []string{bridgeSA}}),
 			wantEmail: adminUser,

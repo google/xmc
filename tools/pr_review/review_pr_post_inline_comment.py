@@ -19,7 +19,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -126,7 +126,7 @@ def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
     raw_message = _read_comment_message(args.message, args.message_file)
 
     # Append audit usage telemetry
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     user = get_git_username()
     telemetry = {
         "git_username": user,

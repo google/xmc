@@ -33,6 +33,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dependency"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
@@ -129,7 +130,14 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 	}
 	ctx := context.Background()
 	s, client := setupTestStore(ctx, t)
-	other := spannerstore.NewSpannerStore(client)
+	otherSt, err := spannerstorage.NewStorage(client)
+	if err != nil {
+		t.Fatalf("failed to create storage: %v", err)
+	}
+	other, err := spannerstore.NewSpannerStore(client, otherSt)
+	if err != nil {
+		t.Fatalf("NewSpannerStore() failed: %v", err)
+	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dep, name := fmt.Sprintf("concurrent-fast-path-dep-%d", i), fmt.Sprintf("concurrent-fast-path-%d", i)
