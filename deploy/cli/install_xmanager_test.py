@@ -290,6 +290,39 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.stage_local_protos(root / "empty_repo", root / "site-packages")
         self.assertIn("Local proto directory not found", stderr.getvalue())
 
+    def test_cleanup_stale_bundled_packages_removes_xdash_without_auth(self) -> None:
+        """Test cleanup_stale_bundled_packages purges wheel-provided xdash without auth.py."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            stale_xdash = site_pkgs / "xdash"
+            stale_xdash.mkdir(parents=True)
+            (stale_xdash / "__init__.py").write_text("", encoding="utf-8")
+            (stale_xdash / "builders.py").write_text("", encoding="utf-8")
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertFalse(stale_xdash.exists())
+
+    def test_cleanup_stale_bundled_packages_preserves_xdash_with_auth(self) -> None:
+        """Test cleanup_stale_bundled_packages preserves valid xdash package with auth.py."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            valid_xdash = site_pkgs / "xdash"
+            valid_xdash.mkdir(parents=True)
+            (valid_xdash / "__init__.py").write_text("", encoding="utf-8")
+            (valid_xdash / "auth.py").write_text("", encoding="utf-8")
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertTrue(valid_xdash.exists())
+
+    def test_cleanup_stale_bundled_packages_noop_when_missing(self) -> None:
+        """Test cleanup_stale_bundled_packages completes cleanly when xdash does not exist."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            site_pkgs.mkdir(parents=True)
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertFalse((site_pkgs / "xdash").exists())
+
     def test_compile_local_protos(self) -> None:
         """Test compile_local_protos ensures operations.proto and invokes grpc_tools.protoc."""
         venv_python = Path("/mock/venv/bin/python3")

@@ -268,6 +268,20 @@ def stage_local_protos(repo_root: Path, site_packages: Path) -> list[str]:
     return staged_files
 
 
+def cleanup_stale_bundled_packages(site_packages: Path) -> None:
+    """Remove obsolete bundled packages from xmanager wheel that conflict with local repository SDKs.
+
+    The upstream xmanager wheel bundles an outdated copy of `xdash` directly in
+    site-packages that lacks recent SDK additions (such as `xdash.auth`). If left
+    in place, standard import resolution loads this stale directory rather than
+    local SDKs installed via editable mode or PYTHONPATH.
+    """
+    stale_xdash = site_packages / "xdash"
+    if stale_xdash.is_dir() and not (stale_xdash / "auth.py").exists():
+        sys.stdout.write(f"Removing obsolete bundled xdash from {stale_xdash}...\n")
+        shutil.rmtree(stale_xdash)
+
+
 def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
     """Compile local XMC API protos into the virtualenv's xmanager_cloud package.
 
@@ -277,6 +291,7 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
     """
     sys.stdout.write("Compiling local XMC protos from api/protos into virtualenv...\n")
     site_packages, grpc_proto_include = resolve_venv_proto_paths(venv_python)
+    cleanup_stale_bundled_packages(site_packages)
     _ensure_longrunning_operations_proto(site_packages)
     proto_files = stage_local_protos(repo_root, site_packages)
     subprocess.run(
