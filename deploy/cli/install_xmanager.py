@@ -315,7 +315,7 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
     """
     sys.stdout.write("Compiling local XMC protos from api/protos into virtualenv...\n")
     site_packages, grpc_proto_include = resolve_venv_proto_paths(venv_python)
-    cleanup_stale_bundled_packages(site_packages)
+    # DO NOT MERGE: purge disabled to reproduce the pre-#1482 shadowed-xdash venv.
     _ensure_longrunning_operations_proto(site_packages)
     proto_files = stage_local_protos(repo_root, site_packages)
     subprocess.run(
