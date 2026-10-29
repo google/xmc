@@ -681,8 +681,10 @@ func TestGenerateQueryChoosesCorrectIndex(t *testing.T) {
 }
 
 func selectedTableFromSQL(sql string, tables []TableView) TableName {
+	sql = strings.TrimSpace(sql)
 	for _, t := range tables {
-		if strings.Contains(sql, " FROM "+t.NameClause.String()+" ") {
+		clause := " FROM " + t.NameClause.String()
+		if strings.Contains(sql, clause+" ") || strings.HasSuffix(sql, clause) {
 			return t.Name
 		}
 	}
