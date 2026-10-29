@@ -25,12 +25,20 @@ import (
 )
 
 func TestNewCMSTokenCredentialsFailsClosedWithoutMockAuthTag(t *testing.T) {
-	t.Setenv("DISABLE_AUTHENTICATION", "false")
-	t.Setenv("MOCK_AUTH", "true")
-	t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+	tests := []struct{ name, mockAuth, disableAuth string }{
+		{name: "MOCK_AUTH", mockAuth: "true", disableAuth: "false"},
+		{name: "DISABLE_AUTHENTICATION", mockAuth: "false", disableAuth: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISABLE_AUTHENTICATION", tt.disableAuth)
+			t.Setenv("MOCK_AUTH", tt.mockAuth)
+			t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
 
-	creds, err := NewCMSTokenCredentials(context.Background())
-	if !errors.Is(err, xmcoauth.ErrDevAuthNotCompiledIn) || creds != nil {
-		t.Fatalf("NewCMSTokenCredentials() = (%v, %v), want (nil, %v)", creds, err, xmcoauth.ErrDevAuthNotCompiledIn)
+			creds, err := NewCMSTokenCredentials(context.Background())
+			if !errors.Is(err, xmcoauth.ErrDevAuthNotCompiledIn) || creds != nil {
+				t.Fatalf("NewCMSTokenCredentials() = (%v, %v), want (nil, %v)", creds, err, xmcoauth.ErrDevAuthNotCompiledIn)
+			}
+		})
 	}
 }

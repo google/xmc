@@ -167,3 +167,12 @@ go_test(
         "@org_golang_x_oauth2//:oauth2",
     ],
 )
+
+# Exercises the mockauth build tag variant, which compiles in DISABLE_AUTHENTICATION support.
+go_test(
+    name = "bridge_mockauth_test",
+    size = "small",
+    srcs = ["credentials_dev_test.go"],
+    embed = [":bridge"],
+    gotags = ["mockauth"],
+)

@@ -24,11 +24,19 @@ import (
 	"xmanager_cloud/pkg/auth/oauth2"
 )
 
-func TestRunBridgeFailsClosedOnMockAuthWithoutMockAuthTag(t *testing.T) {
-	t.Setenv("MOCK_AUTH", "true")
-	t.Setenv("DISABLE_AUTHENTICATION", "false")
-	err := RunBridge(context.Background(), &Config{CMSAddress: "localhost:0"})
-	if !errors.Is(err, oauth2.ErrDevAuthNotCompiledIn) {
-		t.Errorf("RunBridge() error = %v, want %v", err, oauth2.ErrDevAuthNotCompiledIn)
+func TestDialCMSFailsClosedWithoutMockAuthTag(t *testing.T) {
+	tests := []struct{ name, mockAuth, disableAuth string }{
+		{name: "MOCK_AUTH", mockAuth: "true", disableAuth: "false"},
+		{name: "DISABLE_AUTHENTICATION", mockAuth: "false", disableAuth: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MOCK_AUTH", tt.mockAuth)
+			t.Setenv("DISABLE_AUTHENTICATION", tt.disableAuth)
+			conn, err := dialCMS(context.Background(), "localhost:0")
+			if !errors.Is(err, oauth2.ErrDevAuthNotCompiledIn) || conn != nil {
+				t.Errorf("dialCMS() = (%v, %v), want (nil, %v)", conn, err, oauth2.ErrDevAuthNotCompiledIn)
+			}
+		})
 	}
 }

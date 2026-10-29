@@ -166,7 +166,7 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
-	if a.Config != nil && a.Config.DisableAuthentication {
+	if DevAuthCompiledIn() && a.Config.DisableAuthentication {
 		return true, nil
 	}
 	canonicalEmail := principal.Normalize(email)
@@ -269,10 +269,10 @@ func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email
 }
 
 // IsAdmin checks if the given user email has admin privileges.
-// If DisableAuthentication is true, it always returns true.
+// If DisableAuthentication is true in a binary built with the mockauth tag, it always returns true.
 // If AdminIAMRole is not configured, it returns ErrAdminRoleNotConfigured.
 func (a *Authenticator) IsAdmin(ctx context.Context, email string) (bool, error) {
-	if a.Config.DisableAuthentication {
+	if DevAuthCompiledIn() && a.Config.DisableAuthentication {
 		return true, nil
 	}
 	adminRole := a.Config.AdminIAMRole

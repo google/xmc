@@ -65,8 +65,9 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-# Local development only: compiles in mock authentication (MOCK_AUTH). Never package this binary
-# into an image; tools/lint/check_image_binaries.py enforces that in CI.
+# Local development only: compiles in the non-production auth modes (MOCK_AUTH and
+# DISABLE_AUTHENTICATION). Never package this binary into an image;
+# tools/lint/check_image_binaries.py enforces that in CI.
 go_binary(
     name = "experiment_state_server_dev",
     embed = [":experiment_state_server_lib"],
@@ -82,11 +83,22 @@ oci_image_for_service(
 
 go_test(
     name = "health_test",
-    srcs = ["health_test.go"],
+    srcs = [
+        "health_prod_test.go",
+        "health_test.go",
+    ],
     embed = [":experiment_state_server_lib"],
     deps = [
         "//cmd/experiment_state_server/server",
     ],
+)
+
+# Exercises the mockauth build tag variant used by experiment_state_server_dev.
+go_test(
+    name = "health_mockauth_test",
+    srcs = ["health_dev_test.go"],
+    embed = [":experiment_state_server_lib"],
+    gotags = ["mockauth"],
 )
 
 go_test(

@@ -218,7 +218,9 @@ func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.Admiss
 }
 
 func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {
-	if (oauthCfg != nil && oauthCfg.DisableAuthentication) || os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+	// oauthCfg comes from oauth.LoadConfig, which rejects DISABLE_AUTHENTICATION in binaries built
+	// without the mockauth tag; DevAuthCompiledIn also makes this bypass dead code there.
+	if oauth.DevAuthCompiledIn() && oauthCfg != nil && oauthCfg.DisableAuthentication {
 		return cms.NewDisabledAuthorizer()
 	}
 	var checker cms.AdminChecker
