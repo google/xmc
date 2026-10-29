@@ -274,21 +274,13 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart cannot be nil: %w", grpcerr.ErrInvalidArgument)
 	}
-	xid, wid, chartID, err := validator.ValidateChartName(chart.GetName())
+	_, _, chartID, err := validator.ValidateChartName(chart.GetName())
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
 	}
-	cursor := map[string]any{
-		"chart_id": chartID, "title": chart.GetTitle(), "xid": max(xid, chart.GetXid()),
-		"wid": max(wid, chart.GetWid()), "owner": "", "created": time.Time{}, "updated": time.Time{},
-	}
-	if chart.GetCreateTime() != nil {
-		cursor["created"] = chart.GetCreateTime().AsTime()
-	}
-	if chart.GetUpdateTime() != nil {
-		cursor["updated"] = chart.GetUpdateTime().AsTime()
-	}
-	return cursor, nil
+	return map[string]any{
+		"chart_id": chartID,
+	}, nil
 }
 
 // ExtractDashboardCursor extracts pagination cursor values from a Dashboard proto.
@@ -304,8 +296,6 @@ func ExtractDashboardCursor(dash *dpb.Dashboard) (map[string]any, error) {
 
 	cursor := map[string]any{
 		"dashboard_id": dashID,
-		"title":        dash.GetTitle(),
-		"owner":        dash.GetOwner(),
 		"created":      time.Time{},
 		"updated":      time.Time{},
 	}

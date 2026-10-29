@@ -475,7 +475,6 @@ func TestBuildListChartsFilter(t *testing.T) {
 }
 
 func TestExtractChartCursor(t *testing.T) {
-	now := time.Now().Truncate(time.Microsecond).UTC()
 	tests := []struct {
 		name    string
 		chart   *dpb.Chart
@@ -493,23 +492,10 @@ func TestExtractChartCursor(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name: "valid chart returns full order_by cursor",
-			chart: &dpb.Chart{
-				Name:       "experiments/100/workUnits/1/charts/c1",
-				Title:      "Loss Chart",
-				Xid:        100,
-				Wid:        1,
-				CreateTime: timestamppb.New(now),
-				UpdateTime: timestamppb.New(now),
-			},
+			name:  "valid chart returns chart_id cursor",
+			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"},
 			want: map[string]any{
 				"chart_id": "c1",
-				"title":    "Loss Chart",
-				"xid":      int64(100),
-				"wid":      int64(1),
-				"owner":    "",
-				"created":  now,
-				"updated":  now,
 			},
 		},
 	}
@@ -556,14 +542,12 @@ func TestExtractDashboardCursor(t *testing.T) {
 			dash: &dpb.Dashboard{Name: "dashboards/d0"},
 			want: map[string]any{
 				"dashboard_id": "d0",
-				"title":        "",
-				"owner":        "",
 				"created":      time.Time{},
 				"updated":      time.Time{},
 			},
 		},
 		{
-			name: "dashboard with timestamps includes title and owner",
+			name: "dashboard with timestamps excludes title and owner",
 			dash: &dpb.Dashboard{
 				Name:       "dashboards/d1",
 				Title:      "My Dashboard",
@@ -573,8 +557,6 @@ func TestExtractDashboardCursor(t *testing.T) {
 			},
 			want: map[string]any{
 				"dashboard_id": "d1",
-				"title":        "My Dashboard",
-				"owner":        "user@example.com",
 				"created":      now,
 				"updated":      now,
 			},
