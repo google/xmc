@@ -19,7 +19,7 @@
 // MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept separate from
 // error_info_test.go (which unit-tests the pure ErrorInfo constructor helpers in package store) so
 // end-to-end Store RPC rejection parity is verified in package store_test.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"

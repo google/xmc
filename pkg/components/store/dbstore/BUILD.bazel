@@ -17,12 +17,12 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//visibility:public"])
 
 go_library(
-    name = "spanner",
+    name = "dbstore",
     srcs = [
-        "spanner_ownership_fence.go",
-        "spanner_store.go",
+        "dbstore.go",
+        "ownership_fence.go",
     ],
-    importpath = "xmanager_cloud/pkg/components/store/spanner",
+    importpath = "xmanager_cloud/pkg/components/store/dbstore",
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
@@ -40,20 +40,20 @@ go_library(
 )
 
 go_test(
-    name = "spanner_test",
+    name = "dbstore_test",
     srcs = [
+        "dbstore_test.go",
         "export_test.go",
         "intent_dependency_registration_test.go",
+        "intent_fast_path_test.go",
         "intent_idempotency_test.go",
         "intent_source_test.go",
         "observation_heartbeat_test.go",
+        "ownership_fence_test.go",
         "ownership_metrics_test.go",
         "rejection_error_info_test.go",
-        "spanner_intent_fast_path_test.go",
-        "spanner_ownership_fence_test.go",
-        "spanner_store_test.go",
     ],
-    embed = [":spanner"],
+    embed = [":dbstore"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",

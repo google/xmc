@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package spanner_test
+package dbstore_test
 
 import (
 	"context"
@@ -37,22 +37,22 @@ import (
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/store"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
+	"xmanager_cloud/pkg/components/store/dbstore"
 )
 
-func setupTestStore(ctx context.Context, t *testing.T) (*spannerstore.SpannerStore, *spanner.Client) {
+func setupTestStore(ctx context.Context, t *testing.T) (*dbstore.Store, *spanner.Client) {
 	t.Helper()
 	_, essClient := emulator.Setup(ctx, t)
 	st, err := spannerstorage.NewStorage(essClient)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	s, err := spannerstore.NewSpannerStore(st)
+	s, err := dbstore.New(st)
 	if err != nil {
-		t.Fatalf("NewSpannerStore() failed: %v", err)
+		t.Fatalf("dbstore.New() failed: %v", err)
 	}
-	spannerstore.RegisterTestClient(s, essClient)
-	t.Cleanup(func() { spannerstore.UnregisterTestClient(s) })
+	dbstore.RegisterTestClient(s, essClient)
+	t.Cleanup(func() { dbstore.UnregisterTestClient(s) })
 	return s, essClient
 }
 

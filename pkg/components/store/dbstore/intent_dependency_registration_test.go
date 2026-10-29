@@ -19,7 +19,7 @@
 // dependency_registration_test.go (which unit-tests the pure MissingDependency helper in package
 // store) so end-to-end SetComponentIntent parity across both backends is verified in package
 // store_test.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"

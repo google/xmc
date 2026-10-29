@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Test-only package exports for external black-box tests in package spanner_test.
-// Production targets: spanner_store.go and memory_store.go.
-// Test type: standard Go export_test.go bridge (compiled only into spanner_test) exposing unexported
+// Test-only package exports for external black-box tests in package dbstore_test.
+// Production targets: dbstore.go and memory_store.go.
+// Test type: standard Go export_test.go bridge (compiled only into dbstore_test) exposing unexported
 // hooks and raw row inspection helpers without polluting the public Store API.
-package spanner
+package dbstore
 
 import (
 	"context"
@@ -34,18 +34,18 @@ import (
 var testClients sync.Map
 
 // RegisterTestClient associates client with s for raw Spanner test inspection helpers.
-func RegisterTestClient(s *SpannerStore, client *spanner.Client) {
+func RegisterTestClient(s *Store, client *spanner.Client) {
 	testClients.Store(s, client)
 }
 
 // UnregisterTestClient removes s from the test client registry.
-func UnregisterTestClient(s *SpannerStore) {
+func UnregisterTestClient(s *Store) {
 	testClients.Delete(s)
 }
 
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
 // read-only fast path and falls back to its read-write transaction.
-func (s *SpannerStore) SetBeforeIntentWriteForTest(hook func()) {
+func (s *Store) SetBeforeIntentWriteForTest(hook func()) {
 	s.beforeIntentWrite = hook
 }
 
@@ -55,7 +55,7 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	switch st := s.(type) {
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
-	case *SpannerStore:
+	case *Store:
 		val, ok := testClients.Load(st)
 		if !ok {
 			return nil, fmt.Errorf("no test Spanner client registered for %p", st)
@@ -86,7 +86,7 @@ func SetSourceLastSeenTimeForTest(ctx context.Context, s store.Store, canonicalN
 	case *memory.MemoryStore:
 		st.SetSourceLastSeenTimeForTest(canonicalName, seenAt)
 		return nil
-	case *SpannerStore:
+	case *Store:
 		val, ok := testClients.Load(st)
 		if !ok {
 			return fmt.Errorf("no test Spanner client registered for %p", st)

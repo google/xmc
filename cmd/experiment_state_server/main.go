@@ -48,8 +48,8 @@ import (
 	"xmanager_cloud/pkg/auth/principal"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/memory"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -236,12 +236,12 @@ func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, s
 		store.OwnershipGaugeReader
 	}
 	if st != nil {
-		spannerStore, err := spannerstore.NewSpannerStore(st)
+		dbStore, err := dbstore.New(st)
 		if err != nil {
-			logging.Fatal(ctx, "failed to create SpannerStore for Component Manager Service", "error", err)
+			logging.Fatal(ctx, "failed to create dbstore.Store for Component Manager Service", "error", err)
 		}
-		cmsStore = spannerStore
-		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
+		cmsStore = dbStore
+		logging.Info(ctx, "Using dbstore.Store for Component Manager Service")
 	} else {
 		cmsStore = memory.NewMemoryStore()
 		logging.Warn(ctx, "Storage not initialized; using in-memory MemoryStore fallback for Component Manager Service")

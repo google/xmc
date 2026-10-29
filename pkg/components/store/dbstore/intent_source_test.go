@@ -19,7 +19,7 @@
 // against both MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept
 // separate from source_ownership_test.go (which unit-tests the pure CheckSourceOwnership rules in
 // package store) so end-to-end Store RPC ownership parity is verified in package store_test.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"
@@ -36,8 +36,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/memory"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
 // ownerSource is the source that seeds owned rows; cases modify it with sourceWith. It comes from
@@ -627,7 +627,7 @@ func TestExecuteDeletion_OwnerNeverLowersSourceGeneration(t *testing.T) {
 					if err := s.ExecuteDeletion(ctx, name, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true, del); err != nil {
 						t.Fatalf("ExecuteDeletion(generation %d) error = %v", tt.delGen, err)
 					}
-					owner, err := spannerstore.OwnerByIDForTest(ctx, s, seeded.ComponentID)
+					owner, err := dbstore.OwnerByIDForTest(ctx, s, seeded.ComponentID)
 					if err != nil {
 						t.Fatalf("OwnerByIDForTest() error = %v", err)
 					}

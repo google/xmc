@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package spanner provides a Cloud Spanner implementation of store.Store.
-package spanner
+// Package dbstore provides a storage.Storage-backed implementation of store.Store.
+package dbstore
 
 import (
 	"context"
@@ -39,39 +39,39 @@ import (
 	"xmanager_cloud/pkg/components/store/ownership"
 )
 
-// Ensure SpannerStore implements Store interface at compile time.
-var _ store.Store = (*SpannerStore)(nil)
+// Ensure Store implements Store interface at compile time.
+var _ store.Store = (*Store)(nil)
 
-// SpannerStore provides a Cloud Spanner backed production implementation of Store.
-type SpannerStore struct {
+// Store provides a storage.Storage-backed production implementation of store.Store.
+type Store struct {
 	storage storage.Storage
 	// beforeIntentWrite, when non-nil, runs before SetComponentIntent falls back to its read-write
 	// transaction. Tests use it to count fallbacks and to inject concurrent writes.
 	beforeIntentWrite func()
 }
 
-// NewSpannerStore creates a component store over st. Every operation goes through st's
+// New creates a component store over st. Every operation goes through st's
 // ComponentRepository and TransactionRunner (including RunInTransactionWithCommitTime), so st must
 // implement them; today only the Spanner backend does, and other backends return codes.Unimplemented.
-func NewSpannerStore(st storage.Storage) (*SpannerStore, error) {
+func New(st storage.Storage) (*Store, error) {
 	if st == nil {
-		return nil, errors.New("spannerstore: storage.Storage must not be nil")
+		return nil, errors.New("dbstore: storage.Storage must not be nil")
 	}
-	return &SpannerStore{storage: st}, nil
+	return &Store{storage: st}, nil
 }
 
-// SetComponentIntent applies or updates component intent within Spanner. An unchanged intent whose
+// SetComponentIntent applies or updates component intent within storage. An unchanged intent whose
 // dependencies are all registered and active is answered from a strong read-only read without a
 // read-write transaction; anything else, including every changed or new intent (which therefore
 // pays the extra read), is decided by the read-write transaction.
-func (s *SpannerStore) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
+func (s *Store) SetComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64) (*store.ComponentRecord, error) {
 	return s.setIntent(ctx, name, spec, labels, desiredGen, nil)
 }
 
-// SetSourcedComponentIntent applies an intent sent by src within Spanner, with the same read-only
+// SetSourcedComponentIntent applies an intent sent by src within storage, with the same read-only
 // fast path as SetComponentIntent. Recording a new owner, and every rejection except a fence
 // rejection seen by the fast-path read, is decided by the read-write transaction.
-func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
+func (s *Store) SetSourcedComponentIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, src store.RequestSource) (*store.ComponentRecord, error) {
 	if err := ownership.ValidateRequestSource(src); err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (s *SpannerStore) SetSourcedComponentIntent(ctx context.Context, name strin
 }
 
 // setIntent applies an intent ordered by desiredGen when src is nil and by src otherwise.
-func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
+func (s *Store) setIntent(ctx context.Context, name string, spec *componentspb.ComponentSpec, labels map[string]string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
 	canonicalName, err := store.ValidateIntentArgs(name, spec)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 // the latest committed fence, so it is authoritative and fenced clusters replaying intents cost no
 // read-write transaction. On any other outcome, including read errors and other rejections, it
 // returns false so that the read-write transaction decides authoritatively.
-func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, bool, error) {
+func (s *Store) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, bool, error) {
 	rec, fence, err := s.storage.Components().GetComponentWithFence(ctx, canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
@@ -138,7 +138,7 @@ func logFastPathReadError(ctx context.Context, canonicalName string, err error) 
 
 // writeIntent applies the intent in a read-write transaction. It returns the existing record, with
 // any newly recorded owner, when the intent writes neither the spec nor the generation.
-func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
+func (s *Store) writeIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, error) {
 	var finalRec *store.ComponentRecord
 	var plan ownership.IntentPlan
 
@@ -170,7 +170,7 @@ func (s *SpannerStore) writeIntent(ctx context.Context, canonicalName string, sp
 // applyIntentTx validates the intent against the active catalog, buffers the mutations that
 // create or update the component and record src as its owner, and returns the resulting record
 // with the applied plan. A created component is reported as a WriteSpec plan.
-func (s *SpannerStore) applyIntentTx(
+func (s *Store) applyIntentTx(
 	ctx context.Context,
 	txRepo storage.ComponentTxRepository,
 	canonicalName string,
@@ -241,7 +241,7 @@ func writeOwnerColumnsTx(ctx context.Context, txRepo storage.ComponentTxReposito
 	return txRepo.WriteComponentOwner(ctx, rec.ComponentID, owner)
 }
 
-func (s *SpannerStore) updateExistingIntentTx(
+func (s *Store) updateExistingIntentTx(
 	ctx context.Context,
 	txRepo storage.ComponentTxRepository,
 	existingRec *store.ComponentRecord,
@@ -283,7 +283,7 @@ func (s *SpannerStore) updateExistingIntentTx(
 	return rec, nil
 }
 
-func (s *SpannerStore) createNewIntentTx(
+func (s *Store) createNewIntentTx(
 	ctx context.Context,
 	txRepo storage.ComponentTxRepository,
 	canonicalName string,
@@ -322,7 +322,7 @@ func (s *SpannerStore) createNewIntentTx(
 }
 
 // GetComponent retrieves a component record by canonical or full resource name.
-func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*store.ComponentRecord, error) {
+func (s *Store) GetComponent(ctx context.Context, name string) (*store.ComponentRecord, error) {
 	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, err
@@ -337,7 +337,7 @@ func (s *SpannerStore) GetComponent(ctx context.Context, name string) (*store.Co
 }
 
 // GetComponentByID retrieves a component record by its unique database identifier.
-func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error) {
+func (s *Store) GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error) {
 	if componentID <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid component ID")
 	}
@@ -351,7 +351,7 @@ func (s *SpannerStore) GetComponentByID(ctx context.Context, componentID int64) 
 }
 
 // ListComponents returns all non-deleted components in the catalog sorted by name.
-func (s *SpannerStore) ListComponents(ctx context.Context) ([]*store.ComponentRecord, error) {
+func (s *Store) ListComponents(ctx context.Context) ([]*store.ComponentRecord, error) {
 	catalog, err := s.storage.Components().ListActiveComponents(ctx)
 	if err != nil {
 		return nil, err
@@ -372,7 +372,7 @@ func (s *SpannerStore) ListComponents(ctx context.Context) ([]*store.ComponentRe
 }
 
 // PrepareDeactivation checks deactivation safety and transitions target (and cascaded dependents) to DISABLING.
-func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
+func (s *Store) PrepareDeactivation(ctx context.Context, name string, requestCascade bool, src ...store.RequestSource) (*store.PrepareDeactivationResult, error) {
 	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return nil, err
@@ -410,7 +410,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 
 // lookupCatalogTargetTx checks the cluster fence, loads the active catalog, finds canonicalName,
 // and checks source ownership for operation.
-func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txRepo storage.ComponentTxRepository, operation, canonicalName string, src *store.RequestSource) (map[string]*store.ComponentRecord, *store.ComponentRecord, error) {
+func (s *Store) lookupCatalogTargetTx(ctx context.Context, txRepo storage.ComponentTxRepository, operation, canonicalName string, src *store.RequestSource) (map[string]*store.ComponentRecord, *store.ComponentRecord, error) {
 	if err := s.checkFence(ctx, txRepo, operation, src); err != nil {
 		return nil, nil, err
 	}
@@ -464,7 +464,7 @@ func transitionToDisablingTx(ctx context.Context, txRepo storage.ComponentTxRepo
 }
 
 // CompleteDeactivation marks a component in DISABLING state as DISABLED.
-func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
+func (s *Store) CompleteDeactivation(ctx context.Context, name string, force bool, src ...store.RequestSource) error {
 	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
@@ -517,7 +517,7 @@ func (s *SpannerStore) CompleteDeactivation(ctx context.Context, name string, fo
 }
 
 // UpdateObservedGeneration synchronizes actual component access, generation, and state.
-func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
+func (s *Store) UpdateObservedGeneration(ctx context.Context, name string, observedGen int64, access *componentspb.ComponentAccessStatus, state componentspb.ComponentState, statusMsg string, src ...store.RequestSource) (*store.ComponentRecord, error) {
 	canonicalName, reqSrc, err := ownership.ValidateUpdateObservedArgs(name, observedGen, src)
 	if err != nil {
 		return nil, err
@@ -573,7 +573,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 }
 
 // ExecuteDeletion deletes a component using the specified deletion policy.
-func (s *SpannerStore) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
+func (s *Store) ExecuteDeletion(ctx context.Context, name string, policy componentspb.DeletionPolicy, force bool, src ...store.RequestSource) error {
 	canonicalName, reqSrc, err := ownership.ValidateSourcedResourceArgs(name, src)
 	if err != nil {
 		return err
@@ -647,7 +647,7 @@ func softDeleteTargetsTx(ctx context.Context, txRepo storage.ComponentTxReposito
 }
 
 // ResolveComponentSnapshot resolves or creates an immutable snapshot of a component at generation.
-func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
+func (s *Store) ResolveComponentSnapshot(ctx context.Context, name string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, nil, err
@@ -716,7 +716,7 @@ func withSnapshotDependencies(rec *store.ComponentRecord, coords *componentspb.R
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.
-func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
+func (s *Store) ValidateComponentRequirement(ctx context.Context, name string, reqType componentspb.ComponentType, minVersion string) (*store.RequirementValidationResult, error) {
 	canonicalName, err := store.ValidateResourceName(name)
 	if err != nil {
 		return nil, err
@@ -743,8 +743,8 @@ func (s *SpannerStore) ValidateComponentRequirement(ctx context.Context, name st
 }
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
-func (s *SpannerStore) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in SpannerStore")
+func (s *Store) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in Store")
 }
 
 func generateRandomID() (int64, error) {

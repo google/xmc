@@ -18,7 +18,7 @@
 // Test type: hermetic Spanner emulator test in package store_test. Kept in a dedicated file to
 // avoid further growing spanner_store_test.go (~1,400 lines) and to isolate fast-path fallback
 // counting via SetBeforeIntentWriteForTest.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"
@@ -35,8 +35,8 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/dependency"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
 // TestSpannerStore_SetComponentIntent_ReadOnlyFastPath seeds a component at generation 1 that
@@ -134,9 +134,9 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	other, err := spannerstore.NewSpannerStore(otherSt)
+	other, err := dbstore.New(otherSt)
 	if err != nil {
-		t.Fatalf("NewSpannerStore() failed: %v", err)
+		t.Fatalf("dbstore.New() failed: %v", err)
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

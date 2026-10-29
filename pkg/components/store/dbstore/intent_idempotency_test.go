@@ -18,7 +18,7 @@
 // MemoryStore and SpannerStore backed by the in-process Spanner emulator). Kept in a dedicated file
 // rather than memory_store_test.go or spanner_store_test.go because each case asserts identical
 // behavior across both Store implementations.
-package spanner_test
+package dbstore_test
 
 import (
 	"context"
