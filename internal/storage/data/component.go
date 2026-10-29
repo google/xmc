@@ -16,30 +16,26 @@ package data
 
 import (
 	"fmt"
+	"maps"
 
 	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/pkg/components/naming"
-	"xmanager_cloud/pkg/components/store"
 )
 
-// MarshalComponentPayloads serializes rec's Component config proto (name, spec, labels) and
+// MarshalComponentPayloads serializes a Component config proto (name, spec, labels) and
 // optional ComponentAccessStatus payload for database storage.
-func MarshalComponentPayloads(rec *store.ComponentRecord) ([]byte, []byte, error) {
-	if rec == nil {
-		return nil, nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
-	}
+func MarshalComponentPayloads(canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, access *componentspb.ComponentAccessStatus) ([]byte, []byte, error) {
 	configBytes, err := proto.Marshal(&componentspb.Component{
-		Name:   naming.FullComponentName(rec.Name),
-		Spec:   rec.Spec,
-		Labels: store.CopyMap(rec.Labels),
+		Name:   naming.FullComponentName(canonicalName),
+		Spec:   spec,
+		Labels: maps.Clone(labels),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal component proto: %w", err)
 	}
-	accessBytes, err := MarshalAccessStatus(rec.Status)
+	accessBytes, err := MarshalAccessStatus(access)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -58,36 +54,6 @@ func MarshalAccessStatus(access *componentspb.ComponentAccessStatus) ([]byte, er
 	return accessBytes, nil
 }
 
-// UnmarshalConfigProto decodes a serialized Component or legacy ComponentSpec proto into rec.Spec and rec.Labels.
-func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
-	if rec == nil {
-		return fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
-	}
-	if len(configBytes) == 0 {
-		return nil
-	}
-	var comp componentspb.Component
-	if err := proto.Unmarshal(configBytes, &comp); err == nil && (comp.Spec != nil || len(comp.Labels) > 0) {
-		rec.Spec, rec.Labels = comp.Spec, store.CopyMap(comp.Labels)
-		return nil
-	}
-	rec.Spec = &componentspb.ComponentSpec{}
-	return proto.Unmarshal(configBytes, rec.Spec)
-}
-
-// UnmarshalAccessStatus decodes a serialized ComponentAccessStatus proto into rec.Status.
-func UnmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
-	if rec == nil {
-		return fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
-	}
-	rec.Status = nil
-	if len(accessBytes) == 0 {
-		return nil
-	}
-	rec.Status = &componentspb.ComponentAccessStatus{}
-	return proto.Unmarshal(accessBytes, rec.Status)
-}
-
 // DetermineComponentClass derives the stored ComponentClass string from spec.
 func DetermineComponentClass(spec *componentspb.ComponentSpec) string {
 	if spec == nil {
@@ -100,16 +66,4 @@ func DetermineComponentClass(spec *componentspb.ComponentSpec) string {
 		return spec.GetType().String()
 	}
 	return ""
-}
-
-// FinalizeComponentRecord populates DeleteTime (from UpdateTime when DELETED) and derives Etag.
-func FinalizeComponentRecord(rec *store.ComponentRecord) {
-	if rec == nil {
-		return
-	}
-	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		t := rec.UpdateTime
-		rec.DeleteTime = &t
-	}
-	rec.Etag = store.GenerateEtag(rec)
 }

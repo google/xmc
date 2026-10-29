@@ -28,32 +28,18 @@ import (
 
 // ComponentInsertMutations builds Spanner mutations to insert rec and its dependency edges.
 func ComponentInsertMutations(rec *store.ComponentRecord, depIDs map[string]int64) ([]*spanner.Mutation, error) {
-	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec)
+	if rec == nil {
+		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec.Name, rec.Spec, rec.Labels, rec.Status)
 	if err != nil {
 		return nil, err
 	}
 	compClass := data.DetermineComponentClass(rec.Spec)
-	insertCols := []string{
-		"ComponentId",
-		"Name",
-		"ComponentClass",
-		"ConfigProto",
-		"AccessPayload",
-		"State",
-		"Generation",
-		"CreateTime",
-		"UpdateTime",
-	}
+	insertCols := []string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "AccessPayload", "State", "Generation", "CreateTime", "UpdateTime"}
 	insertVals := []any{
-		rec.ComponentID,
-		rec.Name,
-		spanner.NullString{StringVal: compClass, Valid: compClass != ""},
-		configBytes,
-		accessBytes,
-		int64(rec.State),
-		rec.Generation,
-		spanner.CommitTimestamp,
-		spanner.CommitTimestamp,
+		rec.ComponentID, rec.Name, spanner.NullString{StringVal: compClass, Valid: compClass != ""},
+		configBytes, accessBytes, int64(rec.State), rec.Generation, spanner.CommitTimestamp, spanner.CommitTimestamp,
 	}
 	mutations := []*spanner.Mutation{spanner.Insert("Components", insertCols, insertVals)}
 	return appendDependencyMutations(mutations, rec.ComponentID, rec.Dependencies, depIDs)
@@ -61,7 +47,10 @@ func ComponentInsertMutations(rec *store.ComponentRecord, depIDs map[string]int6
 
 // ComponentIntentUpdateMutations builds Spanner mutations to update rec's intent and replace its dependency edges.
 func ComponentIntentUpdateMutations(rec *store.ComponentRecord, depIDs map[string]int64) ([]*spanner.Mutation, error) {
-	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec)
+	if rec == nil {
+		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec.Name, rec.Spec, rec.Labels, rec.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +112,10 @@ func ComponentObservationUpdateMutation(rec *store.ComponentRecord, updateState 
 
 // ComponentSoftDeleteMutation builds a Spanner mutation marking rec as DELETED and optionally updating its owner columns.
 func ComponentSoftDeleteMutation(rec *store.ComponentRecord, owner *store.SourceOwner) (*spanner.Mutation, error) {
-	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec)
+	if rec == nil {
+		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec.Name, rec.Spec, rec.Labels, rec.Status)
 	if err != nil {
 		return nil, err
 	}
