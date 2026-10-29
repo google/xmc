@@ -14,6 +14,8 @@
 package querytools
 
 import (
+	"strings"
+	"sync"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -665,15 +667,28 @@ func TestGenerateQueryChoosesCorrectIndex(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			if _, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), []TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
+			stmt := spannerdialect.NewStatement(nil)
+			if _, _, err = qg.GenerateQuery(stmt, []TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
 				t.Fatalf("Error generating query: %v", err)
 			}
 
-			if _, ok := tt.wantIndexes[qg.LastFromTable()]; !ok {
-				t.Errorf("Query generator with base filter %q and user filter %q chose index %q, want one of %v", tt.baseFilterExp, tt.userFilter, qg.LastFromTable(), tt.wantIndexes)
+			gotTable := selectedTableFromSQL(stmt.Spanner().SQL, AlbumsTables)
+			if _, ok := tt.wantIndexes[gotTable]; !ok {
+				t.Errorf("Query generator with base filter %q and user filter %q chose index %q (SQL %q), want one of %v", tt.baseFilterExp, tt.userFilter, gotTable, stmt.Spanner().SQL, tt.wantIndexes)
 			}
 		})
 	}
+}
+
+func selectedTableFromSQL(sql string, tables []TableView) TableName {
+	sql = strings.TrimSpace(sql)
+	for _, t := range tables {
+		clause := " FROM " + t.NameClause.String()
+		if strings.Contains(sql, clause+" ") || strings.HasSuffix(sql, clause) {
+			return t.Name
+		}
+	}
+	return ""
 }
 
 func TestRewritePhrases(t *testing.T) {
@@ -1600,4 +1615,50 @@ func TestGeneratePostgresQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateQueryConcurrent(t *testing.T) {
+	qg, err := NewOptimizableGenerator(AlbumsTables, nil, nil, nil, true, false)
+	if err != nil {
+		t.Fatalf("NewOptimizableGenerator() failed: %v", err)
+	}
+	type queryCase struct {
+		exp       *fpb.Expression
+		wantTable TableName
+	}
+	rawCases := []struct {
+		filter    string
+		wantTable TableName
+	}{
+		{filter: `SingerId = "123"`, wantTable: AlbumsTableName},
+		{filter: `Rating = 5`, wantTable: AlbumsByTitleReleaseDateRatingTableName},
+		{filter: `AlbumTitle = "Killer Queen" AND AlbumId = "123"`, wantTable: AlbumsByTitleAlbumIDReleaseDateTableName},
+	}
+	cases := make([]queryCase, len(rawCases))
+	for i, rc := range rawCases {
+		exp, err := filter.ParseExpressionWithOptions(fpb.ExpressionParserOptions_builder{}.Build(), rc.filter)
+		if err != nil {
+			t.Fatalf("ParseExpressionWithOptions(%q) failed: %v", rc.filter, err)
+		}
+		cases[i] = queryCase{exp: exp, wantTable: rc.wantTable}
+	}
+
+	var wg sync.WaitGroup
+	for g := range 16 {
+		wg.Go(func() {
+			for i := range 20 {
+				qc := cases[(g+i)%len(cases)]
+				stmt := spannerdialect.NewStatement(nil)
+				if _, _, err := qg.GenerateQuery(stmt, []TableField{AlbumSingerIDTableField}, nil, nil, qc.exp, nil, 10, 0, nil, nil); err != nil {
+					t.Errorf("goroutine %d iter %d: GenerateQuery() failed: %v", g, i, err)
+					return
+				}
+				if gotTable := selectedTableFromSQL(stmt.Spanner().SQL, AlbumsTables); gotTable != qc.wantTable {
+					t.Errorf("goroutine %d iter %d: selectedTableFromSQL(%q) = %q, want %q", g, i, stmt.Spanner().SQL, gotTable, qc.wantTable)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }
