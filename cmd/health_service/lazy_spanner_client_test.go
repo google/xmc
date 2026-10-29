@@ -25,7 +25,7 @@ import (
 	"xmanager_cloud/internal/broadcast"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/dbconfig"
-	"xmanager_cloud/internal/storage/factory"
+	dbFactory "xmanager_cloud/internal/storage/factory"
 	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
@@ -45,12 +45,12 @@ func testSpannerDBConfig() dbconfig.Config {
 	}
 }
 
-func newTestFactoryStorage(db factory.Database, closeFn func()) *factory.Storage {
+func newTestFactoryStorage(db dbFactory.Database, closeFn func()) *dbFactory.Storage {
 	expectedVersion := int64(21)
-	if db == factory.XID {
+	if db == dbFactory.XID {
 		expectedVersion = 1
 	}
-	return factory.New(
+	return dbFactory.New(
 		&storage.MockStorage{
 			PauseStateRepository: storagetest.NewFakePauseStateRepository(),
 		},
@@ -92,14 +92,14 @@ func TestHealthServiceLazyDBWrapper_LazyInitAndCaching(t *testing.T) {
 	ctx := context.Background()
 	var essCalls, xidCalls, essCloses, xidCloses atomic.Int32
 
-	opener := func(_ context.Context, _ dbconfig.Config, db factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error) {
 		switch db {
-		case factory.ESS:
+		case dbFactory.ESS:
 			essCalls.Add(1)
 			return newTestFactoryStorage(db, func() {
 				essCloses.Add(1)
 			}), nil
-		case factory.XID:
+		case dbFactory.XID:
 			xidCalls.Add(1)
 			return newTestFactoryStorage(db, func() {
 				xidCloses.Add(1)
@@ -209,7 +209,7 @@ func TestHealthServiceLazyDBWrapper_InitialFailureThenLazyRecovery(t *testing.T)
 	var shouldFail atomic.Bool
 	shouldFail.Store(true)
 
-	opener := func(_ context.Context, _ dbconfig.Config, db factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error) {
 		if shouldFail.Load() {
 			return nil, errors.New("simulated startup connection timeout")
 		}
@@ -254,7 +254,7 @@ func TestHealthServiceLazyDBWrapper_CanceledContext(t *testing.T) {
 	cancel()
 
 	var openerCalled atomic.Bool
-	opener := func(_ context.Context, _ dbconfig.Config, db factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error) {
 		openerCalled.Store(true)
 		return newTestFactoryStorage(db, nil), nil
 	}
@@ -279,7 +279,7 @@ func TestHealthServiceLazyDBWrapper_CanceledContext(t *testing.T) {
 
 func TestHealthServiceLazyDBWrapper_NilStorageFromOpener(t *testing.T) {
 	ctx := context.Background()
-	opener := func(_ context.Context, _ dbconfig.Config, _ factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, _ dbFactory.Database) (*dbFactory.Storage, error) {
 		return nil, nil
 	}
 
@@ -296,11 +296,11 @@ func TestHealthServiceLazyDBWrapper_ConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
 	var essCalls, xidCalls atomic.Int32
 
-	opener := func(_ context.Context, _ dbconfig.Config, db factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error) {
 		switch db {
-		case factory.ESS:
+		case dbFactory.ESS:
 			essCalls.Add(1)
-		case factory.XID:
+		case dbFactory.XID:
 			xidCalls.Add(1)
 		}
 		return newTestFactoryStorage(db, nil), nil
@@ -341,7 +341,7 @@ func TestHealthServiceLazyDBWrapper_ConcurrentAccess(t *testing.T) {
 func TestHealthServiceLazyDBWrapper_CloseBeforeInit(t *testing.T) {
 	ctx := context.Background()
 	var openerCalled atomic.Bool
-	opener := func(_ context.Context, _ dbconfig.Config, db factory.Database) (*factory.Storage, error) {
+	opener := func(_ context.Context, _ dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error) {
 		openerCalled.Store(true)
 		return newTestFactoryStorage(db, nil), nil
 	}

@@ -352,6 +352,7 @@ func TestCheckSpanner_NilLazySpanner(t *testing.T) {
 	}{
 		{backend: dbconfig.BackendSpanner, wantESS: "Spanner ESS", wantXID: "Spanner XID"},
 		{backend: dbconfig.BackendPostgres, wantESS: "Postgres ESS", wantXID: "Postgres XID"},
+		{backend: "", wantESS: "unknown", wantXID: "unknown"},
 	} {
 		t.Run(string(tc.backend), func(t *testing.T) {
 			checker := &HealthChecker{cfg: &Config{DB: dbconfig.Config{Backend: tc.backend}}}
@@ -602,6 +603,7 @@ func TestRunChecks(t *testing.T) {
 	}{
 		{
 			name:       "AllHealthy",
+			backend:    dbconfig.BackendSpanner,
 			httpStatus: http.StatusOK,
 			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
 			crState:    "CONDITION_SUCCEEDED",
@@ -643,6 +645,7 @@ func TestRunChecks(t *testing.T) {
 		},
 		{
 			name:          "AllUnhealthy",
+			backend:       dbconfig.BackendSpanner,
 			httpStatus:    http.StatusInternalServerError,
 			grpcStatus:    grpc_health_v1.HealthCheckResponse_NOT_SERVING,
 			crState:       "CONDITION_FAILED",
@@ -668,6 +671,7 @@ func TestRunChecks(t *testing.T) {
 		},
 		{
 			name:       "SpannerVersionMismatch",
+			backend:    dbconfig.BackendSpanner,
 			httpStatus: http.StatusOK,
 			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
 			crState:    "CONDITION_SUCCEEDED",
@@ -980,6 +984,7 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 			ActuatorURL:      httpServer.URL,
 			ReconcilerURL:    httpServer.URL,
 			EnableComponents: true,
+			DB:               dbconfig.Config{Backend: dbconfig.BackendSpanner},
 		},
 		LazyDB: &mockLazySpanner{
 			essHealthErr:  errors.New("ess spanner init failed"),

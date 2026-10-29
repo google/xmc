@@ -261,17 +261,31 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 }
 
 func (c *HealthChecker) essDBComponentName() string {
-	if c.cfg != nil && c.cfg.DB.Backend == dbconfig.BackendPostgres {
-		return "Postgres ESS"
+	if c.cfg == nil {
+		return "unknown"
 	}
-	return "Spanner ESS"
+	switch c.cfg.DB.Backend {
+	case dbconfig.BackendSpanner:
+		return "Spanner ESS"
+	case dbconfig.BackendPostgres:
+		return "Postgres ESS"
+	default:
+		return "unknown"
+	}
 }
 
 func (c *HealthChecker) xidDBComponentName() string {
-	if c.cfg != nil && c.cfg.DB.Backend == dbconfig.BackendPostgres {
-		return "Postgres XID"
+	if c.cfg == nil {
+		return "unknown"
 	}
-	return "Spanner XID"
+	switch c.cfg.DB.Backend {
+	case dbconfig.BackendSpanner:
+		return "Spanner XID"
+	case dbconfig.BackendPostgres:
+		return "Postgres XID"
+	default:
+		return "unknown"
+	}
 }
 
 func (c *HealthChecker) CheckESSDatabase(ctx context.Context) (*spb.ComponentHealth, string) {

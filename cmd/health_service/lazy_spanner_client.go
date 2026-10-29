@@ -22,7 +22,7 @@ import (
 
 	health "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage/dbconfig"
-	"xmanager_cloud/internal/storage/factory"
+	dbFactory "xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/summary"
 )
@@ -30,7 +30,7 @@ import (
 var errDatabaseWrapperClosed = errors.New("database wrapper is closed")
 
 // StorageOpener defines a factory function to open a database storage handle.
-type StorageOpener func(ctx context.Context, cfg dbconfig.Config, db factory.Database) (*factory.Storage, error)
+type StorageOpener func(ctx context.Context, cfg dbconfig.Config, db dbFactory.Database) (*dbFactory.Storage, error)
 
 var (
 	_ LazyDBCheckerProvider  = (*HealthServiceLazyDBWrapper)(nil)
@@ -47,18 +47,18 @@ type HealthServiceLazyDBWrapper struct {
 
 	essMu              sync.Mutex
 	essClosed          bool
-	essStorage         *factory.Storage
+	essStorage         *dbFactory.Storage
 	componentsProvider summary.CustomComponentsInfoProvider
 
 	xidMu      sync.Mutex
 	xidClosed  bool
-	xidStorage *factory.Storage
+	xidStorage *dbFactory.Storage
 }
 
 // NewHealthServiceLazyDBWrapper creates a new HealthServiceLazyDBWrapper for the given database configuration.
 func NewHealthServiceLazyDBWrapper(cfg dbconfig.Config, opener StorageOpener) *HealthServiceLazyDBWrapper {
 	if opener == nil {
-		opener = factory.NewStorage
+		opener = dbFactory.NewStorage
 	}
 	return &HealthServiceLazyDBWrapper{
 		cfg:    cfg,
@@ -153,7 +153,7 @@ func (w *HealthServiceLazyDBWrapper) Close() error {
 	return nil
 }
 
-func (w *HealthServiceLazyDBWrapper) ensureStorageLocked(ctx context.Context, db factory.Database, cached *factory.Storage, closed bool) (*factory.Storage, error) {
+func (w *HealthServiceLazyDBWrapper) ensureStorageLocked(ctx context.Context, db dbFactory.Database, cached *dbFactory.Storage, closed bool) (*dbFactory.Storage, error) {
 	if closed {
 		return nil, errDatabaseWrapperClosed
 	}
@@ -173,8 +173,8 @@ func (w *HealthServiceLazyDBWrapper) ensureStorageLocked(ctx context.Context, db
 	return st, nil
 }
 
-func (w *HealthServiceLazyDBWrapper) ensureEssStorageLocked(ctx context.Context) (*factory.Storage, error) {
-	st, err := w.ensureStorageLocked(ctx, factory.ESS, w.essStorage, w.essClosed)
+func (w *HealthServiceLazyDBWrapper) ensureEssStorageLocked(ctx context.Context) (*dbFactory.Storage, error) {
+	st, err := w.ensureStorageLocked(ctx, dbFactory.ESS, w.essStorage, w.essClosed)
 	if err != nil {
 		return nil, err
 	}
@@ -182,8 +182,8 @@ func (w *HealthServiceLazyDBWrapper) ensureEssStorageLocked(ctx context.Context)
 	return w.essStorage, nil
 }
 
-func (w *HealthServiceLazyDBWrapper) ensureXidStorageLocked(ctx context.Context) (*factory.Storage, error) {
-	st, err := w.ensureStorageLocked(ctx, factory.XID, w.xidStorage, w.xidClosed)
+func (w *HealthServiceLazyDBWrapper) ensureXidStorageLocked(ctx context.Context) (*dbFactory.Storage, error) {
+	st, err := w.ensureStorageLocked(ctx, dbFactory.XID, w.xidStorage, w.xidClosed)
 	if err != nil {
 		return nil, err
 	}
