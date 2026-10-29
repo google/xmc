@@ -28,9 +28,11 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	spannerdialect "xmanager_cloud/internal/query_generator/dialect/spanner"
+	queryfilter "xmanager_cloud/internal/query_generator/filter"
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 	"xmanager_cloud/internal/query_generator/querytools"
+	"xmanager_cloud/internal/safesql"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 	spannerutils "xmanager_cloud/internal/storage/spanner/utils"
@@ -75,7 +77,7 @@ func (r *Repository) BuildListStatement(ctx context.Context, pageSize int32, pag
 		PageSize:              pageSize,
 		Filter:                normalizedFilter,
 		OrderBy:               orderBy,
-		QueryGen:              r.xidsQueryGen,
+		QueryGen:              xidQueryGen{QueryGenerator: r.xidsQueryGen},
 		DefaultSelectFields:   xidschema.XidsSelectFields,
 		DefaultFullTextFields: xidschema.XidsFullTextFields,
 		ValidOrderByFields:    xidschema.XidsOrderByFields,
@@ -89,6 +91,68 @@ func (r *Repository) BuildListStatement(ctx context.Context, pageSize int32, pag
 		return nil, fmt.Errorf("failed to generate list statement: %w", err)
 	}
 	return stmt, nil
+}
+
+type xidQueryGen struct {
+	querytools.QueryGenerator
+}
+
+func (g xidQueryGen) GenerateQuery(
+	stmt queryfilter.Statement,
+	selectFields []querytools.TableField,
+	fullTextFields []safesql.TrustedSQLString,
+	baseFilterExp, userFilterExp *fpb.Expression,
+	userOrderBy []querytools.UserOrderedIndex,
+	pageSize, offset int,
+	ptFields map[querytools.TableField]any,
+	preamble *safesql.TrustedSQLString,
+) (map[querytools.TableField]int, querytools.Unnester, error) {
+	rewrittenFilter, err := rewriteXidExpression(userFilterExp)
+	if err != nil {
+		return nil, nil, err
+	}
+	return g.QueryGenerator.GenerateQuery(stmt, selectFields, fullTextFields, baseFilterExp, rewrittenFilter, userOrderBy, pageSize, offset, ptFields, preamble)
+}
+
+func rewriteXidExpression(exp *fpb.Expression) (*fpb.Expression, error) {
+	if exp == nil {
+		return nil, nil
+	}
+	cloned := proto.Clone(exp).(*fpb.Expression)
+	if err := rewriteXidNode(cloned); err != nil {
+		return nil, err
+	}
+	return cloned, nil
+}
+
+func rewriteXidNode(exp *fpb.Expression) error {
+	if exp == nil {
+		return nil
+	}
+	switch exp.WhichExpression() {
+	case fpb.Expression_Conjunction_case:
+		return rewriteXidList(exp.GetConjunction().GetExpressions())
+	case fpb.Expression_Disjunction_case:
+		return rewriteXidList(exp.GetDisjunction().GetExpressions())
+	case fpb.Expression_Negation_case:
+		return rewriteXidNode(exp.GetNegation())
+	case fpb.Expression_Restriction_case:
+		rewritten, err := RewriteXidRestriction(exp.GetRestriction())
+		if err != nil {
+			return err
+		}
+		*exp = *fpb.Expression_builder{Restriction: rewritten}.Build()
+	}
+	return nil
+}
+
+func rewriteXidList(exprs []*fpb.Expression) error {
+	for _, child := range exprs {
+		if err := rewriteXidNode(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RewriteXidRestriction rewrites equality and inequality restrictions on "xid"
