@@ -109,14 +109,19 @@ func TestWorkUnitProtoAndRowRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WorkUnitProtoToRow() failed: %v", err)
 	}
-	if row.QueueName != "test-queue" || row.ExecutionState != int64(essmsgpb.WorkUnitStatus_RUNNING) {
-		t.Errorf("derived queue/state = (%q, %d), want (\"test-queue\", %d)", row.QueueName, row.ExecutionState, essmsgpb.WorkUnitStatus_RUNNING)
+	wantInsertArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "workunittype": int64(essmsgpb.WorkUnit_STANDARD), "priority": int64(200),
+		"urls": [][]byte{mustMarshalProto(t, wu.GetUrls()[0])}, "tags": []string{"wu_tag1", "wu_tag2"}, "notes": "WorkUnit test notes.",
+		"executable":          mustMarshalProto(t, wu.GetExecutable()),
+		"executioncreatetime": testWUTime.Add(3 * time.Minute), "executionupdatetime": testWUTime.Add(4 * time.Minute),
+		"executioncompletetime": &testWUCompleteTime, "executionid": int64(789),
+		"executionmetadata": mustMarshalProto(t, exec.GetMetadata()), "workunitstatus": mustMarshalProto(t, exec.GetStatus()),
+		"queuename": "test-queue", "executionstate": int64(essmsgpb.WorkUnitStatus_RUNNING),
+		"executionstatusmessageseverity": int64(essmsgpb.StructuredMessage_ERROR), "positioninqueue": int64(42),
+		"createtime": testWUTime, "updatetime": testWUTime.Add(time.Minute),
 	}
-	if row.ExecutionStatusMessageSeverity != int64(essmsgpb.StructuredMessage_ERROR) || row.PositionInQueue != 42 {
-		t.Errorf("derived severity/pos = (%d, %d), want (%d, 42)", row.ExecutionStatusMessageSeverity, row.PositionInQueue, essmsgpb.StructuredMessage_ERROR)
-	}
-	if len(row.GetInsertArgs()) != 20 || len(row.GetUpdateArgs()) != 7 || len(row.GetCurrentExecutionUpdateArgs()) != 12 {
-		t.Errorf("named args lengths = (%d, %d, %d), want (20, 7, 12)", len(row.GetInsertArgs()), len(row.GetUpdateArgs()), len(row.GetCurrentExecutionUpdateArgs()))
+	if diff := cmp.Diff(wantInsertArgs, map[string]any(row.GetInsertArgs())); diff != "" {
+		t.Errorf("GetInsertArgs() mismatch (-want +got):\n%s", diff)
 	}
 
 	gotWU, err := WorkUnitRowToProto(row)
@@ -189,6 +194,13 @@ func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
 	if diff := cmp.Diff(wantUpdateRow, updateRow); diff != "" {
 		t.Errorf("WorkUnitProtoToUpdateRow() mismatch (-want +got):\n%s", diff)
 	}
+	wantMetaUpdateArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "priority": int64(10),
+		"urls": [][]byte{}, "tags": []string{}, "notes": "updated", "updatetime": testWUTime,
+	}
+	if diff := cmp.Diff(wantMetaUpdateArgs, map[string]any(updateRow.GetUpdateArgs())); diff != "" {
+		t.Errorf("GetUpdateArgs() mismatch (-want +got):\n%s", diff)
+	}
 
 	exec := sampleWorkUnitProto().CurrentWorkUnitExecution
 	exec.State = essmsgpb.WorkUnitExecution_INACTIVE
@@ -196,8 +208,13 @@ func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WorkUnitExecutionProtoToRow() failed: %v", err)
 	}
-	if len(execRow.GetInsertArgs()) != 8 {
-		t.Errorf("len(execRow.GetInsertArgs()) = %d, want 8", len(execRow.GetInsertArgs()))
+	wantInsertArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "executionid": int64(789),
+		"executionmetadata": mustMarshalProto(t, exec.GetMetadata()), "workunitstatus": mustMarshalProto(t, exec.GetStatus()),
+		"createtime": exec.GetCreateTime().AsTime(), "updatetime": exec.GetUpdateTime().AsTime(), "completetime": &testWUCompleteTime,
+	}
+	if diff := cmp.Diff(wantInsertArgs, map[string]any(execRow.GetInsertArgs())); diff != "" {
+		t.Errorf("GetInsertArgs() mismatch (-want +got):\n%s", diff)
 	}
 	gotExec, err := WorkUnitExecutionRowToProto(execRow)
 	if err != nil {
