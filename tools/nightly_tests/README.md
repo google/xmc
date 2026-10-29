@@ -119,3 +119,24 @@ Export `<example_name>_verify.py` in `exports_files` and add the corresponding `
 Adding a nightly verification suite is the default expectation for all examples (including GPU/TPU examples via Pattern B above).
 
 If an [`examples/`](../../examples/) subdirectory cannot be executed by the nightly GKE workflow (such as static YAML catalogs or local-only `xm_local` scripts), add its directory name with an explanatory comment to the exemption set in [`check_examples_coverage.py`](check_examples_coverage.py).
+
+---
+
+## 4. Per-PR Examples Import Check
+
+[`examples_import_smoke.py`](examples_import_smoke.py) (tested by [`examples_import_smoke_test.py`](examples_import_smoke_test.py)) catches example import regressions, such as a missing SDK symbol or a stale package shadowing a local SDK, before they reach the nightly suite. [`.github/workflows/examples-smoke.yml`](../../.github/workflows/examples-smoke.yml) runs it:
+
+- On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
+- As the `examples-import-check` job of the nightly suite, in parallel with the image builds.
+
+The workflow builds a virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and every `examples/*/requirements.txt`. That script also asserts local SDK provenance. The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and executes the entrypoint's module body (imports and flag definitions) in its own subprocess. `app.run(main)` never runs, so nothing is launched and no cluster or credentials are needed.
+
+> [!NOTE]
+> The check covers imports and flag definitions only. Runtime behavior is still verified by the nightly workload suite.
+
+Run it locally:
+
+```bash
+python3 deploy/cli/install_xmanager.py --venv .venv $(printf -- '--requirements %s ' examples/*/requirements.txt)
+.venv/bin/python3 tools/nightly_tests/examples_import_smoke.py --venv-python .venv/bin/python3
+```
