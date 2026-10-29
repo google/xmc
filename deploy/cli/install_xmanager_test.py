@@ -323,6 +323,23 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
             self.assertFalse((site_pkgs / "xdash").exists())
 
+    def test_cleanup_stale_bundled_packages_preserves_symlinks(self) -> None:
+        """Test cleanup_stale_bundled_packages does not delete symlinked directories."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            site_pkgs = root / "site-packages"
+            site_pkgs.mkdir(parents=True)
+            external_dir = root / "external_xdash"
+            external_dir.mkdir(parents=True)
+            (external_dir / "__init__.py").write_text("", encoding="utf-8")
+
+            symlink_xdash = site_pkgs / "xdash"
+            symlink_xdash.symlink_to(external_dir, target_is_directory=True)
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertTrue(symlink_xdash.is_symlink())
+            self.assertTrue(external_dir.exists())
+
     def test_compile_local_protos(self) -> None:
         """Test compile_local_protos ensures operations.proto and invokes grpc_tools.protoc."""
         venv_python = Path("/mock/venv/bin/python3")

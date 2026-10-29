@@ -277,7 +277,11 @@ def cleanup_stale_bundled_packages(site_packages: Path) -> None:
     local SDKs installed via editable mode or PYTHONPATH.
     """
     stale_xdash = site_packages / "xdash"
-    if stale_xdash.is_dir() and not (stale_xdash / "auth.py").exists():
+    if (
+        stale_xdash.is_dir()
+        and not stale_xdash.is_symlink()
+        and not (stale_xdash / "auth.py").exists()
+    ):
         sys.stdout.write(f"Removing obsolete bundled xdash from {stale_xdash}...\n")
         shutil.rmtree(stale_xdash)
 
