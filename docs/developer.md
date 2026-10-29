@@ -264,6 +264,12 @@ Source files are checked for Google LLC Apache 2.0 license headers using **`addl
 * Enforces copyright headers on all managed source code files (`.go`, `.py`, `.ts`, `.html`, `.css`, `.proto`, `.tf`, `.sh`, Bazel files).
 * Ignores data/schema files (`.json`), lockfiles (`go.mod`, `go.sum`, `*.lock`, `package.json`, `pyproject.toml`), and `third_party/` directories.
 
+### 6. Agent Doc Path References (`check_agent_doc_paths.py`)
+Agent skills and rules (`.agents/**/*.md`, `AGENTS.md`) are checked by [`tools/lint/check_agent_doc_paths.py`](../tools/lint/check_agent_doc_paths.py):
+* Fails when a repo path inside a code span or fenced block is neither a tracked file nor a tracked directory, so agents never copy a stale path into a command.
+* Placeholders (`<name>`, `*`, `...`) only require their directory prefix to exist; runtime-created or illustrative paths are listed in the script's `ALLOWLIST` with a reason, and entries no doc references fail the check.
+* The pre-commit hook runs it when agent docs are staged or files are deleted/renamed (always in `--check` mode); CI always runs it.
+
 ---
 
 ### Local Pre-Commit Hook Usage

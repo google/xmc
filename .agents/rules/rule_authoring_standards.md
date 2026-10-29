@@ -121,6 +121,7 @@ Destinations by language, all reachable through `.githooks/pre-commit` and its `
 | TypeScript / UI | `cmd/ui/eslint.config.js`, prettier |
 | Bazel | buildifier |
 | Terraform | [`.tflint.hcl`](../../.tflint.hcl) |
+| Agent docs (`.agents/**/*.md`, `AGENTS.md`) | `tools/lint/check_agent_doc_paths.py` (path references must exist) |
 
 ---
 

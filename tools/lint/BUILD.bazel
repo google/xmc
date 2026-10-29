@@ -21,6 +21,23 @@ package(default_visibility = ["//visibility:public"])
 exports_files(["dev_binary_guard.py"])
 
 py_library(
+    name = "check_agent_doc_paths_lib",
+    srcs = ["check_agent_doc_paths.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_agent_doc_paths_test",
+    srcs = ["check_agent_doc_paths_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_agent_doc_paths_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_legacy_imports_lib",
     srcs = ["check_legacy_imports.py"],
     data = ["legacy_imports_baseline.json"],
