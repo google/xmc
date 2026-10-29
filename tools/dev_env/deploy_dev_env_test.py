@@ -1357,6 +1357,89 @@ image_tag: latest
         self.assertEqual(mock_run.call_count, 90)
         self.assertEqual(mock_sleep.call_count, 90)
 
+    @patch("tools.dev_env.deploy_dev_env.log_error")
+    @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", side_effect=RuntimeError("old"))
+    @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
+    @patch("tools.dev_env.deploy_dev_env._verify_binaries")
+    def test_run_checks_helm_version_low_when_components_enabled(
+        self, _mock_bin, _mock_tf, _mock_helm, mock_log_error
+    ):
+        cfg = replace(self.valid_config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Failed Helm version check: old")
+
+    @patch("tools.dev_env.deploy_dev_env.log_error")
+    @patch(
+        "tools.dev_env.deploy_dev_env.verify_helm_min_version",
+        side_effect=PermissionError("helm not executable"),
+    )
+    @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
+    @patch("tools.dev_env.deploy_dev_env._verify_binaries")
+    def test_run_checks_helm_oserror_when_components_enabled(
+        self, _mock_bin, _mock_tf, _mock_helm, mock_log_error
+    ):
+        cfg = replace(self.valid_config, enable_components=True)
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with("Failed Helm version check: helm not executable")
+
+    @patch("tools.dev_env.deploy_dev_env.log_error")
+    @patch("tools.dev_env.deploy_dev_env.pathlib.Path.is_file", return_value=False)
+    @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", return_value="v3.15.0")
+    @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
+    @patch("tools.dev_env.deploy_dev_env._verify_binaries")
+    def test_run_checks_missing_profile_values_when_components_enabled(
+        self, _mock_bin, _mock_tf, _mock_helm, _mock_is_file, mock_log_error
+    ):
+        cfg = replace(
+            self.valid_config,
+            enable_components=True,
+            profile_values="/tmp/nonexistent-profile-values-1429.yaml",
+        )
+        with self.assertRaises(SystemExit) as cm:
+            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+        self.assertEqual(cm.exception.code, 1)
+        mock_log_error.assert_called_once_with(
+            "Profile values file '/tmp/nonexistent-profile-values-1429.yaml' does not exist or is not a file."
+        )
+
+    def test_build_resume_cmd_quotes_profile_values(self):
+        parsed = deploy_dev_env.parse_args(
+            [
+                "--config",
+                "cfg.yaml",
+                "--dns-project",
+                "dns-proj",
+                "--dns-zone",
+                "dns-zone",
+                "--enable-components",
+                "--profile-values",
+                "/tmp/my dir/profile values.yaml",
+            ]
+        )
+        cmd = deploy_dev_env._build_resume_cmd(parsed, "app")
+        self.assertIn("--enable-components ", cmd)
+        self.assertIn("--profile-values '/tmp/my dir/profile values.yaml' ", cmd)
+        self.assertTrue(cmd.endswith("--start-from app"))
+
+        parsed_neg = deploy_dev_env.parse_args(
+            [
+                "--config",
+                "cfg.yaml",
+                "--dns-project",
+                "dns-proj",
+                "--dns-zone",
+                "dns-zone",
+                "--no-enable-components",
+            ]
+        )
+        self.assertIn(
+            "--no-enable-components ", deploy_dev_env._build_resume_cmd(parsed_neg, "app")
+        )
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first_arg_ignored", "-v"])

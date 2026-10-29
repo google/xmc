@@ -42,6 +42,7 @@ class DeploymentConfig:
     domain_name: str | None = None
     enable_components: bool = False
     log_monitor_deployment_enabled: bool = False
+    profile_values: str | None = None
 
     @property
     def gke_cluster(self) -> str:
@@ -451,24 +452,75 @@ def build_and_push_images(config: DeploymentConfig) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
+MIN_HELM_VERSION = "3.14.0"
+
+
+def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
+    """Extracts a (major, minor, patch) integer tuple from a version string.
+
+    Args:
+        raw: Version string to parse (e.g. 'v3.14.2+g0a1b2c' or 'v3.14').
+
+    Returns:
+        Tuple of (major, minor, patch) integers, zero-padded if fewer than 3 parts.
+
+    Raises:
+        ValueError: If raw contains no numeric version segments.
+    """
+    version_part = raw.split("+")[0].split("-")[0]
+    parts = [int(p) for p in re.findall(r"\d+", version_part)[:3]]
+    if not parts:
+        raise ValueError(f"Could not parse semantic version from '{raw}'.")
+    while len(parts) < 3:
+        parts.append(0)
+    return parts[0], parts[1], parts[2]
+
+
+def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
+    """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values).
+
+    Args:
+        min_version: Minimum required semantic version string.
+
+    Returns:
+        Detected raw Helm CLI version string.
+
+    Raises:
+        RuntimeError: If the installed Helm version is older than min_version.
+        ValueError: If Helm or min_version output cannot be parsed.
+    """
+    out = run_command(
+        ["helm", "version", "--template={{.Version}}"],
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+    ).stdout.strip()
+    if parse_semver_prefix(out) < parse_semver_prefix(min_version):
+        raise RuntimeError(f"Helm version must be >= {min_version} (found: {out}).")
+    return out
+
+
 def deploy_component_profile(config: DeploymentConfig) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled."""
+    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+
+    Args:
+        config: Loaded DeploymentConfig instance.
+
+    Raises:
+        FileNotFoundError: If config.profile_values is specified and missing.
+    """
     if not config.enable_components:
         return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
+    cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
+    if config.profile_values:
+        if not Path(config.profile_values).is_file():
+            raise FileNotFoundError(
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
+            )
+        cmd.extend(["-f", config.profile_values])
+    cmd.extend(["-n", ns, "--wait"])
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
-    run_command(
-        [
-            "helm",
-            "upgrade",
-            "--install",
-            "--reset-then-reuse-values",
-            "xmc-profile",
-            chart,
-            "-n",
-            ns,
-            "--wait",
-        ]
-    )
+    run_command(cmd)
     log_success("Default component profile (stable-2026a) deployed.")
