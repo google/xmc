@@ -260,6 +260,9 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 		if diff := cmp.Diff(wantExecs, execs, protocmp.Transform()); diff != "" {
 			t.Errorf("ListWorkUnitExecutions() mismatch (-want +got):\n%s", diff)
 		}
+		if gotWU, err := repo.FetchWorkUnit(ctx, xid, wid); err != nil || !gotWU.GetUpdateTime().AsTime().Equal(thirdTime.AsTime()) {
+			t.Errorf("FetchWorkUnit().UpdateTime after UpdateCurrentWorkUnitExecution = (%v, %v), want %v", gotWU.GetUpdateTime(), err, thirdTime)
+		}
 		if _, err := repo.ListWorkUnitExecutions(ctx, xid, 999); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("ListWorkUnitExecutions(missing) = %v, want ErrNotFound", err)
 		}

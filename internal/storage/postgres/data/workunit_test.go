@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
@@ -30,6 +31,15 @@ var (
 	testWUCompleteTime = time.Date(2026, time.January, 3, 1, 0, 0, 0, time.UTC)
 )
 
+func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	b, err := MarshalProto(msg)
+	if err != nil {
+		t.Fatalf("MarshalProto() failed: %v", err)
+	}
+	return b
+}
+
 func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 	return &essmsgpb.WorkUnit{
 		Name:         "experiments/123/workUnits/456",
@@ -37,14 +47,10 @@ func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 		Priority:     200,
 		Notes:        "WorkUnit test notes.",
 		Tags:         []string{"wu_tag1", "wu_tag2"},
-		Urls: []*essmsgpb.Url{
-			{Url: "http://test.com", Icon: "test-icon", DisplayName: "test-display-name"},
-		},
+		Urls:         []*essmsgpb.Url{{Url: "http://test.com", Icon: "test-icon", DisplayName: "test-display-name"}},
 		Executable: &essmsgpb.Executable{
 			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "test-queue"},
-			Type: &essmsgpb.Executable_Jobset{
-				Jobset: &essmsgpb.JobSetExecutable{Jobs: []*essmsgpb.KubernetesJob{{Name: "test-job"}}},
-			},
+			Type:                  &essmsgpb.Executable_Jobset{Jobset: &essmsgpb.JobSetExecutable{Jobs: []*essmsgpb.KubernetesJob{{Name: "test-job"}}}},
 		},
 		CreateTime: timestamppb.New(testWUTime),
 		UpdateTime: timestamppb.New(testWUTime.Add(time.Minute)),
@@ -52,23 +58,11 @@ func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 			Name:  "experiments/123/workUnits/456/executions/789",
 			State: essmsgpb.WorkUnitExecution_ACTIVE,
 			Status: &essmsgpb.WorkUnitStatus{
-				State:      essmsgpb.WorkUnitStatus_RUNNING,
-				UpdateTime: timestamppb.New(testWUTime.Add(2 * time.Minute)),
-				SystemMessage: &essmsgpb.StructuredMessage{
-					Severity:       essmsgpb.StructuredMessage_WARNING,
-					UserFacingText: "sys warning",
-				},
-				UserMessage: &essmsgpb.StructuredMessage{
-					Severity:       essmsgpb.StructuredMessage_ERROR,
-					UserFacingText: "user error",
-				},
-				SchedulingInformation: &essmsgpb.StructuredMessage{
-					AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
-						Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{
-							QueueInfo: &essmsgpb.QueueInfo{PositionInQueue: 42},
-						},
-					},
-				},
+				State:                 essmsgpb.WorkUnitStatus_RUNNING,
+				UpdateTime:            timestamppb.New(testWUTime.Add(2 * time.Minute)),
+				SystemMessage:         &essmsgpb.StructuredMessage{Severity: essmsgpb.StructuredMessage_WARNING, UserFacingText: "sys warning"},
+				UserMessage:           &essmsgpb.StructuredMessage{Severity: essmsgpb.StructuredMessage_ERROR, UserFacingText: "user error"},
+				SchedulingInformation: &essmsgpb.StructuredMessage{AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{Detail: &essmsgpb.AuxiliaryInfo_QueueInfo{QueueInfo: &essmsgpb.QueueInfo{PositionInQueue: 42}}}},
 			},
 			Metadata: &essmsgpb.WorkUnitExecutionMetadata{
 				ManagementCluster: &essmsgpb.ClusterInfo{Project: "p", Location: "l", ClusterName: "c"},
@@ -88,29 +82,32 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CurrentWorkUnitExecutionProtoToRow() failed: %v", err)
 	}
-	if row.ExecutionState != int64(essmsgpb.WorkUnitStatus_RUNNING) || row.PositionInQueue != 42 {
-		t.Errorf("derived state/pos = (%d, %d), want (%d, 42)", row.ExecutionState, row.PositionInQueue, essmsgpb.WorkUnitStatus_RUNNING)
+	wantRow := WorkUnitRow{
+		Xid: 123, WorkUnitID: 456, ExecutionID: 789,
+		ExecutionCreateTime: exec.GetCreateTime().AsTime(), ExecutionUpdateTime: exec.GetUpdateTime().AsTime(),
+		ExecutionCompleteTime: &testWUCompleteTime, ExecutionMetadata: mustMarshalProto(t, exec.GetMetadata()),
+		WorkUnitStatus: mustMarshalProto(t, exec.GetStatus()), ExecutionState: int64(essmsgpb.WorkUnitStatus_RUNNING),
+		ExecutionStatusMessageSeverity: int64(essmsgpb.StructuredMessage_ERROR), PositionInQueue: 42,
+		UpdateTime: exec.GetUpdateTime().AsTime(),
 	}
-	if row.ExecutionStatusMessageSeverity != int64(essmsgpb.StructuredMessage_ERROR) || len(row.GetCurrentExecutionUpdateArgs()) != 12 {
-		t.Errorf("derived severity/args = (%d, %d), want (%d, 12)", row.ExecutionStatusMessageSeverity, len(row.GetCurrentExecutionUpdateArgs()), essmsgpb.StructuredMessage_ERROR)
+	if diff := cmp.Diff(wantRow, row); diff != "" {
+		t.Errorf("CurrentWorkUnitExecutionProtoToRow() mismatch (-want +got):\n%s", diff)
+	}
+	wantUpdateArgs := map[string]any{
+		"xid": wantRow.Xid, "workunitid": wantRow.WorkUnitID, "executionid": wantRow.ExecutionID,
+		"executioncreatetime": wantRow.ExecutionCreateTime, "executionupdatetime": wantRow.ExecutionUpdateTime,
+		"executioncompletetime": wantRow.ExecutionCompleteTime, "executionmetadata": wantRow.ExecutionMetadata,
+		"workunitstatus": wantRow.WorkUnitStatus, "executionstate": wantRow.ExecutionState,
+		"executionstatusmessageseverity": wantRow.ExecutionStatusMessageSeverity,
+		"positioninqueue":                wantRow.PositionInQueue, "updatetime": wantRow.UpdateTime,
+	}
+	if diff := cmp.Diff(wantUpdateArgs, map[string]any(row.GetCurrentExecutionUpdateArgs())); diff != "" {
+		t.Errorf("GetCurrentExecutionUpdateArgs() mismatch (-want +got):\n%s", diff)
 	}
 
-	urlBytes, err := MarshalProto(wu.Urls[0])
-	if err != nil {
-		t.Fatalf("MarshalProto(Url) failed: %v", err)
-	}
-	execBytes, err := MarshalProto(wu.Executable)
-	if err != nil {
-		t.Fatalf("MarshalProto(Executable) failed: %v", err)
-	}
-	row.WorkUnitType = int64(wu.WorkUnitType)
-	row.Priority = int64(wu.Priority)
-	row.Urls = [][]byte{urlBytes}
-	row.Tags = wu.Tags
-	row.Notes = wu.Notes
-	row.Executable = execBytes
-	row.CreateTime = wu.CreateTime.AsTime()
-	row.UpdateTime = wu.UpdateTime.AsTime()
+	row.WorkUnitType, row.Priority, row.Tags, row.Notes = int64(wu.WorkUnitType), int64(wu.Priority), wu.Tags, wu.Notes
+	row.Urls, row.Executable = [][]byte{mustMarshalProto(t, wu.Urls[0])}, mustMarshalProto(t, wu.Executable)
+	row.CreateTime, row.UpdateTime = wu.CreateTime.AsTime(), wu.UpdateTime.AsTime()
 
 	gotWU, err := WorkUnitRowToProto(row)
 	if err != nil {
@@ -119,7 +116,6 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 	if diff := cmp.Diff(wu, gotWU, protocmp.Transform()); diff != "" {
 		t.Errorf("WorkUnitRowToProto mismatch (-want +got):\n%s", diff)
 	}
-
 	gotCurExec, err := WorkUnitCurrentExecutionRowToProto(row)
 	if err != nil {
 		t.Fatalf("WorkUnitCurrentExecutionRowToProto() failed: %v", err)
