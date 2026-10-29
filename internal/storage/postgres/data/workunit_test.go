@@ -75,14 +75,14 @@ func sampleWorkUnitProto() *essmsgpb.WorkUnit {
 	}
 }
 
-func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
+func TestWorkUnitProtoAndRowRoundTrip(t *testing.T) {
 	wu := sampleWorkUnitProto()
 	exec := wu.GetCurrentWorkUnitExecution()
-	row, err := CurrentWorkUnitExecutionProtoToRow(123, 456, 789, exec)
+	execRow, err := CurrentWorkUnitExecutionProtoToRow(123, 456, 789, exec)
 	if err != nil {
 		t.Fatalf("CurrentWorkUnitExecutionProtoToRow() failed: %v", err)
 	}
-	wantRow := WorkUnitRow{
+	wantExecRow := WorkUnitRow{
 		Xid: 123, WorkUnitID: 456, ExecutionID: 789,
 		ExecutionCreateTime: exec.GetCreateTime().AsTime(), ExecutionUpdateTime: exec.GetUpdateTime().AsTime(),
 		ExecutionCompleteTime: &testWUCompleteTime, ExecutionMetadata: mustMarshalProto(t, exec.GetMetadata()),
@@ -90,31 +90,46 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 		ExecutionStatusMessageSeverity: int64(essmsgpb.StructuredMessage_ERROR), PositionInQueue: 42,
 		UpdateTime: exec.GetUpdateTime().AsTime(),
 	}
-	if diff := cmp.Diff(wantRow, row); diff != "" {
+	if diff := cmp.Diff(wantExecRow, execRow); diff != "" {
 		t.Errorf("CurrentWorkUnitExecutionProtoToRow() mismatch (-want +got):\n%s", diff)
 	}
 	wantUpdateArgs := map[string]any{
-		"xid": wantRow.Xid, "workunitid": wantRow.WorkUnitID, "executionid": wantRow.ExecutionID,
-		"executioncreatetime": wantRow.ExecutionCreateTime, "executionupdatetime": wantRow.ExecutionUpdateTime,
-		"executioncompletetime": wantRow.ExecutionCompleteTime, "executionmetadata": wantRow.ExecutionMetadata,
-		"workunitstatus": wantRow.WorkUnitStatus, "executionstate": wantRow.ExecutionState,
-		"executionstatusmessageseverity": wantRow.ExecutionStatusMessageSeverity,
-		"positioninqueue":                wantRow.PositionInQueue, "updatetime": wantRow.UpdateTime,
+		"xid": wantExecRow.Xid, "workunitid": wantExecRow.WorkUnitID, "executionid": wantExecRow.ExecutionID,
+		"executioncreatetime": wantExecRow.ExecutionCreateTime, "executionupdatetime": wantExecRow.ExecutionUpdateTime,
+		"executioncompletetime": wantExecRow.ExecutionCompleteTime, "executionmetadata": wantExecRow.ExecutionMetadata,
+		"workunitstatus": wantExecRow.WorkUnitStatus, "executionstate": wantExecRow.ExecutionState,
+		"executionstatusmessageseverity": wantExecRow.ExecutionStatusMessageSeverity,
+		"positioninqueue":                wantExecRow.PositionInQueue, "updatetime": wantExecRow.UpdateTime,
 	}
-	if diff := cmp.Diff(wantUpdateArgs, map[string]any(row.GetCurrentExecutionUpdateArgs())); diff != "" {
+	if diff := cmp.Diff(wantUpdateArgs, map[string]any(execRow.GetCurrentExecutionUpdateArgs())); diff != "" {
 		t.Errorf("GetCurrentExecutionUpdateArgs() mismatch (-want +got):\n%s", diff)
 	}
 
-	row.WorkUnitType, row.Priority, row.Tags, row.Notes = int64(wu.WorkUnitType), int64(wu.Priority), wu.Tags, wu.Notes
-	row.Urls, row.Executable = [][]byte{mustMarshalProto(t, wu.Urls[0])}, mustMarshalProto(t, wu.Executable)
-	row.CreateTime, row.UpdateTime = wu.CreateTime.AsTime(), wu.UpdateTime.AsTime()
+	row, err := WorkUnitProtoToRow(wu)
+	if err != nil {
+		t.Fatalf("WorkUnitProtoToRow() failed: %v", err)
+	}
+	wantInsertArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "workunittype": int64(essmsgpb.WorkUnit_STANDARD), "priority": int64(200),
+		"urls": [][]byte{mustMarshalProto(t, wu.GetUrls()[0])}, "tags": []string{"wu_tag1", "wu_tag2"}, "notes": "WorkUnit test notes.",
+		"executable":          mustMarshalProto(t, wu.GetExecutable()),
+		"executioncreatetime": testWUTime.Add(3 * time.Minute), "executionupdatetime": testWUTime.Add(4 * time.Minute),
+		"executioncompletetime": &testWUCompleteTime, "executionid": int64(789),
+		"executionmetadata": mustMarshalProto(t, exec.GetMetadata()), "workunitstatus": mustMarshalProto(t, exec.GetStatus()),
+		"queuename": "test-queue", "executionstate": int64(essmsgpb.WorkUnitStatus_RUNNING),
+		"executionstatusmessageseverity": int64(essmsgpb.StructuredMessage_ERROR), "positioninqueue": int64(42),
+		"createtime": testWUTime, "updatetime": testWUTime.Add(time.Minute),
+	}
+	if diff := cmp.Diff(wantInsertArgs, map[string]any(row.GetInsertArgs())); diff != "" {
+		t.Errorf("GetInsertArgs() mismatch (-want +got):\n%s", diff)
+	}
 
 	gotWU, err := WorkUnitRowToProto(row)
 	if err != nil {
 		t.Fatalf("WorkUnitRowToProto() failed: %v", err)
 	}
 	if diff := cmp.Diff(wu, gotWU, protocmp.Transform()); diff != "" {
-		t.Errorf("WorkUnitRowToProto mismatch (-want +got):\n%s", diff)
+		t.Errorf("WorkUnit round-trip mismatch (-want +got):\n%s", diff)
 	}
 	gotCurExec, err := WorkUnitCurrentExecutionRowToProto(row)
 	if err != nil {
@@ -123,26 +138,68 @@ func TestWorkUnitRowAndCurrentExecutionRoundTrip(t *testing.T) {
 	if diff := cmp.Diff(wu.CurrentWorkUnitExecution, gotCurExec, protocmp.Transform()); diff != "" {
 		t.Errorf("WorkUnitCurrentExecutionRowToProto mismatch (-want +got):\n%s", diff)
 	}
+
+	gotUpdating, err := UpdatingWorkUnitRowToProto(row)
+	if err != nil {
+		t.Fatalf("UpdatingWorkUnitRowToProto() failed: %v", err)
+	}
+	wantUpdatingExec := sampleWorkUnitProto().CurrentWorkUnitExecution
+	wantUpdatingExec.State = essmsgpb.WorkUnitExecution_INACTIVE
+	wantUpdating := &essmsgpb.WorkUnit{
+		Name:                     wu.GetName(),
+		Executable:               wu.GetExecutable(),
+		CurrentWorkUnitExecution: wantUpdatingExec,
+	}
+	if diff := cmp.Diff(wantUpdating, gotUpdating, protocmp.Transform()); diff != "" {
+		t.Errorf("UpdatingWorkUnitRowToProto() mismatch (-want +got):\n%s", diff)
+	}
 }
 
-func TestWorkUnitExecutionRoundTripAndDefaults(t *testing.T) {
-	defaultRow, err := CurrentWorkUnitExecutionProtoToRow(1, 2, 3, &essmsgpb.WorkUnitExecution{
-		Name:       "experiments/1/workUnits/2/executions/3",
-		CreateTime: timestamppb.New(testWUTime),
+func TestWorkUnitUpdateAndExecutionRoundTrip(t *testing.T) {
+	wu := &essmsgpb.WorkUnit{
+		Name:       "experiments/123/workUnits/456",
+		Priority:   10,
+		Notes:      "updated",
 		UpdateTime: timestamppb.New(testWUTime),
-	})
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name:       "experiments/123/workUnits/456/executions/1",
+			CreateTime: timestamppb.New(testWUTime),
+			UpdateTime: timestamppb.New(testWUTime),
+		},
+	}
+	defaultRow, err := WorkUnitProtoToRow(wu)
 	if err != nil {
-		t.Fatalf("CurrentWorkUnitExecutionProtoToRow() failed: %v", err)
+		t.Fatalf("WorkUnitProtoToRow() failed: %v", err)
 	}
-	if defaultRow.PositionInQueue != math.MaxInt64 {
-		t.Errorf("defaultRow.PositionInQueue = %d, want MaxInt64", defaultRow.PositionInQueue)
+	if defaultRow.PositionInQueue != math.MaxInt64 || len(defaultRow.Tags) != 0 || defaultRow.Tags == nil {
+		t.Errorf("defaultRow = (pos=%d, tags=%v), want MaxInt64 and non-nil empty slice", defaultRow.PositionInQueue, defaultRow.Tags)
 	}
+	defaultRow.Tags = nil
 	gotEmptyWU, err := WorkUnitRowToProto(defaultRow)
 	if err != nil {
 		t.Fatalf("WorkUnitRowToProto(defaultRow) failed: %v", err)
 	}
 	if gotEmptyWU.Tags == nil || len(gotEmptyWU.Tags) != 0 {
 		t.Errorf("gotEmptyWU.Tags = %v, want non-nil empty slice", gotEmptyWU.Tags)
+	}
+
+	updateRow, err := WorkUnitProtoToUpdateRow(wu)
+	if err != nil {
+		t.Fatalf("WorkUnitProtoToUpdateRow() failed: %v", err)
+	}
+	wantUpdateRow := WorkUnitRow{
+		Xid: 123, WorkUnitID: 456, Priority: 10,
+		Urls: [][]byte{}, Tags: []string{}, Notes: "updated", UpdateTime: testWUTime,
+	}
+	if diff := cmp.Diff(wantUpdateRow, updateRow); diff != "" {
+		t.Errorf("WorkUnitProtoToUpdateRow() mismatch (-want +got):\n%s", diff)
+	}
+	wantMetaUpdateArgs := map[string]any{
+		"xid": int64(123), "workunitid": int64(456), "priority": int64(10),
+		"urls": [][]byte{}, "tags": []string{}, "notes": "updated", "updatetime": testWUTime,
+	}
+	if diff := cmp.Diff(wantMetaUpdateArgs, map[string]any(updateRow.GetUpdateArgs())); diff != "" {
+		t.Errorf("GetUpdateArgs() mismatch (-want +got):\n%s", diff)
 	}
 
 	exec := sampleWorkUnitProto().CurrentWorkUnitExecution
@@ -170,6 +227,12 @@ func TestWorkUnitExecutionRoundTripAndDefaults(t *testing.T) {
 
 func TestWorkUnitConversionErrors(t *testing.T) {
 	corrupt := []byte{0xff, 0xff, 0xff}
+	if _, err := WorkUnitProtoToRow(&essmsgpb.WorkUnit{}); err == nil {
+		t.Error("WorkUnitProtoToRow(invalid) = nil, want error")
+	}
+	if _, err := WorkUnitProtoToUpdateRow(&essmsgpb.WorkUnit{Name: "invalid"}); err == nil {
+		t.Error("WorkUnitProtoToUpdateRow(invalid) = nil, want error")
+	}
 	if _, err := WorkUnitExecutionProtoToRow(&essmsgpb.WorkUnitExecution{Name: "invalid"}); err == nil {
 		t.Error("WorkUnitExecutionProtoToRow(invalid) = nil, want error")
 	}
@@ -186,5 +249,13 @@ func TestWorkUnitConversionErrors(t *testing.T) {
 	}
 	if _, err := WorkUnitCurrentExecutionRowToProto(WorkUnitRow{Xid: 1, WorkUnitID: 1, ExecutionID: 1, WorkUnitStatus: corrupt}); err == nil {
 		t.Error("WorkUnitCurrentExecutionRowToProto(corrupt) = nil, want error")
+	}
+	for i, r := range []WorkUnitRow{
+		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, Executable: corrupt},
+		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, WorkUnitStatus: corrupt},
+	} {
+		if _, err := UpdatingWorkUnitRowToProto(r); err == nil {
+			t.Errorf("UpdatingWorkUnitRowToProto(bad[%d]) = nil, want error", i)
+		}
 	}
 }

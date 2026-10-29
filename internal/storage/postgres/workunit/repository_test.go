@@ -18,21 +18,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
-	postgresdata "xmanager_cloud/internal/storage/postgres/data"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	"xmanager_cloud/internal/validator"
@@ -60,12 +63,26 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 
 	preconditionCalls := []func() error{
 		func() error { _, err := repo.FetchWorkUnit(ctx, 1, 1); return err },
+		func() error {
+			_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+				XID: 1, WID: 1, WorkUnit: &essmsgpb.WorkUnit{},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+			})
+			return err
+		},
 		func() error { _, err := repo.FetchCurrentWorkUnitExecution(ctx, 1, 1); return err },
 		func() error { _, err := repo.ListWorkUnitExecutions(ctx, 1, 1); return err },
 		func() error { _, err := txRepo.FetchWorkUnit(ctx, 1, 1); return err },
+		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
+		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
+		func() error { return txRepo.InsertWorkUnit(ctx, &essmsgpb.WorkUnit{}) },
 		func() error { return txRepo.SaveWorkUnitExecution(ctx, &essmsgpb.WorkUnitExecution{}) },
 		func() error {
 			return txRepo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, &essmsgpb.WorkUnitExecution{})
+		},
+		func() error {
+			_, err := txRepo.ListWorkUnitMessagesBySeverity(ctx, 1, essmsgpb.StructuredMessage_ERROR)
+			return err
 		},
 	}
 	for i, call := range preconditionCalls {
@@ -75,6 +92,19 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 	}
 
 	invalidArgCalls := []func() error{
+		func() error { _, err := repo.UpdateWorkUnit(ctx, nil); return err },
+		func() error { _, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{XID: 1, WID: 1}); return err },
+		func() error {
+			_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{XID: 1, WID: 1, WorkUnit: &essmsgpb.WorkUnit{}})
+			return err
+		},
+		func() error {
+			_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+				XID: 1, WID: 1, WorkUnit: &essmsgpb.WorkUnit{}, UpdateMask: &fieldmaskpb.FieldMask{},
+			})
+			return err
+		},
+		func() error { return txRepo.InsertWorkUnit(ctx, nil) },
 		func() error { return txRepo.SaveWorkUnitExecution(ctx, nil) },
 		func() error { return txRepo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, nil) },
 	}
@@ -85,16 +115,8 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 	}
 
 	unimplementedCalls := []func() error{
-		func() error { _, err := repo.UpdateWorkUnit(ctx, nil); return err },
 		func() error { _, _, err := repo.ListWorkUnits(ctx, "experiments/1", 10, "", "", "", 0); return err },
 		func() error { _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); return err },
-		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
-		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
-		func() error { return txRepo.InsertWorkUnit(ctx, nil) },
-		func() error {
-			_, err := txRepo.ListWorkUnitMessagesBySeverity(ctx, 1, essmsgpb.StructuredMessage_ERROR)
-			return err
-		},
 	}
 	for i, call := range unimplementedCalls {
 		if got := status.Code(call()); got != codes.Unimplemented {
@@ -103,73 +125,62 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 	}
 }
 
-func seedWorkUnitWithCurrentExecution(t *testing.T, pool *pgxpool.Pool, repo *Repository, xid, wid int64, ts time.Time) *essmsgpb.WorkUnitExecution {
-	t.Helper()
-	ctx := t.Context()
-	postgrestest.SeedWorkUnit(ctx, t, pool, xid, wid)
+func blankWorkUnitProto(xid, wid int64, ts time.Time) *essmsgpb.WorkUnit {
 	tsProto := timestamppb.New(ts)
-	exec := &essmsgpb.WorkUnitExecution{
-		Name:       validator.ConstructWorkUnitExecutionName(xid, wid, 1),
-		State:      essmsgpb.WorkUnitExecution_ACTIVE,
-		Metadata:   &essmsgpb.WorkUnitExecutionMetadata{ResourceName: "jobset-1"},
+	return &essmsgpb.WorkUnit{
+		Name:         validator.ConstructWorkUnitName(xid, wid),
+		WorkUnitType: essmsgpb.WorkUnit_STANDARD,
+		Priority:     1,
+		Urls:         []*essmsgpb.Url{{Url: "http://test.com"}},
+		Tags:         []string{"tag1", "tag2"},
+		Notes:        "test-notes",
+		Executable: &essmsgpb.Executable{
+			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "test-queue"},
+		},
 		CreateTime: tsProto,
 		UpdateTime: tsProto,
-		Status: &essmsgpb.WorkUnitStatus{
-			State:           essmsgpb.WorkUnitStatus_INITIALIZING,
-			UpdateTime:      tsProto,
-			StateUpdateTime: tsProto,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name:       validator.ConstructWorkUnitExecutionName(xid, wid, 1),
+			State:      essmsgpb.WorkUnitExecution_ACTIVE,
+			Metadata:   &essmsgpb.WorkUnitExecutionMetadata{},
+			CreateTime: tsProto,
+			UpdateTime: tsProto,
+			Status: &essmsgpb.WorkUnitStatus{
+				State:           essmsgpb.WorkUnitStatus_INITIALIZING,
+				UpdateTime:      tsProto,
+				StateUpdateTime: tsProto,
+				SystemMessage: &essmsgpb.StructuredMessage{
+					Severity:       essmsgpb.StructuredMessage_INFO,
+					Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+					Parent:         validator.ConstructWorkUnitName(xid, wid),
+					UserFacingText: "test-message",
+					CreateTime:     tsProto,
+				},
+			},
 		},
 	}
-	err := pgdb.RunInTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
-		return repo.WithTx(tx).UpdateCurrentWorkUnitExecution(ctx, xid, wid, 1, exec)
-	})
-	if err != nil {
-		t.Fatalf("UpdateCurrentWorkUnitExecution(%d, %d) failed: %v", xid, wid, err)
-	}
-	return exec
 }
 
-func TestRepository_ReadsAndExecutions(t *testing.T) {
+func mustInsertWorkUnit(t *testing.T, pool *pgxpool.Pool, repo *Repository, wu *essmsgpb.WorkUnit) {
+	t.Helper()
+	err := pgdb.RunInTx(t.Context(), pool, func(ctx context.Context, tx pgx.Tx) error {
+		return repo.WithTx(tx).InsertWorkUnit(ctx, wu)
+	})
+	if err != nil {
+		t.Fatalf("InsertWorkUnit(%s) failed: %v", wu.GetName(), err)
+	}
+}
+
+func TestRepository_CRUDAndExecutions(t *testing.T) {
 	ctx := t.Context()
 	_, essPool := postgrestest.Setup(ctx, t)
 	repo := NewRepository(essPool)
 
 	t.Run("FetchWorkUnit and FetchCurrentWorkUnitExecution", func(t *testing.T) {
 		const xid, wid = 101, 1
-		wantExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
-		wantURL := &essmsgpb.Url{Url: "http://test.com", Icon: "test-icon", DisplayName: "test-display-name"}
-		urlBytes, err := postgresdata.MarshalProto(wantURL)
-		if err != nil {
-			t.Fatalf("MarshalProto(Url) failed: %v", err)
-		}
-		wantExecutable := &essmsgpb.Executable{
-			SchedulingConstraints: &essmsgpb.SchedulingConstraints{QueueName: "batch-queue"},
-			Type: &essmsgpb.Executable_Jobset{
-				Jobset: &essmsgpb.JobSetExecutable{Jobs: []*essmsgpb.KubernetesJob{{Name: "test-job"}}},
-			},
-		}
-		execBytes, err := postgresdata.MarshalProto(wantExecutable)
-		if err != nil {
-			t.Fatalf("MarshalProto(Executable) failed: %v", err)
-		}
-		createTime := baseTestTime.Add(-time.Hour)
-		updateTime := baseTestTime.Add(5 * time.Minute)
-		const populateWorkUnitSQL = `UPDATE WorkUnits SET WorkUnitType = $1, Priority = $2, Urls = $3, Tags = $4, Notes = $5, Executable = $6, CreateTime = $7, UpdateTime = $8 WHERE Xid = $9 AND WorkUnitId = $10`
-		if _, err := essPool.Exec(ctx, populateWorkUnitSQL, int64(essmsgpb.WorkUnit_STANDARD), int64(200), [][]byte{urlBytes}, []string{"tag-a", "tag-b"}, "unit-notes", execBytes, createTime, updateTime, xid, wid); err != nil {
-			t.Fatalf("populate WorkUnits(%d, %d) failed: %v", xid, wid, err)
-		}
-		wantWU := &essmsgpb.WorkUnit{
-			Name:                     validator.ConstructWorkUnitName(xid, wid),
-			WorkUnitType:             essmsgpb.WorkUnit_STANDARD,
-			Priority:                 200,
-			Urls:                     []*essmsgpb.Url{wantURL},
-			Tags:                     []string{"tag-a", "tag-b"},
-			Notes:                    "unit-notes",
-			Executable:               wantExecutable,
-			CurrentWorkUnitExecution: wantExec,
-			CreateTime:               timestamppb.New(createTime),
-			UpdateTime:               timestamppb.New(updateTime),
-		}
+		postgrestest.SeedExperiment(ctx, t, essPool, xid)
+		wantWU := blankWorkUnitProto(xid, wid, baseTestTime)
+		mustInsertWorkUnit(t, essPool, repo, wantWU)
 
 		gotWU, err := repo.FetchWorkUnit(ctx, xid, wid)
 		if err != nil {
@@ -197,7 +208,7 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FetchCurrentWorkUnitExecution() failed: %v", err)
 		}
-		if diff := cmp.Diff(wantExec, gotExec, protocmp.Transform()); diff != "" {
+		if diff := cmp.Diff(wantWU.CurrentWorkUnitExecution, gotExec, protocmp.Transform()); diff != "" {
 			t.Errorf("FetchCurrentWorkUnitExecution() mismatch (-want +got):\n%s", diff)
 		}
 
@@ -211,14 +222,16 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 
 	t.Run("ListWorkUnitExecutions and ExecutionArchiving", func(t *testing.T) {
 		const xid, wid = 102, 1
-		firstExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
+		postgrestest.SeedExperiment(ctx, t, essPool, xid)
+		wantWU := blankWorkUnitProto(xid, wid, baseTestTime)
+		mustInsertWorkUnit(t, essPool, repo, wantWU)
 
 		execs, err := repo.ListWorkUnitExecutions(ctx, xid, wid)
 		if err != nil || len(execs) != 1 {
 			t.Fatalf("ListWorkUnitExecutions() = (%d, %v), want 1 execution", len(execs), err)
 		}
 
-		archivedFirst := proto.Clone(firstExec).(*essmsgpb.WorkUnitExecution)
+		archivedFirst := proto.Clone(wantWU.CurrentWorkUnitExecution).(*essmsgpb.WorkUnitExecution)
 		archivedFirst.State = essmsgpb.WorkUnitExecution_INACTIVE
 		secondTime := timestamppb.New(baseTestTime.Add(time.Minute))
 		archivedSecond := &essmsgpb.WorkUnitExecution{
@@ -266,13 +279,320 @@ func TestRepository_ReadsAndExecutions(t *testing.T) {
 		if _, err := repo.ListWorkUnitExecutions(ctx, xid, 999); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("ListWorkUnitExecutions(missing) = %v, want ErrNotFound", err)
 		}
-		if err := repo.WithTx(essPool).UpdateCurrentWorkUnitExecution(ctx, xid, 999, 1, firstExec); !errors.Is(err, grpcerr.ErrNotFound) {
+		if err := repo.WithTx(essPool).UpdateCurrentWorkUnitExecution(ctx, xid, 999, 1, execs[0]); !errors.Is(err, grpcerr.ErrNotFound) {
 			t.Errorf("UpdateCurrentWorkUnitExecution(missing) = %v, want ErrNotFound", err)
 		}
 		if got := status.Code(repo.WithTx(essPool).SaveWorkUnitExecution(ctx, &essmsgpb.WorkUnitExecution{Name: "invalid"})); got != codes.Internal {
 			t.Errorf("SaveWorkUnitExecution(invalid) code = %v, want Internal", got)
 		}
 	})
+
+	t.Run("FetchUpdatingWorkUnits", func(t *testing.T) {
+		const xid = 103
+		postgrestest.SeedExperiment(ctx, t, essPool, xid)
+		mustInsertWorkUnit(t, essPool, repo, blankWorkUnitProto(xid, 1, baseTestTime))
+		mustInsertWorkUnit(t, essPool, repo, blankWorkUnitProto(xid, 2, baseTestTime))
+
+		holdTx, err := essPool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("essPool.Begin() failed: %v", err)
+		}
+		defer func() { _ = holdTx.Rollback(context.Background()) }()
+
+		txRepo := repo.WithTx(holdTx)
+		empty, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, nil)
+		if err != nil || len(empty) != 0 {
+			t.Fatalf("FetchUpdatingWorkUnits(nil) = (%v, %v), want empty", empty, err)
+		}
+		got, err := txRepo.FetchUpdatingWorkUnits(ctx, xid, []int64{2, 1, 999})
+		if err != nil {
+			t.Fatalf("FetchUpdatingWorkUnits() failed: %v", err)
+		}
+		want := map[int64]*essmsgpb.WorkUnit{}
+		for _, wid := range []int64{1, 2} {
+			full := blankWorkUnitProto(xid, wid, baseTestTime)
+			exec := proto.Clone(full.CurrentWorkUnitExecution).(*essmsgpb.WorkUnitExecution)
+			exec.State = essmsgpb.WorkUnitExecution_INACTIVE
+			want[wid] = &essmsgpb.WorkUnit{Name: full.Name, Executable: full.Executable, CurrentWorkUnitExecution: exec}
+		}
+		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+			t.Errorf("FetchUpdatingWorkUnits() mismatch (-want +got):\n%s", diff)
+		}
+
+		for _, wid := range []int64{1, 2} {
+			_, lockErr := essPool.Exec(ctx, "SELECT 1 FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2 FOR NO KEY UPDATE NOWAIT", xid, wid)
+			var pgErr *pgconn.PgError
+			if !errors.As(lockErr, &pgErr) || pgErr.Code != "55P03" {
+				t.Errorf("concurrent FOR NO KEY UPDATE NOWAIT on wid=%d err = %v, want SQLSTATE 55P03", wid, lockErr)
+			}
+			if _, err := essPool.Exec(ctx, "SELECT 1 FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2 FOR KEY SHARE NOWAIT", xid, wid); err != nil {
+				t.Errorf("concurrent FOR KEY SHARE NOWAIT on wid=%d failed (must lock with FOR NO KEY UPDATE, not FOR UPDATE): %v", wid, err)
+			}
+		}
+	})
+}
+
+func TestRepository_UpdateWorkUnitAndConcurrency(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	const xid, wid = 201, 1
+	postgrestest.SeedExperiment(ctx, t, essPool, xid)
+	created := blankWorkUnitProto(xid, wid, baseTestTime)
+	mustInsertWorkUnit(t, essPool, repo, created)
+
+	update := &storage.WorkUnitUpdate{
+		XID: xid,
+		WID: wid,
+		WorkUnit: &essmsgpb.WorkUnit{
+			Priority: 2,
+			Notes:    "new-notes",
+			Tags:     []string{"tag3"},
+			Urls:     []*essmsgpb.Url{{Url: "http://new.com"}},
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"priority", "notes", "tags", "urls"}},
+	}
+	res, err := repo.UpdateWorkUnit(ctx, update)
+	if err != nil {
+		t.Fatalf("UpdateWorkUnit() failed: %v", err)
+	}
+	if diff := cmp.Diff(created, res.Original, protocmp.Transform()); diff != "" {
+		t.Errorf("Original mismatch (-want +got):\n%s", diff)
+	}
+	want := proto.Clone(created).(*essmsgpb.WorkUnit)
+	want.Priority, want.Notes, want.Tags = 2, "new-notes", []string{"tag3"}
+	want.Urls = []*essmsgpb.Url{{Url: "http://new.com"}}
+	if diff := cmp.Diff(want, res.Updated, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.WorkUnit{}, "update_time")); diff != "" {
+		t.Errorf("Updated mismatch (-want +got):\n%s", diff)
+	}
+	if !res.Updated.GetUpdateTime().AsTime().After(created.GetUpdateTime().AsTime()) {
+		t.Errorf("Updated.UpdateTime = %v, want after %v", res.Updated.GetUpdateTime(), created.GetUpdateTime())
+	}
+	gotWU, err := repo.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		t.Fatalf("FetchWorkUnit() failed: %v", err)
+	}
+	if diff := cmp.Diff(res.Updated, gotWU, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchWorkUnit() after update mismatch (-want +got):\n%s", diff)
+	}
+
+	noopRes, err := repo.UpdateWorkUnit(ctx, update)
+	if err != nil {
+		t.Fatalf("no-op UpdateWorkUnit() failed: %v", err)
+	}
+	if !noopRes.Updated.GetUpdateTime().AsTime().Equal(res.Updated.GetUpdateTime().AsTime()) {
+		t.Errorf("no-op UpdateWorkUnit changed UpdateTime: got %v, want %v", noopRes.Updated.GetUpdateTime(), res.Updated.GetUpdateTime())
+	}
+
+	immutableUpdate := &storage.WorkUnitUpdate{
+		XID:        xid,
+		WID:        wid,
+		WorkUnit:   &essmsgpb.WorkUnit{WorkUnitType: essmsgpb.WorkUnit_AUXILIARY},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"work_unit_type"}},
+	}
+	if _, err := repo.UpdateWorkUnit(ctx, immutableUpdate); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateWorkUnit(immutable) = %v, want ErrInvalidArgument", err)
+	}
+	emptyMaskUpdate := &storage.WorkUnitUpdate{
+		XID:        xid,
+		WID:        wid,
+		WorkUnit:   &essmsgpb.WorkUnit{},
+		UpdateMask: &fieldmaskpb.FieldMask{},
+	}
+	if _, err := repo.UpdateWorkUnit(ctx, emptyMaskUpdate); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateWorkUnit(empty mask) = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+		XID: 9999, WID: 1, WorkUnit: &essmsgpb.WorkUnit{Notes: "x"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+	}); !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("UpdateWorkUnit(missing) = %v, want ErrNotFound", err)
+	}
+
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("essPool.Begin() failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(context.Background()) }()
+	if _, err := holdTx.Exec(ctx, lockWorkUnitSQL.String(), xid, wid); err != nil {
+		t.Fatalf("holdTx lock failed: %v", err)
+	}
+
+	var started, done sync.WaitGroup
+	errs := make(chan error, 2)
+	started.Add(2)
+	done.Go(func() {
+		started.Done()
+		_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+			XID: xid, WID: wid, WorkUnit: &essmsgpb.WorkUnit{Notes: "concurrent-notes"},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+		})
+		errs <- err
+	})
+	done.Go(func() {
+		started.Done()
+		_, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+			XID: xid, WID: wid, WorkUnit: &essmsgpb.WorkUnit{Tags: []string{"concurrent-tag"}},
+			UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
+		})
+		errs <- err
+	})
+	started.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("holdTx.Commit() failed: %v", err)
+	}
+	done.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent UpdateWorkUnit failed: %v", err)
+		}
+	}
+	finalWU, err := repo.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		t.Fatalf("FetchWorkUnit() after concurrent updates failed: %v", err)
+	}
+	wantFinal := proto.Clone(res.Updated).(*essmsgpb.WorkUnit)
+	wantFinal.Notes = "concurrent-notes"
+	wantFinal.Tags = []string{"concurrent-tag"}
+	if diff := cmp.Diff(wantFinal, finalWU, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.WorkUnit{}, "update_time")); diff != "" {
+		t.Errorf("FetchWorkUnit() after concurrent updates mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestRepository_IDAllocationAndConcurrentInserts(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	const xid = 301
+	postgrestest.SeedExperiment(ctx, t, essPool, xid)
+
+	err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+		return repo.WithTx(tx).InsertWorkUnit(ctx, blankWorkUnitProto(99999, 1, baseTestTime))
+	})
+	if !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("InsertWorkUnit(missing experiment) = %v, want ErrFailedPrecondition", err)
+	}
+
+	const workers = 8
+	allocated := make([]int64, workers)
+	var wg sync.WaitGroup
+	for i := range workers {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			txErr := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+				txRepo := repo.WithTx(tx)
+				nextID, err := txRepo.FetchNextWorkUnitID(ctx, xid)
+				if err != nil {
+					return err
+				}
+				allocated[idx] = nextID
+				return txRepo.InsertWorkUnit(ctx, blankWorkUnitProto(xid, nextID, baseTestTime))
+			})
+			if txErr != nil {
+				t.Errorf("worker %d transaction failed: %v", idx, txErr)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	slices.Sort(allocated)
+	wantIDs := []int64{1, 2, 3, 4, 5, 6, 7, 8}
+	if !slices.Equal(allocated, wantIDs) {
+		t.Errorf("concurrent allocated WIDs = %v, want %v", allocated, wantIDs)
+	}
+
+	holdTx, err := essPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("essPool.Begin() failed: %v", err)
+	}
+	defer func() { _ = holdTx.Rollback(context.Background()) }()
+	if err := repo.WithTx(holdTx).InsertWorkUnit(ctx, blankWorkUnitProto(xid, workers+1, baseTestTime)); err != nil {
+		t.Fatalf("InsertWorkUnit(caller-supplied wid) failed: %v", err)
+	}
+	var gotID int64
+	var started sync.WaitGroup
+	started.Add(1)
+	done := make(chan error, 1)
+	go func() {
+		started.Done()
+		done <- pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+			txRepo := repo.WithTx(tx)
+			id, err := txRepo.FetchNextWorkUnitID(ctx, xid)
+			if err != nil {
+				return err
+			}
+			gotID = id
+			return txRepo.InsertWorkUnit(ctx, blankWorkUnitProto(xid, id, baseTestTime))
+		})
+	}()
+	started.Wait()
+	time.Sleep(20 * time.Millisecond)
+	if err := holdTx.Commit(ctx); err != nil {
+		t.Fatalf("holdTx.Commit() failed: %v", err)
+	}
+	if err := <-done; err != nil || gotID != workers+2 {
+		t.Errorf("allocator after caller-supplied insert = (%d, %v), want (%d, nil)", gotID, err, workers+2)
+	}
+}
+
+func TestRepository_ListWorkUnitMessagesBySeverity(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	const xid = 401
+	postgrestest.SeedExperiment(ctx, t, essPool, xid)
+
+	seedWithMsgs := func(wid int64, sysMsg, userMsg *essmsgpb.StructuredMessage) {
+		wu := blankWorkUnitProto(xid, wid, baseTestTime)
+		wu.CurrentWorkUnitExecution.Status.SystemMessage = sysMsg
+		wu.CurrentWorkUnitExecution.Status.UserMessage = userMsg
+		mustInsertWorkUnit(t, essPool, repo, wu)
+	}
+	msg := func(text string, sev essmsgpb.StructuredMessage_Severity) *essmsgpb.StructuredMessage {
+		return &essmsgpb.StructuredMessage{UserFacingText: text, Severity: sev, CreateTime: timestamppb.New(baseTestTime)}
+	}
+
+	errSys3 := msg("err sys 3", essmsgpb.StructuredMessage_ERROR)
+	errUser3 := msg("err user 3", essmsgpb.StructuredMessage_ERROR)
+	errSys5 := msg("err sys 5", essmsgpb.StructuredMessage_ERROR)
+	seedWithMsgs(1, msg("info 1", essmsgpb.StructuredMessage_INFO), nil)
+	seedWithMsgs(2, msg("warn 1", essmsgpb.StructuredMessage_WARNING), nil)
+	seedWithMsgs(3, errSys3, errUser3)
+	seedWithMsgs(4, nil, nil)
+	seedWithMsgs(5, errSys5, nil)
+
+	if _, err := repo.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+		XID: xid, WID: 3, WorkUnit: &essmsgpb.WorkUnit{Notes: "moved-tuple"},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"notes"}},
+	}); err != nil {
+		t.Fatalf("UpdateWorkUnit(wid=3) failed: %v", err)
+	}
+
+	err := pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+		txRepo := repo.WithTx(tx)
+		errMsgs, err := txRepo.ListWorkUnitMessagesBySeverity(ctx, xid, essmsgpb.StructuredMessage_ERROR)
+		if err != nil {
+			t.Fatalf("ListWorkUnitMessagesBySeverity(ERROR) failed: %v", err)
+		}
+		wantErrMsgs := []*essmsgpb.StructuredMessage{errSys3, errUser3, errSys5}
+		if diff := cmp.Diff(wantErrMsgs, errMsgs, protocmp.Transform()); diff != "" {
+			t.Errorf("ListWorkUnitMessagesBySeverity(ERROR) mismatch (-want +got):\n%s", diff)
+		}
+		fatalMsgs, err := txRepo.ListWorkUnitMessagesBySeverity(ctx, xid, essmsgpb.StructuredMessage_FATAL)
+		if err != nil || len(fatalMsgs) != 0 {
+			t.Fatalf("ListWorkUnitMessagesBySeverity(FATAL) = (%d, %v), want 0", len(fatalMsgs), err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ListWorkUnitMessagesBySeverity failed: %v", err)
+	}
 }
 
 // Concurrent restart transactions on the same WorkUnit must not lose executions:
@@ -284,7 +604,10 @@ func TestTxRepository_ConcurrentExecutionRestartsNoLostUpdate(t *testing.T) {
 	repo := NewRepository(essPool)
 
 	const xid, wid, workers = 104, 1, 4
-	firstExec := seedWorkUnitWithCurrentExecution(t, essPool, repo, xid, wid, baseTestTime)
+	postgrestest.SeedExperiment(ctx, t, essPool, xid)
+	initialWU := blankWorkUnitProto(xid, wid, baseTestTime)
+	mustInsertWorkUnit(t, essPool, repo, initialWU)
+	firstExec := initialWU.CurrentWorkUnitExecution
 	assertNoKeyUpdateCompatibleWithKeyShare(t, essPool, repo, xid, wid)
 
 	holdTx, err := essPool.Begin(ctx)

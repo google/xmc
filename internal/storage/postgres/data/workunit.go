@@ -49,6 +49,28 @@ type WorkUnitRow struct {
 	UpdateTime                     time.Time  `db:"updatetime"`
 }
 
+// GetInsertArgs returns the strict named arguments required by the WorkUnits INSERT statement.
+func (r WorkUnitRow) GetInsertArgs() pgx.StrictNamedArgs {
+	return pgx.StrictNamedArgs{
+		"xid": r.Xid, "workunitid": r.WorkUnitID, "workunittype": r.WorkUnitType, "priority": r.Priority,
+		"urls": r.Urls, "tags": r.Tags, "notes": r.Notes, "executable": r.Executable,
+		"executioncreatetime": r.ExecutionCreateTime, "executionupdatetime": r.ExecutionUpdateTime,
+		"executioncompletetime": r.ExecutionCompleteTime, "executionid": r.ExecutionID,
+		"executionmetadata": r.ExecutionMetadata, "workunitstatus": r.WorkUnitStatus,
+		"queuename": r.QueueName, "executionstate": r.ExecutionState,
+		"executionstatusmessageseverity": r.ExecutionStatusMessageSeverity, "positioninqueue": r.PositionInQueue,
+		"createtime": r.CreateTime, "updatetime": r.UpdateTime,
+	}
+}
+
+// GetUpdateArgs returns the strict named arguments required by the WorkUnits metadata UPDATE statement.
+func (r WorkUnitRow) GetUpdateArgs() pgx.StrictNamedArgs {
+	return pgx.StrictNamedArgs{
+		"xid": r.Xid, "workunitid": r.WorkUnitID, "priority": r.Priority,
+		"urls": r.Urls, "tags": r.Tags, "notes": r.Notes, "updatetime": r.UpdateTime,
+	}
+}
+
 // GetCurrentExecutionUpdateArgs returns the strict named arguments required to update the current execution on WorkUnits.
 func (r WorkUnitRow) GetCurrentExecutionUpdateArgs() pgx.StrictNamedArgs {
 	return pgx.StrictNamedArgs{
@@ -58,6 +80,14 @@ func (r WorkUnitRow) GetCurrentExecutionUpdateArgs() pgx.StrictNamedArgs {
 		"workunitstatus": r.WorkUnitStatus, "executionstate": r.ExecutionState,
 		"executionstatusmessageseverity": r.ExecutionStatusMessageSeverity,
 		"positioninqueue":                r.PositionInQueue, "updatetime": r.UpdateTime,
+	}
+}
+
+func (r WorkUnitRow) currentExecutionRow() WorkUnitExecutionRow {
+	return WorkUnitExecutionRow{
+		Xid: r.Xid, WorkUnitID: r.WorkUnitID, ExecutionID: r.ExecutionID,
+		ExecutionMetadata: r.ExecutionMetadata, WorkUnitStatus: r.WorkUnitStatus,
+		CreateTime: r.ExecutionCreateTime, UpdateTime: r.ExecutionUpdateTime, CompleteTime: r.ExecutionCompleteTime,
 	}
 }
 
@@ -113,16 +143,29 @@ func WorkUnitExecutionRowToProto(row WorkUnitExecutionRow) (*essmsgpb.WorkUnitEx
 // from the stored ExecutionUpdateTime and ExecutionCompleteTime columns (rather than Spanner
 // WorkUnitCurrentExecutionRowToProto, which sets UpdateTime from Status.UpdateTime and omits CompleteTime).
 func WorkUnitCurrentExecutionRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnitExecution, error) {
-	wue, err := WorkUnitExecutionRowToProto(WorkUnitExecutionRow{
-		Xid: row.Xid, WorkUnitID: row.WorkUnitID, ExecutionID: row.ExecutionID,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	})
+	wue, err := WorkUnitExecutionRowToProto(row.currentExecutionRow())
 	if err != nil {
 		return nil, err
 	}
 	wue.State = essmsgpb.WorkUnitExecution_ACTIVE
 	return wue, nil
+}
+
+// UpdatingWorkUnitRowToProto converts a partial WorkUnitRow selected by FetchUpdatingWorkUnits into a WorkUnit proto.
+func UpdatingWorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
+	execProto, err := UnmarshalProto[essmsgpb.Executable](row.Executable)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
+	}
+	wue, err := WorkUnitExecutionRowToProto(row.currentExecutionRow())
+	if err != nil {
+		return nil, err
+	}
+	return &essmsgpb.WorkUnit{
+		Name:                     validator.ConstructWorkUnitName(row.Xid, row.WorkUnitID),
+		Executable:               execProto,
+		CurrentWorkUnitExecution: wue,
+	}, nil
 }
 
 // WorkUnitRowToProto converts a scanned PostgreSQL WorkUnitRow into a WorkUnit proto.
@@ -150,6 +193,54 @@ func WorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
 		CurrentWorkUnitExecution: wue,
 		CreateTime:               timestamppb.New(row.CreateTime),
 		UpdateTime:               timestamppb.New(row.UpdateTime),
+	}, nil
+}
+
+// WorkUnitProtoToRow converts a WorkUnit proto into a WorkUnitRow for insertion.
+func WorkUnitProtoToRow(wu *essmsgpb.WorkUnit) (WorkUnitRow, error) {
+	exec := wu.GetCurrentWorkUnitExecution()
+	xid, wid, eid, err := validator.ValidateWorkUnitExecutionName(exec.GetName())
+	if err != nil {
+		return WorkUnitRow{}, fmt.Errorf("failed to validate WorkUnitExecution name %q: %w", exec.GetName(), err)
+	}
+	urls, err := marshalUrls(wu.GetUrls())
+	if err != nil {
+		return WorkUnitRow{}, err
+	}
+	execBytes, err := MarshalProto(wu.GetExecutable())
+	if err != nil {
+		return WorkUnitRow{}, fmt.Errorf("failed to marshal Executable: %w", err)
+	}
+	row, err := CurrentWorkUnitExecutionProtoToRow(xid, wid, eid, exec)
+	if err != nil {
+		return WorkUnitRow{}, err
+	}
+	row.WorkUnitType = int64(wu.GetWorkUnitType())
+	row.Priority = int64(wu.GetPriority())
+	row.Urls = urls
+	row.Tags = normalizeTags(wu.GetTags())
+	row.Notes = wu.GetNotes()
+	row.Executable = execBytes
+	row.QueueName = wu.GetExecutable().GetSchedulingConstraints().GetQueueName()
+	row.CreateTime = wu.GetCreateTime().AsTime()
+	row.UpdateTime = wu.GetUpdateTime().AsTime()
+	return row, nil
+}
+
+// WorkUnitProtoToUpdateRow converts a WorkUnit proto into a WorkUnitRow for metadata updates.
+func WorkUnitProtoToUpdateRow(wu *essmsgpb.WorkUnit) (WorkUnitRow, error) {
+	xid, wid, err := validator.ValidateWorkUnitName(wu.GetName())
+	if err != nil {
+		return WorkUnitRow{}, fmt.Errorf("failed to validate work unit name %q: %w", wu.GetName(), err)
+	}
+	urls, err := marshalUrls(wu.GetUrls())
+	if err != nil {
+		return WorkUnitRow{}, err
+	}
+	return WorkUnitRow{
+		Xid: xid, WorkUnitID: wid, Priority: int64(wu.GetPriority()),
+		Urls: urls, Tags: normalizeTags(wu.GetTags()), Notes: wu.GetNotes(),
+		UpdateTime: wu.GetUpdateTime().AsTime(),
 	}, nil
 }
 
@@ -188,11 +279,7 @@ func WorkUnitExecutionProtoToRow(execution *essmsgpb.WorkUnitExecution) (WorkUni
 	if err != nil {
 		return WorkUnitExecutionRow{}, err
 	}
-	return WorkUnitExecutionRow{
-		Xid: xid, WorkUnitID: wid, ExecutionID: eid,
-		ExecutionMetadata: row.ExecutionMetadata, WorkUnitStatus: row.WorkUnitStatus,
-		CreateTime: row.ExecutionCreateTime, UpdateTime: row.ExecutionUpdateTime, CompleteTime: row.ExecutionCompleteTime,
-	}, nil
+	return row.currentExecutionRow(), nil
 }
 
 func populateDerivedStatusFields(row *WorkUnitRow, status *essmsgpb.WorkUnitStatus) {
@@ -202,6 +289,18 @@ func populateDerivedStatusFields(row *WorkUnitRow, status *essmsgpb.WorkUnitStat
 	if qi := status.GetSchedulingInformation().GetAuxiliaryInfo().GetQueueInfo(); qi != nil {
 		row.PositionInQueue = int64(qi.GetPositionInQueue())
 	}
+}
+
+func marshalUrls(urls []*essmsgpb.Url) ([][]byte, error) {
+	res := make([][]byte, len(urls))
+	for i, u := range urls {
+		b, err := MarshalProto(u)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal Url[%d]: %w", i, err)
+		}
+		res[i] = b
+	}
+	return res, nil
 }
 
 func normalizeTags(tags []string) []string {
