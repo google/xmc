@@ -74,7 +74,7 @@ vars:
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
   rod_deployment_enabled: true
-  log_monitor_deployment_enabled: false
+  log_monitor_deployment_enabled: true
   health_status_cache_ttl: 15s
   health_status_force_refresh_max_requests: 5
   health_status_force_refresh_window: 5s

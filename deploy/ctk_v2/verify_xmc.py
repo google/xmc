@@ -226,14 +226,17 @@ def _resolve_log_monitor_deployment_enabled(
         config_path = pathlib.Path(__file__).parent / "xmanager-cloud-deployment.yaml"
 
     if not config_path.is_file():
-        return False
+        return True
 
     try:
         content = config_path.read_text(encoding="utf-8")
     except OSError:
-        return False
+        return True
 
-    return _parse_bool(_extract_yaml_val(content, "log_monitor_deployment_enabled"))
+    val = _extract_yaml_val(content, "log_monitor_deployment_enabled")
+    if val is None:
+        return True
+    return _parse_bool(val)
 
 
 def _check_log_monitor(

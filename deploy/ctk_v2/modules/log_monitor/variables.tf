@@ -70,5 +70,5 @@ variable "max_concurrent_updates" {
 variable "log_monitor_deployment_enabled" {
   type        = bool
   description = "When true, the Log Monitor runs as a GKE Deployment managed by Helm instead of a Cloud Run service."
-  default     = false
+  default     = true
 }

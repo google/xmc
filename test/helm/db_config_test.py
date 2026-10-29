@@ -257,6 +257,22 @@ class DbConfigChartTest(unittest.TestCase):
         )
         self.assertIn("- name: db-config-volume\n            mountPath: /config/db", manifest)
 
+    def test_log_monitor_deployment_enabled_by_default(self) -> None:
+        """log-monitor deployment and health-config GKE URL render with default values."""
+        lm_manifest = render_template("templates/log-monitor/deployment.yaml", {})
+        self.assertIn("name: log-monitor-deployment", lm_manifest)
+
+        health_cm = render_template("templates/health-service/configmap.yaml", {})
+        self.assertIn('health_log_monitor_url: "http://log-monitor-service:8080"', health_cm)
+        self.assertNotIn("health_log_monitor_resource_name", health_cm)
+
+        health_cm_cloud_run = render_template(
+            "templates/health-service/configmap.yaml",
+            {"logMonitorDeployment.enabled": "false"},
+        )
+        self.assertIn("health_log_monitor_resource_name:", health_cm_cloud_run)
+        self.assertNotIn("health_log_monitor_url", health_cm_cloud_run)
+
     def test_workloads_source_postgres_password_from_secret(self) -> None:
         """Every workload receives POSTGRES_PASSWORD from postgres-secret when database.backend is postgres."""
         values = {

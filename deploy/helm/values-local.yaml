@@ -41,6 +41,9 @@ essDeployment:
     minReplicas: 1
     maxReplicas: 1
 
+logMonitorDeployment:
+  enabled: false
+
 auth:
   disableAuthentication: false
   isNonProdAuth: true
