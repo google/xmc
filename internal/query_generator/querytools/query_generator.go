@@ -58,10 +58,6 @@ type QueryGenerator interface {
 	// and any error that occurred.
 	GenerateQuery(stmt queryfilter.Statement, selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (map[TableField]int, Unnester, error)
 
-	// LastFromTable returns the table that was last selected from. This is filled in after calling
-	// GenerateQuery(). This is generally to be used for logging or metric purposes by the client.
-	LastFromTable() TableName
-
 	// Tables returns the tables that can be used for queries.
 	Tables() []TableView
 }
@@ -503,8 +499,6 @@ type queryGen struct {
 	optimizeOrderBy bool
 
 	options options
-
-	lastFromTable TableName
 }
 
 // Tables returns the tables available to this QueryGenerator.
@@ -767,7 +761,6 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 		logging.Info(context.Background(), "Skipping candidate table", "candidateTable", ct.t.Name, "currentBestTable", bestTable.t.Name)
 	}
 	fromTable := bestTable.t
-	q.lastFromTable = fromTable.Name
 
 	// Create a set to lookup whether a field is a selectField.
 	sfs := make(map[TableField]bool, len(selectFields))
@@ -1068,12 +1061,6 @@ func resolveOrderedPageTokenFields(pageTokenFields, orderByFields []UserOrderedI
 		orderedPtFields = append(orderedPtFields, ob)
 	}
 	return orderedPtFields, nil
-}
-
-// LastFromTable returns the table that was last selected from. This is filled in after calling
-// GenerateQuery(). This is generally to be used for logging or metric purposes by the client.
-func (q *queryGen) LastFromTable() TableName {
-	return q.lastFromTable
 }
 
 // appendPageTokenFields adds WHERE conditions to stmt to enforce pagination conditions for
