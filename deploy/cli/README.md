@@ -12,7 +12,7 @@ The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1`) bundles `xman
 
 ### Recommended: Automated Setup & Local Proto Compilation (`install_xmanager.py`)
 
-Use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment, install optional `requirements.txt` files, install `xmanager` and XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `grpcio-tools`, `protobuf`, `python-dotenv`, `requests`) from PyPI, compile the fresh local XMC `.proto` definitions from [`api/protos`](../../api/protos) (`experiment`, `xid`, and `dashboard`) into the virtual environment's `xmanager_cloud` package, and install local `sdks/python/xdash` in editable mode after purging obsolete wheel-bundled `xdash` copies.
+Use [`install_xmanager.py`](install_xmanager.py) to set up a virtual environment, install optional `requirements.txt` files, install `xmanager` and XMC runtime client dependencies (`absl-py`, `google-auth`, `googleapis-common-protos`, `grpcio`, `grpcio-tools`, `protobuf`, `python-dotenv`, `requests`) from PyPI, compile the fresh local XMC `.proto` definitions from [`api/protos`](../../api/protos) (`experiment`, `xid`, and `dashboard`) into the virtual environment's `xmanager_cloud` package, and install local `sdks/python/xdash` and `sdks/python/xmc` in editable mode after purging obsolete wheel-bundled `xdash` copies, then verify both SDKs resolve from the repository checkout.
 
 > [!NOTE]
 > Because `install_xmanager.py` overwrites the `*_pb2.py` and `*_pb2_grpc.py` modules shipped by the `xmanager` wheel inside `site-packages/xmanager_cloud`, you must re-run `install_xmanager.py` after any `pip` operation (such as `pip install -U xmanager` or `--force-reinstall`) that modifies `xmanager`. It also purges any stale wheel-bundled `site-packages/xdash` copy so that standard import resolution loads the repository's local `xdash` SDK rather than outdated wheel artifacts.
@@ -21,8 +21,9 @@ It automates:
 1. Creating a Python virtual environment (default: `./venv`).
 2. Upgrading `pip`, installing any `-r` / `--requirements` files, and installing `xmanager` and XMC client dependencies from PyPI.
 3. Compiling the local XMC API protos from `api/protos` (`experiment`, `xid`, and `dashboard`) directly into `site-packages/xmanager_cloud` via `grpc_tools.protoc` so local proto changes take effect immediately without waiting for a PyPI release.
-4. Purging the obsolete wheel-bundled `site-packages/xdash` package and installing local repository `sdks/python/xdash` in editable mode (`pip install --no-deps -e`).
+4. Purging the obsolete wheel-bundled `site-packages/xdash` package and installing local repository SDKs `sdks/python/xdash` and `sdks/python/xmc` in editable mode (`pip install --no-deps -e`).
 5. Verifying that `xmanager.xm_cloud`, `xdash`, `xdash.auth`, and the compiled XMC gRPC proto modules import cleanly.
+6. Verifying SDK provenance: `xdash` and `xmc` must resolve from `sdks/python/<sdk>` in the repository checkout. The script fails if a same-named package shipped by another distribution (such as a stale copy bundled in the `xmanager` wheel) shadows the editable install.
 
 #### Prerequisites
 - **Python 3** (with `venv` and `pip`)
@@ -72,6 +73,9 @@ You can verify the installation is working correctly by checking imports:
 ```bash
 python3 -c "import xmanager.xm_cloud; import xmanager_cloud.experiment_state_server.experiment_state_api; import xdash; import xdash.auth; print('Verified!')"
 ```
+
+#### Troubleshooting: `<sdk> resolved to ..., expected under sdks/python/<sdk>`
+Another installed distribution ships a top-level package with the same name as a local SDK, and Python loads that copy instead of the repository checkout. Find the owner with `pip show -f xmanager | grep <sdk>/`, then re-run `install_xmanager.py`. If the error persists, the shadowing copy is not handled by the script's cleanup step; remove it from `site-packages` manually and report the offending distribution.
 
 ---
 
