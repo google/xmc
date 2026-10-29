@@ -385,8 +385,6 @@ type ComponentRepository interface {
 	GetComponentWithFence(ctx context.Context, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error)
 	// ReadOwnershipGauges reads the fence and counts active owned components last seen at or before cutoff in one snapshot.
 	ReadOwnershipGauges(ctx context.Context, cutoff time.Time) (store.OwnershipGauges, error)
-	// WithReadOnlySnapshot runs fn with a repository whose reads all come from one consistent read-only snapshot.
-	WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo ComponentTxRepository) error) error
 }
 
 // ComponentTxRepository defines transactional component catalog operations. A read-only binding supports only

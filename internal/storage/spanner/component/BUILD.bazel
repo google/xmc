@@ -43,7 +43,6 @@ go_test(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/grpcerr",
-        "//internal/storage",
         "//internal/storage/spanner/emulator",
         "//pkg/components/naming",
         "//pkg/components/store",

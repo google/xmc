@@ -28,47 +28,72 @@ import (
 
 // InsertComponent buffers mutations to insert a new component and its dependency rows.
 func (r *TxRepository) InsertComponent(_ context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
-	return r.bufferMutations(spannerdata.ComponentInsertMutations(rec, depIDs))
+	if r.tx == nil {
+		return fmt.Errorf("cannot insert component without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	mutations, err := spannerdata.ComponentInsertMutations(rec, depIDs)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite(mutations)
 }
 
 // UpdateComponentIntent buffers mutations to update an existing component's intent and replace its dependencies.
 func (r *TxRepository) UpdateComponentIntent(_ context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
-	return r.bufferMutations(spannerdata.ComponentIntentUpdateMutations(rec, depIDs))
+	if r.tx == nil {
+		return fmt.Errorf("cannot update component intent without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	mutations, err := spannerdata.ComponentIntentUpdateMutations(rec, depIDs)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite(mutations)
 }
 
 // UpdateComponentState buffers an update of a component's state and access status payload.
 func (r *TxRepository) UpdateComponentState(_ context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error {
-	return r.bufferMutation(spannerdata.ComponentStateUpdateMutation(componentID, state, access))
+	if r.tx == nil {
+		return fmt.Errorf("cannot update component state without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	m, err := spannerdata.ComponentStateUpdateMutation(componentID, state, access)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }
 
 // UpdateComponentObservation buffers an update of rec's observed generation, access status, and optional state.
 func (r *TxRepository) UpdateComponentObservation(_ context.Context, rec *store.ComponentRecord, updateState bool) error {
-	return r.bufferMutation(spannerdata.ComponentObservationUpdateMutation(rec, updateState))
+	if r.tx == nil {
+		return fmt.Errorf("cannot update component observation without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	m, err := spannerdata.ComponentObservationUpdateMutation(rec, updateState)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }
 
 // SoftDeleteComponent buffers an update marking rec as DELETED and optionally updating its owner columns.
 func (r *TxRepository) SoftDeleteComponent(_ context.Context, rec *store.ComponentRecord, owner *store.SourceOwner) error {
-	return r.bufferMutation(spannerdata.ComponentSoftDeleteMutation(rec, owner))
+	if r.tx == nil {
+		return fmt.Errorf("cannot soft-delete component without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	m, err := spannerdata.ComponentSoftDeleteMutation(rec, owner)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }
 
 // WriteComponentOwner buffers an update to componentID's source owner columns.
 func (r *TxRepository) WriteComponentOwner(_ context.Context, componentID int64, owner *store.SourceOwner) error {
-	return r.bufferMutation(spannerdata.ComponentOwnerUpdateMutation(componentID, owner), nil)
-}
-
-func (r *TxRepository) bufferMutation(m *spanner.Mutation, err error) error {
-	if m == nil && err == nil {
-		return r.bufferMutations(nil, nil)
-	}
-	return r.bufferMutations([]*spanner.Mutation{m}, err)
-}
-
-func (r *TxRepository) bufferMutations(mutations []*spanner.Mutation, err error) error {
 	if r.tx == nil {
-		return fmt.Errorf("cannot buffer component write without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+		return fmt.Errorf("cannot write component owner without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
 	}
-	if err != nil || len(mutations) == 0 {
-		return err
+	m := spannerdata.ComponentOwnerUpdateMutation(componentID, owner)
+	if m == nil {
+		return nil
 	}
-	return r.tx.BufferWrite(mutations)
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }

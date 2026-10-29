@@ -113,12 +113,6 @@ func TestRepository_Unimplemented(t *testing.T) {
 			},
 		},
 		{
-			name: "Repository.WithReadOnlySnapshot",
-			call: func() error {
-				return repo.WithReadOnlySnapshot(ctx, nil)
-			},
-		},
-		{
 			name: "TxRepository.InsertComponent",
 			call: func() error {
 				return txRepo.InsertComponent(ctx, nil, nil)

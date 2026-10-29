@@ -31,12 +31,19 @@ func MarshalComponentPayloads(rec *store.ComponentRecord) ([]byte, []byte, error
 	if rec == nil {
 		return nil, nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
-	configBytes, err := proto.Marshal(&componentspb.Component{Name: naming.FullComponentName(rec.Name), Spec: rec.Spec, Labels: store.CopyMap(rec.Labels)})
+	configBytes, err := proto.Marshal(&componentspb.Component{
+		Name:   naming.FullComponentName(rec.Name),
+		Spec:   rec.Spec,
+		Labels: store.CopyMap(rec.Labels),
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal component proto: %w", err)
 	}
 	accessBytes, err := MarshalAccessStatus(rec.Status)
-	return configBytes, accessBytes, err
+	if err != nil {
+		return nil, nil, err
+	}
+	return configBytes, accessBytes, nil
 }
 
 // MarshalAccessStatus serializes access to protobuf bytes, returning nil when access is nil.
