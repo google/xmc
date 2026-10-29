@@ -66,6 +66,8 @@ VERIFIED_MODULES = (
     "xmanager_cloud.xid_service.proto.api_pb2",
     "xmanager_cloud.dashboard_service.proto.dashboard_service_pb2",
     "xmanager_cloud.dashboard_service.proto.messages_pb2",
+    "xdash",
+    "xdash.auth",
 )
 
 
@@ -268,6 +270,20 @@ def stage_local_protos(repo_root: Path, site_packages: Path) -> list[str]:
     return staged_files
 
 
+def cleanup_stale_bundled_packages(site_packages: Path) -> None:
+    """Remove obsolete bundled packages from xmanager wheel that conflict with local repository SDKs.
+
+    The upstream xmanager wheel bundles an outdated copy of `xdash` directly in
+    site-packages that lacks recent SDK additions (such as `xdash.auth`). If left
+    in place, standard import resolution loads this stale directory rather than
+    local SDKs installed via editable mode or PYTHONPATH.
+    """
+    stale_xdash = site_packages / "xdash"
+    if stale_xdash.is_dir() and not stale_xdash.is_symlink():
+        sys.stdout.write(f"Removing obsolete bundled xdash from {stale_xdash}...\n")
+        shutil.rmtree(stale_xdash)
+
+
 def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
     """Compile local XMC API protos into the virtualenv's xmanager_cloud package.
 
@@ -277,6 +293,7 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
     """
     sys.stdout.write("Compiling local XMC protos from api/protos into virtualenv...\n")
     site_packages, grpc_proto_include = resolve_venv_proto_paths(venv_python)
+    cleanup_stale_bundled_packages(site_packages)
     _ensure_longrunning_operations_proto(site_packages)
     proto_files = stage_local_protos(repo_root, site_packages)
     subprocess.run(
@@ -292,6 +309,25 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
         ],
         check=True,
     )
+
+
+def install_local_sdks(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
+    """Install local repository SDKs into the virtualenv in editable mode.
+
+    Installs sdks/python/xdash with --no-deps in editable mode so xdash is available
+    to users and callers of install_xmanager.py.
+
+    Args:
+        venv_python: Path to virtualenv python executable.
+        repo_root: Root directory of the XMC repository containing sdks/.
+    """
+    xdash_dir = repo_root / "sdks" / "python" / "xdash"
+    if xdash_dir.is_dir():
+        sys.stdout.write(f"Installing local xdash SDK from {xdash_dir} into virtualenv...\n")
+        subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "--no-deps", "-e", str(xdash_dir)],
+            check=True,
+        )
 
 
 def verify_imports(venv_python: Path) -> None:
@@ -327,6 +363,7 @@ def main(raw_args: list[str] | None = None) -> None:
     venv_python = setup_virtualenv(venv_dir)
     install_xmanager_package(venv_python, xmanager_spec, args.requirements)
     compile_local_protos(venv_python, REPO_ROOT)
+    install_local_sdks(venv_python, REPO_ROOT)
     verify_imports(venv_python)
 
     sys.stdout.write("==================================================\n")
