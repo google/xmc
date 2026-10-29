@@ -31,7 +31,7 @@ rules:
 - apiGroups: ["visibility.kueue.x-k8s.io"]
   resources: ["clusterqueues", "clusterqueues/pendingworkloads"]
   verbs: ["get", "list", "watch"]
-{{- if .Values.componentsDeployment.enabled }}
+{{- if (default (dict) .Values.componentsDeployment).enabled }}
 - apiGroups: ["xmc.dev"]
   resources: ["components"]
   verbs: ["get", "list", "watch"]

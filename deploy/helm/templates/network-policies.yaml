@@ -14,7 +14,7 @@
 
 # With componentsDeployment.enabled, the ingestion-gateway component release ships an equivalent
 # policy alongside its Deployment (deploy/profiles/stable-2026a/components/ingestion-gateway).
-{{- if and .Values.ingestionGatewayDeployment.enabled (not .Values.componentsDeployment.enabled) }}
+{{- if and (default (dict) .Values.ingestionGatewayDeployment).enabled (not (default (dict) .Values.componentsDeployment).enabled) }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -38,6 +38,7 @@ CHECKSUM_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
     "templates/dashboard-service/deployment.yaml",
     "templates/ess/deployment.yaml",
+    "templates/health-service/deployment.yaml",
     "templates/log-monitor/deployment.yaml",
     "templates/reconciler/deployment.yaml",
     "templates/rod/deployment.yaml",

@@ -36,7 +36,7 @@ data:
   health_status_cache_ttl: {{ .Values.healthService.cacheTTL | quote }}
   health_status_force_refresh_max_requests: {{ .Values.healthService.forceRefreshMaxRequests | quote }}
   health_status_force_refresh_window: {{ .Values.healthService.forceRefreshWindow | quote }}
-  enable_components: {{ .Values.componentsDeployment.enabled | default false | quote }}
+  enable_components: {{ (default (dict) .Values.componentsDeployment).enabled | default false | quote }}
   health_scheduling_resume_batch_size: {{ .Values.healthService.schedulingResumeBatchSize | default 100 | quote }}
   health_scheduling_resume_max_backlog: {{ .Values.healthService.schedulingResumeMaxBacklog | default 500 | quote }}
 {{- end }}

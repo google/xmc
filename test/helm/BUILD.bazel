@@ -217,3 +217,19 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "components_rollout_checksum_test",
+    srcs = ["components_rollout_checksum_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "components_rollout_checksum_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)

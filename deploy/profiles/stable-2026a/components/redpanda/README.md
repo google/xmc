@@ -51,8 +51,9 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-gateway` queries the `redpanda` `Component` CR (`xmc.dev/v1alpha1`) in `COMPONENTS_NAMESPACE` (using the namespace-scoped `ingestion-gateway-components-reader` `Role`) at startup:
 
 1. **Broker Resolution Precedence**:
-   - **Primary (`status.access.envVars`)**: Reads `status.access.envVars["ENDPOINT"]` (populated by `xmc-bridge` from `parameters.brokerEndpoints`), appending `status.access.envVars["PORT"]` or `spec.parameters["kafkaPort"]` if `ENDPOINT` does not already include a port.
-   - **Fallback (`spec.parameters`)**: If `status.access.envVars["ENDPOINT"]` is not yet populated, falls back to `spec.parameters["brokerEndpoints"]`.
+   - **Multi-Broker Live Coordinates (`status.access.envVars.ENDPOINT`)**: When `status.access.envVars["ENDPOINT"]` lists multiple comma-separated brokers, prefers those live coordinates (appending `status.access.envVars["PORT"]` or `spec.parameters["kafkaPort"]` to any portless entry).
+   - **Multi-Broker Blueprint Topology (`spec.parameters.brokerEndpoints`)**: When `xmc-bridge` populates only a single probed broker in `status.access.envVars["ENDPOINT"]` while `spec.parameters["brokerEndpoints"]` specifies multiple comma-separated brokers, preserves the full `spec.parameters["brokerEndpoints"]` seed list (appending `spec.parameters["kafkaPort"]` to any portless entry).
+   - **Single-Broker Fallback**: Otherwise prefers a single `status.access.envVars["ENDPOINT"]` (with `PORT` / `kafkaPort`), falling back to a single `spec.parameters["brokerEndpoints"]` (with `kafkaPort`).
 2. **Default Topic Resolution**:
    - Overrides `-topic_name` with `spec.parameters["defaultTopic"]` when non-empty.
 3. **Graceful Fallback Contract**:

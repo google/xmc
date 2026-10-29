@@ -27,6 +27,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dashboard-service/configmap.yaml") . | sha256sum }}
         checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: dashboard-service
@@ -63,7 +64,7 @@ spec:
         - name: GOOGLE_CLOUD_PROJECT
           value: {{ .Values.projectId | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
-        {{- if .Values.metrics.enabled }}
+        {{- if (default (dict) .Values.metrics).enabled }}
         {{- include "xmanager-cloud.clickhouseEnv" . | nindent 8 }}
         {{- end }}
         {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
