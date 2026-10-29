@@ -9,7 +9,10 @@ package(default_visibility = ["//visibility:public"])
 py_binary(
     name = "migrate",
     srcs = ["migrate.py"],
-    data = ["//deploy/profiles/stable-2026a:chart"],
+    data = [
+        "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026a:chart",
+    ],
     imports = ["../../.."],
     deps = ["//tools/common:tool_utils"],
 )
@@ -18,7 +21,6 @@ py_test(
     name = "migrate_test",
     size = "small",
     srcs = ["migrate_test.py"],
-    data = ["//deploy/profiles/stable-2026a:chart"],
     imports = ["../../.."],
     deps = [
         ":migrate",

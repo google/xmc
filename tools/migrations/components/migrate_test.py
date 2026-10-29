@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -69,6 +71,75 @@ class PrepareTests(unittest.TestCase):
             with self.assertRaises(HandledError):
                 migrate._validate_identifiers("xmc", bad_rel)
 
+    def test_version_bounds_and_tty_confirmation_guards(self) -> None:
+        script_path = Path(migrate.__file__).absolute()
+        non_tty = subprocess.run(
+            [sys.executable, str(script_path), "prepare"],
+            input="yes\n",
+            env={**os.environ, "XMC_BYPASS_VENV": "1"},
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(non_tty.returncode, 1)
+        self.assertIn("Interactive TTY confirmation required", non_tty.stdout + non_tty.stderr)
+
+        for ok_desc in ("", "0.16.0-36-g726f0edb5", "0.17.0", "0.18.2", "0.18.2-3-gabcdef0"):
+            migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=ok_desc)
+        for bad_desc in ("0.15.0", "0.16.0", "0.19.0", "0.19.0-2-gabcdef0", "1.0.0"):
+            with self.assertRaises(HandledError):
+                migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=bad_desc)
+        with tempfile.TemporaryDirectory() as tmp:
+            bad_chart = Path(tmp)
+            with self.assertRaises(HandledError):
+                migrate._verify_target_codebase(bad_chart)
+            gw_tpl = bad_chart / "components/ingestion-gateway/templates/deployment.yaml"
+            gw_tpl.parent.mkdir(parents=True, exist_ok=True)
+            gw_tpl.write_text("# pre-0.17 template", encoding="utf-8")
+            with self.assertRaises(HandledError):
+                migrate._verify_target_codebase(bad_chart)
+
+        migrate._verify_source_env({"imageTag": "0.16.0"}, require_legacy=True)
+        migrate._verify_source_env(
+            {"imageTag": "v0.4.0", "ingestionGatewayDeployment": {"enabled": True}},
+            require_legacy=True,
+        )
+        migrate._verify_source_env(
+            {"imageTag": "0.3.0", "ingestionGatewayDeployment": {"enabled": False}},
+            require_legacy=True,
+        )
+        migrate._verify_source_env(
+            {"componentsDeployment": {"enabled": True}}, require_legacy=False
+        )
+        for bad_src in (
+            {"componentsDeployment": {"enabled": True}},
+            {"imageTag": "0.19.0"},
+            {"imageTag": "v1.0.0"},
+            {"imageTag": "0.3.0", "ingestionGatewayDeployment": {"enabled": True}},
+        ):
+            with self.assertRaises(HandledError):
+                migrate._verify_source_env(bad_src, require_legacy=True)
+
+        class _FakeTTY(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        stderr_buf = io.StringIO()
+        args = migrate.build_parser().parse_args(["handoff"])
+        args.handler = lambda _: {"ok": True}
+        with (
+            mock.patch.object(sys, "stdin", _FakeTTY("yes\n")),
+            mock.patch.object(sys, "stderr", stderr_buf),
+        ):
+            self.assertEqual(migrate._confirm_and_run(args), {"ok": True})
+        self.assertIn("WARNING:", stderr_buf.getvalue())
+        with (
+            mock.patch.object(sys, "stdin", _FakeTTY("no\n")),
+            mock.patch.object(sys, "stderr", io.StringIO()),
+            self.assertRaises(HandledError),
+        ):
+            migrate._confirm_and_run(args)
+
     def test_prepare_maps_full_umbrella_values_and_validates_schema(self) -> None:
         umbrella = {
             "projectId": "prod-proj-1",
@@ -118,11 +189,11 @@ class PrepareTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "tools.migrations.components.migrate.verify_helm_min_version",
+                    "tools.common.tool_utils.verify_helm_min_version",
                     autospec=True,
                     return_value="v3.15.0",
                 ),
-                mock.patch("tools.migrations.components.migrate.run_command", side_effect=fake_run),
+                mock.patch("tools.common.tool_utils.run_command", side_effect=fake_run),
             ):
                 summary = migrate.run_prepare(args)
             self.assertTrue(summary["ingestion_gateway_enabled"])
@@ -161,12 +232,12 @@ class PrepareTests(unittest.TestCase):
             args = migrate.build_parser().parse_args(["prepare", "-o", str(out_path)])
             with (
                 mock.patch(
-                    "tools.migrations.components.migrate.verify_helm_min_version",
+                    "tools.common.tool_utils.verify_helm_min_version",
                     autospec=True,
                     return_value="v3.14.0",
                 ),
                 mock.patch(
-                    "tools.migrations.components.migrate.run_command",
+                    "tools.common.tool_utils.run_command",
                     side_effect=[_done(["helm"], stdout=json.dumps(umbrella)), _done(["helm"])],
                 ),
             ):
@@ -181,12 +252,12 @@ class PrepareTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "tools.migrations.components.migrate.verify_helm_min_version",
+                    "tools.common.tool_utils.verify_helm_min_version",
                     autospec=True,
                     return_value="v3.14.0",
                 ),
                 mock.patch(
-                    "tools.migrations.components.migrate.run_command",
+                    "tools.common.tool_utils.run_command",
                     side_effect=[
                         _done(["helm"], stdout="null"),
                         subprocess.CalledProcessError(1, ["helm"], stderr="bad"),
@@ -234,7 +305,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
             return _done(cmd)
 
         args = migrate.build_parser().parse_args(["handoff"])
-        with mock.patch("tools.migrations.components.migrate.run_command", side_effect=ok_run):
+        with mock.patch("tools.common.tool_utils.run_command", side_effect=ok_run):
             res = migrate.run_handoff(args)
         self.assertEqual(len(res["transferred"]), 3)
         self.assertEqual(len([c for c in recorded if c[:2] == ["kubectl", "annotate"]]), 4)
@@ -244,7 +315,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                 _done(cmd, stdout="{}") if cmd[0] == "helm" else _done(cmd, rc=1, stderr="NotFound")
             )
 
-        with mock.patch("tools.migrations.components.migrate.run_command", side_effect=absent_run):
+        with mock.patch("tools.common.tool_utils.run_command", side_effect=absent_run):
             self.assertTrue(migrate.run_handoff(args)["skipped"])
 
         def foreign_run(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
@@ -255,7 +326,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
             )
 
         with (
-            mock.patch("tools.migrations.components.migrate.run_command", side_effect=foreign_run),
+            mock.patch("tools.common.tool_utils.run_command", side_effect=foreign_run),
             self.assertRaises(HandledError),
         ):
             migrate.run_handoff(args)
@@ -264,7 +335,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
         args = migrate.build_parser().parse_args(["handoff", "--undo"])
         with (
             mock.patch(
-                "tools.migrations.components.migrate.run_command",
+                "tools.common.tool_utils.run_command",
                 return_value=_done(["kubectl"], stdout="{}"),
             ),
             self.assertRaises(HandledError),
@@ -287,7 +358,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                 return _done(cmd, stdout=json.dumps({"info": {"status": "deployed"}}))
             return _done(cmd)
 
-        with mock.patch("tools.migrations.components.migrate.run_command", side_effect=undo_run):
+        with mock.patch("tools.common.tool_utils.run_command", side_effect=undo_run):
             res = migrate.run_handoff(args)
         self.assertTrue(res["uninstalled_component_release"])
         self.assertFalse(any(c[:2] == ["helm", "uninstall"] for c in recorded))
@@ -319,7 +390,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                     return _done(cmd, stdout=json.dumps({"info": {"status": "deployed"}}))
                 return _done(cmd)
 
-            with mock.patch("tools.migrations.components.migrate.run_command", side_effect=fin_run):
+            with mock.patch("tools.common.tool_utils.run_command", side_effect=fin_run):
                 res = migrate.run_finalize(args)
             self.assertTrue(res["ingestion_gateway_enabled"])
             deletes = [c[-1] for c in recorded if c[:2] == ["kubectl", "delete"]]
@@ -335,7 +406,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
 
         with (
             mock.patch(
-                "tools.migrations.components.migrate.run_command",
+                "tools.common.tool_utils.run_command",
                 side_effect=disabled_with_live_deploy,
             ),
             self.assertRaises(HandledError),
@@ -351,9 +422,7 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                 return _done(cmd, rc=1, stderr="NotFound")
             return _done(cmd)
 
-        with mock.patch(
-            "tools.migrations.components.migrate.run_command", side_effect=disabled_without_deploy
-        ):
+        with mock.patch("tools.common.tool_utils.run_command", side_effect=disabled_without_deploy):
             self.assertFalse(migrate.run_finalize(args)["ingestion_gateway_enabled"])
 
 

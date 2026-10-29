@@ -11,7 +11,7 @@ This runbook guides platform operators through the one-time, zero-downtime migra
 
 ## Prerequisites
 
-- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` with cluster admin access to the target namespace (default: `xmc`).
+- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` in an **interactive terminal** with cluster admin access to the target namespace (default: `xmc`). Each `migrate.py` subcommand verifies the source cluster and local codebase match the `0.17.0`–`0.18.x` window and prompts for interactive `yes` confirmation on `stdin` (non-TTY invocations abort automatically).
 - Updated XMC container images (including `xmc-bridge` and `ingestion-gateway`) built and pushed to your registry (see [INSTALL.md](../../INSTALL.md#step-2-build-and-push-updated-container-images)).
 - **`xmc-bridge` Workload Identity binding (older Cluster Toolkit deployments)**: If your cluster was provisioned before `module.xmc_wi_binding_xmc_bridge` was added to the `compute` group (and you upgrade only `xmc_app`), ensure `<namespace>/xmc-bridge-sa` holds `roles/iam.workloadIdentityUser` on `<deployment_name>-xmc-wl-sa@<project_id>.iam.gserviceaccount.com` (for example via `terraform -chdir=ctk-out/<deployment_name>/compute apply -target=module.xmc_wi_binding_xmc_bridge` after reviewing `terraform plan`).
 
