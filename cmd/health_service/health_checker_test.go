@@ -26,6 +26,7 @@ import (
 
 	spb "xmanager_cloud/api/protos/health"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/storage/dbconfig"
 	"xmanager_cloud/pkg/components/summary"
 
 	"google.golang.org/api/option"
@@ -188,7 +189,7 @@ func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64
 func TestCheckSpannerComponent(t *testing.T) {
 	tests := []struct {
 		name                 string
-		client               commonhealth.SpannerHealthClient
+		client               commonhealth.SchemaVersionClient
 		expectedVersionInput int64
 		wantHealthState      spb.HealthState
 		wantVersionStr       string
@@ -235,7 +236,7 @@ func TestCheckSpannerComponent(t *testing.T) {
 			wantHealthState:      spb.HealthState_HEALTH_STATE_UNHEALTHY,
 			wantVersionStr:       "",
 			expectErr:            true,
-			wantErrMsg:           "spanner client not initialized",
+			wantErrMsg:           "database client not initialized",
 		},
 	}
 
@@ -243,7 +244,7 @@ func TestCheckSpannerComponent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			comp, versionStr := checker.checkSpannerComponent(context.Background(), "Spanner ESS", tt.client, tt.expectedVersionInput)
+			comp, versionStr := checker.checkDatabaseComponent(context.Background(), "Spanner ESS", tt.client, tt.expectedVersionInput)
 			if comp.HealthState != tt.wantHealthState {
 				t.Errorf("expected state %v, got %v", tt.wantHealthState, comp.HealthState)
 			}
@@ -269,26 +270,36 @@ const (
 )
 
 type mockLazySpanner struct {
-	essHealthClient    commonhealth.SpannerHealthClient
+	essHealthClient    commonhealth.SchemaVersionClient
+	essExpectedVersion int64
 	essHealthErr       error
-	xidHealthClient    commonhealth.SpannerHealthClient
+	xidHealthClient    commonhealth.SchemaVersionClient
+	xidExpectedVersion int64
 	xidHealthErr       error
 	componentsProvider summary.CustomComponentsInfoProvider
 	componentsErr      error
 }
 
-func (m *mockLazySpanner) EssHealthClient(ctx context.Context) (commonhealth.SpannerHealthClient, error) {
+func (m *mockLazySpanner) EssHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
 	if m.essHealthErr != nil {
-		return nil, m.essHealthErr
+		return nil, 0, m.essHealthErr
 	}
-	return m.essHealthClient, nil
+	expected := m.essExpectedVersion
+	if expected == 0 {
+		expected = mockEssExpectedVersion
+	}
+	return m.essHealthClient, expected, nil
 }
 
-func (m *mockLazySpanner) XidHealthClient(ctx context.Context) (commonhealth.SpannerHealthClient, error) {
+func (m *mockLazySpanner) XidHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
 	if m.xidHealthErr != nil {
-		return nil, m.xidHealthErr
+		return nil, 0, m.xidHealthErr
 	}
-	return m.xidHealthClient, nil
+	expected := m.xidExpectedVersion
+	if expected == 0 {
+		expected = mockXidExpectedVersion
+	}
+	return m.xidHealthClient, expected, nil
 }
 
 func (m *mockLazySpanner) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
@@ -310,13 +321,13 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		lazySpanner: &mockLazySpanner{
-			essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
-			xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: true},
+		lazyDB: &mockLazySpanner{
+			essHealthClient:    &mockSpannerHealthClient{version: 6, dirty: false},
+			essExpectedVersion: 6,
+			xidHealthClient:    &mockSpannerHealthClient{version: 1, dirty: true},
+			xidExpectedVersion: 1,
 		},
-		redisClient:              &mockRedisClient{},
-		essExpectedSchemaVersion: 6,
-		xidExpectedSchemaVersion: 1,
+		redisClient: &mockRedisClient{},
 	}
 
 	res := checker.RunChecks(context.Background())
@@ -334,22 +345,33 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 }
 
 func TestCheckSpanner_NilLazySpanner(t *testing.T) {
-	checker := &HealthChecker{}
+	for _, tc := range []struct {
+		backend dbconfig.Backend
+		wantESS string
+		wantXID string
+	}{
+		{backend: dbconfig.BackendSpanner, wantESS: "Spanner ESS", wantXID: "Spanner XID"},
+		{backend: dbconfig.BackendPostgres, wantESS: "Postgres ESS", wantXID: "Postgres XID"},
+	} {
+		t.Run(string(tc.backend), func(t *testing.T) {
+			checker := &HealthChecker{cfg: &Config{DB: dbconfig.Config{Backend: tc.backend}}}
 
-	essComp, essVersion := checker.CheckSpannerESS(context.Background())
-	if essComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || essComp.ErrorMessage != "spanner client not initialized" {
-		t.Errorf("expected UNHEALTHY with 'spanner client not initialized', got %+v", essComp)
-	}
-	if essVersion != "" {
-		t.Errorf("expected empty version, got %q", essVersion)
-	}
+			essComp, essVersion := checker.CheckESSDatabase(context.Background())
+			if essComp.Name != tc.wantESS || essComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || essComp.ErrorMessage != "database client not initialized" {
+				t.Errorf("expected %s UNHEALTHY with 'database client not initialized', got %+v", tc.wantESS, essComp)
+			}
+			if essVersion != "" {
+				t.Errorf("expected empty version, got %q", essVersion)
+			}
 
-	xidComp, xidVersion := checker.CheckSpannerXID(context.Background())
-	if xidComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || xidComp.ErrorMessage != "spanner client not initialized" {
-		t.Errorf("expected UNHEALTHY with 'spanner client not initialized', got %+v", xidComp)
-	}
-	if xidVersion != "" {
-		t.Errorf("expected empty version, got %q", xidVersion)
+			xidComp, xidVersion := checker.CheckXIDDatabase(context.Background())
+			if xidComp.Name != tc.wantXID || xidComp.HealthState != spb.HealthState_HEALTH_STATE_UNHEALTHY || xidComp.ErrorMessage != "database client not initialized" {
+				t.Errorf("expected %s UNHEALTHY with 'database client not initialized', got %+v", tc.wantXID, xidComp)
+			}
+			if xidVersion != "" {
+				t.Errorf("expected empty version, got %q", xidVersion)
+			}
+		})
 	}
 }
 
@@ -507,13 +529,13 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		lazySpanner: &mockLazySpanner{
-			essHealthClient: &mockSpannerHealthClient{version: 6, dirty: false},
-			xidHealthClient: &mockSpannerHealthClient{version: 1, dirty: false},
+		lazyDB: &mockLazySpanner{
+			essHealthClient:    &mockSpannerHealthClient{version: 6, dirty: false},
+			essExpectedVersion: 6,
+			xidHealthClient:    &mockSpannerHealthClient{version: 1, dirty: false},
+			xidExpectedVersion: 1,
 		},
-		redisClient:              &mockRedisClient{},
-		essExpectedSchemaVersion: 6,
-		xidExpectedSchemaVersion: 1,
+		redisClient: &mockRedisClient{},
 	}
 
 	res := checker.RunChecks(context.Background())
@@ -561,6 +583,7 @@ func newMockCloudRunServer(t *testing.T, state, reason, message string) *httptes
 func TestRunChecks(t *testing.T) {
 	tests := []struct {
 		name                   string
+		backend                dbconfig.Backend
 		httpStatus             int
 		grpcStatus             grpc_health_v1.HealthCheckResponse_ServingStatus
 		crState                string
@@ -593,6 +616,27 @@ func TestRunChecks(t *testing.T) {
 				"Spanner ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
 				"Spanner XID": spb.HealthState_HEALTH_STATE_HEALTHY,
 				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+			wantEssDbSchemaVersion: "5",
+			wantXidDbSchemaVersion: "1",
+		},
+		{
+			name:       "AllHealthyPostgres",
+			backend:    dbconfig.BackendPostgres,
+			httpStatus: http.StatusOK,
+			grpcStatus: grpc_health_v1.HealthCheckResponse_SERVING,
+			crState:    "CONDITION_SUCCEEDED",
+			essVersion: mockEssExpectedVersion,
+			xidVersion: mockXidExpectedVersion,
+			wantStates: map[string]spb.HealthState{
+				"ESS":          spb.HealthState_HEALTH_STATE_HEALTHY,
+				"XID":          spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Actuator":     spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Reconciler":   spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Log Monitor":  spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Postgres ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Postgres XID": spb.HealthState_HEALTH_STATE_HEALTHY,
+				"Redis":        spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
 			wantEssDbSchemaVersion: "5",
 			wantXidDbSchemaVersion: "1",
@@ -684,15 +728,14 @@ func TestRunChecks(t *testing.T) {
 					ActuatorURL:            httpServer.URL,
 					ReconcilerURL:          httpServer.URL,
 					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
+					DB:                     dbconfig.Config{Backend: tc.backend},
 				},
-				LazySpanner: &mockLazySpanner{
+				LazyDB: &mockLazySpanner{
 					essHealthClient: &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
 					xidHealthClient: &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
 				},
-				RedisClient:              &mockRedisClient{err: tc.redisErr},
-				CloudRunService:          cloudRunService,
-				EssExpectedSchemaVersion: mockEssExpectedVersion,
-				XidExpectedSchemaVersion: mockXidExpectedVersion,
+				RedisClient:     &mockRedisClient{err: tc.redisErr},
+				CloudRunService: cloudRunService,
 			})
 			if err != nil {
 				t.Fatalf("failed to create health checker: %v", err)
@@ -812,14 +855,13 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:            xidListener.Addr().String(),
-			EssURL:             httpServer.URL,
-			ActuatorURL:        httpServer.URL,
-			ReconcilerURL:      httpServer.URL,
-			EnableComponents:   true,
-			EssSpannerDatabase: "projects/test/instances/test/databases/test",
+			XidAddr:          xidListener.Addr().String(),
+			EssURL:           httpServer.URL,
+			ActuatorURL:      httpServer.URL,
+			ReconcilerURL:    httpServer.URL,
+			EnableComponents: true,
 		},
-		LazySpanner: &mockLazySpanner{
+		LazyDB: &mockLazySpanner{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -879,14 +921,13 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:            xidListener.Addr().String(),
-			EssURL:             httpServer.URL,
-			ActuatorURL:        httpServer.URL,
-			ReconcilerURL:      httpServer.URL,
-			EnableComponents:   true,
-			EssSpannerDatabase: "projects/test/instances/test/databases/test",
+			XidAddr:          xidListener.Addr().String(),
+			EssURL:           httpServer.URL,
+			ActuatorURL:      httpServer.URL,
+			ReconcilerURL:    httpServer.URL,
+			EnableComponents: true,
 		},
-		LazySpanner: &mockLazySpanner{
+		LazyDB: &mockLazySpanner{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -934,14 +975,13 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:            xidListener.Addr().String(),
-			EssURL:             httpServer.URL,
-			ActuatorURL:        httpServer.URL,
-			ReconcilerURL:      httpServer.URL,
-			EnableComponents:   true,
-			EssSpannerDatabase: "projects/test/instances/test/databases/test",
+			XidAddr:          xidListener.Addr().String(),
+			EssURL:           httpServer.URL,
+			ActuatorURL:      httpServer.URL,
+			ReconcilerURL:    httpServer.URL,
+			EnableComponents: true,
 		},
-		LazySpanner: &mockLazySpanner{
+		LazyDB: &mockLazySpanner{
 			essHealthErr:  errors.New("ess spanner init failed"),
 			xidHealthErr:  errors.New("xid spanner init failed"),
 			componentsErr: errors.New("components provider init failed"),
@@ -971,7 +1011,7 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 	}
 }
 
-func TestHealthChecker_RunChecks_CustomComponentsSkippedWhenSpannerDbEmpty(t *testing.T) {
+func TestHealthChecker_RunChecks_CustomComponentsRunsAcrossBackends(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -992,30 +1032,46 @@ func TestHealthChecker_RunChecks_CustomComponentsSkippedWhenSpannerDbEmpty(t *te
 	}()
 	defer xidServer.Stop()
 
-	mockProvider := &mockComponentsInfoProvider{}
-
-	checker, err := NewHealthChecker(HealthCheckerParams{
-		Config: &Config{
-			XidAddr:            xidListener.Addr().String(),
-			EssURL:             httpServer.URL,
-			ActuatorURL:        httpServer.URL,
-			ReconcilerURL:      httpServer.URL,
-			EnableComponents:   true,
-			EssSpannerDatabase: "", // Empty database path
+	mockProvider := &mockComponentsInfoProvider{
+		healthList: []summary.ComponentHealth{
+			{
+				Name:        "clickhouse",
+				Type:        summary.ComponentTypeCustom3PWrapper,
+				HealthState: summary.HealthStateHealthy,
+			},
 		},
-		LazySpanner: &mockLazySpanner{
-			componentsProvider: mockProvider,
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to create health checker: %v", err)
 	}
-	defer checker.Close()
 
-	res := checker.RunChecks(context.Background())
-	for _, comp := range res.Components {
-		if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
-			t.Errorf("expected no custom components when EssSpannerDatabase is empty, got: %+v", comp)
-		}
+	for _, backend := range []dbconfig.Backend{dbconfig.BackendSpanner, dbconfig.BackendPostgres} {
+		t.Run(string(backend), func(t *testing.T) {
+			checker, err := NewHealthChecker(HealthCheckerParams{
+				Config: &Config{
+					XidAddr:          xidListener.Addr().String(),
+					EssURL:           httpServer.URL,
+					ActuatorURL:      httpServer.URL,
+					ReconcilerURL:    httpServer.URL,
+					EnableComponents: true,
+					DB:               dbconfig.Config{Backend: backend},
+				},
+				LazyDB: &mockLazySpanner{
+					componentsProvider: mockProvider,
+				},
+			})
+			if err != nil {
+				t.Fatalf("failed to create health checker: %v", err)
+			}
+			defer checker.Close()
+
+			res := checker.RunChecks(context.Background())
+			found := false
+			for _, comp := range res.Components {
+				if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT && comp.Name == "clickhouse" {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected custom component clickhouse to be checked for backend %s", backend)
+			}
+		})
 	}
 }

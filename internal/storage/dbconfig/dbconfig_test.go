@@ -31,8 +31,11 @@ var allDBEnvVars = []string{
 	"SPANNER_XID_DATABASE",
 	"SPANNER_QUOTA_PROJECT_ID",
 	"ess_spanner_database_name",
+	"dashboard_spanner_database_name",
+	"health_ess_spanner_database_name",
 	"spanner_database_name",
 	"xid_spanner_database_name",
+	"health_xid_spanner_database_name",
 	"ess_quota_project_id",
 	"xid_quota_project_id",
 	"quota_project_id",
@@ -151,6 +154,20 @@ func TestLoad(t *testing.T) {
 				Backend: BackendSpanner,
 				Spanner: Spanner{
 					EssDatabase: "projects/p/instances/i/databases/legacy-dashboard-ess-db",
+				},
+			},
+		},
+		{
+			name: "spanner backend falls back to legacy health service env vars when SPANNER_* unset",
+			env: map[string]string{
+				"health_ess_spanner_database_name": "projects/p/instances/i/databases/legacy-health-ess-db",
+				"health_xid_spanner_database_name": "projects/p/instances/i/databases/legacy-health-xid-db",
+			},
+			want: Config{
+				Backend: BackendSpanner,
+				Spanner: Spanner{
+					EssDatabase: "projects/p/instances/i/databases/legacy-health-ess-db",
+					XidDatabase: "projects/p/instances/i/databases/legacy-health-xid-db",
 				},
 			},
 		},

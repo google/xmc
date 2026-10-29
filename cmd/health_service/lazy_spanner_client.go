@@ -21,102 +21,79 @@ import (
 	"sync"
 
 	health "xmanager_cloud/internal/common/health"
-	"xmanager_cloud/internal/storage"
-	spannerstorage "xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/dbconfig"
+	"xmanager_cloud/internal/storage/factory"
 	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/summary"
-
-	"cloud.google.com/go/spanner"
 )
 
-var errSpannerWrapperClosed = errors.New("spanner wrapper is closed")
+var errDatabaseWrapperClosed = errors.New("database wrapper is closed")
 
-// SpannerClientFactory defines a factory function to instantiate a Spanner client.
-type SpannerClientFactory func(ctx context.Context, database string) (*spanner.Client, error)
-
-// DefaultSpannerClientFactory creates a real Spanner client using spanner.NewClient.
-// It uses context.Background() so short-lived request timeouts do not cancel the cached client's session pool.
-func DefaultSpannerClientFactory(_ context.Context, database string) (*spanner.Client, error) {
-	return spanner.NewClient(context.Background(), database)
-}
+// StorageOpener defines a factory function to open a database storage handle.
+type StorageOpener func(ctx context.Context, cfg dbconfig.Config, db factory.Database) (*factory.Storage, error)
 
 var (
-	_ LazySpannerCheckerProvider = (*HealthServiceLazySpannerWrapper)(nil)
-	_ LazyComponentsProvider     = (*HealthServiceLazySpannerWrapper)(nil)
-	_ LazyStorageProvider        = (*HealthServiceLazySpannerWrapper)(nil)
+	_ LazyDBCheckerProvider  = (*HealthServiceLazyDBWrapper)(nil)
+	_ LazyComponentsProvider = (*HealthServiceLazyDBWrapper)(nil)
+	_ LazyStorageProvider    = (*HealthServiceLazyDBWrapper)(nil)
 )
 
-// HealthServiceLazySpannerWrapper provides thread-safe lazy initialization of Spanner clients
-// and Spanner-backed providers (health clients, custom components provider, and storage)
+// HealthServiceLazyDBWrapper provides thread-safe lazy initialization of database storage handles
+// and database-backed providers (schema version health clients, custom components provider, and storage)
 // for the health service.
-type HealthServiceLazySpannerWrapper struct {
-	factory SpannerClientFactory
+type HealthServiceLazyDBWrapper struct {
+	cfg    dbconfig.Config
+	opener StorageOpener
 
 	essMu              sync.Mutex
 	essClosed          bool
-	essDBPath          string
-	essClient          *spanner.Client
-	essHealthClient    health.SpannerHealthClient
+	essStorage         *factory.Storage
 	componentsProvider summary.CustomComponentsInfoProvider
-	storage            storage.Storage
 
-	xidMu           sync.Mutex
-	xidClosed       bool
-	xidDBPath       string
-	xidClient       *spanner.Client
-	xidHealthClient health.SpannerHealthClient
+	xidMu      sync.Mutex
+	xidClosed  bool
+	xidStorage *factory.Storage
 }
 
-// NewHealthServiceLazySpannerWrapper creates a new HealthServiceLazySpannerWrapper for the given ESS and XID database paths.
-func NewHealthServiceLazySpannerWrapper(essDBPath, xidDBPath string, factory SpannerClientFactory) *HealthServiceLazySpannerWrapper {
-	if factory == nil {
-		factory = DefaultSpannerClientFactory
+// NewHealthServiceLazyDBWrapper creates a new HealthServiceLazyDBWrapper for the given database configuration.
+func NewHealthServiceLazyDBWrapper(cfg dbconfig.Config, opener StorageOpener) *HealthServiceLazyDBWrapper {
+	if opener == nil {
+		opener = factory.NewStorage
 	}
-	return &HealthServiceLazySpannerWrapper{
-		factory:   factory,
-		essDBPath: essDBPath,
-		xidDBPath: xidDBPath,
+	return &HealthServiceLazyDBWrapper{
+		cfg:    cfg,
+		opener: opener,
 	}
 }
 
-// EssHealthClient returns the lazily-initialized SpannerHealthClient for the ESS database.
-func (w *HealthServiceLazySpannerWrapper) EssHealthClient(ctx context.Context) (health.SpannerHealthClient, error) {
+// EssHealth returns the lazily-initialized SchemaVersionClient and expected schema version for the ESS database.
+func (w *HealthServiceLazyDBWrapper) EssHealth(ctx context.Context) (health.SchemaVersionClient, int64, error) {
 	w.essMu.Lock()
 	defer w.essMu.Unlock()
 
-	if w.essHealthClient != nil {
-		return w.essHealthClient, nil
-	}
-
-	client, err := w.ensureEssClientLocked(ctx)
+	st, err := w.ensureEssStorageLocked(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-
-	w.essHealthClient = health.NewSpannerHealthClient(client)
-	return w.essHealthClient, nil
+	client, expected := st.SchemaVersion()
+	return client, expected, nil
 }
 
-// XidHealthClient returns the lazily-initialized SpannerHealthClient for the XID database.
-func (w *HealthServiceLazySpannerWrapper) XidHealthClient(ctx context.Context) (health.SpannerHealthClient, error) {
+// XidHealth returns the lazily-initialized SchemaVersionClient and expected schema version for the XID database.
+func (w *HealthServiceLazyDBWrapper) XidHealth(ctx context.Context) (health.SchemaVersionClient, int64, error) {
 	w.xidMu.Lock()
 	defer w.xidMu.Unlock()
 
-	if w.xidHealthClient != nil {
-		return w.xidHealthClient, nil
-	}
-
-	client, err := w.ensureXidClientLocked(ctx)
+	st, err := w.ensureXidStorageLocked(ctx)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-
-	w.xidHealthClient = health.NewSpannerHealthClient(client)
-	return w.xidHealthClient, nil
+	client, expected := st.SchemaVersion()
+	return client, expected, nil
 }
 
 // ComponentsProvider returns the lazily-initialized CustomComponentsInfoProvider backed by the ESS database.
-func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
+func (w *HealthServiceLazyDBWrapper) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
 	w.essMu.Lock()
 	defer w.essMu.Unlock()
 
@@ -142,95 +119,74 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 	return w.componentsProvider, nil
 }
 
-// Storage returns the lazily-initialized Spanner-backed PauseSchedulingStorage for the ESS database.
-func (w *HealthServiceLazySpannerWrapper) Storage(ctx context.Context) (PauseSchedulingStorage, error) {
+// Storage returns the lazily-initialized PauseSchedulingStorage for the ESS database.
+func (w *HealthServiceLazyDBWrapper) Storage(ctx context.Context) (PauseSchedulingStorage, error) {
 	w.essMu.Lock()
 	defer w.essMu.Unlock()
 
-	return w.ensureEssStorageLocked(ctx)
-}
-
-func (w *HealthServiceLazySpannerWrapper) ensureEssStorageLocked(ctx context.Context) (storage.Storage, error) {
-	if w.storage != nil {
-		return w.storage, nil
-	}
-
-	client, err := w.ensureEssClientLocked(ctx)
+	st, err := w.ensureEssStorageLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	st, err := spannerstorage.NewStorage(client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner storage: %w", err)
-	}
-
-	w.storage = st
-	return w.storage, nil
+	return st, nil
 }
 
-// Close closes any initialized underlying Spanner clients and marks the wrapper as closed.
-func (w *HealthServiceLazySpannerWrapper) Close() error {
+// Close closes any initialized underlying database storage handles and marks the wrapper as closed.
+func (w *HealthServiceLazyDBWrapper) Close() error {
 	w.essMu.Lock()
 	w.essClosed = true
-	if w.essClient != nil {
-		w.essClient.Close()
-		w.essClient = nil
+	if w.essStorage != nil {
+		w.essStorage.Close()
+		w.essStorage = nil
 	}
-	w.essHealthClient = nil
 	w.componentsProvider = nil
-	w.storage = nil
 	w.essMu.Unlock()
 
 	w.xidMu.Lock()
 	w.xidClosed = true
-	if w.xidClient != nil {
-		w.xidClient.Close()
-		w.xidClient = nil
+	if w.xidStorage != nil {
+		w.xidStorage.Close()
+		w.xidStorage = nil
 	}
-	w.xidHealthClient = nil
 	w.xidMu.Unlock()
 
 	return nil
 }
 
-func (w *HealthServiceLazySpannerWrapper) ensureClientLocked(ctx context.Context, dbPath, dbName string, cachedClient *spanner.Client, closed bool) (*spanner.Client, error) {
+func (w *HealthServiceLazyDBWrapper) ensureStorageLocked(ctx context.Context, db factory.Database, cached *factory.Storage, closed bool) (*factory.Storage, error) {
 	if closed {
-		return nil, errSpannerWrapperClosed
+		return nil, errDatabaseWrapperClosed
 	}
-	if dbPath == "" {
-		return nil, fmt.Errorf("%s spanner database path is not configured", dbName)
-	}
-	if cachedClient != nil {
-		return cachedClient, nil
+	if cached != nil {
+		return cached, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	client, err := w.factory(ctx, dbPath)
+	st, err := w.opener(ctx, w.cfg, db)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create spanner client for %s: %w", dbPath, err)
+		return nil, fmt.Errorf("failed to open %s database storage: %w", db, err)
 	}
-	if client == nil {
-		return nil, fmt.Errorf("spanner client factory returned nil client for %s", dbPath)
+	if st == nil || st.Storage == nil {
+		return nil, fmt.Errorf("storage opener returned nil storage for %s", db)
 	}
-	return client, nil
+	return st, nil
 }
 
-func (w *HealthServiceLazySpannerWrapper) ensureEssClientLocked(ctx context.Context) (*spanner.Client, error) {
-	client, err := w.ensureClientLocked(ctx, w.essDBPath, "ess", w.essClient, w.essClosed)
+func (w *HealthServiceLazyDBWrapper) ensureEssStorageLocked(ctx context.Context) (*factory.Storage, error) {
+	st, err := w.ensureStorageLocked(ctx, factory.ESS, w.essStorage, w.essClosed)
 	if err != nil {
 		return nil, err
 	}
-	w.essClient = client
-	return w.essClient, nil
+	w.essStorage = st
+	return w.essStorage, nil
 }
 
-func (w *HealthServiceLazySpannerWrapper) ensureXidClientLocked(ctx context.Context) (*spanner.Client, error) {
-	client, err := w.ensureClientLocked(ctx, w.xidDBPath, "xid", w.xidClient, w.xidClosed)
+func (w *HealthServiceLazyDBWrapper) ensureXidStorageLocked(ctx context.Context) (*factory.Storage, error) {
+	st, err := w.ensureStorageLocked(ctx, factory.XID, w.xidStorage, w.xidClosed)
 	if err != nil {
 		return nil, err
 	}
-	w.xidClient = client
-	return w.xidClient, nil
+	w.xidStorage = st
+	return w.xidStorage, nil
 }

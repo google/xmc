@@ -33,7 +33,6 @@ import (
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
-	"xmanager_cloud/internal/storage/spanner/migrations/version"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/auth/oauth2"
 
@@ -50,15 +49,15 @@ type grpcServerDeps struct {
 	grpcServer     *grpc.Server
 	listener       net.Listener
 	srv            *server
-	lazySpanner    *HealthServiceLazySpannerWrapper
+	lazyDB         *HealthServiceLazyDBWrapper
 	redisClient    redisclient.Publisher
 	pauseScheduler PauseScheduler
 }
 
 func (d *grpcServerDeps) Close(ctx context.Context) {
-	if d.lazySpanner != nil {
-		if err := d.lazySpanner.Close(); err != nil {
-			logging.Error(ctx, "Failed to close lazy spanner wrapper", "error", err)
+	if d.lazyDB != nil {
+		if err := d.lazyDB.Close(); err != nil {
+			logging.Error(ctx, "Failed to close lazy database wrapper", "error", err)
 		}
 	}
 	if d.redisClient != nil {
@@ -78,10 +77,14 @@ func (d *grpcServerDeps) Close(ctx context.Context) {
 func main() {
 	flag.Parse()
 
-	cfg := LoadConfig()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		logging.Fatal(ctx, "Failed to load config", "error", err)
+	}
 
 	oauthCfg, err := oauth2.LoadConfig()
 	if err != nil {
@@ -157,7 +160,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 
 	grpcServer := grpc.NewServer(grpc.Creds(transportCreds))
 
-	lazySpanner := NewHealthServiceLazySpannerWrapper(cfg.EssSpannerDatabase, cfg.XidSpannerDatabase, nil)
+	lazyDB := NewHealthServiceLazyDBWrapper(cfg.DB, nil)
 
 	var redisPingClient RedisPingClient
 	var publisher redisclient.Publisher
@@ -176,12 +179,10 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 	}
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
-		Config:                   cfg,
-		LazySpanner:              lazySpanner,
-		RedisClient:              redisPingClient,
-		CloudRunService:          cloudRunService,
-		EssExpectedSchemaVersion: version.EssExpectedSchemaVersion(),
-		XidExpectedSchemaVersion: version.XidExpectedSchemaVersion(),
+		Config:          cfg,
+		LazyDB:          lazyDB,
+		RedisClient:     redisPingClient,
+		CloudRunService: cloudRunService,
 	})
 	if err != nil {
 		logging.Fatal(ctx, "Failed to create health checker", "error", err)
@@ -192,8 +193,8 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		Authorizer:    authorizer,
 		Authenticator: authenticator,
 	})
-	pauseScheduler := initPauseScheduler(cfg, lazySpanner, publisher)
-	srv := newServer(cfg, checker, guard, lazySpanner, pauseScheduler)
+	pauseScheduler := initPauseScheduler(cfg, lazyDB, publisher)
+	srv := newServer(cfg, checker, guard, lazyDB, pauseScheduler)
 	spb.RegisterHealthServiceServer(grpcServer, srv)
 	reflection.Register(grpcServer)
 
@@ -201,7 +202,7 @@ func initGRPCServer(ctx context.Context, cfg *Config, oauthCfg oauth2.Config, au
 		grpcServer:     grpcServer,
 		listener:       lis,
 		srv:            srv,
-		lazySpanner:    lazySpanner,
+		lazyDB:         lazyDB,
 		redisClient:    publisher,
 		pauseScheduler: pauseScheduler,
 	}

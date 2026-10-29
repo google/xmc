@@ -45,6 +45,25 @@ type Storage struct {
 	closeOnce       sync.Once
 }
 
+// New wraps st with its schema-version client, expected schema version and close callback.
+func New(st storage.Storage, schemaVersion health.SchemaVersionClient, expectedVersion int64, closeFn func()) *Storage {
+	return &Storage{
+		Storage:         st,
+		schemaVersion:   schemaVersion,
+		expectedVersion: expectedVersion,
+		closeFn:         closeFn,
+	}
+}
+
+// SchemaVersion returns the database's schema-version client and the schema version that this
+// binary expects.
+func (s *Storage) SchemaVersion() (health.SchemaVersionClient, int64) {
+	if s == nil {
+		return nil, 0
+	}
+	return s.schemaVersion, s.expectedVersion
+}
+
 // CheckReady returns an error unless the database is reachable and migrated to the schema version
 // that this binary expects.
 func (s *Storage) CheckReady(ctx context.Context) error {
@@ -54,7 +73,7 @@ func (s *Storage) CheckReady(ctx context.Context) error {
 // Close releases the database connections. Later calls do nothing, and the Storage must not be used
 // afterwards.
 func (s *Storage) Close() {
-	if s.closeFn != nil {
+	if s != nil && s.closeFn != nil {
 		s.closeOnce.Do(s.closeFn)
 	}
 }

@@ -336,7 +336,7 @@ func TestListConfigEntries(t *testing.T) {
 	}
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config:          cfg,
-		LazySpanner:     nil,
+		LazyDB:          nil,
 		RedisClient:     nil,
 		CloudRunService: nil,
 	})
