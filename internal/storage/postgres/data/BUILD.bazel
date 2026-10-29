@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "data",
     srcs = [
+        "dashboard.go",
         "experiment.go",
         "operation.go",
         "pausedtask.go",
@@ -28,10 +29,13 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/postgres/data",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
+        "//internal/grpcerr",
         "//internal/storage",
+        "//internal/storage/data",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgtype",
@@ -46,6 +50,7 @@ go_library(
 go_test(
     name = "data_test",
     srcs = [
+        "dashboard_test.go",
         "experiment_test.go",
         "operation_test.go",
         "pausedtask_test.go",
@@ -55,6 +60,7 @@ go_test(
     ],
     embed = [":data"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
