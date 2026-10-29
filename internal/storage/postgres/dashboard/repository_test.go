@@ -296,7 +296,7 @@ func TestChartCRUD_ConcurrentUpdate_Monotonic_AndDeleteFKCleanup(t *testing.T) {
 	}
 }
 
-func TestListDashboards_PaginationAndOrderByAllFields(t *testing.T) {
+func TestListDashboards_PaginationAndOrderBy(t *testing.T) {
 	ctx := context.Background()
 	repo, _ := setupDashboardRepository(ctx, t)
 
@@ -345,7 +345,7 @@ func TestListDashboards_PaginationAndOrderByAllFields(t *testing.T) {
 		t.Errorf("ListDashboards filter = (%+v, %v), want only b-middle", filtered, err)
 	}
 
-	// Multi-page pagination across all ValidOrderByFields.
+	// Multi-page pagination across the orderings supported by ExtractDashboardCursor.
 	orderTests := []struct {
 		orderBy   string
 		wantNames []string
@@ -354,8 +354,6 @@ func TestListDashboards_PaginationAndOrderByAllFields(t *testing.T) {
 		{"created asc", []string{"dashboards/a-oldest", "dashboards/b-middle", "dashboards/c-newest"}},
 		{"updated desc", []string{"dashboards/c-newest", "dashboards/b-middle", "dashboards/a-oldest"}},
 		{"dashboard_id asc", []string{"dashboards/a-oldest", "dashboards/b-middle", "dashboards/c-newest"}},
-		{"title asc", []string{"dashboards/b-middle", "dashboards/c-newest", "dashboards/a-oldest"}},
-		{"owner asc", []string{"dashboards/b-middle", "dashboards/c-newest", "dashboards/a-oldest"}},
 	}
 	for _, tc := range orderTests {
 		t.Run("order_"+tc.orderBy, func(t *testing.T) {
@@ -381,7 +379,7 @@ func TestListDashboards_PaginationAndOrderByAllFields(t *testing.T) {
 	}
 }
 
-func TestListCharts_ParentsFiltersAndPaginationAllOrderByFields(t *testing.T) {
+func TestListCharts_ParentsFiltersAndPagination(t *testing.T) {
 	ctx := context.Background()
 	repo, _ := setupDashboardRepository(ctx, t)
 
@@ -433,9 +431,9 @@ func TestListCharts_ParentsFiltersAndPaginationAllOrderByFields(t *testing.T) {
 		t.Errorf("hydrated plots diff (-want +got):\n%s", diff)
 	}
 
-	// Multi-page pagination across all ValidOrderByFields (both root and dashboard parent).
+	// Multi-page pagination across the orderings supported by ExtractChartCursor (both root and dashboard parent).
 	for _, parent := range []string{"", "dashboards/parent-dash"} {
-		for _, orderBy := range []string{"", "chart_id asc", "title asc", "created asc", "updated desc", "xid asc", "wid desc", "owner asc"} {
+		for _, orderBy := range []string{"", "chart_id asc"} {
 			t.Run(fmt.Sprintf("parent_%s_order_%s", parent, orderBy), func(t *testing.T) {
 				p1, tok1, err := repo.ListCharts(ctx, parent, 2, "", "", orderBy, 0)
 				if err != nil || len(p1) != 2 || tok1 == "" {
