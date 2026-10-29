@@ -16,24 +16,28 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "workunit",
-    srcs = ["repository.go"],
+    srcs = [
+        "queries.go",
+        "repository.go",
+    ],
     importpath = "xmanager_cloud/internal/storage/postgres/workunit",
     visibility = ["//visibility:public"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
         "//internal/logging",
+        "//internal/query_generator/liststatement",
+        "//internal/query_generator/querytools",
         "//internal/safesql",
         "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/postgres/data",
         "//internal/storage/postgres/pgdb",
+        "//internal/storage/postgres/schema/workunitschema",
         "//internal/validator",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@com_github_kylelemons_godebug//diff",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -42,7 +46,10 @@ go_library(
 
 go_test(
     name = "workunit_test",
-    srcs = ["repository_test.go"],
+    srcs = [
+        "queries_test.go",
+        "repository_test.go",
+    ],
     embed = [":workunit"],
     tags = ["local"],
     deps = [
