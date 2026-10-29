@@ -23,10 +23,13 @@ import (
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/store"
@@ -162,6 +165,69 @@ func TestRepository_ReadsAndWithTx(t *testing.T) {
 			t.Fatalf("ReadWriteTransaction() failed: %v", err)
 		}
 	})
+
+	t.Run("FenceAndSnapshots", func(t *testing.T) {
+		if _, err := client.Apply(ctx, []*spanner.Mutation{spanner.UpdateMap("Components", map[string]any{
+			"ComponentId": int64(2), "SourceNamespace": "xmc", "SourceClusterUid": "old-uid",
+			"SourceEpoch": int64(1), "SourceLastSeenTime": baseTime,
+		})}); err != nil {
+			t.Fatalf("Apply(seed owner) failed: %v", err)
+		}
+
+		cluster := store.ClusterIdentity{UID: "c-uid", Name: "prod", Epoch: 2}
+		if _, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			if f, err := txRepo.ReadFence(ctx); err != nil || f != nil {
+				t.Fatalf("ReadFence() = %v, %v, want nil, nil", f, err)
+			}
+			count, err := txRepo.ReassignOwnedComponents(ctx, cluster.UID, cluster.Epoch)
+			if err != nil {
+				return err
+			}
+			if count != 1 {
+				t.Errorf("ReassignOwnedComponents() count = %d, want 1", count)
+			}
+			return txRepo.ReplaceFence(ctx, cluster)
+		}); err != nil {
+			t.Fatalf("ReplaceFence() failed: %v", err)
+		}
+
+		renamed := "prod-east"
+		if _, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+			txRepo := repo.WithTx(tx)
+			gotFence, err := txRepo.ReadFence(ctx)
+			if err != nil {
+				return err
+			}
+			if diff := cmp.Diff(&cluster, gotFence); diff != "" {
+				t.Errorf("ReadFence() mismatch (-want +got):\n%s", diff)
+			}
+			return txRepo.RefreshFence(ctx, &renamed)
+		}); err != nil {
+			t.Fatalf("RefreshFence() failed: %v", err)
+		}
+
+		gotRec, gotFence, err := repo.GetComponentWithFence(ctx, "app")
+		if err != nil {
+			t.Fatalf("GetComponentWithFence(app) failed: %v", err)
+		}
+		if diff := cmp.Diff(wantApp, gotRec, protocmp.Transform()); diff != "" {
+			t.Errorf("GetComponentWithFence(app) rec mismatch (-want +got):\n%s", diff)
+		}
+		wantFence := &store.ClusterIdentity{UID: "c-uid", Name: renamed, Epoch: 2}
+		if diff := cmp.Diff(wantFence, gotFence); diff != "" {
+			t.Errorf("GetComponentWithFence(app) fence mismatch (-want +got):\n%s", diff)
+		}
+
+		gauges, err := repo.ReadOwnershipGauges(ctx, baseTime)
+		if err != nil || !gauges.FenceDeclared || gauges.FenceEpoch != 2 || gauges.StaleOwners != 0 {
+			t.Errorf("ReadOwnershipGauges(baseTime) = %+v, %v, want FenceDeclared=true, FenceEpoch=2, StaleOwners=0", gauges, err)
+		}
+		staleGauges, err := repo.ReadOwnershipGauges(ctx, time.Now().Add(time.Minute))
+		if err != nil || staleGauges.StaleOwners != 1 {
+			t.Errorf("ReadOwnershipGauges(future) = %+v, %v, want StaleOwners=1", staleGauges, err)
+		}
+	})
 }
 
 // componentRowColumns lists the columns of ComponentColumnsSQL in order.
@@ -280,31 +346,70 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 	ro := client.ReadOnlyTransaction()
 	defer ro.Close()
 
-	got, err := NewRepository(client).WithTx(ro).GetComponentByID(ctx, wantApp.ComponentID)
+	txRepo := NewRepository(client).WithTx(ro)
+	got, err := txRepo.GetComponentByID(ctx, wantApp.ComponentID)
 	if err != nil {
 		t.Fatalf("WithTx(ReadOnlyTransaction).GetComponentByID(%d) failed: %v", wantApp.ComponentID, err)
 	}
 	if diff := cmp.Diff(wantApp, got, protocmp.Transform()); diff != "" {
 		t.Errorf("WithTx(ReadOnlyTransaction).GetComponentByID(%d) mismatch (-want +got):\n%s", wantApp.ComponentID, diff)
 	}
+	if _, _, err := txRepo.GetSnapshotByID(ctx, 1, 99, "app", baseTime, baseTime); status.Code(err) != codes.NotFound {
+		t.Errorf("GetSnapshotByID(missing) error = %v, want code %v", err, codes.NotFound)
+	}
+	if _, _, err := txRepo.GetSnapshotByName(ctx, "app", 99); status.Code(err) != codes.NotFound {
+		t.Errorf("GetSnapshotByName(missing) error = %v, want code %v", err, codes.NotFound)
+	}
 }
 
-// TestRepository_NilClientOrTransaction checks that a read without a client, or through WithTx
-// without a transaction, fails instead of dereferencing nil.
+// TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
+// WithTx without the required transaction, fail instead of dereferencing nil.
 func TestRepository_NilClientOrTransaction(t *testing.T) {
-	repos := map[string]interface {
+	ctx := context.Background()
+	nilRepo := NewRepository(nil)
+	nilTxRepo := nilRepo.WithTx(nil)
+
+	for name, r := range map[string]interface {
 		GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+		GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
 		ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
 	}{
-		"NewRepository(nil)": NewRepository(nil),
-		"WithTx(nil)":        NewRepository(nil).WithTx(nil),
+		"NewRepository(nil)": nilRepo,
+		"WithTx(nil)":        nilTxRepo,
+	} {
+		if _, err := r.GetActiveComponent(ctx, "app"); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("%s.GetActiveComponent() error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+		}
+		if _, err := r.GetComponentByID(ctx, 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("%s.GetComponentByID() error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+		}
+		if _, err := r.ListActiveComponents(ctx); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("%s.ListActiveComponents() error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+		}
 	}
-	for name, r := range repos {
-		if _, err := r.GetActiveComponent(context.Background(), "app"); err == nil {
-			t.Errorf("%s.GetActiveComponent() error = nil, want an error", name)
-		}
-		if _, err := r.ListActiveComponents(context.Background()); err == nil {
-			t.Errorf("%s.ListActiveComponents() error = nil, want an error", name)
-		}
+
+	if _, _, err := nilRepo.GetComponentWithFence(ctx, "app"); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("NewRepository(nil).GetComponentWithFence() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, err := nilRepo.ReadOwnershipGauges(ctx, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("NewRepository(nil).ReadOwnershipGauges() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, _, err := nilTxRepo.GetSnapshotByID(ctx, 1, 1, "app", baseTime, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).GetSnapshotByID() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, _, err := nilTxRepo.GetSnapshotByName(ctx, "app", 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).GetSnapshotByName() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, err := nilTxRepo.ReadFence(ctx); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).ReadFence() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.RefreshFence(ctx, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).RefreshFence() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.ReplaceFence(ctx, store.ClusterIdentity{}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).ReplaceFence() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, err := nilTxRepo.ReassignOwnedComponents(ctx, "uid", 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).ReassignOwnedComponents() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 }

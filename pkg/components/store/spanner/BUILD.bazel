@@ -35,7 +35,6 @@ go_library(
         "//pkg/components/store/lifecycle",
         "//pkg/components/store/ownership",
         "@com_google_cloud_go_spanner//:spanner",
-        "@org_golang_google_api//iterator",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",

@@ -61,9 +61,9 @@ class ArtifactRegressionTest(googletest.TestCase):
 
         # Wait for experiment artifacts to be available in ESS with a timeout.
         timeout = datetime.timedelta(seconds=_TIMEOUT_SECONDS)
-        start_time = datetime.datetime.now(datetime.timezone.utc)
+        start_time = datetime.datetime.now(datetime.UTC)
         response = None
-        while datetime.datetime.now(datetime.timezone.utc) - start_time < timeout and (
+        while datetime.datetime.now(datetime.UTC) - start_time < timeout and (
             response is None or len(response.artifacts) < artifact_count
         ):
             response = self.examples.list_artifacts(

@@ -19,7 +19,7 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -103,7 +103,7 @@ def reply_comment(args):
         skill_commit_id = "unknown"
 
     # Construct telemetry payload
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     telemetry = {
         "git_username": github_username,
         "date": now.strftime("%Y-%m-%d"),

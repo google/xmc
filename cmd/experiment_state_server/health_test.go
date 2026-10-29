@@ -174,14 +174,15 @@ func TestBuildCMSAuthorizer(t *testing.T) {
 }
 
 func TestCMSAdmission(t *testing.T) {
-	const invokerSA = "xmc-wl-sa@proj.iam.gserviceaccount.com"
+	const invokerSA = "xmc-wl-sa@kproj.iam.gserviceaccount.com"
 	tests := []struct {
 		name     string
 		oauthCfg *oauth.Config
 		email    string
 		want     bool
 	}{
-		{name: "admits the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "XMC-WL-SA@proj.iam.gserviceaccount.com", want: true},
+		{name: "admits the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "XMC-WL-SA@KProj.iam.gserviceaccount.com", want: true},
+		{name: "kelvin sign does not alias the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "xmc-wl-sa@\u212Aproj.iam.gserviceaccount.com", want: false},
 		{name: "admits deployment principals", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "alice@example.com", want: true},
 		{name: "rejects everyone else", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "mallory@example.com", want: false},
 		{name: "disabled authentication admits all", oauthCfg: &oauth.Config{DisableAuthentication: true}, email: "anyone@example.com", want: true},

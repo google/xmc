@@ -21,7 +21,7 @@ import math
 import statistics
 import subprocess
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -38,8 +38,8 @@ def parse_iso_timestamp(timestamp_str: str) -> datetime:
         normalized = timestamp_str.replace("Z", "+00:00")
         parsed_dt = datetime.fromisoformat(normalized)
         if parsed_dt.tzinfo is None:
-            parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
-        return parsed_dt.astimezone(timezone.utc)
+            parsed_dt = parsed_dt.replace(tzinfo=UTC)
+        return parsed_dt.astimezone(UTC)
     except (ValueError, TypeError) as exc:
         raise HandledError(
             f"Invalid ISO timestamp format: '{timestamp_str}'.",
@@ -308,7 +308,7 @@ def analyze_ci_performance(args: argparse.Namespace) -> dict[str, Any]:
                 f"Invalid --hours argument: {args.hours}. Must be greater than 0.",
                 "Specify a positive number of hours (e.g. --hours 24).",
             )
-        since_dt = datetime.now(timezone.utc) - timedelta(hours=args.hours)
+        since_dt = datetime.now(UTC) - timedelta(hours=args.hours)
 
     compare_dt = parse_iso_timestamp(args.compare_time) if args.compare_time else None
 

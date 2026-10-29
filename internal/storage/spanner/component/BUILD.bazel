@@ -26,6 +26,8 @@ go_library(
         "//pkg/components/store",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
     ],
 )
@@ -36,11 +38,14 @@ go_test(
     embed = [":component"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/grpcerr",
         "//internal/storage/spanner/emulator",
         "//pkg/components/naming",
         "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
         "@com_google_cloud_go_spanner//:spanner",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
     ],

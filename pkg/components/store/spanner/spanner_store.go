@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/spanner"
-	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -46,37 +45,6 @@ import (
 
 // Ensure SpannerStore implements Store interface at compile time.
 var _ store.Store = (*SpannerStore)(nil)
-
-const (
-	selectComponentWithActiveDependenciesSQL = `SELECT ` + component.ComponentColumnsSQL + `,
-  ARRAY(
-    SELECT dep.Name
-    FROM ComponentDependencies cd
-    JOIN Components dep ON cd.DependencyComponentId = dep.ComponentId
-    WHERE cd.ComponentId = c.ComponentId AND dep.ActiveName IS NOT NULL
-    ORDER BY dep.Name ASC
-  ) AS ActiveDependencies,
-  ` + fenceColumnsSQL + `
-FROM Components c
-WHERE c.ActiveName = @name
-LIMIT 1`
-
-	selectSnapshotByComponentIDAndGenSQL = `SELECT ComponentId, LockedGeneration, ConfigProto, AccessPayload
-FROM ExperimentComponentSnapshots
-WHERE ComponentId = @id AND LockedGeneration = @gen
-LIMIT 1`
-
-	selectSnapshotByNameAndGenSQL = `SELECT s.ComponentId, s.LockedGeneration, s.ConfigProto, s.AccessPayload, c.CreateTime, c.UpdateTime
-FROM ExperimentComponentSnapshots s
-JOIN Components c ON s.ComponentId = c.ComponentId
-WHERE c.Name = @name AND s.LockedGeneration = @gen
-ORDER BY c.CreateTime DESC, c.ComponentId DESC
-LIMIT 1`
-)
-
-type spannerQueryable interface {
-	Query(ctx context.Context, statement spanner.Statement) *spanner.RowIterator
-}
 
 // SpannerStore provides a Cloud Spanner backed production implementation of Store.
 type SpannerStore struct {
@@ -147,7 +115,7 @@ func (s *SpannerStore) setIntent(ctx context.Context, name string, spec *compone
 // read-write transaction. On any other outcome, including read errors and other rejections, it
 // returns false so that the read-write transaction decides authoritatively.
 func (s *SpannerStore) readUnchangedIntent(ctx context.Context, canonicalName string, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64, src *store.RequestSource) (*store.ComponentRecord, bool, error) {
-	rec, fence, err := queryComponentWithActiveDependencies(ctx, s.client.Single(), canonicalName)
+	rec, fence, err := s.storage.Components().GetComponentWithFence(ctx, canonicalName)
 	if err != nil {
 		logFastPathReadError(ctx, canonicalName, err)
 		return nil, false, nil
@@ -174,38 +142,6 @@ func logFastPathReadError(ctx context.Context, canonicalName string, err error) 
 	default:
 		logging.Warn(ctx, "Intent fast-path read failed; falling back to read-write transaction", "name", canonicalName, "error", err)
 	}
-}
-
-// queryComponentWithActiveDependencies runs one query, so it can use a single-use read-only
-// transaction, and returns the active record of canonicalName with Dependencies set to its
-// registered, non-deleted dependencies (nil when there are none, as on the read-write path),
-// together with the fence holder in the same snapshot (nil before the first declaration).
-func queryComponentWithActiveDependencies(ctx context.Context, queryable spannerQueryable, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error) {
-	iter := queryable.Query(ctx, spanner.Statement{SQL: selectComponentWithActiveDependenciesSQL, Params: map[string]any{"name": canonicalName}})
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if errors.Is(err, iterator.Done) {
-		return nil, nil, store.ErrComponentNotFound
-	}
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to query component %q: %w", canonicalName, err)
-	}
-	rec, err := component.RowToComponentRecord(row)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := row.ColumnByName("ActiveDependencies", &rec.Dependencies); err != nil {
-		return nil, nil, fmt.Errorf("failed to read dependencies of component %q: %w", canonicalName, err)
-	}
-	if len(rec.Dependencies) == 0 {
-		rec.Dependencies = nil
-	}
-	fence, err := scanFenceColumns(row)
-	if err != nil {
-		return nil, nil, err
-	}
-	return rec, fence, nil
 }
 
 // writeIntent applies the intent in a read-write transaction. It returns the existing record, with
@@ -254,7 +190,7 @@ func (s *SpannerStore) applyIntentTx(
 	desiredGen int64,
 	src *store.RequestSource,
 ) (*store.ComponentRecord, ownership.IntentPlan, error) {
-	if err := checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
+	if err := s.checkFence(ctx, txn, store.OperationSetComponentIntent, src); err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
 	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
@@ -571,7 +507,7 @@ func (s *SpannerStore) PrepareDeactivation(ctx context.Context, name string, req
 // lookupCatalogTargetTx checks the cluster fence, loads the active catalog, finds canonicalName,
 // and checks source ownership for operation.
 func (s *SpannerStore) lookupCatalogTargetTx(ctx context.Context, txn *spanner.ReadWriteTransaction, operation, canonicalName string, src *store.RequestSource) (map[string]*store.ComponentRecord, *store.ComponentRecord, error) {
-	if err := checkFence(ctx, txn, operation, src); err != nil {
+	if err := s.checkFence(ctx, txn, operation, src); err != nil {
 		return nil, nil, err
 	}
 	catalog, err := s.repo.WithTx(txn).ListActiveComponents(ctx)
@@ -709,7 +645,7 @@ func (s *SpannerStore) UpdateObservedGeneration(ctx context.Context, name string
 
 	commitTimestamp, err := s.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		unchanged = false
-		if err := checkFence(ctx, txn, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
+		if err := s.checkFence(ctx, txn, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
 		}
 		rec, err := s.repo.WithTx(txn).GetActiveComponent(ctx, canonicalName)
@@ -890,11 +826,12 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 
 	txn := s.client.ReadOnlyTransaction()
 	defer txn.Close()
+	repo := s.repo.WithTx(txn)
 
-	rec, err := s.repo.WithTx(txn).GetActiveComponent(ctx, canonicalName)
+	rec, err := repo.GetActiveComponent(ctx, canonicalName)
 	if err != nil {
 		if errors.Is(err, store.ErrComponentNotFound) && generation > 0 {
-			return s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, generation)
+			return withSnapshotDependencies(repo.GetSnapshotByName(ctx, canonicalName, generation))
 		}
 		return nil, nil, err
 	}
@@ -908,7 +845,7 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		// If the active component is at a lower generation than requested (e.g. name was reused
 		// after soft-deleting an older incarnation that reached a higher generation), attempt
 		// resolving historically by name before returning NotFound.
-		snapRec, coords, err := s.resolveHistoricalSnapshotByName(ctx, txn, canonicalName, targetGen)
+		snapRec, coords, err := withSnapshotDependencies(repo.GetSnapshotByName(ctx, canonicalName, targetGen))
 		if err == nil {
 			return snapRec, coords, nil
 		}
@@ -926,132 +863,17 @@ func (s *SpannerStore) ResolveComponentSnapshot(ctx context.Context, name string
 		return store.CloneRecord(rec), coords, nil
 	}
 
-	return s.resolveHistoricalSnapshot(ctx, txn, rec, targetGen, canonicalName)
+	return withSnapshotDependencies(repo.GetSnapshotByID(ctx, rec.ComponentID, targetGen, canonicalName, rec.CreateTime, rec.UpdateTime))
 }
 
-// snapshotRowData holds the raw ExperimentComponentSnapshots column values read from a query row.
-type snapshotRowData struct {
-	componentID   int64
-	lockedGen     int64
-	configProto   []byte
-	accessPayload []byte
-}
-
-// querySnapshotRow executes stmt and returns the first matching ExperimentComponentSnapshots row.
-// It returns a NotFound status error when no snapshot exists for the requested generation.
-func querySnapshotRow(ctx context.Context, queryable spannerQueryable, stmt spanner.Statement, canonicalName string, targetGen int64) (*spanner.Row, error) {
-	iter := queryable.Query(ctx, stmt)
-	defer iter.Stop()
-
-	row, err := iter.Next()
-	if err != nil {
-		if errors.Is(err, iterator.Done) {
-			return nil, status.Errorf(codes.NotFound, "historical snapshot for generation %d of component %s not found", targetGen, canonicalName)
-		}
-		return nil, fmt.Errorf("failed to query experiment component snapshots: %w", err)
-	}
-	return row, nil
-}
-
-// scanSnapshotRow reads the ExperimentComponentSnapshots columns shared by all snapshot queries.
-func scanSnapshotRow(row *spanner.Row) (*snapshotRowData, error) {
-	var d snapshotRowData
-	if err := row.ColumnByName("ComponentId", &d.componentID); err != nil {
-		return nil, fmt.Errorf("failed to read ComponentId: %w", err)
-	}
-	if err := row.ColumnByName("LockedGeneration", &d.lockedGen); err != nil {
-		return nil, fmt.Errorf("failed to read LockedGeneration: %w", err)
-	}
-	if err := row.ColumnByName("ConfigProto", &d.configProto); err != nil {
-		return nil, fmt.Errorf("failed to read ConfigProto: %w", err)
-	}
-	if err := row.ColumnByName("AccessPayload", &d.accessPayload); err != nil {
-		return nil, fmt.Errorf("failed to read AccessPayload: %w", err)
-	}
-	return &d, nil
-}
-
-// snapshotRowToRecord hydrates a historical ComponentRecord and its coordinates from a scanned
-// snapshot row. Timestamps are supplied by the caller because snapshots do not store their own;
-// the record is built from scratch so no active component state leaks into the historical view.
-func snapshotRowToRecord(d *snapshotRowData, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	snapRec := &store.ComponentRecord{
-		ComponentID: d.componentID,
-		Name:        canonicalName,
-		Generation:  d.lockedGen,
-		CreateTime:  createTime,
-		UpdateTime:  updateTime,
-	}
-	if err := component.UnmarshalConfigProto(d.configProto, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
-	}
-	if err := component.UnmarshalAccessStatus(d.accessPayload, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
-	}
-	if snapRec.Status != nil {
-		snapRec.State = snapRec.Status.State
-		obsGen := snapRec.Status.ObservedGeneration
-		snapRec.ObservedGeneration = &obsGen
-	}
-	snapRec.Dependencies = dependency.ExtractDependencies(snapRec.Spec, snapRec.Labels)
-	snapRec.Etag = store.GenerateEtag(snapRec)
-
-	var coords *componentspb.ResolvedComponentCoordinates
-	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-		coords = store.CloneCoordinates(snapRec.Status.Coordinates)
-	}
-	return snapRec, coords, nil
-}
-
-// resolveHistoricalSnapshot resolves a snapshot of an active component by its ComponentId,
-// inheriting the timestamps of the owning active record.
-func (s *SpannerStore) resolveHistoricalSnapshot(ctx context.Context, queryable spannerQueryable, rec *store.ComponentRecord, targetGen int64, canonicalName string) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	stmt := spanner.Statement{
-		SQL: selectSnapshotByComponentIDAndGenSQL,
-		Params: map[string]any{
-			"id":  rec.ComponentID,
-			"gen": targetGen,
-		},
-	}
-	row, err := querySnapshotRow(ctx, queryable, stmt, canonicalName, targetGen)
+// withSnapshotDependencies derives the dependencies of a historical snapshot record from its spec
+// and labels, because snapshots do not store dependency edges.
+func withSnapshotDependencies(rec *store.ComponentRecord, coords *componentspb.ResolvedComponentCoordinates, err error) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	d, err := scanSnapshotRow(row)
-	if err != nil {
-		return nil, nil, err
-	}
-	return snapshotRowToRecord(d, canonicalName, rec.CreateTime, rec.UpdateTime)
-}
-
-// resolveHistoricalSnapshotByName resolves a snapshot by component name, covering soft-deleted or
-// recreated incarnations whose active record is unavailable. Timestamps come from the joined
-// Components row of the incarnation that owns the snapshot.
-func (s *SpannerStore) resolveHistoricalSnapshotByName(ctx context.Context, queryable spannerQueryable, canonicalName string, targetGen int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	stmt := spanner.Statement{
-		SQL: selectSnapshotByNameAndGenSQL,
-		Params: map[string]any{
-			"name": canonicalName,
-			"gen":  targetGen,
-		},
-	}
-	row, err := querySnapshotRow(ctx, queryable, stmt, canonicalName, targetGen)
-	if err != nil {
-		return nil, nil, err
-	}
-	d, err := scanSnapshotRow(row)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var createTime, updateTime time.Time
-	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
-		return nil, nil, fmt.Errorf("failed to read CreateTime: %w", err)
-	}
-	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
-		return nil, nil, fmt.Errorf("failed to read UpdateTime: %w", err)
-	}
-	return snapshotRowToRecord(d, canonicalName, createTime, updateTime)
+	rec.Dependencies = dependency.ExtractDependencies(rec.Spec, rec.Labels)
+	return rec, coords, nil
 }
 
 // ValidateComponentRequirement checks if a required component type and version exists and is active.

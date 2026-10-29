@@ -27,6 +27,7 @@ go_library(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
+        "//pkg/auth/principal",
         "//pkg/components/naming",
         "//pkg/components/semver",
         "//pkg/components/store",

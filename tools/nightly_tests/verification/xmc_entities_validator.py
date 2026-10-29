@@ -34,6 +34,11 @@ from types import SimpleNamespace
 from typing import Any
 
 try:
+    from sdks.python.xdash import auth as xdash_auth
+except ImportError:
+    from xdash import auth as xdash_auth  # type: ignore[no-redef]
+
+try:
     import dotenv
 
     logging.getLogger("dotenv.main").setLevel(logging.ERROR)
@@ -1055,7 +1060,12 @@ def _http_get(
     req = urllib.request.Request(url, headers=headers or {}, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            content = resp.read().decode("utf-8")
+            raw_content = resp.read()
+            content = (
+                raw_content.decode("utf-8")
+                if isinstance(raw_content, bytes)
+                else str(raw_content or "")
+            )
             if not content.strip():
                 return None
             try:
@@ -1063,7 +1073,12 @@ def _http_get(
             except json.JSONDecodeError:
                 return content.strip()
     except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace") if err.fp else ""
+        raw_body = err.read() if err.fp else b""
+        body = (
+            raw_body.decode("utf-8", errors="replace")
+            if isinstance(raw_body, bytes)
+            else str(raw_body or "")
+        )
         if "data engine is not configured" in body.lower():
             raise AssertionError(
                 f"Dashboard Service returned 'data engine is not configured' for {url}: {body}"
@@ -1162,10 +1177,11 @@ def validate_clickhouse_metrics(
     return {"total_rows": 0, "metrics": [], "skipped": True}
 
 
-def _build_dashboard_headers() -> dict[str, str]:
+def _build_dashboard_headers(url: str | None = None) -> dict[str, str]:
     """Builds HTTP request headers for Dashboard Service REST calls."""
     headers = {"Accept": "application/json", "User-Agent": "xmc-validator/1.0"}
-    if token := (os.environ.get("XMC_AUTH_TOKEN") or os.environ.get("AUTH_TOKEN") or "").strip():
+    token = xdash_auth.resolve_env_auth_token() or xdash_auth.load_cached_cli_token(url)
+    if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
@@ -1174,7 +1190,7 @@ def query_dashboard_http(url: str, timeout_sec: int = 10) -> dict[str, Any]:
     """Executes an HTTP GET request against the Dashboard Service REST gateway."""
     return _http_get(
         url,
-        headers=_build_dashboard_headers(),
+        headers=_build_dashboard_headers(url),
         timeout_sec=timeout_sec,
         service_name="Dashboard",
     )

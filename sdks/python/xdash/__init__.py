@@ -13,6 +13,12 @@
 # limitations under the License.
 """Public API for xdash: XMC Python SDK & CLI for Metrics Dashboards."""
 
+from xdash.auth import (
+    load_cached_cli_token,
+    resolve_auth_headers,
+    resolve_env_auth_token,
+    resolve_xmc_origin,
+)
 from xdash.builders import (
     ChartBuilder,
     DashboardBuilder,
@@ -50,6 +56,10 @@ __all__ = [
     "XDashError",
     "XDashConnectionError",
     "XDashRPCError",
+    "load_cached_cli_token",
+    "resolve_auth_headers",
+    "resolve_env_auth_token",
+    "resolve_xmc_origin",
     "create_vcc_comparison_dashboard",
     "create_vcc_comparison_charts",
     "create_standard_experiment_chart",

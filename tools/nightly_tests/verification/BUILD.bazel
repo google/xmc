@@ -39,6 +39,9 @@ py_library(
     name = "xmc_entities_validator_lib",
     srcs = ["xmc_entities_validator.py"],
     imports = ["../../.."],
+    deps = [
+        "//sdks/python/xdash:auth",
+    ],
 )
 
 py_library(
@@ -51,6 +54,7 @@ py_library(
     deps = [
         ":endpoint_resolution",
         ":verifier_cli",
+        "//sdks/python/xdash:auth",
     ],
 )
 
