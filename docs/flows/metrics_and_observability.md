@@ -217,7 +217,7 @@ The Health Service answers "is XMC working?" for the UI's status page and for op
 | Actuator | HTTP `GET /readyz` |
 | Reconciler | HTTP `GET /readyz` |
 | XID Service | gRPC health check on `xmc.XidService` |
-| Log Monitor | HTTP `GET /` on `log-monitor-service` (GKE) or Cloud Run service state |
+| Log Monitor | HTTP `GET /readyz` on `log-monitor-service` (GKE) or Cloud Run service state |
 | Redis | `PING` |
 | Spanner ESS / Spanner XID | Connectivity **plus schema version comparison** |
 
