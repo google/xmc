@@ -77,38 +77,24 @@ func TestRepository_ValidationAndNilPoolErrors(t *testing.T) {
 	poolRepo := NewRepository(&pgxpool.Pool{})
 	mask := &fmpb.FieldMask{Paths: []string{"notes"}}
 
+	onlyErr := func(_ any, err error) error { return err }
 	tests := []struct {
 		name     string
 		call     func() error
 		wantErr  error
 		wantCode codes.Code
 	}{
-		{"CreateArtifact nil pool", func() error { _, err := nilRepo.CreateArtifact(ctx, blankArtifactProto(1, 1)); return err }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
-		{"CreateArtifact nil artifact", func() error { _, err := poolRepo.CreateArtifact(ctx, nil); return err }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"CreateArtifact invalid name", func() error {
-			_, err := poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "invalid", Parent: "experiments/1"})
-			return err
-		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"CreateArtifact invalid parent", func() error {
-			_, err := poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "artifacts/1", Parent: "invalid/1"})
-			return err
-		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"FetchArtifact nil pool", func() error { _, err := nilRepo.FetchArtifact(ctx, 1); return err }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
+		{"CreateArtifact nil pool", func() error { return onlyErr(nilRepo.CreateArtifact(ctx, blankArtifactProto(1, 1))) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
+		{"CreateArtifact nil artifact", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, nil)) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"CreateArtifact invalid name", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "invalid", Parent: "experiments/1"})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"CreateArtifact invalid parent", func() error { return onlyErr(poolRepo.CreateArtifact(ctx, &essmsgpb.Artifact{Name: "artifacts/1", Parent: "invalid/1"})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"FetchArtifact nil pool", func() error { return onlyErr(nilRepo.FetchArtifact(ctx, 1)) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"ListArtifacts nil pool", func() error { _, _, err := nilRepo.ListArtifacts(ctx, "", 10, "", "", "", 0); return err }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"ListArtifacts invalid parent", func() error { _, _, err := nilRepo.ListArtifacts(ctx, "invalid/1", 10, "", "", "", 0); return err }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact nil update", func() error { _, err := nilRepo.UpdateArtifact(ctx, nil); return err }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact nil artifact", func() error {
-			_, err := nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, UpdateMask: mask})
-			return err
-		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact empty mask", func() error {
-			_, err := nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: &fmpb.FieldMask{}})
-			return err
-		}, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
-		{"UpdateArtifact nil pool", func() error {
-			_, err := nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: mask})
-			return err
-		}, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
+		{"UpdateArtifact nil update", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, nil)) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"UpdateArtifact nil artifact", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, UpdateMask: mask})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"UpdateArtifact empty mask", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: &fmpb.FieldMask{}})) }, grpcerr.ErrInvalidArgument, codes.InvalidArgument},
+		{"UpdateArtifact nil pool", func() error { return onlyErr(nilRepo.UpdateArtifact(ctx, &storage.ArtifactUpdate{AID: 1, Artifact: &essmsgpb.Artifact{}, UpdateMask: mask})) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 		{"DeleteArtifact nil pool", func() error { return nilRepo.DeleteArtifact(ctx, 1) }, grpcerr.ErrFailedPrecondition, codes.FailedPrecondition},
 	}
 	for _, tc := range tests {
@@ -193,10 +179,11 @@ func TestUpdateArtifact(t *testing.T) {
 	postgrestest.SeedExperiment(ctx, t, pool, testXID)
 
 	createdArt := mustCreateArtifact(ctx, t, repo, blankArtifactProto(testXID, 456))
+	newPayload := &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Text{Text: &essmsgpb.TextArtifact{Title: "updated-title", Text: "updated-searchable-body"}}}
 	res, err := repo.UpdateArtifact(ctx, &storage.ArtifactUpdate{
 		AID:        456,
-		Artifact:   &essmsgpb.Artifact{Notes: "new-notes", Tags: []string{"tag3"}, Url: &essmsgpb.Url{Url: "http://new.com", Priority: 5}},
-		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes", "tags", "url"}},
+		Artifact:   &essmsgpb.Artifact{Notes: "new-notes", Tags: []string{"tag3"}, Url: &essmsgpb.Url{Url: "http://new.com", Priority: 5}, Payload: newPayload},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"notes", "tags", "url", "payload"}},
 	})
 	if err != nil {
 		t.Fatalf("UpdateArtifact() failed: %v", err)
@@ -204,18 +191,27 @@ func TestUpdateArtifact(t *testing.T) {
 	if diff := cmp.Diff(createdArt, res.Original, protocmp.Transform()); diff != "" {
 		t.Errorf("UpdateArtifact Original mismatch (-want +got):\n%s", diff)
 	}
-	if res.Updated.GetNotes() != "new-notes" || res.Updated.GetPriority() != 5 {
-		t.Errorf("UpdateArtifact Updated notes=%q priority=%d, want new-notes and 5", res.Updated.GetNotes(), res.Updated.GetPriority())
-	}
 	if !res.Updated.GetUpdateTime().AsTime().After(createdArt.GetUpdateTime().AsTime()) {
 		t.Errorf("UpdateTime = %v, want > %v", res.Updated.GetUpdateTime(), createdArt.GetUpdateTime())
+	}
+	wantUpdated := &essmsgpb.Artifact{
+		Name: "artifacts/456", Parent: "experiments/123",
+		Url: &essmsgpb.Url{Url: "http://new.com", Priority: 5}, Priority: 5,
+		Tags: []string{"tag3"}, Notes: "new-notes", Payload: newPayload,
+		CreateTime: createdArt.GetCreateTime(), UpdateTime: res.Updated.GetUpdateTime(),
+	}
+	if diff := cmp.Diff(wantUpdated, res.Updated, protocmp.Transform()); diff != "" {
+		t.Errorf("UpdateArtifact Updated mismatch (-want +got):\n%s", diff)
 	}
 	gotArt, err := repo.FetchArtifact(ctx, 456)
 	if err != nil {
 		t.Fatalf("FetchArtifact(456) failed: %v", err)
 	}
-	if diff := cmp.Diff(res.Updated, gotArt, protocmp.Transform()); diff != "" {
+	if diff := cmp.Diff(wantUpdated, gotArt, protocmp.Transform()); diff != "" {
 		t.Errorf("FetchArtifact(456) after update mismatch (-want +got):\n%s", diff)
+	}
+	if listed, _, err := repo.ListArtifacts(ctx, "experiments/123", 10, "", `payload_type = "text" AND "updated-searchable-body"`, "", 0); err != nil || len(listed) != 1 {
+		t.Errorf("ListArtifacts(updated payload_type & searchable_content) = (%d items, err %v), want (1, nil)", len(listed), err)
 	}
 
 	t.Run("no-op update skips write and preserves UpdateTime", func(t *testing.T) {
@@ -305,9 +301,7 @@ func TestListArtifacts_FiltersAndOrdering(t *testing.T) {
 	art1 := blankArtifactProto(testXID, 3)
 	art1.Url = &essmsgpb.Url{Url: "http://1", DisplayName: "name-1", Priority: 9}
 	art1.Tags, art1.Notes, art1.MimeType = []string{"tag1"}, "notes-1", "mime-1"
-	art1.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-		ManagedXprof: &essmsgpb.ManagedXprofArtifact{DisplayName: "xprof-display", RunGroup: "xprof-rg"},
-	}}
+	art1.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: &essmsgpb.ManagedXprofArtifact{DisplayName: "xprof-display", RunGroup: "xprof-rg"}}}
 	mustCreateArtifact(ctx, t, repo, art1)
 	time.Sleep(2 * time.Millisecond)
 
@@ -315,15 +309,13 @@ func TestListArtifacts_FiltersAndOrdering(t *testing.T) {
 	art2.Parent = validator.ConstructWorkUnitName(testXID, testWID)
 	art2.Url = &essmsgpb.Url{Url: "http://2", DisplayName: "name-2", Priority: 8}
 	art2.Tags, art2.Notes, art2.MimeType = []string{"tag2"}, "notes-2", "mime-2"
-	art2.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_CodeSource{
-		CodeSource: &essmsgpb.CodeSourceArtifact{Title: "code-title", CodeBlock: "print('hi')"},
-	}}
+	art2.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_CodeSource{CodeSource: &essmsgpb.CodeSourceArtifact{Title: "code-title", CodeBlock: "print('hi')"}}}
 	mustCreateArtifact(ctx, t, repo, art2)
 	time.Sleep(2 * time.Millisecond)
 
 	art3 := blankArtifactProto(testXID, 2)
 	art3.Url = &essmsgpb.Url{Url: "http://3", DisplayName: "name-1", Priority: 7}
-	art3.Tags, art3.Notes, art3.MimeType = []string{"tag1", "tag3"}, "notes-3", "mime-3"
+	art3.Tags, art3.Notes, art3.MimeType, art3.LifecyclePhase = []string{"tag1", "tag3"}, "notes-3", "mime-3", essmsgpb.Artifact_OUTPUT
 	mustCreateArtifact(ctx, t, repo, art3)
 
 	filterTests := []struct {
@@ -341,6 +333,9 @@ func TestListArtifacts_FiltersAndOrdering(t *testing.T) {
 		{"mime_type", "", `mime_type="mime-2"`, []int64{1}},
 		{"payload_type managed_xprof", "", `payload_type = "managed_xprof"`, []int64{3}},
 		{"payload_type code_source", "", `payload_type = "code_source"`, []int64{1}},
+		{"full text searchable_content", "", "xprof", []int64{3}},
+		{"full text tags", "", "tag3", []int64{2}},
+		{"lifecycle_phase enum name", "", `lifecycle_phase = "OUTPUT"`, []int64{2}},
 	}
 	for _, tc := range filterTests {
 		t.Run("filter_"+tc.name, func(t *testing.T) {
@@ -381,13 +376,22 @@ func TestListArtifacts_FiltersAndOrdering(t *testing.T) {
 func TestListArtifacts_MultiPagePagination(t *testing.T) {
 	ctx := t.Context()
 	repo, pool := newTestRepository(t)
-	postgrestest.SeedExperiment(ctx, t, pool, 1)
+	postgrestest.SeedWorkUnit(ctx, t, pool, 1, 1)
+	postgrestest.SeedWorkUnit(ctx, t, pool, 1, 2)
 
-	specs := []struct{ displayName, mimeType string }{{"D", "M1"}, {"C", "M2"}, {"B", "M1"}, {"A", "M2"}, {"E", "M1"}}
+	specs := []struct {
+		parent, displayName, mimeType string
+	}{
+		{"experiments/1", "D", "M1"},
+		{"experiments/1", "C", "M2"},
+		{"experiments/1/workUnits/1", "B", "M1"},
+		{"experiments/1/workUnits/1", "A", "M2"},
+		{"experiments/1/workUnits/2", "E", "M1"},
+	}
 	created := make([]*essmsgpb.Artifact, len(specs))
 	for i, s := range specs {
 		art := blankArtifactProto(1, int64(i+1))
-		art.Url.DisplayName, art.MimeType = s.displayName, s.mimeType
+		art.Parent, art.Url.DisplayName, art.MimeType = s.parent, s.displayName, s.mimeType
 		created[i] = mustCreateArtifact(ctx, t, repo, art)
 	}
 

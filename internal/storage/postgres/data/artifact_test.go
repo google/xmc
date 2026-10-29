@@ -57,45 +57,35 @@ func TestArtifactProtoAndRowRoundTrip(t *testing.T) {
 		{
 			name: "managed xprof payload",
 			art: prototest.Modify(baseArtifact, func(a *essmsgpb.Artifact) {
-				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{
-					ManagedXprof: &essmsgpb.ManagedXprofArtifact{DisplayName: "tb-display-name", RunGroup: "tb-run-group"},
-				}}
+				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_ManagedXprof{ManagedXprof: &essmsgpb.ManagedXprofArtifact{DisplayName: "tb-display-name", RunGroup: "tb-run-group"}}}
 			}),
 			wantWorkUnitValid: true, wantPayloadType: "managed_xprof", wantSearchable: "tb-display-name tb-run-group",
 		},
 		{
 			name: "code source payload",
 			art: prototest.Modify(baseArtifact, func(a *essmsgpb.Artifact) {
-				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_CodeSource{
-					CodeSource: &essmsgpb.CodeSourceArtifact{Title: "my-title", Description: "my-description", CodeBlock: "my-code-block", CodeUrl: "http://code.url"},
-				}}
+				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_CodeSource{CodeSource: &essmsgpb.CodeSourceArtifact{Title: "my-title", Description: "my-description", CodeBlock: "my-code-block", CodeUrl: "http://code.url"}}}
 			}),
 			wantWorkUnitValid: true, wantPayloadType: "code_source", wantSearchable: "my-title my-description my-code-block http://code.url",
 		},
 		{
 			name: "text payload",
 			art: prototest.Modify(baseArtifact, func(a *essmsgpb.Artifact) {
-				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Text{
-					Text: &essmsgpb.TextArtifact{Title: "my-title", Text: "my-text"},
-				}}
+				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Text{Text: &essmsgpb.TextArtifact{Title: "my-title", Text: "my-text"}}}
 			}),
 			wantWorkUnitValid: true, wantPayloadType: "text", wantSearchable: "my-title my-text",
 		},
 		{
 			name: "url payload",
 			art: prototest.Modify(baseArtifact, func(a *essmsgpb.Artifact) {
-				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Url{
-					Url: &essmsgpb.UrlArtifact{Url: "http://example.com/artifact", DisplayName: "Example Link"},
-				}}
+				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Url{Url: &essmsgpb.UrlArtifact{Url: "http://example.com/artifact", DisplayName: "Example Link"}}}
 			}),
 			wantWorkUnitValid: true, wantPayloadType: "url", wantSearchable: "http://example.com/artifact Example Link",
 		},
 		{
 			name: "chart payload",
 			art: prototest.Modify(baseArtifact, func(a *essmsgpb.Artifact) {
-				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{
-					Chart: &essmsgpb.ChartArtifact{Title: "Test Dashboard", MetricNames: []string{"accuracy", "loss"}},
-				}}
+				a.Payload = &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{Chart: &essmsgpb.ChartArtifact{Title: "Test Dashboard", MetricNames: []string{"accuracy", "loss"}}}}
 			}),
 			wantWorkUnitValid: true, wantPayloadType: "chart", wantSearchable: "Test Dashboard accuracy loss",
 		},
@@ -124,6 +114,19 @@ func TestArtifactProtoAndRowRoundTrip(t *testing.T) {
 				t.Errorf("round-trip Artifact mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestArtifactRowToProto_PreservesEmptyNonNilProtoBytes(t *testing.T) {
+	got, err := ArtifactRowToProto(ArtifactRow{
+		Xid: 123, ArtifactID: 789, AdditionalInfo: []byte{}, Payload: []byte{},
+		CreateTime: testArtifactTime, UpdateTime: testArtifactTime,
+	})
+	if err != nil {
+		t.Fatalf("ArtifactRowToProto() failed: %v", err)
+	}
+	if got.GetAdditionalInfo() == nil || got.GetPayload() == nil {
+		t.Errorf("empty non-nil proto bytes unmarshaled to (info=%v, payload=%v), want non-nil empty structs", got.GetAdditionalInfo(), got.GetPayload())
 	}
 }
 
