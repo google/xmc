@@ -462,11 +462,13 @@ def main(raw_args: list[str] | None = None) -> None:
     install_xmanager_package(venv_python, xmanager_spec, args.requirements)
     compile_local_protos(venv_python, REPO_ROOT)
     install_local_sdks(venv_python, REPO_ROOT)
-    verify_imports(venv_python)
+    # Provenance runs first: a shadowed SDK would otherwise fail verify_imports with a
+    # bare CalledProcessError instead of the actionable SdkShadowedError message.
     try:
         verify_sdk_provenance(venv_python, REPO_ROOT)
     except SdkShadowedError as err:
         error_exit(str(err))
+    verify_imports(venv_python)
 
     sys.stdout.write("==================================================\n")
     sys.stdout.write("Installation complete!\n")
