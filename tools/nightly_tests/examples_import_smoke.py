@@ -41,12 +41,18 @@ from collections.abc import Sequence
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
 
-# Matches every non-empty `example_path` key of a nightly matrix entry.
-_PATH_RE = re.compile(r"example_path:\s*'(?P<path>[^']+)'")
-# Matches the `entrypoint` key that must directly follow an `example_path` key.
-_ENTRYPOINT_RE = re.compile(r"\s*\n\s*entrypoint:\s*'(?P<entrypoint>[^']+)'")
-# Executes the module body without triggering `if __name__ == "__main__"`.
-_RUN_SNIPPET = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__examples_smoke__')"
+# Matches an `example_path` / `entrypoint` key, optionally opening a YAML list item.
+_KEY_RE = re.compile(r"^\s*(?:-\s+)?(?P<key>example_path|entrypoint):(?P<value>.*)$")
+# Matches the first line of a YAML list item (`- key: ...`).
+_ITEM_START_RE = re.compile(r"^\s*-\s")
+# Number of trailing non-empty stderr lines kept as failure context.
+_STDERR_TAIL_LINES = 5
+# Executes the module body without triggering `if __name__ == "__main__"`. sys.argv is
+# reset to [script] so argv[0]-relative path logic behaves like `python3 <script>`.
+_RUN_SNIPPET = (
+    "import runpy, sys; script = sys.argv[1]; sys.argv = [script]; "
+    "runpy.run_path(script, run_name='__examples_smoke__')"
+)
 
 
 @dataclasses.dataclass(frozen=True, order=True)
@@ -67,8 +73,31 @@ class SmokeResult:
     error: str = ""
 
 
+def _unquote(raw: str) -> str:
+    """Return a scalar YAML value without surrounding quotes or a trailing comment."""
+    value = raw.strip()
+    if value[:1] in ("'", '"'):
+        end = value.find(value[0], 1)
+        return value[1:end] if end > 0 else value[1:]
+    return value.split(" #", 1)[0].strip()
+
+
+def _flush_item(item: dict[str, str], entries: dict[Entrypoint, None]) -> None:
+    """Record a parsed list item as an entrypoint, rejecting incomplete items."""
+    path = item.get("example_path", "")
+    if not path:
+        return
+    entrypoint = item.get("entrypoint", "")
+    if not entrypoint:
+        raise ValueError(f"example_path '{path}' has no 'entrypoint' in the same matrix entry")
+    entries[Entrypoint(path, entrypoint)] = None
+
+
 def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
     """Extract unique, non-empty example entrypoints from the nightly workflow.
+
+    Keys are grouped per YAML list item, so their order, quoting style (single,
+    double, or none), trailing comments, and interleaved keys do not matter.
 
     Args:
         workflow_text: Contents of the nightly examples workflow YAML.
@@ -78,24 +107,26 @@ def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
         `example_path` (UI-only checks) are skipped.
 
     Raises:
-        ValueError: If a non-empty `example_path` is not directly followed by an
-            `entrypoint` key, so matrix layout drift cannot silently drop examples.
+        ValueError: If a matrix entry has a non-empty `example_path` but no
+            `entrypoint`, so matrix drift cannot silently drop examples.
     """
     entries: dict[Entrypoint, None] = {}
-    for path_match in _PATH_RE.finditer(workflow_text):
-        entry_match = _ENTRYPOINT_RE.match(workflow_text, path_match.end())
-        if entry_match is None:
-            raise ValueError(
-                f"example_path '{path_match.group('path')}' is not directly followed by "
-                "an 'entrypoint' key"
-            )
-        entries[Entrypoint(path_match.group("path"), entry_match.group("entrypoint"))] = None
+    item: dict[str, str] = {}
+    for line in workflow_text.splitlines():
+        if _ITEM_START_RE.match(line):
+            _flush_item(item, entries)
+            item = {}
+        key_match = _KEY_RE.match(line)
+        if key_match:
+            item[key_match.group("key")] = _unquote(key_match.group("value"))
+    _flush_item(item, entries)
     return list(entries)
 
 
-def _last_line(text: str) -> str:
+def _stderr_tail(text: str) -> str:
+    """Return the last few non-empty stderr lines to keep traceback context."""
     lines = [line for line in text.strip().splitlines() if line.strip()]
-    return lines[-1] if lines else ""
+    return "\n".join(lines[-_STDERR_TAIL_LINES:])
 
 
 def smoke_entrypoint(
@@ -126,7 +157,7 @@ def smoke_entrypoint(
     )
     if proc.returncode == 0:
         return SmokeResult(entry.example_path, entry.entrypoint, ok=True)
-    error = _last_line(proc.stderr) or f"exit code {proc.returncode}"
+    error = _stderr_tail(proc.stderr) or f"exit code {proc.returncode}"
     return SmokeResult(entry.example_path, entry.entrypoint, ok=False, error=error)
 
 
@@ -155,7 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         entries = parse_entrypoints(args.workflow.read_text(encoding="utf-8"))
-    except ValueError as err:
+    except (ValueError, OSError) as err:
         print(json.dumps({"error": f"{args.workflow}: {err}"}))
         return 2
     if not entries:

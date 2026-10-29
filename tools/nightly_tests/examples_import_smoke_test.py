@@ -51,12 +51,22 @@ _WORKFLOW = textwrap.dedent(
 
 _OK_ENTRYPOINT = textwrap.dedent(
     """\
+    import sys
     import helper  # resolved via the example dir on PYTHONPATH
+    if sys.argv != ["launch.py"]:
+        raise SystemExit(f"unexpected argv: {sys.argv}")
     if __name__ == "__main__":
         raise SystemExit("main must not run during smoke checks")
     """
 )
-_BROKEN_ENTRYPOINT = "from json import resolve_auth_headers\n"
+# Fails to import, then prints a cleanup warning after the traceback via atexit.
+_BROKEN_ENTRYPOINT = textwrap.dedent(
+    """\
+    import atexit, sys
+    atexit.register(lambda: print("WARNING: trailing cleanup log", file=sys.stderr))
+    from json import resolve_auth_headers
+    """
+)
 
 
 class ParseEntrypointsTest(unittest.TestCase):
@@ -72,13 +82,33 @@ class ParseEntrypointsTest(unittest.TestCase):
             ],
         )
 
-    def test_rejects_example_path_without_entrypoint(self) -> None:
-        """Layout drift (entrypoint not adjacent) fails loudly instead of dropping examples."""
-        drifted = _WORKFLOW.replace(
-            "entrypoint: 'create.py'", "args: ''\n                entrypoint: 'create.py'"
+    def test_tolerates_formatting_variations(self) -> None:
+        """Quoting style, key order, interleaved keys, and comments do not matter."""
+        workflow = textwrap.dedent(
+            """\
+            example:
+              - id: 'double_quoted'
+                example_path: "examples/a"
+                args: ''
+                entrypoint: "launch.py"
+              - entrypoint: create.py  # reordered and unquoted
+                id: 'reordered'
+                example_path: examples/b
+            """
         )
+        self.assertEqual(
+            smoke.parse_entrypoints(workflow),
+            [
+                smoke.Entrypoint("examples/a", "launch.py"),
+                smoke.Entrypoint("examples/b", "create.py"),
+            ],
+        )
+
+    def test_rejects_example_path_without_entrypoint(self) -> None:
+        """A matrix entry missing its entrypoint fails loudly instead of being dropped."""
+        broken = _WORKFLOW.replace("entrypoint: 'create.py'", "args: ''")
         with self.assertRaisesRegex(ValueError, "examples/broken_job"):
-            smoke.parse_entrypoints(drifted)
+            smoke.parse_entrypoints(broken)
 
 
 class SmokeExecutionTest(unittest.TestCase):
@@ -100,20 +130,22 @@ class SmokeExecutionTest(unittest.TestCase):
         self.python = pathlib.Path(sys.executable)
 
     def test_ok_entrypoint_imports_without_running_main(self) -> None:
-        """A healthy entrypoint passes and its __main__ block is not executed."""
+        """A healthy entrypoint passes with argv[0] set to the script, without running main."""
         result = smoke.smoke_entrypoint(
             self.python, self.repo, smoke.Entrypoint("examples/ok_job", "launch.py")
         )
         self.assertEqual(result, smoke.SmokeResult("examples/ok_job", "launch.py", ok=True))
 
-    def test_import_error_is_reported(self) -> None:
-        """An ImportError fails the entrypoint and surfaces the final traceback line."""
+    def test_import_error_survives_trailing_stderr(self) -> None:
+        """The ImportError stays in the reported tail even when stderr has trailing logs."""
         result = smoke.smoke_entrypoint(
             self.python, self.repo, smoke.Entrypoint("examples/broken_job", "create.py")
         )
         self.assertFalse(result.ok)
         self.assertIn("ImportError", result.error)
         self.assertIn("resolve_auth_headers", result.error)
+        self.assertTrue(result.error.endswith("WARNING: trailing cleanup log"))
+        self.assertLessEqual(len(result.error.splitlines()), smoke._STDERR_TAIL_LINES)
 
     def test_main_reports_json_and_exit_code(self) -> None:
         """main prints a JSON report and returns 1 when any entrypoint fails."""
@@ -139,6 +171,14 @@ class SmokeExecutionTest(unittest.TestCase):
         with redirect_stdout(io.StringIO()):
             code = smoke.main(["--workflow", str(self.workflow)])
         self.assertEqual(code, 2)
+
+    def test_main_returns_2_for_missing_workflow(self) -> None:
+        """main reports an unreadable workflow as JSON with exit code 2, not a traceback."""
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = smoke.main(["--workflow", str(self.repo / "missing.yml")])
+        self.assertEqual(code, 2)
+        self.assertIn("missing.yml", json.loads(stdout.getvalue())["error"])
 
 
 if __name__ == "__main__":
