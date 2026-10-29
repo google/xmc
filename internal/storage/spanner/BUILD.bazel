@@ -55,6 +55,12 @@ go_test(
     ],
     embed = [":spanner"],
     deps = [
+        "//api/protos/components/v1alpha1",
+        "//internal/grpcerr",
+        "//internal/storage",
         "//internal/storage/spanner/emulator",
+        "//pkg/components/store",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

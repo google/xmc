@@ -36,6 +36,7 @@ import (
 	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
+	"xmanager_cloud/pkg/components/store"
 	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 )
 
@@ -46,10 +47,12 @@ func setupTestStore(ctx context.Context, t *testing.T) (*spannerstore.SpannerSto
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	s, err := spannerstore.NewSpannerStore(essClient, st)
+	s, err := spannerstore.NewSpannerStore(st)
 	if err != nil {
 		t.Fatalf("NewSpannerStore() failed: %v", err)
 	}
+	spannerstore.RegisterTestClient(s, essClient)
+	t.Cleanup(func() { spannerstore.UnregisterTestClient(s) })
 	return s, essClient
 }
 
@@ -332,7 +335,7 @@ func TestSpannerStore_ListComponents(t *testing.T) {
 
 func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	ctx := context.Background()
-	s, _ := setupTestStore(ctx, t)
+	s, essClient := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -372,6 +375,13 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	if updated.Status.GetCoordinates().GetServiceName() != "obs-service" {
 		t.Errorf("expected coordinate serviceName 'obs-service', got %q", updated.Status.GetCoordinates().GetServiceName())
 	}
+	_, storedUpdateTime, _ := readComponentRowTimestamps(ctx, t, essClient, updated.ComponentID)
+	if !updated.UpdateTime.Equal(storedUpdateTime) {
+		t.Errorf("UpdateObservedGeneration UpdateTime = %v, want commit timestamp %v", updated.UpdateTime, storedUpdateTime)
+	}
+	if wantEtag := store.GenerateEtag(updated); updated.Etag != wantEtag {
+		t.Errorf("UpdateObservedGeneration Etag = %q, want %q", updated.Etag, wantEtag)
+	}
 
 	// Negative observed generation rejection
 	if _, err := s.UpdateObservedGeneration(ctx, "obs-comp", -1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, ""); status.Code(err) != codes.InvalidArgument {
@@ -382,6 +392,108 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	if _, err := s.UpdateObservedGeneration(ctx, "unknown", 1, nil, componentspb.ComponentState_COMPONENT_STATE_UNSPECIFIED, ""); status.Code(err) != codes.NotFound {
 		t.Errorf("expected NotFound for unknown component, got %v", err)
 	}
+}
+
+func TestSpannerStore_CommitTimestamps(t *testing.T) {
+	ctx := context.Background()
+	s, essClient := setupTestStore(ctx, t)
+	declareOwnerCluster(ctx, t, s)
+
+	const name = "commit-ts-comp"
+
+	// 1. Create: CreateTime, UpdateTime, SourceLastSeenTime, and Etag match the commit timestamp.
+	created, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.0.0"), nil, ownerSource)
+	if err != nil {
+		t.Fatalf("SetSourcedComponentIntent(create) failed: %v", err)
+	}
+	rawCreate, rawUpdate, rawLastSeen := readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	if !created.CreateTime.Equal(rawCreate) || !created.UpdateTime.Equal(rawUpdate) || !created.SourceLastSeenTime.Equal(rawLastSeen) {
+		t.Errorf("create timestamps = (%v, %v, %v), want (%v, %v, %v)",
+			created.CreateTime, created.UpdateTime, created.SourceLastSeenTime, rawCreate, rawUpdate, rawLastSeen)
+	}
+	if wantEtag := store.GenerateEtag(created); created.Etag != wantEtag {
+		t.Errorf("create Etag = %q, want %q", created.Etag, wantEtag)
+	}
+
+	// 2. Spec change: UpdateTime, SourceLastSeenTime, and Etag advance to the new commit timestamp; CreateTime is kept.
+	specChanged, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.1.0"), nil, ownerSource)
+	if err != nil {
+		t.Fatalf("SetSourcedComponentIntent(spec change) failed: %v", err)
+	}
+	rawCreate, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	if !specChanged.CreateTime.Equal(created.CreateTime) || !specChanged.CreateTime.Equal(rawCreate) {
+		t.Errorf("spec change CreateTime = %v, want preserved %v", specChanged.CreateTime, created.CreateTime)
+	}
+	if !specChanged.UpdateTime.Equal(rawUpdate) || !specChanged.UpdateTime.After(created.UpdateTime) {
+		t.Errorf("spec change UpdateTime = %v, want %v (after %v)", specChanged.UpdateTime, rawUpdate, created.UpdateTime)
+	}
+	if !specChanged.SourceLastSeenTime.Equal(rawLastSeen) {
+		t.Errorf("spec change SourceLastSeenTime = %v, want %v", specChanged.SourceLastSeenTime, rawLastSeen)
+	}
+	if wantEtag := store.GenerateEtag(specChanged); specChanged.Etag != wantEtag || specChanged.Etag == created.Etag {
+		t.Errorf("spec change Etag = %q, want %q (distinct from %q)", specChanged.Etag, wantEtag, created.Etag)
+	}
+
+	// 3. Owner-only write: SourceLastSeenTime advances to the commit timestamp; UpdateTime and Etag stay unchanged.
+	newerSrc := sourceWith(func(src *store.RequestSource) { src.Generation = ownerSource.Generation + 1 })
+	ownerOnly, err := s.SetSourcedComponentIntent(ctx, name, intentSpec("v1.1.0"), nil, newerSrc)
+	if err != nil {
+		t.Fatalf("SetSourcedComponentIntent(owner-only) failed: %v", err)
+	}
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	if !ownerOnly.UpdateTime.Equal(specChanged.UpdateTime) || !ownerOnly.UpdateTime.Equal(rawUpdate) {
+		t.Errorf("owner-only UpdateTime = %v, want unchanged %v", ownerOnly.UpdateTime, specChanged.UpdateTime)
+	}
+	if !ownerOnly.SourceLastSeenTime.Equal(rawLastSeen) || !ownerOnly.SourceLastSeenTime.After(specChanged.SourceLastSeenTime) {
+		t.Errorf("owner-only SourceLastSeenTime = %v, want %v (after %v)", ownerOnly.SourceLastSeenTime, rawLastSeen, specChanged.SourceLastSeenTime)
+	}
+	if ownerOnly.Etag != specChanged.Etag || ownerOnly.Etag != store.GenerateEtag(ownerOnly) {
+		t.Errorf("owner-only Etag = %q, want unchanged %q", ownerOnly.Etag, specChanged.Etag)
+	}
+
+	// 4. Changed observation followed by a sourced unchanged heartbeat.
+	observed, err := s.UpdateObservedGeneration(ctx, name, 2, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready", newerSrc)
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration(changed) failed: %v", err)
+	}
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	if !observed.UpdateTime.Equal(rawUpdate) || !observed.SourceLastSeenTime.Equal(rawLastSeen) {
+		t.Errorf("observed timestamps = (%v, %v), want (%v, %v)", observed.UpdateTime, observed.SourceLastSeenTime, rawUpdate, rawLastSeen)
+	}
+	if wantEtag := store.GenerateEtag(observed); observed.Etag != wantEtag {
+		t.Errorf("observed Etag = %q, want %q", observed.Etag, wantEtag)
+	}
+
+	heartbeat, err := s.UpdateObservedGeneration(ctx, name, 2, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "Ready", newerSrc)
+	if err != nil {
+		t.Fatalf("UpdateObservedGeneration(unchanged heartbeat) failed: %v", err)
+	}
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	if !heartbeat.UpdateTime.Equal(observed.UpdateTime) || !heartbeat.UpdateTime.Equal(rawUpdate) {
+		t.Errorf("heartbeat UpdateTime = %v, want unchanged %v", heartbeat.UpdateTime, observed.UpdateTime)
+	}
+	if !heartbeat.SourceLastSeenTime.Equal(rawLastSeen) || !heartbeat.SourceLastSeenTime.After(observed.SourceLastSeenTime) {
+		t.Errorf("heartbeat SourceLastSeenTime = %v, want %v (after %v)", heartbeat.SourceLastSeenTime, rawLastSeen, observed.SourceLastSeenTime)
+	}
+	if heartbeat.Etag != observed.Etag || heartbeat.Etag != store.GenerateEtag(heartbeat) {
+		t.Errorf("heartbeat Etag = %q, want unchanged %q", heartbeat.Etag, observed.Etag)
+	}
+}
+
+func readComponentRowTimestamps(ctx context.Context, t *testing.T, client *spanner.Client, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
+	t.Helper()
+	row, err := client.Single().ReadRow(ctx, "Components", spanner.Key{componentID}, []string{"CreateTime", "UpdateTime", "SourceLastSeenTime"})
+	if err != nil {
+		t.Fatalf("ReadRow(Components, %d) failed: %v", componentID, err)
+	}
+	var nullLastSeen spanner.NullTime
+	if err := row.Columns(&createTime, &updateTime, &nullLastSeen); err != nil {
+		t.Fatalf("row.Columns(Components, %d) failed: %v", componentID, err)
+	}
+	if nullLastSeen.Valid {
+		lastSeenTime = nullLastSeen.Time
+	}
+	return createTime, updateTime, lastSeenTime
 }
 
 func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T) {

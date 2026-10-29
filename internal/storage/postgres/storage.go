@@ -17,9 +17,12 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
@@ -102,6 +105,12 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 	return pgdb.RunInTx(ctx, s.pool, func(txCtx context.Context, pgTx pgx.Tx) error {
 		return fn(txCtx, s.newTransaction(pgTx))
 	})
+}
+
+// RunInTransactionWithCommitTime is not yet implemented for PostgreSQL; it lands with PostgreSQL
+// component writes.
+func (s *Storage) RunInTransactionWithCommitTime(context.Context, func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+	return time.Time{}, status.Error(codes.Unimplemented, "postgres storage: RunInTransactionWithCommitTime is not implemented")
 }
 
 func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {

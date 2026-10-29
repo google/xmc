@@ -124,16 +124,12 @@ func (w *HealthServiceLazySpannerWrapper) ComponentsProvider(ctx context.Context
 		return w.componentsProvider, nil
 	}
 
-	client, err := w.ensureEssClientLocked(ctx)
-	if err != nil {
-		return nil, err
-	}
 	st, err := w.ensureEssStorageLocked(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	compStore, err := spannerstore.NewSpannerStore(client, st)
+	compStore, err := spannerstore.NewSpannerStore(st)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create component store: %w", err)
 	}

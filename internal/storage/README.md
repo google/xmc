@@ -33,8 +33,7 @@ The Helm chart renders the `database.*` values into the `db-config` ConfigMap, w
 
 - serves `storage.Storage` from the backend that `cfg.Backend` selects;
 - implements `health.ReadinessChecker` via `CheckReady(ctx)`, which compares the database's schema version with the version that the binary expects for that backend;
-- releases its connections on `Close()`, which is safe to call more than once;
-- exposes `SpannerClient` on the Spanner backend only, for the components store.
+- releases its connections on `Close()`, which is safe to call more than once.
 
 ## Schemas and Migrations
 
@@ -51,6 +50,7 @@ Multi-step writes that touch multiple tables (for example, `restartWorkUnitExecu
 ```go
 type TransactionRunner interface {
     RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
+    RunInTransactionWithCommitTime(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
 }
 ```
 

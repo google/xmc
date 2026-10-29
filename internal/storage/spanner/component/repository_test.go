@@ -30,6 +30,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/store"
@@ -360,6 +361,18 @@ func TestRepository_WithReadOnlyTransaction(t *testing.T) {
 	if _, _, err := txRepo.GetSnapshotByName(ctx, "app", 99); status.Code(err) != codes.NotFound {
 		t.Errorf("GetSnapshotByName(missing) error = %v, want code %v", err, codes.NotFound)
 	}
+	if err := NewRepository(client).WithReadOnlySnapshot(ctx, func(ctx context.Context, snapRepo storage.ComponentTxRepository) error {
+		snapGot, err := snapRepo.GetComponentByID(ctx, wantApp.ComponentID)
+		if err != nil {
+			return err
+		}
+		if diff := cmp.Diff(wantApp, snapGot, protocmp.Transform()); diff != "" {
+			t.Errorf("WithReadOnlySnapshot().GetComponentByID(%d) mismatch (-want +got):\n%s", wantApp.ComponentID, diff)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("WithReadOnlySnapshot() failed: %v", err)
+	}
 }
 
 func TestRepository_MutationsEdgeCases(t *testing.T) {
@@ -579,6 +592,12 @@ func TestRepository_NilClientOrTransaction(t *testing.T) {
 	}
 	if _, err := nilRepo.ReadOwnershipGauges(ctx, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("NewRepository(nil).ReadOwnershipGauges() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilRepo.WithReadOnlySnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("NewRepository(nil).WithReadOnlySnapshot(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if err := nilRepo.WithReadOnlySnapshot(ctx, func(context.Context, storage.ComponentTxRepository) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("NewRepository(nil).WithReadOnlySnapshot(fn) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 	if _, _, err := nilTxRepo.GetSnapshotByID(ctx, 1, 1, "app", baseTime, baseTime); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("WithTx(nil).GetSnapshotByID() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)

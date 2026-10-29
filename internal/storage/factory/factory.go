@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"sync"
 
-	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/dbconfig"
@@ -39,9 +38,6 @@ const (
 // Storage is an open XMC database: its storage, a readiness check and Close.
 type Storage struct {
 	storage.Storage
-
-	// SpannerClient is set only on the Spanner backend, for the components store.
-	SpannerClient *spanner.Client
 
 	schemaVersion   health.SchemaVersionClient
 	expectedVersion int64

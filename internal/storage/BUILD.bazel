@@ -41,7 +41,10 @@ go_library(
 
 go_test(
     name = "storage_test",
-    srcs = ["workunit_errors_test.go"],
+    srcs = [
+        "test_utils_test.go",
+        "workunit_errors_test.go",
+    ],
     embed = [":storage"],
     deps = [
         "//internal/grpcerr",

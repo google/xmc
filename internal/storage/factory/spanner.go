@@ -43,7 +43,6 @@ func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Stora
 	}
 	return &Storage{
 		Storage:         st,
-		SpannerClient:   client,
 		schemaVersion:   health.NewSpannerHealthClient(client),
 		expectedVersion: expectedVersion,
 		closeFn:         client.Close,

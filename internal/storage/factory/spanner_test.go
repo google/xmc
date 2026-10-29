@@ -42,10 +42,6 @@ func TestOpen_Spanner(t *testing.T) {
 			}
 			defer st.Close()
 
-			wantDatabase, _ := spannerDatabase(cfg.Spanner, db)
-			if got := st.SpannerClient.DatabaseName(); got != wantDatabase {
-				t.Errorf("SpannerClient.DatabaseName() = %q, want %q", got, wantDatabase)
-			}
 			noop := func(context.Context, *storage.Transaction) error { return nil }
 			if err := st.RunInTransaction(ctx, noop); err != nil {
 				t.Errorf("RunInTransaction() failed: %v", err)

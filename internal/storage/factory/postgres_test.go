@@ -41,9 +41,6 @@ func TestOpen_Postgres(t *testing.T) {
 			}
 			defer storage.Close()
 
-			if storage.SpannerClient != nil {
-				t.Error("SpannerClient is set for the postgres backend, want nil")
-			}
 			// The harness stamps each database with the version that this binary expects, so a
 			// mixed-up database or expected version fails here.
 			if err := storage.CheckReady(ctx); err != nil {
