@@ -441,6 +441,36 @@ class TestWaitForCI(unittest.TestCase):
         mock_run.side_effect = [_rollup(pending), _rollup(pending), _rollup(_check_run("unit"))]
         self.assertEqual(self._run()["outcome"], "success")
 
+    def test_deadline_after_failed_confirming_poll_reports_failure(self, mock_run):
+        """Complete-with-failure, then a gh error at the deadline, reports the failure."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        failed = _check_run("unit", conclusion="FAILURE")
+        err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        mock_run.side_effect = [
+            _rollup(pending),
+            _rollup(failed),
+            err,
+            _completed("##[error]boom"),
+        ]
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        self.assertIn("1 CI check(s) failed", ctx.exception.message)
+        details = _details(ctx)
+        self.assertEqual(details["outcome"], "failure")
+        self.assertEqual([c["name"] for c in details["failed_checks"]], ["unit"])
+        self.assertEqual(self.clock.now, 25)
+
+    def test_deadline_after_failed_confirming_poll_reports_success(self, mock_run):
+        """All-green complete poll, then a gh error at the deadline, reports success."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        mock_run.side_effect = [_rollup(pending), _rollup(_check_run("unit")), err]
+        res = self._run()
+        self.assertEqual(res["outcome"], "success")
+        self.assertEqual(self.clock.now, 25)
+
 
 if __name__ == "__main__":
     unittest.main()

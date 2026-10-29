@@ -364,10 +364,11 @@ def wait_for_ci(
             log_info(f"PR {args.pr} checks: {summarize_counts(checks)}", stream=sys.stderr)
         remaining = deadline - clock()
         if remaining <= 0:
-            if previous_names is not None:
-                # Deadline hit before a confirming poll: report the complete
-                # (but unconfirmed) result rather than a misleading timeout.
-                return _report_result(args, checks or [])
+            if checks and _completed_names(checks) is not None:
+                # Deadline hit before a confirming poll (or the confirming poll
+                # failed): report the last fully-complete but unconfirmed result
+                # rather than a misleading timeout.
+                return _report_result(args, checks)
             _raise_timeout(args, checks)
         sleep(min(interval, remaining))
         interval = min(interval * 2, max(MAX_INTERVAL_SECONDS, args.interval))
