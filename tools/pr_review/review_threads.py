@@ -33,7 +33,7 @@ from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
-    call_github_api,
+    get_authenticated_login,
     list_review_threads,
     resolve_review_thread,
 )
@@ -46,22 +46,14 @@ _AUTH_INSTRUCTION = (
 )
 
 
-def get_authenticated_login() -> str:
-    """Returns the GitHub login of the authenticated user.
-
-    Raises:
-        HandledError: If the login cannot be determined (e.g. unauthenticated).
-    """
+def _get_login() -> str:
+    """Returns the authenticated user's GitHub login, as a CLI-facing error on failure."""
     try:
-        user = call_github_api("/user", user_agent=_USER_AGENT)
+        return get_authenticated_login(user_agent=_USER_AGENT)
     except (GithubAuthError, GithubAPIError) as e:
         raise HandledError(
             f"Failed to fetch the authenticated GitHub user: {e}", _AUTH_INSTRUCTION
         ) from e
-    login = user.get("login") if isinstance(user, dict) else None
-    if not login:
-        raise HandledError("Authenticated GitHub user has no login.", _AUTH_INSTRUCTION)
-    return str(login)
 
 
 def _snippet(body: str) -> str:
@@ -103,7 +95,7 @@ def summarize_thread(thread: dict[str, Any], login: str) -> dict[str, Any]:
 
 def _fetch_summaries(args: argparse.Namespace) -> tuple[str, list[dict[str, Any]]]:
     """Fetches all review threads of the PR and summarizes them for the current user."""
-    login = get_authenticated_login()
+    login = _get_login()
     try:
         threads = list_review_threads(args.owner, args.repo, args.pr_number, user_agent=_USER_AGENT)
     except (GithubAuthError, GithubAPIError) as e:

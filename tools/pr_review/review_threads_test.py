@@ -21,7 +21,6 @@ from tools.common.tool_utils import HandledError
 from tools.pr_review.github_utils import GithubAPIError, GithubAuthError
 from tools.pr_review.review_threads import (
     build_parser,
-    get_authenticated_login,
     list_threads,
     main,
     resolve_replied,
@@ -93,23 +92,24 @@ class SummarizeThreadTest(unittest.TestCase):
         self.assertFalse(summary["replied_by_me"])
 
 
-class GetAuthenticatedLoginTest(unittest.TestCase):
-    """Tests for get_authenticated_login."""
+class GetLoginTest(unittest.TestCase):
+    """Tests for the CLI-boundary error conversion of the login lookup."""
 
-    @patch(f"{_MODULE}.call_github_api", return_value={"login": _ME})
-    def test_returns_login(self, _):
-        self.assertEqual(get_authenticated_login(), _ME)
-
-    @patch(f"{_MODULE}.call_github_api", side_effect=GithubAuthError("no auth"))
-    def test_auth_error_raises_handled(self, _):
+    @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAuthError("no auth"))
+    def test_auth_error_raises_handled(self, mock_login):
+        args = build_parser().parse_args(["list", "google", "xmc", "7"])
         with self.assertRaises(HandledError) as ctx:
-            get_authenticated_login()
+            list_threads(args)
+        mock_login.assert_called_once_with(user_agent="XMC-Review-Threads-Agent")
         self.assertIn("no auth", ctx.exception.message)
+        self.assertIn("gh auth login", ctx.exception.instruction)
 
-    @patch(f"{_MODULE}.call_github_api", return_value={})
-    def test_missing_login_raises_handled(self, _):
-        with self.assertRaises(HandledError):
-            get_authenticated_login()
+    @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAPIError("no login"))
+    def test_api_error_raises_handled(self, _):
+        args = build_parser().parse_args(["resolve-replied", "google", "xmc", "7"])
+        with self.assertRaises(HandledError) as ctx:
+            resolve_replied(args)
+        self.assertIn("no login", ctx.exception.message)
 
 
 @patch(f"{_MODULE}.get_authenticated_login", return_value=_ME)

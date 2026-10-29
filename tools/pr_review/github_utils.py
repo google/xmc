@@ -170,6 +170,26 @@ def _raise_detailed_error(errors):
     raise GithubAPIError(f"GitHub API call failed: {error_summary}")
 
 
+def get_authenticated_login(user_agent: str) -> str:
+    """Returns the GitHub login of the authenticated user (`GET /user`).
+
+    Args:
+        user_agent: User-Agent header for token / unauthenticated HTTP calls.
+
+    Returns:
+        The authenticated user's GitHub login.
+
+    Raises:
+        GithubAuthError: If GitHub authentication fails.
+        GithubAPIError: If the API call fails or the response has no string login.
+    """
+    user = call_github_api("/user", user_agent=user_agent)
+    login = user.get("login") if isinstance(user, dict) else None
+    if not isinstance(login, str) or not login:
+        raise GithubAPIError("GitHub /user response has no login.")
+    return login
+
+
 _REVIEW_THREADS_QUERY = """
 query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {

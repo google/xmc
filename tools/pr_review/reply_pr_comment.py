@@ -31,6 +31,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    get_authenticated_login,
     parse_comment_url,
     resolve_review_thread,
 )
@@ -79,8 +80,7 @@ def reply_comment(args):
 
     # Fetch authenticated user's Github login
     try:
-        user_info = call_github_api("/user", user_agent="XMC-Comment-Replier-Agent")
-        github_username = user_info.get("login", "unknown")
+        github_username = get_authenticated_login(user_agent="XMC-Comment-Replier-Agent")
     except Exception:
         github_username = "unknown"
 

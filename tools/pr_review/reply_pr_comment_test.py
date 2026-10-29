@@ -25,6 +25,14 @@ from tools.pr_review.reply_pr_comment import reply_comment
 class TestReplyPRComment(unittest.TestCase):
     """Test suite for reply_pr_comment tool."""
 
+    def setUp(self):
+        login_patch = patch(
+            "tools.pr_review.reply_pr_comment.get_authenticated_login",
+            return_value="test_user",
+        )
+        self.mock_login = login_patch.start()
+        self.addCleanup(login_patch.stop)
+
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     def test_reply_comment_invalid_url(self, mock_parse):
         """Test reply_comment raises HandledError when URL is invalid."""
@@ -66,7 +74,6 @@ class TestReplyPRComment(unittest.TestCase):
         }
 
         mock_call.side_effect = [
-            {"login": "test_user"},  # response for GET /user
             {"id": 5678, "body": "done"},  # response for POST comment
         ]
 
@@ -77,7 +84,7 @@ class TestReplyPRComment(unittest.TestCase):
         res = reply_comment(args)
         self.assertEqual(res["id"], 5678)
 
-        mock_call.assert_any_call("/user", user_agent="XMC-Comment-Replier-Agent")
+        self.mock_login.assert_called_once_with(user_agent="XMC-Comment-Replier-Agent")
 
         expected_body = (
             'done\n\n<!-- xmc-telemetry: {"git_username": "test_user", "date":'
@@ -117,8 +124,8 @@ class TestReplyPRComment(unittest.TestCase):
             "comment_id": 1234,
         }
 
+        self.mock_login.side_effect = GithubAPIError("GitHub API down")
         mock_call.side_effect = [
-            Exception("GitHub API down"),  # response for GET /user
             {"id": 5678, "body": "done"},  # response for POST comment
         ]
 
@@ -166,7 +173,6 @@ class TestReplyPRComment(unittest.TestCase):
         }
 
         mock_call.side_effect = [
-            {"login": "test_user"},  # response for GET /user
             {"id": 5678, "body": "done"},  # response for POST comment
         ]
 
@@ -214,7 +220,6 @@ class TestReplyPRComment(unittest.TestCase):
         }
 
         mock_call.side_effect = [
-            {"login": "test_user"},  # response for GET /user
             {"id": 5678, "body": "done"},  # response for POST comment
         ]
 
@@ -312,7 +317,6 @@ class TestReplyPRComment(unittest.TestCase):
         }
 
         mock_call.side_effect = [
-            {"login": "test_user"},
             {"id": 5678, "body": "file content"},
         ]
 
@@ -397,7 +401,6 @@ class TestReplyPRComment(unittest.TestCase):
             "comment_id": 1234,
         }
         mock_call.side_effect = [
-            {"login": "test_user"},
             {"id": 5678, "body": ""},
         ]
 
@@ -438,13 +441,17 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         )
         call_patch = patch(
             "tools.pr_review.reply_pr_comment.call_github_api",
-            side_effect=[{"login": "test_user"}, {"id": 5678}],
+            return_value={"id": 5678},
+        )
+        login_patch = patch(
+            "tools.pr_review.reply_pr_comment.get_authenticated_login",
+            return_value="test_user",
         )
         git_patch = patch(
             "tools.pr_review.reply_pr_comment.subprocess.check_output",
             return_value="mock_commit_id",
         )
-        for p in (parse_patch, call_patch, git_patch):
+        for p in (parse_patch, call_patch, login_patch, git_patch):
             p.start()
             self.addCleanup(p.stop)
         self.args = MagicMock()

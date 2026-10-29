@@ -16,12 +16,14 @@
 
 import subprocess
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from tools.pr_review.github_utils import (
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    get_authenticated_login,
     list_review_threads,
     parse_comment_url,
     resolve_review_thread,
@@ -317,6 +319,42 @@ class TestGithubUtils(unittest.TestCase):
         with self.assertRaises(GithubAPIError) as ctx:
             resolve_review_thread("google", "xmc", 490, "PRRT_node_999")
         self.assertIn("GraphQL mutation failed", str(ctx.exception))
+
+    @patch("tools.pr_review.github_utils.call_github_api", return_value={"login": "me"})
+    def test_get_authenticated_login_success(self, mock_api):
+        """Test get_authenticated_login returns the /user login."""
+        self.assertEqual(get_authenticated_login(user_agent="UA"), "me")
+        mock_api.assert_called_once_with("/user", user_agent="UA")
+
+    @patch(
+        "tools.pr_review.github_utils.call_github_api",
+        side_effect=GithubAuthError("no auth"),
+    )
+    def test_get_authenticated_login_auth_error_propagates(self, _):
+        """Test get_authenticated_login propagates GithubAuthError."""
+        with self.assertRaises(GithubAuthError):
+            get_authenticated_login(user_agent="UA")
+
+    @patch(
+        "tools.pr_review.github_utils.call_github_api",
+        side_effect=GithubAPIError("api down"),
+    )
+    def test_get_authenticated_login_api_error_propagates(self, _):
+        """Test get_authenticated_login propagates GithubAPIError."""
+        with self.assertRaises(GithubAPIError):
+            get_authenticated_login(user_agent="UA")
+
+    def test_get_authenticated_login_missing_or_invalid_login_raises(self):
+        """Test get_authenticated_login raises GithubAPIError without a string login."""
+        responses: list[Any] = [{}, {"login": ""}, {"login": 123}, None, []]
+        for response in responses:
+            with (
+                self.subTest(response=response),
+                patch("tools.pr_review.github_utils.call_github_api", return_value=response),
+                self.assertRaises(GithubAPIError) as ctx,
+            ):
+                get_authenticated_login(user_agent="UA")
+            self.assertIn("no login", str(ctx.exception))
 
     @patch("tools.pr_review.github_utils.call_github_api")
     def test_list_review_threads_follows_pagination(self, mock_api):
