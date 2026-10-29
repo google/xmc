@@ -49,11 +49,12 @@ Before making commits or opening a PR:
 
 Before creating any commit:
 
-1. **Run Pre-Commit Formatting & Affected Tests Protocol**:
+1. **Stage, Then Run Pre-Commit Formatting & Affected Tests Protocol**:
    ```bash
-   ./.githooks/pre-commit && git add .
+   git add <changed_paths>
+   ./.githooks/pre-commit
    ```
-   This runs repository formatters/linters and executes `python3 ./tools/run_affected_tests.py --skip-emulator-check` once linters pass.
+   Stage first: the hook auto-restages formatter fixes only for fully staged files (opt out with `XMC_PRECOMMIT_NO_AUTOSTAGE=1`). It exits 1 on unfixed lint errors or on fixes to partially staged or unstaged files; review those (`git diff`), stage them, and re-run. Once linters pass it executes `python3 ./tools/run_affected_tests.py --skip-emulator-check`, skipped when every staged path is Markdown or under `docs/`.
 2. **Format Conventional Commit Message**:
    Format the commit message header using `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support`).
 3. **Include Mandatory Context & Tags**:

@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "data",
     srcs = [
+        "artifact.go",
         "dashboard.go",
         "experiment.go",
         "operation.go",
@@ -50,6 +51,7 @@ go_library(
 go_test(
     name = "data_test",
     srcs = [
+        "artifact_test.go",
         "dashboard_test.go",
         "experiment_test.go",
         "operation_test.go",
@@ -64,6 +66,7 @@ go_test(
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
+        "//internal/prototest",
         "//internal/storage",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",

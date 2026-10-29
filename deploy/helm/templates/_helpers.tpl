@@ -132,7 +132,8 @@ Common OAuth environment variables for XMC services.
 DISABLE_AUTHENTICATION turns off authorization checks (for example CMS authorization and admin
 checks), and mock authentication accepts any caller, so the chart refuses to render either
 outside development environments. Both checks parse the flags the way the backend reads the
-DISABLE_AUTHENTICATION and MOCK_AUTH environment variables.
+DISABLE_AUTHENTICATION and MOCK_AUTH environment variables. Both flags additionally require
+binaries built with gotags = ["mockauth"]; published images refuse to start when either is true.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
 {{- if and (include "xmanager-cloud.authFlagEnabled" .Values.auth.disableAuthentication) (not .Values.isDevEnvironment) -}}

@@ -172,8 +172,9 @@ and performs no authentication. A caller is admitted when it matches, in order:
 Human users and service accounts that call gRPC directly, such as CI runners or workloads using
 their own ID token, need one of these entries. The Component Manager Service additionally admits
 `gcpServiceAccount`, the account `xmc-bridge` runs as; no other service admits it by identity.
-`auth.disableAuthentication: true` skips admission on gRPC; use it only on local development
-clusters.
+`auth.disableAuthentication: true` skips admission on both HTTP and gRPC; it works only in
+binaries built with `gotags = ["mockauth"]` on local development clusters (see
+[Disabling authentication](#disabling-authentication)).
 
 ---
 
@@ -183,6 +184,9 @@ clusters.
 as CMS authorization and admin checks. The chart refuses to render it unless `isDevEnvironment`
 is true.
 
+Like mock authentication, disabling authentication is compiled only into Go binaries built with
+`gotags = ["mockauth"]`. Published images refuse to start when `DISABLE_AUTHENTICATION` is true.
+
 ---
 
 ## Mock authentication
@@ -190,6 +194,12 @@ is true.
 `auth.mockAuth` replaces sign-in with a fixed test identity and is meant for local
 development only. The chart refuses to render it unless `isDevEnvironment` is
 true.
+
+Mock authentication is compiled only into Go binaries built with
+`gotags = ["mockauth"]` (for example `//cmd/experiment_state_server:experiment_state_server_dev`).
+Published images are always built from untagged binaries, so every service in them refuses to
+start when `MOCK_AUTH` is true instead of silently ignoring it. Use Dex for authentication on
+development clusters.
 
 ---
 

@@ -58,11 +58,15 @@ oci_image_for_service(
 go_test(
     name = "xmc_bridge_test",
     size = "small",
-    srcs = ["main_test.go"],
+    srcs = [
+        "main_prod_test.go",
+        "main_test.go",
+    ],
     embed = [":xmc_bridge_lib"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/logging",
+        "//pkg/auth/oauth2",
         "//pkg/components/bridge",
         "//pkg/components/bridge/healthprobe",
         "//pkg/components/bridge/helm",

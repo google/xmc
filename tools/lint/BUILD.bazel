@@ -17,6 +17,9 @@ load("@rules_python//python:py_test.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
+# Test entrypoint for the dev_binary_guard_test macro in //:oci.bzl.
+exports_files(["dev_binary_guard.py"])
+
 py_library(
     name = "check_legacy_imports_lib",
     srcs = ["check_legacy_imports.py"],
@@ -31,6 +34,23 @@ py_test(
     imports = ["../.."],
     deps = [
         ":check_legacy_imports_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "precommit_autostage_lib",
+    srcs = ["precommit_autostage.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "precommit_autostage_test",
+    srcs = ["precommit_autostage_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":precommit_autostage_lib",
         "//tools/common:tool_utils",
     ],
 )

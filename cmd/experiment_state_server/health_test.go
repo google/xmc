@@ -157,8 +157,8 @@ func TestBuildCMSAuthorizer(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv("DISABLE_AUTHENTICATION", "true")
-	if _, err := buildCMSAuthorizer(cfg, &oauth.Config{}, nil, nil).AuthorizeMutating(ctx); err != nil {
-		t.Fatalf("AuthorizeMutating() with DISABLE_AUTHENTICATION=true error = %v", err)
+	if _, err := buildCMSAuthorizer(cfg, &oauth.Config{}, nil, nil).AuthorizeMutating(ctx); err == nil {
+		t.Fatal("AuthorizeMutating() honored DISABLE_AUTHENTICATION from the environment, want only the validated config to disable authorization")
 	}
 
 	t.Setenv("DISABLE_AUTHENTICATION", "false")
@@ -185,7 +185,6 @@ func TestCMSAdmission(t *testing.T) {
 		{name: "kelvin sign does not alias the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "xmc-wl-sa@\u212Aproj.iam.gserviceaccount.com", want: false},
 		{name: "admits deployment principals", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "alice@example.com", want: true},
 		{name: "rejects everyone else", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "mallory@example.com", want: false},
-		{name: "disabled authentication admits all", oauthCfg: &oauth.Config{DisableAuthentication: true}, email: "anyone@example.com", want: true},
 	}
 
 	for _, tt := range tests {
