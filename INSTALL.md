@@ -556,7 +556,7 @@ python3 ./deploy/ctk_v2/verify_xmc.py
 
 #### Step 6 (Optional): Migrate Legacy Metrics Workloads to XMC Components
 
-If your deployment currently manages `ingestion-gateway` via legacy umbrella Helm values (`enable_components: false`), follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) before upgrading to the next release.
+If your deployment currently manages `ingestion-gateway` via legacy umbrella Helm values (`enable_components: false`), follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) during the `0.17.0`–`0.18.x` transition window (before `0.19.0` removes legacy non-component metrics templates).
 
 ---
 

@@ -3,7 +3,9 @@
 This runbook guides platform operators through the one-time, zero-downtime migration of an existing XMC installation from legacy umbrella-managed metrics workloads (`enable_components: false` / `componentsDeployment.enabled=false`) to the `stable-2026a` Component profile (`enable_components: true` / `componentsDeployment.enabled=true`).
 
 > [!IMPORTANT]
-> Complete this migration in Release `N` before upgrading to Release `N+1`, where legacy non-component metrics templates are slated for removal.
+> **Supported XMC Versions (`from` -> `target`)**:
+> - **Source (`from`)**: Any existing XMC installation running legacy umbrella mode (`enable_components: false` / `componentsDeployment.enabled=false`) — including `0.4.0`–`0.16.x` deployments with live `ingestion-gateway` workloads (and `0.17.0`–`0.18.x` clusters that have not yet enabled components). Pre-`0.4.0` clusters or installations where `ingestionGatewayDeployment.enabled=false` are also handled safely (`handoff` is a no-op).
+> - **Target (`to`)**: XMC **`0.17.0` – `0.18.x`**. Targets `<= 0.16.0` are unsupported (missing `stable-2026a` `ingestion-gateway` parameter/schema parity, multi-broker resolution, and `--profile-values` support). Complete this cutover on `0.17.0`–`0.18.x` before upgrading to `0.19.0`, where legacy non-component metrics templates are slated for removal.
 
 ---
 
