@@ -30,6 +30,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	fpb "xmanager_cloud/api/filter"
@@ -1566,6 +1567,39 @@ func TestGeneratePostgresQuery(t *testing.T) {
 		{
 			name:        "Member.EnumValues rejects unrecognized dotted Member expression with InvalidArgument",
 			userFilter:  `SingerId = foo.bar`,
+			wantErrCode: codes.InvalidArgument,
+		},
+		{
+			name:       "RestrictionRewriter rewrites field and value before SQL generation",
+			userFilter: `AlbumId = 10`,
+			options: []Option{
+				RestrictionRewriter(func(r *fpb.Restriction) (*fpb.Restriction, error) {
+					if r.GetLhs().GetValue() != string(AlbumIDTableField) {
+						return r, nil
+					}
+					return fpb.Restriction_builder{
+						Comparator: r.GetComparator(),
+						Lhs:        fpb.Expression_builder{Value: proto.String(string(SingerIDTableField))}.Build(),
+						Rhs:        fpb.Expression_builder{Value: proto.String("99")}.Build(),
+					}.Build(), nil
+				}),
+			},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(99)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				AlbumIDTableField: 1,
+			},
+		},
+		{
+			name:       "RestrictionRewriter error rejects the filter",
+			userFilter: `AlbumId = 10`,
+			options: []Option{
+				RestrictionRewriter(func(r *fpb.Restriction) (*fpb.Restriction, error) {
+					return nil, status.Error(codes.InvalidArgument, "custom restriction error")
+				}),
+			},
 			wantErrCode: codes.InvalidArgument,
 		},
 	}

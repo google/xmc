@@ -346,6 +346,9 @@ type mockXidClient struct {
 	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
 	updateXidEntryErr          error
 	updateXidEntryResp         *xidmsgpb.XidEntry
+	listXidEntriesErr          error
+	listXidEntriesResp         *xidmsgpb.ListXidEntriesResponse
+	gotListXidEntriesReq       *xidmsgpb.ListXidEntriesRequest
 }
 
 func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
@@ -361,6 +364,10 @@ func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb
 }
 func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidmsgpb.UpdateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
 	return m.updateXidEntryResp, m.updateXidEntryErr
+}
+func (m *mockXidClient) ListXidEntries(ctx context.Context, in *xidmsgpb.ListXidEntriesRequest, opts ...grpc.CallOption) (*xidmsgpb.ListXidEntriesResponse, error) {
+	m.gotListXidEntriesReq = in
+	return m.listXidEntriesResp, m.listXidEntriesErr
 }
 
 type mockAuthenticator struct {

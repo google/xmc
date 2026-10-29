@@ -15,8 +15,10 @@ package xid_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 	"xmanager_cloud/internal/storage/spanner"
@@ -25,7 +27,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	fpb "xmanager_cloud/api/filter"
 	xidpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/storage/spanner/xid"
@@ -167,6 +171,8 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 		t.Fatalf("CreateXidEntry failed: %v", err)
 	}
 	xid1, _ := validator.ValidateXIDName(entry1.GetName())
+	xid2, _ := validator.ValidateXIDName(entry2.GetName())
+	xid3, _ := validator.ValidateXIDName(entry3.GetName())
 
 	testCases := []struct {
 		name   string
@@ -196,6 +202,31 @@ func TestListXidEntries_FilterFields(t *testing.T) {
 		{
 			name:   "xid",
 			filter: fmt.Sprintf("xid=%d", xid1),
+			want:   []*xidpb.XidEntry{entry1},
+		},
+		{
+			name:   "xid_or_chain",
+			filter: fmt.Sprintf("xid=%d OR xid=%d", xid1, xid3),
+			want:   []*xidpb.XidEntry{entry1, entry3},
+		},
+		{
+			name:   "xid_not_equals",
+			filter: fmt.Sprintf("xid != %d", xid2),
+			want:   []*xidpb.XidEntry{entry1, entry3},
+		},
+		{
+			name:   "xid_range_greater_than",
+			filter: fmt.Sprintf("xid > %d", xid1),
+			want:   []*xidpb.XidEntry{entry2, entry3},
+		},
+		{
+			name:   "xid_range_less_equals",
+			filter: fmt.Sprintf("xid <= %d", xid2),
+			want:   []*xidpb.XidEntry{entry1, entry2},
+		},
+		{
+			name:   "legacy_bit_reversed_xid",
+			filter: fmt.Sprintf("bit_reversed_xid=%d", spannerutils.ReverseBits(xid1)),
 			want:   []*xidpb.XidEntry{entry1},
 		},
 		{
@@ -419,6 +450,88 @@ func TestExtractXidEntryCursor(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("extractXidEntryCursor(%v) returned diff (-want +got):\n%s", tc.entry, diff)
+			}
+		})
+	}
+}
+
+func TestRewriteXidRestriction(t *testing.T) {
+	restriction := func(lhs string, cmp fpb.Restriction_Comparator, rhs string) *fpb.Restriction {
+		return fpb.Restriction_builder{
+			Comparator: cmp,
+			Lhs:        fpb.Expression_builder{Value: proto.String(lhs)}.Build(),
+			Rhs:        fpb.Expression_builder{Value: proto.String(rhs)}.Build(),
+		}.Build()
+	}
+	reversed10 := strconv.FormatInt(spannerutils.ReverseBits(10), 10)
+
+	testCases := []struct {
+		name           string
+		in             *fpb.Restriction
+		want           *fpb.Restriction
+		wantInvalidArg bool
+	}{
+		{
+			name: "equals_uses_bit_reversed_xid",
+			in:   restriction("xid", fpb.Restriction_EQUALS, "10"),
+			want: restriction("bit_reversed_xid", fpb.Restriction_EQUALS, reversed10),
+		},
+		{
+			name: "not_equals_uses_bit_reversed_xid",
+			in:   restriction("xid", fpb.Restriction_NOT_EQUALS, "10"),
+			want: restriction("bit_reversed_xid", fpb.Restriction_NOT_EQUALS, reversed10),
+		},
+		{
+			name: "range_stays_on_xid",
+			in:   restriction("xid", fpb.Restriction_GREATER_THAN, "10"),
+			want: restriction("xid", fpb.Restriction_GREATER_THAN, "10"),
+		},
+		{
+			name: "other_field_unchanged",
+			in:   restriction("creator", fpb.Restriction_EQUALS, "xid"),
+			want: restriction("creator", fpb.Restriction_EQUALS, "xid"),
+		},
+		{
+			name:           "non_integer_literal_rejected",
+			in:             restriction("xid", fpb.Restriction_EQUALS, "abc"),
+			wantInvalidArg: true,
+		},
+		{
+			name:           "non_integer_range_literal_rejected",
+			in:             restriction("xid", fpb.Restriction_LESS_THAN, "1.5"),
+			wantInvalidArg: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := xid.RewriteXidRestriction(tc.in)
+			if tc.wantInvalidArg {
+				if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+					t.Fatalf("RewriteXidRestriction(%v) error = %v, want %v", tc.in, err, grpcerr.ErrInvalidArgument)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RewriteXidRestriction(%v) unexpected error: %v", tc.in, err)
+			}
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("RewriteXidRestriction(%v) returned diff (-want +got):\n%s", tc.in, diff)
+			}
+		})
+	}
+}
+
+func TestListXidEntries_InvalidFilters(t *testing.T) {
+	ctx := context.Background()
+	xidClient, _ := emulator.Setup(ctx, t)
+	storage, _ := spanner.NewStorage(xidClient)
+
+	for _, filter := range []string{"xid = abc", `xid = "abc"`, "xid = 1.5", "xid > abc"} {
+		t.Run(filter, func(t *testing.T) {
+			_, _, err := storage.ListXidEntries(ctx, 10, "", filter, "", 0)
+			if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+				t.Errorf("ListXidEntries(filter=%q) error = %v, want %v", filter, err, grpcerr.ErrInvalidArgument)
 			}
 		})
 	}

@@ -44,6 +44,9 @@ type EqualityVisitor struct {
 	visitFromEqual bool
 	FunctionFunc   FunctionFunc
 	MemberFunc     MemberFunc
+	// RestrictionTranslate optionally rewrites each restriction before it is inspected, so equality
+	// is tracked on the same fields that end up in the generated query.
+	RestrictionTranslate func(*fpb.Restriction) *fpb.Restriction
 }
 
 // ConjunctionExp handles expressions with the conjunction type
@@ -90,6 +93,9 @@ func (ev *EqualityVisitor) NegationExp(e *fpb.Expression) (filtervisitor.PrimTyp
 
 // RestrictionExp handles expressions with the restriction type
 func (ev *EqualityVisitor) RestrictionExp(e *fpb.Restriction) (filtervisitor.PrimType, error) {
+	if ev.RestrictionTranslate != nil {
+		e = ev.RestrictionTranslate(e)
+	}
 	// all comparators other than eq
 	if e.GetComparator() != fpb.Restriction_EQUALS {
 		return filtervisitor.Invalid, nil

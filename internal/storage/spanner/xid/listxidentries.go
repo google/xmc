@@ -17,9 +17,11 @@ package xid
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/xidschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
@@ -28,7 +30,9 @@ import (
 	"xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/query_generator/normalizer"
 
+	fpb "xmanager_cloud/api/filter"
 	xidpb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 )
@@ -91,6 +95,27 @@ func (r *Repository) ListXidEntries(ctx context.Context, pageSize int32, pageTok
 
 	// 5. Return the results.
 	return xidEntries, nextPageToken, nil
+}
+
+// RewriteXidRestriction rewrites "xid = V" and "xid != V" to the bit-reversed primary key
+// column so Spanner performs key lookups instead of scanning the unindexed Xid column.
+// Range comparisons stay on Xid because bit reversal does not preserve ordering.
+func RewriteXidRestriction(r *fpb.Restriction) (*fpb.Restriction, error) {
+	if r.GetLhs().GetValue() != "xid" {
+		return r, nil
+	}
+	v, err := strconv.ParseInt(r.GetRhs().GetValue(), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid integer literal for field \"xid\": %w", grpcerr.ErrInvalidArgument)
+	}
+	if c := r.GetComparator(); c != fpb.Restriction_EQUALS && c != fpb.Restriction_NOT_EQUALS {
+		return r, nil
+	}
+	return fpb.Restriction_builder{
+		Comparator: r.GetComparator(),
+		Lhs:        fpb.Expression_builder{Value: proto.String("bit_reversed_xid")}.Build(),
+		Rhs:        fpb.Expression_builder{Value: proto.String(strconv.FormatInt(spannerutils.ReverseBits(v), 10))}.Build(),
+	}.Build(), nil
 }
 
 // ExtractXidEntryCursor extracts pagination cursor values from an XidEntry proto.
