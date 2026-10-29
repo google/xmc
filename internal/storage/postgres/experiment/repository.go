@@ -21,21 +21,23 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kylelemons/godebug/diff"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/query_generator/liststatement"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	postgresdata "xmanager_cloud/internal/storage/postgres/data"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	"xmanager_cloud/internal/storage/postgres/schema/experimentschema"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -55,12 +57,24 @@ var (
 	updateExperimentSQL          = safesql.New("UPDATE Experiments SET Title = @title, Priority = @priority, Urls = @urls, Tags = @tags, Notes = @notes, UpdateTime = @updatetime WHERE Xid = @xid")
 	updateExperimentStatusSQL    = safesql.New("UPDATE Experiments SET Status = @status, ActiveState = @activestate, LaunchState = @launchstate, UpdateTime = @updatetime, CompleteTime = @completetime WHERE Xid = @xid")
 	updateExperimentResourcesSQL = safesql.New("UPDATE Experiments SET Resources = @resources, UpdateTime = @updatetime WHERE Xid = @xid")
+	fetchDriftedComponentsSQL    = safesql.New(
+		"SELECT c.Name, s.LockedGeneration, c.ObservedGeneration, c.State, s.ComponentId " +
+			"FROM ExperimentConsistencyInfo v " +
+			"JOIN ExperimentComponentSnapshots s ON s.Xid = v.Xid " +
+			"LEFT JOIN Components c ON s.ComponentId = c.ComponentId " +
+			"WHERE v.Xid = $1 " +
+			"AND NOT v.IsExperimentConsistent " +
+			"AND (c.ComponentId IS NULL OR c.State = $2 OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration)) " +
+			"ORDER BY c.Name ASC NULLS FIRST, s.ComponentId ASC " +
+			"LIMIT (CASE WHEN $3 > 0 THEN $3 END)",
+	)
 )
 
 // Repository manages persistence for experiment entities in PostgreSQL.
 type Repository struct {
-	pool *pgxpool.Pool
-	db   pgdb.DBTX
+	pool                *pgxpool.Pool
+	db                  pgdb.DBTX
+	experimentsQueryGen querytools.QueryGenerator
 }
 
 // TxRepository manages transactional persistence for experiment entities in PostgreSQL.
@@ -70,7 +84,14 @@ type TxRepository struct {
 
 // NewRepository creates a new PostgreSQL Experiment repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
+	queryGen, err := querytools.NewQueryGenerator(
+		experimentschema.ExperimentTables, nil, nil, nil,
+		querytools.DeduplicateSelects(true),
+	)
+	if err != nil {
+		logging.Error(context.Background(), "Failed to initialize experiment QueryGenerator", "error", err)
+	}
+	return &Repository{pool: pool, db: pgdb.FromPool(pool), experimentsQueryGen: queryGen}
 }
 
 // WithTx returns a wrapper bound to the read-write transaction tx.
@@ -107,8 +128,46 @@ func (r *Repository) FetchExperimentStatus(ctx context.Context, xid int64) (*ess
 }
 
 // ListExperiments retrieves a list of experiments matching the given filter.
-func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.Experiment, string, error) {
-	return nil, "", status.Error(codes.Unimplemented, "postgres experiment store: ListExperiments is not implemented")
+func (r *Repository) ListExperiments(ctx context.Context, pageSize int32, pageToken, filter, orderBy string, _ time.Duration) ([]*essmsgpb.Experiment, string, error) {
+	if pageSize <= 0 {
+		return nil, "", fmt.Errorf("page_size must be positive: %w", grpcerr.ErrInvalidArgument)
+	}
+	return pgdb.List(ctx, r.db, entityName, pageToken, liststatement.ListParams{
+		PageSize:              pageSize,
+		Filter:                filter,
+		OrderBy:               orderBy,
+		QueryGen:              r.experimentsQueryGen,
+		DefaultSelectFields:   experimentschema.ExperimentsSelectFields,
+		DefaultFullTextFields: experimentschema.ExperimentsFullTextFields,
+		ValidOrderByFields:    experimentschema.ExperimentsOrderByFields,
+	}, postgresdata.ExperimentRowToProto, ExtractExperimentCursor)
+}
+
+// ExtractExperimentCursor extracts keyset pagination cursor values from an Experiment proto.
+func ExtractExperimentCursor(exp *essmsgpb.Experiment) (map[string]any, error) {
+	if exp == nil {
+		return nil, fmt.Errorf("experiment cannot be nil")
+	}
+	xid, err := validator.ValidateExperimentName(exp.GetName())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse experiment name %q: %w", exp.GetName(), err)
+	}
+	cursorValues := map[string]any{
+		"xid":       xid,
+		"created":   nil,
+		"updated":   nil,
+		"completed": nil,
+	}
+	if exp.GetCreateTime() != nil {
+		cursorValues["created"] = exp.GetCreateTime().AsTime()
+	}
+	if exp.GetUpdateTime() != nil {
+		cursorValues["updated"] = exp.GetUpdateTime().AsTime()
+	}
+	if exp.GetCompleteTime() != nil {
+		cursorValues["completed"] = exp.GetCompleteTime().AsTime()
+	}
+	return cursorValues, nil
 }
 
 // UpdateExperiment updates an experiment with the given update mask.
@@ -153,9 +212,29 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 	return res, nil
 }
 
+type driftedComponentRow struct {
+	Name               pgtype.Text `db:"name"`
+	LockedGeneration   int64       `db:"lockedgeneration"`
+	ObservedGeneration pgtype.Int8 `db:"observedgeneration"`
+	State              pgtype.Int8 `db:"state"`
+	ComponentID        int64       `db:"componentid"`
+}
+
 // FetchDriftedComponents retrieves components whose live catalog entry diverges from the experiment's snapshot.
 func (r *Repository) FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]storage.ComponentDiff, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres experiment store: FetchDriftedComponents is not implemented")
+	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
+	if xid <= 0 {
+		return nil, fmt.Errorf("experiment ID must be positive: %w", grpcerr.ErrInvalidArgument)
+	}
+	rows, err := pgdb.QueryRows[driftedComponentRow](ctx, r.db, fetchDriftedComponentsSQL.String(), entityName, xid, int64(storage.ComponentStateDeleted), limit)
+	if err != nil {
+		return nil, err
+	}
+	diffs := make([]storage.ComponentDiff, len(rows))
+	for i, row := range rows {
+		diffs[i] = toComponentDiff(row)
+	}
+	return diffs, nil
 }
 
 // FetchExperiment retrieves and locks an experiment by its unique ID within the transaction.
@@ -245,4 +324,24 @@ func validateExperimentUpdate(update *storage.ExperimentUpdate) error {
 		return fmt.Errorf("experiment ID must not be 0: %w", grpcerr.ErrInvalidArgument)
 	}
 	return nil
+}
+
+func toComponentDiff(r driftedComponentRow) storage.ComponentDiff {
+	d := storage.ComponentDiff{
+		ComponentID:      r.ComponentID,
+		LockedGeneration: r.LockedGeneration,
+	}
+	if r.Name.Valid {
+		name := r.Name.String
+		d.Name = &name
+	}
+	if r.ObservedGeneration.Valid {
+		gen := r.ObservedGeneration.Int64
+		d.ObservedGeneration = &gen
+	}
+	if r.State.Valid {
+		state := r.State.Int64
+		d.State = &state
+	}
+	return d
 }
