@@ -56,10 +56,16 @@ func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 	}
 }
 
-func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
+func TestRepository_ValidationAndNilGuards(t *testing.T) {
 	ctx := t.Context()
 	repo := NewRepository(nil)
 	txRepo := repo.WithTx(nil)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"q"}, 10, ""); !errors.Is(err, context.Canceled) {
+		t.Errorf("FetchActiveWorkUnitsByQueues(canceled) = %v, want context.Canceled", err)
+	}
 
 	preconditionCalls := []func() error{
 		func() error { _, err := repo.FetchWorkUnit(ctx, 1, 1); return err },
@@ -72,6 +78,8 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 		},
 		func() error { _, err := repo.FetchCurrentWorkUnitExecution(ctx, 1, 1); return err },
 		func() error { _, err := repo.ListWorkUnitExecutions(ctx, 1, 1); return err },
+		func() error { _, _, err := repo.ListWorkUnits(ctx, "experiments/1", 10, "", "", "", 0); return err },
+		func() error { _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); return err },
 		func() error { _, err := txRepo.FetchWorkUnit(ctx, 1, 1); return err },
 		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
 		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
@@ -111,16 +119,6 @@ func TestRepository_ValidationAndUnimplementedStubs(t *testing.T) {
 	for i, call := range invalidArgCalls {
 		if got := status.Code(call()); got != codes.InvalidArgument {
 			t.Errorf("invalidArgCalls[%d] code = %v, want InvalidArgument", i, got)
-		}
-	}
-
-	unimplementedCalls := []func() error{
-		func() error { _, _, err := repo.ListWorkUnits(ctx, "experiments/1", 10, "", "", "", 0); return err },
-		func() error { _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); return err },
-	}
-	for i, call := range unimplementedCalls {
-		if got := status.Code(call()); got != codes.Unimplemented {
-			t.Errorf("unimplementedCalls[%d] code = %v, want Unimplemented", i, got)
 		}
 	}
 }

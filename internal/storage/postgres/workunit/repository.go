@@ -23,19 +23,19 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kylelemons/godebug/diff"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/query_generator/querytools"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	postgresdata "xmanager_cloud/internal/storage/postgres/data"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	"xmanager_cloud/internal/storage/postgres/schema/workunitschema"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -72,8 +72,9 @@ var (
 
 // Repository manages persistence for work unit entities in PostgreSQL.
 type Repository struct {
-	pool *pgxpool.Pool
-	db   pgdb.DBTX
+	pool              *pgxpool.Pool
+	db                pgdb.DBTX
+	workUnitsQueryGen querytools.QueryGenerator
 }
 
 // TxRepository manages transactional persistence for work unit entities in PostgreSQL.
@@ -83,7 +84,11 @@ type TxRepository struct {
 
 // NewRepository creates a new PostgreSQL WorkUnit repository instance bound to pool.
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool, db: pgdb.FromPool(pool)}
+	qg, err := querytools.NewQueryGenerator(workunitschema.WorkUnitTables, nil, nil, nil, querytools.DeduplicateSelects(true))
+	if err != nil {
+		panic(fmt.Sprintf("workunitschema.WorkUnitTables is invalid: %v", err))
+	}
+	return &Repository{pool: pool, db: pgdb.FromPool(pool), workUnitsQueryGen: qg}
 }
 
 // WithTx returns a wrapper bound to the read-write transaction tx.
@@ -140,16 +145,6 @@ func (r *Repository) ListWorkUnitExecutions(ctx context.Context, xid int64, wid 
 		return nil
 	})
 	return executions, err
-}
-
-// ListWorkUnits retrieves a list of work units matching the given filter.
-func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
-	return nil, "", status.Error(codes.Unimplemented, "postgres ListWorkUnits is not implemented")
-}
-
-// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
-	return nil, status.Error(codes.Unimplemented, "postgres FetchActiveWorkUnitsByQueues is not implemented")
 }
 
 // FetchNextWorkUnitID retrieves the next available work unit ID for an experiment within the transaction.
