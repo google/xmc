@@ -296,7 +296,8 @@ ON WorkUnits (
   SortPhase DESC, 
   PositionInQueue ASC, 
   CreateTime ASC, 
-  WorkUnitId ASC
+  WorkUnitId ASC, 
+  Xid ASC
 ) STORING (
   IsPendingOrRunningJob
 ) WHERE IsPendingOrRunningJob IS NOT NULL;
