@@ -47,6 +47,19 @@ func ComponentInsertMutations(rec *store.ComponentRecord, depIDs map[string]int6
 
 // ComponentIntentUpdateMutations builds Spanner mutations to update rec's intent and replace its dependency edges.
 func ComponentIntentUpdateMutations(rec *store.ComponentRecord, depIDs map[string]int64) ([]*spanner.Mutation, error) {
+	cols, err := componentIntentUpdateColumns(rec)
+	if err != nil {
+		return nil, err
+	}
+	delDeps := spanner.Delete("ComponentDependencies", spanner.KeyRange{
+		Start: spanner.Key{rec.ComponentID},
+		End:   spanner.Key{rec.ComponentID},
+		Kind:  spanner.ClosedClosed,
+	})
+	return appendDependencyMutations([]*spanner.Mutation{spanner.UpdateMap("Components", cols), delDeps}, rec.ComponentID, rec.Dependencies, depIDs)
+}
+
+func componentIntentUpdateColumns(rec *store.ComponentRecord) (map[string]any, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
@@ -55,7 +68,7 @@ func ComponentIntentUpdateMutations(rec *store.ComponentRecord, depIDs map[strin
 		return nil, err
 	}
 	compClass := data.DetermineComponentClass(rec.Spec)
-	update := spanner.UpdateMap("Components", map[string]any{
+	return map[string]any{
 		"ComponentId":    rec.ComponentID,
 		"ComponentClass": spanner.NullString{StringVal: compClass, Valid: compClass != ""},
 		"ConfigProto":    configBytes,
@@ -63,31 +76,41 @@ func ComponentIntentUpdateMutations(rec *store.ComponentRecord, depIDs map[strin
 		"State":          int64(rec.State),
 		"Generation":     rec.Generation,
 		"UpdateTime":     spanner.CommitTimestamp,
-	})
-	delDeps := spanner.Delete("ComponentDependencies", spanner.KeyRange{
-		Start: spanner.Key{rec.ComponentID},
-		End:   spanner.Key{rec.ComponentID},
-		Kind:  spanner.ClosedClosed,
-	})
-	return appendDependencyMutations([]*spanner.Mutation{update, delDeps}, rec.ComponentID, rec.Dependencies, depIDs)
+	}, nil
 }
 
 // ComponentStateUpdateMutation builds a Spanner mutation to update componentID's state and access payload.
 func ComponentStateUpdateMutation(componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) (*spanner.Mutation, error) {
+	cols, err := componentStateUpdateColumns(componentID, state, access)
+	if err != nil {
+		return nil, err
+	}
+	return spanner.UpdateMap("Components", cols), nil
+}
+
+func componentStateUpdateColumns(componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) (map[string]any, error) {
 	accessBytes, err := data.MarshalAccessStatus(access)
 	if err != nil {
 		return nil, err
 	}
-	return spanner.UpdateMap("Components", map[string]any{
+	return map[string]any{
 		"ComponentId":   componentID,
 		"State":         int64(state),
 		"AccessPayload": accessBytes,
 		"UpdateTime":    spanner.CommitTimestamp,
-	}), nil
+	}, nil
 }
 
 // ComponentObservationUpdateMutation builds a Spanner mutation to update rec's observed generation, access payload, and optional state.
 func ComponentObservationUpdateMutation(rec *store.ComponentRecord, updateState bool) (*spanner.Mutation, error) {
+	cols, err := componentObservationUpdateColumns(rec, updateState)
+	if err != nil {
+		return nil, err
+	}
+	return spanner.UpdateMap("Components", cols), nil
+}
+
+func componentObservationUpdateColumns(rec *store.ComponentRecord, updateState bool) (map[string]any, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
@@ -107,11 +130,19 @@ func ComponentObservationUpdateMutation(rec *store.ComponentRecord, updateState 
 	if updateState {
 		cols["State"] = int64(rec.State)
 	}
-	return spanner.UpdateMap("Components", cols), nil
+	return cols, nil
 }
 
 // ComponentSoftDeleteMutation builds a Spanner mutation marking rec as DELETED and optionally updating its owner columns.
 func ComponentSoftDeleteMutation(rec *store.ComponentRecord, owner *store.SourceOwner) (*spanner.Mutation, error) {
+	cols, err := componentSoftDeleteColumns(rec, owner)
+	if err != nil {
+		return nil, err
+	}
+	return spanner.UpdateMap("Components", cols), nil
+}
+
+func componentSoftDeleteColumns(rec *store.ComponentRecord, owner *store.SourceOwner) (map[string]any, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
@@ -129,17 +160,25 @@ func ComponentSoftDeleteMutation(rec *store.ComponentRecord, owner *store.Source
 	if owner != nil {
 		maps.Copy(cols, ownerColumns(owner))
 	}
-	return spanner.UpdateMap("Components", cols), nil
+	return cols, nil
 }
 
 // ComponentOwnerUpdateMutation builds a Spanner mutation updating componentID's source owner columns.
 func ComponentOwnerUpdateMutation(componentID int64, owner *store.SourceOwner) *spanner.Mutation {
+	cols := componentOwnerUpdateColumns(componentID, owner)
+	if cols == nil {
+		return nil
+	}
+	return spanner.UpdateMap("Components", cols)
+}
+
+func componentOwnerUpdateColumns(componentID int64, owner *store.SourceOwner) map[string]any {
 	if owner == nil {
 		return nil
 	}
 	cols := ownerColumns(owner)
 	cols["ComponentId"] = componentID
-	return spanner.UpdateMap("Components", cols)
+	return cols
 }
 
 func appendDependencyMutations(mutations []*spanner.Mutation, componentID int64, deps []string, depIDs map[string]int64) ([]*spanner.Mutation, error) {
