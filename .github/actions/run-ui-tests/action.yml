@@ -54,10 +54,16 @@ runs:
       run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
       working-directory: ${{ inputs.working-directory }}
 
+    # The arc-runner-set image pre-bakes Chromium system libraries (Karma runs
+    # ChromeHeadless above, and e2e-tests.yml runs Playwright without apt), so
+    # --with-deps is omitted: its unbounded `apt-get update` against
+    # archive.ubuntu.com can hang until the job timeout. Missing host libraries
+    # still fail fast at browser launch. `timeout` bounds the CDN download
+    # because composite action steps do not support `timeout-minutes`.
     - name: 'Install Playwright Browsers'
       if: steps.scope.outputs.run_ui == 'true'
       shell: bash
-      run: npx playwright install --with-deps chromium
+      run: timeout 300 npx playwright install chromium
       working-directory: ${{ inputs.working-directory }}
 
     - name: 'Build Angular Application'
