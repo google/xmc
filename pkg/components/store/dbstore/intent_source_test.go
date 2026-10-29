@@ -27,7 +27,6 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -37,7 +36,6 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
-	"xmanager_cloud/pkg/components/store/memory"
 )
 
 // ownerSource is the source that seeds owned rows; cases modify it with sourceWith. It comes from
@@ -555,17 +553,12 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 	targetOwner := store.RequestSource{UID: "uid-a", Generation: 1, Namespace: "xmc", ClusterUID: prodClusterUID, Epoch: 1}
 	dependentOwner := targetOwner
 	dependentOwner.UID = "uid-b"
-	backends := []struct {
-		name     string
-		newStore func(context.Context, *testing.T) (store.Store, *spanner.Client)
-	}{
-		{name: "memory", newStore: func(context.Context, *testing.T) (store.Store, *spanner.Client) { return memory.NewMemoryStore(), nil }},
-		{name: "spanner", newStore: func(ctx context.Context, t *testing.T) (store.Store, *spanner.Client) { return setupTestStore(ctx, t) }},
-	}
-	for _, backend := range backends {
+	for _, backend := range intentStoreBackends() {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
-			s, client := backend.newStore(ctx, t)
+			s := backend.newStore(t)
+			// MemoryStore records no SourceLastSeenTime, so it has no rows to inspect.
+			rows, _ := s.(backendRows)
 			if _, err := s.DeclareClusterEpoch(ctx, cluster); err != nil {
 				t.Fatalf("DeclareClusterEpoch() error = %v", err)
 			}
@@ -576,8 +569,8 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 				t.Fatalf("SetSourcedComponentIntent(%s) error = %v", dependent, err)
 			}
 			var lastSeenBefore time.Time
-			if client != nil {
-				lastSeenBefore, _ = readSourceTimes(ctx, t, client, dependent)
+			if rows != nil {
+				lastSeenBefore, _ = readSourceTimes(ctx, t, rows, dependent)
 			}
 
 			res, err := s.PrepareDeactivation(ctx, target, true, targetOwner)
@@ -594,8 +587,8 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 			if got.State != componentspb.ComponentState_COMPONENT_STATE_DISABLING || !cmp.Equal(got.Owner, ownerFor(dependentOwner)) {
 				t.Errorf("dependent = (state=%v, owner=%+v), want DISABLING owned by %+v", got.State, got.Owner, ownerFor(dependentOwner))
 			}
-			if client != nil {
-				if lastSeenAfter, _ := readSourceTimes(ctx, t, client, dependent); !lastSeenAfter.Equal(lastSeenBefore) {
+			if rows != nil {
+				if lastSeenAfter, _ := readSourceTimes(ctx, t, rows, dependent); !lastSeenAfter.Equal(lastSeenBefore) {
 					t.Errorf("dependent SourceLastSeenTime = %v, want unchanged %v", lastSeenAfter, lastSeenBefore)
 				}
 			}

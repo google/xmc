@@ -42,6 +42,7 @@ go_library(
 go_test(
     name = "dbstore_test",
     srcs = [
+        "backend_test.go",
         "dbstore_test.go",
         "export_test.go",
         "intent_dependency_registration_test.go",
@@ -52,11 +53,13 @@ go_test(
         "ownership_fence_test.go",
         "ownership_metrics_test.go",
         "rejection_error_info_test.go",
+        "spanner_backend_test.go",
     ],
     embed = [":dbstore"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
+        "//internal/storage",
         "//internal/storage/data",
         "//internal/storage/spanner",
         "//internal/storage/spanner/component",

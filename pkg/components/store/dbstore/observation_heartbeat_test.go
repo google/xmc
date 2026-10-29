@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -141,17 +140,17 @@ func TestUpdateObservedGeneration_UnchangedHeartbeat_Parity(t *testing.T) {
 // while keeping UpdateTime. It reads the columns directly, so it is Spanner-only.
 func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen(t *testing.T) {
 	ctx := context.Background()
-	s, client := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 	const name = "heartbeat-last-seen"
 	seeded := seedOwnedComponent(ctx, t, s, name, false)
-	lastSeenBefore, updateBefore := readSourceTimes(ctx, t, client, name)
+	lastSeenBefore, updateBefore := readSourceTimes(ctx, t, db, name)
 
 	rec, err := seededHeartbeat(ctx, s, name, seeded, ownerSource)
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration(unchanged) error = %v", err)
 	}
 
-	lastSeenAfter, updateAfter := readSourceTimes(ctx, t, client, name)
+	lastSeenAfter, updateAfter := readSourceTimes(ctx, t, db, name)
 	if !lastSeenAfter.After(lastSeenBefore) {
 		t.Errorf("SourceLastSeenTime = %v, want after %v", lastSeenAfter, lastSeenBefore)
 	}
@@ -164,15 +163,9 @@ func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSe
 }
 
 // readSourceTimes returns SourceLastSeenTime and UpdateTime of the active record name.
-func readSourceTimes(ctx context.Context, t *testing.T, client *spanner.Client, name string) (lastSeen, update time.Time) {
+func readSourceTimes(ctx context.Context, t *testing.T, db backendRows, name string) (lastSeen, update time.Time) {
 	t.Helper()
-	stmt := spanner.Statement{
-		SQL:    `SELECT SourceLastSeenTime, UpdateTime FROM Components WHERE ActiveName = @name`,
-		Params: map[string]any{"name": name},
-	}
-	err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-		return row.Columns(&lastSeen, &update)
-	})
+	lastSeen, update, err := db.SourceTimes(ctx, name)
 	if err != nil {
 		t.Fatalf("query source times of %s error = %v", name, err)
 	}

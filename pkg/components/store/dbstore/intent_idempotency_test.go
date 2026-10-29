@@ -43,16 +43,17 @@ type intentStoreBackend struct {
 	newStore func(t *testing.T) store.Store
 }
 
-// intentStoreBackends returns MemoryStore and SpannerStore factories so parity tests run the same
-// rows against both implementations.
+// intentStoreBackends returns a MemoryStore factory and a Store factory for every database in
+// dbBackends so parity tests run the same rows against all implementations.
 func intentStoreBackends() []intentStoreBackend {
-	return []intentStoreBackend{
-		{name: "memory", newStore: func(*testing.T) store.Store { return memory.NewMemoryStore() }},
-		{name: "spanner", newStore: func(t *testing.T) store.Store {
-			s, _ := setupTestStore(context.Background(), t)
-			return s
-		}},
+	backends := []intentStoreBackend{{name: "memory", newStore: func(*testing.T) store.Store { return memory.NewMemoryStore() }}}
+	for _, db := range dbBackends() {
+		backends = append(backends, intentStoreBackend{name: db.name, newStore: func(t *testing.T) store.Store {
+			s, rows := db.newStore(context.Background(), t)
+			return &inspectableStore{Store: s, backendRows: rows}
+		}})
 	}
+	return backends
 }
 
 func intentSpec(version string, deps ...string) *componentspb.ComponentSpec {
