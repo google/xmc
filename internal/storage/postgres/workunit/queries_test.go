@@ -160,6 +160,7 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 		wid   int64
 		state essmsgpb.WorkUnitStatus_WorkUnitState
 		pos   int32
+		queue string
 	}{
 		{wid: 1, state: essmsgpb.WorkUnitStatus_SCHEDULING, pos: 20},
 		{wid: 2, state: essmsgpb.WorkUnitStatus_SCHEDULING, pos: 10},
@@ -167,10 +168,14 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 		{wid: 4, state: essmsgpb.WorkUnitStatus_INITIALIZING, pos: 0},
 		{wid: 5, state: essmsgpb.WorkUnitStatus_STARTING, pos: 0},
 		{wid: 6, state: essmsgpb.WorkUnitStatus_COMPLETED, pos: 0},
+		{wid: 7, state: essmsgpb.WorkUnitStatus_SCHEDULING, pos: 15, queue: "other-queue"},
 	}
 	for _, s := range states {
 		wu := blankWorkUnitProto(xid, s.wid, baseTestTime.Add(time.Duration(s.wid)*time.Second))
 		wu.CurrentWorkUnitExecution.Status.State = s.state
+		if s.queue != "" {
+			wu.Executable.SchedulingConstraints.QueueName = s.queue
+		}
 		if s.pos > 0 {
 			wu.CurrentWorkUnitExecution.Status.SchedulingInformation = &essmsgpb.StructuredMessage{
 				AuxiliaryInfo: &essmsgpb.AuxiliaryInfo{
@@ -188,14 +193,17 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 
 	var gotWIDs []int64
 	token := ""
-	wantPageCounts := []int{2, 2, 1}
-	for i, wantCount := range wantPageCounts {
+	wantPages := []struct {
+		count   int
+		hasNext bool
+	}{{2, true}, {2, true}, {1, false}}
+	for i, wantPage := range wantPages {
 		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token)
 		if err != nil {
 			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
 		}
-		if len(res.WorkUnits) != wantCount || res.TotalQueueSize != 5 {
-			t.Errorf("page %d = (len=%d, total=%d), want (%d, 5)", i+1, len(res.WorkUnits), res.TotalQueueSize, wantCount)
+		if len(res.WorkUnits) != wantPage.count || res.TotalQueueSize != 5 || (res.NextPageToken != "") != wantPage.hasNext {
+			t.Errorf("page %d = (len=%d, total=%d, hasNext=%t), want (%d, 5, %t)", i+1, len(res.WorkUnits), res.TotalQueueSize, res.NextPageToken != "", wantPage.count, wantPage.hasNext)
 		}
 		for _, item := range res.WorkUnits {
 			if item.Author != "user" {
@@ -208,6 +216,22 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 	}
 	if diff := cmp.Diff([]int64{3, 4, 5, 2, 1}, gotWIDs); diff != "" {
 		t.Errorf("active queue ordering mismatch (-want +got):\n%s", diff)
+	}
+
+	bothRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue", "other-queue"}, 10, "")
+	if err != nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues(both queues) failed: %v", err)
+	}
+	if bothRes.TotalQueueSize != 6 || bothRes.NextPageToken != "" {
+		t.Errorf("both queues = (total=%d, next=%q), want (6, \"\")", bothRes.TotalQueueSize, bothRes.NextPageToken)
+	}
+	var gotBothWIDs []int64
+	for _, item := range bothRes.WorkUnits {
+		_, wid, _ := validator.ValidateWorkUnitName(item.WorkUnit.GetName())
+		gotBothWIDs = append(gotBothWIDs, wid)
+	}
+	if diff := cmp.Diff([]int64{3, 4, 5, 2, 7, 1}, gotBothWIDs); diff != "" {
+		t.Errorf("multi-queue ordering mismatch (-want +got):\n%s", diff)
 	}
 
 	rawToken := base64.RawURLEncoding.EncodeToString([]byte("3"))
@@ -275,51 +299,6 @@ func TestExtractWorkUnitCursor(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("ExtractWorkUnitCursor() mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-func TestPaginationHelpers(t *testing.T) {
-	clampCases := []struct {
-		in   int32
-		want int32
-	}{
-		{in: 0, want: defaultPageSize},
-		{in: -5, want: defaultPageSize},
-		{in: 25, want: 25},
-		{in: 5000, want: maxPageSize},
-	}
-	for _, tc := range clampCases {
-		if got := clampPageSize(tc.in); got != tc.want {
-			t.Errorf("clampPageSize(%d) = %d, want %d", tc.in, got, tc.want)
-		}
-	}
-
-	tokenCases := []struct {
-		name    string
-		token   string
-		want    int64
-		wantErr bool
-	}{
-		{name: "empty", token: "", want: 0},
-		{name: "padded url encoding", token: encodePageToken(12), want: 12},
-		{name: "unpadded raw url encoding", token: base64.RawURLEncoding.EncodeToString([]byte("5")), want: 5},
-		{name: "negative offset", token: encodePageToken(-1), wantErr: true},
-		{name: "non-numeric offset", token: base64.URLEncoding.EncodeToString([]byte("abc")), wantErr: true},
-		{name: "corrupt base64", token: "!!!", wantErr: true},
-	}
-	for _, tc := range tokenCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := decodePageToken(tc.token)
-			if tc.wantErr {
-				if !errors.Is(err, storage.ErrInvalidPageToken) {
-					t.Errorf("decodePageToken(%q) = %v, want ErrInvalidPageToken", tc.token, err)
-				}
-				return
-			}
-			if err != nil || got != tc.want {
-				t.Errorf("decodePageToken(%q) = (%d, %v), want (%d, nil)", tc.token, got, err, tc.want)
 			}
 		})
 	}

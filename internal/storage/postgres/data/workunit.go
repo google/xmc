@@ -47,7 +47,6 @@ type WorkUnitRow struct {
 	PositionInQueue                int64      `db:"positioninqueue"`
 	CreateTime                     time.Time  `db:"createtime"`
 	UpdateTime                     time.Time  `db:"updatetime"`
-	Creator                        string     `db:"creator"`
 }
 
 // GetInsertArgs returns the strict named arguments required by the WorkUnits INSERT statement.

@@ -16,9 +16,7 @@ package workunit
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,16 +26,18 @@ import (
 	ls "xmanager_cloud/internal/query_generator/liststatement"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/offsetpagetoken"
 	postgresdata "xmanager_cloud/internal/storage/postgres/data"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/internal/storage/postgres/schema/workunitschema"
 	"xmanager_cloud/internal/validator"
 )
 
-const (
-	defaultPageSize = int32(100)
-	maxPageSize     = int32(1000)
-)
+// activeWorkUnitRow is a WorkUnits row joined with its parent experiment's creator.
+type activeWorkUnitRow struct {
+	postgresdata.WorkUnitRow
+	Creator string `db:"creator"`
+}
 
 var (
 	countActiveWorkUnitsSQL = safesql.New(`SELECT COUNT(*) FROM WorkUnits wu WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
@@ -122,8 +122,8 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	if len(queueNames) == 0 {
 		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.WorkUnitWithAuthor{}, NextPageToken: ""}, nil
 	}
-	pageSizeVal := clampPageSize(pageSize)
-	offset, err := decodePageToken(pageToken)
+	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
+	offset, err := offsetpagetoken.Decode(pageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
@@ -132,13 +132,13 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queueNames []string, pageSize int32, offset int64) (*storage.ActiveWorkUnitsResult, error) {
 	var totalQueueSize int64
-	var rawRows []postgresdata.WorkUnitRow
+	var rawRows []activeWorkUnitRow
 	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, countActiveWorkUnitsSQL.String(), queueNames).Scan(&totalQueueSize); err != nil {
 			return pgdb.TranslateError(err, entityName)
 		}
 		var err error
-		rawRows, err = pgdb.QueryRows[postgresdata.WorkUnitRow](ctx, tx, fetchActiveWorkUnitsSQL.String(), entityName, queueNames, int64(pageSize)+1, offset)
+		rawRows, err = pgdb.QueryRows[activeWorkUnitRow](ctx, tx, fetchActiveWorkUnitsSQL.String(), entityName, queueNames, int64(pageSize)+1, offset)
 		return err
 	})
 	if err != nil {
@@ -147,7 +147,7 @@ func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queue
 	nextPageToken := ""
 	if int64(len(rawRows)) > int64(pageSize) {
 		rawRows = rawRows[:pageSize]
-		nextPageToken = encodePageToken(offset + int64(pageSize))
+		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSize))
 	}
 	workUnits, err := toWorkUnitsWithAuthor(rawRows)
 	if err != nil {
@@ -156,46 +156,14 @@ func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queue
 	return &storage.ActiveWorkUnitsResult{WorkUnits: workUnits, NextPageToken: nextPageToken, TotalQueueSize: totalQueueSize}, nil
 }
 
-func toWorkUnitsWithAuthor(rows []postgresdata.WorkUnitRow) ([]storage.WorkUnitWithAuthor, error) {
+func toWorkUnitsWithAuthor(rows []activeWorkUnitRow) ([]storage.WorkUnitWithAuthor, error) {
 	res := make([]storage.WorkUnitWithAuthor, 0, len(rows))
 	for _, row := range rows {
-		wu, err := postgresdata.WorkUnitRowToProto(row)
+		wu, err := postgresdata.WorkUnitRowToProto(row.WorkUnitRow)
 		if err != nil {
 			return nil, err
 		}
 		res = append(res, storage.WorkUnitWithAuthor{WorkUnit: wu, Author: row.Creator})
 	}
 	return res, nil
-}
-
-func clampPageSize(pageSize int32) int32 {
-	if pageSize <= 0 {
-		return defaultPageSize
-	}
-	return min(pageSize, maxPageSize)
-}
-
-func decodePageToken(token string) (int64, error) {
-	if token == "" {
-		return 0, nil
-	}
-	b, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		b, err = base64.RawURLEncoding.DecodeString(token)
-		if err != nil {
-			return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-		}
-	}
-	offset, err := strconv.ParseInt(string(b), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-	}
-	if offset < 0 {
-		return 0, fmt.Errorf("%w: offset cannot be negative", storage.ErrInvalidPageToken)
-	}
-	return offset, nil
-}
-
-func encodePageToken(offset int64) string {
-	return base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(offset, 10)))
 }
