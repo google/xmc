@@ -17,11 +17,6 @@ output "instance_name" {
   value       = var.enabled ? google_spanner_instance.main[0].name : ""
 }
 
-output "instance_id" {
-  description = "The ID of the Spanner instance."
-  value       = var.enabled ? google_spanner_instance.main[0].id : ""
-}
-
 output "database_ids" {
   description = "A map from logical database name to the actual created database ID."
   value       = var.enabled ? { for k, db in google_spanner_database.db : k => db.name } : { for k, _ in var.databases : k => "" }

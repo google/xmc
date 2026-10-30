@@ -90,6 +90,18 @@ vars:
   clickhouse_user: "default"
   clickhouse_password: ""
 
+  # Storage backend: "spanner" (default) or "postgres". With "postgres", Spanner is not
+  # provisioned and the workloads connect to the Bring-Your-Own PostgreSQL below
+  # (see README > Database Backend).
+  database_backend: "spanner"
+  postgres_host: ""
+  postgres_port: 5432
+  postgres_user: ""
+  postgres_password: ""
+  postgres_ess_database: ""
+  postgres_xid_database: ""
+  postgres_ssl_mode: ""
+
   # Enable Foundational Component Controllers
   enable_components: false
 

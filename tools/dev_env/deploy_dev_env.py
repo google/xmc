@@ -582,10 +582,6 @@ def step_migrate(config: DeploymentConfig) -> None:
     Args:
         config: The loaded DeploymentConfig instance.
     """
-    if config.database_backend == "postgres":
-        log_info("Skipping Spanner schema migrations because database_backend is 'postgres'.")
-        return
-
     pending = check_pending_migrations(config)
     if not pending:
         log_success("No pending migrations found. Databases are up to date.")
