@@ -16,6 +16,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -23,76 +24,20 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/pkg/components/store"
 )
 
-func TestRepository_Unimplemented(t *testing.T) {
-	repo := NewRepository(nil)
-	txRepo := repo.WithTx(nil)
+func TestTxRepository_UnimplementedWrites(t *testing.T) {
+	txRepo := NewRepository(nil).WithTx(nil)
 
 	ctx := context.Background()
-	now := time.Now()
 	tests := []struct {
 		name string
 		call func() error
 	}{
-		{
-			name: "Repository.GetActiveComponent",
-			call: func() error {
-				_, err := repo.GetActiveComponent(ctx, "app")
-				return err
-			},
-		},
-		{
-			name: "Repository.GetComponentByID",
-			call: func() error {
-				_, err := repo.GetComponentByID(ctx, 1)
-				return err
-			},
-		},
-		{
-			name: "Repository.ListActiveComponents",
-			call: func() error {
-				_, err := repo.ListActiveComponents(ctx)
-				return err
-			},
-		},
-		{
-			name: "Repository.GetComponentWithFence",
-			call: func() error {
-				_, _, err := repo.GetComponentWithFence(ctx, "app")
-				return err
-			},
-		},
-		{
-			name: "TxRepository.GetSnapshotByID",
-			call: func() error {
-				_, _, err := txRepo.GetSnapshotByID(ctx, 1, 1, "app", now, now)
-				return err
-			},
-		},
-		{
-			name: "TxRepository.GetSnapshotByName",
-			call: func() error {
-				_, _, err := txRepo.GetSnapshotByName(ctx, "app", 1)
-				return err
-			},
-		},
-		{
-			name: "Repository.ReadOwnershipGauges",
-			call: func() error {
-				_, err := repo.ReadOwnershipGauges(ctx, now)
-				return err
-			},
-		},
-		{
-			name: "TxRepository.ReadFence",
-			call: func() error {
-				_, err := txRepo.ReadFence(ctx)
-				return err
-			},
-		},
 		{
 			name: "TxRepository.RefreshFence",
 			call: func() error {
@@ -110,12 +55,6 @@ func TestRepository_Unimplemented(t *testing.T) {
 			call: func() error {
 				_, err := txRepo.ReassignOwnedComponents(ctx, "uid", 1)
 				return err
-			},
-		},
-		{
-			name: "Repository.WithReadOnlySnapshot",
-			call: func() error {
-				return repo.WithReadOnlySnapshot(ctx, nil)
 			},
 		},
 		{
@@ -166,11 +105,47 @@ func TestRepository_Unimplemented(t *testing.T) {
 	}
 }
 
+func TestRepository_NilPoolOrTransaction(t *testing.T) {
+	ctx := context.Background()
+	nilRepo := NewRepository(nil)
+	nilTxRepo := nilRepo.WithTx(nil)
+	now := time.Now()
+
+	if err := nilRepo.WithReadOnlySnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("WithReadOnlySnapshot(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if err := nilRepo.WithReadOnlySnapshot(ctx, func(context.Context, storage.ComponentTxRepository) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithReadOnlySnapshot(fn) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+
+	calls := map[string]func() error{
+		"Repository.GetActiveComponent":    func() error { _, err := nilRepo.GetActiveComponent(ctx, "app"); return err },
+		"Repository.GetComponentByID":      func() error { _, err := nilRepo.GetComponentByID(ctx, 1); return err },
+		"Repository.ListActiveComponents":  func() error { _, err := nilRepo.ListActiveComponents(ctx); return err },
+		"Repository.GetComponentWithFence": func() error { _, _, err := nilRepo.GetComponentWithFence(ctx, "app"); return err },
+		"Repository.ReadOwnershipGauges":   func() error { _, err := nilRepo.ReadOwnershipGauges(ctx, now); return err },
+		"TxRepository.GetActiveComponent":  func() error { _, err := nilTxRepo.GetActiveComponent(ctx, "app"); return err },
+		"TxRepository.GetComponentByID":    func() error { _, err := nilTxRepo.GetComponentByID(ctx, 1); return err },
+		"TxRepository.ListActiveComponents": func() error {
+			_, err := nilTxRepo.ListActiveComponents(ctx)
+			return err
+		},
+		"TxRepository.GetSnapshotByID":   func() error { _, _, err := nilTxRepo.GetSnapshotByID(ctx, 1, 1, "app", now, now); return err },
+		"TxRepository.GetSnapshotByName": func() error { _, _, err := nilTxRepo.GetSnapshotByName(ctx, "app", 1); return err },
+		"TxRepository.ReadFence":         func() error { _, err := nilTxRepo.ReadFence(ctx); return err },
+	}
+	for name, call := range calls {
+		if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+			t.Errorf("%s error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+		}
+	}
+}
+
 func TestNewRepository_BindsPoolAndTx(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	repo := NewRepository(pool)
-	if repo.db != pool {
-		t.Errorf("NewRepository(pool).db = %v, want %p", repo.db, pool)
+	if repo.db != pool || repo.pool != pool {
+		t.Errorf("NewRepository(pool) = {db: %v, pool: %p}, want both %p", repo.db, repo.pool, pool)
 	}
 
 	var tx pgdb.DBTX = &pgxpool.Pool{}

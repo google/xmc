@@ -26,13 +26,13 @@ go_library(
         "//api/protos/components/v1alpha1",
         "//internal/grpcerr",
         "//internal/storage",
+        "//internal/storage/data",
         "//internal/storage/spanner/data",
         "//pkg/components/store",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
