@@ -13,40 +13,36 @@
 # limitations under the License.
 """Public API for xdash: XMC Python SDK & CLI for Metrics Dashboards."""
 
-from .auth import (
+from xdash.auth import (
     load_cached_cli_token,
     resolve_auth_headers,
     resolve_env_auth_token,
     resolve_xmc_origin,
 )
-
-try:
-    from xdash.builders import (
-        ChartBuilder,
-        DashboardBuilder,
-        bar_plot,
-        chart_id_from_name,
-        scatter_plot,
-        summary_kpi_plot,
-        validate_chart_id,
-    )
-    from xdash.client import (
-        DashboardClient,
-        XDashConnectionError,
-        XDashError,
-        XDashRPCError,
-    )
-    from xdash.presets import (
-        VCC_BASELINE_XID,
-        VCC_COMPARISON_RUNS,
-        VCC_TUNED_V1_XID,
-        VCC_TUNED_V2_XID,
-        create_standard_experiment_chart,
-        create_vcc_comparison_charts,
-        create_vcc_comparison_dashboard,
-    )
-except ImportError:
-    pass
+from xdash.builders import (
+    ChartBuilder,
+    DashboardBuilder,
+    bar_plot,
+    chart_id_from_name,
+    scatter_plot,
+    summary_kpi_plot,
+    validate_chart_id,
+)
+from xdash.client import (
+    DashboardClient,
+    XDashConnectionError,
+    XDashError,
+    XDashRPCError,
+)
+from xdash.presets import (
+    VCC_BASELINE_XID,
+    VCC_COMPARISON_RUNS,
+    VCC_TUNED_V1_XID,
+    VCC_TUNED_V2_XID,
+    create_standard_experiment_chart,
+    create_vcc_comparison_charts,
+    create_vcc_comparison_dashboard,
+)
 
 __all__ = [
     "DashboardBuilder",

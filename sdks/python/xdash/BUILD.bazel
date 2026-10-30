@@ -16,10 +16,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "auth",
-    srcs = [
-        "__init__.py",
-        "auth.py",
-    ],
+    srcs = ["auth.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
 )

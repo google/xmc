@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
-import sys
 import unittest
 import urllib.error
 import urllib.request
@@ -1495,28 +1493,6 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             headers = xmc_entities_validator._build_dashboard_headers(url)
         mock_cli_tok.assert_called_once_with(url)
         self.assertEqual(headers["Authorization"], "Bearer cached-cli-tok")
-
-    def test_import_clean_without_sdks_python_on_sys_path(self) -> None:
-        """Verifies sdks.python.xdash and xmc_entities_validator import cleanly without sdks/python on sys.path."""
-        code = (
-            "import sys\n"
-            "sys.path = [p for p in sys.path if 'sdks/python' not in p]\n"
-            "import sdks.python.xdash\n"
-            "from sdks.python.xdash import auth as xdash_auth\n"
-            "from tools.nightly_tests.verification import xmc_entities_validator\n"
-            "assert xdash_auth is not None\n"
-            "assert xmc_entities_validator.xdash_auth is not None\n"
-            "assert hasattr(xdash_auth, 'resolve_auth_headers')\n"
-            "import sdks.python.xdash as xdash_pkg\n"
-            "assert hasattr(xdash_pkg, 'resolve_auth_headers')\n"
-        )
-        res = subprocess.run(
-            [sys.executable, "-c", code],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        self.assertEqual(res.returncode, 0, f"Subprocess import failed:\n{res.stderr}")
 
 
 if __name__ == "__main__":
