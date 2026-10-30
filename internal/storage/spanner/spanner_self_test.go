@@ -33,7 +33,7 @@ func TestNewStorage_NilClient(t *testing.T) {
 	}
 }
 
-func TestStorage_RunInTransactionWithCommitTime_MatchesStoredUpdateTime(t *testing.T) {
+func TestStorage_RunInSerializableTransaction_MatchesStoredUpdateTime(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)
 	st, err := NewStorage(essClient)
@@ -56,14 +56,14 @@ func TestStorage_RunInTransactionWithCommitTime_MatchesStoredUpdateTime(t *testi
 		Generation: 1,
 	}
 
-	commitTime, err := st.RunInTransactionWithCommitTime(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	commitTime, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		return tx.Components.InsertComponent(ctx, rec, nil)
 	})
 	if err != nil {
-		t.Fatalf("RunInTransactionWithCommitTime() failed: %v", err)
+		t.Fatalf("RunInSerializableTransaction() failed: %v", err)
 	}
 	if commitTime.IsZero() {
-		t.Fatal("RunInTransactionWithCommitTime() returned zero timestamp")
+		t.Fatal("RunInSerializableTransaction() returned zero timestamp")
 	}
 
 	stored, err := st.Components().GetComponentByID(ctx, rec.ComponentID)
@@ -124,8 +124,8 @@ func TestStorage_RunInTransaction_AlreadyExistsMapping(t *testing.T) {
 
 func TestStorage_RunInTransaction_Validation(t *testing.T) {
 	ctx := context.Background()
-	if _, err := (&Storage{}).RunInTransactionWithCommitTime(ctx, func(context.Context, *storage.Transaction) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("RunInTransactionWithCommitTime() with nil client = %v, want ErrFailedPrecondition", err)
+	if _, err := (&Storage{}).RunInSerializableTransaction(ctx, func(context.Context, *storage.Transaction) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("RunInSerializableTransaction() with nil client = %v, want ErrFailedPrecondition", err)
 	}
 
 	_, essClient := emulator.Setup(ctx, t)
@@ -133,7 +133,7 @@ func TestStorage_RunInTransaction_Validation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStorage() failed: %v", err)
 	}
-	if _, err := st.RunInTransactionWithCommitTime(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-		t.Errorf("RunInTransactionWithCommitTime(nil) = %v, want ErrInvalidArgument", err)
+	if _, err := st.RunInSerializableTransaction(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("RunInSerializableTransaction(nil) = %v, want ErrInvalidArgument", err)
 	}
 }

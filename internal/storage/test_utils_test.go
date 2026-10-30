@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-func TestMockStorage_RunInTransactionWithCommitTime(t *testing.T) {
+func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 	ctx := context.Background()
 	fixedTime := time.Date(2026, time.October, 29, 10, 0, 0, 0, time.UTC)
 	wantErr := errors.New("tx failed")
@@ -29,15 +29,15 @@ func TestMockStorage_RunInTransactionWithCommitTime(t *testing.T) {
 	t.Run("returns configured CommitTime", func(t *testing.T) {
 		m := &MockStorage{CommitTime: fixedTime}
 		called := false
-		got, err := m.RunInTransactionWithCommitTime(ctx, func(context.Context, *Transaction) error {
+		got, err := m.RunInSerializableTransaction(ctx, func(context.Context, *Transaction) error {
 			called = true
 			return nil
 		})
 		if err != nil {
-			t.Fatalf("RunInTransactionWithCommitTime() error = %v", err)
+			t.Fatalf("RunInSerializableTransaction() error = %v", err)
 		}
 		if !called {
-			t.Error("RunInTransactionWithCommitTime() did not invoke callback")
+			t.Error("RunInSerializableTransaction() did not invoke callback")
 		}
 		if !got.Equal(fixedTime) {
 			t.Errorf("CommitTime = %v, want %v", got, fixedTime)
@@ -47,12 +47,12 @@ func TestMockStorage_RunInTransactionWithCommitTime(t *testing.T) {
 	t.Run("defaults to current time when CommitTime is zero", func(t *testing.T) {
 		before := time.Now()
 		m := &MockStorage{}
-		got, err := m.RunInTransactionWithCommitTime(ctx, func(context.Context, *Transaction) error {
+		got, err := m.RunInSerializableTransaction(ctx, func(context.Context, *Transaction) error {
 			return nil
 		})
 		after := time.Now()
 		if err != nil {
-			t.Fatalf("RunInTransactionWithCommitTime() error = %v", err)
+			t.Fatalf("RunInSerializableTransaction() error = %v", err)
 		}
 		if got.Before(before) || got.After(after) {
 			t.Errorf("CommitTime = %v, want within [%v, %v]", got, before, after)
@@ -61,11 +61,11 @@ func TestMockStorage_RunInTransactionWithCommitTime(t *testing.T) {
 
 	t.Run("propagates error with zero timestamp", func(t *testing.T) {
 		m := &MockStorage{CommitTime: fixedTime, RunInTransactionErr: wantErr}
-		got, err := m.RunInTransactionWithCommitTime(ctx, func(context.Context, *Transaction) error {
+		got, err := m.RunInSerializableTransaction(ctx, func(context.Context, *Transaction) error {
 			return nil
 		})
 		if !errors.Is(err, wantErr) {
-			t.Errorf("RunInTransactionWithCommitTime() error = %v, want %v", err, wantErr)
+			t.Errorf("RunInSerializableTransaction() error = %v, want %v", err, wantErr)
 		}
 		if !got.IsZero() {
 			t.Errorf("CommitTime = %v, want zero time on error", got)

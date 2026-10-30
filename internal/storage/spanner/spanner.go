@@ -74,13 +74,13 @@ type Storage struct {
 // RunInTransaction executes the given function in a Spanner read-write transaction,
 // passing a Transaction struct with repositories bound to the Spanner transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	_, err := s.RunInTransactionWithCommitTime(ctx, fn)
+	_, err := s.RunInSerializableTransaction(ctx, fn)
 	return err
 }
 
-// RunInTransactionWithCommitTime executes fn in a Spanner read-write transaction and returns the
-// commit timestamp assigned by Spanner.
-func (s *Storage) RunInTransactionWithCommitTime(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+// RunInSerializableTransaction executes fn in a Spanner read-write transaction (which is always
+// serializable) and returns the commit timestamp assigned by Spanner.
+func (s *Storage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
 	if s == nil || s.client == nil {
 		return time.Time{}, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
 	}

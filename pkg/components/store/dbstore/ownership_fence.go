@@ -30,7 +30,7 @@ func (s *Store) DeclareClusterEpoch(ctx context.Context, cluster store.ClusterId
 		return nil, err
 	}
 	var res *store.DeclarationResult
-	err := s.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	_, err := s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
 		res, err = s.declareClusterEpochTx(ctx, tx.Components, cluster)
 		return err

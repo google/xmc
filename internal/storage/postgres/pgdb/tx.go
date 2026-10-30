@@ -34,11 +34,11 @@ const (
 )
 
 type txBeginner interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
 }
 
 type txRetryConfig struct {
+	txOptions      pgx.TxOptions
 	maxAttempts    int
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
@@ -60,6 +60,15 @@ func RunInTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Contex
 	return runInTx(ctx, pool, defaultTxRetryConfig, fn)
 }
 
+// RunInSerializableTx executes fn inside a SERIALIZABLE read-write PostgreSQL transaction with the
+// same commit, rollback, and retry semantics as RunInTx.
+func RunInSerializableTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	if pool == nil {
+		return WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return runInSerializableTx(ctx, pool, fn)
+}
+
 // RunInReadOnlyTx executes fn inside a REPEATABLE READ READ ONLY PostgreSQL transaction,
 // releasing the snapshot via a detached-context Rollback when fn returns or panics.
 func RunInReadOnlyTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
@@ -67,6 +76,12 @@ func RunInReadOnlyTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx contex
 		return WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	return runInReadOnlyTx(ctx, pool, fn)
+}
+
+func runInSerializableTx(ctx context.Context, beginner txBeginner, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	cfg := defaultTxRetryConfig
+	cfg.txOptions = pgx.TxOptions{IsoLevel: pgx.Serializable}
+	return runInTx(ctx, beginner, cfg, fn)
 }
 
 func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn func(ctx context.Context, tx pgx.Tx) error) error {
@@ -79,7 +94,7 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		lastErr = runTxAttempt(ctx, beginner, fn)
+		lastErr = runTxAttempt(ctx, beginner, cfg.txOptions, fn)
 		if lastErr == nil || !IsRetryableTxError(lastErr) {
 			return lastErr
 		}
@@ -93,8 +108,8 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 	return TranslateError(lastErr, "transaction")
 }
 
-func runTxAttempt(ctx context.Context, beginner txBeginner, fn func(ctx context.Context, tx pgx.Tx) error) error {
-	tx, err := beginner.Begin(ctx)
+func runTxAttempt(ctx context.Context, beginner txBeginner, opts pgx.TxOptions, fn func(ctx context.Context, tx pgx.Tx) error) error {
+	tx, err := beginner.BeginTx(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("failed to begin postgres transaction: %w", err)
 	}

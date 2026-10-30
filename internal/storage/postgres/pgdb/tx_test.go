@@ -203,6 +203,42 @@ func TestRunInTxExecutionAndRetries(t *testing.T) {
 	})
 }
 
+func TestRunInSerializableTx(t *testing.T) {
+	if err := RunInSerializableTx(context.Background(), nil, func(context.Context, pgx.Tx) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("RunInSerializableTx(nil pool) = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+
+	tests := []struct {
+		name string
+		run  func(ctx context.Context, beginner txBeginner, fn func(context.Context, pgx.Tx) error) error
+		want []pgx.TxOptions
+	}{
+		{
+			name: "runInTx uses server default isolation",
+			run: func(ctx context.Context, beginner txBeginner, fn func(context.Context, pgx.Tx) error) error {
+				return runInTx(ctx, beginner, fastRetryConfig(), fn)
+			},
+			want: []pgx.TxOptions{{}},
+		},
+		{
+			name: "runInSerializableTx uses serializable isolation",
+			run:  runInSerializableTx,
+			want: []pgx.TxOptions{{IsoLevel: pgx.Serializable}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			beginner := &fakeBeginner{}
+			if err := tt.run(context.Background(), beginner, func(context.Context, pgx.Tx) error { return nil }); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, beginner.txOpts); diff != "" {
+				t.Errorf("BeginTx options mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestRunInTxContextAndPanicHandling(t *testing.T) {
 	serializationErr := &pgconn.PgError{Code: SQLStateSerializationFailure, Message: "could not serialize"}
 
