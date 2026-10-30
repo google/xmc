@@ -18,6 +18,7 @@ go_library(
     name = "data",
     srcs = [
         "artifact.go",
+        "dashboard.go",
         "experiment.go",
         "operation.go",
         "pausedtask.go",
@@ -31,9 +32,11 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/postgres/data",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
+        "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/data",
         "//internal/validator",
@@ -51,6 +54,7 @@ go_test(
     name = "data_test",
     srcs = [
         "artifact_test.go",
+        "dashboard_test.go",
         "experiment_test.go",
         "operation_test.go",
         "pausedtask_test.go",
@@ -62,6 +66,7 @@ go_test(
     ],
     embed = [":data"],
     deps = [
+        "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue",
         "//api/protos/xid:messages_go_proto",
