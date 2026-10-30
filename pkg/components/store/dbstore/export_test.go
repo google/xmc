@@ -27,10 +27,12 @@ import (
 	"xmanager_cloud/pkg/components/store/memory"
 )
 
-// componentRowInspector reads and writes component rows directly, bypassing the Store API. The
+// RowInspector reads and writes component rows directly, bypassing the Store API. The
 // database-backed stores of the dbstore_test backends implement it.
-type componentRowInspector interface {
+type RowInspector interface {
+	// OwnerByID returns the recorded owner of the record componentID, including a deleted record.
 	OwnerByID(ctx context.Context, componentID int64) (*store.SourceOwner, error)
+	// SetSourceLastSeenTime sets the recorded SourceLastSeenTime of the active record canonicalName.
 	SetSourceLastSeenTime(ctx context.Context, canonicalName string, seenAt time.Time) error
 }
 
@@ -46,7 +48,7 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	switch st := s.(type) {
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
-	case componentRowInspector:
+	case RowInspector:
 		return st.OwnerByID(ctx, componentID)
 	default:
 		return nil, fmt.Errorf("unsupported store %T", s)
@@ -59,9 +61,9 @@ func SetSourceLastSeenTimeForTest(ctx context.Context, s store.Store, canonicalN
 	case *memory.MemoryStore:
 		st.SetSourceLastSeenTimeForTest(canonicalName, seenAt)
 		return nil
-	case componentRowInspector:
+	case RowInspector:
 		return st.SetSourceLastSeenTime(ctx, canonicalName, seenAt)
 	default:
-		return nil
+		return fmt.Errorf("unsupported store %T", s)
 	}
 }
