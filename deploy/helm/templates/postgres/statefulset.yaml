@@ -1,0 +1,118 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- if include "xmanager-cloud.postgresDeploy" . }}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres }}
+{{- $user := include "xmanager-cloud.postgresUser" . }}
+{{- $essDb := include "xmanager-cloud.postgresEssDatabase" . }}
+{{- $_ := include "xmanager-cloud.postgresXidDatabase" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      annotations:
+        checksum/initdb: {{ include (print $.Template.BasePath "/postgres/initdb-configmap.yaml") . | sha256sum }}
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: {{ default "postgres:16-alpine" $pg.image | quote }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          runAsNonRoot: true
+          runAsUser: 70
+          runAsGroup: 70
+          capabilities:
+            drop:
+            - ALL
+        ports:
+        - name: tcp-postgres
+          containerPort: 5432
+        env:
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        - name: POSTGRES_USER
+          value: {{ $user | quote }}
+        - name: POSTGRES_DB
+          value: {{ $essDb | quote }}
+        {{- if $pg.password }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        {{- else }}
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: "trust"
+        {{- end }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        - name: initdb
+          mountPath: /docker-entrypoint-initdb.d
+          readOnly: true
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - {{ $user | quote }}
+            - -d
+            - {{ $essDb | quote }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - {{ $user | quote }}
+            - -d
+            - {{ $essDb | quote }}
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      volumes:
+      - name: initdb
+        configMap:
+          name: postgres-initdb
+          defaultMode: 493
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      {{- if $pg.storageClassName }}
+      storageClassName: {{ $pg.storageClassName | quote }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ default "20Gi" $pg.storageSize | quote }}
+{{- end }}
