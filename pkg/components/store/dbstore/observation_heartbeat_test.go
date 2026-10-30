@@ -139,7 +139,8 @@ func TestUpdateObservedGeneration_UnchangedHeartbeat_Parity(t *testing.T) {
 
 // TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen checks that an
 // unchanged sourced heartbeat still refreshes SourceLastSeenTime, and returns the stored value,
-// while keeping UpdateTime. MemoryStore records no SourceLastSeenTime, so this runs on dbBackends.
+// while keeping UpdateTime. MemoryStore records no SourceLastSeenTime, so this runs on every
+// dbstoretest.Backends() database.
 func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen(t *testing.T) {
 	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 		const name = "heartbeat-last-seen"

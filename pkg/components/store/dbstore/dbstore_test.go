@@ -1224,36 +1224,17 @@ func testGetPlatformHealth(ctx context.Context, t *testing.T, s *dbstore.Store, 
 	}
 }
 
-type concurrencyScale struct {
-	goroutines, writers, writerIters, pairs int
-}
-
-// concurrencyLimits bounds concurrent commits on PostgreSQL within pgdb.DefaultMaxTxAttempts (5
-// optimistic SERIALIZABLE attempts) while keeping the 8-worker 2PL stress counts on Spanner.
-func concurrencyLimits(backendName string) concurrencyScale {
-	if backendName == "postgres" {
-		return concurrencyScale{goroutines: 4, writers: 3, writerIters: 2, pairs: 2}
-	}
-	return concurrencyScale{goroutines: 8, writers: 8, writerIters: 4, pairs: 4}
-}
-
 func TestSpannerStore_ConcurrentOperations(t *testing.T) {
-	for _, backend := range dbstoretest.Backends() {
-		t.Run(backend.Name, func(t *testing.T) {
-			ctx := context.Background()
-			s, _ := newDBStore(ctx, t, backend)
-			limits := concurrencyLimits(backend.Name)
-			testConcurrentOperations(ctx, t, s, limits.goroutines)
-		})
-	}
+	forEachDBBackend(t, testConcurrentOperations)
 }
 
-func testConcurrentOperations(ctx context.Context, t *testing.T, s *dbstore.Store, numGoroutines int) {
+func testConcurrentOperations(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
 	}
 
+	const numGoroutines = 8
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 
@@ -1371,17 +1352,10 @@ func testSoftDeletionPreservesSnapshotForeignKey(ctx context.Context, t *testing
 }
 
 func TestSpannerStore_ConcurrentIntentUpdatesOnSameComponent(t *testing.T) {
-	for _, backend := range dbstoretest.Backends() {
-		t.Run(backend.Name, func(t *testing.T) {
-			ctx := context.Background()
-			s, _ := newDBStore(ctx, t, backend)
-			limits := concurrencyLimits(backend.Name)
-			testConcurrentIntentUpdatesOnSameComponent(ctx, t, s, limits.writers, limits.writerIters)
-		})
-	}
+	forEachDBBackend(t, testConcurrentIntentUpdatesOnSameComponent)
 }
 
-func testConcurrentIntentUpdatesOnSameComponent(ctx context.Context, t *testing.T, s *dbstore.Store, numWriters, writerIterations int) {
+func testConcurrentIntentUpdatesOnSameComponent(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
@@ -1405,6 +1379,10 @@ func testConcurrentIntentUpdatesOnSameComponent(ctx context.Context, t *testing.
 	// Unlike TestSpannerStore_ConcurrentOperations, every worker contends for the same row, so
 	// serializable transactions must serialize the read-modify-write generation bumps rather than
 	// interleave them. Generations are collected to assert no two writers were handed the same one.
+	const (
+		numWriters       = 8
+		writerIterations = 4
+	)
 	var (
 		mu       sync.Mutex
 		observed = make(map[int64]int)
@@ -1454,17 +1432,10 @@ func testConcurrentIntentUpdatesOnSameComponent(ctx context.Context, t *testing.
 }
 
 func TestSpannerStore_ConcurrentDeactivationAndIntentUpdate(t *testing.T) {
-	for _, backend := range dbstoretest.Backends() {
-		t.Run(backend.Name, func(t *testing.T) {
-			ctx := context.Background()
-			s, _ := newDBStore(ctx, t, backend)
-			limits := concurrencyLimits(backend.Name)
-			testConcurrentDeactivationAndIntentUpdate(ctx, t, s, limits.pairs)
-		})
-	}
+	forEachDBBackend(t, testConcurrentDeactivationAndIntentUpdate)
 }
 
-func testConcurrentDeactivationAndIntentUpdate(ctx context.Context, t *testing.T, s *dbstore.Store, concurrentPairs int) {
+func testConcurrentDeactivationAndIntentUpdate(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
@@ -1485,6 +1456,7 @@ func testConcurrentDeactivationAndIntentUpdate(ctx context.Context, t *testing.T
 
 	// Deactivation and intent updates mutate the same row. Either may lose the race, but neither
 	// may leave the record in a state outside the lifecycle contract.
+	const concurrentPairs = 4
 	var wg sync.WaitGroup
 	wg.Add(concurrentPairs * 2)
 	for i := 0; i < concurrentPairs; i++ {

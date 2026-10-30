@@ -17,6 +17,7 @@ package pgdb
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,12 +26,13 @@ import (
 )
 
 const (
-	// DefaultMaxTxAttempts is the maximum number of transaction attempts before giving up on retryable errors.
+	// DefaultMaxTxAttempts is the maximum number of transaction attempts before giving up on retryable errors in RunInTx.
 	DefaultMaxTxAttempts = 5
 
-	defaultInitialBackoff = 10 * time.Millisecond
-	defaultMaxBackoff     = 200 * time.Millisecond
-	rollbackTimeout       = 5 * time.Second
+	defaultInitialBackoff          = 10 * time.Millisecond
+	defaultMaxBackoff              = 200 * time.Millisecond
+	defaultSerializableRetryWindow = 30 * time.Second
+	rollbackTimeout                = 5 * time.Second
 )
 
 type txBeginner interface {
@@ -40,14 +42,24 @@ type txBeginner interface {
 type txRetryConfig struct {
 	txOptions      pgx.TxOptions
 	maxAttempts    int
+	fallbackWindow time.Duration
 	initialBackoff time.Duration
 	maxBackoff     time.Duration
+	jitter         func(time.Duration) time.Duration
 }
 
 var defaultTxRetryConfig = txRetryConfig{
 	maxAttempts:    DefaultMaxTxAttempts,
 	initialBackoff: defaultInitialBackoff,
 	maxBackoff:     defaultMaxBackoff,
+}
+
+var serializableTxRetryConfig = txRetryConfig{
+	txOptions:      pgx.TxOptions{IsoLevel: pgx.Serializable},
+	fallbackWindow: defaultSerializableRetryWindow,
+	initialBackoff: defaultInitialBackoff,
+	maxBackoff:     defaultMaxBackoff,
+	jitter:         equalJitter,
 }
 
 // RunInTx executes fn inside a read-write PostgreSQL transaction, committing on success,
@@ -60,8 +72,10 @@ func RunInTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Contex
 	return runInTx(ctx, pool, defaultTxRetryConfig, fn)
 }
 
-// RunInSerializableTx executes fn inside a SERIALIZABLE read-write PostgreSQL transaction with the
-// same commit, rollback, and retry semantics as RunInTx.
+// RunInSerializableTx executes fn inside a SERIALIZABLE read-write PostgreSQL transaction,
+// committing on success, rolling back on error or panic, and retrying transient serialization
+// (40001) or deadlock (40P01) errors with jittered exponential backoff until ctx expires (or up to
+// a 30-second fallback window when ctx has no deadline).
 func RunInSerializableTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if pool == nil {
 		return WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
@@ -79,18 +93,17 @@ func RunInReadOnlyTx(ctx context.Context, pool *pgxpool.Pool, fn func(ctx contex
 }
 
 func runInSerializableTx(ctx context.Context, beginner txBeginner, fn func(ctx context.Context, tx pgx.Tx) error) error {
-	cfg := defaultTxRetryConfig
-	cfg.txOptions = pgx.TxOptions{IsoLevel: pgx.Serializable}
-	return runInTx(ctx, beginner, cfg, fn)
+	return runInTx(ctx, beginner, serializableTxRetryConfig, fn)
 }
 
 func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn func(ctx context.Context, tx pgx.Tx) error) error {
 	if fn == nil {
 		return WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
+	deadline := retryDeadline(ctx, cfg.fallbackWindow)
 	backoff := cfg.initialBackoff
 	var lastErr error
-	for attempt := 1; attempt <= cfg.maxAttempts; attempt++ {
+	for attempt := 1; cfg.maxAttempts <= 0 || attempt <= cfg.maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -98,12 +111,14 @@ func runInTx(ctx context.Context, beginner txBeginner, cfg txRetryConfig, fn fun
 		if lastErr == nil || !IsRetryableTxError(lastErr) {
 			return lastErr
 		}
-		if attempt < cfg.maxAttempts {
-			if err := waitBackoff(ctx, backoff); err != nil {
-				return err
-			}
-			backoff = nextBackoff(backoff, cfg.maxBackoff)
+		delay, ok := nextRetryDelay(attempt, cfg, backoff, deadline)
+		if !ok {
+			break
 		}
+		if err := waitBackoff(ctx, delay); err != nil {
+			return err
+		}
+		backoff = nextBackoff(backoff, cfg.maxBackoff)
 	}
 	return TranslateError(lastErr, "transaction")
 }
@@ -152,8 +167,8 @@ func rollbackDetached(tx pgx.Tx) {
 }
 
 func waitBackoff(ctx context.Context, d time.Duration) error {
-	if d <= 0 {
-		return ctx.Err()
+	if err := ctx.Err(); err != nil || d <= 0 {
+		return err
 	}
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -161,8 +176,37 @@ func waitBackoff(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
-		return nil
+		return ctx.Err()
 	}
+}
+
+func retryDeadline(ctx context.Context, fallbackWindow time.Duration) time.Time {
+	if _, ok := ctx.Deadline(); ok || fallbackWindow <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(fallbackWindow)
+}
+
+func nextRetryDelay(attempt int, cfg txRetryConfig, backoff time.Duration, deadline time.Time) (time.Duration, bool) {
+	if cfg.maxAttempts > 0 && attempt >= cfg.maxAttempts {
+		return 0, false
+	}
+	delay := backoff
+	if cfg.jitter != nil {
+		delay = cfg.jitter(delay)
+	}
+	if !deadline.IsZero() && time.Now().Add(delay).After(deadline) {
+		return 0, false
+	}
+	return delay, true
+}
+
+func equalJitter(d time.Duration) time.Duration {
+	if d <= 1 {
+		return d
+	}
+	half := d / 2
+	return half + rand.N(d-half+1)
 }
 
 func nextBackoff(current, maxBackoff time.Duration) time.Duration {
