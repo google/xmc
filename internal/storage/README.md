@@ -131,6 +131,7 @@ Spanner read-write transactions are always serializable. PostgreSQL runs `RunInT
 - **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried. Set `MockStorage.CommitTime` to pin the timestamp returned by `RunInSerializableTransaction`; when it is zero, the mock returns `time.Now()`.
 - **Spanner integration tests**: Tests under `internal/storage/spanner/...` run against the Spanner emulator to test SQL queries, mutations, and schema constraints.
 - **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/operation/`](postgres/operation/) and [`postgres/pausestate/`](postgres/pausestate/) hold the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
+- **Component store tests**: [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/) runs its cross-backend tests on both Spanner and PostgreSQL (one `dbBackends()` entry each), and its PostgreSQL concurrency tests check that `SERIALIZABLE` transactions that would break catalog invariants are aborted and retried.
 
 ```bash
 # Unit tests (MockStorage)

@@ -51,8 +51,8 @@ type Store struct {
 }
 
 // New creates a component store over st. Every operation goes through st's
-// ComponentRepository and TransactionRunner.RunInSerializableTransaction, so st must
-// implement them; today only the Spanner backend does, and other backends return codes.Unimplemented.
+// ComponentRepository and TransactionRunner.RunInSerializableTransaction, which the
+// Spanner and PostgreSQL backends implement.
 func New(st storage.Storage) (*Store, error) {
 	if st == nil {
 		return nil, errors.New("dbstore: storage.Storage must not be nil")

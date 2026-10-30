@@ -37,7 +37,7 @@ type dbBackend struct {
 
 // dbBackends returns every database that the cross-backend dbstore tests run against.
 func dbBackends() []dbBackend {
-	return []dbBackend{spannerBackend()}
+	return []dbBackend{spannerBackend(), postgresBackend()}
 }
 
 // newStore returns a Store on a fresh b database and the hooks that reach its rows.
