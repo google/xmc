@@ -41,21 +41,24 @@ var tryLockSQL = safesql.New(`SELECT pg_try_advisory_xact_lock($1)`)
 
 // deleteExpiredSQLs delete up to $1 expired rows from one table each, mirroring the Spanner
 // ROW DELETION POLICY of that table. now() is the start time of the transaction. Rows whose
-// ExpirationTime is NULL (pending PausedTasks) never match. Rows are selected by ctid, so each
-// statement deletes them with a TID scan instead of a second lookup by primary key.
+// ExpirationTime is NULL (pending PausedTasks) never match. Rows are selected by primary key.
 var deleteExpiredSQLs = []safesql.TrustedSQLString{
 	// OLDER_THAN(ExpirationTime, INTERVAL 0 DAY): 30 days, or 180 days for ERROR and FATAL.
 	safesql.New(`DELETE FROM StatusMessages
-WHERE ctid = ANY(ARRAY(SELECT ctid FROM StatusMessages WHERE ExpirationTime < now() LIMIT $1))`),
+WHERE (Xid, CreateTime, MessageId) IN (
+  SELECT Xid, CreateTime, MessageId FROM StatusMessages WHERE ExpirationTime < now() LIMIT $1)`),
 	// OLDER_THAN(ExpirationTime, INTERVAL 0 DAY): 30 days.
 	safesql.New(`DELETE FROM WorkUnitStatusHistory
-WHERE ctid = ANY(ARRAY(SELECT ctid FROM WorkUnitStatusHistory WHERE ExpirationTime < now() LIMIT $1))`),
+WHERE (Xid, WorkUnitId, HistoryId) IN (
+  SELECT Xid, WorkUnitId, HistoryId FROM WorkUnitStatusHistory WHERE ExpirationTime < now() LIMIT $1)`),
 	// OLDER_THAN(ExpirationTime, INTERVAL 0 DAY): 7 days after ProcessedTime.
 	safesql.New(`DELETE FROM PausedTasks
-WHERE ctid = ANY(ARRAY(SELECT ctid FROM PausedTasks WHERE ExpirationTime < now() LIMIT $1))`),
+WHERE (Xid, WorkUnitId, TaskId) IN (
+  SELECT Xid, WorkUnitId, TaskId FROM PausedTasks WHERE ExpirationTime < now() LIMIT $1)`),
 	// OLDER_THAN(ExpiresAt, INTERVAL 1 DAY).
 	safesql.New(`DELETE FROM CliLoginCodes
-WHERE ctid = ANY(ARRAY(SELECT ctid FROM CliLoginCodes WHERE ExpiresAt < now() - INTERVAL '1 day' LIMIT $1))`),
+WHERE CodeHash IN (
+  SELECT CodeHash FROM CliLoginCodes WHERE ExpiresAt < now() - INTERVAL '1 day' LIMIT $1)`),
 }
 
 var _ storage.ExpiredRowStore = (*Repository)(nil)

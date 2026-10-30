@@ -61,6 +61,7 @@ func Start(ctx context.Context, store storage.ExpiredRowStore, interval time.Dur
 	runCtx, cancel := context.WithCancel(ctx)
 	s := &Sweeper{cancel: cancel, done: make(chan struct{})}
 	go func() {
+		defer cancel()
 		defer close(s.done)
 		run(runCtx, store, interval, batchSize)
 	}()
