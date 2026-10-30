@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
+DEFAULT_BACKEND = "spanner"
+
 
 @dataclass(kw_only=True)
 class DeploymentConfig:
@@ -42,7 +44,7 @@ class DeploymentConfig:
     domain_name: str | None = None
     enable_components: bool = False
     log_monitor_deployment_enabled: bool = True
-    database_backend: str = "spanner"
+    database_backend: str = DEFAULT_BACKEND
     profile_values: str | None = None
 
     @property
@@ -212,9 +214,9 @@ SUPPORTED_DATABASE_BACKENDS: tuple[str, ...] = ("spanner", "postgres")
 
 def _resolve_database_backend(raw: Any) -> str:
     """Normalizes and validates database_backend against supported backends."""
-    backend = str(raw).strip().lower() if raw is not None else "spanner"
+    backend = str(raw).strip().lower() if raw is not None else DEFAULT_BACKEND
     if not backend:
-        backend = "spanner"
+        backend = DEFAULT_BACKEND
     if backend not in SUPPORTED_DATABASE_BACKENDS:
         raise ValueError(
             f"Field 'database_backend' value '{raw}' is invalid. "
@@ -326,7 +328,9 @@ def load_and_validate_config(
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
-        database_backend=_resolve_database_backend(config.get("database_backend", "spanner")),
+        database_backend=_resolve_database_backend(
+            config.get("database_backend", DEFAULT_BACKEND)
+        ),
     )
 
 
