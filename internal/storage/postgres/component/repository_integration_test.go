@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	"xmanager_cloud/pkg/components/naming"
@@ -344,5 +345,328 @@ func TestRepository_WithReadOnlySnapshotReadsOneSnapshot(t *testing.T) {
 	}
 	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil || got.Generation != 2 {
 		t.Errorf("GetActiveComponent(app) after the snapshot = %+v, %v; want generation 2", got, err)
+	}
+}
+
+func TestRepository_WithReadOnlySnapshotRejectsWrites(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	rec := buildRecord(1, "app", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 0)
+	owner := &store.SourceOwner{UID: "uid-1", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 1}
+
+	err := repo.WithReadOnlySnapshot(ctx, func(ctx context.Context, snap storage.ComponentTxRepository) error {
+		for name, call := range map[string]func() error{
+			"RefreshFence":               func() error { return snap.RefreshFence(ctx, nil) },
+			"ReplaceFence":               func() error { return snap.ReplaceFence(ctx, store.ClusterIdentity{UID: "c", Name: "n", Epoch: 1}) },
+			"ReassignOwnedComponents":    func() error { _, err := snap.ReassignOwnedComponents(ctx, "c", 1); return err },
+			"InsertComponent":            func() error { return snap.InsertComponent(ctx, rec, nil) },
+			"UpdateComponentIntent":      func() error { return snap.UpdateComponentIntent(ctx, rec, nil) },
+			"UpdateComponentState":       func() error { return snap.UpdateComponentState(ctx, 1, rec.State, nil) },
+			"UpdateComponentObservation": func() error { return snap.UpdateComponentObservation(ctx, rec, false) },
+			"SoftDeleteComponent":        func() error { return snap.SoftDeleteComponent(ctx, rec, nil) },
+			"WriteComponentOwner(nil)":   func() error { return snap.WriteComponentOwner(ctx, 1, nil) },
+			"WriteComponentOwner(owner)": func() error { return snap.WriteComponentOwner(ctx, 1, owner) },
+		} {
+			if callErr := call(); !errors.Is(callErr, grpcerr.ErrFailedPrecondition) || status.Code(callErr) != codes.FailedPrecondition {
+				t.Errorf("%s error = %v, want %v", name, callErr, grpcerr.ErrFailedPrecondition)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithReadOnlySnapshot() unexpected error: %v", err)
+	}
+}
+
+// runWriteTx runs fn in a read-write transaction and returns the transaction's now() timestamp in UTC.
+func runWriteTx(ctx context.Context, t *testing.T, pool *pgxpool.Pool, repo *Repository, fn func(txRepo *TxRepository) error) (time.Time, error) {
+	t.Helper()
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin() unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(repo.WithTx(tx)); err != nil {
+		return time.Time{}, err
+	}
+	var commitTime time.Time
+	if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&commitTime); err != nil {
+		t.Fatalf("SELECT now() unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return time.Time{}, err
+	}
+	return commitTime.UTC(), nil
+}
+
+func TestTxRepository_ComponentLifecycleWrites(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	pending := componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	enabled := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	disabling := componentspb.ComponentState_COMPONENT_STATE_DISABLING
+	deleted := componentspb.ComponentState_COMPONENT_STATE_DELETED
+
+	// Insert dependencies with distinct ComponentClass shapes (unspecified -> NULL, 3P wrapper -> CrdKind) and nil Status.
+	depA := &store.ComponentRecord{ComponentID: 10, Name: "dep-a", Spec: &componentspb.ComponentSpec{Version: "v1.0.0"}, State: enabled, Generation: 1}
+	depB := &store.ComponentRecord{
+		ComponentID: 11, Name: "dep-b",
+		Spec:  &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, WrapperRef: &componentspb.WrapperRef{CrdKind: "RedisCluster"}, Version: "v1.0.0"},
+		State: enabled, Generation: 1,
+	}
+	app := &store.ComponentRecord{
+		ComponentID:  12,
+		Name:         "app",
+		Spec:         &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.0.0", Generation: 1},
+		Status:       &componentspb.ComponentAccessStatus{State: pending},
+		State:        pending,
+		Generation:   1,
+		Dependencies: []string{"dep-a"},
+		Labels:       map[string]string{"env": "dev"},
+	}
+
+	createAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		for _, dep := range []*store.ComponentRecord{depA, depB} {
+			if err := txRepo.InsertComponent(ctx, dep, nil); err != nil {
+				return err
+			}
+		}
+		return txRepo.InsertComponent(ctx, app, map[string]int64{"dep-a": depA.ComponentID})
+	})
+	if err != nil {
+		t.Fatalf("InsertComponent() unexpected error: %v", err)
+	}
+
+	assertComponentClass(ctx, t, pool, depA.ComponentID, nil)
+	wantWrapperClass := "RedisCluster"
+	assertComponentClass(ctx, t, pool, depB.ComponentID, &wantWrapperClass)
+	want1PClass := "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"
+	assertComponentClass(ctx, t, pool, app.ComponentID, &want1PClass)
+
+	gotDepA, err := repo.GetActiveComponent(ctx, "dep-a")
+	if err != nil || gotDepA.Status != nil {
+		t.Fatalf("GetActiveComponent(dep-a) = %+v, %v; want nil Status", gotDepA, err)
+	}
+
+	app.CreateTime, app.UpdateTime = createAt, createAt
+	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil {
+		t.Fatalf("GetActiveComponent(app) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(app, "dep-a"), got, protocmp.Transform()); diff != "" {
+		t.Errorf("inserted app mismatch (-want +got):\n%s", diff)
+	}
+
+	// UpdateComponentIntent replaces dependencies, updates spec/labels/status, and preserves CreateTime.
+	app.Spec = &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, Version: "v1.1.0", Generation: 2}
+	app.Generation = 2
+	app.Dependencies = []string{"dep-b"}
+	app.Labels = map[string]string{"env": "prod"}
+	intentAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.UpdateComponentIntent(ctx, app, map[string]int64{"dep-b": depB.ComponentID})
+	})
+	if err != nil {
+		t.Fatalf("UpdateComponentIntent() unexpected error: %v", err)
+	}
+	app.UpdateTime = intentAt
+	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil {
+		t.Fatalf("GetActiveComponent(app) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(app, "dep-b"), got, protocmp.Transform()); diff != "" {
+		t.Errorf("updated app mismatch (-want +got):\n%s", diff)
+	}
+
+	// UpdateComponentObservation handles both non-nil and nil ObservedGeneration / Status, and updateState false vs true.
+	obsGen := int64(2)
+	app.ObservedGeneration = &obsGen
+	app.Status = &componentspb.ComponentAccessStatus{State: enabled, ObservedGeneration: 2, HealthMessage: "ready"}
+	app.State = enabled
+	obsAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.UpdateComponentObservation(ctx, app, true)
+	})
+	if err != nil {
+		t.Fatalf("UpdateComponentObservation(updateState=true) unexpected error: %v", err)
+	}
+	app.UpdateTime = obsAt
+
+	// Nil ObservedGeneration + nil Status + updateState=false keeps State as enabled while clearing ObservedGeneration and Status.
+	app.ObservedGeneration = nil
+	app.Status = nil
+	clearObsRecord := store.CloneRecord(app)
+	clearObsRecord.State = disabling // Ignored when updateState is false.
+	clearAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.UpdateComponentObservation(ctx, clearObsRecord, false)
+	})
+	if err != nil {
+		t.Fatalf("UpdateComponentObservation(nil ObservedGeneration, updateState=false) unexpected error: %v", err)
+	}
+	app.UpdateTime = clearAt
+	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil {
+		t.Fatalf("GetActiveComponent(app) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(app, "dep-b"), got, protocmp.Transform()); diff != "" {
+		t.Errorf("observation-cleared app mismatch (-want +got):\n%s", diff)
+	}
+
+	// UpdateComponentState handles nil and non-nil access payloads.
+	stateAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.UpdateComponentState(ctx, app.ComponentID, disabling, nil)
+	})
+	if err != nil {
+		t.Fatalf("UpdateComponentState(nil access) unexpected error: %v", err)
+	}
+	app.State = disabling
+	app.UpdateTime = stateAt
+	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil {
+		t.Fatalf("GetActiveComponent(app) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(app, "dep-b"), got, protocmp.Transform()); diff != "" {
+		t.Errorf("state-updated app mismatch (-want +got):\n%s", diff)
+	}
+
+	// WriteComponentOwner stamps SourceLastSeenTime without touching UpdateTime; nil owner is a no-op.
+	owner := &store.SourceOwner{UID: "uid-1", Generation: 3, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 2}
+	ownerAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.WriteComponentOwner(ctx, app.ComponentID, owner)
+	})
+	if err != nil {
+		t.Fatalf("WriteComponentOwner(owner) unexpected error: %v", err)
+	}
+	if _, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.WriteComponentOwner(ctx, app.ComponentID, nil)
+	}); err != nil {
+		t.Fatalf("WriteComponentOwner(nil) unexpected error: %v", err)
+	}
+	app.Owner = owner
+	app.SourceLastSeenTime = ownerAt
+	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil {
+		t.Fatalf("GetActiveComponent(app) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(app, "dep-b"), got, protocmp.Transform()); diff != "" {
+		t.Errorf("owned app mismatch (-want +got):\n%s", diff)
+	}
+
+	// SoftDeleteComponent marks app DELETED, updates owner when non-nil, and releases ActiveName for reuse.
+	delOwner := &store.SourceOwner{UID: "uid-2", Generation: 4, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 2}
+	app.State = deleted
+	if _, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.SoftDeleteComponent(ctx, app, delOwner)
+	}); err != nil {
+		t.Fatalf("SoftDeleteComponent() unexpected error: %v", err)
+	}
+	if _, err := repo.GetActiveComponent(ctx, "app"); !errors.Is(err, store.ErrComponentNotFound) {
+		t.Errorf("GetActiveComponent(deleted app) error = %v, want %v", err, store.ErrComponentNotFound)
+	}
+	recreated := &store.ComponentRecord{ComponentID: 13, Name: "app", Spec: &componentspb.ComponentSpec{Version: "v2.0.0"}, State: enabled, Generation: 1}
+	if _, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.InsertComponent(ctx, recreated, nil)
+	}); err != nil {
+		t.Fatalf("InsertComponent(recreated app) unexpected error: %v", err)
+	}
+}
+
+func TestTxRepository_MissingTargetReturnsNotFound(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	missing := buildRecord(999, "missing", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 0)
+	owner := &store.SourceOwner{UID: "uid-1", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 1}
+
+	for name, op := range map[string]func(*TxRepository) error{
+		"RefreshFence":               func(r *TxRepository) error { return r.RefreshFence(ctx, nil) },
+		"UpdateComponentIntent":      func(r *TxRepository) error { return r.UpdateComponentIntent(ctx, missing, nil) },
+		"UpdateComponentState":       func(r *TxRepository) error { return r.UpdateComponentState(ctx, 999, missing.State, nil) },
+		"UpdateComponentObservation": func(r *TxRepository) error { return r.UpdateComponentObservation(ctx, missing, false) },
+		"SoftDeleteComponent":        func(r *TxRepository) error { return r.SoftDeleteComponent(ctx, missing, nil) },
+		"WriteComponentOwner":        func(r *TxRepository) error { return r.WriteComponentOwner(ctx, 999, owner) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runWriteTx(ctx, t, pool, repo, op)
+			if status.Code(err) != codes.NotFound {
+				t.Errorf("%s error = %v, want NotFound", name, err)
+			}
+		})
+	}
+}
+
+func TestTxRepository_FenceAndOwnerReassignment(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	enabled := componentspb.ComponentState_COMPONENT_STATE_ENABLED
+	deleted := componentspb.ComponentState_COMPONENT_STATE_DELETED
+
+	owned := buildRecord(1, "owned", enabled, 0)
+	owned.Owner = &store.SourceOwner{UID: "uid-a", Generation: 2, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 1}
+	owned.SourceLastSeenTime = baseTime
+	unowned := buildRecord(2, "unowned", enabled, time.Minute)
+	deletedOwned := buildRecord(3, "deleted-owned", deleted, 2*time.Minute)
+	deletedOwned.Owner = &store.SourceOwner{UID: "uid-b", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 1}
+	deletedOwned.SourceLastSeenTime = baseTime
+	for _, rec := range []*store.ComponentRecord{owned, unowned, deletedOwned} {
+		seedComponent(ctx, t, pool, rec)
+	}
+
+	clusterA := store.ClusterIdentity{UID: "cluster-a", Name: "prod", Epoch: 1}
+	declaredAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.ReplaceFence(ctx, clusterA)
+	})
+	if err != nil {
+		t.Fatalf("ReplaceFence(cluster-a) unexpected error: %v", err)
+	}
+
+	// RefreshFence with nil newName updates LastSeenTime while keeping DeclaredTime and ActiveClusterName;
+	// RefreshFence with non-nil newName renames the cluster while still keeping DeclaredTime.
+	renamed := "prod-east"
+	refreshedAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		if err := txRepo.RefreshFence(ctx, nil); err != nil {
+			return err
+		}
+		return txRepo.RefreshFence(ctx, &renamed)
+	})
+	if err != nil {
+		t.Fatalf("RefreshFence() unexpected error: %v", err)
+	}
+	var gotDeclared, gotLastSeen time.Time
+	var gotName string
+	if err := pool.QueryRow(ctx, `SELECT ActiveClusterName, DeclaredTime, LastSeenTime FROM ComponentOwnershipFence WHERE FenceId = 1`).
+		Scan(&gotName, &gotDeclared, &gotLastSeen); err != nil {
+		t.Fatalf("query fence unexpected error: %v", err)
+	}
+	if gotName != renamed || !gotDeclared.Equal(declaredAt) || !gotLastSeen.Equal(refreshedAt) {
+		t.Errorf("fence = (%q, %v, %v), want (%q, %v, %v)", gotName, gotDeclared, gotLastSeen, renamed, declaredAt, refreshedAt)
+	}
+
+	// ReassignOwnedComponents moves only active owned components, clears SourceUid, sets SourceLastSeenTime, and keeps UpdateTime.
+	clusterB := store.ClusterIdentity{UID: "cluster-b", Name: "dr", Epoch: 2}
+	var reassigned int64
+	takeoverAt, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		var txErr error
+		reassigned, txErr = txRepo.ReassignOwnedComponents(ctx, clusterB.UID, clusterB.Epoch)
+		if txErr != nil {
+			return txErr
+		}
+		return txRepo.ReplaceFence(ctx, clusterB)
+	})
+	if err != nil || reassigned != 1 {
+		t.Fatalf("ReassignOwnedComponents() = %d, %v; want 1, nil", reassigned, err)
+	}
+
+	owned.Owner = &store.SourceOwner{Generation: 2, Namespace: "xmc", ClusterUID: "cluster-b", Epoch: 2}
+	owned.SourceLastSeenTime = takeoverAt
+	if got, err := repo.GetActiveComponent(ctx, "owned"); err != nil {
+		t.Fatalf("GetActiveComponent(owned) unexpected error: %v", err)
+	} else if diff := cmp.Diff(wantRecord(owned), got, protocmp.Transform()); diff != "" {
+		t.Errorf("reassigned owned mismatch (-want +got):\n%s", diff)
+	}
+	if got, err := repo.GetActiveComponent(ctx, "unowned"); err != nil || got.Owner != nil {
+		t.Errorf("GetActiveComponent(unowned) = %+v, %v; want nil Owner", got, err)
+	}
+}
+
+func assertComponentClass(ctx context.Context, t *testing.T, pool *pgxpool.Pool, componentID int64, want *string) {
+	t.Helper()
+	var got *string
+	if err := pool.QueryRow(ctx, `SELECT ComponentClass FROM Components WHERE ComponentId = $1`, componentID).Scan(&got); err != nil {
+		t.Fatalf("SELECT ComponentClass(%d) unexpected error: %v", componentID, err)
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("ComponentClass(%d) mismatch (-want +got):\n%s", componentID, diff)
 	}
 }

@@ -35,6 +35,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 	"xmanager_cloud/pkg/components/store/dependency"
 )
 
@@ -62,41 +63,41 @@ func TestSpannerStore_SetComponentIntent_ReadOnlyFastPath(t *testing.T) {
 		{name: "newer desired generation falls back", version: "v1.0.0", labels: labels, desiredGen: 5, wantFallbacks: 1, wantGen: 5},
 		{name: "deregistered dependency falls back and is rejected", version: "v1.0.0", labels: labels, desiredGen: 1, deleteDep: true, wantFallbacks: 1, wantGen: 1, wantCode: codes.FailedPrecondition},
 	}
-	ctx := context.Background()
-	s, _ := setupTestStore(ctx, t)
-	// Subtests are intentionally sequential (no t.Parallel) because they share one store and hook.
-	for i, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dep, name := fmt.Sprintf("fast-path-dep-%d", i), fmt.Sprintf("fast-path-%d", i)
-			deps := []string{dep}
-			if tt.noDep {
-				deps = nil
-			}
-			before := seedFastPathComponent(ctx, t, s, name, labels, deps)
-			if tt.deleteDep {
-				if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
-					t.Fatalf("ExecuteDeletion(%s) error = %v", dep, err)
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
+		// Subtests are intentionally sequential (no t.Parallel) because they share one store and hook.
+		for i, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				dep, name := fmt.Sprintf("fast-path-dep-%d", i), fmt.Sprintf("fast-path-%d", i)
+				deps := []string{dep}
+				if tt.noDep {
+					deps = nil
 				}
-			}
-			fallbacks := 0
-			s.SetBeforeIntentWriteForTest(func() { fallbacks++ })
-			defer s.SetBeforeIntentWriteForTest(nil)
+				before := seedFastPathComponent(ctx, t, s, name, labels, deps)
+				if tt.deleteDep {
+					if err := s.ExecuteDeletion(ctx, dep, componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN, true); err != nil {
+						t.Fatalf("ExecuteDeletion(%s) error = %v", dep, err)
+					}
+				}
+				fallbacks := 0
+				s.SetBeforeIntentWriteForTest(func() { fallbacks++ })
+				defer s.SetBeforeIntentWriteForTest(nil)
 
-			got, err := s.SetComponentIntent(ctx, name, intentSpec(tt.version, deps...), tt.labels, tt.desiredGen)
-			if status.Code(err) != tt.wantCode {
-				t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
-			}
-			if fallbacks != tt.wantFallbacks {
-				t.Errorf("read-write fallbacks = %d, want %d", fallbacks, tt.wantFallbacks)
-			}
-			if err == nil && tt.wantFallbacks == 0 {
-				if diff := cmp.Diff(before, got, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
-					t.Errorf("fast path returned a record different from the stored one (-before +got):\n%s", diff)
+				got, err := s.SetComponentIntent(ctx, name, intentSpec(tt.version, deps...), tt.labels, tt.desiredGen)
+				if status.Code(err) != tt.wantCode {
+					t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
 				}
-			}
-			assertStoredGeneration(ctx, t, s, name, tt.wantGen)
-		})
-	}
+				if fallbacks != tt.wantFallbacks {
+					t.Errorf("read-write fallbacks = %d, want %d", fallbacks, tt.wantFallbacks)
+				}
+				if err == nil && tt.wantFallbacks == 0 {
+					if diff := cmp.Diff(before, got, protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+						t.Errorf("fast path returned a record different from the stored one (-before +got):\n%s", diff)
+					}
+				}
+				assertStoredGeneration(ctx, t, s, name, tt.wantGen)
+			})
+		}
+	})
 }
 
 // TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback injects a write from another
@@ -127,35 +128,39 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 			wantCode: codes.FailedPrecondition,
 		},
 	}
-	ctx := context.Background()
-	st, _ := spannerBackend().open(ctx, t)
-	s, err := dbstore.New(st)
-	if err != nil {
-		t.Fatalf("dbstore.New() failed: %v", err)
-	}
-	other, err := dbstore.New(st)
-	if err != nil {
-		t.Fatalf("dbstore.New() failed: %v", err)
-	}
-	for i, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dep, name := fmt.Sprintf("concurrent-fast-path-dep-%d", i), fmt.Sprintf("concurrent-fast-path-%d", i)
-			seedFastPathComponent(ctx, t, s, name, labels, []string{dep})
-			s.SetBeforeIntentWriteForTest(func() {
-				if err := tt.concurrent(ctx, other, dep, name); err != nil {
-					t.Errorf("concurrent write error = %v", err)
-				}
-			})
-			defer s.SetBeforeIntentWriteForTest(nil)
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
+			ctx := context.Background()
+			st, _ := backend.Open(ctx, t)
+			s, err := dbstore.New(st)
+			if err != nil {
+				t.Fatalf("dbstore.New() failed: %v", err)
+			}
+			other, err := dbstore.New(st)
+			if err != nil {
+				t.Fatalf("dbstore.New() failed: %v", err)
+			}
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					dep, name := fmt.Sprintf("concurrent-fast-path-dep-%d", i), fmt.Sprintf("concurrent-fast-path-%d", i)
+					seedFastPathComponent(ctx, t, s, name, labels, []string{dep})
+					s.SetBeforeIntentWriteForTest(func() {
+						if err := tt.concurrent(ctx, other, dep, name); err != nil {
+							t.Errorf("concurrent write error = %v", err)
+						}
+					})
+					defer s.SetBeforeIntentWriteForTest(nil)
 
-			_, err := s.SetComponentIntent(ctx, name, intentSpec("v1.1.0", dep), labels, 0)
-			if status.Code(err) != tt.wantCode {
-				t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
+					_, err := s.SetComponentIntent(ctx, name, intentSpec("v1.1.0", dep), labels, 0)
+					if status.Code(err) != tt.wantCode {
+						t.Fatalf("SetComponentIntent() error = %v, want code %v", err, tt.wantCode)
+					}
+					if err != nil && !strings.HasPrefix(status.Convert(err).Message(), dependency.DependencyNotFoundMessagePrefix) {
+						t.Errorf("SetComponentIntent() error = %v, want message starting with %q", err, dependency.DependencyNotFoundMessagePrefix)
+					}
+					assertStoredGeneration(ctx, t, s, name, tt.wantGen)
+				})
 			}
-			if err != nil && !strings.HasPrefix(status.Convert(err).Message(), dependency.DependencyNotFoundMessagePrefix) {
-				t.Errorf("SetComponentIntent() error = %v, want message starting with %q", err, dependency.DependencyNotFoundMessagePrefix)
-			}
-			assertStoredGeneration(ctx, t, s, name, tt.wantGen)
 		})
 	}
 }

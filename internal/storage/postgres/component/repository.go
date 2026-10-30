@@ -18,6 +18,7 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -58,6 +59,26 @@ var (
 	selectFenceSQL                 = safesql.New(`SELECT ActiveClusterUid, ActiveClusterName, Epoch FROM ComponentOwnershipFence WHERE FenceId = 1`)
 )
 
+// Write statements. Commit-time columns use now(), which returns the transaction timestamp in
+// PostgreSQL and matches the timestamp returned by postgres.Storage.RunInSerializableTransaction.
+var (
+	insertComponentSQL = safesql.New(`INSERT INTO Components (ComponentId, Name, ComponentClass, ConfigProto, AccessPayload, State, Generation, CreateTime, UpdateTime)
+VALUES (@componentid, @name, @componentclass, @configproto, @accesspayload, @state, @generation, now(), now())`)
+	updateComponentIntentSQL      = safesql.New(`UPDATE Components SET ComponentClass = @componentclass, ConfigProto = @configproto, AccessPayload = @accesspayload, State = @state, Generation = @generation, UpdateTime = now() WHERE ComponentId = @componentid`)
+	deleteDependenciesSQL         = safesql.New(`DELETE FROM ComponentDependencies WHERE ComponentId = $1`)
+	insertDependenciesSQL         = safesql.New(`INSERT INTO ComponentDependencies (ComponentId, DependencyComponentId) SELECT @componentid, unnest(@depids::BIGINT[])`)
+	updateComponentStateSQL       = safesql.New(`UPDATE Components SET State = @state, AccessPayload = @accesspayload, UpdateTime = now() WHERE ComponentId = @componentid`)
+	updateComponentObservationSQL = safesql.New(`UPDATE Components SET ObservedGeneration = @observedgeneration, AccessPayload = @accesspayload, State = COALESCE(@state::BIGINT, State), UpdateTime = now() WHERE ComponentId = @componentid`)
+	softDeleteComponentSQL        = safesql.New(`UPDATE Components SET ConfigProto = @configproto, AccessPayload = @accesspayload, State = 5, UpdateTime = now() WHERE ComponentId = @componentid`)
+	updateComponentOwnerSQL       = safesql.New(`UPDATE Components SET SourceUid = @sourceuid, SourceGeneration = @sourcegeneration, SourceNamespace = @sourcenamespace, SourceClusterUid = @sourceclusteruid, SourceEpoch = @sourceepoch, SourceLastSeenTime = now() WHERE ComponentId = @componentid`)
+	reassignOwnedComponentsSQL    = safesql.New(`UPDATE Components SET SourceClusterUid = @sourceclusteruid, SourceEpoch = @sourceepoch, SourceUid = NULL, SourceLastSeenTime = now() WHERE ActiveName IS NOT NULL AND SourceClusterUid IS NOT NULL`)
+	refreshFenceSQL               = safesql.New(`UPDATE ComponentOwnershipFence SET LastSeenTime = now(), ActiveClusterName = COALESCE(@activeclustername::TEXT, ActiveClusterName) WHERE FenceId = 1`)
+	replaceFenceSQL               = safesql.New(`INSERT INTO ComponentOwnershipFence (FenceId, ActiveClusterUid, ActiveClusterName, Epoch, DeclaredTime, LastSeenTime)
+VALUES (1, @activeclusteruid, @activeclustername, @epoch, now(), now())
+ON CONFLICT (FenceId) DO UPDATE SET ActiveClusterUid = EXCLUDED.ActiveClusterUid, ActiveClusterName = EXCLUDED.ActiveClusterName, Epoch = EXCLUDED.Epoch,
+  DeclaredTime = EXCLUDED.DeclaredTime, LastSeenTime = EXCLUDED.LastSeenTime`)
+)
+
 var (
 	_ storage.ComponentRepository   = (*Repository)(nil)
 	_ storage.ComponentTxRepository = (*TxRepository)(nil)
@@ -79,6 +100,7 @@ type Repository struct {
 // transaction of RunInSerializableTransaction or a read-only snapshot of Repository.WithReadOnlySnapshot.
 type TxRepository struct {
 	reader
+	readOnly bool
 }
 
 // NewRepository creates a new PostgreSQL Component repository instance bound to pool.
@@ -98,7 +120,7 @@ func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx conte
 		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
-		return fn(ctx, r.WithTx(tx))
+		return fn(ctx, &TxRepository{reader: reader{db: tx}, readOnly: true})
 	})
 }
 
@@ -318,47 +340,229 @@ func (f *fenceColumns) identity() *store.ClusterIdentity {
 	return &store.ClusterIdentity{UID: f.uid.String, Name: f.name.String, Epoch: f.epoch.Int64}
 }
 
-// RefreshFence updates the ownership fence LastSeenTime (and optional name) within the transaction.
+// RefreshFence updates LastSeenTime to the commit time and, when newName is non-nil,
+// ActiveClusterName within the transaction.
 func (r *TxRepository) RefreshFence(ctx context.Context, newName *string) error {
-	return status.Error(codes.Unimplemented, "postgres component store: RefreshFence is not implemented")
+	if err := r.checkWriteDB(); err != nil {
+		return err
+	}
+	var name pgtype.Text
+	if newName != nil {
+		name = pgtype.Text{String: *newName, Valid: true}
+	}
+	return r.execUpdate(ctx, refreshFenceSQL, "ownership fence", pgx.StrictNamedArgs{"activeclustername": name})
 }
 
-// ReplaceFence writes the ownership fence holder within the transaction.
+// ReplaceFence writes cluster as the ownership fence holder with DeclaredTime and LastSeenTime at
+// the transaction's commit time.
 func (r *TxRepository) ReplaceFence(ctx context.Context, cluster store.ClusterIdentity) error {
-	return status.Error(codes.Unimplemented, "postgres component store: ReplaceFence is not implemented")
+	if err := r.checkWriteDB(); err != nil {
+		return err
+	}
+	return r.exec(ctx, replaceFenceSQL, "ownership fence", pgx.StrictNamedArgs{
+		"activeclusteruid": cluster.UID, "activeclustername": cluster.Name, "epoch": cluster.Epoch,
+	})
 }
 
-// ReassignOwnedComponents reassigns active owned components to the declaring cluster.
+// ReassignOwnedComponents reassigns active owned components to the declaring cluster without an
+// owner UID, leaving UpdateTime unchanged, and returns how many it reassigned.
 func (r *TxRepository) ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error) {
-	return 0, status.Error(codes.Unimplemented, "postgres component store: ReassignOwnedComponents is not implemented")
+	if err := r.checkWriteDB(); err != nil {
+		return 0, err
+	}
+	tag, err := r.db.Exec(ctx, reassignOwnedComponentsSQL.String(), pgx.StrictNamedArgs{
+		"sourceclusteruid": clusterUID, "sourceepoch": epoch,
+	})
+	if err != nil {
+		return 0, pgdb.TranslateError(err, entityName)
+	}
+	return tag.RowsAffected(), nil
 }
 
-// InsertComponent inserts a new component record and its dependencies.
+// InsertComponent inserts a new component record, created at the commit time, and then its
+// dependency edges, whose foreign keys PostgreSQL checks immediately.
 func (r *TxRepository) InsertComponent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
-	return status.Error(codes.Unimplemented, "postgres component store: InsertComponent is not implemented")
+	configBytes, accessBytes, err := r.prepareRecordWrite(rec)
+	if err != nil {
+		return err
+	}
+	ids, err := resolveDependencyIDs(rec.Dependencies, depIDs)
+	if err != nil {
+		return err
+	}
+	if err := r.exec(ctx, insertComponentSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": rec.ComponentID, "name": rec.Name, "componentclass": componentClass(rec.Spec),
+		"configproto": configBytes, "accesspayload": accessBytes, "state": int64(rec.State), "generation": rec.Generation,
+	}); err != nil {
+		return err
+	}
+	return r.insertDependencies(ctx, rec.ComponentID, ids)
 }
 
 // UpdateComponentIntent updates an existing component's intent and replaces its dependencies.
 func (r *TxRepository) UpdateComponentIntent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error {
-	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentIntent is not implemented")
+	configBytes, accessBytes, err := r.prepareRecordWrite(rec)
+	if err != nil {
+		return err
+	}
+	ids, err := resolveDependencyIDs(rec.Dependencies, depIDs)
+	if err != nil {
+		return err
+	}
+	if err := r.execUpdate(ctx, updateComponentIntentSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": rec.ComponentID, "componentclass": componentClass(rec.Spec),
+		"configproto": configBytes, "accesspayload": accessBytes, "state": int64(rec.State), "generation": rec.Generation,
+	}); err != nil {
+		return err
+	}
+	if err := r.exec(ctx, deleteDependenciesSQL, entityName, rec.ComponentID); err != nil {
+		return err
+	}
+	return r.insertDependencies(ctx, rec.ComponentID, ids)
 }
 
 // UpdateComponentState updates a component's state and access status payload.
 func (r *TxRepository) UpdateComponentState(ctx context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error {
-	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentState is not implemented")
+	if err := r.checkWriteDB(); err != nil {
+		return err
+	}
+	accessBytes, err := data.MarshalAccessStatus(access)
+	if err != nil {
+		return err
+	}
+	return r.execUpdate(ctx, updateComponentStateSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": componentID, "state": int64(state), "accesspayload": accessBytes,
+	})
 }
 
 // UpdateComponentObservation updates a component's observed generation, access status, and optional state.
 func (r *TxRepository) UpdateComponentObservation(ctx context.Context, rec *store.ComponentRecord, updateState bool) error {
-	return status.Error(codes.Unimplemented, "postgres component store: UpdateComponentObservation is not implemented")
+	if err := r.checkRecordWrite(rec); err != nil {
+		return err
+	}
+	accessBytes, err := data.MarshalAccessStatus(rec.Status)
+	if err != nil {
+		return err
+	}
+	var observedGen pgtype.Int8
+	if rec.ObservedGeneration != nil {
+		observedGen = pgtype.Int8{Int64: *rec.ObservedGeneration, Valid: true}
+	}
+	state := pgtype.Int8{Int64: int64(rec.State), Valid: updateState}
+	return r.execUpdate(ctx, updateComponentObservationSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": rec.ComponentID, "observedgeneration": observedGen, "accesspayload": accessBytes, "state": state,
+	})
 }
 
 // SoftDeleteComponent marks a component as DELETED and optionally updates its owner columns.
 func (r *TxRepository) SoftDeleteComponent(ctx context.Context, rec *store.ComponentRecord, owner *store.SourceOwner) error {
-	return status.Error(codes.Unimplemented, "postgres component store: SoftDeleteComponent is not implemented")
+	configBytes, accessBytes, err := r.prepareRecordWrite(rec)
+	if err != nil {
+		return err
+	}
+	if err := r.execUpdate(ctx, softDeleteComponentSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": rec.ComponentID, "configproto": configBytes, "accesspayload": accessBytes,
+	}); err != nil {
+		return err
+	}
+	return r.WriteComponentOwner(ctx, rec.ComponentID, owner)
 }
 
-// WriteComponentOwner updates a component's source owner columns.
+// WriteComponentOwner updates a component's source owner columns, with SourceLastSeenTime at the
+// commit time, and leaves UpdateTime unchanged. A nil owner is a no-op.
 func (r *TxRepository) WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error {
-	return status.Error(codes.Unimplemented, "postgres component store: WriteComponentOwner is not implemented")
+	if err := r.checkWriteDB(); err != nil {
+		return err
+	}
+	if owner == nil {
+		return nil
+	}
+	return r.execUpdate(ctx, updateComponentOwnerSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": componentID, "sourceuid": owner.UID, "sourcegeneration": owner.Generation,
+		"sourcenamespace": owner.Namespace, "sourceclusteruid": owner.ClusterUID, "sourceepoch": owner.Epoch,
+	})
+}
+
+func (r *TxRepository) checkWriteDB() error {
+	if err := r.checkDB(); err != nil {
+		return err
+	}
+	if r.readOnly {
+		return pgdb.WrapStatusError("cannot write component catalog in a read-only snapshot", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return nil
+}
+
+func (r *TxRepository) checkRecordWrite(rec *store.ComponentRecord) error {
+	if err := r.checkWriteDB(); err != nil {
+		return err
+	}
+	if rec == nil {
+		return pgdb.WrapStatusError("component record must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	return nil
+}
+
+func (r *TxRepository) prepareRecordWrite(rec *store.ComponentRecord) ([]byte, []byte, error) {
+	if err := r.checkRecordWrite(rec); err != nil {
+		return nil, nil, err
+	}
+	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec.Name, rec.Spec, rec.Labels, rec.Status)
+	if err != nil {
+		return nil, nil, err
+	}
+	if configBytes == nil {
+		configBytes = []byte{}
+	}
+	return configBytes, accessBytes, nil
+}
+
+func (r *TxRepository) insertDependencies(ctx context.Context, componentID int64, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return r.exec(ctx, insertDependenciesSQL, entityName, pgx.StrictNamedArgs{
+		"componentid": componentID, "depids": ids,
+	})
+}
+
+func resolveDependencyIDs(deps []string, depIDs map[string]int64) ([]int64, error) {
+	if len(deps) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, 0, len(deps))
+	for _, dep := range deps {
+		id, ok := depIDs[dep]
+		if !ok {
+			return nil, pgdb.WrapStatusError(fmt.Sprintf("missing component ID for dependency %q", dep), grpcerr.ErrFailedPrecondition, nil)
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// exec runs a write statement within the transaction and translates its error, keeping
+// serialization failures and deadlocks retryable.
+func (r *TxRepository) exec(ctx context.Context, query safesql.TrustedSQLString, entity string, args ...any) error {
+	_, err := r.db.Exec(ctx, query.String(), args...)
+	return pgdb.TranslateError(err, entity)
+}
+
+// execUpdate runs a single-row UPDATE and returns NotFound when no row matched, matching Spanner's
+// UpdateMap semantics.
+func (r *TxRepository) execUpdate(ctx context.Context, query safesql.TrustedSQLString, entity string, args ...any) error {
+	tag, err := r.db.Exec(ctx, query.String(), args...)
+	if err != nil {
+		return pgdb.TranslateError(err, entity)
+	}
+	if tag.RowsAffected() == 0 {
+		return pgdb.TranslateError(pgx.ErrNoRows, entity)
+	}
+	return nil
+}
+
+// componentClass returns the stored ComponentClass of spec, NULL when it has none.
+func componentClass(spec *componentspb.ComponentSpec) pgtype.Text {
+	class := data.DetermineComponentClass(spec)
+	return pgtype.Text{String: class, Valid: class != ""}
 }

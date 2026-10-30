@@ -30,79 +30,65 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-func TestTxRepository_UnimplementedWrites(t *testing.T) {
-	txRepo := NewRepository(nil).WithTx(nil)
-
+func TestTxRepository_WritePreconditionsAndValidation(t *testing.T) {
 	ctx := context.Background()
-	tests := []struct {
-		name string
-		call func() error
-	}{
-		{
-			name: "TxRepository.RefreshFence",
-			call: func() error {
-				return txRepo.RefreshFence(ctx, nil)
-			},
-		},
-		{
-			name: "TxRepository.ReplaceFence",
-			call: func() error {
-				return txRepo.ReplaceFence(ctx, store.ClusterIdentity{})
-			},
-		},
-		{
-			name: "TxRepository.ReassignOwnedComponents",
-			call: func() error {
-				_, err := txRepo.ReassignOwnedComponents(ctx, "uid", 1)
-				return err
-			},
-		},
-		{
-			name: "TxRepository.InsertComponent",
-			call: func() error {
-				return txRepo.InsertComponent(ctx, nil, nil)
-			},
-		},
-		{
-			name: "TxRepository.UpdateComponentIntent",
-			call: func() error {
-				return txRepo.UpdateComponentIntent(ctx, nil, nil)
-			},
-		},
-		{
-			name: "TxRepository.UpdateComponentState",
-			call: func() error {
-				return txRepo.UpdateComponentState(ctx, 1, 0, nil)
-			},
-		},
-		{
-			name: "TxRepository.UpdateComponentObservation",
-			call: func() error {
-				return txRepo.UpdateComponentObservation(ctx, nil, false)
-			},
-		},
-		{
-			name: "TxRepository.SoftDeleteComponent",
-			call: func() error {
-				return txRepo.SoftDeleteComponent(ctx, nil, nil)
-			},
-		},
-		{
-			name: "TxRepository.WriteComponentOwner",
-			call: func() error {
-				return txRepo.WriteComponentOwner(ctx, 1, nil)
-			},
-		},
-	}
+	nilTxRepo := NewRepository(nil).WithTx(nil)
+	readOnlyRepo := &TxRepository{reader: reader{db: &pgxpool.Pool{}}, readOnly: true}
+	rwRepo := NewRepository(nil).WithTx(&pgxpool.Pool{})
+	validRec := &store.ComponentRecord{ComponentID: 1, Name: "app"}
+	owner := &store.SourceOwner{UID: "uid", Generation: 1, Namespace: "xmc", ClusterUID: "c", Epoch: 1}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.call()
-			if got := status.Code(err); got != codes.Unimplemented {
-				t.Errorf("%s code = %v, want %v (err: %v)", tt.name, got, codes.Unimplemented, err)
+	for label, repo := range map[string]*TxRepository{
+		"nil transaction is FailedPrecondition":       nilTxRepo,
+		"read-only transaction is FailedPrecondition": readOnlyRepo,
+	} {
+		t.Run(label, func(t *testing.T) {
+			calls := map[string]func() error{
+				"RefreshFence":               func() error { return repo.RefreshFence(ctx, nil) },
+				"ReplaceFence":               func() error { return repo.ReplaceFence(ctx, store.ClusterIdentity{}) },
+				"ReassignOwnedComponents":    func() error { _, err := repo.ReassignOwnedComponents(ctx, "uid", 1); return err },
+				"InsertComponent":            func() error { return repo.InsertComponent(ctx, validRec, nil) },
+				"InsertComponent(nil)":       func() error { return repo.InsertComponent(ctx, nil, nil) },
+				"UpdateComponentIntent":      func() error { return repo.UpdateComponentIntent(ctx, validRec, nil) },
+				"UpdateComponentState":       func() error { return repo.UpdateComponentState(ctx, 1, 0, nil) },
+				"UpdateComponentObservation": func() error { return repo.UpdateComponentObservation(ctx, validRec, false) },
+				"SoftDeleteComponent":        func() error { return repo.SoftDeleteComponent(ctx, validRec, nil) },
+				"WriteComponentOwner(nil)":   func() error { return repo.WriteComponentOwner(ctx, 1, nil) },
+				"WriteComponentOwner(owner)": func() error { return repo.WriteComponentOwner(ctx, 1, owner) },
+			}
+			for name, call := range calls {
+				if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
+					t.Errorf("%s error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+				}
 			}
 		})
 	}
+
+	t.Run("nil record is InvalidArgument", func(t *testing.T) {
+		calls := map[string]func() error{
+			"InsertComponent":            func() error { return rwRepo.InsertComponent(ctx, nil, nil) },
+			"UpdateComponentIntent":      func() error { return rwRepo.UpdateComponentIntent(ctx, nil, nil) },
+			"UpdateComponentObservation": func() error { return rwRepo.UpdateComponentObservation(ctx, nil, false) },
+			"SoftDeleteComponent":        func() error { return rwRepo.SoftDeleteComponent(ctx, nil, nil) },
+		}
+		for name, call := range calls {
+			if err := call(); !errors.Is(err, grpcerr.ErrInvalidArgument) || status.Code(err) != codes.InvalidArgument {
+				t.Errorf("%s(nil) error = %v, want %v", name, err, grpcerr.ErrInvalidArgument)
+			}
+		}
+	})
+
+	t.Run("missing dependency ID is FailedPrecondition", func(t *testing.T) {
+		recWithDep := &store.ComponentRecord{ComponentID: 1, Name: "app", Dependencies: []string{"db"}}
+		for name, call := range map[string]func() error{
+			"InsertComponent":       func() error { return rwRepo.InsertComponent(ctx, recWithDep, map[string]int64{}) },
+			"UpdateComponentIntent": func() error { return rwRepo.UpdateComponentIntent(ctx, recWithDep, nil) },
+		} {
+			if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
+				t.Errorf("%s(missing dep) error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+			}
+		}
+	})
 }
 
 func TestRepository_NilPoolOrTransaction(t *testing.T) {
