@@ -35,11 +35,21 @@ func TestOpen_Postgres(t *testing.T) {
 
 	for _, db := range []Database{ESS, XID} {
 		t.Run(string(db), func(t *testing.T) {
-			storage, err := NewStorage(ctx, cfg, db)
+			initCtx, cancel := context.WithCancel(ctx)
+			storage, err := NewStorage(initCtx, cfg, db)
 			if err != nil {
+				cancel()
 				t.Fatalf("NewStorage(%q) failed: %v", db, err)
 			}
 			defer storage.Close()
+
+			// Canceling the initialization context must not tear down the cached connection pool.
+			cancel()
+
+			schemaClient, expectedVersion := storage.SchemaVersion()
+			if schemaClient == nil || expectedVersion <= 0 {
+				t.Errorf("SchemaVersion() = (%v, %d), want non-nil client and positive expectedVersion", schemaClient, expectedVersion)
+			}
 
 			// The harness stamps each database with the version that this binary expects, so a
 			// mixed-up database or expected version fails here.

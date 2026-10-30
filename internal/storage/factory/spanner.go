@@ -32,7 +32,7 @@ func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Stora
 	if database == "" {
 		return nil, fmt.Errorf("no spanner database is configured for %s", db)
 	}
-	client, err := spanner.NewClientWithConfig(ctx, database, spannerClientConfig(), spannerClientOptions(cfg)...)
+	client, err := spanner.NewClientWithConfig(context.WithoutCancel(ctx), database, spannerClientConfig(), spannerClientOptions(cfg)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create spanner client for %s: %w", database, err)
 	}
@@ -41,12 +41,7 @@ func openSpanner(ctx context.Context, cfg dbconfig.Spanner, db Database) (*Stora
 		client.Close()
 		return nil, fmt.Errorf("failed to create spanner storage for %s: %w", database, err)
 	}
-	return &Storage{
-		Storage:         st,
-		schemaVersion:   health.NewSpannerHealthClient(client),
-		expectedVersion: expectedVersion,
-		closeFn:         client.Close,
-	}, nil
+	return New(st, health.NewSpannerHealthClient(client), expectedVersion, client.Close), nil
 }
 
 // spannerDatabase returns the database path configured for db and the Spanner schema version

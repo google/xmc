@@ -55,7 +55,7 @@ type server struct {
 	cfg            *Config
 	checker        healthChecker
 	guard          AdminRoleGuard
-	lazySpanner    LazyComponentsProvider
+	lazyDB         LazyComponentsProvider
 	pauseScheduler PauseScheduler
 
 	// Caching
@@ -72,7 +72,7 @@ func newServer(
 	cfg *Config,
 	checker healthChecker,
 	guard AdminRoleGuard,
-	lazySpanner LazyComponentsProvider,
+	lazyDB LazyComponentsProvider,
 	pauseScheduler PauseScheduler,
 ) *server {
 	var limiter *rate.Limiter
@@ -83,7 +83,7 @@ func newServer(
 		cfg:                 cfg,
 		checker:             checker,
 		guard:               guard,
-		lazySpanner:         lazySpanner,
+		lazyDB:              lazyDB,
 		pauseScheduler:      pauseScheduler,
 		forceRefreshLimiter: limiter,
 	}
@@ -256,10 +256,10 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
-	if s.cfg == nil || !s.cfg.EnableComponents || s.lazySpanner == nil {
+	if s.cfg == nil || !s.cfg.EnableComponents || s.lazyDB == nil {
 		return nil, nil
 	}
-	provider, err := s.lazySpanner.ComponentsProvider(ctx)
+	provider, err := s.lazyDB.ComponentsProvider(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()

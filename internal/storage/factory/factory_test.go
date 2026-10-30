@@ -130,6 +130,20 @@ func (f fakeSchemaVersionClient) QuerySchemaVersion(context.Context) (int64, boo
 	return f.version, false, nil
 }
 
+func TestStorage_SchemaVersion(t *testing.T) {
+	client := fakeSchemaVersionClient{version: 7}
+	st := New(nil, client, 7, nil)
+	gotClient, gotExpected := st.SchemaVersion()
+	if gotClient != client || gotExpected != 7 {
+		t.Errorf("SchemaVersion() = (%v, %d), want (%v, 7)", gotClient, gotExpected, client)
+	}
+
+	var nilStorage *Storage
+	if nilClient, nilExpected := nilStorage.SchemaVersion(); nilClient != nil || nilExpected != 0 {
+		t.Errorf("(*Storage)(nil).SchemaVersion() = (%v, %d), want (nil, 0)", nilClient, nilExpected)
+	}
+}
+
 func TestStorage_CheckReady(t *testing.T) {
 	tests := []struct {
 		name    string
