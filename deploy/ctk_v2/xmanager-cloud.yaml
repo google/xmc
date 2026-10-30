@@ -424,7 +424,7 @@ deployment_groups:
       environment: $(vars.environment)
       image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
-      log_monitor_deployment_enabled: $(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)
+      log_monitor_deployment_enabled: '$(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)'
 
   - id: xmc_app_helm
     source: community/modules/management/direct-helm-install
@@ -568,7 +568,7 @@ deployment_groups:
         value: $(vars.rod_deployment_enabled)
         type: auto
       - name: logMonitorDeployment.enabled
-        value: $(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)
+        value: '$(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)'
         type: auto
       - name: database.backend
         value: $(vars.database_backend)
