@@ -24,26 +24,16 @@ from typing import Any
 try:
     import grpc
 except ImportError:
-    grpc = None
+    grpc = None  # type: ignore[assignment]
 
-try:
-    from xdash._protos import dashboard_service_pb2, messages_pb2
-    from xdash.auth import (
-        LOCAL_HOSTS as _LOCAL_HOSTS,
-        load_cached_cli_token,
-        mint_iam_impersonated_token,
-        resolve_env_auth_token,
-    )
-    from xdash.builders import chart_id_from_name
-except ImportError:
-    from ._protos import dashboard_service_pb2, messages_pb2
-    from .auth import (
-        LOCAL_HOSTS as _LOCAL_HOSTS,
-        load_cached_cli_token,
-        mint_iam_impersonated_token,
-        resolve_env_auth_token,
-    )
-    from .builders import chart_id_from_name
+from xdash._protos import dashboard_service_pb2, messages_pb2
+from xdash.auth import (
+    LOCAL_HOSTS as _LOCAL_HOSTS,
+    load_cached_cli_token,
+    mint_iam_impersonated_token,
+    resolve_env_auth_token,
+)
+from xdash.builders import chart_id_from_name
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 _TOKEN_TTL_SEC = 3300.0

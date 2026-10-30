@@ -20,34 +20,19 @@ import re
 import sys
 from collections.abc import Sequence
 
-try:
-    from xdash.builders import (
-        ChartBuilder,
-        DashboardBuilder,
-        chart_id_from_name,
-        scatter_plot,
-        summary_kpi_plot,
-    )
-    from xdash.client import DashboardClient, XDashError
-    from xdash.presets import (
-        create_standard_experiment_chart,
-        create_vcc_comparison_charts,
-        create_vcc_comparison_dashboard,
-    )
-except ImportError:
-    from .builders import (
-        ChartBuilder,
-        DashboardBuilder,
-        chart_id_from_name,
-        scatter_plot,
-        summary_kpi_plot,
-    )
-    from .client import DashboardClient, XDashError
-    from .presets import (
-        create_standard_experiment_chart,
-        create_vcc_comparison_charts,
-        create_vcc_comparison_dashboard,
-    )
+from xdash.builders import (
+    ChartBuilder,
+    DashboardBuilder,
+    chart_id_from_name,
+    scatter_plot,
+    summary_kpi_plot,
+)
+from xdash.client import DashboardClient, XDashError
+from xdash.presets import (
+    create_standard_experiment_chart,
+    create_vcc_comparison_charts,
+    create_vcc_comparison_dashboard,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:

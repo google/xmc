@@ -13,20 +13,12 @@
 # limitations under the License.
 """Public API for xdash: XMC Python SDK & CLI for Metrics Dashboards."""
 
-try:
-    from xdash.auth import (
-        load_cached_cli_token,
-        resolve_auth_headers,
-        resolve_env_auth_token,
-        resolve_xmc_origin,
-    )
-except ImportError:
-    from .auth import (
-        load_cached_cli_token,
-        resolve_auth_headers,
-        resolve_env_auth_token,
-        resolve_xmc_origin,
-    )
+from .auth import (
+    load_cached_cli_token,
+    resolve_auth_headers,
+    resolve_env_auth_token,
+    resolve_xmc_origin,
+)
 
 try:
     from xdash.builders import (
@@ -54,41 +46,7 @@ try:
         create_vcc_comparison_dashboard,
     )
 except ImportError:
-    try:
-        from .builders import (
-            ChartBuilder,
-            DashboardBuilder,
-            bar_plot,
-            chart_id_from_name,
-            scatter_plot,
-            summary_kpi_plot,
-            validate_chart_id,
-        )
-        from .client import (
-            DashboardClient,
-            XDashConnectionError,
-            XDashError,
-            XDashRPCError,
-        )
-        from .presets import (
-            VCC_BASELINE_XID,
-            VCC_COMPARISON_RUNS,
-            VCC_TUNED_V1_XID,
-            VCC_TUNED_V2_XID,
-            create_standard_experiment_chart,
-            create_vcc_comparison_charts,
-            create_vcc_comparison_dashboard,
-        )
-    except ModuleNotFoundError as exc:
-        root_pkg = (exc.name or "").split(".")[0]
-        leaf_pkg = (exc.name or "").split(".")[-1]
-        if root_pkg not in {"xmanager_cloud", "grpc", "google"} and leaf_pkg not in {
-            "builders",
-            "client",
-            "presets",
-            "_protos",
-        }:
-            raise
+    pass
 
 __all__ = [
     "DashboardBuilder",

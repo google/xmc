@@ -18,10 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-try:
-    from xdash._protos import messages_pb2
-except ImportError:
-    from ._protos import messages_pb2
+from xdash._protos import messages_pb2
 
 
 def _slugify(text: str) -> str:

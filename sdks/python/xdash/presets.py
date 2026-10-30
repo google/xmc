@@ -17,24 +17,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-try:
-    from xdash._protos import messages_pb2
-    from xdash.builders import (
-        ChartBuilder,
-        DashboardBuilder,
-        chart_id_from_name,
-        scatter_plot,
-        summary_kpi_plot,
-    )
-except ImportError:
-    from ._protos import messages_pb2
-    from .builders import (
-        ChartBuilder,
-        DashboardBuilder,
-        chart_id_from_name,
-        scatter_plot,
-        summary_kpi_plot,
-    )
+from xdash._protos import messages_pb2
+from xdash.builders import (
+    ChartBuilder,
+    DashboardBuilder,
+    chart_id_from_name,
+    scatter_plot,
+    summary_kpi_plot,
+)
 
 # Standard test experiment IDs available in UI and DataEngine test data.
 VCC_BASELINE_XID = 234911122
