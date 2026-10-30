@@ -27,6 +27,8 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 	"xmanager_cloud/pkg/components/store/memory"
 )
 
@@ -37,6 +39,15 @@ const (
 	idempotencyDependencyB = "intent-idempotency-dep-b"
 )
 
+// inspectableStore is a database-backed Store together with the hooks that reach its rows, so that
+// dbstore.OwnerByIDForTest and dbstore.SetSourceLastSeenTimeForTest work on it.
+type inspectableStore struct {
+	*dbstore.Store
+	dbstoretest.Rows
+}
+
+var _ dbstore.RowInspector = inspectableStore{}
+
 // intentStoreBackend constructs a fresh Store for cross-backend parity tests.
 type intentStoreBackend struct {
 	name     string
@@ -44,13 +55,13 @@ type intentStoreBackend struct {
 }
 
 // intentStoreBackends returns a MemoryStore factory and a Store factory for every database in
-// dbBackends so parity tests run the same rows against all implementations.
+// dbstoretest.Backends so parity tests run the same rows against all implementations.
 func intentStoreBackends() []intentStoreBackend {
 	backends := []intentStoreBackend{{name: "memory", newStore: func(*testing.T) store.Store { return memory.NewMemoryStore() }}}
-	for _, db := range dbBackends() {
-		backends = append(backends, intentStoreBackend{name: db.name, newStore: func(t *testing.T) store.Store {
-			s, rows := db.newStore(context.Background(), t)
-			return &inspectableStore{Store: s, backendRows: rows}
+	for _, db := range dbstoretest.Backends() {
+		backends = append(backends, intentStoreBackend{name: db.Name, newStore: func(t *testing.T) store.Store {
+			s, rows := newDBStore(context.Background(), t, db)
+			return &inspectableStore{Store: s, Rows: rows}
 		}})
 	}
 	return backends

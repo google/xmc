@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -36,6 +37,7 @@ import (
 	"xmanager_cloud/internal/storage/postgres/pgdb"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 	"xmanager_cloud/pkg/components/store/dependency"
 )
 
@@ -146,18 +148,18 @@ func (r meetingTxRepository) ReadFence(ctx context.Context) (*store.ClusterIdent
 	return fence, r.meet.wait(ctx)
 }
 
-// overlappingStores holds the stores and rows of one fresh PostgreSQL database: seed is a plain
+// overlappingStores holds the stores and pool of one fresh PostgreSQL database: seed is a plain
 // store for seeding, and the next two transactions of store overlap through overlap.
 type overlappingStores struct {
 	seed, store *dbstore.Store
 	overlap     *overlappingStorage
-	rows        postgresRows
+	pool        *pgxpool.Pool
 }
 
 // newOverlappingStores returns overlappingStores on one fresh PostgreSQL database.
 func newOverlappingStores(ctx context.Context, t *testing.T) overlappingStores {
 	t.Helper()
-	st, rows := openPostgresStorage(ctx, t)
+	pool, st, _ := dbstoretest.OpenPostgres(ctx, t)
 	seedStore, err := dbstore.New(st)
 	if err != nil {
 		t.Fatalf("dbstore.New(seed) failed: %v", err)
@@ -167,7 +169,7 @@ func newOverlappingStores(ctx context.Context, t *testing.T) overlappingStores {
 	if err != nil {
 		t.Fatalf("dbstore.New(overlap) failed: %v", err)
 	}
-	return overlappingStores{seed: seedStore, store: overlappingStore, overlap: overlap, rows: rows.(postgresRows)}
+	return overlappingStores{seed: seedStore, store: overlappingStore, overlap: overlap, pool: pool}
 }
 
 // runConcurrently runs ops in parallel goroutines and returns their errors in order.
@@ -221,7 +223,7 @@ func TestPostgresStore_ConcurrentDependentCreationAndCascadingDeletion(t *testin
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	f := newOverlappingStores(ctx, t)
-	seed, s, overlap, rows := f.seed, f.store, f.overlap, f.rows
+	seed, s, overlap, pool := f.seed, f.store, f.overlap, f.pool
 	if _, err := seed.SetComponentIntent(ctx, "cascade-y", intentSpec("v1.0.0"), nil, 1); err != nil {
 		t.Fatalf("seed SetComponentIntent(cascade-y) error = %v", err)
 	}
@@ -242,7 +244,7 @@ func TestPostgresStore_ConcurrentDependentCreationAndCascadingDeletion(t *testin
 		t.Errorf("SetComponentIntent(cascade-z) error = %v, want nil or a missing dependency rejection", errs[0])
 	}
 	var dangling int64
-	err := rows.pool.QueryRow(ctx, `SELECT COUNT(*) FROM ComponentDependencies cd
+	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM ComponentDependencies cd
 JOIN Components c ON c.ComponentId = cd.ComponentId JOIN Components d ON d.ComponentId = cd.DependencyComponentId
 WHERE c.ActiveName IS NOT NULL AND d.ActiveName IS NULL`).Scan(&dangling)
 	if err != nil || dangling != 0 {
@@ -294,7 +296,7 @@ func TestPostgresStore_ConcurrentObservationAndSoftDeletion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	f := newOverlappingStores(ctx, t)
-	seed, s, overlap, rows := f.seed, f.store, f.overlap, f.rows
+	seed, s, overlap, pool := f.seed, f.store, f.overlap, f.pool
 	const name, message = "observed-deleted", "observed concurrently"
 	seeded := seedIntentComponent(ctx, t, seed, name, intentSpec("v1.0.0"), 1, nil, componentspb.ComponentState_COMPONENT_STATE_ENABLED)
 	deletedState := int64(componentspb.ComponentState_COMPONENT_STATE_DELETED)
@@ -317,7 +319,7 @@ func TestPostgresStore_ConcurrentObservationAndSoftDeletion(t *testing.T) {
 	// The deleted row keeps an observation that committed before the deletion.
 	var state int64
 	var access []byte
-	if err := rows.pool.QueryRow(ctx, `SELECT State, AccessPayload FROM Components WHERE ComponentId = $1`, seeded.ComponentID).Scan(&state, &access); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT State, AccessPayload FROM Components WHERE ComponentId = $1`, seeded.ComponentID).Scan(&state, &access); err != nil {
 		t.Fatalf("query deleted row error = %v", err)
 	}
 	stored := &componentspb.ComponentAccessStatus{}

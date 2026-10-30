@@ -35,6 +35,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 	"xmanager_cloud/pkg/components/store/dependency"
 )
 
@@ -62,7 +63,7 @@ func TestSpannerStore_SetComponentIntent_ReadOnlyFastPath(t *testing.T) {
 		{name: "newer desired generation falls back", version: "v1.0.0", labels: labels, desiredGen: 5, wantFallbacks: 1, wantGen: 5},
 		{name: "deregistered dependency falls back and is rejected", version: "v1.0.0", labels: labels, desiredGen: 1, deleteDep: true, wantFallbacks: 1, wantGen: 1, wantCode: codes.FailedPrecondition},
 	}
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 		// Subtests are intentionally sequential (no t.Parallel) because they share one store and hook.
 		for i, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -127,10 +128,10 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 			wantCode: codes.FailedPrecondition,
 		},
 	}
-	for _, backend := range dbBackends() {
-		t.Run(backend.name, func(t *testing.T) {
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
 			ctx := context.Background()
-			st, _ := backend.open(ctx, t)
+			st, _ := backend.Open(ctx, t)
 			s, err := dbstore.New(st)
 			if err != nil {
 				t.Fatalf("dbstore.New() failed: %v", err)

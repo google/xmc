@@ -36,6 +36,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 )
 
 // ownerSource is the source that seeds owned rows; cases modify it with sourceWith. It comes from
@@ -234,7 +235,7 @@ func TestSpannerStore_SetSourcedComponentIntent_ReadOnlyFastPath(t *testing.T) {
 		{name: "newer owner generation falls back to record the owner", src: sourceWith(func(s *store.RequestSource) { s.Generation = 4 }), wantFallbacks: 1},
 		{name: "incarnation mismatch falls back and is rejected", src: sourceWith(func(s *store.RequestSource) { s.UID = "uid-b" }), wantFallbacks: 1, wantCode: codes.FailedPrecondition},
 	}
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 		// Subtests are intentionally sequential (no t.Parallel) because they share one store and hook.
 		for i, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -557,8 +558,8 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			// Only database backends expose backendRows; MemoryStore skips the raw-row check.
-			rows, _ := s.(backendRows)
+			// Only database backends expose dbstoretest.Rows; MemoryStore skips the raw-row check.
+			rows, _ := s.(dbstoretest.Rows)
 			if _, err := s.DeclareClusterEpoch(ctx, cluster); err != nil {
 				t.Fatalf("DeclareClusterEpoch() error = %v", err)
 			}

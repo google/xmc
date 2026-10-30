@@ -28,6 +28,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 )
 
 // UIDs of the kube-system Namespaces of the prod and DR test clusters.
@@ -143,7 +144,7 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 // DeclaredTime), which starts the owner_stale adoption grace period. MemoryStore records no
 // SourceLastSeenTime, so this runs on dbBackends.
 func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing.T) {
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 		seedOwnedComponent(ctx, t, s, "fence-grace", false)
 		if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}); err != nil {
 			t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
@@ -171,19 +172,19 @@ func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing
 func TestSpannerStore_OwnershipFenceSchema(t *testing.T) {
 	tests := []struct {
 		name    string
-		row     fenceRow
+		row     dbstoretest.FenceRow
 		wantErr bool
 	}{
-		{name: "epoch 0 violates the CHECK", row: fenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 0}, wantErr: true},
-		{name: "NULL LastSeenTime is rejected", row: fenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1, NullLastSeenTime: true}, wantErr: true},
-		{name: "FenceId other than 1 is allowed", row: fenceRow{FenceID: 2, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1}},
+		{name: "epoch 0 violates the CHECK", row: dbstoretest.FenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 0}, wantErr: true},
+		{name: "NULL LastSeenTime is rejected", row: dbstoretest.FenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1, NullLastSeenTime: true}, wantErr: true},
+		{name: "FenceId other than 1 is allowed", row: dbstoretest.FenceRow{FenceID: 2, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1}},
 	}
-	for _, backend := range dbBackends() {
-		t.Run(backend.name, func(t *testing.T) {
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
 					ctx := context.Background()
-					_, db := backend.newStore(ctx, t)
+					_, db := newDBStore(ctx, t, backend)
 					err := db.InsertFence(ctx, tt.row)
 					if gotErr := err != nil; gotErr != tt.wantErr {
 						t.Errorf("InsertFence(%+v) error = %v, wantErr %t", tt.row, err, tt.wantErr)
@@ -316,7 +317,7 @@ func TestSetSourcedComponentIntent_FenceParity(t *testing.T) {
 // TestSpannerStore_SetSourcedComponentIntent_FencedReplay checks that the read-only fast path
 // rejects an unchanged intent from a fenced cluster itself, without a read-write transaction.
 func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 		seedOwnedComponent(ctx, t, s, "fence-replay", false)
 		if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: drClusterUID, Name: "dr", Epoch: 2}); err != nil {
 			t.Fatalf("DeclareClusterEpoch() error = %v", err)
@@ -337,7 +338,7 @@ func TestSpannerStore_SetSourcedComponentIntent_FencedReplay(t *testing.T) {
 // decodes a declared fence and answers an unchanged intent from the fence holder at the fence
 // epoch without a read-write transaction.
 func TestSpannerStore_SetSourcedComponentIntent_AdmittedReplay(t *testing.T) {
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 		prodSource := sourceWith(func(s *store.RequestSource) { s.ClusterUID, s.Epoch = prodClusterUID, 2 })
 		if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}); err != nil {
 			t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
@@ -367,7 +368,7 @@ func TestSpannerStore_SetSourcedComponentIntent_AdmittedReplay(t *testing.T) {
 // after the fast-path read but before the read-write transaction fences the in-flight intent: the
 // transaction rereads the fence, rejects the intent and leaves the taken-over record unchanged.
 func TestSpannerStore_SetSourcedComponentIntent_TakeoverBeforeWrite(t *testing.T) {
-	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 		prodSource := sourceWith(func(s *store.RequestSource) { s.ClusterUID, s.Epoch = prodClusterUID, 2 })
 		if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 2}); err != nil {
 			t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)

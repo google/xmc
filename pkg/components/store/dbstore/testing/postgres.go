@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dbstore_test
+package dbstoretest
 
 import (
 	"context"
@@ -31,29 +31,35 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-// postgresBackend runs the dbstore tests against a fresh PostgreSQL test database.
-func postgresBackend() dbBackend {
-	return dbBackend{name: "postgres", open: openPostgresStorage}
+// PostgresBackend runs the dbstore tests against a fresh PostgreSQL test database.
+func PostgresBackend() Backend {
+	return Backend{Name: "postgres", Open: openPostgresStorage}
 }
 
-// openPostgresStorage returns a storage.Storage on a fresh PostgreSQL test database and the hooks
-// that reach its rows.
-func openPostgresStorage(ctx context.Context, t *testing.T) (storage.Storage, backendRows) {
+// OpenPostgres returns the connection pool, storage.Storage, and row hooks on a fresh PostgreSQL
+// test database.
+func OpenPostgres(ctx context.Context, t *testing.T) (*pgxpool.Pool, storage.Storage, Rows) {
 	t.Helper()
 	_, pool := postgrestest.Setup(ctx, t)
 	st, err := postgres.NewStorage(pool)
 	if err != nil {
 		t.Fatalf("failed to create storage: %v", err)
 	}
-	return st, postgresRows{pool: pool}
+	return pool, st, postgresRows{pool: pool}
 }
 
-// postgresRows implements backendRows with SQL on a PostgreSQL database.
+func openPostgresStorage(ctx context.Context, t *testing.T) (storage.Storage, Rows) {
+	t.Helper()
+	_, st, rows := OpenPostgres(ctx, t)
+	return st, rows
+}
+
+// postgresRows implements Rows with SQL on a PostgreSQL database.
 type postgresRows struct {
 	pool *pgxpool.Pool
 }
 
-// OwnerByID implements backendRows.
+// OwnerByID implements Rows.
 func (r postgresRows) OwnerByID(ctx context.Context, componentID int64) (*store.SourceOwner, error) {
 	var uid, namespace, cluster pgtype.Text
 	var generation, epoch pgtype.Int8
@@ -68,13 +74,13 @@ func (r postgresRows) OwnerByID(ctx context.Context, componentID int64) (*store.
 	return &store.SourceOwner{UID: uid.String, Generation: generation.Int64, Namespace: namespace.String, ClusterUID: cluster.String, Epoch: epoch.Int64}, nil
 }
 
-// SetSourceLastSeenTime implements backendRows.
+// SetSourceLastSeenTime implements Rows.
 func (r postgresRows) SetSourceLastSeenTime(ctx context.Context, canonicalName string, seenAt time.Time) error {
 	_, err := r.pool.Exec(ctx, `UPDATE Components SET SourceLastSeenTime = $1 WHERE ActiveName = $2`, seenAt, canonicalName)
 	return err
 }
 
-// SourceTimes implements backendRows.
+// SourceTimes implements Rows.
 func (r postgresRows) SourceTimes(ctx context.Context, canonicalName string) (lastSeen, update time.Time, err error) {
 	var nullLastSeen pgtype.Timestamptz
 	err = r.pool.QueryRow(ctx, `SELECT SourceLastSeenTime, UpdateTime FROM Components WHERE ActiveName = $1`, canonicalName).Scan(&nullLastSeen, &update)
@@ -87,32 +93,32 @@ func (r postgresRows) SourceTimes(ctx context.Context, canonicalName string) (la
 	return lastSeen, update.UTC(), nil
 }
 
-// ComponentRowTimestamps implements backendRows.
-func (r postgresRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (rowTimestamps, error) {
+// ComponentRowTimestamps implements Rows.
+func (r postgresRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (RowTimestamps, error) {
 	var createTime, updateTime time.Time
 	var lastSeen pgtype.Timestamptz
 	err := r.pool.QueryRow(ctx, `SELECT CreateTime, UpdateTime, SourceLastSeenTime FROM Components WHERE ComponentId = $1`, componentID).
 		Scan(&createTime, &updateTime, &lastSeen)
 	if err != nil {
-		return rowTimestamps{}, err
+		return RowTimestamps{}, err
 	}
-	ts := rowTimestamps{Create: createTime.UTC(), Update: updateTime.UTC()}
+	ts := RowTimestamps{Create: createTime.UTC(), Update: updateTime.UTC()}
 	if lastSeen.Valid {
 		ts.LastSeen = lastSeen.Time.UTC()
 	}
 	return ts, nil
 }
 
-// ComponentRows implements backendRows.
-func (r postgresRows) ComponentRows(ctx context.Context, name string) ([]componentRow, error) {
+// ComponentRows implements Rows.
+func (r postgresRows) ComponentRows(ctx context.Context, name string) ([]ComponentRow, error) {
 	rows, err := r.pool.Query(ctx, `SELECT ComponentId, State, ActiveName FROM Components WHERE Name = $1 ORDER BY ComponentId ASC`, name)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var result []componentRow
+	var result []ComponentRow
 	for rows.Next() {
-		var cr componentRow
+		var cr ComponentRow
 		var activeName pgtype.Text
 		if err := rows.Scan(&cr.ID, &cr.State, &activeName); err != nil {
 			return nil, err
@@ -125,15 +131,15 @@ func (r postgresRows) ComponentRows(ctx context.Context, name string) ([]compone
 	return result, rows.Err()
 }
 
-// HardDeleteComponent implements backendRows.
+// HardDeleteComponent implements Rows.
 func (r postgresRows) HardDeleteComponent(ctx context.Context, componentID int64) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM Components WHERE ComponentId = $1`, componentID)
 	return err
 }
 
-// InsertExperimentWithSnapshot implements backendRows. PostgreSQL keys snapshots by the experiment
+// InsertExperimentWithSnapshot implements Rows. PostgreSQL keys snapshots by the experiment
 // ID itself, and their foreign key requires the experiment row first.
-func (r postgresRows) InsertExperimentWithSnapshot(ctx context.Context, exp *essmsgpb.Experiment, snap snapshotRow) error {
+func (r postgresRows) InsertExperimentWithSnapshot(ctx context.Context, exp *essmsgpb.Experiment, snap SnapshotRow) error {
 	status, err := proto.Marshal(exp.GetStatus())
 	if err != nil {
 		return fmt.Errorf("failed to marshal experiment status: %w", err)
@@ -153,22 +159,22 @@ VALUES ($1, $2, $3, $4, '{}', $5, $6, '{}', $7, $8, $9, now(), now())`,
 	return err
 }
 
-// CountSnapshots implements backendRows.
+// CountSnapshots implements Rows.
 func (r postgresRows) CountSnapshots(ctx context.Context, componentID int64) (int64, error) {
 	var count int64
 	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM ExperimentComponentSnapshots WHERE ComponentId = $1`, componentID).Scan(&count)
 	return count, err
 }
 
-// FenceDeclaredTime implements backendRows.
+// FenceDeclaredTime implements Rows.
 func (r postgresRows) FenceDeclaredTime(ctx context.Context) (time.Time, error) {
 	var declared time.Time
 	err := r.pool.QueryRow(ctx, `SELECT DeclaredTime FROM ComponentOwnershipFence WHERE FenceId = 1`).Scan(&declared)
 	return declared.UTC(), err
 }
 
-// InsertFence implements backendRows.
-func (r postgresRows) InsertFence(ctx context.Context, row fenceRow) error {
+// InsertFence implements Rows.
+func (r postgresRows) InsertFence(ctx context.Context, row FenceRow) error {
 	now := time.Now().UTC()
 	var lastSeen any = now
 	if row.NullLastSeenTime {

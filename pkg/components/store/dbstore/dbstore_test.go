@@ -33,13 +33,35 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
+	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 )
+
+func newDBStore(ctx context.Context, t *testing.T, b dbstoretest.Backend) (*dbstore.Store, dbstoretest.Rows) {
+	t.Helper()
+	st, rows := b.Open(ctx, t)
+	s, err := dbstore.New(st)
+	if err != nil {
+		t.Fatalf("dbstore.New() failed: %v", err)
+	}
+	return s, rows
+}
+
+func forEachDBBackend(t *testing.T, fn func(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows)) {
+	t.Helper()
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
+			ctx := context.Background()
+			s, rows := newDBStore(ctx, t, backend)
+			fn(ctx, t, s, rows)
+		})
+	}
+}
 
 func TestSpannerStore_SetComponentIntent_Success(t *testing.T) {
 	forEachDBBackend(t, testSetComponentIntentSuccess)
 }
 
-func testSetComponentIntentSuccess(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testSetComponentIntentSuccess(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:        componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version:     "v1.0.0",
@@ -111,7 +133,7 @@ func TestSpannerStore_SetComponentIntent_Dependencies(t *testing.T) {
 	forEachDBBackend(t, testSetComponentIntentDependencies)
 }
 
-func testSetComponentIntentDependencies(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testSetComponentIntentDependencies(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	// Create dependency component dep-a
 	specA := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -153,7 +175,7 @@ func TestSpannerStore_SetComponentIntent_MissingDependencyRejection(t *testing.T
 	forEachDBBackend(t, testSetComponentIntentMissingDependencyRejection)
 }
 
-func testSetComponentIntentMissingDependencyRejection(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testSetComponentIntentMissingDependencyRejection(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -173,7 +195,7 @@ func TestSpannerStore_SetComponentIntent_CycleDetectionRejection(t *testing.T) {
 	forEachDBBackend(t, testSetComponentIntentCycleDetectionRejection)
 }
 
-func testSetComponentIntentCycleDetectionRejection(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testSetComponentIntentCycleDetectionRejection(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -234,7 +256,7 @@ func TestSpannerStore_GetComponent_And_GetComponentByID(t *testing.T) {
 	forEachDBBackend(t, testGetComponentAndGetComponentByID)
 }
 
-func testGetComponentAndGetComponentByID(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testGetComponentAndGetComponentByID(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -287,7 +309,7 @@ func TestSpannerStore_ListComponents(t *testing.T) {
 	forEachDBBackend(t, testListComponents)
 }
 
-func testListComponents(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testListComponents(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -322,7 +344,7 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	forEachDBBackend(t, testUpdateObservedGeneration)
 }
 
-func testUpdateObservedGeneration(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testUpdateObservedGeneration(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -384,7 +406,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	forEachDBBackend(t, testCommitTimestamps)
 }
 
-func testCommitTimestamps(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testCommitTimestamps(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	declareOwnerCluster(ctx, t, s)
 
 	const name = "commit-ts-comp"
@@ -468,7 +490,7 @@ func testCommitTimestamps(ctx context.Context, t *testing.T, s *dbstore.Store, d
 	}
 }
 
-func readComponentRowTimestamps(ctx context.Context, t *testing.T, db backendRows, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
+func readComponentRowTimestamps(ctx context.Context, t *testing.T, db dbstoretest.Rows, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
 	t.Helper()
 	ts, err := db.ComponentRowTimestamps(ctx, componentID)
 	if err != nil {
@@ -481,7 +503,7 @@ func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T)
 	forEachDBBackend(t, testPrepareAndCompleteDeactivation)
 }
 
-func testPrepareAndCompleteDeactivation(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testPrepareAndCompleteDeactivation(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -576,7 +598,7 @@ func TestSpannerStore_CompleteDeactivation_TransitiveInactiveChain(t *testing.T)
 	forEachDBBackend(t, testCompleteDeactivationTransitiveInactiveChain)
 }
 
-func testCompleteDeactivationTransitiveInactiveChain(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testCompleteDeactivationTransitiveInactiveChain(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -634,7 +656,7 @@ func TestSpannerStore_ExecuteDeletion(t *testing.T) {
 	forEachDBBackend(t, testExecuteDeletion)
 }
 
-func testExecuteDeletion(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testExecuteDeletion(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -689,7 +711,7 @@ func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 	forEachDBBackend(t, testSoftDeletionAndActiveNameRelease)
 }
 
-func testSoftDeletionAndActiveNameRelease(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testSoftDeletionAndActiveNameRelease(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -748,7 +770,7 @@ func testSoftDeletionAndActiveNameRelease(ctx context.Context, t *testing.T, s *
 		t.Fatalf("expected 2 historical/active rows in Components table, got %d", len(rows))
 	}
 
-	var deletedRow, activeRow *componentRow
+	var deletedRow, activeRow *dbstoretest.ComponentRow
 	for i := range rows {
 		if rows[i].ID == origID {
 			deletedRow = &rows[i]
@@ -770,7 +792,7 @@ func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 	forEachDBBackend(t, testResolveComponentSnapshot)
 }
 
-func testResolveComponentSnapshot(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testResolveComponentSnapshot(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -874,7 +896,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 	forEachDBBackend(t, testResolveComponentSnapshotSoftDeleted)
 }
 
-func testResolveComponentSnapshotSoftDeleted(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testResolveComponentSnapshotSoftDeleted(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -947,7 +969,7 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	forEachDBBackend(t, testResolveComponentSnapshotRecreatedLowerGeneration)
 }
 
-func testResolveComponentSnapshotRecreatedLowerGeneration(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testResolveComponentSnapshotRecreatedLowerGeneration(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	specV1 := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -1036,7 +1058,7 @@ func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIso
 	forEachDBBackend(t, testResolveComponentSnapshotHistoricalDependenciesAndStateIsolation)
 }
 
-func testResolveComponentSnapshotHistoricalDependenciesAndStateIsolation(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testResolveComponentSnapshotHistoricalDependenciesAndStateIsolation(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	// Active component has state ENABLED, observed generation 2, active labels
 	activeSpec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1127,7 +1149,7 @@ func TestSpannerStore_ValidateComponentRequirement(t *testing.T) {
 	forEachDBBackend(t, testValidateComponentRequirement)
 }
 
-func testValidateComponentRequirement(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testValidateComponentRequirement(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v2.3.4",
@@ -1195,7 +1217,7 @@ func TestSpannerStore_GetPlatformHealth(t *testing.T) {
 	forEachDBBackend(t, testGetPlatformHealth)
 }
 
-func testGetPlatformHealth(ctx context.Context, t *testing.T, s *dbstore.Store, _ backendRows) {
+func testGetPlatformHealth(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
 	_, err := s.GetPlatformHealth(ctx, "", 10, "")
 	if status.Code(err) != codes.Unimplemented {
 		t.Errorf("expected Unimplemented code for GetPlatformHealth, got %v", err)
@@ -1216,11 +1238,11 @@ func concurrencyLimits(backendName string) concurrencyScale {
 }
 
 func TestSpannerStore_ConcurrentOperations(t *testing.T) {
-	for _, backend := range dbBackends() {
-		t.Run(backend.name, func(t *testing.T) {
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
 			ctx := context.Background()
-			s, _ := backend.newStore(ctx, t)
-			limits := concurrencyLimits(backend.name)
+			s, _ := newDBStore(ctx, t, backend)
+			limits := concurrencyLimits(backend.Name)
 			testConcurrentOperations(ctx, t, s, limits.goroutines)
 		})
 	}
@@ -1263,7 +1285,7 @@ func testConcurrentOperations(ctx context.Context, t *testing.T, s *dbstore.Stor
 
 // seedExperimentWithSnapshot creates an ACTIVE experiment for xid and binds componentID to it via
 // an ExperimentComponentSnapshots row locked at lockedGen.
-func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, db backendRows, xid, componentID, lockedGen int64, configProto, accessPayload []byte) {
+func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, db dbstoretest.Rows, xid, componentID, lockedGen int64, configProto, accessPayload []byte) {
 	t.Helper()
 	testExp := &essmsgpb.Experiment{
 		Name:      fmt.Sprintf("experiments/%d", xid),
@@ -1281,7 +1303,7 @@ func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, db backendRow
 		CreateTime: timestamppb.Now(),
 		UpdateTime: timestamppb.Now(),
 	}
-	snap := snapshotRow{Xid: xid, ComponentID: componentID, LockedGeneration: lockedGen, ConfigProto: configProto, AccessPayload: accessPayload}
+	snap := dbstoretest.SnapshotRow{Xid: xid, ComponentID: componentID, LockedGeneration: lockedGen, ConfigProto: configProto, AccessPayload: accessPayload}
 	if err := db.InsertExperimentWithSnapshot(ctx, testExp, snap); err != nil {
 		t.Fatalf("failed to seed experiment %d with snapshot: %v", xid, err)
 	}
@@ -1291,7 +1313,7 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 	forEachDBBackend(t, testSoftDeletionPreservesSnapshotForeignKey)
 }
 
-func testSoftDeletionPreservesSnapshotForeignKey(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+func testSoftDeletionPreservesSnapshotForeignKey(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 		Version: "v1.0.0",
@@ -1349,11 +1371,11 @@ func testSoftDeletionPreservesSnapshotForeignKey(ctx context.Context, t *testing
 }
 
 func TestSpannerStore_ConcurrentIntentUpdatesOnSameComponent(t *testing.T) {
-	for _, backend := range dbBackends() {
-		t.Run(backend.name, func(t *testing.T) {
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
 			ctx := context.Background()
-			s, _ := backend.newStore(ctx, t)
-			limits := concurrencyLimits(backend.name)
+			s, _ := newDBStore(ctx, t, backend)
+			limits := concurrencyLimits(backend.Name)
 			testConcurrentIntentUpdatesOnSameComponent(ctx, t, s, limits.writers, limits.writerIters)
 		})
 	}
@@ -1432,11 +1454,11 @@ func testConcurrentIntentUpdatesOnSameComponent(ctx context.Context, t *testing.
 }
 
 func TestSpannerStore_ConcurrentDeactivationAndIntentUpdate(t *testing.T) {
-	for _, backend := range dbBackends() {
-		t.Run(backend.name, func(t *testing.T) {
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
 			ctx := context.Background()
-			s, _ := backend.newStore(ctx, t)
-			limits := concurrencyLimits(backend.name)
+			s, _ := newDBStore(ctx, t, backend)
+			limits := concurrencyLimits(backend.Name)
 			testConcurrentDeactivationAndIntentUpdate(ctx, t, s, limits.pairs)
 		})
 	}

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dbstore_test
+package dbstoretest
 
 import (
 	"context"
@@ -32,14 +32,14 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
-// spannerBackend runs the dbstore tests against a fresh database on the Spanner emulator.
-func spannerBackend() dbBackend {
-	return dbBackend{name: "spanner", open: openSpannerStorage}
+// SpannerBackend runs the dbstore tests against a fresh database on the Spanner emulator.
+func SpannerBackend() Backend {
+	return Backend{Name: "spanner", Open: openSpannerStorage}
 }
 
 // openSpannerStorage returns a storage.Storage on a fresh Spanner emulator database and the hooks
 // that reach its rows.
-func openSpannerStorage(ctx context.Context, t *testing.T) (storage.Storage, backendRows) {
+func openSpannerStorage(ctx context.Context, t *testing.T) (storage.Storage, Rows) {
 	t.Helper()
 	_, client := emulator.Setup(ctx, t)
 	st, err := spannerstorage.NewStorage(client)
@@ -49,12 +49,12 @@ func openSpannerStorage(ctx context.Context, t *testing.T) (storage.Storage, bac
 	return st, spannerRows{client: client}
 }
 
-// spannerRows implements backendRows with SQL and mutations on a Spanner database.
+// spannerRows implements Rows with SQL and mutations on a Spanner database.
 type spannerRows struct {
 	client *spanner.Client
 }
 
-// OwnerByID implements backendRows.
+// OwnerByID implements Rows.
 func (r spannerRows) OwnerByID(ctx context.Context, componentID int64) (*store.SourceOwner, error) {
 	stmt := spanner.Statement{SQL: `SELECT ` + component.ComponentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
 	var owner *store.SourceOwner
@@ -75,7 +75,7 @@ func (r spannerRows) OwnerByID(ctx context.Context, componentID int64) (*store.S
 	return owner, nil
 }
 
-// SetSourceLastSeenTime implements backendRows.
+// SetSourceLastSeenTime implements Rows.
 func (r spannerRows) SetSourceLastSeenTime(ctx context.Context, canonicalName string, seenAt time.Time) error {
 	_, err := r.client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
 		_, err := txn.Update(ctx, spanner.Statement{SQL: `UPDATE Components SET SourceLastSeenTime = @seenAt WHERE ActiveName = @name`, Params: map[string]any{"seenAt": seenAt, "name": canonicalName}})
@@ -84,7 +84,7 @@ func (r spannerRows) SetSourceLastSeenTime(ctx context.Context, canonicalName st
 	return err
 }
 
-// SourceTimes implements backendRows.
+// SourceTimes implements Rows.
 func (r spannerRows) SourceTimes(ctx context.Context, canonicalName string) (lastSeen, update time.Time, err error) {
 	stmt := spanner.Statement{
 		SQL:    `SELECT SourceLastSeenTime, UpdateTime FROM Components WHERE ActiveName = @name`,
@@ -101,16 +101,16 @@ func (r spannerRows) SourceTimes(ctx context.Context, canonicalName string) (las
 	return lastSeen, update, err
 }
 
-// ComponentRowTimestamps implements backendRows.
-func (r spannerRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (rowTimestamps, error) {
+// ComponentRowTimestamps implements Rows.
+func (r spannerRows) ComponentRowTimestamps(ctx context.Context, componentID int64) (RowTimestamps, error) {
 	row, err := r.client.Single().ReadRow(ctx, "Components", spanner.Key{componentID}, []string{"CreateTime", "UpdateTime", "SourceLastSeenTime"})
 	if err != nil {
-		return rowTimestamps{}, err
+		return RowTimestamps{}, err
 	}
-	var ts rowTimestamps
+	var ts RowTimestamps
 	var nullLastSeen spanner.NullTime
 	if err := row.Columns(&ts.Create, &ts.Update, &nullLastSeen); err != nil {
-		return rowTimestamps{}, err
+		return RowTimestamps{}, err
 	}
 	if nullLastSeen.Valid {
 		ts.LastSeen = nullLastSeen.Time
@@ -118,15 +118,15 @@ func (r spannerRows) ComponentRowTimestamps(ctx context.Context, componentID int
 	return ts, nil
 }
 
-// ComponentRows implements backendRows.
-func (r spannerRows) ComponentRows(ctx context.Context, name string) ([]componentRow, error) {
+// ComponentRows implements Rows.
+func (r spannerRows) ComponentRows(ctx context.Context, name string) ([]ComponentRow, error) {
 	stmt := spanner.Statement{
 		SQL:    `SELECT ComponentId, State, ActiveName FROM Components WHERE Name = @name ORDER BY ComponentId ASC`,
 		Params: map[string]any{"name": name},
 	}
-	var rows []componentRow
+	var rows []ComponentRow
 	err := r.client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-		var cr componentRow
+		var cr ComponentRow
 		var activeName spanner.NullString
 		if err := row.Columns(&cr.ID, &cr.State, &activeName); err != nil {
 			return err
@@ -140,15 +140,15 @@ func (r spannerRows) ComponentRows(ctx context.Context, name string) ([]componen
 	return rows, err
 }
 
-// HardDeleteComponent implements backendRows.
+// HardDeleteComponent implements Rows.
 func (r spannerRows) HardDeleteComponent(ctx context.Context, componentID int64) error {
 	_, err := r.client.Apply(ctx, []*spanner.Mutation{spanner.Delete("Components", spanner.Key{componentID})})
 	return err
 }
 
-// InsertExperimentWithSnapshot implements backendRows. Spanner keys snapshots by the bit-reversed
+// InsertExperimentWithSnapshot implements Rows. Spanner keys snapshots by the bit-reversed
 // experiment ID.
-func (r spannerRows) InsertExperimentWithSnapshot(ctx context.Context, exp *essmsgpb.Experiment, snap snapshotRow) error {
+func (r spannerRows) InsertExperimentWithSnapshot(ctx context.Context, exp *essmsgpb.Experiment, snap SnapshotRow) error {
 	expMut, err := spannerdata.ExperimentProtoToInsertMutation(exp)
 	if err != nil {
 		return fmt.Errorf("failed to create experiment mutation: %w", err)
@@ -160,7 +160,7 @@ func (r spannerRows) InsertExperimentWithSnapshot(ctx context.Context, exp *essm
 	return err
 }
 
-// CountSnapshots implements backendRows.
+// CountSnapshots implements Rows.
 func (r spannerRows) CountSnapshots(ctx context.Context, componentID int64) (int64, error) {
 	var count int64
 	err := r.client.Single().Query(ctx, spanner.Statement{
@@ -170,7 +170,7 @@ func (r spannerRows) CountSnapshots(ctx context.Context, componentID int64) (int
 	return count, err
 }
 
-// FenceDeclaredTime implements backendRows.
+// FenceDeclaredTime implements Rows.
 func (r spannerRows) FenceDeclaredTime(ctx context.Context) (time.Time, error) {
 	var declared time.Time
 	row, err := r.client.Single().ReadRow(ctx, "ComponentOwnershipFence", spanner.Key{int64(1)}, []string{"DeclaredTime"})
@@ -181,8 +181,8 @@ func (r spannerRows) FenceDeclaredTime(ctx context.Context) (time.Time, error) {
 	return declared, err
 }
 
-// InsertFence implements backendRows.
-func (r spannerRows) InsertFence(ctx context.Context, row fenceRow) error {
+// InsertFence implements Rows.
+func (r spannerRows) InsertFence(ctx context.Context, row FenceRow) error {
 	var lastSeen any = spanner.CommitTimestamp
 	if row.NullLastSeenTime {
 		lastSeen = nil
