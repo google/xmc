@@ -19,7 +19,6 @@ package retentionsweep
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -50,7 +49,7 @@ type Sweeper struct {
 // batchSize rows per table in each DeleteExpiredRows call.
 func Start(ctx context.Context, store storage.ExpiredRowStore, interval time.Duration, batchSize int) (*Sweeper, error) {
 	if store == nil {
-		return nil, errors.New("expired row store cannot be nil")
+		return nil, fmt.Errorf("expired row store cannot be nil")
 	}
 	if interval <= 0 {
 		return nil, fmt.Errorf("sweep interval must be positive, got %v", interval)
