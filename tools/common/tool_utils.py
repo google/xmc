@@ -328,9 +328,7 @@ def load_and_validate_config(
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
-        database_backend=_resolve_database_backend(
-            config.get("database_backend", DEFAULT_BACKEND)
-        ),
+        database_backend=_resolve_database_backend(config.get("database_backend", DEFAULT_BACKEND)),
     )
 
 
