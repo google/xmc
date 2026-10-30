@@ -248,17 +248,19 @@ To extract this telemetry and output it as a raw JSON dataset, run:
 Using the `.env` configuration file, the agent updates the deployment environment.
 
 ### Target Environment (Extracted from `.env`)
-- **GCP Project ID**: `xmc-test-project-6`
-- **GKE Cluster**: `xmc-cttest8d-cttest8e`
-- **GCP Region**: `europe-central2`
+- **GCP Project ID**: `<project_id>`
+- **GKE Cluster**: `<cluster_name>`
+- **GCP Region**: `<region>`
 - **K8S Namespace**: `xmc`
-- **Artifact Registry Target**: `us-docker.pkg.dev/xmc-test-project-6/xmc`
+- **Artifact Registry Target**: `us-docker.pkg.dev/<project_id>/xmc`
 
 ### Rebuild and Push Containers
 For each affected binary (e.g. `xid_service`), the agent sets up the environment variables and runs the push script:
 ```bash
+PROJECT_ID="<project_id>"
+
 # Set build environment variables
-export XMC_ACR_TARGET="us-docker.pkg.dev/xmc-test-project-6/xmc"
+export XMC_ACR_TARGET="us-docker.pkg.dev/${PROJECT_ID}/xmc"
 export XMC_ENV="dev"
 
 # Build and push the container image to GCP Artifact Registry
@@ -269,10 +271,14 @@ bazel run //cmd/xid_service:xid_service_image_push
 The agent initiates a rolling update to download the newly pushed image (tagged `:latest`):
 
 ```bash
+PROJECT_ID="<project_id>"
+CLUSTER_NAME="<cluster_name>"
+REGION="<region>"
+
 # 1. Authenticate to the GKE Cluster
-gcloud container clusters get-credentials xmc-cttest8d-cttest8e \
-    --region europe-central2 \
-    --project xmc-test-project-6
+gcloud container clusters get-credentials "${CLUSTER_NAME}" \
+    --region "${REGION}" \
+    --project "${PROJECT_ID}"
 
 # 2. Restart the deployment to pick up the updated container image
 kubectl rollout restart deployment/xid-service-deployment -n xmc

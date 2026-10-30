@@ -274,7 +274,7 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 		}
 		podSpec.NodeSelector[tpuAcceleratorSelectorKey] = tpuRes.GetType()
 		podSpec.NodeSelector[tpuTopologySelectorKey] = tpuRes.GetTopology()
-		// TODO(b/470040109) - Ironwood (TPU7x) requires cloud.google.com/placement-policy-name in the
+		// TODO: Ironwood (TPU7x) requires cloud.google.com/placement-policy-name in the
 		// nodeSelector. The value is a user-created workload policy name, which needs to be plumbed
 		// through the TpuResources proto.
 		return nil

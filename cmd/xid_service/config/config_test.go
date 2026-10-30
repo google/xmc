@@ -87,6 +87,10 @@ func TestConfig_RegisterFlags(t *testing.T) {
 	var c Config
 	c.registerFlags(fs)
 
+	if c.Audience != "https://xmc.example.com" {
+		t.Errorf("default c.Audience = %q, want %q", c.Audience, "https://xmc.example.com")
+	}
+
 	args := []string{
 		"-xid_audience=https://custom-audience.example.com",
 		"-xid_jwks_url=https://auth.example.com/keys",

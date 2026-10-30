@@ -231,7 +231,7 @@ vars:
         def run_cmd_side_effect(cmd):
             cmd_str = " ".join(cmd)
             if "gateway" in cmd_str:
-                return "35.240.10.20"
+                return "203.0.113.20"
             if "app=actuator" in cmd_str:
                 return "actuator-pod-abc"
             return ""
@@ -243,7 +243,7 @@ vars:
 
         self.assertTrue(res)
         output = captured.getvalue()
-        self.assertIn("Gateway IP Address: 35.240.10.20", output)
+        self.assertIn("Gateway IP Address: 203.0.113.20", output)
         self.assertIn("Run: kubectl port-forward -n xmc actuator-pod-abc 8080:8080", output)
 
     @mock.patch.object(verify_xmc, "_run_command")

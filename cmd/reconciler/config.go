@@ -79,7 +79,7 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
-	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&quotaProjectID, "quota_project_id", "xmc-project")
 	configutil.DurationEnv(&batcherTickDuration, "batcher_tick_duration", 250*time.Millisecond)
 	configutil.DurationEnv(&kueueSyncTickDuration, "kueue_sync_tick_duration", 60*time.Second)
 	configutil.IntEnv(&maxConcurrentKueueSyncReconciles, "max_concurrent_kueue_sync_reconciles", 1000)

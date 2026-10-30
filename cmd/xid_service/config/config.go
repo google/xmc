@@ -82,14 +82,14 @@ func (c *Config) registerFlags(fs *flag.FlagSet) {
 	if fs == nil {
 		fs = flag.CommandLine
 	}
-	fs.StringVar(&c.Audience, "xid_audience", "https://test-xmanager-gcp.corp.goog", "The audience of the IAP JWT.")
+	fs.StringVar(&c.Audience, "xid_audience", "https://xmc.example.com", "The audience of the IAP JWT.")
 	fs.StringVar(&c.JWKSURL, "xid_jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 }
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.Port, "xid_grpc_port", "50051")
-	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-test-project-1")
+	configutil.StringEnv(&c.QuotaProjectID, "xid_quota_project_id", "xmc-project")
 	configutil.StringEnv(&c.JWKSURL, "xid_jwks_url", "")
 }
 

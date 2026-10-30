@@ -369,7 +369,7 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 	if err := r.helmManager.HydrateComponentState(ctx, ref, 0, wasPreviouslyActive); err != nil {
 		logging.Warn(ctx, "Failed to hydrate Helm state from cluster; continuing with CR status fallback", "name", in.Name, "namespace", in.Namespace, "err", err)
 	}
-	// TODO(vluk): Skipping the uninstall here relies on Delete1PComponent discarding queued async upgrades; until
+	// TODO: Skipping the uninstall here relies on Delete1PComponent discarding queued async upgrades; until
 	// #1072 lands, an upgrade enqueued before the uninstall can reinstall the release while activeState stays false
 	// (pre-existing race in K8sHelmManager). Drop this TODO once #1072 is merged.
 	if !r.helmManager.IsComponentActive(ref) && !wasPreviouslyActive {

@@ -46,6 +46,9 @@ func TestNewMLRunCreatorReturnsNilInterfaceOnError(t *testing.T) {
 
 func TestLoadConfig(t *testing.T) {
 	cfg := Load()
+	if cfg.QuotaProjectID != "xmc-project" {
+		t.Errorf("Load().QuotaProjectID = %q, want %q", cfg.QuotaProjectID, "xmc-project")
+	}
 	if cfg.MetricsPort != 8082 {
 		t.Errorf("Load().MetricsPort = %d, want 8082", cfg.MetricsPort)
 	}
