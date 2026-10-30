@@ -40,7 +40,7 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/common/build_oci.py`):
+When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/pr_review/review_threads.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
@@ -236,6 +236,27 @@ EOF
 
 > [!WARNING]
 > **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/pr_review/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
+
+### Resolve Review Threads
+For `Adopt` items, pass `--resolve` so the tool resolves the comment's review thread right after posting the reply (via `github_utils.resolve_review_thread`). Leave `Push Back` / `Defer` threads unresolved so the reviewer can adjudicate, unless the user instructs otherwise:
+```bash
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt --resolve
+```
+
+If `--resolve` fails after the reply was posted, the tool exits with a handled error carrying the `reply_id`; do NOT re-post the reply, retry resolution only.
+
+To audit thread state or batch-resolve threads you have already replied to, use `tools/pr_review/review_threads.py` (it paginates and identifies your replies via the authenticated `gh` / `GITHUB_TOKEN` user):
+```bash
+# List threads: thread_id, path:line, is_resolved, replied_by_me, first-comment snippet
+./tools/pr_review/review_threads.py list <owner> <repo> <pr_number> --unresolved-only
+
+# Preview, then resolve only unresolved threads that have a reply from you
+./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pr_number> --dry-run
+./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pr_number>
+```
+
+> [!IMPORTANT]
+> Do NOT hand-write `gh api graphql` `resolveReviewThread` loops. Always run `resolve-replied --dry-run` first and confirm the candidate list matches the threads you intend to resolve (e.g. it excludes `Push Back` replies you want left open).
 
 ### Usage Telemetry Tracking
 When `tools/pr_review/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:

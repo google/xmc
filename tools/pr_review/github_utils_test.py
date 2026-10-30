@@ -16,15 +16,34 @@
 
 import subprocess
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from tools.pr_review.github_utils import (
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    get_authenticated_login,
+    list_review_threads,
     parse_comment_url,
     resolve_review_thread,
 )
+
+
+def _threads_page(nodes, has_next=False, end_cursor=None):
+    """Builds a GraphQL reviewThreads response page."""
+    return {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "reviewThreads": {
+                        "pageInfo": {"hasNextPage": has_next, "endCursor": end_cursor},
+                        "nodes": nodes,
+                    }
+                }
+            }
+        }
+    }
 
 
 class TestGithubUtils(unittest.TestCase):
@@ -300,6 +319,116 @@ class TestGithubUtils(unittest.TestCase):
         with self.assertRaises(GithubAPIError) as ctx:
             resolve_review_thread("google", "xmc", 490, "PRRT_node_999")
         self.assertIn("GraphQL mutation failed", str(ctx.exception))
+
+    @patch("tools.pr_review.github_utils.call_github_api", return_value={"login": "me"})
+    def test_get_authenticated_login_success(self, mock_api):
+        """Test get_authenticated_login returns the /user login."""
+        self.assertEqual(get_authenticated_login(user_agent="UA"), "me")
+        mock_api.assert_called_once_with("/user", user_agent="UA")
+
+    @patch(
+        "tools.pr_review.github_utils.call_github_api",
+        side_effect=GithubAuthError("no auth"),
+    )
+    def test_get_authenticated_login_auth_error_propagates(self, _):
+        """Test get_authenticated_login propagates GithubAuthError."""
+        with self.assertRaises(GithubAuthError):
+            get_authenticated_login(user_agent="UA")
+
+    @patch(
+        "tools.pr_review.github_utils.call_github_api",
+        side_effect=GithubAPIError("api down"),
+    )
+    def test_get_authenticated_login_api_error_propagates(self, _):
+        """Test get_authenticated_login propagates GithubAPIError."""
+        with self.assertRaises(GithubAPIError):
+            get_authenticated_login(user_agent="UA")
+
+    def test_get_authenticated_login_missing_or_invalid_login_raises(self):
+        """Test get_authenticated_login raises GithubAPIError without a string login."""
+        responses: list[Any] = [{}, {"login": ""}, {"login": 123}, None, []]
+        for response in responses:
+            with (
+                self.subTest(response=response),
+                patch("tools.pr_review.github_utils.call_github_api", return_value=response),
+                self.assertRaises(GithubAPIError) as ctx,
+            ):
+                get_authenticated_login(user_agent="UA")
+            self.assertIn("no login", str(ctx.exception))
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_follows_pagination(self, mock_api):
+        """Test list_review_threads concatenates every page using endCursor."""
+        mock_api.side_effect = [
+            _threads_page([{"id": "PRRT_1"}], has_next=True, end_cursor="CUR_1"),
+            _threads_page([{"id": "PRRT_2"}]),
+        ]
+        threads = list_review_threads("google", "xmc", 7)
+        self.assertEqual([t["id"] for t in threads], ["PRRT_1", "PRRT_2"])
+        cursors = [c.kwargs["payload"]["variables"]["cursor"] for c in mock_api.call_args_list]
+        self.assertEqual(cursors, [None, "CUR_1"])
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_drops_null_thread_nodes(self, mock_api):
+        """Test list_review_threads filters out null thread nodes."""
+        mock_api.return_value = _threads_page([None, {"id": "PRRT_1"}, None])
+        self.assertEqual(list_review_threads("google", "xmc", 7), [{"id": "PRRT_1"}])
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_resolve_review_thread_skips_null_comment_nodes(self, mock_api):
+        """Test comment ID lookup tolerates null comment nodes inside a thread."""
+        mock_api.side_effect = [
+            _threads_page([{"id": "PRRT_2", "comments": {"nodes": [None, {"databaseId": 2}]}}]),
+            {"data": {"resolveReviewThread": {"thread": {"id": "PRRT_2", "isResolved": True}}}},
+        ]
+        res = resolve_review_thread("google", "xmc", 7, 2)
+        self.assertEqual(res["thread_id"], "PRRT_2")
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_stops_when_end_cursor_missing(self, mock_api):
+        """Test pagination stops instead of re-fetching page 1 when endCursor is missing."""
+        mock_api.return_value = _threads_page([{"id": "PRRT_1"}], has_next=True, end_cursor=None)
+        threads = list_review_threads("google", "xmc", 7)
+        self.assertEqual([t["id"] for t in threads], ["PRRT_1"])
+        self.assertEqual(mock_api.call_count, 1)
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_resolve_review_thread_skips_threads_with_null_comments(self, mock_api):
+        """Test comment ID lookup tolerates GraphQL `comments: null` thread nodes."""
+        mock_api.side_effect = [
+            _threads_page(
+                [
+                    {"id": "PRRT_null", "comments": None},
+                    {"id": "PRRT_2", "comments": {"nodes": [{"databaseId": 2}]}},
+                ]
+            ),
+            {"data": {"resolveReviewThread": {"thread": {"id": "PRRT_2", "isResolved": True}}}},
+        ]
+        res = resolve_review_thread("google", "xmc", 7, 2)
+        self.assertEqual(res["thread_id"], "PRRT_2")
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_list_review_threads_query_error_raises(self, mock_api):
+        """Test list_review_threads raises on GraphQL errors."""
+        mock_api.return_value = {"errors": [{"message": "boom"}]}
+        with self.assertRaises(GithubAPIError) as ctx:
+            list_review_threads("google", "xmc", 7)
+        self.assertIn("GraphQL query failed", str(ctx.exception))
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_resolve_review_thread_comment_on_second_page(self, mock_api):
+        """Test comment ID lookup finds threads beyond the first page."""
+        mock_api.side_effect = [
+            _threads_page(
+                [{"id": "PRRT_1", "comments": {"nodes": [{"databaseId": 1}]}}],
+                has_next=True,
+                end_cursor="CUR_1",
+            ),
+            _threads_page([{"id": "PRRT_2", "comments": {"nodes": [{"databaseId": 2}]}}]),
+            {"data": {"resolveReviewThread": {"thread": {"id": "PRRT_2", "isResolved": True}}}},
+        ]
+        res = resolve_review_thread("google", "xmc", 7, 2)
+        self.assertEqual(res["thread_id"], "PRRT_2")
 
 
 if __name__ == "__main__":

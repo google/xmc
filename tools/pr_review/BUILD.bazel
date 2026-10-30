@@ -26,6 +26,7 @@ exports_files([
     "review_pr_generate_audit.py",
     "review_pr_post_inline_comment.py",
     "review_pr_verify_posted.py",
+    "review_threads.py",
     "update_pr_description.py",
     "verify_pr_comment_resolution.py",
     "wait_for_ci.py",
@@ -106,6 +107,38 @@ py_test(
     deps = [
         ":github_utils",
         ":reply_pr_comment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "review_threads_lib",
+    srcs = ["review_threads.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "review_threads",
+    srcs = ["review_threads.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_threads_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_threads_test",
+    srcs = ["review_threads_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_threads_lib",
         "//tools/common:tool_utils",
     ],
 )
