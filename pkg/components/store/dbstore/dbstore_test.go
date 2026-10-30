@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,28 +31,15 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/storage/data"
-	spannerstorage "xmanager_cloud/internal/storage/spanner"
-	spannerdata "xmanager_cloud/internal/storage/spanner/data"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
 )
 
-func setupTestStore(ctx context.Context, t *testing.T) (*dbstore.Store, *spanner.Client) {
+// setupTestStore returns a Store on a fresh Spanner emulator database and the hooks that reach its
+// rows.
+func setupTestStore(ctx context.Context, t *testing.T) (*dbstore.Store, backendRows) {
 	t.Helper()
-	_, essClient := emulator.Setup(ctx, t)
-	st, err := spannerstorage.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("failed to create storage: %v", err)
-	}
-	s, err := dbstore.New(st)
-	if err != nil {
-		t.Fatalf("dbstore.New() failed: %v", err)
-	}
-	dbstore.RegisterTestClient(s, essClient)
-	t.Cleanup(func() { dbstore.UnregisterTestClient(s) })
-	return s, essClient
+	return spannerBackend().newStore(ctx, t)
 }
 
 func TestSpannerStore_SetComponentIntent_Success(t *testing.T) {
@@ -335,7 +321,7 @@ func TestSpannerStore_ListComponents(t *testing.T) {
 
 func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -375,7 +361,7 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 	if updated.Status.GetCoordinates().GetServiceName() != "obs-service" {
 		t.Errorf("expected coordinate serviceName 'obs-service', got %q", updated.Status.GetCoordinates().GetServiceName())
 	}
-	_, storedUpdateTime, _ := readComponentRowTimestamps(ctx, t, essClient, updated.ComponentID)
+	_, storedUpdateTime, _ := readComponentRowTimestamps(ctx, t, db, updated.ComponentID)
 	if !updated.UpdateTime.Equal(storedUpdateTime) {
 		t.Errorf("UpdateObservedGeneration UpdateTime = %v, want commit timestamp %v", updated.UpdateTime, storedUpdateTime)
 	}
@@ -396,7 +382,7 @@ func TestSpannerStore_UpdateObservedGeneration(t *testing.T) {
 
 func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 	declareOwnerCluster(ctx, t, s)
 
 	const name = "commit-ts-comp"
@@ -406,7 +392,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetSourcedComponentIntent(create) failed: %v", err)
 	}
-	rawCreate, rawUpdate, rawLastSeen := readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	rawCreate, rawUpdate, rawLastSeen := readComponentRowTimestamps(ctx, t, db, created.ComponentID)
 	if !created.CreateTime.Equal(rawCreate) || !created.UpdateTime.Equal(rawUpdate) || !created.SourceLastSeenTime.Equal(rawLastSeen) {
 		t.Errorf("create timestamps = (%v, %v, %v), want (%v, %v, %v)",
 			created.CreateTime, created.UpdateTime, created.SourceLastSeenTime, rawCreate, rawUpdate, rawLastSeen)
@@ -420,7 +406,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetSourcedComponentIntent(spec change) failed: %v", err)
 	}
-	rawCreate, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	rawCreate, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, db, created.ComponentID)
 	if !specChanged.CreateTime.Equal(created.CreateTime) || !specChanged.CreateTime.Equal(rawCreate) {
 		t.Errorf("spec change CreateTime = %v, want preserved %v", specChanged.CreateTime, created.CreateTime)
 	}
@@ -440,7 +426,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetSourcedComponentIntent(owner-only) failed: %v", err)
 	}
-	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, db, created.ComponentID)
 	if !ownerOnly.UpdateTime.Equal(specChanged.UpdateTime) || !ownerOnly.UpdateTime.Equal(rawUpdate) {
 		t.Errorf("owner-only UpdateTime = %v, want unchanged %v", ownerOnly.UpdateTime, specChanged.UpdateTime)
 	}
@@ -456,7 +442,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration(changed) failed: %v", err)
 	}
-	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, db, created.ComponentID)
 	if !observed.UpdateTime.Equal(rawUpdate) || !observed.SourceLastSeenTime.Equal(rawLastSeen) {
 		t.Errorf("observed timestamps = (%v, %v), want (%v, %v)", observed.UpdateTime, observed.SourceLastSeenTime, rawUpdate, rawLastSeen)
 	}
@@ -468,7 +454,7 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateObservedGeneration(unchanged heartbeat) failed: %v", err)
 	}
-	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, essClient, created.ComponentID)
+	_, rawUpdate, rawLastSeen = readComponentRowTimestamps(ctx, t, db, created.ComponentID)
 	if !heartbeat.UpdateTime.Equal(observed.UpdateTime) || !heartbeat.UpdateTime.Equal(rawUpdate) {
 		t.Errorf("heartbeat UpdateTime = %v, want unchanged %v", heartbeat.UpdateTime, observed.UpdateTime)
 	}
@@ -480,20 +466,13 @@ func TestSpannerStore_CommitTimestamps(t *testing.T) {
 	}
 }
 
-func readComponentRowTimestamps(ctx context.Context, t *testing.T, client *spanner.Client, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
+func readComponentRowTimestamps(ctx context.Context, t *testing.T, db backendRows, componentID int64) (createTime, updateTime, lastSeenTime time.Time) {
 	t.Helper()
-	row, err := client.Single().ReadRow(ctx, "Components", spanner.Key{componentID}, []string{"CreateTime", "UpdateTime", "SourceLastSeenTime"})
+	ts, err := db.ComponentRowTimestamps(ctx, componentID)
 	if err != nil {
-		t.Fatalf("ReadRow(Components, %d) failed: %v", componentID, err)
+		t.Fatalf("ComponentRowTimestamps(%d) failed: %v", componentID, err)
 	}
-	var nullLastSeen spanner.NullTime
-	if err := row.Columns(&createTime, &updateTime, &nullLastSeen); err != nil {
-		t.Fatalf("row.Columns(Components, %d) failed: %v", componentID, err)
-	}
-	if nullLastSeen.Valid {
-		lastSeenTime = nullLastSeen.Time
-	}
-	return createTime, updateTime, lastSeenTime
+	return ts.Create, ts.Update, ts.LastSeen
 }
 
 func TestSpannerStore_PrepareDeactivation_And_CompleteDeactivation(t *testing.T) {
@@ -703,7 +682,7 @@ func TestSpannerStore_ExecuteDeletion(t *testing.T) {
 
 func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -753,36 +732,8 @@ func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 		t.Errorf("expected tag 'v2', got %q", activeRec.Labels["tag"])
 	}
 
-	// Step 4: Verify directly in Spanner that both records exist in Components table
-	stmt := spanner.Statement{
-		SQL: `SELECT ComponentId, State, ActiveName FROM Components WHERE Name = @name ORDER BY ComponentId ASC`,
-		Params: map[string]any{
-			"name": "recycled-comp",
-		},
-	}
-	iter := essClient.Single().Query(ctx, stmt)
-	defer iter.Stop()
-
-	type rowResult struct {
-		id         int64
-		state      int64
-		activeName spanner.NullString
-	}
-	var rows []rowResult
-	err = iter.Do(func(row *spanner.Row) error {
-		var r rowResult
-		if err := row.ColumnByName("ComponentId", &r.id); err != nil {
-			return err
-		}
-		if err := row.ColumnByName("State", &r.state); err != nil {
-			return err
-		}
-		if err := row.ColumnByName("ActiveName", &r.activeName); err != nil {
-			return err
-		}
-		rows = append(rows, r)
-		return nil
-	})
+	// Step 4: Verify directly in the database that both records exist in Components table
+	rows, err := db.ComponentRows(ctx, "recycled-comp")
 	if err != nil {
 		t.Fatalf("failed to query raw Components table: %v", err)
 	}
@@ -791,27 +742,27 @@ func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 		t.Fatalf("expected 2 historical/active rows in Components table, got %d", len(rows))
 	}
 
-	var deletedRow, activeRow *rowResult
+	var deletedRow, activeRow *componentRow
 	for i := range rows {
-		if rows[i].id == origID {
+		if rows[i].ID == origID {
 			deletedRow = &rows[i]
 		}
-		if rows[i].id == newID {
+		if rows[i].ID == newID {
 			activeRow = &rows[i]
 		}
 	}
 
-	if deletedRow == nil || deletedRow.state != 5 || deletedRow.activeName.Valid {
+	if deletedRow == nil || deletedRow.State != 5 || deletedRow.ActiveName != "" {
 		t.Errorf("expected deleted row: id=%d, state=5, activeName=NULL; got: %v", origID, deletedRow)
 	}
-	if activeRow == nil || activeRow.state == 5 || !activeRow.activeName.Valid || activeRow.activeName.StringVal != "recycled-comp" {
+	if activeRow == nil || activeRow.State == 5 || activeRow.ActiveName != "recycled-comp" {
 		t.Errorf("expected active row: id=%d, activeName='recycled-comp'; got: %v", newID, activeRow)
 	}
 }
 
 func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -894,39 +845,7 @@ func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 		},
 	}
 	histAccessBytes, _ := proto.Marshal(histAccessProto)
-
-	// Create dummy experiment in Experiments table
-	testExp := &essmsgpb.Experiment{
-		Name:      "experiments/12345",
-		Title:     "Test Experiment",
-		Creator:   "test-user",
-		Priority:  100,
-		Urls:      []*essmsgpb.Url{},
-		Tags:      []string{},
-		Notes:     "test-notes",
-		Resources: []*essmsgpb.ResourceSet{},
-		Status: &essmsgpb.ExperimentStatus{
-			ActiveState: essmsgpb.ExperimentStatus_ACTIVE,
-			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
-		},
-		CreateTime: timestamppb.Now(),
-		UpdateTime: timestamppb.Now(),
-	}
-	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
-	if err != nil {
-		t.Fatalf("failed to create experiment mutation: %v", err)
-	}
-
-	bitReversedXid := data.ReverseBits(12345)
-
-	_, err = essClient.Apply(ctx, []*spanner.Mutation{
-		expMut,
-		spanner.Insert("ExperimentComponentSnapshots", []string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
-			[]any{bitReversedXid, rec.ComponentID, int64(1), histConfigBytes, histAccessBytes}),
-	})
-	if err != nil {
-		t.Fatalf("failed to insert ExperimentComponentSnapshots: %v", err)
-	}
+	seedExperimentWithSnapshot(ctx, t, db, 12345, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Now resolve generation 1
 	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "snap-comp", 1)
@@ -946,7 +865,7 @@ func TestSpannerStore_ResolveComponentSnapshot(t *testing.T) {
 
 func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -978,7 +897,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 	}
 	histConfigBytes, _ := proto.Marshal(histCompProto)
 	histAccessBytes, _ := proto.Marshal(access)
-	seedExperimentWithSnapshot(ctx, t, essClient, 20001, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
+	seedExperimentWithSnapshot(ctx, t, db, 20001, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Soft-delete the component via ExecuteDeletion
 	if err := s.ExecuteDeletion(ctx, "soft-del-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
@@ -1018,7 +937,7 @@ func TestSpannerStore_ResolveComponentSnapshot_SoftDeleted(t *testing.T) {
 
 func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	specV1 := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1064,7 +983,7 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 	}
 	configBytes3, _ := proto.Marshal(compProto3)
 	accessBytes3, _ := proto.Marshal(accessV3)
-	seedExperimentWithSnapshot(ctx, t, essClient, 20002, rec1.ComponentID, 3, configBytes3, accessBytes3)
+	seedExperimentWithSnapshot(ctx, t, db, 20002, rec1.ComponentID, 3, configBytes3, accessBytes3)
 
 	// Soft-delete reincarnation 1 via ExecuteDeletion
 	if err := s.ExecuteDeletion(ctx, "reincarnated-comp", componentspb.DeletionPolicy_DELETION_POLICY_DELETE, false); err != nil {
@@ -1106,7 +1025,7 @@ func TestSpannerStore_ResolveComponentSnapshot_RecreatedLowerGeneration(t *testi
 
 func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIsolation(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	// Active component has state ENABLED, observed generation 2, active labels
 	activeSpec := &componentspb.ComponentSpec{
@@ -1161,7 +1080,7 @@ func TestSpannerStore_ResolveComponentSnapshot_HistoricalDependenciesAndStateIso
 	}
 	histAccessBytes, _ := proto.Marshal(histAccessProto)
 
-	seedExperimentWithSnapshot(ctx, t, essClient, 20003, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
+	seedExperimentWithSnapshot(ctx, t, db, 20003, rec.ComponentID, 1, histConfigBytes, histAccessBytes)
 
 	// Resolve gen 1 (via resolveHistoricalSnapshot)
 	histRec, histCoords, err := s.ResolveComponentSnapshot(ctx, "isolated-comp", 1)
@@ -1312,7 +1231,7 @@ func TestSpannerStore_ConcurrentOperations(t *testing.T) {
 
 // seedExperimentWithSnapshot creates an ACTIVE experiment for xid and binds componentID to it via
 // an ExperimentComponentSnapshots row locked at lockedGen.
-func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, essClient *spanner.Client, xid, componentID, lockedGen int64, configProto, accessPayload []byte) {
+func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, db backendRows, xid, componentID, lockedGen int64, configProto, accessPayload []byte) {
 	t.Helper()
 	testExp := &essmsgpb.Experiment{
 		Name:      fmt.Sprintf("experiments/%d", xid),
@@ -1330,22 +1249,15 @@ func seedExperimentWithSnapshot(ctx context.Context, t *testing.T, essClient *sp
 		CreateTime: timestamppb.Now(),
 		UpdateTime: timestamppb.Now(),
 	}
-	expMut, err := spannerdata.ExperimentProtoToInsertMutation(testExp)
-	if err != nil {
-		t.Fatalf("failed to create experiment mutation for xid %d: %v", xid, err)
-	}
-	snapMut := spanner.Insert("ExperimentComponentSnapshots",
-		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
-		[]any{data.ReverseBits(xid), componentID, lockedGen, configProto, accessPayload})
-
-	if _, err := essClient.Apply(ctx, []*spanner.Mutation{expMut, snapMut}); err != nil {
+	snap := snapshotRow{Xid: xid, ComponentID: componentID, LockedGeneration: lockedGen, ConfigProto: configProto, AccessPayload: accessPayload}
+	if err := db.InsertExperimentWithSnapshot(ctx, testExp, snap); err != nil {
 		t.Fatalf("failed to seed experiment %d with snapshot: %v", xid, err)
 	}
 }
 
 func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 	ctx := context.Background()
-	s, essClient := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 
 	spec := &componentspb.ComponentSpec{
 		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
@@ -1366,10 +1278,10 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 	compProto := &componentspb.Component{Name: "components/fk-comp", Spec: spec}
 	configBytes, _ := proto.Marshal(compProto)
 	accessBytes, _ := proto.Marshal(access)
-	seedExperimentWithSnapshot(ctx, t, essClient, 20004, rec.ComponentID, 1, configBytes, accessBytes)
+	seedExperimentWithSnapshot(ctx, t, db, 20004, rec.ComponentID, 1, configBytes, accessBytes)
 
 	// A hard row delete must be rejected: FK_Snapshots_Component still references this component.
-	_, err = essClient.Apply(ctx, []*spanner.Mutation{spanner.Delete("Components", spanner.Key{rec.ComponentID})})
+	err = db.HardDeleteComponent(ctx, rec.ComponentID)
 	if err == nil {
 		t.Fatalf("hard DELETE on Components succeeded, want rejection by FK_Snapshots_Component")
 	}
@@ -1383,31 +1295,19 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 		t.Fatalf("ExecuteDeletion failed: %v", err)
 	}
 
-	var (
-		state      int64
-		activeName spanner.NullString
-	)
-	row, err := essClient.Single().ReadRow(ctx, "Components", spanner.Key{rec.ComponentID}, []string{"State", "ActiveName"})
-	if err != nil {
-		t.Fatalf("soft-deleted Components row is unreadable: %v", err)
+	rows, err := db.ComponentRows(ctx, "fk-comp")
+	if err != nil || len(rows) != 1 || rows[0].ID != rec.ComponentID {
+		t.Fatalf("soft-deleted Components row is unreadable: rows = %+v, error = %v", rows, err)
 	}
-	if err := row.Columns(&state, &activeName); err != nil {
-		t.Fatalf("failed to read soft-deleted Components row: %v", err)
+	if want := int64(componentspb.ComponentState_COMPONENT_STATE_DELETED); rows[0].State != want {
+		t.Errorf("State = %d, want %d (DELETED)", rows[0].State, want)
 	}
-	if want := int64(componentspb.ComponentState_COMPONENT_STATE_DELETED); state != want {
-		t.Errorf("State = %d, want %d (DELETED)", state, want)
-	}
-	if activeName.Valid {
-		t.Errorf("ActiveName = %q, want NULL so the name can be reused", activeName.StringVal)
+	if rows[0].ActiveName != "" {
+		t.Errorf("ActiveName = %q, want NULL so the name can be reused", rows[0].ActiveName)
 	}
 
-	var snapCount int64
-	countIter := essClient.Single().Query(ctx, spanner.Statement{
-		SQL:    "SELECT COUNT(1) AS Total FROM ExperimentComponentSnapshots WHERE ComponentId = @id",
-		Params: map[string]any{"id": rec.ComponentID},
-	})
-	defer countIter.Stop()
-	if err := countIter.Do(func(r *spanner.Row) error { return r.ColumnByName("Total", &snapCount) }); err != nil {
+	snapCount, err := db.CountSnapshots(ctx, rec.ComponentID)
+	if err != nil {
 		t.Fatalf("failed to count snapshots: %v", err)
 	}
 	if snapCount != 1 {

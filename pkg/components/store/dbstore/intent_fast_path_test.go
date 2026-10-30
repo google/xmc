@@ -33,7 +33,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
-	spannerstorage "xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/dependency"
@@ -129,12 +128,12 @@ func TestSpannerStore_SetComponentIntent_ConcurrentChangeBeforeFallback(t *testi
 		},
 	}
 	ctx := context.Background()
-	s, client := setupTestStore(ctx, t)
-	otherSt, err := spannerstorage.NewStorage(client)
+	st, _ := spannerBackend().open(ctx, t)
+	s, err := dbstore.New(st)
 	if err != nil {
-		t.Fatalf("failed to create storage: %v", err)
+		t.Fatalf("dbstore.New() failed: %v", err)
 	}
-	other, err := dbstore.New(otherSt)
+	other, err := dbstore.New(st)
 	if err != nil {
 		t.Fatalf("dbstore.New() failed: %v", err)
 	}

@@ -21,26 +21,17 @@ package dbstore
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
-	"cloud.google.com/go/spanner"
-
-	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/memory"
 )
 
-var testClients sync.Map
-
-// RegisterTestClient associates client with s for raw Spanner test inspection helpers.
-func RegisterTestClient(s *Store, client *spanner.Client) {
-	testClients.Store(s, client)
-}
-
-// UnregisterTestClient removes s from the test client registry.
-func UnregisterTestClient(s *Store) {
-	testClients.Delete(s)
+// componentRowInspector reads and writes component rows directly, bypassing the Store API. The
+// database-backed stores of the dbstore_test backends implement it.
+type componentRowInspector interface {
+	OwnerByID(ctx context.Context, componentID int64) (*store.SourceOwner, error)
+	SetSourceLastSeenTime(ctx context.Context, canonicalName string, seenAt time.Time) error
 }
 
 // SetBeforeIntentWriteForTest installs hook to run each time SetComponentIntent misses the
@@ -55,26 +46,8 @@ func OwnerByIDForTest(ctx context.Context, s store.Store, componentID int64) (*s
 	switch st := s.(type) {
 	case *memory.MemoryStore:
 		return st.OwnerByIDForTest(componentID)
-	case *Store:
-		val, ok := testClients.Load(st)
-		if !ok {
-			return nil, fmt.Errorf("no test Spanner client registered for %p", st)
-		}
-		client := val.(*spanner.Client)
-		stmt := spanner.Statement{SQL: `SELECT ` + component.ComponentColumnsSQL + ` FROM Components WHERE ComponentId = @id`, Params: map[string]any{"id": componentID}}
-		var owner *store.SourceOwner
-		err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-			rec, err := component.RowToComponentRecord(row)
-			if err != nil {
-				return err
-			}
-			owner = rec.Owner
-			return nil
-		})
-		if err == nil && owner == nil {
-			err = fmt.Errorf("component %d has no recorded owner", componentID)
-		}
-		return owner, err
+	case componentRowInspector:
+		return st.OwnerByID(ctx, componentID)
 	default:
 		return nil, fmt.Errorf("unsupported store %T", s)
 	}
@@ -86,17 +59,8 @@ func SetSourceLastSeenTimeForTest(ctx context.Context, s store.Store, canonicalN
 	case *memory.MemoryStore:
 		st.SetSourceLastSeenTimeForTest(canonicalName, seenAt)
 		return nil
-	case *Store:
-		val, ok := testClients.Load(st)
-		if !ok {
-			return fmt.Errorf("no test Spanner client registered for %p", st)
-		}
-		client := val.(*spanner.Client)
-		_, err := client.ReadWriteTransaction(ctx, func(ctx context.Context, txn *spanner.ReadWriteTransaction) error {
-			_, err := txn.Update(ctx, spanner.Statement{SQL: `UPDATE Components SET SourceLastSeenTime = @seenAt WHERE ActiveName = @name`, Params: map[string]any{"seenAt": seenAt, "name": canonicalName}})
-			return err
-		})
-		return err
+	case componentRowInspector:
+		return st.SetSourceLastSeenTime(ctx, canonicalName, seenAt)
 	default:
 		return nil
 	}

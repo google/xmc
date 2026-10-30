@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"testing"
 
-	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -144,7 +143,7 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 // SourceLastSeenTime, so this is Spanner-only.
 func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing.T) {
 	ctx := context.Background()
-	s, client := setupTestStore(ctx, t)
+	s, db := setupTestStore(ctx, t)
 	seedOwnedComponent(ctx, t, s, "fence-grace", false)
 	if _, err := s.DeclareClusterEpoch(ctx, store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}); err != nil {
 		t.Fatalf("DeclareClusterEpoch(prod) error = %v", err)
@@ -153,18 +152,15 @@ func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing
 		t.Fatalf("DeclareClusterEpoch(dr) error = %v", err)
 	}
 
-	stmt := spanner.Statement{
-		SQL:    `SELECT c.SourceLastSeenTime, f.DeclaredTime FROM Components c, ComponentOwnershipFence f WHERE c.ActiveName = @name AND f.FenceId = 1`,
-		Params: map[string]any{"name": "fence-grace"},
-	}
-	var lastSeen, declared spanner.NullTime
-	err := client.Single().Query(ctx, stmt).Do(func(row *spanner.Row) error {
-		return row.Columns(&lastSeen, &declared)
-	})
+	lastSeen, _, err := db.SourceTimes(ctx, "fence-grace")
 	if err != nil {
 		t.Fatalf("query SourceLastSeenTime error = %v", err)
 	}
-	if !lastSeen.Valid || !lastSeen.Time.Equal(declared.Time) {
+	declared, err := db.FenceDeclaredTime(ctx)
+	if err != nil {
+		t.Fatalf("query DeclaredTime error = %v", err)
+	}
+	if lastSeen.IsZero() || !lastSeen.Equal(declared) {
 		t.Errorf("SourceLastSeenTime = %v, want the takeover commit time %v", lastSeen, declared)
 	}
 }
@@ -172,23 +168,22 @@ func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing
 // TestSpannerStore_OwnershipFenceSchema checks the ComponentOwnershipFence constraints: Epoch must
 // be at least 1, LastSeenTime is required, and FenceId has no singleton CHECK.
 func TestSpannerStore_OwnershipFenceSchema(t *testing.T) {
-	cols := []string{"FenceId", "ActiveClusterUid", "ActiveClusterName", "Epoch", "DeclaredTime", "LastSeenTime"}
 	tests := []struct {
 		name    string
-		vals    []any
+		row     fenceRow
 		wantErr bool
 	}{
-		{name: "epoch 0 violates the CHECK", vals: []any{int64(1), prodClusterUID, "prod", int64(0), spanner.CommitTimestamp, spanner.CommitTimestamp}, wantErr: true},
-		{name: "NULL LastSeenTime is rejected", vals: []any{int64(1), prodClusterUID, "prod", int64(1), spanner.CommitTimestamp, nil}, wantErr: true},
-		{name: "FenceId other than 1 is allowed", vals: []any{int64(2), prodClusterUID, "prod", int64(1), spanner.CommitTimestamp, spanner.CommitTimestamp}},
+		{name: "epoch 0 violates the CHECK", row: fenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 0}, wantErr: true},
+		{name: "NULL LastSeenTime is rejected", row: fenceRow{FenceID: 1, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1, NullLastSeenTime: true}, wantErr: true},
+		{name: "FenceId other than 1 is allowed", row: fenceRow{FenceID: 2, ClusterUID: prodClusterUID, ClusterName: "prod", Epoch: 1}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			_, client := setupTestStore(ctx, t)
-			_, err := client.Apply(ctx, []*spanner.Mutation{spanner.Insert("ComponentOwnershipFence", cols, tt.vals)})
+			_, db := setupTestStore(ctx, t)
+			err := db.InsertFence(ctx, tt.row)
 			if gotErr := err != nil; gotErr != tt.wantErr {
-				t.Errorf("Insert(%v) error = %v, wantErr %t", tt.vals, err, tt.wantErr)
+				t.Errorf("InsertFence(%+v) error = %v, wantErr %t", tt.row, err, tt.wantErr)
 			}
 		})
 	}
