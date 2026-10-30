@@ -752,10 +752,10 @@ func TestSpannerStore_SoftDeletion_And_ActiveNameRelease(t *testing.T) {
 		}
 	}
 
-	if deletedRow == nil || deletedRow.State != 5 || deletedRow.ActiveName != "" {
+	if deletedRow == nil || deletedRow.State != 5 || deletedRow.ActiveName != nil {
 		t.Errorf("expected deleted row: id=%d, state=5, activeName=NULL; got: %v", origID, deletedRow)
 	}
-	if activeRow == nil || activeRow.State == 5 || activeRow.ActiveName != "recycled-comp" {
+	if activeRow == nil || activeRow.State == 5 || activeRow.ActiveName == nil || *activeRow.ActiveName != "recycled-comp" {
 		t.Errorf("expected active row: id=%d, activeName='recycled-comp'; got: %v", newID, activeRow)
 	}
 }
@@ -1302,8 +1302,8 @@ func TestSpannerStore_SoftDeletion_PreservesSnapshotForeignKey(t *testing.T) {
 	if want := int64(componentspb.ComponentState_COMPONENT_STATE_DELETED); rows[0].State != want {
 		t.Errorf("State = %d, want %d (DELETED)", rows[0].State, want)
 	}
-	if rows[0].ActiveName != "" {
-		t.Errorf("ActiveName = %q, want NULL so the name can be reused", rows[0].ActiveName)
+	if rows[0].ActiveName != nil {
+		t.Errorf("ActiveName = %q, want NULL so the name can be reused", *rows[0].ActiveName)
 	}
 
 	snapCount, err := db.CountSnapshots(ctx, rec.ComponentID)

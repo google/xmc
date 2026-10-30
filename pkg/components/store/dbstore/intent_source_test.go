@@ -546,7 +546,7 @@ func TestSourcedObservationAndDeactivation_Parity(t *testing.T) {
 // TestPrepareDeactivation_CascadeKeepsDependentOwner checks the cascade exception on both backends:
 // a forced PrepareDeactivation from the target's owner moves a dependent owned by another CR to
 // DISABLING without checking the dependent's ownership, and keeps the dependent's recorded owner
-// (and, on Spanner, which alone records it, its SourceLastSeenTime).
+// and SourceLastSeenTime.
 func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 	const target, dependent = "cascade-target", "cascade-dependent"
 	cluster := store.ClusterIdentity{UID: prodClusterUID, Name: "prod", Epoch: 1}
@@ -557,7 +557,7 @@ func TestPrepareDeactivation_CascadeKeepsDependentOwner(t *testing.T) {
 		t.Run(backend.name, func(t *testing.T) {
 			ctx := context.Background()
 			s := backend.newStore(t)
-			// MemoryStore records no SourceLastSeenTime, so it has no rows to inspect.
+			// Only database backends expose backendRows; MemoryStore skips the raw-row check.
 			rows, _ := s.(backendRows)
 			if _, err := s.DeclareClusterEpoch(ctx, cluster); err != nil {
 				t.Fatalf("DeclareClusterEpoch() error = %v", err)
