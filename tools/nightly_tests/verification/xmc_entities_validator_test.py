@@ -755,14 +755,14 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     # =========================================================================
 
     def test_normalize_artifact_type(self) -> None:
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("ChartArtifact"), "chart")
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("UrlArtifact"), "url")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("ChartArtifact"), "chart")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("UrlArtifact"), "url")
         self.assertEqual(
-            xmc_entities_validator._normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
+            xmc_entities_validator.normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
         )
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("chart"), "chart")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("chart"), "chart")
         self.assertEqual(
-            xmc_entities_validator._normalize_artifact_type("ArtifactPayload.chart"), "chart"
+            xmc_entities_validator.normalize_artifact_type("ArtifactPayload.chart"), "chart"
         )
 
     def test_validate_artifacts_success_with_chart_and_url(self) -> None:
@@ -991,13 +991,13 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
         def make_mx_art(
             display_name: str = "exp_1",
-            xprof_url: str = "",
+            xprof_url: str | None = "",
             top_url: str = "",
         ) -> SimpleNamespace:
             mx_obj = SimpleNamespace(
                 display_name=display_name,
                 run_group="group_1",
-                xprof=SimpleNamespace(xprof_url=xprof_url),
+                xprof=SimpleNamespace(xprof_url=xprof_url) if xprof_url is not None else None,
             )
             return SimpleNamespace(
                 name="artifacts/77",
@@ -1009,8 +1009,8 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 ),
             )
 
-        # Lenient mode succeeds even when xprof_url is not populated.
-        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[make_mx_art()])
+        # Lenient mode succeeds even when xprof_url or payload.xprof is not populated.
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[make_mx_art(xprof_url=None)])
         res = xmc_entities_validator.validate_artifacts(
             stub=stub,
             xid="10",

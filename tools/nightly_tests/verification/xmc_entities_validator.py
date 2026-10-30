@@ -769,7 +769,7 @@ def stop_work_units(stub: Any, xid: str) -> None:
     print(f"  [✓] Stopped pending WorkUnits for experiments/{xid}")
 
 
-def _normalize_artifact_type(type_name: str) -> str:
+def normalize_artifact_type(type_name: str) -> str:
     """Normalizes artifact type string (e.g., 'ChartArtifact' -> 'chart')."""
     base = type_name.strip().split(".")[-1]
     snake = re.sub(r"(?<!^)(?=[A-Z])", "_", base).lower()
@@ -801,7 +801,7 @@ def _extract_artifact_payload_info(art: Any) -> tuple[str, Any]:
     )
     if not which:
         return "", None
-    return _normalize_artifact_type(which), getattr(payload, which, None)
+    return normalize_artifact_type(which), getattr(payload, which, None)
 
 
 def _extract_chart_artifact_details(art_name: str, chart: Any) -> tuple[list[str], str]:
@@ -822,8 +822,12 @@ def _extract_managed_xprof_details(
     title = str(getattr(payload, "display_name", "") or "").strip()
     if not title:
         raise AssertionError(f"ManagedXprofArtifact '{art_name}' has an empty display_name.")
-    xprof_url = str(getattr(getattr(payload, "xprof", None), "xprof_url", "") or "").strip()
-    top_url = str(getattr(getattr(art, "url", None), "url", "") or "").strip()
+    xprof_url = ""
+    if (xprof_obj := getattr(payload, "xprof", None)) is not None:
+        xprof_url = str(getattr(xprof_obj, "xprof_url", "") or "").strip()
+    top_url = ""
+    if (art_url_obj := getattr(art, "url", None)) is not None:
+        top_url = str(getattr(art_url_obj, "url", "") or "").strip()
     if xprof_url:
         if not xprof_url.startswith(("http://", "https://")):
             raise AssertionError(
@@ -915,7 +919,7 @@ def validate_artifacts(
 ) -> list[dict[str, Any]]:
     """Fetches and validates artifacts associated with an Experiment or WorkUnit."""
     parent = f"experiments/{xid}/workUnits/{wid}" if wid is not None else f"experiments/{xid}"
-    exp_types = {_normalize_artifact_type(t) for t in (expected_artifact_types or ())}
+    exp_types = {normalize_artifact_type(t) for t in (expected_artifact_types or ())}
     exp_metrics = set(expected_metric_names or ())
     start_time = time.monotonic()
 

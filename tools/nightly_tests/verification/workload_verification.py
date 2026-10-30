@@ -136,7 +136,7 @@ def cluster_has_managed_xprof_bucket(
 def resolve_require_managed_xprof_url(expected_artifact_types: Sequence[str]) -> bool:
     """Resolves whether ManagedXprof artifacts must expose a non-empty xprof_url."""
     normalized = {
-        xmc_entities_validator._normalize_artifact_type(t) for t in expected_artifact_types
+        xmc_entities_validator.normalize_artifact_type(t) for t in expected_artifact_types
     }
     if "managed_xprof" not in normalized:
         return False
