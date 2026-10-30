@@ -235,8 +235,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_CONFIGMAP, {"dashboardServiceDeployment.enabled": "true"}
         )
 
-        # Deprecated: retained for one-release rollout compatibility until db-config images roll out.
-        self.assertIn("dashboard_spanner_database_name:", manifest)
         self.assertIn("dashboard_xid_service_addr:", manifest)
         self.assertIn('enable_components: "false"', manifest)
         self.assertIn("components_namespace:", manifest)
