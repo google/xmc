@@ -55,6 +55,14 @@ vars:
   use_redis_queue: true
   deploy_redis: true
   redis_region:
+  database_backend: "spanner"
+  postgres_host: ""
+  postgres_port: 5432
+  postgres_user: ""
+  postgres_password: ""
+  postgres_ess_database: ""
+  postgres_xid_database: ""
+  postgres_ssl_mode: ""
   # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
   # Requires GKE cluster version 1.35.0-gke.3065000 or later.
   enable_managed_mldiagnostics: false
@@ -95,13 +103,12 @@ deployment_groups:
       gcp_service_list: '$(concat([
         "compute.googleapis.com",
         "container.googleapis.com",
-        "spanner.googleapis.com",
         "redis.googleapis.com",
         "iam.googleapis.com",
         "cloudresourcemanager.googleapis.com",
         "servicenetworking.googleapis.com",
         "certificatemanager.googleapis.com"
-      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
+      ], vars.database_backend == "spanner" ? ["spanner.googleapis.com"] : [], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
 
 - group: primary
   modules:
@@ -176,8 +183,10 @@ deployment_groups:
       - serviceusage.serviceUsageConsumer
 
   - id: db_spanner
-    source: modules/database/spanner
+    source: ./deploy/ctk_v2/modules/spanner
     settings:
+      enabled: $(vars.database_backend == "spanner")
+      project_id: $(vars.project_id)
       instance_name: xmc-$(vars.environment)
       edition: ENTERPRISE
       databases:
@@ -204,6 +213,7 @@ deployment_groups:
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      enabled: $(vars.database_backend == "spanner")
       project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.ess)
@@ -214,6 +224,7 @@ deployment_groups:
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      enabled: $(vars.database_backend == "spanner")
       project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.xid)
@@ -413,7 +424,7 @@ deployment_groups:
       environment: $(vars.environment)
       image_url: $(vars.log_monitor_image)
       service_account_email: $(log_monitor_service_account.service_account_email)
-      log_monitor_deployment_enabled: $(vars.log_monitor_deployment_enabled)
+      log_monitor_deployment_enabled: '$(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)'
 
   - id: xmc_app_helm
     source: community/modules/management/direct-helm-install
@@ -557,8 +568,29 @@ deployment_groups:
         value: $(vars.rod_deployment_enabled)
         type: auto
       - name: logMonitorDeployment.enabled
-        value: $(vars.log_monitor_deployment_enabled)
+        value: '$(vars.database_backend == "postgres" ? true : vars.log_monitor_deployment_enabled)'
         type: auto
+      - name: database.backend
+        value: $(vars.database_backend)
+      - name: database.experimentalPostgres
+        value: $(vars.database_backend == "postgres")
+        type: auto
+      - name: database.postgres.host
+        value: $(vars.postgres_host)
+      - name: database.postgres.port
+        value: $(vars.postgres_port)
+        type: auto
+      - name: database.postgres.user
+        value: $(vars.postgres_user)
+      - name: database.postgres.password
+        value: $(vars.postgres_password)
+        type: string
+      - name: database.postgres.essDatabase
+        value: $(vars.postgres_ess_database)
+      - name: database.postgres.xidDatabase
+        value: $(vars.postgres_xid_database)
+      - name: database.postgres.sslMode
+        value: $(vars.postgres_ssl_mode)
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)
         type: auto
