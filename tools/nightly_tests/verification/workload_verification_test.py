@@ -148,7 +148,103 @@ class WorkloadVerificationTest(unittest.TestCase):
                 expected_artifact_types=["chart"],
                 expected_metric_names=["loss"],
                 timeout_sec=60,
+                require_managed_xprof_url=False,
             )
+
+    def test_cluster_has_managed_xprof_bucket(self) -> None:
+        with mock.patch("shutil.which", return_value=None):
+            self.assertFalse(workload_verification.cluster_has_managed_xprof_bucket("xmc"))
+
+        with (
+            mock.patch("shutil.which", return_value="/usr/bin/kubectl"),
+            mock.patch(
+                "subprocess.run",
+                return_value=SimpleNamespace(returncode=0, stdout="gs://proj-mlruns\n", stderr=""),
+            ) as mock_run,
+        ):
+            self.assertTrue(workload_verification.cluster_has_managed_xprof_bucket("custom-ns"))
+            mock_run.assert_called_once_with(
+                [
+                    "kubectl",
+                    "get",
+                    "configmap",
+                    "managed-xprof-gcs-config",
+                    "-n",
+                    "custom-ns",
+                    "-o",
+                    "jsonpath={.data.gcs_path}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+
+        for rc, out in ((1, ""), (0, "   ")):
+            with (
+                mock.patch("shutil.which", return_value="/usr/bin/kubectl"),
+                mock.patch(
+                    "subprocess.run",
+                    return_value=SimpleNamespace(returncode=rc, stdout=out, stderr="not found"),
+                ),
+            ):
+                self.assertFalse(workload_verification.cluster_has_managed_xprof_bucket("xmc"))
+
+    def test_resolve_require_managed_xprof_url(self) -> None:
+        with (
+            mock.patch.object(verifier_cli, "get_flag", return_value="auto"),
+            mock.patch.object(
+                workload_verification, "cluster_has_managed_xprof_bucket", return_value=True
+            ) as mock_detect,
+        ):
+            self.assertFalse(workload_verification.resolve_require_managed_xprof_url(["chart"]))
+            mock_detect.assert_not_called()
+            self.assertTrue(
+                workload_verification.resolve_require_managed_xprof_url(["ManagedXprofArtifact"])
+            )
+            mock_detect.assert_called_once()
+
+        for mode, expected in (("true", True), ("false", False)):
+            with (
+                mock.patch.object(verifier_cli, "get_flag", return_value=mode),
+                mock.patch.object(
+                    workload_verification, "cluster_has_managed_xprof_bucket"
+                ) as mock_detect,
+            ):
+                self.assertEqual(
+                    workload_verification.resolve_require_managed_xprof_url(["managed_xprof"]),
+                    expected,
+                )
+                mock_detect.assert_not_called()
+
+    def test_verify_standard_workload_expected_title_pattern_flag_override(self) -> None:
+        mock_stub = mock.MagicMock()
+        mock_channel = mock.MagicMock()
+        mock_stub.GetExperiment.return_value = SimpleNamespace(
+            name="experiments/21", title="Custom Smoke Run"
+        )
+        mock_stub.ListWorkUnits.return_value = SimpleNamespace(
+            work_units=[_make_fake_wu("21", 1, ["w1"])]
+        )
+        flags_map = {"xid": "21", "expected_title_pattern": "Custom Smoke"}
+        with (
+            mock.patch.object(
+                verifier_cli, "get_flag", side_effect=lambda _, k, d=None: flags_map.get(k, d)
+            ),
+            mock.patch(
+                "tools.nightly_tests.verification.xmc_entities_validator.create_authenticated_stub",
+                return_value=(mock_stub, mock_channel),
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as mock_stdout,
+        ):
+            workload_verification.verify_standard_workload(
+                ["script.py"],
+                banner_title="Banner",
+                summary_title="Summary",
+                expected_title_pattern="Default Unmatched Title",
+                expected_worker_names=["w1"],
+            )
+            self.assertIn("Custom Smoke Run", mock_stdout.getvalue())
 
     def test_verify_standard_workload_stub_boundary_and_num_work_units_isolation(self) -> None:
         mock_stub = mock.MagicMock()

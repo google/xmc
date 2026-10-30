@@ -17,6 +17,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -101,6 +103,53 @@ def assert_work_unit_jobsets(
     return job_results
 
 
+def cluster_has_managed_xprof_bucket(
+    namespace: str | None = None,
+    timeout_sec: int = 10,
+) -> bool:
+    """Returns True when the target cluster renders ConfigMap managed-xprof-gcs-config."""
+    if not shutil.which("kubectl"):
+        return False
+    target_ns = namespace or os.environ.get("K8S_NAMESPACE", "xmc")
+    try:
+        res = subprocess.run(
+            [
+                "kubectl",
+                "get",
+                "configmap",
+                "managed-xprof-gcs-config",
+                "-n",
+                target_ns,
+                "-o",
+                "jsonpath={.data.gcs_path}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_sec,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return res.returncode == 0 and res.stdout.strip().startswith("gs://")
+
+
+def resolve_require_managed_xprof_url(expected_artifact_types: Sequence[str]) -> bool:
+    """Resolves whether ManagedXprof artifacts must expose a non-empty xprof_url."""
+    normalized = {
+        xmc_entities_validator._normalize_artifact_type(t) for t in expected_artifact_types
+    }
+    if "managed_xprof" not in normalized:
+        return False
+    mode = str(
+        verifier_cli.get_flag(verifier_cli.FLAGS, "require_managed_xprof_url", "auto") or "auto"
+    ).lower()
+    if mode == "true":
+        return True
+    if mode == "false":
+        return False
+    return cluster_has_managed_xprof_bucket()
+
+
 def assert_work_unit_artifacts(
     stub: Any,
     xid: str,
@@ -112,6 +161,7 @@ def assert_work_unit_artifacts(
 ) -> list[dict[str, Any]]:
     """Asserts WorkUnit artifact payloads and metric names."""
     print(f"\n[{step_label}] Validating WorkUnit Artifacts (WID: {wid})...")
+    require_managed_xprof_url = resolve_require_managed_xprof_url(expected_artifact_types)
     artifact_results = xmc_entities_validator.validate_artifacts(
         stub=stub,
         xid=xid,
@@ -119,6 +169,7 @@ def assert_work_unit_artifacts(
         expected_artifact_types=expected_artifact_types,
         expected_metric_names=expected_metric_names,
         timeout_sec=min(60, timeout_sec),
+        require_managed_xprof_url=require_managed_xprof_url,
     )
     for art in artifact_results:
         print(
@@ -226,16 +277,20 @@ def verify_standard_workload(
     verifier_cli.validate_argv(argv)
     xid = verifier_cli.parse_xid(verifier_cli.get_flag(verifier_cli.FLAGS, "xid"))
     queue = verifier_cli.get_flag(verifier_cli.FLAGS, "expected_queue", "cpu-queue")
+    title_pattern = (
+        verifier_cli.get_flag(verifier_cli.FLAGS, "expected_title_pattern", expected_title_pattern)
+        or expected_title_pattern
+    )
     workers = expected_worker_names or ([expected_jobs[0]["name"]] if expected_jobs else [])
     timeout = verifier_cli.get_flag(verifier_cli.FLAGS, "timeout_sec", 600)
-    _print_workload_banner(banner_title, xid, expected_title_pattern, queue, workers, timeout)
+    _print_workload_banner(banner_title, xid, title_pattern, queue, workers, timeout)
     ep = verifier_cli.get_flag(verifier_cli.FLAGS, "endpoint")
     with (
         ess_session.handle_verification_errors(),
         ess_session.ess_channel_context(ep) as (stub, _),
     ):
         try:
-            exp = assert_experiment(stub, xid, expected_title_pattern)
+            exp = assert_experiment(stub, xid, title_pattern)
             wus = assert_work_units(
                 stub,
                 xid,
