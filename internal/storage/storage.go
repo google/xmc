@@ -390,9 +390,8 @@ type ComponentRepository interface {
 }
 
 // ComponentTxRepository defines transactional component catalog operations. A read-only binding supports only
-// catalog and snapshot reads, returning codes.FailedPrecondition on writes; in a read-write transaction, reads hold
-// what they return (including an absent fence row, e.g. via a seeded singleton row locked with FOR UPDATE in
-// PostgreSQL) until commit, and writes stamp commit-time columns.
+// catalog and snapshot reads, returning codes.FailedPrecondition on writes; in a serializable read-write transaction,
+// reads and writes execute atomically and writes stamp commit-time columns.
 type ComponentTxRepository interface {
 	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
@@ -512,9 +511,9 @@ type Transaction struct {
 // The provided *Transaction is valid only for the duration of fn and must not be retained.
 type TransactionRunner interface {
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
-	// RunInTransactionWithCommitTime runs fn like RunInTransaction and returns the timestamp the
-	// backend wrote to commit-time columns.
-	RunInTransactionWithCommitTime(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
+	// RunInSerializableTransaction runs fn in a serializable read-write transaction and returns the
+	// timestamp the backend wrote to commit-time columns.
+	RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
 }
 
 // Storage defines the interface for all data persistence operations.

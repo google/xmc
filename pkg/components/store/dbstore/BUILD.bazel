@@ -53,6 +53,7 @@ go_test(
         "ownership_fence_test.go",
         "ownership_metrics_test.go",
         "rejection_error_info_test.go",
+        "serializable_test.go",
         "spanner_backend_test.go",
     ],
     embed = [":dbstore"],

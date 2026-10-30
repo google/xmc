@@ -50,13 +50,13 @@ Multi-step writes that touch multiple tables (for example, `restartWorkUnitExecu
 ```go
 type TransactionRunner interface {
     RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
-    RunInTransactionWithCommitTime(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
+    RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
 }
 ```
 
-`RunInTransactionWithCommitTime` follows the same callback and retry rules as `RunInTransaction` and also returns the backend's commit timestamp (the value written to commit-time columns such as `UpdateTime`), so callers can populate timestamps without reading rows back. The PostgreSQL backend returns `codes.Unimplemented` until the PostgreSQL serializable-transaction follow-up (#1416) lands. For reads that must come from one consistent snapshot without a write lock, `ComponentRepository.WithReadOnlySnapshot` passes `fn` a read-only `ComponentTxRepository`; writes through it fail with `codes.FailedPrecondition`.
+`RunInSerializableTransaction` runs `fn` in a serializable read-write transaction with the same callback and retry rules as `RunInTransaction`, and returns the backend's commit timestamp (the value written to commit-time columns such as `UpdateTime`) so callers can populate timestamps without reading rows back. For reads that must come from one consistent snapshot without a write lock, `ComponentRepository.WithReadOnlySnapshot` passes `fn` a read-only `ComponentTxRepository`; writes through it fail with `codes.FailedPrecondition`.
 
-Inside `RunInTransaction` (and `RunInTransactionWithCommitTime`), the callback receives a `*storage.Transaction` holding repositories bound to the active read-write transaction:
+Inside `RunInTransaction` (and `RunInSerializableTransaction`), the callback receives a `*storage.Transaction` holding repositories bound to the active read-write transaction:
 
 ```go
 type Transaction struct {
@@ -116,15 +116,19 @@ Methods that only buffer mutations into an active read-write transaction (such a
 
 ### Writing `RunInTransaction` Callbacks
 
-Cloud Spanner may abort and re-run the `RunInTransaction` or `RunInTransactionWithCommitTime` callback when a transaction encounters lock contention (the PostgreSQL backend likewise re-runs it on serialization failures and deadlocks):
+Cloud Spanner may abort and re-run the `RunInTransaction` or `RunInSerializableTransaction` callback when a transaction encounters lock contention (the PostgreSQL backend likewise re-runs it on serialization failures and deadlocks):
 
 1. **Reset state on each attempt**: Initialize or clear any slices, maps, or counters modified by `fn` at the start of the callback, not outside it.
-2. **Avoid external side effects**: Do not enqueue tasks or make external RPCs inside `fn`. Perform those after `RunInTransaction` / `RunInTransactionWithCommitTime` succeeds.
+2. **Avoid external side effects**: Do not enqueue tasks or make external RPCs inside `fn`. Perform those after `RunInTransaction` / `RunInSerializableTransaction` succeeds.
 3. **Read through `tx`**: Use `tx.WorkUnits` / `tx.Experiments` for reads inside the callback rather than the non-transactional `Storage`, so reads participate in the read-write transaction.
+
+### Isolation
+
+Spanner read-write transactions are always serializable. PostgreSQL runs `RunInTransaction` at `READ COMMITTED` by default, and repositories lock the rows they read and write back (see rule 5 of [`AGENTS.md`](AGENTS.md)). Callers whose invariants span many rows, such as the component store in [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/), call `RunInSerializableTransaction` (backed by `pgdb.RunInSerializableTx` at `SERIALIZABLE` isolation) instead; PostgreSQL then aborts conflicting transactions with `40001`, and the callback is retried.
 
 ## Testing
 
-- **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried. Set `MockStorage.CommitTime` to pin the timestamp returned by `RunInTransactionWithCommitTime`; when it is zero, the mock returns `time.Now()`.
+- **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried. Set `MockStorage.CommitTime` to pin the timestamp returned by `RunInSerializableTransaction`; when it is zero, the mock returns `time.Now()`.
 - **Spanner integration tests**: Tests under `internal/storage/spanner/...` run against the Spanner emulator to test SQL queries, mutations, and schema constraints.
 - **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/operation/`](postgres/operation/) and [`postgres/pausestate/`](postgres/pausestate/) hold the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
 

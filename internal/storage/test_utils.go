@@ -228,7 +228,7 @@ type MockStorage struct {
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
 	// Spanner re-running the closure after an abort. Values below 2 invoke fn once.
 	RunInTransactionAttempts int
-	// CommitTime is returned by RunInTransactionWithCommitTime when non-zero; otherwise time.Now() is returned.
+	// CommitTime is returned by RunInSerializableTransaction when non-zero; otherwise time.Now() is returned.
 	CommitTime time.Time
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
@@ -426,9 +426,9 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	return fn(ctx, tx)
 }
 
-// RunInTransactionWithCommitTime mocks running a function within a transaction and returns CommitTime
-// when set, or time.Now() otherwise.
-func (s *MockStorage) RunInTransactionWithCommitTime(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error) {
+// RunInSerializableTransaction mocks running a function within a serializable transaction and
+// returns CommitTime when set, or time.Now() otherwise.
+func (s *MockStorage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error) {
 	if err := s.RunInTransaction(ctx, fn); err != nil {
 		return time.Time{}, err
 	}

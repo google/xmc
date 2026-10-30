@@ -51,7 +51,7 @@ type Store struct {
 }
 
 // New creates a component store over st. Every operation goes through st's
-// ComponentRepository and TransactionRunner (including RunInTransactionWithCommitTime), so st must
+// ComponentRepository and TransactionRunner.RunInSerializableTransaction, so st must
 // implement them; today only the Spanner backend does, and other backends return codes.Unimplemented.
 func New(st storage.Storage) (*Store, error) {
 	if st == nil {
@@ -142,7 +142,7 @@ func (s *Store) writeIntent(ctx context.Context, canonicalName string, spec *com
 	var finalRec *store.ComponentRecord
 	var plan ownership.IntentPlan
 
-	commitTimestamp, err := s.storage.RunInTransactionWithCommitTime(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	commitTimestamp, err := s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		// Assign both results on every attempt because the transaction body may be retried.
 		var err error
 		finalRec, plan, err = s.applyIntentTx(ctx, tx.Components, canonicalName, spec, labels, deps, desiredGen, src)
@@ -381,7 +381,7 @@ func (s *Store) PrepareDeactivation(ctx context.Context, name string, requestCas
 	var result *store.PrepareDeactivationResult
 	var prevOwner *store.SourceOwner
 
-	err = s.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	_, err = s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		catalog, targetRec, err := s.lookupCatalogTargetTx(ctx, tx.Components, store.OperationPrepareDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
@@ -471,7 +471,7 @@ func (s *Store) CompleteDeactivation(ctx context.Context, name string, force boo
 	}
 
 	var prevOwner *store.SourceOwner
-	err = s.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	_, err = s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, tx.Components, store.OperationCompleteDeactivation, canonicalName, reqSrc)
 		if err != nil {
 			return err
@@ -527,7 +527,7 @@ func (s *Store) UpdateObservedGeneration(ctx context.Context, name string, obser
 	var unchanged bool
 	var prevOwner *store.SourceOwner
 
-	commitTimestamp, err := s.storage.RunInTransactionWithCommitTime(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	commitTimestamp, err := s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		unchanged = false
 		if err := s.checkFence(ctx, tx.Components, store.OperationUpdateObservedGeneration, reqSrc); err != nil {
 			return err
@@ -580,7 +580,7 @@ func (s *Store) ExecuteDeletion(ctx context.Context, name string, policy compone
 	}
 
 	var prevOwner *store.SourceOwner
-	err = s.storage.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	_, err = s.storage.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		catalog, rec, err := s.lookupCatalogTargetTx(ctx, tx.Components, store.OperationExecuteDeletion, canonicalName, reqSrc)
 		if err != nil {
 			return err
