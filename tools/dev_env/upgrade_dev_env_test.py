@@ -406,7 +406,7 @@ class TestStepSubprocesses(unittest.TestCase):
                 "REGION": "us-central1",
                 "PROJECT_ID": "proj-123",
                 "ENABLE_COMPONENTS": "false",
-                "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+                "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
             },
         )
 

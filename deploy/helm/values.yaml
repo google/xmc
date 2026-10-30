@@ -129,7 +129,7 @@ rodDeployment:
   gcpServiceAccount: ""
 
 logMonitorDeployment:
-  enabled: false
+  enabled: true
 
 logMonitor:
   gcpServiceAccount: ""

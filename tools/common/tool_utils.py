@@ -41,7 +41,7 @@ class DeploymentConfig:
     namespace: str = "xmc"
     domain_name: str | None = None
     enable_components: bool = False
-    log_monitor_deployment_enabled: bool = False
+    log_monitor_deployment_enabled: bool = True
     profile_values: str | None = None
 
     @property
@@ -307,7 +307,7 @@ def load_and_validate_config(
         namespace=config.get("namespace", "xmc"),
         enable_components=parse_bool_flag(config.get("enable_components", False)),
         log_monitor_deployment_enabled=parse_bool_flag(
-            config.get("log_monitor_deployment_enabled", False)
+            config.get("log_monitor_deployment_enabled", True)
         ),
     )
 

@@ -66,6 +66,7 @@ class HelmDeployer:
             "dashboard-service",
             "health-service",
             "ingestion-gateway",
+            "log-monitor",
             "rod",
             "ess/gateway.yaml",
             "ess/httproute.yaml",

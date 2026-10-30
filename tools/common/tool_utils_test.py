@@ -426,16 +426,20 @@ class TestConfigLoader(unittest.TestCase):
         self.assertEqual(config.environment, "dev")
 
     def test_load_and_validate_config_log_monitor_flag_yaml(self):
-        yaml_with_log_monitor = self.valid_yaml + "\n  log_monitor_deployment_enabled: true\n"
-        self.config_path.write_text(yaml_with_log_monitor, encoding="utf-8")
-        config = load_and_validate_config(str(self.config_path))
-        self.assertTrue(config.log_monitor_deployment_enabled)
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        default_config = load_and_validate_config(str(self.config_path))
+        self.assertTrue(default_config.log_monitor_deployment_enabled)
 
-    @patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "true"})
+        yaml_without_log_monitor = self.valid_yaml + "\n  log_monitor_deployment_enabled: false\n"
+        self.config_path.write_text(yaml_without_log_monitor, encoding="utf-8")
+        config = load_and_validate_config(str(self.config_path))
+        self.assertFalse(config.log_monitor_deployment_enabled)
+
+    @patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "false"})
     def test_load_and_validate_config_log_monitor_flag_env(self):
         self.config_path.write_text(self.valid_yaml, encoding="utf-8")
         config = load_and_validate_config(str(self.config_path))
-        self.assertTrue(config.log_monitor_deployment_enabled)
+        self.assertFalse(config.log_monitor_deployment_enabled)
 
     def test_load_and_validate_config_with_defaults(self):
         minimal_yaml = """vars:

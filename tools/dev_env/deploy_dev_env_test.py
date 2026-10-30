@@ -1189,12 +1189,12 @@ image_tag: latest
                 "REGION": "us-central1",
                 "PROJECT_ID": "my-project",
                 "ENABLE_COMPONENTS": "false",
-                "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+                "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
             },
         )
-        cfg_with_lm = replace(self.valid_config, log_monitor_deployment_enabled=True)
-        env_lm = deploy_dev_env._build_verify_env(cfg_with_lm)
-        self.assertEqual(env_lm["LOG_MONITOR_DEPLOYMENT_ENABLED"], "true")
+        cfg_without_lm = replace(self.valid_config, log_monitor_deployment_enabled=False)
+        env_lm = deploy_dev_env._build_verify_env(cfg_without_lm)
+        self.assertEqual(env_lm["LOG_MONITOR_DEPLOYMENT_ENABLED"], "false")
 
     @patch("tools.dev_env.deploy_dev_env.wait_for_deployments_ready")
     @patch("tools.dev_env.deploy_dev_env.run_command")
@@ -1243,7 +1243,7 @@ image_tag: latest
                         "REGION": "us-central1",
                         "PROJECT_ID": "my-project",
                         "ENABLE_COMPONENTS": "false",
-                        "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+                        "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
                     },
                     log_on_error=False,
                 ),
