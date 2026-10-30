@@ -19,6 +19,7 @@ package dbstore_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -83,6 +84,14 @@ type componentRow struct {
 	State int64
 	// ActiveName is nil when the column is NULL, that is once the record released its name.
 	ActiveName *string
+}
+
+func (r componentRow) String() string {
+	name := "NULL"
+	if r.ActiveName != nil {
+		name = fmt.Sprintf("%q", *r.ActiveName)
+	}
+	return fmt.Sprintf("{ID: %d, State: %d, ActiveName: %s}", r.ID, r.State, name)
 }
 
 // snapshotRow is an ExperimentComponentSnapshots row that locks generation LockedGeneration of
