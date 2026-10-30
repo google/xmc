@@ -131,7 +131,7 @@ jobs:
           build_and_push metrics-job            metrics_job            .
           build_and_push chart-artifact-job     chart_artifact_job     .
           build_and_push metrics-dashboard-job  metrics_dashboard_job  .
-          build_and_push programmatic-xprof-job managed_xprof_artifact_job
+          build_and_push managed-xprof-artifact-job managed_xprof_artifact_job
           build_and_push per-job-node-selector  per_job_node_selector
 
   run-and-verify-examples:

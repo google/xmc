@@ -21,7 +21,7 @@ if [ -z "${PROJECT_ID}" ]; then
   exit 1
 fi
 
-IMAGE_PATH="${IMAGE_PATH:-us-docker.pkg.dev/${PROJECT_ID}/xmc/programmatic-xprof-job:latest}"
+IMAGE_PATH="${IMAGE_PATH:-us-docker.pkg.dev/${PROJECT_ID}/xmc/managed-xprof-artifact-job:latest}"
 
 echo "Building and pushing image: ${IMAGE_PATH}"
 docker build -t "${IMAGE_PATH}" -f Dockerfile .
