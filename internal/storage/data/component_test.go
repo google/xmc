@@ -16,13 +16,26 @@ package data
 
 import (
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/pkg/components/store"
 )
+
+var componentTime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+
+func mustMarshal(t *testing.T, m proto.Message) []byte {
+	t.Helper()
+	b, err := proto.Marshal(m)
+	if err != nil {
+		t.Fatalf("proto.Marshal(%T) error = %v", m, err)
+	}
+	return b
+}
 
 func TestMarshalComponentPayloads(t *testing.T) {
 	spec := &componentspb.ComponentSpec{
@@ -99,6 +112,134 @@ func TestDetermineComponentClass(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := DetermineComponentClass(tt.spec); got != tt.want {
 				t.Errorf("DetermineComponentClass() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDecodeComponentPayloads(t *testing.T) {
+	if err := DecodeComponentPayloads(nil, nil, nil); err != nil {
+		t.Fatalf("DecodeComponentPayloads(nil) error = %v, want nil", err)
+	}
+	spec := &componentspb.ComponentSpec{Version: "v1.0.0"}
+	status := &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED}
+	tests := []struct {
+		name    string
+		config  []byte
+		access  []byte
+		want    *store.ComponentRecord
+		wantErr bool
+	}{
+		{
+			name:   "component with labels",
+			config: mustMarshal(t, &componentspb.Component{Spec: spec, Labels: map[string]string{"env": "prod"}}),
+			access: mustMarshal(t, status),
+			want:   &store.ComponentRecord{Spec: spec, Labels: map[string]string{"env": "prod"}, Status: status},
+		},
+		{
+			name:   "component without status",
+			config: mustMarshal(t, &componentspb.Component{Spec: spec}),
+			want:   &store.ComponentRecord{Spec: spec},
+		},
+		{
+			name:    "invalid access payload",
+			config:  mustMarshal(t, &componentspb.Component{Spec: spec}),
+			access:  []byte{0xff},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := &store.ComponentRecord{}
+			err := DecodeComponentPayloads(tt.config, tt.access, got)
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("DecodeComponentPayloads() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("DecodeComponentPayloads() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFinalizeComponentRecord(t *testing.T) {
+	FinalizeComponentRecord(nil)
+
+	deleteTime := componentTime
+	tests := []struct {
+		name  string
+		state componentspb.ComponentState
+		deps  []string
+		want  *store.ComponentRecord
+	}{
+		{
+			name:  "active record keeps its dependencies",
+			state: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			deps:  []string{"db"},
+			want:  &store.ComponentRecord{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED, Dependencies: []string{"db"}},
+		},
+		{
+			name:  "empty dependencies become nil",
+			state: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			deps:  []string{},
+			want:  &store.ComponentRecord{State: componentspb.ComponentState_COMPONENT_STATE_ENABLED},
+		},
+		{
+			name:  "deleted record is deleted at its update time",
+			state: componentspb.ComponentState_COMPONENT_STATE_DELETED,
+			want:  &store.ComponentRecord{State: componentspb.ComponentState_COMPONENT_STATE_DELETED, DeleteTime: &deleteTime},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := &store.ComponentRecord{ComponentID: 1, Name: "app", State: tt.state, Dependencies: tt.deps, UpdateTime: componentTime}
+			FinalizeComponentRecord(got)
+			tt.want.ComponentID, tt.want.Name, tt.want.UpdateTime = 1, "app", componentTime
+			tt.want.Etag = store.GenerateEtag(tt.want)
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("FinalizeComponentRecord() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDecodeComponentSnapshot(t *testing.T) {
+	coords := &componentspb.ResolvedComponentCoordinates{ServiceName: "svc", Port: 80}
+	status := &componentspb.ComponentAccessStatus{State: componentspb.ComponentState_COMPONENT_STATE_DISABLED, ObservedGeneration: 2, Coordinates: coords}
+	spec := &componentspb.ComponentSpec{Version: "v0.9.0"}
+	observedGen := int64(2)
+	tests := []struct {
+		name       string
+		access     []byte
+		want       *store.ComponentRecord
+		wantCoords *componentspb.ResolvedComponentCoordinates
+	}{
+		{
+			name:       "state and coordinates come from the snapshot status",
+			access:     mustMarshal(t, status),
+			wantCoords: coords,
+			want:       &store.ComponentRecord{Status: status, State: status.State, ObservedGeneration: &observedGen},
+		},
+		{name: "snapshot without status", want: &store.ComponentRecord{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snap := ComponentSnapshot{ComponentID: 7, LockedGeneration: 3, ConfigProto: mustMarshal(t, &componentspb.Component{Spec: spec}), AccessPayload: tt.access}
+			got, gotCoords, err := DecodeComponentSnapshot(snap, "app", componentTime, componentTime)
+			if err != nil {
+				t.Fatalf("DecodeComponentSnapshot() error = %v", err)
+			}
+			want := tt.want
+			want.ComponentID, want.Name, want.Generation, want.Spec, want.CreateTime, want.UpdateTime = 7, "app", 3, spec, componentTime, componentTime
+			want.Etag = store.GenerateEtag(want)
+			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("DecodeComponentSnapshot() record mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tt.wantCoords, gotCoords, protocmp.Transform()); diff != "" {
+				t.Errorf("DecodeComponentSnapshot() coordinates mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
