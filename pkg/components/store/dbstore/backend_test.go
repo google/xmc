@@ -24,7 +24,6 @@ import (
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dbstore"
 )
 
@@ -54,10 +53,7 @@ func (b dbBackend) newStore(ctx context.Context, t *testing.T) (*dbstore.Store, 
 // backendRows seeds and inspects the rows of one test database directly, bypassing the Store API,
 // for state that the Store API cannot create or does not expose.
 type backendRows interface {
-	// OwnerByID returns the recorded owner of the record componentID, including a deleted record.
-	OwnerByID(ctx context.Context, componentID int64) (*store.SourceOwner, error)
-	// SetSourceLastSeenTime sets the recorded SourceLastSeenTime of the active record canonicalName.
-	SetSourceLastSeenTime(ctx context.Context, canonicalName string, seenAt time.Time) error
+	dbstore.RowInspector
 	// SourceTimes returns SourceLastSeenTime and UpdateTime of the active record canonicalName.
 	SourceTimes(ctx context.Context, canonicalName string) (lastSeen, update time.Time, err error)
 	// ComponentRowTimestamps returns CreateTime, UpdateTime, and SourceLastSeenTime of componentID.
@@ -85,8 +81,8 @@ type rowTimestamps struct {
 type componentRow struct {
 	ID    int64
 	State int64
-	// ActiveName is empty when the column is NULL, that is once the record released its name.
-	ActiveName string
+	// ActiveName is nil when the column is NULL, that is once the record released its name.
+	ActiveName *string
 }
 
 // snapshotRow is an ExperimentComponentSnapshots row that locks generation LockedGeneration of
@@ -111,3 +107,5 @@ type inspectableStore struct {
 	*dbstore.Store
 	backendRows
 }
+
+var _ dbstore.RowInspector = inspectableStore{}

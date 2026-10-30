@@ -131,7 +131,9 @@ func (r spannerRows) ComponentRows(ctx context.Context, name string) ([]componen
 		if err := row.Columns(&cr.ID, &cr.State, &activeName); err != nil {
 			return err
 		}
-		cr.ActiveName = activeName.StringVal
+		if activeName.Valid {
+			cr.ActiveName = &activeName.StringVal
+		}
 		rows = append(rows, cr)
 		return nil
 	})
