@@ -85,7 +85,7 @@ jobs:
           echo "::add-mask::${TOKEN}"
           export XMC_AUTH_TOKEN="${TOKEN}"
           export PATH="${GITHUB_WORKSPACE}/.venv/bin:${PATH}"
-          export PYTHONPATH="${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
+          export PYTHONPATH="${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}/sdks/python:${PYTHONPATH:-}"
           python3 -m tools.nightly_tests.weekly_visual_snapshot \
             --ui_base_url="${UI_URL}" \
             --output_dir="${GALLERY_DIR}" \

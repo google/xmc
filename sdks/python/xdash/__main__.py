@@ -13,7 +13,10 @@
 # limitations under the License.
 """Main execution entrypoint for python -m xdash."""
 
-from xdash.cli import main
+try:
+    from xdash.cli import main
+except ImportError:
+    from .cli import main
 
 if __name__ == "__main__":
     main()
