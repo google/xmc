@@ -50,7 +50,11 @@ _ITEM_START_RE = re.compile(r"^\s*-\s")
 _STDERR_TAIL_LINES = 5
 # Per-entrypoint import budget, so one blocking import cannot hang the whole report.
 _IMPORT_TIMEOUT_SECONDS = 120
-# Executes the module body without triggering `if __name__ == "__main__"`. sys.argv is
+# Executes the entrypoint the way an import would: the module body (imports, absl flag
+# definitions) runs, but `__name__` is set to a non-"__main__" value, so the
+# `if __name__ == "__main__": app.run(main)` guard is skipped and nothing is launched.
+# runpy.run_path loads by file path rather than `import launch`, which avoids name clashes
+# between the many examples' `launch.py` modules and sys.modules caching. sys.argv is
 # reset to [script] so argv[0] matches `python3 <script>`; runpy keeps argv[0] equal to
 # the path it is given, so the script path is intentionally passed through relative.
 _RUN_SNIPPET = (
