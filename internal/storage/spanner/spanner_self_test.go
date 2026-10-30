@@ -33,29 +33,6 @@ func TestNewStorage_NilClient(t *testing.T) {
 	}
 }
 
-func TestStorage_DeleteExpiredRows(t *testing.T) {
-	tests := []struct {
-		name      string
-		batchSize int
-		wantErr   error
-	}{
-		{name: "positive batch size deletes nothing", batchSize: 100},
-		{name: "zero batch size", batchSize: 0, wantErr: grpcerr.ErrInvalidArgument},
-		{name: "negative batch size", batchSize: -1, wantErr: grpcerr.ErrInvalidArgument},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := (&Storage{}).DeleteExpiredRows(context.Background(), tt.batchSize)
-			if !errors.Is(err, tt.wantErr) {
-				t.Errorf("DeleteExpiredRows(%d) error = %v, want %v", tt.batchSize, err, tt.wantErr)
-			}
-			if got != 0 {
-				t.Errorf("DeleteExpiredRows(%d) = %d, want 0", tt.batchSize, got)
-			}
-		})
-	}
-}
-
 func TestStorage_RunInSerializableTransaction_MatchesStoredUpdateTime(t *testing.T) {
 	ctx := context.Background()
 	_, essClient := emulator.Setup(ctx, t)

@@ -107,7 +107,7 @@ func sweep(ctx context.Context, store storage.ExpiredRowStore, batchSize int) (i
 		n, err := deleteBatch(ctx, store, batchSize)
 		total += n
 		if err != nil {
-			return total, fmt.Errorf("failed to delete expired rows: %w", err)
+			return total, err
 		}
 		// A batch deletes at most batchSize rows from each table, so a smaller total means that every
 		// table is drained, or that another replica holds the sweep lock and is sweeping instead.
@@ -115,6 +115,7 @@ func sweep(ctx context.Context, store storage.ExpiredRowStore, batchSize int) (i
 			return total, nil
 		}
 	}
+	logging.Info(ctx, "Expired row sweep reached its batch limit; the rest waits for the next sweep", "batches", maxBatchesPerSweep)
 	return total, nil
 }
 

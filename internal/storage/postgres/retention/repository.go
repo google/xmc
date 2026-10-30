@@ -31,9 +31,10 @@ import (
 
 const entityName = "expired rows"
 
-// sweepLockKey is the pg_try_advisory_xact_lock key that serializes DeleteExpiredRows calls
-// across all ESS replicas sharing a database. It is "xmcttl" in ASCII; no other code in the
-// database takes this advisory lock.
+// sweepLockKey is the pg_try_advisory_xact_lock key that keeps DeleteExpiredRows calls from
+// sweeping at the same time across ESS replicas. The value is arbitrary (ASCII "xmcttl"); it only
+// has to differ from other advisory lock keys used in the ESS database. A collision would only
+// make sweeps skip, never delete the wrong rows.
 const sweepLockKey int64 = 0x786d6374746c
 
 // tryLockSQL takes the sweep lock until the current transaction ends, without waiting for it.
@@ -85,8 +86,11 @@ func (r *Repository) DeleteExpiredRows(ctx context.Context, batchSize int) (int6
 		// pgdb.RunInTx may re-run this callback, so reset the count on every attempt.
 		deleted = 0
 		locked, err := tryLock(ctx, tx)
-		if err != nil || !locked {
+		if err != nil {
 			return err
+		}
+		if !locked {
+			return nil
 		}
 		for _, stmt := range deleteExpiredSQLs {
 			tag, err := tx.Exec(ctx, stmt.String(), batchSize)

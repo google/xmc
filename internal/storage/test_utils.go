@@ -243,10 +243,6 @@ type MockStorage struct {
 	// Transaction.StatusHistory, Transaction.PauseState, Transaction.PausedTasks, and
 	// Transaction.Components passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
-
-	// DeleteExpiredRowsResp and DeleteExpiredRowsErr are returned by DeleteExpiredRows.
-	DeleteExpiredRowsResp int64
-	DeleteExpiredRowsErr  error
 }
 
 // CreateXidEntry mocks XID entry creation.
@@ -486,9 +482,9 @@ func (s *MockStorage) Components() ComponentRepository {
 	return s.ComponentRepository
 }
 
-// DeleteExpiredRows mocks deleting expired rows, returning DeleteExpiredRowsResp and DeleteExpiredRowsErr.
+// DeleteExpiredRows mocks deleting expired rows and deletes nothing.
 func (s *MockStorage) DeleteExpiredRows(ctx context.Context, batchSize int) (int64, error) {
-	return s.DeleteExpiredRowsResp, s.DeleteExpiredRowsErr
+	return 0, nil
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.

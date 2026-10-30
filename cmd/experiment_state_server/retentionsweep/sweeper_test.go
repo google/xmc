@@ -17,6 +17,7 @@ package retentionsweep
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -67,14 +68,6 @@ func scripted(results ...batchResult) func(context.Context, int) (int64, error) 
 	}
 }
 
-func repeatInt(v, n int) []int {
-	s := make([]int, n)
-	for i := range s {
-		s[i] = v
-	}
-	return s
-}
-
 func TestSweep(t *testing.T) {
 	const batchSize = 10
 	errDB := errors.New("database unavailable")
@@ -120,7 +113,7 @@ func TestSweep(t *testing.T) {
 			name:          "backlog stops after maxBatchesPerSweep batches",
 			deleteFn:      func(context.Context, int) (int64, error) { return batchSize, nil },
 			wantDeleted:   maxBatchesPerSweep * batchSize,
-			wantBatchSize: repeatInt(batchSize, maxBatchesPerSweep),
+			wantBatchSize: slices.Repeat([]int{batchSize}, maxBatchesPerSweep),
 		},
 	}
 	for _, tt := range tests {

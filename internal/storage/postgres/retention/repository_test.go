@@ -232,6 +232,8 @@ func TestRepository_DeleteExpiredRows_SkipsWhileSweepLockIsHeld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Begin() unexpected error: %v", err)
 	}
+	// Release the connection even if an assertion below fails, so pool.Close does not hang.
+	t.Cleanup(func() { _ = holder.Rollback(context.Background()) })
 	if _, err := holder.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, sweepLockKey); err != nil {
 		t.Fatalf("pg_advisory_xact_lock() unexpected error: %v", err)
 	}
