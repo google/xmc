@@ -374,11 +374,11 @@ type CLILoginCodeStore interface {
 // WorkUnitStatusHistory rows past their ExpirationTime, processed PausedTasks rows past their
 // ExpirationTime, and CliLoginCodes rows more than one day past their ExpiresAt.
 type ExpiredRowStore interface {
-	// DeleteExpiredRows deletes up to batchSize expired rows from each of those tables and returns
-	// the total number of rows deleted. Concurrent calls never sweep at the same time: a call that
-	// cannot take the backend's sweep lock does not wait for it, deletes nothing and returns 0.
-	// Backends that expire these rows natively (Cloud Spanner's ROW DELETION POLICY) also return 0.
-	// batchSize must be positive.
+	// DeleteExpiredRows deletes up to batchSize expired rows from each of those tables in one
+	// transaction and returns the total number of rows deleted (0 on error). Concurrent calls never
+	// sweep at the same time: a call that cannot take the backend's sweep lock does not wait for it,
+	// deletes nothing and returns 0. Backends that expire these rows natively (Cloud Spanner's
+	// ROW DELETION POLICY) also return 0. batchSize must be positive.
 	DeleteExpiredRows(ctx context.Context, batchSize int) (int64, error)
 }
 

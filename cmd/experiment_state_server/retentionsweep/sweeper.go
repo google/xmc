@@ -99,15 +99,18 @@ func run(ctx context.Context, store storage.ExpiredRowStore, interval time.Durat
 }
 
 // sweep deletes expired rows batch by batch until a batch shows that every table is drained,
-// ctx is done, or maxBatchesPerSweep batches have run, and returns the number of rows deleted.
+// ctx is done, or maxBatchesPerSweep batches have run, and returns the number of rows committed
+// across completed batches. Each batch commits in its own transaction so a sweep makes bounded
+// progress without holding long-lived locks; if a batch fails, it rolls back while earlier batches
+// stay committed, and any remaining expired rows wait for the next sweep.
 func sweep(ctx context.Context, store storage.ExpiredRowStore, batchSize int) (int64, error) {
 	var total int64
 	for range maxBatchesPerSweep {
 		n, err := deleteBatch(ctx, store, batchSize)
-		total += n
 		if err != nil {
 			return total, err
 		}
+		total += n
 		// A batch deletes at most batchSize rows from each table, so a smaller total means that every
 		// table is drained, or that another replica holds the sweep lock and is sweeping instead.
 		if n < int64(batchSize) {
