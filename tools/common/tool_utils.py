@@ -42,6 +42,7 @@ class DeploymentConfig:
     domain_name: str | None = None
     enable_components: bool = False
     log_monitor_deployment_enabled: bool = True
+    database_backend: str = "spanner"
     profile_values: str | None = None
 
     @property
@@ -203,7 +204,23 @@ ENV_VAR_MAPPING = {
     "XMC_BASE_DOMAIN": "domain_name",
     "ENABLE_COMPONENTS": "enable_components",
     "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
+    "DB_BACKEND": "database_backend",
 }
+
+SUPPORTED_DATABASE_BACKENDS: tuple[str, ...] = ("spanner", "postgres")
+
+
+def _resolve_database_backend(raw: Any) -> str:
+    """Normalizes and validates database_backend against supported backends."""
+    backend = str(raw).strip().lower() if raw is not None else "spanner"
+    if not backend:
+        backend = "spanner"
+    if backend not in SUPPORTED_DATABASE_BACKENDS:
+        raise ValueError(
+            f"Field 'database_backend' value '{raw}' is invalid. "
+            f"Must be one of: {', '.join(SUPPORTED_DATABASE_BACKENDS)}"
+        )
+    return backend
 
 
 def parse_bool_flag(val: Any) -> bool:
@@ -309,6 +326,7 @@ def load_and_validate_config(
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
+        database_backend=_resolve_database_backend(config.get("database_backend", "spanner")),
     )
 
 

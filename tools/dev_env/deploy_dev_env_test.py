@@ -956,6 +956,14 @@ image_tag: latest
 
     @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
     @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
+    def test_step_migrate_skips_when_postgres_backend(self, mock_check, mock_apply):
+        pg_config = replace(self.valid_config, database_backend="postgres")
+        deploy_dev_env.step_migrate(pg_config)
+        mock_check.assert_not_called()
+        mock_apply.assert_not_called()
+
+    @patch("tools.dev_env.deploy_dev_env.apply_pending_migrations")
+    @patch("tools.dev_env.deploy_dev_env.check_pending_migrations")
     def test_step_migrate_pending_migrations(self, mock_check, mock_apply):
         pending = [
             ("ess", "xmc-dev", "experiment-db-dev"),

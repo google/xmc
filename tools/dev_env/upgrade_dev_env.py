@@ -310,6 +310,10 @@ def check_pending_migrations(config: DeploymentConfig) -> list[tuple[str, str, s
     Returns:
       List of (migrations_dir, spanner_instance, db_name) tuples with pending migrations.
     """
+    if config.database_backend == "postgres":
+        log_info("Skipping Spanner migration check because database_backend is 'postgres'.")
+        return []
+
     log_info("Checking for pending database migrations...")
     spanner_instance = f"xmc-{config.environment}"
     targets = [
@@ -339,6 +343,10 @@ def apply_pending_migrations(config: DeploymentConfig, pending: list[tuple[str, 
 
 def step_migrate(config: UpgradeConfig) -> None:
     """Checks and applies pending Spanner database migrations."""
+    if config.database_backend == "postgres":
+        log_info("Skipping Spanner schema migrations because database_backend is 'postgres'.")
+        return
+
     pending = check_pending_migrations(config)
     if not pending:
         log_success("No pending migrations found. Databases are up to date.")
