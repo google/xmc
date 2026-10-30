@@ -35,6 +35,7 @@ rod_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/rod-dev:latest"
 ingestion_gateway_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ingestion-gateway-dev:latest"
 log_monitor_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/log-monitor-dev:latest"
 xmc_bridge_custom_image: ""
+postgres_migrator_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/postgres-migrator-dev:latest"
 
 featureFlags:
   pause_scheduling_enabled: true
@@ -350,6 +351,10 @@ database:
   # Opt-in for the experimental PostgreSQL backend.
   experimentalPostgres: false
   postgres:
+    # When true (default), renders a batch/v1 Job that runs PostgreSQL schema migrations
+    # (--command=up for xid and ess) during Helm installs and upgrades.
+    # Set to false to skip the migration Job when managing PostgreSQL DDL out-of-band.
+    runMigrations: true
     # host, user, essDatabase and xidDatabase are required when backend is "postgres".
     # No password in db-config: the password is delivered via the postgres-secret Secret.
     host: ""

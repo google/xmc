@@ -55,6 +55,7 @@ SHARED_ROOT_FILES: frozenset[str] = frozenset(
     }
 )
 HELM_MANIFEST_PREFIXES: tuple[str, ...] = ("deploy/helm/", "deploy/local/", "test/e2e/manifests/")
+POSTGRES_MIGRATIONS_PREFIX: str = "internal/storage/postgres/migrations/"
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -161,6 +162,8 @@ class ChangeDetector:
             if any(clean_f.startswith(p) for p in HELM_MANIFEST_PREFIXES):
                 if clean_f.endswith((".yaml", ".yml", ".tpl", ".json")):
                     helm_upgrade_needed = True
+            elif clean_f.startswith(POSTGRES_MIGRATIONS_PREFIX):
+                helm_upgrade_needed = True
 
             matched_service = self._match_service_for_file(clean_f)
             if matched_service:

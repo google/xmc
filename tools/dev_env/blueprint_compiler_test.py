@@ -14,6 +14,7 @@
 
 """Unit tests for blueprint_compiler."""
 
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -106,16 +107,28 @@ class CompileBlueprintTest(unittest.TestCase):
     """Tests for compile_blueprint."""
 
     @mock.patch.object(blueprint_compiler, "run_command")
-    @mock.patch.object(blueprint_compiler, "compute_chart_content_hash", return_value="abc123")
+    @mock.patch.object(
+        blueprint_compiler,
+        "compute_chart_content_hash",
+        side_effect=["chart_h", "ess_h", "xid_h"],
+    )
     @mock.patch.object(blueprint_compiler, "purge_staged_artifacts")
     def test_purges_before_gcluster_create(self, mock_purge, mock_hash, mock_run) -> None:
         order = mock.Mock()
         order.attach_mock(mock_purge, "purge")
         order.attach_mock(mock_run, "run")
+        expected_hash = hashlib.sha256(b"chart_h\ness_h\nxid_h").hexdigest()
 
         blueprint_compiler.compile_blueprint("my-config.yaml", _DEPLOYMENT)
 
-        mock_hash.assert_called_once_with(Path("deploy/helm"))
+        self.assertEqual(
+            mock_hash.mock_calls,
+            [
+                mock.call(Path("deploy/helm")),
+                mock.call(Path("internal/storage/postgres/migrations/ess")),
+                mock.call(Path("internal/storage/postgres/migrations/xid")),
+            ],
+        )
         self.assertEqual(
             order.mock_calls,
             [
@@ -130,7 +143,7 @@ class CompileBlueprintTest(unittest.TestCase):
                         "-o",
                         "ctk-out",
                         "--vars",
-                        "helm_chart_content_hash=abc123",
+                        f"helm_chart_content_hash={expected_hash}",
                         "--vars",
                         "enable_components=false",
                         "-l",
@@ -143,7 +156,7 @@ class CompileBlueprintTest(unittest.TestCase):
         )
 
     @mock.patch.object(blueprint_compiler, "run_command")
-    @mock.patch.object(blueprint_compiler, "compute_chart_content_hash", return_value="abc123")
+    @mock.patch.object(blueprint_compiler, "_compute_release_content_hash", return_value="abc123")
     @mock.patch.object(blueprint_compiler, "purge_staged_artifacts")
     def test_passes_enable_components_var(self, _mock_purge, _mock_hash, mock_run) -> None:
         blueprint_compiler.compile_blueprint("my-config.yaml", _DEPLOYMENT, enable_components=True)

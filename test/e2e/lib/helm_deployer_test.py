@@ -86,6 +86,7 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn('username: "admin@xmc.local"', values)
         self.assertIn('password: "password123"', values)
         self.assertIn('xmc_bridge_custom_image: "xmc_bridge_image:latest"', values)
+        self.assertIn('postgres_migrator_custom_image: "postgres_migrator_image:latest"', values)
         self.assertIn("componentsDeployment:\n  enabled: true", values)
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")

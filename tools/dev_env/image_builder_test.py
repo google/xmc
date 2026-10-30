@@ -40,6 +40,7 @@ class ImageBuilderTest(unittest.TestCase):
         services = discover_buildable_services()
         self.assertIn("actuator", services)
         self.assertIn("experiment_state_server", services)
+        self.assertIn("postgres_migrator", services)
         self.assertIn("ui", services)
         self.assertIn("reconciler", services)
 
@@ -100,6 +101,19 @@ class ImageBuilderTest(unittest.TestCase):
         self.assertEqual(
             specs,
             [("cmd/xmc_bridge", "xmc_bridge_image_tarball", "xmc_bridge_image:latest")],
+        )
+
+    def test_get_service_specs_postgres_migrator(self) -> None:
+        specs = self.builder.get_service_specs(services=["postgres_migrator"])
+        self.assertEqual(
+            specs,
+            [
+                (
+                    "internal/storage/postgres/migrations",
+                    "postgres_migrator_image_tarball",
+                    "postgres_migrator_image:latest",
+                )
+            ],
         )
 
     def test_get_service_specs_invalid_name(self) -> None:

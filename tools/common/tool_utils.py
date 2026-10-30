@@ -463,6 +463,10 @@ def build_and_push_images(config: DeploymentConfig) -> None:
         ("ingestion_gateway", "//cmd/ingestion_gateway:ingestion_gateway_image_push"),
         ("xmc_bridge", "//cmd/xmc_bridge:xmc_bridge_image_push"),
         ("rod_data_provider", "//cmd/rod_data_provider:rod_data_provider_image_push"),
+        (
+            "postgres_migrator",
+            "//internal/storage/postgres/migrations:postgres_migrator_image_push",
+        ),
     ]
 
     for name, target in targets:

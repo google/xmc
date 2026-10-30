@@ -50,6 +50,7 @@ vars:
   ingestion_gateway_image: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
   log_monitor_image: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
   xmc_bridge_image: "$(vars.image_registry)/xmc-bridge-$(vars.environment):$(vars.image_tag)"
+  postgres_migrator_image: "$(vars.image_registry)/postgres-migrator-$(vars.environment):$(vars.image_tag)"
   
   task_signature_ttl_seconds: 86400
   use_redis_queue: true
@@ -63,6 +64,7 @@ vars:
   postgres_ess_database: ""
   postgres_xid_database: ""
   postgres_ssl_mode: ""
+  run_postgres_migrations: true
   # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
   # Requires GKE cluster version 1.35.0-gke.3065000 or later.
   enable_managed_mldiagnostics: false
@@ -437,6 +439,7 @@ deployment_groups:
       create_namespace: false
       description: "chart-content-sha256=$(vars.helm_chart_content_hash)"
       wait: true
+      wait_for_jobs: true
       timeout: 600 # 10 minutes
       set_values:
       - name: essDeployment.enabled
@@ -591,6 +594,11 @@ deployment_groups:
         value: $(vars.postgres_xid_database)
       - name: database.postgres.sslMode
         value: $(vars.postgres_ssl_mode)
+      - name: database.postgres.runMigrations
+        value: $(vars.run_postgres_migrations)
+        type: auto
+      - name: postgres_migrator_custom_image
+        value: $(vars.postgres_migrator_image)
       - name: componentsDeployment.enabled
         value: $(vars.enable_components)
         type: auto

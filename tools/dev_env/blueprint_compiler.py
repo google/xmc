@@ -22,6 +22,7 @@ the staged copy mirrors the current checkout; `gcluster create` re-stages
 every referenced file.
 """
 
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -30,6 +31,10 @@ from tools.dev_env.chart_fingerprint import compute_chart_content_hash
 
 BLUEPRINT_PATH = "deploy/ctk_v2/xmanager-cloud.yaml"
 HELM_CHART_DIR = Path("deploy/helm")
+POSTGRES_MIGRATION_DIRS: tuple[Path, ...] = (
+    Path("internal/storage/postgres/migrations/ess"),
+    Path("internal/storage/postgres/migrations/xid"),
+)
 DEFAULT_OUTPUT_DIR = Path("ctk-out")
 
 
@@ -74,6 +79,12 @@ def purge_staged_artifacts(output_dir: Path, deployment_name: str) -> None:
     shutil.rmtree(staged_dir)
 
 
+def _compute_release_content_hash() -> str:
+    """Hashes the Helm chart and embedded PostgreSQL migration directories."""
+    parts = [compute_chart_content_hash(d) for d in (HELM_CHART_DIR, *POSTGRES_MIGRATION_DIRS)]
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
 def compile_blueprint(
     config_path: str,
     deployment_name: str,
@@ -83,9 +94,9 @@ def compile_blueprint(
 ) -> None:
     """Purges staged artifacts and re-compiles the XMC blueprint.
 
-    The umbrella chart's content hash is passed as the
-    `helm_chart_content_hash` blueprint variable so that template-only chart
-    changes alter the Helm release inputs and trigger a real Helm upgrade.
+    The umbrella chart and migration SQL content hash is passed as the
+    `helm_chart_content_hash` blueprint variable so that template-only or
+    SQL-only changes alter the Helm release inputs and trigger a real upgrade.
 
     Args:
         config_path: Path to the deployment configuration YAML.
@@ -94,7 +105,7 @@ def compile_blueprint(
         enable_components: When True, passes `--vars enable_components=true` to gcluster.
     """
     purge_staged_artifacts(output_dir, deployment_name)
-    chart_hash = compute_chart_content_hash(HELM_CHART_DIR)
+    chart_hash = _compute_release_content_hash()
     extra_vars = ["--vars", f"enable_components={'true' if enable_components else 'false'}"]
     run_command(
         [

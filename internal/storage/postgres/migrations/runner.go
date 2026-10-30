@@ -23,14 +23,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/dbconfig"
 	"xmanager_cloud/internal/storage/migrations"
 	"xmanager_cloud/internal/storage/migrations/commands"
 )
@@ -48,6 +52,10 @@ const (
 	// migrationsBaseDir is the workspace-relative directory that contains the migrations subdirectories.
 	migrationsBaseDir = "internal/storage/postgres/migrations"
 
+	initialPingBackoff = 500 * time.Millisecond
+	maxPingBackoff     = 5 * time.Second
+	pingAttemptTimeout = 5 * time.Second
+
 	checkNonEmptyDBQuery = `
 SELECT 1
 FROM information_schema.tables
@@ -60,20 +68,22 @@ LIMIT 1
 type config struct {
 	// dsn is the PostgreSQL connection string. Settings it leaves out are taken by the lib/pq driver
 	// from the standard PG* environment variables (PGHOST, PGUSER, PGSSLMODE, ...).
-	dsn           string
-	migrationsDir string
-	command       string
-	arg           *int
-	migrationName string
+	dsn            string
+	migrationsDir  string
+	command        string
+	connectTimeout time.Duration
+	arg            *int
+	migrationName  string
 }
 
 // parseConfig parses CLI arguments into a config, falling back to the POSTGRES_DSN environment variable.
 func parseConfig(args []string) (*config, error) {
 	cfg := &config{}
 	fs := flag.NewFlagSet("migrations", flag.ContinueOnError)
-	fs.StringVar(&cfg.dsn, "postgres_dsn", "", "PostgreSQL connection DSN (defaults to POSTGRES_DSN)")
+	fs.StringVar(&cfg.dsn, "postgres_dsn", "", "PostgreSQL connection DSN (defaults to POSTGRES_DSN or dbconfig)")
 	fs.StringVar(&cfg.migrationsDir, "migrations_dir", "", "Migrations directory ('ess' or 'xid')")
 	fs.StringVar(&cfg.command, "command", "", "Command to run: up, down, force, version, init, create")
+	fs.DurationVar(&cfg.connectTimeout, "connect_timeout", 0, "Maximum time to wait for PostgreSQL connection readiness (0 disables retry)")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -93,7 +103,8 @@ func parseConfig(args []string) (*config, error) {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	cfg, err := parseConfig(os.Args[1:])
 	if err != nil {
 		logging.Fatal(ctx, "failed to parse arguments", "error", err)
@@ -123,17 +134,70 @@ func run(ctx context.Context, cfg *config) error {
 	return runner.ExecCommand(ctx, cfg.command, cfg.arg)
 }
 
+// resolveDSN returns the trimmed DSN from cfg, or loads it from dbconfig when unset.
+func resolveDSN(cfg *config) (string, error) {
+	if dsn := strings.TrimSpace(cfg.dsn); dsn != "" {
+		return dsn, nil
+	}
+	dbCfg, err := dbconfig.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed to load database configuration: %w", err)
+	}
+	if dbCfg.Backend != dbconfig.BackendPostgres {
+		return "", fmt.Errorf("postgres_dsn is not set and DB_BACKEND is %q (expected %q)", dbCfg.Backend, dbconfig.BackendPostgres)
+	}
+	if cfg.migrationsDir == schemaXID {
+		return dbCfg.Postgres.XidDSN()
+	}
+	return dbCfg.Postgres.EssDSN()
+}
+
+func pingOnce(ctx context.Context, ping func(context.Context) error) error {
+	pingCtx, cancel := context.WithTimeout(ctx, pingAttemptTimeout)
+	defer cancel()
+	return ping(pingCtx)
+}
+
+// pingWithRetry pings the database once when timeout <= 0, or retries with exponential backoff until timeout expires.
+func pingWithRetry(ctx context.Context, ping func(context.Context) error, timeout time.Duration) error {
+	if timeout <= 0 {
+		return pingOnce(ctx, ping)
+	}
+	deadlineCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	backoff := initialPingBackoff
+	for {
+		lastErr := pingOnce(deadlineCtx, ping)
+		if lastErr == nil {
+			return nil
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-deadlineCtx.Done():
+			timer.Stop()
+			return lastErr
+		case <-timer.C:
+		}
+		backoff = min(backoff*2, maxPingBackoff)
+	}
+}
+
 // newRunner opens a dedicated *sql.DB from cfg and returns a migration runner that uses it.
 // Closing the runner also closes the connection.
 func newRunner(ctx context.Context, cfg *config) (*migrations.Runner, error) {
 	if cfg.migrationsDir != schemaESS && cfg.migrationsDir != schemaXID {
 		return nil, fmt.Errorf("unknown migrations_dir %q: expected %q or %q", cfg.migrationsDir, schemaESS, schemaXID)
 	}
-	db, err := sql.Open("postgres", strings.TrimSpace(cfg.dsn))
+	dsn, err := resolveDSN(cfg)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgres connection: %w", err)
 	}
-	if err := db.PingContext(ctx); err != nil {
+	if err := pingWithRetry(ctx, db.PingContext, cfg.connectTimeout); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
 	}

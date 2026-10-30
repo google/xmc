@@ -261,3 +261,7 @@ helm upgrade --install xmc deploy/helm \
 ### Production GKE Deployment
 
 Production installations typically deploy via HPC Cluster Toolkit blueprints (`deploy/ctk_v2/`) which render values dynamically from `xmanager-cloud-deployment.yaml`.
+
+### PostgreSQL Schema Migrations (`database.postgres.runMigrations`)
+
+When `database.backend: "postgres"` and `database.experimentalPostgres: true` are set, the chart renders a `batch/v1` `Job` (`templates/postgres/migrations-job.yaml`, named `postgres-migrations-r<revision>`) by default (`database.postgres.runMigrations: true`). The Job sequentially runs `--command=up --connect_timeout=90s` for `xid` (via `initContainers`) and `ess` (via `containers`) using the `db-config` ConfigMap and `postgres-secret` Secret. Set `database.postgres.runMigrations: false` to skip the Job when managing PostgreSQL DDL out-of-band.

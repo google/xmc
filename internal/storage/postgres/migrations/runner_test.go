@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/google/go-cmp/cmp"
@@ -440,9 +441,9 @@ func TestParseConfig(t *testing.T) {
 			want: &config{dsn: envDSN, migrationsDir: schemaESS, command: migrations.UpCmd, arg: intPtr(2)},
 		},
 		{
-			name: "flag overrides POSTGRES_DSN",
-			args: []string{"--postgres_dsn=" + flagDSN, "--migrations_dir=xid", "--command=version"},
-			want: &config{dsn: flagDSN, migrationsDir: schemaXID, command: migrations.VersionCmd},
+			name: "flag overrides POSTGRES_DSN and parses connect_timeout",
+			args: []string{"--postgres_dsn=" + flagDSN, "--migrations_dir=xid", "--command=version", "--connect_timeout=90s"},
+			want: &config{dsn: flagDSN, migrationsDir: schemaXID, command: migrations.VersionCmd, connectTimeout: 90 * time.Second},
 		},
 		{
 			name: "create takes a migration name",
@@ -465,4 +466,102 @@ func TestParseConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func setPostgresDBConfigEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DB_BACKEND", "postgres")
+	t.Setenv("POSTGRES_HOST", "db.example.internal")
+	t.Setenv("POSTGRES_PORT", "5432")
+	t.Setenv("POSTGRES_USER", "xmc")
+	t.Setenv("POSTGRES_PASSWORD", "secret")
+	t.Setenv("POSTGRES_ESS_DATABASE", "xmc_ess")
+	t.Setenv("POSTGRES_XID_DATABASE", "xmc_xid")
+	t.Setenv("POSTGRES_SSLMODE", "disable")
+}
+
+func TestResolveDSN(t *testing.T) {
+	t.Run("explicit dsn overrides dbconfig", func(t *testing.T) {
+		t.Setenv("DB_BACKEND", "spanner")
+		got, err := resolveDSN(&config{dsn: " postgres://explicit/db ", migrationsDir: schemaESS})
+		if err != nil || got != "postgres://explicit/db" {
+			t.Fatalf("resolveDSN() = (%q, %v), want (%q, nil)", got, err, "postgres://explicit/db")
+		}
+	})
+
+	t.Run("dbconfig fallback for ess and xid", func(t *testing.T) {
+		setPostgresDBConfigEnv(t)
+		essDSN, err := resolveDSN(&config{migrationsDir: schemaESS})
+		if err != nil || essDSN != "postgres://xmc:secret@db.example.internal:5432/xmc_ess?sslmode=disable" {
+			t.Fatalf("resolveDSN(ess) = (%q, %v)", essDSN, err)
+		}
+		xidDSN, err := resolveDSN(&config{migrationsDir: schemaXID})
+		if err != nil || xidDSN != "postgres://xmc:secret@db.example.internal:5432/xmc_xid?sslmode=disable" {
+			t.Fatalf("resolveDSN(xid) = (%q, %v)", xidDSN, err)
+		}
+	})
+
+	t.Run("rejects spanner or unset DB_BACKEND", func(t *testing.T) {
+		t.Setenv("DB_BACKEND", "")
+		if _, err := resolveDSN(&config{migrationsDir: schemaESS}); err == nil || !strings.Contains(err.Error(), "DB_BACKEND") {
+			t.Fatalf("resolveDSN(unset DB_BACKEND) error = %v, want DB_BACKEND error", err)
+		}
+		t.Setenv("DB_BACKEND", "spanner")
+		if _, err := resolveDSN(&config{migrationsDir: schemaXID}); err == nil || !strings.Contains(err.Error(), "DB_BACKEND") {
+			t.Fatalf("resolveDSN(spanner DB_BACKEND) error = %v, want DB_BACKEND error", err)
+		}
+	})
+
+	t.Run("propagates dbconfig load and missing field errors", func(t *testing.T) {
+		t.Setenv("DB_BACKEND", "invalid")
+		if _, err := resolveDSN(&config{migrationsDir: schemaESS}); err == nil {
+			t.Fatal("resolveDSN(invalid DB_BACKEND) succeeded, want error")
+		}
+		t.Setenv("DB_BACKEND", "postgres")
+		t.Setenv("POSTGRES_HOST", "")
+		if _, err := resolveDSN(&config{migrationsDir: schemaESS}); err == nil || !strings.Contains(err.Error(), "POSTGRES_HOST") {
+			t.Fatalf("resolveDSN(missing POSTGRES_HOST) error = %v, want POSTGRES_HOST error", err)
+		}
+	})
+}
+
+func TestPingWithRetry(t *testing.T) {
+	ctx := t.Context()
+	boom := errors.New("connection refused")
+
+	t.Run("zero timeout fails immediately without retry", func(t *testing.T) {
+		calls := 0
+		err := pingWithRetry(ctx, func(context.Context) error {
+			calls++
+			return boom
+		}, 0)
+		if !errors.Is(err, boom) || calls != 1 {
+			t.Fatalf("pingWithRetry(timeout=0) = %v (calls=%d), want %v (calls=1)", err, calls, boom)
+		}
+	})
+
+	t.Run("retries transient error until success", func(t *testing.T) {
+		calls := 0
+		err := pingWithRetry(ctx, func(context.Context) error {
+			calls++
+			if calls < 2 {
+				return boom
+			}
+			return nil
+		}, 2*time.Second)
+		if err != nil || calls != 2 {
+			t.Fatalf("pingWithRetry(transient) = %v (calls=%d), want nil (calls=2)", err, calls)
+		}
+	})
+
+	t.Run("stops and returns last error when timeout expires", func(t *testing.T) {
+		calls := 0
+		err := pingWithRetry(ctx, func(context.Context) error {
+			calls++
+			return boom
+		}, 50*time.Millisecond)
+		if !errors.Is(err, boom) || calls != 1 {
+			t.Fatalf("pingWithRetry(expired) = %v (calls=%d), want %v (calls=1)", err, calls, boom)
+		}
+	})
 }

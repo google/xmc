@@ -88,6 +88,7 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/dashboard_service:dashboard_service_image_push
    bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
+   bazel run //internal/storage/postgres/migrations:postgres_migrator_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -395,9 +396,13 @@ bazel run //cmd/health_service:health_service_image_push
 bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
+bazel run //internal/storage/postgres/migrations:postgres_migrator_image_push
 ```
 
 #### Step 3: Run Database Schema Migrations
+
+> [!NOTE]
+> **PostgreSQL Backend (`database_backend: "postgres"`)**: When using PostgreSQL, the Helm chart and Cluster Toolkit blueprint (`run_postgres_migrations: true` / `database.postgres.runMigrations: true`) automatically run a Kubernetes `batch/v1` `Job` (`postgres-migrations-r<revision>`) that executes `--command=up` for both `xid` and `ess` during `gcluster deploy --only xmc_app` or `helm upgrade --install`. Set `database.postgres.runMigrations: false` (`run_postgres_migrations: false`) only if you manage PostgreSQL DDL out-of-band via `bazel run //internal/storage/postgres/migrations:migrations`.
 
 Existing Cloud Spanner databases (`ess` and `xid`) must be upgraded to apply any new incremental DDL migrations introduced in the updated version.
 

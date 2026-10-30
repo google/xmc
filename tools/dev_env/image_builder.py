@@ -35,6 +35,7 @@ from tools.dev_env.config import LocalDevConfig
 _LOGGER = logging.getLogger("xmc.dev_env.image_builder")
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+_POSTGRES_MIGRATOR_PACKAGE = "internal/storage/postgres/migrations"
 
 
 def discover_buildable_services(repo_root: Path | None = None) -> list[str]:
@@ -72,7 +73,10 @@ def discover_buildable_services(repo_root: Path | None = None) -> list[str]:
         if "oci_image_for_service" in content or "_image_tarball" in content:
             services.append(entry.name)
 
-    return services
+    migrator_build = root / _POSTGRES_MIGRATOR_PACKAGE / "BUILD.bazel"
+    if migrator_build.is_file():
+        services.append("postgres_migrator")
+    return sorted(services)
 
 
 class ImageBuilder:
@@ -130,7 +134,11 @@ class ImageBuilder:
                     "alphanumeric characters, underscores, or dashes."
                 )
             target_svc = "xmc_bridge" if s == "components" else s
-            pkg = f"cmd/{target_svc}"
+            pkg = (
+                _POSTGRES_MIGRATOR_PACKAGE
+                if target_svc == "postgres_migrator"
+                else f"cmd/{target_svc}"
+            )
             if pkg in seen_pkgs:
                 continue
             seen_pkgs.add(pkg)
