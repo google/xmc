@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"xmanager_cloud/cmd/experiment_state_server/config"
-	"xmanager_cloud/internal/storage/dbconfig"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -135,17 +134,6 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		}
 		if ps.Storage() != nil {
 			t.Errorf("Storage() on nil ProdServer = %v, want nil", ps.Storage())
-		}
-		if ps.StorageBackend() != "" {
-			t.Errorf("StorageBackend() on nil ProdServer = %q, want empty", ps.StorageBackend())
-		}
-	})
-
-	t.Run("configured StorageBackend returned", func(t *testing.T) {
-		t.Parallel()
-		ps := &ProdServer{storageBackend: dbconfig.BackendSpanner}
-		if got := ps.StorageBackend(); got != dbconfig.BackendSpanner {
-			t.Errorf("StorageBackend() = %q, want %q", got, dbconfig.BackendSpanner)
 		}
 	})
 }
