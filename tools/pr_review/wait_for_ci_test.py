@@ -29,8 +29,10 @@ from tools.pr_review.wait_for_ci import (
     PASSED,
     PENDING,
     CheckResult,
+    MalformedResponseError,
     build_parser,
     classify_check,
+    parse_rollup,
     parse_run_reference,
     trim_job_log,
 )
@@ -165,6 +167,22 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(args.interval, wait_for_ci.DEFAULT_INTERVAL_SECONDS)
         self.assertEqual(args.log_lines, wait_for_ci.DEFAULT_LOG_LINES)
 
+    def test_build_parser_rejects_non_positive_values(self):
+        """Numeric flags reject zero, negative, and non-integer values."""
+        for flag in ("--timeout", "--interval", "--log-lines"):
+            for value in ("0", "-5", "abc"):
+                with self.subTest(flag=flag, value=value):
+                    with patch("sys.stderr"), self.assertRaises(SystemExit):
+                        build_parser().parse_args(["148", flag, value])
+
+    def test_parse_rollup_rejects_bad_shapes(self):
+        """Non-object payloads, non-list rollups, and non-object entries are malformed."""
+        for payload in ("[]", '{"statusCheckRollup": {"a": 1}}', '{"statusCheckRollup": [1]}'):
+            with self.subTest(payload=payload):
+                with self.assertRaises(MalformedResponseError):
+                    parse_rollup(payload)
+        self.assertEqual(parse_rollup('{"statusCheckRollup": null}'), [])
+
 
 @patch("tools.pr_review.wait_for_ci.log_info", MagicMock())
 @patch("tools.pr_review.wait_for_ci.subprocess.run")
@@ -197,6 +215,7 @@ class TestWaitForCI(unittest.TestCase):
             text=True,
             errors="replace",
             check=True,
+            timeout=wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
         )
 
     def test_late_registered_check_is_not_false_pass(self, mock_run):
@@ -284,6 +303,7 @@ class TestWaitForCI(unittest.TestCase):
             text=True,
             errors="replace",
             check=False,
+            timeout=wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
         )
         self.assertEqual(mock_run.call_count, 4)
 
@@ -356,6 +376,100 @@ class TestWaitForCI(unittest.TestCase):
         mock_run.return_value = _rollup(_check_run("a"))
         self._run()
         self.assertNotIn("--repo", mock_run.call_args.args[0])
+
+    def test_unexecutable_gh_binary_raises_immediately(self, mock_run):
+        """A missing or non-executable gh binary is a non-retryable HandledError."""
+        for error in (FileNotFoundError("gh"), PermissionError("gh")):
+            with self.subTest(error=type(error).__name__):
+                mock_run.reset_mock()
+                mock_run.side_effect = error
+                with self.assertRaises(HandledError) as ctx:
+                    self._run()
+                self.assertIn("gh CLI could not be executed", ctx.exception.message)
+                self.assertEqual(mock_run.call_count, 1)
+
+    def test_gh_timeout_is_retried_as_transient(self, mock_run):
+        """A hung gh call (TimeoutExpired) is retried like other transient errors."""
+        hung = subprocess.TimeoutExpired("gh", wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS)
+        mock_run.side_effect = [hung, _rollup(_check_run("a")), _rollup(_check_run("a"))]
+        self.assertEqual(self._run()["outcome"], "success")
+
+    def test_malformed_rollup_entries_raise_after_retries(self, mock_run):
+        """Persistent non-object rollup entries raise a HandledError after retries."""
+        mock_run.return_value = _completed('{"statusCheckRollup": ["bad"]}')
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        self.assertIn("list of objects", ctx.exception.message)
+        self.assertEqual(mock_run.call_count, wait_for_ci.MAX_CONSECUTIVE_GH_ERRORS)
+
+    def test_job_log_fetch_errors_become_placeholders(self, mock_run):
+        """Missing gh or a hung log download yields a placeholder, not a crash."""
+        failing = _check_run("unit", conclusion="FAILURE")
+        for error in (
+            FileNotFoundError("gh"),
+            PermissionError("gh"),
+            subprocess.TimeoutExpired("gh", 60),
+        ):
+            with self.subTest(error=type(error).__name__):
+                mock_run.reset_mock()
+                mock_run.side_effect = [_rollup(failing), _rollup(failing), error]
+                with self.assertRaises(HandledError) as ctx:
+                    self._run()
+                log_tail = _details(ctx)["failed_checks"][0]["log_tail"]
+                self.assertTrue(log_tail.startswith("<gh api job logs failed"))
+
+    def test_deadline_reports_complete_but_unconfirmed_failure(self, mock_run):
+        """At the deadline, a first fully-complete poll is reported, not timed out."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        failed = _check_run("unit", conclusion="FAILURE")
+        mock_run.side_effect = [
+            _rollup(pending),
+            _rollup(pending),
+            _rollup(failed),
+            _completed("##[error]boom"),
+        ]
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        self.assertEqual(_details(ctx)["outcome"], "failure")
+        self.assertEqual(self.clock.now, 25)
+
+    def test_deadline_reports_complete_but_unconfirmed_success(self, mock_run):
+        """At the deadline, an all-green first complete poll is reported as success."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        mock_run.side_effect = [_rollup(pending), _rollup(pending), _rollup(_check_run("unit"))]
+        self.assertEqual(self._run()["outcome"], "success")
+
+    def test_deadline_after_failed_confirming_poll_reports_failure(self, mock_run):
+        """Complete-with-failure, then a gh error at the deadline, reports the failure."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        failed = _check_run("unit", conclusion="FAILURE")
+        err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        mock_run.side_effect = [
+            _rollup(pending),
+            _rollup(failed),
+            err,
+            _completed("##[error]boom"),
+        ]
+        with self.assertRaises(HandledError) as ctx:
+            self._run()
+        self.assertIn("1 CI check(s) failed", ctx.exception.message)
+        details = _details(ctx)
+        self.assertEqual(details["outcome"], "failure")
+        self.assertEqual([c["name"] for c in details["failed_checks"]], ["unit"])
+        self.assertEqual(self.clock.now, 25)
+
+    def test_deadline_after_failed_confirming_poll_reports_success(self, mock_run):
+        """All-green complete poll, then a gh error at the deadline, reports success."""
+        self.args.timeout = 25
+        pending = _check_run("unit", status="IN_PROGRESS", conclusion=None)
+        err = subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        mock_run.side_effect = [_rollup(pending), _rollup(_check_run("unit")), err]
+        res = self._run()
+        self.assertEqual(res["outcome"], "success")
+        self.assertEqual(self.clock.now, 25)
 
 
 if __name__ == "__main__":
