@@ -380,3 +380,61 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncMLRunCachesURLBeforeBatchFlushAndEvictsOnDelete(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := withManagedXprofEnvs(&v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "test-ns",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	})
+	// Storage simulates the 250ms batcher flush window: MlrunUrl is still empty in ESS.
+	storage := &mockStorageUpdater{
+		fetchRes: &spb.WorkUnitExecution{
+			Name:     "experiments/10/workUnits/20/executions/30",
+			Status:   &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+			Metadata: &spb.WorkUnitExecutionMetadata{MlrunUrl: ""},
+		},
+	}
+	client := &mockMLRunCreator{
+		retRes:    map[string]any{"name": "op-123", "url": "https://mlrun/op-123"},
+		updateRes: map[string]any{"url": "https://mlrun/op-123"},
+	}
+	r := &Reconciler{
+		Project:     "test-proj",
+		Location:    "us-central1",
+		ClusterName: "cluster-a",
+		Storage:     storage,
+		MLRunClient: client,
+	}
+
+	const wantURL = "https://mlrun/op-123?tab=profiles"
+	got1 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got1 != wantURL {
+		t.Fatalf("first syncMLRun() = %q, want %q", got1, wantURL)
+	}
+
+	// Second reconcile arrives ~70ms later before batcher flushes MlrunUrl to Spanner.
+	got2 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got2 != wantURL {
+		t.Fatalf("second syncMLRun() = %q, want %q", got2, wantURL)
+	}
+	if client.createCalls != 1 {
+		t.Errorf("createCalls = %d, want 1 (duplicate CreateMLRun during batch flush window)", client.createCalls)
+	}
+	if client.updateCalls != 1 {
+		t.Errorf("updateCalls = %d, want 1", client.updateCalls)
+	}
+
+	// Evicting on JobSet deletion must drop cached entries with EID <= 30.
+	r.evictPendingJobSetUpdate(10, 20, 30)
+	got3 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got3 != wantURL {
+		t.Fatalf("third syncMLRun() after eviction = %q, want %q", got3, wantURL)
+	}
+	if client.createCalls != 2 {
+		t.Errorf("createCalls after eviction = %d, want 2", client.createCalls)
+	}
+}

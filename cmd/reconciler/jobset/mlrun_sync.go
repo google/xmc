@@ -47,12 +47,58 @@ type MLRunCreator interface {
 	UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error)
 }
 
+type mlRunCacheKey struct {
+	xid int64
+	wid int64
+	eid int64
+}
+
+// maxMLRunURLCacheEntries caps the in-memory MLRun URL cache so memory stays
+// bounded even if JobSets disappear without going through finalizer eviction.
+const maxMLRunURLCacheEntries = 10000
+
+func (r *Reconciler) getCachedMLRunURL(xid, wid, eid int64) string {
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	return r.mlRunURLCache[mlRunCacheKey{xid: xid, wid: wid, eid: eid}]
+}
+
+func (r *Reconciler) cacheMLRunURL(xid, wid, eid int64, url string) {
+	if url == "" {
+		return
+	}
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	if r.mlRunURLCache == nil {
+		r.mlRunURLCache = make(map[mlRunCacheKey]string)
+	} else if len(r.mlRunURLCache) >= maxMLRunURLCacheEntries {
+		clear(r.mlRunURLCache)
+	}
+	r.mlRunURLCache[mlRunCacheKey{xid: xid, wid: wid, eid: eid}] = url
+}
+
+func (r *Reconciler) evictCachedMLRunURLs(xid, wid, eid int64) {
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	for k := range r.mlRunURLCache {
+		if k.xid == xid && k.wid == wid && k.eid <= eid {
+			delete(r.mlRunURLCache, k)
+		}
+	}
+}
+
 // syncMLRun resolves ManagedXprof metadata for a JobSet and ensures its MLRun
 // tracking record is created or reused when ManagedXprof is enabled.
 func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64) string {
 	mlRunStart := time.Now()
 	mxEnvs := getManagedXprofEnvs(jobSet)
 	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
+	if gcsPath != "" {
+		if cached := r.getCachedMLRunURL(xid, wid, eid); cached != "" {
+			mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
+			return cached
+		}
+	}
 	if gcsPath != "" && (displayName == "" || runGroup == "") {
 		displayName, runGroup = r.lookupManagedXprofArtifact(ctx, xid, wid)
 	}
@@ -64,6 +110,7 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
 		mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+		r.cacheMLRunURL(xid, wid, eid, mlRunURL)
 	}
 	mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	return mlRunURL
@@ -219,6 +266,8 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid, 
 	mlRunURL := getMLRunURL(execution)
 	if execution != nil && mlRunURL != "" && isStaleExecutionForMLRun(execution.GetName(), eid) {
 		logging.Warn(ctx, "Reusing MLRun URL from a different current execution than the one being reconciled; possible re-execution race.", "reconciledEID", eid, "xid", xid, "wid", wid, "executionName", execution.GetName())
+	} else if mlRunURL != "" {
+		r.cacheMLRunURL(xid, wid, eid, mlRunURL)
 	}
 
 	if execution != nil && isTerminalState(execution.GetStatus().GetState()) {

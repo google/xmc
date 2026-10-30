@@ -15,13 +15,18 @@
 package hypercomputeclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"xmanager_cloud/internal/logging"
 )
 
 func TestGetMLRun(t *testing.T) {
@@ -92,6 +97,52 @@ func TestCreateMLRun(t *testing.T) {
 	}
 	if got["displayName"] != "My Run" {
 		t.Errorf("response displayName = %v, want %q", got["displayName"], "My Run")
+	}
+}
+
+func TestCreateMLRunErrorLogging(t *testing.T) {
+	tests := []struct {
+		name         string
+		statusCode   int
+		wantErrorLog bool
+	}{
+		{
+			name:         "409 conflict does not emit ERROR log",
+			statusCode:   http.StatusConflict,
+			wantErrorLog: false,
+		},
+		{
+			name:         "500 internal error emits ERROR log",
+			statusCode:   http.StatusInternalServerError,
+			wantErrorLog: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, `{"error":"boom"}`, tc.statusCode)
+			}))
+			defer server.Close()
+
+			var logBuf bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelError}))
+			ctx := logging.WithLogger(context.Background(), logger)
+
+			_, err := newTestClient(server).CreateMLRun(ctx, "run-1", "run-1", "ACTIVE", nil)
+			if err == nil {
+				t.Fatalf("CreateMLRun() expected error for status %d, got nil", tc.statusCode)
+			}
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != tc.statusCode {
+				t.Fatalf("CreateMLRun() error = %v, want APIError with status %d", err, tc.statusCode)
+			}
+
+			gotErrorLog := strings.Contains(logBuf.String(), "CreateMLRun failed")
+			if gotErrorLog != tc.wantErrorLog {
+				t.Errorf("gotErrorLog = %v (logs=%s), want %v", gotErrorLog, logBuf.String(), tc.wantErrorLog)
+			}
+		})
 	}
 }
 

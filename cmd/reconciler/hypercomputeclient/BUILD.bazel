@@ -40,5 +40,8 @@ go_test(
         "sanitize_test.go",
     ],
     embed = [":hypercomputeclient"],
-    deps = ["@org_golang_x_oauth2//:oauth2"],
+    deps = [
+        "//internal/logging",
+        "@org_golang_x_oauth2//:oauth2",
+    ],
 )

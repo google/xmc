@@ -16,6 +16,7 @@ package hypercomputeclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -53,7 +54,12 @@ func (c *ControlPlaneClient) CreateMLRun(ctx context.Context, name, displayName,
 	logging.Debug(ctx, "CreateMLRun request", "url", c.mlRunsPath, "params", params, "payload", payload)
 	result, err := c.do(ctx, http.MethodPost, c.mlRunsPath, params, payload)
 	if err != nil {
-		logging.Error(ctx, "CreateMLRun failed", "error", err)
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusConflict {
+			logging.Debug(ctx, "CreateMLRun returned conflict (already exists)", "error", err)
+		} else {
+			logging.Error(ctx, "CreateMLRun failed", "error", err)
+		}
 		return nil, err
 	}
 	logging.Debug(ctx, "CreateMLRun response", "result", result)
