@@ -183,8 +183,10 @@ deployment_groups:
       - serviceusage.serviceUsageConsumer
 
   - id: db_spanner
-    source: modules/database/spanner
+    source: ./deploy/ctk_v2/modules/spanner
     settings:
+      enabled: $(vars.database_backend == "spanner")
+      project_id: $(vars.project_id)
       instance_name: xmc-$(vars.environment)
       edition: ENTERPRISE
       databases:
@@ -211,6 +213,7 @@ deployment_groups:
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      enabled: $(vars.database_backend == "spanner")
       project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.ess)
@@ -221,6 +224,7 @@ deployment_groups:
     source: ./deploy/ctk_v2/modules/spanner-schema-applier
     use: [db_spanner]
     settings:
+      enabled: $(vars.database_backend == "spanner")
       project_id: $(vars.project_id)
       instance_name: $(db_spanner.instance_name)
       database_name: $(db_spanner.database_ids.xid)
