@@ -79,8 +79,16 @@ except ImportError:
             create_vcc_comparison_charts,
             create_vcc_comparison_dashboard,
         )
-    except ImportError:
-        pass
+    except ModuleNotFoundError as exc:
+        root_pkg = (exc.name or "").split(".")[0]
+        leaf_pkg = (exc.name or "").split(".")[-1]
+        if root_pkg not in {"xmanager_cloud", "grpc", "google"} and leaf_pkg not in {
+            "builders",
+            "client",
+            "presets",
+            "_protos",
+        }:
+            raise
 
 __all__ = [
     "DashboardBuilder",
