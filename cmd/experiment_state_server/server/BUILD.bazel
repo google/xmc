@@ -57,6 +57,7 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//cmd/experiment_state_server/config",
         "//cmd/experiment_state_server/resumption",
+        "//cmd/experiment_state_server/retentionsweep",
         "//cmd/experiment_state_server/toollibs",
         "//internal/auth",
         "//internal/common/health",

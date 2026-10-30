@@ -132,6 +132,16 @@ func (s *Storage) Components() storage.ComponentRepository {
 	return s.componentRepository
 }
 
+// DeleteExpiredRows deletes nothing and returns 0, because the ROW DELETION POLICY of each table
+// already makes Cloud Spanner delete expired rows. Like the PostgreSQL backend, it rejects a
+// non-positive batchSize.
+func (s *Storage) DeleteExpiredRows(_ context.Context, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		return 0, fmt.Errorf("batch size must be positive, got %d: %w", batchSize, grpcerr.ErrInvalidArgument)
+	}
+	return 0, nil
+}
+
 // NewStorage creates a new instance of the Spanner-backed storage.
 func NewStorage(client *spanner.Client) (*Storage, error) {
 	if client == nil {
