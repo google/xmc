@@ -34,6 +34,7 @@ import (
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 )
 
 // seededHeartbeat repeats the observation of seeded, as recorded by seedOwnedComponent, so it
@@ -137,29 +138,29 @@ func TestUpdateObservedGeneration_UnchangedHeartbeat_Parity(t *testing.T) {
 
 // TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen checks that an
 // unchanged sourced heartbeat still refreshes SourceLastSeenTime, and returns the stored value,
-// while keeping UpdateTime. It reads the columns directly, so it is Spanner-only.
+// while keeping UpdateTime. MemoryStore records no SourceLastSeenTime, so this runs on dbBackends.
 func TestSpannerStore_UpdateObservedGeneration_UnchangedHeartbeatRefreshesLastSeen(t *testing.T) {
-	ctx := context.Background()
-	s, db := setupTestStore(ctx, t)
-	const name = "heartbeat-last-seen"
-	seeded := seedOwnedComponent(ctx, t, s, name, false)
-	lastSeenBefore, updateBefore := readSourceTimes(ctx, t, db, name)
+	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows) {
+		const name = "heartbeat-last-seen"
+		seeded := seedOwnedComponent(ctx, t, s, name, false)
+		lastSeenBefore, updateBefore := readSourceTimes(ctx, t, db, name)
 
-	rec, err := seededHeartbeat(ctx, s, name, seeded, ownerSource)
-	if err != nil {
-		t.Fatalf("UpdateObservedGeneration(unchanged) error = %v", err)
-	}
+		rec, err := seededHeartbeat(ctx, s, name, seeded, ownerSource)
+		if err != nil {
+			t.Fatalf("UpdateObservedGeneration(unchanged) error = %v", err)
+		}
 
-	lastSeenAfter, updateAfter := readSourceTimes(ctx, t, db, name)
-	if !lastSeenAfter.After(lastSeenBefore) {
-		t.Errorf("SourceLastSeenTime = %v, want after %v", lastSeenAfter, lastSeenBefore)
-	}
-	if !rec.SourceLastSeenTime.Equal(lastSeenAfter) {
-		t.Errorf("returned SourceLastSeenTime = %v, want the stored %v", rec.SourceLastSeenTime, lastSeenAfter)
-	}
-	if !updateAfter.Equal(updateBefore) {
-		t.Errorf("UpdateTime = %v, want unchanged %v", updateAfter, updateBefore)
-	}
+		lastSeenAfter, updateAfter := readSourceTimes(ctx, t, db, name)
+		if !lastSeenAfter.After(lastSeenBefore) {
+			t.Errorf("SourceLastSeenTime = %v, want after %v", lastSeenAfter, lastSeenBefore)
+		}
+		if !rec.SourceLastSeenTime.Equal(lastSeenAfter) {
+			t.Errorf("returned SourceLastSeenTime = %v, want the stored %v", rec.SourceLastSeenTime, lastSeenAfter)
+		}
+		if !updateAfter.Equal(updateBefore) {
+			t.Errorf("UpdateTime = %v, want unchanged %v", updateAfter, updateBefore)
+		}
+	})
 }
 
 // readSourceTimes returns SourceLastSeenTime and UpdateTime of the active record name.

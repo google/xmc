@@ -33,27 +33,36 @@ import (
 func TestTxRepository_WritePreconditionsAndValidation(t *testing.T) {
 	ctx := context.Background()
 	nilTxRepo := NewRepository(nil).WithTx(nil)
+	readOnlyRepo := &TxRepository{reader: reader{db: &pgxpool.Pool{}}, readOnly: true}
 	rwRepo := NewRepository(nil).WithTx(&pgxpool.Pool{})
 	validRec := &store.ComponentRecord{ComponentID: 1, Name: "app"}
+	owner := &store.SourceOwner{UID: "uid", Generation: 1, Namespace: "xmc", ClusterUID: "c", Epoch: 1}
 
-	t.Run("nil transaction is FailedPrecondition", func(t *testing.T) {
-		calls := map[string]func() error{
-			"RefreshFence":               func() error { return nilTxRepo.RefreshFence(ctx, nil) },
-			"ReplaceFence":               func() error { return nilTxRepo.ReplaceFence(ctx, store.ClusterIdentity{}) },
-			"ReassignOwnedComponents":    func() error { _, err := nilTxRepo.ReassignOwnedComponents(ctx, "uid", 1); return err },
-			"InsertComponent":            func() error { return nilTxRepo.InsertComponent(ctx, validRec, nil) },
-			"UpdateComponentIntent":      func() error { return nilTxRepo.UpdateComponentIntent(ctx, validRec, nil) },
-			"UpdateComponentState":       func() error { return nilTxRepo.UpdateComponentState(ctx, 1, 0, nil) },
-			"UpdateComponentObservation": func() error { return nilTxRepo.UpdateComponentObservation(ctx, validRec, false) },
-			"SoftDeleteComponent":        func() error { return nilTxRepo.SoftDeleteComponent(ctx, validRec, nil) },
-			"WriteComponentOwner":        func() error { return nilTxRepo.WriteComponentOwner(ctx, 1, nil) },
-		}
-		for name, call := range calls {
-			if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
-				t.Errorf("%s error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+	for label, repo := range map[string]*TxRepository{
+		"nil transaction is FailedPrecondition":       nilTxRepo,
+		"read-only transaction is FailedPrecondition": readOnlyRepo,
+	} {
+		t.Run(label, func(t *testing.T) {
+			calls := map[string]func() error{
+				"RefreshFence":               func() error { return repo.RefreshFence(ctx, nil) },
+				"ReplaceFence":               func() error { return repo.ReplaceFence(ctx, store.ClusterIdentity{}) },
+				"ReassignOwnedComponents":    func() error { _, err := repo.ReassignOwnedComponents(ctx, "uid", 1); return err },
+				"InsertComponent":            func() error { return repo.InsertComponent(ctx, validRec, nil) },
+				"InsertComponent(nil)":       func() error { return repo.InsertComponent(ctx, nil, nil) },
+				"UpdateComponentIntent":      func() error { return repo.UpdateComponentIntent(ctx, validRec, nil) },
+				"UpdateComponentState":       func() error { return repo.UpdateComponentState(ctx, 1, 0, nil) },
+				"UpdateComponentObservation": func() error { return repo.UpdateComponentObservation(ctx, validRec, false) },
+				"SoftDeleteComponent":        func() error { return repo.SoftDeleteComponent(ctx, validRec, nil) },
+				"WriteComponentOwner(nil)":   func() error { return repo.WriteComponentOwner(ctx, 1, nil) },
+				"WriteComponentOwner(owner)": func() error { return repo.WriteComponentOwner(ctx, 1, owner) },
 			}
-		}
-	})
+			for name, call := range calls {
+				if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
+					t.Errorf("%s error = %v, want %v", name, err, grpcerr.ErrFailedPrecondition)
+				}
+			}
+		})
+	}
 
 	t.Run("nil record is InvalidArgument", func(t *testing.T) {
 		calls := map[string]func() error{

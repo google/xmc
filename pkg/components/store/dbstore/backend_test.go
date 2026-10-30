@@ -51,6 +51,18 @@ func (b dbBackend) newStore(ctx context.Context, t *testing.T) (*dbstore.Store, 
 	return s, rows
 }
 
+// forEachDBBackend runs fn in a subtest against a fresh Store for each backend in dbBackends.
+func forEachDBBackend(t *testing.T, fn func(ctx context.Context, t *testing.T, s *dbstore.Store, db backendRows)) {
+	t.Helper()
+	for _, backend := range dbBackends() {
+		t.Run(backend.name, func(t *testing.T) {
+			ctx := context.Background()
+			s, rows := backend.newStore(ctx, t)
+			fn(ctx, t, s, rows)
+		})
+	}
+}
+
 // backendRows seeds and inspects the rows of one test database directly, bypassing the Store API,
 // for state that the Store API cannot create or does not expose.
 type backendRows interface {

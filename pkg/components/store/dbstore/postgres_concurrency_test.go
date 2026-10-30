@@ -39,19 +39,19 @@ import (
 	"xmanager_cloud/pkg/components/store/dependency"
 )
 
-// rendezvous blocks its first parties callers of wait until all of them have arrived; later calls,
+// barrier blocks its first parties callers of wait until all of them have arrived; later calls,
 // such as those of retried transactions, return at once.
-type rendezvous struct {
+type barrier struct {
 	mu      sync.Mutex
 	pending int
 	all     chan struct{}
 }
 
-func newRendezvous(parties int) *rendezvous {
-	return &rendezvous{pending: parties, all: make(chan struct{})}
+func newBarrier(parties int) *barrier {
+	return &barrier{pending: parties, all: make(chan struct{})}
 }
 
-func (r *rendezvous) wait(ctx context.Context) error {
+func (r *barrier) wait(ctx context.Context) error {
 	r.mu.Lock()
 	if r.pending == 0 {
 		r.mu.Unlock()
@@ -74,7 +74,7 @@ func (r *rendezvous) wait(ctx context.Context) error {
 // records every transaction attempt with the error its callback returned.
 type overlappingStorage struct {
 	storage.Storage
-	meet     *rendezvous
+	meet     *barrier
 	mu       sync.Mutex
 	attempts []error
 }
@@ -119,7 +119,7 @@ func hasReasonOrPrefix(err error, wants []string) bool {
 // meetingTxRepository waits at meet after the catalog and fence reads that start CMS transactions.
 type meetingTxRepository struct {
 	storage.ComponentTxRepository
-	meet *rendezvous
+	meet *barrier
 }
 
 func (r meetingTxRepository) ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error) {
@@ -162,7 +162,7 @@ func newOverlappingStores(ctx context.Context, t *testing.T) overlappingStores {
 	if err != nil {
 		t.Fatalf("dbstore.New(seed) failed: %v", err)
 	}
-	overlap := &overlappingStorage{Storage: st, meet: newRendezvous(2)}
+	overlap := &overlappingStorage{Storage: st, meet: newBarrier(2)}
 	overlappingStore, err := dbstore.New(overlap)
 	if err != nil {
 		t.Fatalf("dbstore.New(overlap) failed: %v", err)

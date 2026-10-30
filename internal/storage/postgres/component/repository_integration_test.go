@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	"xmanager_cloud/pkg/components/naming"
@@ -344,6 +345,37 @@ func TestRepository_WithReadOnlySnapshotReadsOneSnapshot(t *testing.T) {
 	}
 	if got, err := repo.GetActiveComponent(ctx, "app"); err != nil || got.Generation != 2 {
 		t.Errorf("GetActiveComponent(app) after the snapshot = %+v, %v; want generation 2", got, err)
+	}
+}
+
+func TestRepository_WithReadOnlySnapshotRejectsWrites(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	rec := buildRecord(1, "app", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 0)
+	owner := &store.SourceOwner{UID: "uid-1", Generation: 1, Namespace: "xmc", ClusterUID: "cluster-a", Epoch: 1}
+
+	err := repo.WithReadOnlySnapshot(ctx, func(ctx context.Context, snap storage.ComponentTxRepository) error {
+		for name, call := range map[string]func() error{
+			"RefreshFence":               func() error { return snap.RefreshFence(ctx, nil) },
+			"ReplaceFence":               func() error { return snap.ReplaceFence(ctx, store.ClusterIdentity{UID: "c", Name: "n", Epoch: 1}) },
+			"ReassignOwnedComponents":    func() error { _, err := snap.ReassignOwnedComponents(ctx, "c", 1); return err },
+			"InsertComponent":            func() error { return snap.InsertComponent(ctx, rec, nil) },
+			"UpdateComponentIntent":      func() error { return snap.UpdateComponentIntent(ctx, rec, nil) },
+			"UpdateComponentState":       func() error { return snap.UpdateComponentState(ctx, 1, rec.State, nil) },
+			"UpdateComponentObservation": func() error { return snap.UpdateComponentObservation(ctx, rec, false) },
+			"SoftDeleteComponent":        func() error { return snap.SoftDeleteComponent(ctx, rec, nil) },
+			"WriteComponentOwner(nil)":   func() error { return snap.WriteComponentOwner(ctx, 1, nil) },
+			"WriteComponentOwner(owner)": func() error { return snap.WriteComponentOwner(ctx, 1, owner) },
+		} {
+			if callErr := call(); !errors.Is(callErr, grpcerr.ErrFailedPrecondition) || status.Code(callErr) != codes.FailedPrecondition {
+				t.Errorf("%s error = %v, want %v", name, callErr, grpcerr.ErrFailedPrecondition)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithReadOnlySnapshot() unexpected error: %v", err)
 	}
 }
 

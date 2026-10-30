@@ -100,6 +100,7 @@ type Repository struct {
 // transaction of RunInSerializableTransaction or a read-only snapshot of Repository.WithReadOnlySnapshot.
 type TxRepository struct {
 	reader
+	readOnly bool
 }
 
 // NewRepository creates a new PostgreSQL Component repository instance bound to pool.
@@ -119,7 +120,7 @@ func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx conte
 		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
-		return fn(ctx, r.WithTx(tx))
+		return fn(ctx, &TxRepository{reader: reader{db: tx}, readOnly: true})
 	})
 }
 
@@ -342,7 +343,7 @@ func (f *fenceColumns) identity() *store.ClusterIdentity {
 // RefreshFence updates LastSeenTime to the commit time and, when newName is non-nil,
 // ActiveClusterName within the transaction.
 func (r *TxRepository) RefreshFence(ctx context.Context, newName *string) error {
-	if err := r.checkDB(); err != nil {
+	if err := r.checkWriteDB(); err != nil {
 		return err
 	}
 	var name pgtype.Text
@@ -355,7 +356,7 @@ func (r *TxRepository) RefreshFence(ctx context.Context, newName *string) error 
 // ReplaceFence writes cluster as the ownership fence holder with DeclaredTime and LastSeenTime at
 // the transaction's commit time.
 func (r *TxRepository) ReplaceFence(ctx context.Context, cluster store.ClusterIdentity) error {
-	if err := r.checkDB(); err != nil {
+	if err := r.checkWriteDB(); err != nil {
 		return err
 	}
 	return r.exec(ctx, replaceFenceSQL, "ownership fence", pgx.StrictNamedArgs{
@@ -366,7 +367,7 @@ func (r *TxRepository) ReplaceFence(ctx context.Context, cluster store.ClusterId
 // ReassignOwnedComponents reassigns active owned components to the declaring cluster without an
 // owner UID, leaving UpdateTime unchanged, and returns how many it reassigned.
 func (r *TxRepository) ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error) {
-	if err := r.checkDB(); err != nil {
+	if err := r.checkWriteDB(); err != nil {
 		return 0, err
 	}
 	tag, err := r.db.Exec(ctx, reassignOwnedComponentsSQL.String(), pgx.StrictNamedArgs{
@@ -422,7 +423,7 @@ func (r *TxRepository) UpdateComponentIntent(ctx context.Context, rec *store.Com
 
 // UpdateComponentState updates a component's state and access status payload.
 func (r *TxRepository) UpdateComponentState(ctx context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error {
-	if err := r.checkDB(); err != nil {
+	if err := r.checkWriteDB(); err != nil {
 		return err
 	}
 	accessBytes, err := data.MarshalAccessStatus(access)
@@ -470,7 +471,7 @@ func (r *TxRepository) SoftDeleteComponent(ctx context.Context, rec *store.Compo
 // WriteComponentOwner updates a component's source owner columns, with SourceLastSeenTime at the
 // commit time, and leaves UpdateTime unchanged. A nil owner is a no-op.
 func (r *TxRepository) WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error {
-	if err := r.checkDB(); err != nil {
+	if err := r.checkWriteDB(); err != nil {
 		return err
 	}
 	if owner == nil {
@@ -482,8 +483,18 @@ func (r *TxRepository) WriteComponentOwner(ctx context.Context, componentID int6
 	})
 }
 
-func (r *TxRepository) checkRecordWrite(rec *store.ComponentRecord) error {
+func (r *TxRepository) checkWriteDB() error {
 	if err := r.checkDB(); err != nil {
+		return err
+	}
+	if r.readOnly {
+		return pgdb.WrapStatusError("cannot write component catalog in a read-only snapshot", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return nil
+}
+
+func (r *TxRepository) checkRecordWrite(rec *store.ComponentRecord) error {
+	if err := r.checkWriteDB(); err != nil {
 		return err
 	}
 	if rec == nil {
