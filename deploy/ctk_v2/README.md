@@ -85,10 +85,10 @@ ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [Click
 *   **`clickhouse_user`**: ClickHouse username (default: `default`).
 *   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap. The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that do enable it should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
 
-### Database Backend (Spanner or Bring-Your-Own PostgreSQL)
+### Database Backend (Spanner or PostgreSQL)
 **`database_backend`** selects the storage backend: `spanner` (default) or `postgres`.
 *   **`spanner`**: The blueprint provisions the Cloud Spanner instance, the ESS and XID databases, and applies their schemas. Existing deployments are unaffected.
-*   **`postgres`**: Spanner, its schema appliers, and the `spanner.googleapis.com` API are skipped, and the log monitor runs in-cluster (the Cloud Run log monitor only supports Spanner). PostgreSQL is Bring-Your-Own infrastructure; point the workloads at it with:
+*   **`postgres`**: Spanner, its schema appliers, and the `spanner.googleapis.com` API are skipped, and the log monitor runs in-cluster (the Cloud Run log monitor only supports Spanner). Point the workloads at your PostgreSQL instance with:
     *   **`postgres_host`**: PostgreSQL hostname reachable from the cluster.
     *   **`postgres_port`**: PostgreSQL port (default: `5432`).
     *   **`postgres_user`** / **`postgres_password`**: Credentials used by the workloads.
