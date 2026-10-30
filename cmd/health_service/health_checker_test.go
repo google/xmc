@@ -269,7 +269,7 @@ const (
 	mockXidExpectedVersion = int64(1)
 )
 
-type mockLazySpanner struct {
+type mockLazyDB struct {
 	essHealthClient    commonhealth.SchemaVersionClient
 	essExpectedVersion int64
 	essHealthErr       error
@@ -280,7 +280,7 @@ type mockLazySpanner struct {
 	componentsErr      error
 }
 
-func (m *mockLazySpanner) EssHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
+func (m *mockLazyDB) EssHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
 	if m.essHealthErr != nil {
 		return nil, 0, m.essHealthErr
 	}
@@ -291,7 +291,7 @@ func (m *mockLazySpanner) EssHealth(ctx context.Context) (commonhealth.SchemaVer
 	return m.essHealthClient, expected, nil
 }
 
-func (m *mockLazySpanner) XidHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
+func (m *mockLazyDB) XidHealth(ctx context.Context) (commonhealth.SchemaVersionClient, int64, error) {
 	if m.xidHealthErr != nil {
 		return nil, 0, m.xidHealthErr
 	}
@@ -302,7 +302,7 @@ func (m *mockLazySpanner) XidHealth(ctx context.Context) (commonhealth.SchemaVer
 	return m.xidHealthClient, expected, nil
 }
 
-func (m *mockLazySpanner) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
+func (m *mockLazyDB) ComponentsProvider(ctx context.Context) (summary.CustomComponentsInfoProvider, error) {
 	if m.componentsErr != nil {
 		return nil, m.componentsErr
 	}
@@ -321,7 +321,7 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		lazyDB: &mockLazySpanner{
+		lazyDB: &mockLazyDB{
 			essHealthClient:    &mockSpannerHealthClient{version: 6, dirty: false},
 			essExpectedVersion: 6,
 			xidHealthClient:    &mockSpannerHealthClient{version: 1, dirty: true},
@@ -344,7 +344,7 @@ func TestRunChecks_SpannerMetadata(t *testing.T) {
 	}
 }
 
-func TestCheckSpanner_NilLazySpanner(t *testing.T) {
+func TestCheckDatabase_NilLazyDB(t *testing.T) {
 	for _, tc := range []struct {
 		backend dbconfig.Backend
 		wantESS string
@@ -530,7 +530,7 @@ func TestRunChecks_LogMonitorMissingConfig(t *testing.T) {
 		httpClient: &http.Client{
 			Timeout: 10 * time.Millisecond,
 		},
-		lazyDB: &mockLazySpanner{
+		lazyDB: &mockLazyDB{
 			essHealthClient:    &mockSpannerHealthClient{version: 6, dirty: false},
 			essExpectedVersion: 6,
 			xidHealthClient:    &mockSpannerHealthClient{version: 1, dirty: false},
@@ -734,7 +734,7 @@ func TestRunChecks(t *testing.T) {
 					LogMonitorResourceName: "projects/test-project/locations/us-central1/services/log-monitor",
 					DB:                     dbconfig.Config{Backend: tc.backend},
 				},
-				LazyDB: &mockLazySpanner{
+				LazyDB: &mockLazyDB{
 					essHealthClient: &mockSpannerHealthClient{version: tc.essVersion, dirty: tc.essSpannerDirty, err: tc.essSpannerErr},
 					xidHealthClient: &mockSpannerHealthClient{version: tc.xidVersion, dirty: tc.xidSpannerDirty, err: tc.xidSpannerErr},
 				},
@@ -865,7 +865,7 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 			ReconcilerURL:    httpServer.URL,
 			EnableComponents: true,
 		},
-		LazyDB: &mockLazySpanner{
+		LazyDB: &mockLazyDB{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -931,7 +931,7 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 			ReconcilerURL:    httpServer.URL,
 			EnableComponents: true,
 		},
-		LazyDB: &mockLazySpanner{
+		LazyDB: &mockLazyDB{
 			componentsProvider: mockProvider,
 		},
 	})
@@ -956,7 +956,7 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 	}
 }
 
-func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
+func TestHealthChecker_RunChecks_LazyDBInitError(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -986,7 +986,7 @@ func TestHealthChecker_RunChecks_LazySpannerInitError(t *testing.T) {
 			EnableComponents: true,
 			DB:               dbconfig.Config{Backend: dbconfig.BackendSpanner},
 		},
-		LazyDB: &mockLazySpanner{
+		LazyDB: &mockLazyDB{
 			essHealthErr:  errors.New("ess spanner init failed"),
 			xidHealthErr:  errors.New("xid spanner init failed"),
 			componentsErr: errors.New("components provider init failed"),
@@ -1058,7 +1058,7 @@ func TestHealthChecker_RunChecks_CustomComponentsRunsAcrossBackends(t *testing.T
 					EnableComponents: true,
 					DB:               dbconfig.Config{Backend: backend},
 				},
-				LazyDB: &mockLazySpanner{
+				LazyDB: &mockLazyDB{
 					componentsProvider: mockProvider,
 				},
 			})

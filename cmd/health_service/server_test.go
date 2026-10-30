@@ -414,7 +414,7 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 			},
 		},
 	}
-	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	s := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -459,7 +459,7 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -491,7 +491,7 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 		ConfigDir:        tempDir,
 		EnableComponents: true,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	resp, err := s.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
@@ -521,7 +521,7 @@ func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: context.Canceled,
 	}
-	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazySpanner{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsProvider: mockProvider}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
 
 	_, err := s.ListConfigEntries(ctx, &spb.ListConfigEntriesRequest{})
