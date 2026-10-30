@@ -167,8 +167,8 @@ func rollbackDetached(tx pgx.Tx) {
 }
 
 func waitBackoff(ctx context.Context, d time.Duration) error {
-	if err := ctx.Err(); err != nil || d <= 0 {
-		return err
+	if d <= 0 {
+		return ctx.Err()
 	}
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -176,7 +176,7 @@ func waitBackoff(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-timer.C:
-		return ctx.Err()
+		return nil
 	}
 }
 
