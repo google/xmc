@@ -24,16 +24,13 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/status"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/internal/storage/dbconfig"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
@@ -215,14 +212,10 @@ func TestCMSAdmission(t *testing.T) {
 
 type stubComponentRepo struct {
 	storage.ComponentRepository
-	err     error
 	records map[string]*store.ComponentRecord
 }
 
 func (r stubComponentRepo) GetActiveComponent(_ context.Context, canonicalName string) (*store.ComponentRecord, error) {
-	if r.err != nil {
-		return nil, r.err
-	}
 	if rec, ok := r.records[canonicalName]; ok {
 		return rec, nil
 	}
@@ -230,9 +223,6 @@ func (r stubComponentRepo) GetActiveComponent(_ context.Context, canonicalName s
 }
 
 func (r stubComponentRepo) ReadOwnershipGauges(context.Context, time.Time) (store.OwnershipGauges, error) {
-	if r.err != nil {
-		return store.OwnershipGauges{}, r.err
-	}
 	return store.OwnershipGauges{}, nil
 }
 
@@ -244,7 +234,7 @@ func TestInitCMS_StoreSelection(t *testing.T) {
 	}
 
 	t.Run("nil storage falls back to MemoryStore", func(t *testing.T) {
-		client, cleanup := startTestCMSServer(ctx, t, nil, dbconfig.BackendSpanner)
+		client, cleanup := startTestCMSServer(ctx, t, nil)
 		defer cleanup()
 
 		resp, err := client.ValidateComponentRequirement(ctx, req)
@@ -256,25 +246,7 @@ func TestInitCMS_StoreSelection(t *testing.T) {
 		}
 	})
 
-	t.Run("postgres backend falls back to MemoryStore", func(t *testing.T) {
-		st := &storage.MockStorage{
-			ComponentRepository: stubComponentRepo{
-				err: status.Error(codes.Unimplemented, "postgres component repo unimplemented"),
-			},
-		}
-		client, cleanup := startTestCMSServer(ctx, t, st, dbconfig.BackendPostgres)
-		defer cleanup()
-
-		resp, err := client.ValidateComponentRequirement(ctx, req)
-		if err != nil {
-			t.Fatalf("ValidateComponentRequirement() on Postgres fallback failed: %v", err)
-		}
-		if resp.GetSatisfied() {
-			t.Errorf("ValidateComponentRequirement().Satisfied = true, want false on empty MemoryStore")
-		}
-	})
-
-	t.Run("spanner backend wires dbstore.Store", func(t *testing.T) {
+	t.Run("storage wires dbstore.Store", func(t *testing.T) {
 		seeded := &store.ComponentRecord{
 			ComponentID: 42,
 			Name:        "spanner-backed-comp",
@@ -292,7 +264,7 @@ func TestInitCMS_StoreSelection(t *testing.T) {
 				records: map[string]*store.ComponentRecord{"spanner-backed-comp": seeded},
 			},
 		}
-		client, cleanup := startTestCMSServer(ctx, t, st, dbconfig.BackendSpanner)
+		client, cleanup := startTestCMSServer(ctx, t, st)
 		defer cleanup()
 
 		resp, err := client.ValidateComponentRequirement(ctx, req)
@@ -305,14 +277,14 @@ func TestInitCMS_StoreSelection(t *testing.T) {
 	})
 }
 
-func startTestCMSServer(ctx context.Context, t *testing.T, st storage.Storage, backend dbconfig.Backend) (componentspb.ComponentManagerServiceClient, func()) {
+func startTestCMSServer(ctx context.Context, t *testing.T, st storage.Storage) (componentspb.ComponentManagerServiceClient, func()) {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen() failed: %v", err)
 	}
 	s := grpc.NewServer()
-	stopCMS := initCMS(ctx, s, health.NewServer(), st, backend, cms.NewDisabledAuthorizer())
+	stopCMS := initCMS(ctx, s, health.NewServer(), st, cms.NewDisabledAuthorizer())
 	go func() {
 		_ = s.Serve(lis)
 	}()

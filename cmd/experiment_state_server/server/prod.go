@@ -49,7 +49,6 @@ var _ apipb.ExperimentStateServiceServer = (*ProdServer)(nil)
 type ProdServer struct {
 	*Server
 	storage         storage.Storage
-	storageBackend  dbconfig.Backend
 	dbHealth        commonhealth.ReadinessChecker
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
@@ -71,14 +70,6 @@ func (p *ProdServer) Storage() storage.Storage {
 		return nil
 	}
 	return p.storage
-}
-
-// StorageBackend returns the database backend configured for the server, or empty when unset.
-func (p *ProdServer) StorageBackend() dbconfig.Backend {
-	if p == nil {
-		return ""
-	}
-	return p.storageBackend
 }
 
 // Close closes all underlying production client connections.
@@ -286,7 +277,6 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	return &ProdServer{
 		Server:          srv,
 		storage:         storage,
-		storageBackend:  dbCfg.Backend,
 		dbHealth:        storage,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
