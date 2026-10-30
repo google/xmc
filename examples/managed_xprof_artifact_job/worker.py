@@ -62,9 +62,6 @@ def _run_workload(
     warmup.block_until_ready()
     print("Warmup complete.", flush=True)
 
-    jax.profiler.start_server(profiler_port)
-    print(f"JAX profiler server listening on port {profiler_port}.", flush=True)
-
     print(f"Capturing {programmatic_steps} steps to {profile_dir}...", flush=True)
     jax.profiler.start_trace(profile_dir)
     try:
@@ -74,9 +71,11 @@ def _run_workload(
         jax.profiler.stop_trace()
     print(f"Programmatic trace written to {profile_dir}", flush=True)
 
-    # Note: Due to an XProf limitation, triggering an on-demand profile capture needs to wait
-    # for programmatic tracing to finish here. The 9999 xprof server can be started at the
-    # same time, but simultaneous trace captures are not supported.
+    # Start the on-demand JAX profiler server only after programmatic tracing
+    # completes so concurrent on-demand profile captures cannot collide with start_trace().
+    jax.profiler.start_server(profiler_port)
+    print(f"JAX profiler server listening on port {profiler_port}.", flush=True)
+
     print(f"Running steps {programmatic_steps + 1} to {total_steps}...", flush=True)
     for _ in range(programmatic_steps + 1, total_steps + 1):
         _matmul_step(x, y).block_until_ready()
