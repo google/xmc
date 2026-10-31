@@ -113,7 +113,15 @@ export const MOCK_CLUSTER_QUEUES: ListClusterQueuesResponse = {
   queues: [
     {
       queueName: 'gpu-cluster-queue',
-      queueCapacity: [{ resourceType: 'nvidia.com/gpu', totalCapacity: 64, freeCapacity: 56 }],
+      queueCapacity: [
+        {
+          resourceType: 'nvidia.com/gpu',
+          totalCapacity: 64,
+          freeCapacity: 56,
+          usedCapacity: 8,
+          freeCapacityWithBorrowing: 72,
+        },
+      ],
     },
     {
       queueName: 'cpu-cluster-queue',

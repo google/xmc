@@ -262,6 +262,7 @@ func convertAggregatedQuotaToResourceCapacity(resourceType string, quotaAggregat
 	return &spb.QueueResourceCapacity{
 		ResourceType:              resourceType,
 		TotalCapacity:             nominalQuota,
+		UsedCapacity:              &totalUsedCapacity,
 		FreeCapacity:              freeCapacity,
 		FreeCapacityWithBorrowing: freeCapacityWithBorrowing,
 	}

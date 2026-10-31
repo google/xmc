@@ -35,25 +35,37 @@ xmc-smart-resource-finder {
   width: 100%;
 }
 
-.rod-split-container {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  width: 100%;
+.gpu-quota-summary,
+.queue-jobs-container {
+  margin-bottom: 24px;
+  min-width: 0;
 }
 
-.rod-main-content {
-  flex: 1 1 50%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+.gpu-quota-summary {
+  h2 {
+    font-size: 18px;
+    margin: 0 0 8px;
+  }
+
+  p {
+    margin: 8px 0 16px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th,
+  td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--mat-sys-outline-variant, #dadce0);
+  }
 }
 
-.jobs-side-pane {
-  flex: 1 1 50%;
-  min-width: 0;
-  position: sticky;
-  top: 16px;
+.quota-table-container {
+  overflow-x: auto;
 }
 
 .resource-availability-container {

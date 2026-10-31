@@ -40,16 +40,9 @@ export class ResourceService {
    * Fetches the list of cluster queues strictly matching the ListClusterQueuesResponse proto shape.
    */
   getClusterQueues(): Observable<ListClusterQueuesResponse> {
-    return this.http
-      .get<ListClusterQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
-        withCredentials: true,
-      })
-      .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch cluster queues:', error);
-          return of({ queues: [] });
-        }),
-      );
+    return this.http.get<ListClusterQueuesResponse>(`${XMC_API_DOMAIN}/clusterqueues`, {
+      withCredentials: true,
+    });
   }
 
   /**

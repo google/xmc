@@ -72,7 +72,7 @@ describe('ResourceService', () => {
       expect(response.queues?.[0].queueCapacity?.[0].totalCapacity).toBe(64);
     });
 
-    it('should handle HTTP error gracefully and return empty queues response', async () => {
+    it('should propagate queue fetch errors so consumers can retain stale data', async () => {
       const responsePromise: Promise<ListClusterQueuesResponse> = firstValueFrom(
         state.service.getClusterQueues(),
       );
@@ -80,8 +80,7 @@ describe('ResourceService', () => {
       const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/clusterqueues`);
       req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
 
-      const response = await responsePromise;
-      expect(response.queues).toEqual([]);
+      await expectAsync(responsePromise).toBeRejected();
       await flush();
     });
   });

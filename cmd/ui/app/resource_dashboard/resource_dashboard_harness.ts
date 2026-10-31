@@ -20,9 +20,27 @@ import { QueueListHarness } from './components/queue_list/queue_list_harness';
 import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harness';
 
+class GpuQuotaRowHarness extends ComponentHarness {
+  static hostSelector = '.gpu-quota-summary tbody tr';
+
+  async getCells(): Promise<string[]> {
+    const cells = await this.locatorForAll('th, td')();
+    return Promise.all(cells.map((cell) => cell.text()));
+  }
+}
+
 /** Harness for interacting with <xmc-resource-dashboard> in tests. */
 export class ResourceDashboardHarness extends ComponentHarness {
   static hostSelector = 'xmc-resource-dashboard';
+
+  async getGpuQuotaText(): Promise<string> {
+    return (await this.locatorFor('.gpu-quota-summary')()).text();
+  }
+
+  async getGpuQuotaRows(): Promise<string[][]> {
+    const rows = await this.locatorForAll(GpuQuotaRowHarness)();
+    return Promise.all(rows.map((row) => row.getCells()));
+  }
 
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {

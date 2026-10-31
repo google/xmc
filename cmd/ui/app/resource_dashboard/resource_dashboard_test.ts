@@ -15,7 +15,7 @@
 import { Component } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 
 import { ListClusterQueuesResponse, QueueOverview } from 'app/protos/rod';
 import { AUTO_REFRESH_INTERVAL_MS } from 'app/service/constants';
@@ -29,6 +29,7 @@ import {
   setupObservableMatchers,
 } from 'app/testing/test';
 
+import { AutoReloadService } from '../common/components/autoreloader/autoreloader_service';
 import { ResourceDashboard } from './resource_dashboard';
 import { ResourceDashboardHarness } from './resource_dashboard_harness';
 
@@ -49,6 +50,8 @@ describe('ResourceDashboard Container', () => {
         resourceType: 'nvidia.com/gpu',
         totalCapacity: 64,
         freeCapacity: 56,
+        usedCapacity: 8,
+        freeCapacityWithBorrowing: 72,
       },
     ],
   };
@@ -64,7 +67,7 @@ describe('ResourceDashboard Container', () => {
     ],
   };
 
-  cleanState(() => {
+  const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
@@ -76,22 +79,30 @@ describe('ResourceDashboard Container', () => {
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
     resourceService.getQueueSecondaryData.and.returnValue(of({ queuePredictability: {} }));
 
+    const reload$ = new Subject<void>();
+    const queryParams$ = new BehaviorSubject({ queue: 'gpu-cluster-queue' });
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
       providers: [
         provideRouter([]),
+        {
+          provide: AutoReloadService,
+          useValue: {
+            createReloader: () => ({ reloader$: reload$, start: () => {}, stop: () => {} }),
+          },
+        },
         { provide: ResourceService, useValue: resourceService },
         { provide: AUTO_REFRESH_INTERVAL_MS, useValue: 30000 },
         {
           provide: ActivatedRoute,
           useValue: {
-            queryParams: of({ queue: 'gpu-cluster-queue' }),
+            queryParams: queryParams$,
             data: of({}),
           },
         },
       ],
     });
-    return { resourceService };
+    return { resourceService, reload$, queryParams$ };
   }, beforeEach);
 
   it('should render subnav tabs, smart resource finder, resolved cluster queues, and queue jobs table', async () => {
@@ -109,6 +120,145 @@ describe('ResourceDashboard Container', () => {
 
     expect(await finderHarness.getResourceTypeSelectCount()).toBe(1);
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
+  });
+
+  it('should show quota usage and borrowing headroom for the selected queue', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaRows()).toEqual([['nvidia.com/gpu', '8', '56', '64', '72']]);
+    expect(await dashboard.getGpuQuotaText()).toContain('GPU quota: gpu-cluster-queue');
+    expect(await dashboard.getGpuQuotaText()).toContain('Quota accounting');
+
+    const queueList = (await dashboard.getQueueList())!;
+    await (await queueList.getQueueCard(1)).click();
+    await flush();
+    expect(await dashboard.getGpuQuotaRows()).toEqual([]);
+    expect(await dashboard.getGpuQuotaText()).toContain('GPU quota: cpu-cluster-queue');
+    expect(await dashboard.getGpuQuotaText()).toContain('No GPU quota configured');
+  });
+
+  it('should keep GPU types separate and report borrowed usage above nominal quota', async () => {
+    state.resourceService.getClusterQueues.and.returnValue(
+      of({
+        queues: [
+          {
+            ...mockGpuQueue,
+            queueCapacity: [
+              {
+                resourceType: 'nvidia.com/gpu: nvidia-h100',
+                totalCapacity: 8,
+                freeCapacity: 0,
+                usedCapacity: 12,
+                freeCapacityWithBorrowing: 4,
+              },
+              {
+                resourceType: 'nvidia.com/gpu: nvidia-l4',
+                totalCapacity: 16,
+                freeCapacity: 16,
+                usedCapacity: 0,
+                freeCapacityWithBorrowing: 16,
+              },
+              { resourceType: 'cpu', totalCapacity: 64, freeCapacity: 32, usedCapacity: 32 },
+            ],
+          },
+        ],
+      }),
+    );
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaRows()).toEqual([
+      ['nvidia.com/gpu: nvidia-h100', '12', '0', '8', '4'],
+      ['nvidia.com/gpu: nvidia-l4', '0', '16', '16', '16'],
+    ]);
+  });
+
+  it('should show unavailable usage when the server does not report it', async () => {
+    state.resourceService.getClusterQueues.and.returnValue(
+      of({
+        queues: [
+          {
+            ...mockGpuQueue,
+            queueCapacity: [{ resourceType: 'nvidia.com/gpu', totalCapacity: 8, freeCapacity: 0 }],
+          },
+        ],
+      }),
+    );
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaRows()).toEqual([
+      ['nvidia.com/gpu', 'Unavailable', '0', '8', 'Unavailable'],
+    ]);
+  });
+
+  it('should show unavailable quota when the selected queue is absent', async () => {
+    state.resourceService.getClusterQueues.and.returnValue(of({ queues: [] }));
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaText()).toContain('Queue quota unavailable.');
+  });
+
+  it('should refresh quota and retain the last data when refresh fails', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    state.resourceService.getClusterQueues.and.returnValue(throwError(() => new Error('offline')));
+    state.reload$.next();
+    await flush();
+    expect(await dashboard.getGpuQuotaText()).toContain('Queue quota refresh failed');
+    expect(await dashboard.getGpuQuotaRows()).toEqual([['nvidia.com/gpu', '8', '56', '64', '72']]);
+
+    const refreshed$ = new Subject<ListClusterQueuesResponse>();
+    state.resourceService.getClusterQueues.and.returnValue(refreshed$);
+    state.reload$.next();
+    await flush();
+    expect(await dashboard.getGpuQuotaText()).toContain('Refreshing queue quota');
+    refreshed$.next({
+      queues: [
+        { ...mockGpuQueue, queueCapacity: [{ resourceType: 'nvidia.com/gpu', usedCapacity: 12 }] },
+      ],
+    });
+    await flush();
+    expect(await dashboard.getGpuQuotaRows()).toEqual([
+      ['nvidia.com/gpu', '12', 'Unavailable', 'Unavailable', 'Unavailable'],
+    ]);
+    expect(await dashboard.getGpuQuotaText()).not.toContain('Queue quota refresh failed');
+    expect(await dashboard.getGpuQuotaText()).not.toContain('Refreshing queue quota');
+  });
+
+  it('should select a configured queue when the URL does not select one', async () => {
+    state.queryParams$.next({ queue: '' });
+    state.resourceService.getClusterQueues.and.returnValue(of({ queues: [mockCpuQueue] }));
+    bootstrap(TestHostComponent);
+    await flush();
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaText()).toContain('GPU quota: cpu-cluster-queue');
+  });
+
+  it('should wait for a configured queue before fetching jobs', async () => {
+    state.queryParams$.next({ queue: '' });
+    state.resourceService.getClusterQueues.and.returnValue(of({ queues: [] }));
+    bootstrap(TestHostComponent);
+    await flush();
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getQueueJobsTable()).toBeNull();
+    expect(state.resourceService.getQueueJobs).not.toHaveBeenCalled();
+  });
+
+  it('should preserve an unavailable explicit queue selection', async () => {
+    state.queryParams$.next({ queue: 'missing-queue' });
+    bootstrap(TestHostComponent);
+    await flush();
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getGpuQuotaText()).toContain('GPU quota: missing-queue');
+    expect(await dashboard.getGpuQuotaText()).toContain('Queue quota unavailable.');
   });
 
   it('should populate picker dropdown with correct available resource types sorted alphabetically', async () => {

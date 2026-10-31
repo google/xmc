@@ -38,6 +38,7 @@ export interface QueueResourceCapacity {
   totalCapacity?: number;
   freeCapacity?: number;
   freeCapacityWithBorrowing?: number;
+  usedCapacity?: number;
 }
 
 export interface QueueOverview {

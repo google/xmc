@@ -18,7 +18,7 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1200 });
+    await page.setViewportSize({ width: 2400, height: 1800 });
     await setupMockRoutes(page);
 
     const jobsPromise = page.waitForResponse(
@@ -45,6 +45,10 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
     await expect(dashboard).toBeVisible();
+    await expect(dashboard.locator('.gpu-quota-summary')).toContainText(
+      'Used quota (including borrowed)',
+    );
+    await expect(dashboard.locator('.gpu-quota-summary tbody')).toContainText('72');
     await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
   });
 

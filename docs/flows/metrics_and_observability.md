@@ -265,6 +265,8 @@ waiting, and what is available.
 | `GetSubmitQueue` | What is the ordered admission queue? |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched. |
 
+The GPU quota summary in `/resources` shows the selected queue's reported used quota (including borrowed quota), free nominal quota, total nominal quota, and headroom with cohort borrowing. These values describe Kueue quota accounting, not physical GPU availability or measured GPU activity. Accelerator types remain separate. Missing reported usage is shown as unavailable rather than inferred from free nominal quota, which is clamped to zero when usage exceeds nominal quota.
+
 Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
 cache; they never hit the Kubernetes API.

@@ -20,24 +20,69 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-    <div class="rod-split-container">
-      <div class="rod-main-content">
-        <xmc-rod-queue-list
-          [queues]="filteredQueues()"
-          [selectedQueue]="selectedQueue()"
-          [isLoading]="isLoading()"
-          [secondaryDataMap]="secondaryDataMap()"
-          [isSecondaryLoading]="isSecondaryLoading()"
-          [activeResourceFilters]="activeResourceFilters()"
-          [dominantResource]="dominantResource()"
-          [(velocityPeriod)]="velocityPeriod"
-          (selectQueue)="onQueueSelect($event)"
-        />
-      </div>
-      <div class="jobs-side-pane">
+    <section class="gpu-quota-summary" aria-labelledby="gpu-quota-heading">
+      <h2 id="gpu-quota-heading">GPU quota: {{ selectedQueue() }}</h2>
+      <p>
+        Quota accounting for workloads. Quota headroom does not guarantee physical GPUs are ready.
+      </p>
+      @if (isLoading()) {
+        <p role="status">Refreshing queue quota…</p>
+      } @else if (quotaRefreshFailed()) {
+        <p role="status">
+          Queue quota refresh failed. Any displayed values are from the last successful request.
+        </p>
+      }
+      @if (gpuQuota().length) {
+        <div class="quota-table-container">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">GPU type</th>
+                <th scope="col">Used quota (including borrowed)</th>
+                <th scope="col">Free nominal quota</th>
+                <th scope="col">Total nominal quota</th>
+                <th scope="col">Headroom with cohort borrowing</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (capacity of gpuQuota(); track capacity.resourceType) {
+                <tr>
+                  <th scope="row">{{ capacity.resourceType }}</th>
+                  <td>{{ capacity.usedCapacity ?? 'Unavailable' }}</td>
+                  <td>{{ capacity.freeCapacity ?? 'Unavailable' }}</td>
+                  <td>{{ capacity.totalCapacity ?? 'Unavailable' }}</td>
+                  <td>{{ capacity.freeCapacityWithBorrowing ?? 'Unavailable' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p>
+          {{
+            selectedQueueOverview()
+              ? 'No GPU quota configured for this queue.'
+              : 'Queue quota unavailable.'
+          }}
+        </p>
+      }
+    </section>
+    @if (selectedQueue()) {
+      <div class="queue-jobs-container">
         <xmc-queue-jobs-table [queueName]="selectedQueue()" />
       </div>
-    </div>
+    }
+    <xmc-rod-queue-list
+      [queues]="filteredQueues()"
+      [selectedQueue]="selectedQueue()"
+      [isLoading]="isLoading()"
+      [secondaryDataMap]="secondaryDataMap()"
+      [isSecondaryLoading]="isSecondaryLoading()"
+      [activeResourceFilters]="activeResourceFilters()"
+      [dominantResource]="dominantResource()"
+      [(velocityPeriod)]="velocityPeriod"
+      (selectQueue)="onQueueSelect($event)"
+    />
   } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {
     <div class="resource-availability-container">
       <xmc-wip-banner />

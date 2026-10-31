@@ -24,7 +24,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
+import { catchError, EMPTY, startWith, Subject, Subscription, switchMap, tap } from 'rxjs';
 
 import { ClusterQueueSecondaryMetrics, QueueOverview, QueueResourceCapacity } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
@@ -73,12 +73,44 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly resourceService = inject(ResourceService);
 
-  private readonly clusterQueuesResponse = toSignal(this.resourceService.getClusterQueues());
+  protected readonly isLoading = signal<boolean>(false);
+  protected readonly quotaRefreshFailed = signal(false);
+  private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
+    emitOnStart: false,
+  });
+  private readonly clusterQueuesResponse = toSignal(
+    this.reloader.reloader$.pipe(
+      tap(() => this.fetchSecondaryData()),
+      startWith(undefined),
+      tap(() => this.isLoading.set(true)),
+      switchMap(() =>
+        this.resourceService.getClusterQueues().pipe(
+          tap(() => {
+            this.isLoading.set(false);
+            this.quotaRefreshFailed.set(false);
+          }),
+          catchError(() => {
+            this.isLoading.set(false);
+            this.quotaRefreshFailed.set(true);
+            return EMPTY;
+          }),
+        ),
+      ),
+    ),
+  );
   protected readonly queues = computed<QueueOverview[]>(
     () => this.clusterQueuesResponse()?.queues ?? [],
   );
-  protected readonly isLoading = signal<boolean>(false);
-  protected readonly selectedQueue = signal<string>('gpu-cluster-queue');
+  protected readonly selectedQueue = signal<string>('');
+  private readonly explicitQueueRequested = signal(false);
+  protected readonly selectedQueueOverview = computed(() =>
+    this.queues().find((queue) => queue.queueName === this.selectedQueue()),
+  );
+  protected readonly gpuQuota = computed(() =>
+    (this.selectedQueueOverview()?.queueCapacity ?? []).filter((capacity) =>
+      /(^|\/)gpu(?=:|$)/i.test(capacity.resourceType ?? ''),
+    ),
+  );
   protected readonly activeTab = signal<DashboardTab>(TAB_SMART_FINDER);
   protected readonly velocityPeriod = signal<string>('1h');
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
@@ -92,6 +124,12 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   constructor() {
     this.setupSecondaryDataSubscription();
+    effect(() => {
+      if (this.explicitQueueRequested() || this.selectedQueueOverview()) {
+        return;
+      }
+      this.selectedQueue.set(this.queues()[0]?.queueName ?? '');
+    });
 
     effect(() => {
       const queues = this.queues();
@@ -180,26 +218,19 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     });
   });
 
-  private readonly reloader: ReloaderControl = this.autoReloadService.createReloader({
-    emitOnStart: false,
-  });
   private readonly subscriptions = new Subscription();
 
   ngOnInit() {
     this.subscriptions.add(
       this.route.queryParams.subscribe((params) => {
         const queue = params['queue'];
+        this.explicitQueueRequested.set(Boolean(queue));
         if (queue) {
           this.selectedQueue.set(queue);
         }
       }),
     );
 
-    this.subscriptions.add(
-      this.reloader.reloader$.subscribe(() => {
-        this.fetchSecondaryData();
-      }),
-    );
     this.reloader.start();
   }
 

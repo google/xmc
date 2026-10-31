@@ -83,6 +83,8 @@ message QueueResourceCapacity {
   double total_capacity = 2;
   double free_capacity = 3;
   double free_capacity_with_borrowing = 4;
+  // Quota assigned to workloads, including borrowing, as reported by Kueue.
+  optional double used_capacity = 5;
 }
 
 // QueueOverview provides an overview of the queue and its resources.

@@ -28,10 +28,11 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 )
 
-func createTestQueueCapacity(resourceType string, total, free, freeBorrowing float64) *spb.QueueResourceCapacity {
+func createTestQueueCapacity(resourceType string, total, free, freeBorrowing, used float64) *spb.QueueResourceCapacity {
 	return &spb.QueueResourceCapacity{
 		ResourceType:              resourceType,
 		TotalCapacity:             total,
+		UsedCapacity:              &used,
 		FreeCapacity:              free,
 		FreeCapacityWithBorrowing: freeBorrowing,
 	}
@@ -198,6 +199,9 @@ func TestConvertAggregatedQuotaToResourceCapacity(t *testing.T) {
 			}
 			capMetric := convertAggregatedQuotaToResourceCapacity("nvidia.com/gpu", aggregator, tt.in.totalUsed, nil)
 
+			if capMetric.UsedCapacity == nil || capMetric.GetUsedCapacity() != tt.in.totalUsed {
+				t.Errorf("UsedCapacity = %v, want %v", capMetric.UsedCapacity, tt.in.totalUsed)
+			}
 			if capMetric.TotalCapacity != tt.want.total {
 				t.Errorf("TotalCapacity = %v, want %v", capMetric.TotalCapacity, tt.want.total)
 			}
@@ -277,10 +281,10 @@ func TestMultiFlavorQueueOverview(t *testing.T) {
 
 	// Summed CPU (128+64=192) and Memory (512+256=768) across all flavors, with distinct accelerator capacities for nvidia-l4 and nvidia-tesla-h100:
 	wantOverview := createTestQueueOverview("dynamic-gpu-cq",
-		createTestQueueCapacity("nvidia.com/gpu: nvidia-l4", 32.0, 24.0, 24.0),
-		createTestQueueCapacity("cpu", 192.0, 150.0, 150.0),
-		createTestQueueCapacity("memory", 768.0, 600.0, 600.0),
-		createTestQueueCapacity("nvidia.com/gpu: nvidia-tesla-h100", 8.0, 6.0, 6.0),
+		createTestQueueCapacity("nvidia.com/gpu: nvidia-l4", 32.0, 24.0, 24.0, 8.0),
+		createTestQueueCapacity("cpu", 192.0, 150.0, 150.0, 42.0),
+		createTestQueueCapacity("memory", 768.0, 600.0, 600.0, 168.0),
+		createTestQueueCapacity("nvidia.com/gpu: nvidia-tesla-h100", 8.0, 6.0, 6.0, 2.0),
 	)
 
 	overview := buildQueueOverviewFromClusterQueue(cq, rfMap, nil)
@@ -396,10 +400,10 @@ func TestCohortResourceBorrowing(t *testing.T) {
 			},
 			want: []*spb.QueueOverview{
 				createTestQueueOverview("queue-1",
-					createTestQueueCapacity("cpu", 100.0, 60.0, 30.0),
+					createTestQueueCapacity("cpu", 100.0, 60.0, 30.0, 40.0),
 				),
 				createTestQueueOverview("queue-2",
-					createTestQueueCapacity("cpu", 100.0, 0.0, 20.0),
+					createTestQueueCapacity("cpu", 100.0, 0.0, 20.0, 130.0),
 				),
 			},
 		},
@@ -410,7 +414,7 @@ func TestCohortResourceBorrowing(t *testing.T) {
 			},
 			want: []*spb.QueueOverview{
 				createTestQueueOverview("queue-standalone",
-					createTestQueueCapacity("cpu", 100.0, 60.0, 110.0),
+					createTestQueueCapacity("cpu", 100.0, 60.0, 110.0, 40.0),
 				),
 			},
 		},
