@@ -33,6 +33,7 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
     {
       positionInQueue: 1,
       xid: 53296,
+      experimentTitle: 'GPU training',
       workUnitId: 1,
       user: 'example@example.com',
       priority: -10,
@@ -126,6 +127,7 @@ describe('QueueJobsTable Component', () => {
     const firstRow = await harness.getRowCellsText(0);
     expect(firstRow.position).toBe('N/A - running');
     expect(firstRow.jobName).toContain('Experiment #53296');
+    expect(firstRow.jobName).toContain('GPU training');
     expect(firstRow.status).toContain('Running');
     expect(firstRow.priority).toContain('-10');
     expect(firstRow.resources).toContain('cpu: 3000000');
@@ -136,7 +138,7 @@ describe('QueueJobsTable Component', () => {
 
     const secondRow = await harness.getRowCellsText(1);
     expect(secondRow.position).toBe('2');
-    expect(secondRow.jobName).toContain('Experiment #53308');
+    expect(secondRow.jobName).toBe('Experiment #53308');
     expect(secondRow.status).toContain('Scheduling');
     expect(secondRow.priority).toContain('100');
     expect(secondRow.resources).toContain('16 x TPU v4');

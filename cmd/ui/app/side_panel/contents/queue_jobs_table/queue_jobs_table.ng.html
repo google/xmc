@@ -61,12 +61,13 @@
         <ng-container matColumnDef="jobName">
           <th mat-header-cell *matHeaderCellDef>Experiment name</th>
           <td mat-cell *matCellDef="let job" class="name-cell">
-            <a
-              class="job-link"
-              [routerLink]="['/experiments', job.xid]"
-              [attr.aria-label]="'View experiment ' + job.xid"
-              >Experiment #{{ job.xid }}</a
-            >
+            <a class="job-link" [routerLink]="['/experiments', job.xid]">
+              @if (job.experimentTitle) {
+                {{ job.experimentTitle }} (Experiment #{{ job.xid }})
+              } @else {
+                Experiment #{{ job.xid }}
+              }
+            </a>
           </td>
         </ng-container>
 

@@ -206,6 +206,9 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 			t.Errorf("page %d = (len=%d, total=%d, hasNext=%t), want (%d, 5, %t)", i+1, len(res.WorkUnits), res.TotalQueueSize, res.NextPageToken != "", wantPage.count, wantPage.hasNext)
 		}
 		for _, item := range res.WorkUnits {
+			if item.ExperimentTitle != "test" {
+				t.Errorf("ExperimentTitle = %q, want test", item.ExperimentTitle)
+			}
 			if item.Author != "user" {
 				t.Errorf("Author = %q, want \"user\"", item.Author)
 			}

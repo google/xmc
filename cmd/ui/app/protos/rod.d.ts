@@ -75,6 +75,7 @@ export interface BatchGetQueueSecondaryDataResponse {
 }
 
 export interface DashboardJob {
+  experimentTitle?: string;
   xid?: number;
   workUnitId?: number;
   user?: string;

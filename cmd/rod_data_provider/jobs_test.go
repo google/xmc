@@ -100,6 +100,22 @@ func newTestWorkUnits(now time.Time) []storage.WorkUnitWithAuthor {
 	}
 }
 
+func TestMapWorkUnitsToDashboardJobsExperimentTitle(t *testing.T) {
+	for _, title := range []string{"GPU training", ""} {
+		t.Run(title, func(t *testing.T) {
+			items := newTestWorkUnits(time.Now())
+			items[0].ExperimentTitle = title
+			jobs := mapWorkUnitsToDashboardJobs(context.Background(), items, time.Now())
+			if len(jobs) != 1 {
+				t.Fatalf("got %d jobs, want 1", len(jobs))
+			}
+			if got := jobs[0].GetExperimentTitle(); got != title {
+				t.Errorf("experiment title = %q, want %q", got, title)
+			}
+		})
+	}
+}
+
 type mockWorkUnitFetcher struct {
 	workUnits      []storage.WorkUnitWithAuthor
 	nextPageToken  string

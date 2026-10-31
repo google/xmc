@@ -265,6 +265,8 @@ waiting, and what is available.
 | `GetSubmitQueue` | What is the ordered admission queue? |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched. |
 
+The queue jobs table shows each experiment's title alongside its ID and links to the experiment. `GetRunningAndPendingJobs` returns the title from the parent experiment in `DashboardJob.experiment_title`. Jobs with an empty title display only the experiment ID.
+
 Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
 cache; they never hit the Kubernetes API.

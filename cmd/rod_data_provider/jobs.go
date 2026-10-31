@@ -95,6 +95,7 @@ func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.WorkUn
 	var jobs []*spb.DashboardJob
 	for _, item := range workUnits {
 		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, now); job != nil {
+			job.ExperimentTitle = item.ExperimentTitle
 			jobs = append(jobs, job)
 		}
 	}

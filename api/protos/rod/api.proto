@@ -133,6 +133,7 @@ message DashboardJob {
   int64 position_in_queue = 8;
   google.protobuf.Timestamp create_time = 9;
   repeated string tags = 10;
+  string experiment_title = 11;
 }
 
 // GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.

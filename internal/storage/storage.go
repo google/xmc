@@ -195,10 +195,11 @@ var (
 	ErrInvalidPageToken = errors.New("invalid page_token")
 )
 
-// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
+// WorkUnitWithAuthor wraps a WorkUnit proto with experiment metadata.
 type WorkUnitWithAuthor struct {
-	WorkUnit *essmsgpb.WorkUnit
-	Author   string
+	WorkUnit        *essmsgpb.WorkUnit
+	Author          string
+	ExperimentTitle string
 }
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
