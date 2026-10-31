@@ -172,7 +172,8 @@ class SPAHandler(server.SPAHandler):
         )
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:
         """Handles preflight CORS requests."""
@@ -187,29 +188,35 @@ class SPAHandler(server.SPAHandler):
 
     def do_GET(self) -> None:
         """Handles GET requests for SPA routing, static files, and mock APIs."""
-        if self.path == "/healthz":
+        clean_path = self.path.split("?", 1)[0].rstrip("/")
+        if clean_path == "/healthz":
             self.send_response(200, "OK")
             self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(b"OK")
+            if self.command != "HEAD":
+                self.wfile.write(b"OK")
             return
 
-        if self.path == "/config.js":
+        if clean_path == "/config.js":
             self._handle_config_js()
             return
 
-        if self.path.startswith("/v1/auth/user") or self.path.startswith("/auth/user"):
+        if clean_path in ("/api/user", "/v1/auth/user", "/auth/user"):
             self._handle_auth_user()
             return
 
-        if ":getData" in self.path:
-            self._handle_chart_data(self.path)
+        if clean_path == "/v1/static/auth-check.js":
+            self._handle_auth_check()
             return
 
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
-            clean_path = self.path.split("?")[0].rstrip("/")
-            if clean_path in ("/v1/dashboards", "/dashboards"):
+        if clean_path.startswith("/v1/") and clean_path.endswith(":getData"):
+            self._handle_chart_data(clean_path)
+            return
+
+        if clean_path == "/v1/dashboards" or clean_path.startswith("/v1/dashboards/"):
+            if clean_path == "/v1/dashboards":
                 self.send_json(200, {"dashboards": SPAHandler.in_memory_dashboards})
                 return
             dashboard_name = clean_path.lstrip("/").removeprefix("v1/")
@@ -220,34 +227,34 @@ class SPAHandler(server.SPAHandler):
             self.send_json(404, {"error": f"Dashboard {dashboard_name} not found"})
             return
 
-        if self.path.startswith("/v1/experiments") or self.path.startswith("/experiments"):
-            clean_path = self.path.split("?")[0].rstrip("/")
-            if clean_path in ("/v1/experiments", "/experiments"):
+        if clean_path == "/v1/experiments" or clean_path.startswith("/v1/experiments/"):
+            if clean_path == "/v1/experiments":
                 self._handle_experiments_list()
                 return
             self._handle_single_experiment(clean_path)
             return
 
+        if self.command == "HEAD":
+            super().do_HEAD()
+            return
         super().do_GET()
 
     def do_HEAD(self) -> None:
-        """Handles HEAD requests, routing them with SPA fallback."""
-        if self.path in ("/healthz", "/config.js") or self.path.startswith(("/v1/", "/auth/")):
-            self.do_GET()
-            return
-
-        super().do_HEAD()
+        """Uses GET routing without writing a response body."""
+        self.do_GET()
 
     def do_POST(self) -> None:
         """Handles POST requests for creating resources."""
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if path == "/v1/dashboards" or path.startswith("/v1/dashboards/"):
             self._handle_dashboards_post()
             return
         self.send_json(404, {"error": "Not Found"})
 
     def do_DELETE(self) -> None:
         """Handles DELETE requests for deleting resources."""
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if path == "/v1/dashboards" or path.startswith("/v1/dashboards/"):
             self._handle_dashboards_delete()
             return
         self.send_json(404, {"error": "Not Found"})
@@ -300,7 +307,15 @@ class SPAHandler(server.SPAHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         config_content = server.generate_runtime_config(default_api_url="/v1")
-        self.wfile.write(config_content.encode("utf-8"))
+        if self.command != "HEAD":
+            self.wfile.write(config_content.encode("utf-8"))
+
+    def _handle_auth_check(self) -> None:
+        """Serves an empty script because local authentication needs no IAP handshake."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _handle_auth_user(self) -> None:
         """Serves mock authenticated user for local development."""
