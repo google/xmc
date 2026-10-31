@@ -118,7 +118,13 @@ message GetRunningAndPendingJobsRequest {
   string queue_name = 1;
   int32 page_size = 2;
   string page_token = 3;
+  // Display ordering: author, priority, or status, optionally followed by asc or desc.
+  // Status asc orders RUNNING, STARTING, INITIALIZING, then SCHEDULING.
+  // Empty preserves scheduling display order. Equal values use experiment and work-unit IDs.
   string order_by = 4;
+  // Exact author and active status equalities, optionally joined by AND.
+  // Example: author = "alice@example.com" AND status = RUNNING.
+  string filter = 5;
 }
 
 // DashboardJob represents a pending or running job in a cluster queue.
@@ -163,4 +169,3 @@ message BatchGetQueueSecondaryDataRequest {
 message BatchGetQueueSecondaryDataResponse {
   map<string, ClusterQueueSecondaryMetrics> queue_predictability = 1;
 }
-

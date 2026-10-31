@@ -190,7 +190,7 @@ type WorkUnitStore interface {
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
 
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
-	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query ActiveWorkUnitQuery) (*ActiveWorkUnitsResult, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.

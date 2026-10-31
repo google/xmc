@@ -93,6 +93,7 @@ export interface GetRunningAndPendingJobsRequest {
   pageSize?: number;
   pageToken?: string;
   orderBy?: string;
+  filter?: string;
 }
 
 export interface GetRunningAndPendingJobsResponse {

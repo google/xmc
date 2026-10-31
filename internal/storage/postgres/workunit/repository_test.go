@@ -63,7 +63,7 @@ func TestRepository_ValidationAndNilGuards(t *testing.T) {
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	if _, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"q"}, 10, ""); !errors.Is(err, context.Canceled) {
+	if _, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"q"}, 10, "", storage.ActiveWorkUnitQuery{}); !errors.Is(err, context.Canceled) {
 		t.Errorf("FetchActiveWorkUnitsByQueues(canceled) = %v, want context.Canceled", err)
 	}
 
@@ -79,7 +79,10 @@ func TestRepository_ValidationAndNilGuards(t *testing.T) {
 		func() error { _, err := repo.FetchCurrentWorkUnitExecution(ctx, 1, 1); return err },
 		func() error { _, err := repo.ListWorkUnitExecutions(ctx, 1, 1); return err },
 		func() error { _, _, err := repo.ListWorkUnits(ctx, "experiments/1", 10, "", "", "", 0); return err },
-		func() error { _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); return err },
+		func() error {
+			_, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, "", storage.ActiveWorkUnitQuery{})
+			return err
+		},
 		func() error { _, err := txRepo.FetchWorkUnit(ctx, 1, 1); return err },
 		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
 		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
@@ -354,7 +357,7 @@ func TestRepository_CRUDAndExecutions(t *testing.T) {
 			mustInsertWorkUnit(t, essPool, repo, wu)
 		}
 
-		activeRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{queueName}, 10, "")
+		activeRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{queueName}, 10, "", storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("FetchActiveWorkUnitsByQueues() failed: %v", err)
 		}

@@ -18,6 +18,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -146,7 +147,7 @@ func TestRepository_ListWorkUnits(t *testing.T) {
 
 func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 	ctx := t.Context()
-	if _, err := ((*Repository)(nil)).FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, ""); status.Code(err) != codes.FailedPrecondition {
+	if _, err := ((*Repository)(nil)).FetchActiveWorkUnitsByQueues(ctx, []string{"q"}, 10, "", storage.ActiveWorkUnitQuery{}); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("nil Repository.FetchActiveWorkUnitsByQueues() code = %v, want FailedPrecondition", status.Code(err))
 	}
 
@@ -186,7 +187,7 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 		mustInsertWorkUnit(t, essPool, repo, wu)
 	}
 
-	emptyRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, nil, 10, "")
+	emptyRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, nil, 10, "", storage.ActiveWorkUnitQuery{})
 	if err != nil || len(emptyRes.WorkUnits) != 0 {
 		t.Fatalf("FetchActiveWorkUnitsByQueues(nil) = (%v, %v), want 0 work units", emptyRes, err)
 	}
@@ -198,7 +199,7 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 		hasNext bool
 	}{{2, true}, {2, true}, {1, false}}
 	for i, wantPage := range wantPages {
-		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token)
+		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
 		}
@@ -221,7 +222,7 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 		t.Errorf("active queue ordering mismatch (-want +got):\n%s", diff)
 	}
 
-	bothRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue", "other-queue"}, 10, "")
+	bothRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue", "other-queue"}, 10, "", storage.ActiveWorkUnitQuery{})
 	if err != nil {
 		t.Fatalf("FetchActiveWorkUnitsByQueues(both queues) failed: %v", err)
 	}
@@ -238,13 +239,13 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 	}
 
 	rawToken := base64.RawURLEncoding.EncodeToString([]byte("3"))
-	rawRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 0, rawToken)
+	rawRes, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 0, rawToken, storage.ActiveWorkUnitQuery{})
 	if err != nil || len(rawRes.WorkUnits) != 2 {
 		t.Fatalf("FetchActiveWorkUnitsByQueues(rawToken) = (%v, %v), want 2 work units", rawRes, err)
 	}
 
 	for _, badToken := range []string{"!!!", base64.URLEncoding.EncodeToString([]byte("-1")), base64.URLEncoding.EncodeToString([]byte("abc"))} {
-		if _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, badToken); !errors.Is(err, storage.ErrInvalidPageToken) {
+		if _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, badToken, storage.ActiveWorkUnitQuery{}); !errors.Is(err, storage.ErrInvalidPageToken) {
 			t.Errorf("FetchActiveWorkUnitsByQueues(token=%q) = %v, want ErrInvalidPageToken", badToken, err)
 		}
 	}
@@ -268,7 +269,7 @@ func TestRepository_FetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t 
 	var gotNames []string
 	token := ""
 	for i := range 3 {
-		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token)
+		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token, storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
 		}
@@ -342,4 +343,104 @@ func TestExtractWorkUnitCursor(t *testing.T) {
 
 func ptrTime(t time.Time) *time.Time {
 	return &t
+}
+
+func TestActiveQueueOrderingAcrossPages(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	for _, xid := range []int64{100, 200} {
+		postgrestest.SeedExperiment(ctx, t, pool, xid)
+		author := "z@example.com"
+		if xid == 200 {
+			author = "a@example.com"
+		}
+		if _, err := pool.Exec(ctx, "UPDATE Experiments SET Creator=$1 WHERE Xid=$2", author, xid); err != nil {
+			t.Fatal(err)
+		}
+		for i, state := range []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_SCHEDULING, essmsgpb.WorkUnitStatus_RUNNING, essmsgpb.WorkUnitStatus_INITIALIZING} {
+			wu := blankWorkUnitProto(xid, int64(i+1), baseTestTime)
+			wu.Priority = essmsgpb.Priority(i + 1)
+			wu.CurrentWorkUnitExecution.Status.State = state
+			mustInsertWorkUnit(t, pool, repo, wu)
+		}
+	}
+
+	t.Run("combined filter and count", func(t *testing.T) {
+		result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Author: "a@example.com", HasAuthor: true, Status: "RUNNING"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TotalQueueSize != 1 || len(result.WorkUnits) != 1 || result.NextPageToken != "" {
+			t.Fatalf("filtered result = %+v", result)
+		}
+		if got := result.WorkUnits[0].WorkUnit.GetName(); got != "experiments/200/workUnits/2" {
+			t.Errorf("work unit = %s", got)
+		}
+	})
+	t.Run("filtered pagination", func(t *testing.T) {
+		token := ""
+		for page := 0; page < 3; page++ {
+			result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, token, storage.ActiveWorkUnitQuery{OrderBy: "priority desc", Filter: storage.ActiveWorkUnitFilter{Author: "a@example.com", HasAuthor: true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.TotalQueueSize != 3 || len(result.WorkUnits) != 1 {
+				t.Fatalf("filtered page = %+v", result)
+			}
+			token = result.NextPageToken
+			if (token != "") != (page < 2) {
+				t.Fatalf("page %d token = %q", page, token)
+			}
+		}
+	})
+	t.Run("unmatched author", func(t *testing.T) {
+		result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Author: "missing@example.com", HasAuthor: true}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TotalQueueSize != 0 || len(result.WorkUnits) != 0 {
+			t.Fatalf("unmatched result = %+v", result)
+		}
+	})
+
+	cases := []struct {
+		order string
+		want  []string
+	}{
+		{"author asc", []string{"experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3"}},
+		{"author desc", []string{"experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3"}},
+		{"priority asc", []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3"}},
+		{"priority desc", []string{"experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status asc", []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status desc", []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2"}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.order, func(t *testing.T) {
+			var names []string
+			token := ""
+			for page := 0; page < 3; page++ {
+				result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, storage.ActiveWorkUnitQuery{OrderBy: tt.order})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.TotalQueueSize != 6 {
+					t.Fatalf("total = %d, want 6", result.TotalQueueSize)
+				}
+				for _, item := range result.WorkUnits {
+					names = append(names, item.WorkUnit.GetName())
+				}
+				token = result.NextPageToken
+				if page < 2 && token == "" {
+					t.Fatal("missing next page")
+				}
+			}
+			if token != "" {
+				t.Fatal("unexpected final page token")
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("order = %v, want %v", names, tt.want)
+			}
+		})
+	}
 }

@@ -103,3 +103,10 @@
 .jobs-table-container {
   overflow-x: auto;
 }
+
+.job-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}

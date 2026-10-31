@@ -37,15 +37,30 @@ var fetchActiveWorkUnitPKsSQL = safesql.New(
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
-	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC
+ AND (NOT @hasAuthor OR COALESCE(e.Creator, '') = @author)
+ AND (@status = '' OR CAST(wu.ExecutionState AS STRING) = @status)
+	ORDER BY
+ CASE WHEN @orderBy = 'author asc' THEN COALESCE(e.Creator, '') END ASC,
+ CASE WHEN @orderBy = 'author desc' THEN COALESCE(e.Creator, '') END DESC,
+ CASE WHEN @orderBy = 'priority asc' THEN wu.Priority END ASC,
+ CASE WHEN @orderBy = 'priority desc' THEN wu.Priority END DESC,
+ CASE WHEN @orderBy = 'status asc' THEN CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END END ASC,
+ CASE WHEN @orderBy = 'status desc' THEN CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END END DESC,
+ CASE WHEN @orderBy = '' THEN wu.SortPhase END DESC,
+ CASE WHEN @orderBy = '' THEN wu.PositionInQueue END ASC,
+ CASE WHEN @orderBy = '' THEN wu.CreateTime END ASC,
+ wu.WorkUnitId ASC, wu.Xid ASC
 	LIMIT @limit OFFSET @offset`,
 )
 
 var countActiveWorkUnitsSQL = safesql.New(
 	`SELECT COUNT(*)
 	FROM WorkUnits wu
+ JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
-	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
+	  AND wu.IsPendingOrRunningJob IS NOT NULL
+ AND (NOT @hasAuthor OR COALESCE(e.Creator, '') = @author)
+ AND (@status = '' OR CAST(wu.ExecutionState AS STRING) = @status)`,
 )
 
 type workUnitPK struct {
@@ -55,13 +70,15 @@ type workUnitPK struct {
 	ExperimentTitle string
 }
 
-func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64, orderBy string, filter storage.ActiveWorkUnitFilter) ([]workUnitPK, error) {
 	stmt := spanner.Statement{
 		SQL: fetchActiveWorkUnitPKsSQL.String(),
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
-			"limit":      limit,
-			"offset":     offset,
+			"hasAuthor":  filter.HasAuthor, "author": filter.Author, "status": filter.Status,
+			"limit":   limit,
+			"offset":  offset,
+			"orderBy": orderBy,
 		},
 	}
 
@@ -156,7 +173,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 }
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -183,7 +200,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	defer txn.Close()
 
 	// Query 1: Count total active work units across matching queues
-	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
+	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames, query.Filter)
 	if err != nil {
 		logging.Error(ctx, "failed to count active work units", "error", err)
 		return nil, err
@@ -191,7 +208,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	// Fetch pageSize + 1 items to determine if nextPageToken is needed
 	limit := int64(pageSizeVal) + 1
-	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
+	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset, query.OrderBy, query.Filter)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
@@ -230,11 +247,12 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}, nil
 }
 
-func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) (int64, error) {
+func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, filter storage.ActiveWorkUnitFilter) (int64, error) {
 	countStmt := spanner.Statement{
 		SQL: countActiveWorkUnitsSQL.String(),
 		Params: map[string]interface{}{
 			"queueNames": queueNames,
+			"hasAuthor":  filter.HasAuthor, "author": filter.Author, "status": filter.Status,
 		},
 	}
 	var totalQueueSize int64
