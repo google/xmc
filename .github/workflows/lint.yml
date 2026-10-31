@@ -192,7 +192,7 @@ jobs:
 
       - name: 'Install UI Dependencies'
         if: steps.changes.outputs.ui == 'true'
-        run: npm ci --legacy-peer-deps --prefer-offline --no-audit
+        run: npm ci --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
       - name: 'Run Prettier Check'

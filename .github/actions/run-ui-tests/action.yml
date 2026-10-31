@@ -45,7 +45,7 @@ runs:
     - name: 'Install Node.js dependencies'
       if: steps.scope.outputs.run_ui == 'true'
       shell: bash
-      run: npm ci --legacy-peer-deps --prefer-offline --no-audit
+      run: npm ci --prefer-offline --no-audit
       working-directory: ${{ inputs.working-directory }}
 
     - name: 'Run Angular UI Unit Tests'
