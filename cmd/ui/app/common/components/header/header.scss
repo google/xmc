@@ -83,7 +83,8 @@ mat-toolbar {
   max-width: none;
   min-width: 0;
   padding: 1rem;
-  background-color: var(--mat-card-elevated-container-color);
+  background-color: var(--mat-sys-surface-container, #f8f9fa);
+  color: var(--mat-sys-on-surface, #3c4043);
 
   ul {
     padding-left: 1rem;

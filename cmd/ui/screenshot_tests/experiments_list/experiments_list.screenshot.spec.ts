@@ -65,4 +65,13 @@ test.describe('Experiments List Page - Screenshot Tests', () => {
 
     await expect(listPage).toHaveScreenshot('experiments-list-page.png');
   });
+
+  test('search syntax help has an opaque surface over experiment rows', async ({ page }) => {
+    await page.getByRole('button', { name: 'Information on the search syntax' }).click();
+    const menu = page.locator('.search-syntax-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu).toContainText('Search Syntax');
+    const background = await menu.evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(background).toMatch(/^rgba?\(\d+,\s*\d+,\s*\d+(?:,\s*1)?\)$/);
+  });
 });
