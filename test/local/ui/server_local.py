@@ -11,17 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-A standalone Python server for local UI development with mock APIs and SPA fallback.
-This is intentionally scoped as a minimal mock setup for the performance dashboards
-and metrics workflow for now rather than an exhaustive mock of all XMC endpoints
-(such as /v1/clusterqueues).
-There is parallel ongoing work around running the UI locally,
-so this implementation serves as the starting point to establish
-and consolidate those local development workflows.
-Additional endpoints can be incrementally added
-and unified as those parallel efforts converge.
-"""
+"""Local UI preview server with dashboard, experiment, and resource mock APIs."""
 
 import argparse
 import glob
@@ -32,6 +22,9 @@ import os
 import re
 import sys
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, unquote, urlsplit
+
+import resource_fixtures
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +227,9 @@ class SPAHandler(server.SPAHandler):
             self._handle_single_experiment(clean_path)
             return
 
+        if self._handle_resource_get(clean_path):
+            return
+
         if self.command == "HEAD":
             super().do_HEAD()
             return
@@ -246,10 +242,51 @@ class SPAHandler(server.SPAHandler):
     def do_POST(self) -> None:
         """Handles POST requests for creating resources."""
         path = self.path.split("?", 1)[0].rstrip("/")
+        if path in (
+            "/v1/clusterqueues:batchGetSecondaryData",
+            "/clusterqueues:batchGetSecondaryData",
+        ):
+            self._handle_resource_secondary()
+            return
         if path == "/v1/dashboards" or path.startswith("/v1/dashboards/"):
             self._handle_dashboards_post()
             return
         self.send_json(404, {"error": "Not Found"})
+
+    def _handle_resource_get(self, path: str) -> bool:
+        route = path.removeprefix("/v1")
+        if route == "/clusterqueues":
+            self.send_json(200, resource_fixtures.cluster_queues())
+            return True
+        match = re.fullmatch(r"/clusterqueues/([^/]+)/(jobs|submitqueue)", route)
+        if match is None:
+            return False
+        queue, operation = unquote(match[1]), match[2]
+        try:
+            params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            response = (
+                resource_fixtures.queue_jobs(queue, params)
+                if operation == "jobs"
+                else resource_fixtures.submit_queue(queue)
+            )
+            self.send_json(200, response)
+        except KeyError:
+            self.send_json(404, {"error": "Unknown cluster queue"})
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+        return True
+
+    def _handle_resource_secondary(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 0 or length > 65536:
+                raise ValueError("invalid request length")
+            body = json.loads(self.rfile.read(length))
+            self.send_json(200, resource_fixtures.secondary_data(body))
+        except KeyError:
+            self.send_json(404, {"error": "Unknown cluster queue"})
+        except (ValueError, UnicodeError) as error:
+            self.send_json(400, {"error": str(error)})
 
     def do_DELETE(self) -> None:
         """Handles DELETE requests for deleting resources."""

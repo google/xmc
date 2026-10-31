@@ -50,7 +50,6 @@ class SPAHandlerLocalTest(unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        self.mock_wfile = self.enter_context(io.BytesIO())
         self.mock_request = mock.create_autospec(socket.socket, instance=True, spec_set=True)
         self.mock_client_address = ("::1", 1234)
         self.mock_server = mock.create_autospec(
@@ -147,6 +146,56 @@ class SPAHandlerLocalTest(unittest.TestCase):
         handler.send_response.assert_called_with(200)
         handler.send_header.assert_any_call("Content-Type", "application/javascript")
         return self.mock_wfile.getvalue().decode()
+
+    def test_resource_get_routes(self) -> None:
+        for prefix in ("/v1", ""):
+            for suffix, field in (
+                ("", "queues"),
+                ("/gpu-cluster-queue/jobs?pageSize=5&orderBy=priority%20desc", "jobs"),
+                ("/gpu-cluster-queue/submitqueue", "submitQueue"),
+            ):
+                with self.subTest(prefix=prefix, suffix=suffix):
+                    handler = self._request(f"{prefix}/clusterqueues{suffix}")
+                    handler.send_response.assert_called_with(200)
+                    response = json.loads(self.mock_wfile.getvalue())
+                    self.assertIn(field, response)
+                    if field == "jobs":
+                        self.assertEqual(len(response["jobs"]), 5)
+                        self.assertEqual(response["totalQueueSize"], 24)
+
+    def test_resource_get_errors_and_head(self) -> None:
+        for path, code in (
+            ("/v1/clusterqueues/missing/jobs", 404),
+            ("/v1/clusterqueues/gpu-cluster-queue/jobs?pageToken=bad!", 400),
+            ("/v1/clusterqueues/gpu-cluster-queue/jobs?filter=status%20%3D%20COMPLETED", 400),
+        ):
+            with self.subTest(path=path):
+                handler = self._request(path)
+                handler.send_response.assert_called_with(code)
+        handler = self._request("/v1/clusterqueues", method="HEAD")
+        handler.send_response.assert_called_with(200)
+        self.assertEqual(self.mock_wfile.getvalue(), b"")
+
+    def test_resource_secondary_routes(self) -> None:
+        for prefix in ("/v1", ""):
+            with self.subTest(prefix=prefix):
+                body = json.dumps(
+                    {"queueNames": ["gpu-cluster-queue"], "range": "RANGE_PRESET_LAST_DAY"}
+                ).encode()
+                handler = self._request(
+                    f"{prefix}/clusterqueues:batchGetSecondaryData", method="POST", body=body
+                )
+                handler.send_response.assert_called_with(200)
+                response = json.loads(self.mock_wfile.getvalue())
+                self.assertEqual(list(response["queuePredictability"]), ["gpu-cluster-queue"])
+
+    def test_resource_secondary_errors(self) -> None:
+        for body, code in ((b"invalid", 400), (b"[]", 400), (b'{"queueNames":["missing"]}', 404)):
+            with self.subTest(body=body):
+                handler = self._request(
+                    "/v1/clusterqueues:batchGetSecondaryData", method="POST", body=body
+                )
+                handler.send_response.assert_called_with(code)
 
     def test_healthz(self):
         handler = self._request("/healthz")
