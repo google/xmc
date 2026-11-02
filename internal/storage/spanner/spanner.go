@@ -132,6 +132,12 @@ func (s *Storage) Components() storage.ComponentRepository {
 	return s.componentRepository
 }
 
+// DeleteExpiredRows deletes nothing and returns 0, because the ROW DELETION POLICY of each table
+// already makes Cloud Spanner delete expired rows.
+func (s *Storage) DeleteExpiredRows(context.Context, int) (int64, error) {
+	return 0, nil
+}
+
 // NewStorage creates a new instance of the Spanner-backed storage.
 func NewStorage(client *spanner.Client) (*Storage, error) {
 	if client == nil {

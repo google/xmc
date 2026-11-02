@@ -142,7 +142,7 @@ func TestDeclareClusterEpoch_TakeoverParity(t *testing.T) {
 // TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace checks that a takeover sets
 // SourceLastSeenTime of the reassigned record to the takeover's commit time (the fence's
 // DeclaredTime), which starts the owner_stale adoption grace period. MemoryStore records no
-// SourceLastSeenTime, so this runs on dbBackends.
+// SourceLastSeenTime, so this runs on every dbstoretest.Backends() database.
 func TestSpannerStore_DeclareClusterEpoch_TakeoverStartsAdoptionGrace(t *testing.T) {
 	forEachDBBackend(t, func(ctx context.Context, t *testing.T, s *dbstore.Store, db dbstoretest.Rows) {
 		seedOwnedComponent(ctx, t, s, "fence-grace", false)

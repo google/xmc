@@ -247,6 +247,39 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 	}
 }
 
+func TestRepository_FetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	// Insert in descending Xid order with identical (SortPhase, PositionInQueue, CreateTime, WorkUnitId)
+	// so heap insertion order would return [604, 602, 601] without the Xid ASC tie-breaker.
+	for _, xid := range []int64{604, 602, 601} {
+		postgrestest.SeedExperiment(ctx, t, essPool, xid)
+		wu := blankWorkUnitProto(xid, 1, baseTestTime)
+		wu.CurrentWorkUnitExecution.Status.State = essmsgpb.WorkUnitStatus_RUNNING
+		wu.Executable.SchedulingConstraints.QueueName = "tie-queue"
+		mustInsertWorkUnit(t, essPool, repo, wu)
+	}
+
+	var gotNames []string
+	token := ""
+	for i := range 3 {
+		res, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token)
+		if err != nil {
+			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
+		}
+		for _, item := range res.WorkUnits {
+			gotNames = append(gotNames, item.WorkUnit.GetName())
+		}
+		token = res.NextPageToken
+	}
+	wantNames := []string{"experiments/601/workUnits/1", "experiments/602/workUnits/1", "experiments/604/workUnits/1"}
+	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+		t.Errorf("cross-experiment Xid tie-breaker mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestExtractWorkUnitCursor(t *testing.T) {
 	ts := timestamppb.New(baseTestTime)
 	cases := []struct {

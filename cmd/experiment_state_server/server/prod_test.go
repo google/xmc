@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"xmanager_cloud/cmd/experiment_state_server/config"
+	"xmanager_cloud/internal/storage"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -120,6 +121,20 @@ func TestNewProd_Validation(t *testing.T) {
 			t.Errorf("NewProd(cfg, nil) = (%v, %v), want (nil, error)", ps, err)
 		}
 	})
+}
+
+func TestStartBackgroundWorkers_StartsExpiredRowSweeper(t *testing.T) {
+	t.Parallel()
+	cleanups, err := startBackgroundWorkers(t.Context(), &config.Config{}, nil, &storage.MockStorage{})
+	if err != nil {
+		t.Fatalf("startBackgroundWorkers() unexpected error: %v", err)
+	}
+	if len(cleanups) != 1 {
+		t.Fatalf("len(cleanups) = %d, want 1 (the expired row sweeper)", len(cleanups))
+	}
+	if err := runCleanups(cleanups); err != nil {
+		t.Errorf("runCleanups() = %v, want nil", err)
+	}
 }
 
 func TestProdServer_HealthCheckers(t *testing.T) {

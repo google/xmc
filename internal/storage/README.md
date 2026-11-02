@@ -43,6 +43,21 @@ Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,
 - **Backend-specific migrations**: If a migration only applies to one backend (such as tuning a backend-specific index), add a same-numbered no-op `.up.sql` / `.down.sql` pair in the other backend so expected schema versions (`EssExpectedSchemaVersion()`, `XidExpectedSchemaVersion()`) remain identical.
 - **Automated parity check**: [`migrations/parity_test.go`](migrations/parity_test.go) checks only that expected schema versions and canonical table names match across Spanner and PostgreSQL; it does not compare exact DDL or column definitions, which differ by SQL dialect.
 
+## Expired Rows (`ExpiredRowStore`)
+
+Some ESS tables keep rows only for a limited time:
+
+| Table | Rows expire |
+| :--- | :--- |
+| `StatusMessages` | 30 days after `CreateTime` (180 days for `ERROR` and `FATAL`) |
+| `WorkUnitStatusHistory` | 30 days after `CreateTime` |
+| `PausedTasks` | 7 days after `ProcessedTime` (pending tasks never expire) |
+| `CliLoginCodes` | 1 day after `ExpiresAt` |
+
+Cloud Spanner deletes these rows itself through the `ROW DELETION POLICY` of each table, so the Spanner `DeleteExpiredRows` is a no-op. PostgreSQL has no row TTL, so [`postgres/retention/`](postgres/retention/) deletes them: each `DeleteExpiredRows(ctx, batchSize)` call runs one transaction that takes `pg_try_advisory_xact_lock` and, only if it gets the lock, deletes up to `batchSize` expired rows from each table. A call that does not get the lock deletes nothing and returns 0, so concurrent callers never sweep at the same time. ESS calls it periodically from [`retentionsweep`](../../cmd/experiment_state_server/retentionsweep/) on every replica (see that package for the schedule and batch limits).
+
+When you add a retention policy to a table, update both the Spanner `ROW DELETION POLICY` and the PostgreSQL delete statements in [`postgres/retention/`](postgres/retention/).
+
 ## Transactions (`TransactionRunner`)
 
 Multi-step writes that touch multiple tables (for example, `restartWorkUnitExecutions`) run in the service layer via `TransactionRunner`:
@@ -124,14 +139,14 @@ Cloud Spanner may abort and re-run the `RunInTransaction` or `RunInSerializableT
 
 ### Isolation
 
-Spanner read-write transactions are always serializable. PostgreSQL runs `RunInTransaction` at `READ COMMITTED` by default, and repositories lock the rows they read and write back (see rule 5 of [`AGENTS.md`](AGENTS.md)). Callers whose invariants span many rows, such as the component store in [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/), call `RunInSerializableTransaction` (backed by `pgdb.RunInSerializableTx` at `SERIALIZABLE` isolation) instead; PostgreSQL then aborts conflicting transactions with `40001`, and the callback is retried.
+Spanner read-write transactions are always serializable. PostgreSQL runs `RunInTransaction` at `READ COMMITTED` by default (retrying `40001`/`40P01` up to `pgdb.DefaultMaxTxAttempts` times), and repositories lock the rows they read and write back (see rule 5 of [`AGENTS.md`](AGENTS.md)). Callers whose invariants span many rows, such as the component store in [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/), call `RunInSerializableTransaction` (backed by `pgdb.RunInSerializableTx` at `SERIALIZABLE` isolation) instead; PostgreSQL then aborts conflicting transactions with `40001`, and `pgdb.RunInSerializableTx` retries the callback with jittered exponential backoff until the caller's context deadline (or a 30-second fallback window when the context carries no deadline).
 
 ## Testing
 
 - **Service unit tests**: Use `storage.MockStorage` ([`test_utils.go`](test_utils.go)) to test handler logic in memory. Set `MockStorage.RunInTransactionAttempts = 2` to verify that a transaction callback behaves properly when retried. Set `MockStorage.CommitTime` to pin the timestamp returned by `RunInSerializableTransaction`; when it is zero, the mock returns `time.Now()`.
 - **Spanner integration tests**: Tests under `internal/storage/spanner/...` run against the Spanner emulator to test SQL queries, mutations, and schema constraints.
 - **PostgreSQL integration tests**: Tests under `internal/storage/postgres/...` call `postgrestest.Setup(ctx, t)` ([`postgres/testing/`](postgres/testing/)) to get isolated databases with the canonical schema on a shared `postgres:16-alpine` container; their `go_test` targets need `tags = ["local"]` for Docker access. [`postgres/operation/`](postgres/operation/) and [`postgres/pausestate/`](postgres/pausestate/) hold the reference repository tests, including the concurrency test required by [`AGENTS.md`](AGENTS.md).
-- **Component store tests**: [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/) runs its cross-backend tests on both Spanner and PostgreSQL (one `dbBackends()` entry each), and its PostgreSQL concurrency tests check that `SERIALIZABLE` transactions that would break catalog invariants are aborted and retried.
+- **Component store tests**: [`pkg/components/store/dbstore/`](../../pkg/components/store/dbstore/) runs its cross-backend tests on both Spanner and PostgreSQL (one [`dbstoretest.Backends()`](../../pkg/components/store/dbstore/testing/backend.go) entry each), and its PostgreSQL concurrency tests check that `SERIALIZABLE` transactions that would break catalog invariants are aborted and retried.
 
 ```bash
 # Unit tests (MockStorage)

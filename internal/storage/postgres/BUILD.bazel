@@ -35,6 +35,7 @@ go_library(
         "//internal/storage/postgres/pausedtask",
         "//internal/storage/postgres/pausestate",
         "//internal/storage/postgres/pgdb",
+        "//internal/storage/postgres/retention",
         "//internal/storage/postgres/statushistory",
         "//internal/storage/postgres/statusmessage",
         "//internal/storage/postgres/workunit",

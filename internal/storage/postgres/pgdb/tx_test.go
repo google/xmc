@@ -204,6 +204,8 @@ func TestRunInTxExecutionAndRetries(t *testing.T) {
 }
 
 func TestRunInSerializableTx(t *testing.T) {
+	serializationErr := &pgconn.PgError{Code: SQLStateSerializationFailure, Message: "could not serialize"}
+
 	if err := RunInSerializableTx(context.Background(), nil, func(context.Context, pgx.Tx) error { return nil }); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("RunInSerializableTx(nil pool) = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
@@ -236,6 +238,97 @@ func TestRunInSerializableTx(t *testing.T) {
 				t.Errorf("BeginTx options mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+
+	t.Run("retries past DefaultMaxTxAttempts until success", func(t *testing.T) {
+		beginner := &fakeBeginner{}
+		wantAttempts := DefaultMaxTxAttempts + 2
+		err := runInSerializableTx(context.Background(), beginner, func(context.Context, pgx.Tx) error {
+			if beginner.begins < wantAttempts {
+				return serializationErr
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("runInSerializableTx() unexpected error: %v", err)
+		}
+		if beginner.begins != wantAttempts {
+			t.Errorf("begins = %d, want %d", beginner.begins, wantAttempts)
+		}
+	})
+
+	t.Run("stops and returns DeadlineExceeded when caller context expires", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+		defer cancel()
+		beginner := &fakeBeginner{}
+
+		err := runInSerializableTx(ctx, beginner, func(context.Context, pgx.Tx) error {
+			return serializationErr
+		})
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("runInSerializableTx() = %v, want context.DeadlineExceeded", err)
+		}
+		if beginner.begins < 1 {
+			t.Errorf("begins = %d, want >= 1", beginner.begins)
+		}
+	})
+
+	t.Run("stops and returns Aborted when un-deadlined context exhausts fallbackWindow", func(t *testing.T) {
+		beginner := &fakeBeginner{}
+		cfg := serializableTxRetryConfig
+		cfg.fallbackWindow = 12 * time.Millisecond
+		cfg.initialBackoff = time.Millisecond
+		cfg.maxBackoff = 2 * time.Millisecond
+
+		err := runInTx(context.Background(), beginner, cfg, func(context.Context, pgx.Tx) error {
+			return serializationErr
+		})
+		if !errors.Is(err, grpcerr.ErrAborted) {
+			t.Errorf("errors.Is(%v, grpcerr.ErrAborted) = false, want true", err)
+		}
+		if beginner.begins < 2 {
+			t.Errorf("begins = %d, want >= 2", beginner.begins)
+		}
+	})
+
+	t.Run("caller deadline overrides fallbackWindow", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		beginner := &fakeBeginner{}
+		cfg := serializableTxRetryConfig
+		cfg.fallbackWindow = time.Nanosecond
+		cfg.initialBackoff = time.Millisecond
+		cfg.maxBackoff = time.Millisecond
+
+		err := runInTx(ctx, beginner, cfg, func(context.Context, pgx.Tx) error {
+			if beginner.begins < 4 {
+				return serializationErr
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("runInTx() unexpected error: %v", err)
+		}
+		if beginner.begins != 4 {
+			t.Errorf("begins = %d, want 4", beginner.begins)
+		}
+	})
+}
+
+func TestEqualJitter(t *testing.T) {
+	for _, nonJittered := range []time.Duration{-5 * time.Millisecond, 0, 1} {
+		if got := equalJitter(nonJittered); got != nonJittered {
+			t.Errorf("equalJitter(%v) = %v, want %v", nonJittered, got, nonJittered)
+		}
+	}
+	for _, d := range []time.Duration{2, 11, 10 * time.Millisecond, 200 * time.Millisecond} {
+		low := d / 2
+		for range 100 {
+			got := equalJitter(d)
+			if got < low || got > d {
+				t.Fatalf("equalJitter(%v) = %v, want within [%v, %v]", d, got, low, d)
+			}
+		}
 	}
 }
 

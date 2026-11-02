@@ -113,6 +113,14 @@ func TestStorage(t *testing.T) {
 			},
 		},
 		{
+			name: "DeleteExpiredRows",
+			check: func(t *testing.T) {
+				if s.retentionRepository == nil {
+					t.Error("NewStorage() did not initialize retentionRepository")
+				}
+			},
+		},
+		{
 			name: "RunInTransaction nil pool",
 			check: func(t *testing.T) {
 				err := (&Storage{}).RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {

@@ -35,16 +35,18 @@ func TestLoadConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "loads legacy health service Spanner database env vars",
+			name: "loads Spanner database settings from db-config env vars",
 			env: map[string]string{
-				"health_ess_spanner_database_name": "projects/p/instances/i/databases/ess",
-				"health_xid_spanner_database_name": "projects/p/instances/i/databases/xid",
+				"SPANNER_ESS_DATABASE":     "projects/p/instances/i/databases/ess",
+				"SPANNER_XID_DATABASE":     "projects/p/instances/i/databases/xid",
+				"SPANNER_QUOTA_PROJECT_ID": "quota-proj",
 			},
 			wantDB: dbconfig.Config{
 				Backend: dbconfig.BackendSpanner,
 				Spanner: dbconfig.Spanner{
-					EssDatabase: "projects/p/instances/i/databases/ess",
-					XidDatabase: "projects/p/instances/i/databases/xid",
+					EssDatabase:    "projects/p/instances/i/databases/ess",
+					XidDatabase:    "projects/p/instances/i/databases/xid",
+					QuotaProjectID: "quota-proj",
 				},
 			},
 		},
@@ -84,8 +86,7 @@ func TestLoadConfig(t *testing.T) {
 				"DB_BACKEND", "db_backend",
 				"SPANNER_ESS_DATABASE", "spanner_ess_database",
 				"SPANNER_XID_DATABASE", "spanner_xid_database",
-				"health_ess_spanner_database_name",
-				"health_xid_spanner_database_name",
+				"SPANNER_QUOTA_PROJECT_ID", "spanner_quota_project_id",
 				"POSTGRES_HOST", "postgres_host",
 				"POSTGRES_PORT", "postgres_port",
 			} {

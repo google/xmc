@@ -14,13 +14,10 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"reflect"
 	"testing"
 	"time"
-
-	"xmanager_cloud/internal/storage/dbconfig"
 )
 
 func TestDefaultPort(t *testing.T) {
@@ -32,48 +29,6 @@ func TestDefaultPort(t *testing.T) {
 	if f.DefValue != "8080" {
 		t.Errorf("Default value for flag 'port' = %q, want %q", f.DefValue, "8080")
 	}
-}
-
-func TestApplyLegacySpannerFlags(t *testing.T) {
-	origDB := spannerDatabaseName
-	origQuota := quotaProjectID
-	t.Cleanup(func() {
-		spannerDatabaseName = origDB
-		quotaProjectID = origQuota
-	})
-
-	spannerDatabaseName = "projects/p/instances/i/databases/flag-ess"
-	quotaProjectID = "flag-quota"
-
-	t.Run("populates unset Spanner fields from deprecated flags", func(t *testing.T) {
-		cfg := dbconfig.Config{Backend: dbconfig.BackendSpanner}
-		applyLegacySpannerFlags(context.Background(), &cfg)
-
-		if cfg.Spanner.EssDatabase != "projects/p/instances/i/databases/flag-ess" {
-			t.Errorf("Spanner.EssDatabase = %q, want flag fallback", cfg.Spanner.EssDatabase)
-		}
-		if cfg.Spanner.QuotaProjectID != "flag-quota" {
-			t.Errorf("Spanner.QuotaProjectID = %q, want flag fallback", cfg.Spanner.QuotaProjectID)
-		}
-	})
-
-	t.Run("db-config environment values take precedence over deprecated flags", func(t *testing.T) {
-		cfg := dbconfig.Config{
-			Backend: dbconfig.BackendSpanner,
-			Spanner: dbconfig.Spanner{
-				EssDatabase:    "projects/p/instances/i/databases/env-ess",
-				QuotaProjectID: "env-quota",
-			},
-		}
-		applyLegacySpannerFlags(context.Background(), &cfg)
-
-		if cfg.Spanner.EssDatabase != "projects/p/instances/i/databases/env-ess" {
-			t.Errorf("Spanner.EssDatabase = %q, want env value", cfg.Spanner.EssDatabase)
-		}
-		if cfg.Spanner.QuotaProjectID != "env-quota" {
-			t.Errorf("Spanner.QuotaProjectID = %q, want env value", cfg.Spanner.QuotaProjectID)
-		}
-	})
 }
 
 func TestLoadConfig(t *testing.T) {
