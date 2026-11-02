@@ -47,7 +47,7 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { matchesResourceFilter } from './resource_filter';
+import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
 
 /**
@@ -133,14 +133,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
-    return [
-      ...new Set(
-        this.queues()
-          .flatMap((q) => q.queueCapacity ?? [])
-          .map((cap) => cap.resourceType)
-          .filter((type): type is string => Boolean(type)),
-      ),
-    ].sort();
+    const rawTypes = this.queues()
+      .flatMap((q) => q.queueCapacity ?? [])
+      .map((cap) => cap.resourceType)
+      .filter((type): type is string => Boolean(type));
+    return expandResourceTypesWithParents(rawTypes);
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {

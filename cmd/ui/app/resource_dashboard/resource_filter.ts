@@ -37,3 +37,45 @@ export function matchesResourceFilter(resourceType: string, filter: string): boo
   }
   return r.includes(f);
 }
+
+/**
+ * Extracts the parent resource type from a compound resource identifier
+ * (e.g. "nvidia.com/gpu: nvidia-tesla-a100" -> "nvidia.com/gpu").
+ * Returns null if the resource is not compound or has no distinct parent.
+ */
+export function extractParentResourceType(resourceType: string): string | null {
+  const trimmed = resourceType?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const colonIndex = trimmed.indexOf(':');
+  if (colonIndex <= 0) {
+    return null;
+  }
+  const parent = trimmed.substring(0, colonIndex).trim();
+  const model = trimmed.substring(colonIndex + 1).trim();
+  if (!parent || !model) {
+    return null;
+  }
+  return parent;
+}
+
+/**
+ * Expands a collection of resource types to include synthesized parent resource types
+ * for any compound entries, returning a deduplicated and deterministically sorted list.
+ */
+export function expandResourceTypesWithParents(resourceTypes: Iterable<string>): string[] {
+  const uniqueTypes = new Set<string>();
+  for (const rawType of resourceTypes) {
+    const trimmed = rawType?.trim();
+    if (!trimmed) {
+      continue;
+    }
+    uniqueTypes.add(trimmed);
+    const parent = extractParentResourceType(trimmed);
+    if (parent) {
+      uniqueTypes.add(parent);
+    }
+  }
+  return Array.from(uniqueTypes).sort();
+}
