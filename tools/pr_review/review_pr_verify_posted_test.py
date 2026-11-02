@@ -350,6 +350,22 @@ class TestApprovedSidecarItems(unittest.TestCase):
         self.assertEqual([i.get("item_id") or i["thread_id"] for i in items], ["#1", 5])
         self.assertEqual(items[1]["action"], "RESOLVE")
 
+    def test_integer_strings_accepted_bools_and_floats_rejected(self):
+        sidecar = _sidecar(
+            [
+                {**_inline_item("#1", "Approved"), "line": " 15 "},
+                {**_inline_item("#2", "Approved"), "line": True},
+                {**_inline_item("#3", "Approved"), "line": 15.0},
+                {**_inline_item("#4", "Approved"), "line": "-3"},
+                {"type": "re_review_thread", "thread_id": "101", "action": "RESPOND"},
+                {"type": "re_review_thread", "thread_id": False, "action": "RESOLVE"},
+            ]
+        )
+        items = approved_sidecar_items(sidecar)
+        self.assertEqual(len(items), 2)
+        self.assertEqual((items[0]["item_id"], items[0]["line"]), ("#1", 15))
+        self.assertEqual(items[1]["thread_id"], 101)
+
     def test_missing_sidecar_returns_none(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.assertIsNone(load_sidecar(Path(tmpdir) / "checklist.json"))

@@ -223,12 +223,28 @@ def load_sidecar(sidecar_path: Path) -> dict[str, Any] | None:
     return sidecar
 
 
+def _as_positive_int(value: Any) -> int | None:
+    """Returns `value` as an int >= 1, accepting integer strings like "15".
+
+    Bools are rejected even though they are ints, as are floats and any value
+    that does not parse to a positive integer.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
 def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
     """Returns the actionable sidecar items in the shape of the markdown parsers.
 
     Initial inline items count when their status is Approved, Confirmed, or
     Posted and they target a file line; re-review threads count when their
-    action is RESOLVE or RESPOND.
+    action is RESOLVE or RESPOND. Integer strings are accepted for `line` and
+    `thread_id`; items with malformed values are skipped.
     """
     items: list[dict[str, Any]] = []
     for item in sidecar["items"]:
@@ -236,18 +252,14 @@ def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         status = str(item.get("status") or "")
         if item.get("type") == "initial_inline":
-            line = item.get("line")
-            if (
-                _APPROVED_STATUS.search(status)
-                and item.get("file_path")
-                and isinstance(line, int)
-                and line > 0
-            ):
-                items.append({**item, "item_id": str(item.get("item_id"))})
+            line = _as_positive_int(item.get("line"))
+            if _APPROVED_STATUS.search(status) and item.get("file_path") and line:
+                items.append({**item, "item_id": str(item.get("item_id")), "line": line})
         elif item.get("type") == "re_review_thread":
             action = str(item.get("action") or "").upper()
-            if action in ("RESOLVE", "RESPOND") and isinstance(item.get("thread_id"), int):
-                items.append({**item, "action": action})
+            thread_id = _as_positive_int(item.get("thread_id"))
+            if action in ("RESOLVE", "RESPOND") and thread_id:
+                items.append({**item, "thread_id": thread_id, "action": action})
     return items
 
 
