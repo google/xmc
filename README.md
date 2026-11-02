@@ -121,5 +121,3 @@ You can deploy XMC to a Kubernetes cluster or evaluate it locally on KinD in thr
 - File bug reports and feature requests in [GitHub Issues](https://github.com/google/xmc/issues). Self-hosted deployments receive best-effort support without contractual SLAs; contractual SLAs apply when running XMC through Google Cloud Managed Training Clusters.
 - Report security vulnerabilities privately through [g.co/vulnz](https://g.co/vulnz) rather than in public issues.
 - Released under the [Apache 2.0 License](LICENSE).
-
-*This is not an officially supported Google product.*
