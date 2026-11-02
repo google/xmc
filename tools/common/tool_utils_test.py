@@ -17,6 +17,7 @@
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -311,6 +312,63 @@ class TestLogStreams(unittest.TestCase):
         self.assertIsNone(default_call.kwargs["stdout"])
         self.assertIsNone(captured_call.kwargs["stdout"])
         self.assertTrue(captured_call.kwargs["capture_output"])
+
+
+class TestRunCommandHardening(unittest.TestCase):
+    """Tests for run_command stdin, timeout, decoding, and HandledError options."""
+
+    _BAD_BYTES = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"]
+
+    def _run(self, cmd: list[str], **kwargs):
+        return run_command(cmd, capture_output=True, log_cmd=False, log_on_error=False, **kwargs)
+
+    def test_input_text_is_written_to_stdin(self):
+        cmd = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        self.assertEqual(self._run(cmd, input_text="abc").stdout.strip(), "ABC")
+
+    def test_errors_replace_tolerates_undecodable_output(self):
+        self.assertEqual(self._run(self._BAD_BYTES, errors="replace").stdout, "ok\ufffd")
+
+    def test_default_decoding_stays_strict(self):
+        with self.assertRaises(UnicodeDecodeError):
+            self._run(self._BAD_BYTES)
+
+    def test_raw_exceptions_without_handled_instruction(self):
+        with self.assertRaises(FileNotFoundError):
+            self._run(["xmc-nonexistent-binary"])
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self._run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.2)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self._run([sys.executable, "-c", "raise SystemExit(3)"])
+
+    def test_missing_binary_raises_handled_error(self):
+        with self.assertRaisesRegex(HandledError, "Cannot run xmc-nonexistent-binary") as ctx:
+            self._run(["xmc-nonexistent-binary"], handled_instruction="Install it.")
+        self.assertEqual(ctx.exception.instruction, "Install it.")
+        self.assertIsInstance(ctx.exception.__cause__, FileNotFoundError)
+
+    def test_timeout_raises_handled_error(self):
+        cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
+        with self.assertRaisesRegex(HandledError, r"timed out after 0\.2s"):
+            self._run(cmd, timeout=0.2, handled_instruction="Retry.")
+
+    def test_non_zero_exit_raises_handled_error_with_stderr(self):
+        cmd = [sys.executable, "-c", "import sys; sys.exit('boom')"]
+        with self.assertRaisesRegex(HandledError, r"exit code 1: .*\nboom") as ctx:
+            self._run(cmd, handled_instruction="Fix it.")
+        self.assertEqual(ctx.exception.instruction, "Fix it.")
+
+    def test_non_zero_exit_without_check_returns_result(self):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        result = self._run(cmd, check=False, handled_instruction="Unused.")
+        self.assertEqual(result.returncode, 3)
+
+    @patch("tools.common.tool_utils.log_error")
+    def test_handled_failure_still_logs_when_requested(self, mock_log_error):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        with self.assertRaises(HandledError):
+            run_command(cmd, capture_output=True, log_cmd=False, handled_instruction="Fix it.")
+        mock_log_error.assert_called_once()
 
 
 class TestConfigLoader(unittest.TestCase):

@@ -29,7 +29,6 @@ import argparse
 import dataclasses
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,7 +37,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.common.tool_utils import HandledError, run_command, run_tool  # noqa: E402
 
 BASELINE_RELPATH = Path("tools/lint/legacy_imports_baseline.json")
 GO_MODULE_PREFIX = "xmanager_cloud/"
@@ -223,10 +222,16 @@ def compare_to_baseline(current: dict[str, int], baseline: dict[str, int]) -> di
 
 def list_tracked_files(repo_root: Path) -> list[str]:
     """Lists git-tracked files relative to the repository root."""
-    result = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
+    result = run_command(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        errors="replace",
+        handled_instruction="Run from inside the repository with git on PATH, or pass --repo-root.",
     )
-    return [f for f in result.stdout.decode().split("\0") if f]
+    return [f for f in result.stdout.split("\0") if f]
 
 
 def load_baseline(path: Path) -> dict[str, int]:

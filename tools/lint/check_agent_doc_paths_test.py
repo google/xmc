@@ -243,12 +243,14 @@ class CheckAgentDocPathsEndToEndTest(unittest.TestCase):
 class ListTrackedFilesTest(unittest.TestCase):
     def test_outside_git_repository_raises_handled_error(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaisesRegex(HandledError, "git ls-files failed"):
+            with self.assertRaisesRegex(HandledError, "git ls-files -z"):
                 cli.list_tracked_files(Path(tmp))
 
     def test_missing_git_binary_raises_handled_error(self):
-        with mock.patch.object(cli.subprocess, "run", side_effect=FileNotFoundError("git")):
-            with self.assertRaisesRegex(HandledError, "git ls-files failed"):
+        with mock.patch(
+            "tools.common.tool_utils.subprocess.run", side_effect=FileNotFoundError("git")
+        ):
+            with self.assertRaisesRegex(HandledError, "Cannot run git"):
                 cli.list_tracked_files(Path("."))
 
 
