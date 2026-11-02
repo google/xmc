@@ -243,6 +243,14 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("missing.yml", json.loads(stdout.getvalue())["error"])
 
+    def test_list_example_paths_prints_unique_matrix_paths(self) -> None:
+        """--list-example-paths prints each matrix example path once, without importing."""
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = smoke.main(["--workflow", str(self.workflow), "--list-example-paths"])
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout.getvalue().split(), ["examples/ok_job", "examples/broken_job"])
+
 
 if __name__ == "__main__":
     unittest.main()

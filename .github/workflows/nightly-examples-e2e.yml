@@ -89,6 +89,8 @@ jobs:
   examples-import-check:
     name: 'Examples Import Check'
     uses: ./.github/workflows/examples-smoke.yml
+    with:
+      xmanager_version: ${{ inputs.xmanager_version || '' }}
     permissions:
       contents: read
       pull-requests: read

@@ -48,14 +48,17 @@ _KEY_RE = re.compile(r"^\s*(?:-\s+)?(?P<key>example_path|entrypoint):(?P<value>.
 _ITEM_START_RE = re.compile(r"^\s*-\s")
 # Number of trailing non-empty stderr lines kept as failure context.
 _STDERR_TAIL_LINES = 5
-# Per-entrypoint import budget, so one blocking import cannot hang the whole report.
-_IMPORT_TIMEOUT_SECONDS = 120
+# Per-entrypoint import budget. Observed imports take about 0.6s; 30s x 13 entries stays
+# well under the 15-minute job timeout, so a hang still yields a JSON report.
+_IMPORT_TIMEOUT_SECONDS = 30
 # Plainly imports the entrypoint module (e.g. `import launch`) inside a per-example
 # subprocess whose cwd/PYTHONPATH is the example dir. The module body (imports, absl flag
 # definitions) runs with `__name__ == "launch"`, so `app.run(main)` is never reached.
-# One subprocess per example keeps the absl flag registry and sibling modules (several
-# examples ship their own `worker.py`) isolated, as in the nightly suite. sys.argv is
-# reset to [script] so argv[0] matches `python3 <script>`.
+# One subprocess per example is required: 12 of 13 entrypoints share the module name
+# `launch` (sys.modules would return the first one cached), absl's flag registry is
+# process-global (simple_job and workunit_artifact_job both define --queue), and each
+# import gets its own timeout. sys.argv is reset to [script] so argv[0] matches
+# `python3 <script>`.
 _RUN_SNIPPET = (
     "import importlib, sys; script = sys.argv[1]; sys.argv = [script]; "
     "importlib.import_module(script.removesuffix('.py'))"
@@ -226,6 +229,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--repo-root", type=pathlib.Path, default=REPO_ROOT)
     parser.add_argument("--workflow", type=pathlib.Path, default=DEFAULT_WORKFLOW)
+    parser.add_argument(
+        "--list-example-paths",
+        action="store_true",
+        help="Print the unique matrix example paths (one per line) and exit; used by CI to "
+        "install only the requirements of examples the nightly suite actually runs.",
+    )
     args = parser.parse_args(argv)
     # Subprocesses run with cwd=<example dir>, so relative paths must be anchored now.
     # absolute() (not resolve()) keeps the venv's python symlink and its site-packages.
@@ -252,6 +261,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not entries:
         print(json.dumps({"error": f"no example entrypoints found in {args.workflow}"}))
         return 2
+    if args.list_example_paths:
+        print("\n".join(dict.fromkeys(e.example_path for e in entries)))
+        return 0
     results = [smoke_entrypoint(args.venv_python, args.repo_root, e) for e in entries]
     print(json.dumps({"results": [dataclasses.asdict(r) for r in results]}, indent=2))
     return 0 if all(r.ok for r in results) else 1

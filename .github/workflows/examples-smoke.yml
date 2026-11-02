@@ -12,16 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds the examples virtualenv exactly as the Nightly Examples E2E suite does
-# (install_xmanager.py + example requirements) and import-checks every nightly
-# example entrypoint. No cluster, credentials, or workload launches are involved.
+# Approximates the Nightly Examples E2E venv (install_xmanager.py + the requirements of
+# the examples in the nightly matrix, in one combined venv) and import-checks every
+# nightly example entrypoint. No cluster, credentials, or workload launches are involved.
 name: 'Examples Import Check'
 
 on:
   pull_request:
   merge_group:
   workflow_call:
+    inputs:
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (mirrors the nightly input)'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
+    inputs:
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   # Literal prefix: under workflow_call, github.workflow resolves to the caller's name.
@@ -46,8 +58,11 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
-          # Full history lets paths-filter diff locally on merge_group (no API fallback).
-          fetch-depth: 0
+          # paths-filter v3.0.2 has no native merge_group support: it diffs against the base
+          # SHA via `git fetch origin <sha>`, which fails on this private repo without
+          # persisted credentials. Full history avoids that fetch. PRs use the REST API, so
+          # they keep a shallow clone.
+          fetch-depth: ${{ github.event_name == 'merge_group' && 0 || 1 }}
 
       - name: 'Check Changed Paths'
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
@@ -89,15 +104,23 @@ jobs:
 
       - name: 'Build Examples Virtualenv'
         if: steps.gate.outputs.run == 'true'
+        env:
+          # Read by install_xmanager.py; empty means the default `xmanager>=...` spec.
+          XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
         run: |
           set -euo pipefail
-          shopt -s nullglob
+          # Only the examples the nightly matrix runs (not every examples/* directory).
+          # Files are installed sequentially, so a cross-example conflict resolves
+          # last-wins rather than failing; nightly installs one example per venv.
+          mapfile -t example_paths < <(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths)
           req_args=()
-          for req in examples/*/requirements.txt; do
-            req_args+=(--requirements "${req}")
+          for example_path in "${example_paths[@]}"; do
+            if [ -f "${example_path}/requirements.txt" ]; then
+              req_args+=(--requirements "${example_path}/requirements.txt")
+            fi
           done
           if [ "${#req_args[@]}" -eq 0 ]; then
-            echo "::error::No examples/*/requirements.txt files found."
+            echo "::error::No requirements.txt found for the nightly matrix examples."
             exit 1
           fi
           python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" "${req_args[@]}"
