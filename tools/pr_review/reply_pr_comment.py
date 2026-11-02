@@ -148,8 +148,8 @@ def reply_comment(args):
 
     if getattr(args, "resolve", False) is not True:
         return _summarize_reply(parsed, response, resolved=False)
-    resolved = _resolve_replied_thread(parsed, response)
-    return _summarize_reply(parsed, response, resolved=bool(resolved.get("is_resolved")))
+    resolution = _resolve_replied_thread(parsed, response)
+    return _summarize_reply(parsed, response, resolved=bool(resolution.get("is_resolved")))
 
 
 def _summarize_reply(parsed: dict, response: dict, resolved: bool) -> dict:
