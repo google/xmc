@@ -191,7 +191,7 @@ func (r *Repository) UpdateExperiment(ctx context.Context, update *storage.Exper
 			res = storage.UpdatedExperiments{Original: originalExp, Updated: updatedExp}
 			return nil
 		}
-		updatedExp.UpdateTime = timestamppb.New(time.Now().UTC().Truncate(time.Microsecond))
+		updatedExp.UpdateTime = timestamppb.New(postgresdata.MonotonicUpdateTime(time.Now(), originalExp.GetUpdateTime().AsTime()))
 		row, err := toExperimentRow(updatedExp)
 		if err != nil {
 			return err

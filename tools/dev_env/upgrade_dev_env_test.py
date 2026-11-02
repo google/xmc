@@ -197,6 +197,26 @@ class TestMigrationHelpers(unittest.TestCase):
         upgrade_dev_env.step_migrate(config)
         self.assertEqual(mock_run_mig.call_count, 2)
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_migration")
+    @mock.patch("tools.dev_env.upgrade_dev_env.get_migration_status")
+    def test_step_migrate_skips_when_postgres_backend(self, mock_status, mock_run_mig):
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="latest",
+            database_backend="postgres",
+            run_migrations=True,
+        )
+        self.assertEqual(upgrade_dev_env.check_pending_migrations(config), [])
+        upgrade_dev_env.step_migrate(config)
+        mock_status.assert_not_called()
+        mock_run_mig.assert_not_called()
+
 
 class TestDeploymentResolution(unittest.TestCase):
     """Tests Kubernetes deployment name fallback resolution."""
@@ -406,7 +426,7 @@ class TestStepSubprocesses(unittest.TestCase):
                 "REGION": "us-central1",
                 "PROJECT_ID": "proj-123",
                 "ENABLE_COMPONENTS": "false",
-                "LOG_MONITOR_DEPLOYMENT_ENABLED": "false",
+                "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
             },
         )
 

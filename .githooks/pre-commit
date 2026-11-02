@@ -8,6 +8,7 @@ fi
 
 echo "=== Running XMC Pre-Commit Linter Hooks (Mode: ${MODE}) ==="
 FAILED=0
+AUTOSTAGE_STATE=""
 
 check_bazel() {
   local buildifier_bin=""
@@ -46,7 +47,9 @@ check_go() {
     if [ -n "$unformatted_go" ]; then
       echo "❌ Unformatted Go files found:"
       echo "$unformatted_go"
-      FAILED=1
+      # Fix mode rewrites these files below; restage_fixes decides whether the
+      # rewrite can be staged automatically or must fail the hook.
+      if [ "$MODE" = "check" ]; then FAILED=1; fi
     fi
 
     if [ "$MODE" = "fix" ]; then
@@ -140,6 +143,22 @@ check_examples_coverage() {
   echo "--> Checking Nightly E2E Verification Coverage for examples/..."
   if ! XMC_BYPASS_VENV=1 python3 tools/nightly_tests/check_examples_coverage.py >/dev/null; then
     echo "❌ Nightly examples verification coverage check failed."
+    FAILED=1
+  fi
+}
+
+check_agent_doc_paths() {
+  # In fix mode, only run when agent docs are staged, or when staged deletes or
+  # renames could orphan a path an agent doc references, to keep the hook fast.
+  if [ "$MODE" = "fix" ]; then
+    local agent_docs removed_paths
+    agent_docs=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^\.agents/.*\.md$|(^|/)AGENTS\.md$' || true)
+    removed_paths=$(git diff --cached --name-only --diff-filter=DR || true)
+    if [ -z "$agent_docs" ] && [ -z "$removed_paths" ]; then return; fi
+  fi
+  echo "--> Checking Agent Doc Path References..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_agent_doc_paths.py >/dev/null; then
+    echo "❌ Agent docs reference non-existent repository paths (see JSON error above)."
     FAILED=1
   fi
 }
@@ -463,11 +482,57 @@ check_affected_tests() {
   fi
 }
 
+# Fix mode stages formatter fixes to fully staged files unless
+# XMC_PRECOMMIT_NO_AUTOSTAGE=1 restores the manual restage workflow.
+autostage_enabled() {
+  [ "${MODE}" = "fix" ] && [ "${XMC_PRECOMMIT_NO_AUTOSTAGE:-0}" != "1" ]
+}
+
+snapshot_staging() {
+  if ! autostage_enabled; then
+    return
+  fi
+  AUTOSTAGE_STATE=$(mktemp)
+  trap 'rm -f "${AUTOSTAGE_STATE}"' EXIT
+  XMC_BYPASS_VENV=1 python3 tools/lint/precommit_autostage.py snapshot --state "${AUTOSTAGE_STATE}" >/dev/null
+}
+
+restage_fixes() {
+  if [ "${MODE}" != "fix" ]; then
+    return
+  fi
+  if autostage_enabled; then
+    if ! XMC_BYPASS_VENV=1 python3 tools/lint/precommit_autostage.py restage --state "${AUTOSTAGE_STATE}" >/dev/null; then
+      echo ""
+      echo "❌ PRE-COMMIT HOOK FAILED: Linters fixed files that were not fully staged (see \"blocked\" above)."
+      echo "   Please review the modified files (git diff), stage them, and re-run git commit."
+      exit 1
+    fi
+    return
+  fi
+  if ! git diff --quiet; then
+    echo ""
+    echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
+    echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
+    exit 1
+  fi
+}
+
+# Returns success when files are staged and all are Markdown or under docs/,
+# which resolve_test_scope.py classifies as non-code.
+staged_docs_only() {
+  local staged
+  staged=$(git diff --cached --name-only)
+  [ -n "${staged}" ] && ! grep -qvE '(\.md$|^docs/)' <<<"${staged}"
+}
+
 main() {
+  snapshot_staging
   check_bazel
   check_go
   check_legacy_imports
   check_examples_coverage
+  check_agent_doc_paths
   check_ui
   check_license
   check_python
@@ -476,21 +541,18 @@ main() {
   check_helm
   check_security
 
-  if [ "$MODE" = "fix" ]; then
-    if ! git diff --quiet; then
-      echo ""
-      echo "❌ PRE-COMMIT HOOK FAILED: Linters automatically fixed formatting issues in your code!"
-      echo "   Please review the modified files (git diff), stage them (git add -u), and re-run git commit."
-      exit 1
-    fi
-  fi
+  restage_fixes
 
   if [ "$FAILED" -ne 0 ]; then
     echo "=== ❌ Linter checks failed! ==="
     exit 1
   fi
 
-  check_affected_tests
+  if [ "$MODE" = "fix" ] && staged_docs_only; then
+    echo "--> Skipping Affected Bazel Unit Tests: every staged path is documentation."
+  else
+    check_affected_tests
+  fi
   if [ "$FAILED" -ne 0 ]; then
     echo "=== ❌ Pre-commit checks failed! ==="
     exit 1

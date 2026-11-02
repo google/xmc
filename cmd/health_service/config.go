@@ -21,6 +21,7 @@ import (
 
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
+	"xmanager_cloud/internal/storage/dbconfig"
 )
 
 // Config holds the configuration for the health service.
@@ -37,8 +38,7 @@ type Config struct {
 	LogMonitorURL              string
 	LogMonitorResourceName     string
 	ConfigDir                  string
-	EssSpannerDatabase         string
-	XidSpannerDatabase         string
+	DB                         dbconfig.Config
 	RedisAddr                  string
 	AppVersion                 string
 	BuildVersion               string
@@ -71,8 +71,6 @@ func init() {
 	configutil.StringEnv(&cfg.ReconcilerURL, "health_reconciler_url", "http://reconciler-svc:8080")
 	configutil.StringEnv(&cfg.LogMonitorURL, "health_log_monitor_url", "")
 	configutil.StringEnv(&cfg.LogMonitorResourceName, "health_log_monitor_resource_name", "")
-	configutil.StringEnv(&cfg.EssSpannerDatabase, "health_ess_spanner_database_name", "")
-	configutil.StringEnv(&cfg.XidSpannerDatabase, "health_xid_spanner_database_name", "")
 	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
 	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
 	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
@@ -107,6 +105,11 @@ func init() {
 }
 
 // LoadConfig loads and returns the configuration.
-func LoadConfig() *Config {
-	return &cfg
+func LoadConfig() (*Config, error) {
+	dbCfg, err := dbconfig.Load()
+	if err != nil {
+		return nil, err
+	}
+	cfg.DB = dbCfg
+	return &cfg, nil
 }

@@ -28,7 +28,7 @@ import (
 const DependencyNotFoundMessagePrefix = "dependency not found:"
 
 // ValidateIntentDependencies checks that the dependencies deps of an intent for canonicalName keep
-// the dependency graph acyclic and are all registered in catalog. MemoryStore and SpannerStore both
+// the dependency graph acyclic and are all registered in catalog. MemoryStore and dbstore.Store both
 // call it before applying an intent so they reject the same intents with the same errors. It
 // returns the ComponentID of each dependency.
 func ValidateIntentDependencies(catalog map[string]*store.ComponentRecord, canonicalName string, deps []string) (map[string]int64, error) {

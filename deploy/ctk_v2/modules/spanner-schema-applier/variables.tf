@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+variable "enabled" {
+  type        = bool
+  default     = true
+  description = "Whether to apply the Spanner schema and initialize migrations."
+}
+
 variable "project_id" {
   type        = string
   description = "GCP Project ID"

@@ -14,7 +14,13 @@
  * limitations under the License.
  */
 
+moved {
+  from = null_resource.apply_schema
+  to   = null_resource.apply_schema[0]
+}
+
 resource "null_resource" "apply_schema" {
+  count      = var.enabled ? 1 : 0
   depends_on = [var.depends_on_anchor]
 
   triggers = {

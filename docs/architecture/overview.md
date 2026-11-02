@@ -161,7 +161,8 @@ Scheduling itself is delegated to third-party controllers: **Kueue** admits work
 The **Ingestion Gateway** receives metric batches from training jobs over HTTP and publishes them
 to the metrics message bus; it runs in GKE. The **Log Monitor** pulls filtered workload log entries
 from a Pub/Sub subscription, parses them into structured status messages, and writes them to
-Spanner; it runs on **Cloud Run**, outside the GKE cluster.
+Spanner; it runs as a GKE `Deployment` by default (or on **Cloud Run** when
+`log_monitor_deployment_enabled` is `false`).
 
 Metrics never transit the control plane: the SDK writes straight to the Ingestion Gateway, and
 ClickHouse consumes from the bus on its own. See
@@ -216,7 +217,7 @@ graph TD
 
     subgraph Tel["Telemetry Plane"]
         IG["Ingestion Gateway<br/>:8080 (GKE)"]
-        LM["Log Monitor<br/>(Cloud Run)"]
+        LM["Log Monitor<br/>:8080 (GKE / Cloud Run)"]
     end
 
     subgraph Stores["Data Stores"]
@@ -393,9 +394,10 @@ the Actuator, Reconciler, and ROD Data Provider additionally hold `ClusterRole` 
 `JobSet`, Kueue, and namespace resources, since they are the components that read or write
 cluster-scoped workload and quota objects.
 
-Two pieces sit outside the chart. The **Log Monitor** is provisioned as a Cloud Run service by the
-Terraform module [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor),
-together with its Cloud Logging sink, Pub/Sub topic, and dead-letter topic. **Redpanda** and
+The **Log Monitor** runs as an in-cluster `Deployment` by default (`logMonitorDeployment.enabled: true`), while the
+Terraform module [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor)
+provisions its Cloud Logging sink, Pub/Sub topic, dead-letter topic, and subscription (plus the
+fallback Cloud Run service when `log_monitor_deployment_enabled` is `false`). **Redpanda** and
 **ClickHouse** are bring-your-own addons under [`deploy/addons/metrics`](../../deploy/addons/metrics).
 
 Two topologies exist — a legacy split across GKE and Cloud Run behind IAP, and the current unified

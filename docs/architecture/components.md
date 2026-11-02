@@ -19,7 +19,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
-| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | Cloud Run service | HTTP health endpoint | Terraform module |
+| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (or Cloud Run service) | HTTP `8080` (health) | `logMonitorDeployment.enabled` (default `true`) |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
 Container images are pinned per service through the `*_custom_image` values in

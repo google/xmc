@@ -86,10 +86,11 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 
 ## 5. Pre-Commit Verification & Staging
 
-1. **Run Pre-Commit Hooks**:
-   Before committing code changes, run the repository pre-commit script, which formats files, runs linters, and executes `run_affected_tests.py --skip-emulator-check`:
+1. **Stage, Then Run Pre-Commit Hooks**:
+   Before committing code changes, stage them and run the repository pre-commit script, which formats files, auto-restages formatter fixes to fully staged files, runs linters, and executes `run_affected_tests.py --skip-emulator-check`:
    ```bash
-   ./.githooks/pre-commit && git add .
+   git add <changed_paths>
+   ./.githooks/pre-commit
    ```
 2. **Verify Linter & Affected Test Status**:
    Ensure all linters and affected unit tests pass without errors or warnings.

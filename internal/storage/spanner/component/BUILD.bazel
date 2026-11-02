@@ -16,19 +16,23 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "component",
-    srcs = ["repository.go"],
+    srcs = [
+        "mutations.go",
+        "repository.go",
+    ],
     importpath = "xmanager_cloud/internal/storage/spanner/component",
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/grpcerr",
         "//internal/storage",
+        "//internal/storage/data",
+        "//internal/storage/spanner/data",
         "//pkg/components/store",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_api//iterator",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -39,6 +43,7 @@ go_test(
     deps = [
         "//api/protos/components/v1alpha1",
         "//internal/grpcerr",
+        "//internal/storage",
         "//internal/storage/spanner/emulator",
         "//pkg/components/naming",
         "//pkg/components/store",

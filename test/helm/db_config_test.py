@@ -17,11 +17,20 @@
 import re
 import unittest
 
-from chart_test_lib import render_template, require_helm
+from chart_test_lib import render_chart, render_template, require_helm
 
 DB_CONFIG_TEMPLATE = "templates/db-config.yaml"
 POSTGRES_SECRET_TEMPLATE = "templates/postgres-secret.yaml"
 HEALTH_DEPLOYMENT = "templates/health-service/deployment.yaml"
+
+SERVICE_CONFIGMAPS: tuple[tuple[str, str], ...] = (
+    ("templates/actuator/configmap.yaml", "actuator-config"),
+    ("templates/dashboard-service/configmap.yaml", "dashboard-config"),
+    ("templates/ess/configmap.yaml", "ess-config"),
+    ("templates/health-service/configmap.yaml", "health-config"),
+    ("templates/reconciler/configmap.yaml", "reconciler-config"),
+    ("templates/xid/configmap.yaml", "xid-config"),
+)
 
 WORKLOAD_DEPLOYMENTS: tuple[str, ...] = (
     "templates/actuator/deployment.yaml",
@@ -187,66 +196,52 @@ class DbConfigChartTest(unittest.TestCase):
                 changed = db_config_checksum(render_template(template, changed_values))
                 self.assertNotEqual(default, changed)
 
-    def test_legacy_service_configmap_keys_match_db_config(self) -> None:
-        """Deprecated per-service ConfigMap keys render the same values as db-config."""
+    def test_service_configmaps_exclude_legacy_db_keys(self) -> None:
+        """Per-service ConfigMaps exclude Spanner DB keys; rod-data-provider-config is absent."""
+        base_values = {
+            **ENABLE_OPTIONAL_DEPLOYMENTS,
+            "projectId": "my-project",
+            "environment": "dev",
+            "gcpServiceAccount": "sa@my-project.iam.gserviceaccount.com",
+        }
         scenarios = {
             "default": {
-                "projectId": "my-project",
-                "environment": "dev",
+                **base_values,
                 "experimentStateServer.spannerDatabaseName": "",
                 "xidService.spannerDatabaseName": "",
-                "gcpServiceAccount": "sa@my-project.iam.gserviceaccount.com",
             },
             "overridden": {
-                "projectId": "my-project",
-                "environment": "dev",
-                "experimentStateServer.spannerDatabaseName": "projects/p/instances/i/databases/ess-v1",
-                "xidService.spannerDatabaseName": "projects/p/instances/i/databases/xid-v1",
-                "gcpServiceAccount": "sa@my-project.iam.gserviceaccount.com",
+                **base_values,
+                "experimentStateServer.spannerDatabaseName": "projects/p/instances/i/databases/ess",
+                "xidService.spannerDatabaseName": "projects/p/instances/i/databases/xid",
             },
         }
-        service_templates = (
-            (
-                "templates/ess/configmap.yaml",
-                "ess_spanner_database_name",
-                "SPANNER_ESS_DATABASE",
-                "ess_quota_project_id",
-            ),
-            (
-                "templates/xid/configmap.yaml",
-                "xid_spanner_database_name",
-                "SPANNER_XID_DATABASE",
-                "xid_quota_project_id",
-            ),
-            (
-                "templates/actuator/configmap.yaml",
-                "spanner_database_name",
-                "SPANNER_ESS_DATABASE",
-                "quota_project_id",
-            ),
-            (
-                "templates/reconciler/configmap.yaml",
-                "spanner_database_name",
-                "SPANNER_ESS_DATABASE",
-                "quota_project_id",
-            ),
-        )
+        for scenario, values in scenarios.items():
+            for template, configmap_name in SERVICE_CONFIGMAPS:
+                with self.subTest(scenario=scenario, configmap=configmap_name):
+                    manifest = render_template(template, values)
+                    self.assertIn(f"name: {configmap_name}", manifest)
+                    self.assertNotIn("spanner_database_name", manifest)
 
-        for scenario_name, values in scenarios.items():
-            db_manifest = render_template(DB_CONFIG_TEMPLATE, values)
-            for template, legacy_db_key, db_config_key, legacy_quota_key in service_templates:
-                with self.subTest(scenario=scenario_name, template=template):
-                    svc_manifest = render_template(template, values)
-                    expected_db = re.search(
-                        rf"^\s*{db_config_key}: (.+)$", db_manifest, re.MULTILINE
-                    )
-                    expected_quota = re.search(
-                        r"^\s*SPANNER_QUOTA_PROJECT_ID: (.+)$", db_manifest, re.MULTILINE
-                    )
-                    self.assertIsNotNone(expected_db)
-                    self.assertIsNotNone(expected_quota)
-                    self.assertIn(f"{legacy_db_key}: {expected_db.group(1)}", svc_manifest)
-                    self.assertIn(f"{legacy_quota_key}: {expected_quota.group(1)}", svc_manifest)
+        actuator_cm = render_template("templates/actuator/configmap.yaml", base_values)
+        self.assertNotIn("quota_project_id", actuator_cm)
+        self.assertIn(
+            'ess_quota_project_id: "my-project"',
+            render_template("templates/ess/configmap.yaml", base_values),
+        )
+        self.assertIn(
+            'xid_quota_project_id: "my-project"',
+            render_template("templates/xid/configmap.yaml", base_values),
+        )
+        self.assertIn(
+            'quota_project_id: "my-project"',
+            render_template("templates/reconciler/configmap.yaml", base_values),
+        )
+        self.assertNotIn("rod-data-provider-config", render_chart(base_values))
+        self.assertNotIn(
+            "rod-data-provider-config",
+            render_template("templates/rod/deployment.yaml", base_values),
+        )
 
     def test_health_service_mounts_db_config(self) -> None:
         """health-service mounts db-config under /config/db so the admin UI can list it."""
@@ -256,6 +251,24 @@ class DbConfigChartTest(unittest.TestCase):
             "- name: db-config-volume\n          configMap:\n            name: db-config", manifest
         )
         self.assertIn("- name: db-config-volume\n            mountPath: /config/db", manifest)
+
+    def test_log_monitor_deployment_enabled_by_default(self) -> None:
+        """log-monitor deployment and health-config GKE URL render with default values."""
+        lm_manifest = render_template("templates/log-monitor/deployment.yaml", {})
+        self.assertIn("name: log-monitor-deployment", lm_manifest)
+        self.assertNotIn("-spanner_database_name", lm_manifest)
+        self.assertNotIn("-quota_project_id", lm_manifest)
+
+        health_cm = render_template("templates/health-service/configmap.yaml", {})
+        self.assertIn('health_log_monitor_url: "http://log-monitor-service:8080"', health_cm)
+        self.assertNotIn("health_log_monitor_resource_name", health_cm)
+
+        health_cm_cloud_run = render_template(
+            "templates/health-service/configmap.yaml",
+            {"logMonitorDeployment.enabled": "false"},
+        )
+        self.assertIn("health_log_monitor_resource_name:", health_cm_cloud_run)
+        self.assertNotIn("health_log_monitor_url", health_cm_cloud_run)
 
     def test_workloads_source_postgres_password_from_secret(self) -> None:
         """Every workload receives POSTGRES_PASSWORD from postgres-secret when database.backend is postgres."""

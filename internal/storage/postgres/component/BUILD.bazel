@@ -21,9 +21,14 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//api/protos/components/v1alpha1",
+        "//internal/grpcerr",
+        "//internal/safesql",
         "//internal/storage",
+        "//internal/storage/data",
         "//internal/storage/postgres/pgdb",
         "//pkg/components/store",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -32,13 +37,25 @@ go_library(
 
 go_test(
     name = "component_test",
-    srcs = ["repository_test.go"],
+    srcs = [
+        "repository_integration_test.go",
+        "repository_test.go",
+    ],
     embed = [":component"],
+    tags = ["local"],
     deps = [
+        "//api/protos/components/v1alpha1",
+        "//internal/grpcerr",
+        "//internal/storage",
         "//internal/storage/postgres/pgdb",
+        "//internal/storage/postgres/testing",
+        "//pkg/components/naming",
         "//pkg/components/store",
+        "@com_github_google_go_cmp//cmp",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

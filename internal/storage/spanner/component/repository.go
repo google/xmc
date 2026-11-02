@@ -25,11 +25,11 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -118,6 +118,19 @@ func NewRepository(client *spanner.Client) *Repository {
 func (r *Repository) WithTx(q Queryable) *TxRepository {
 	tx, _ := q.(*spanner.ReadWriteTransaction)
 	return &TxRepository{q: q, tx: tx}
+}
+
+// WithReadOnlySnapshot runs fn against a consistent read-only snapshot.
+func (r *Repository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.ComponentTxRepository) error) error {
+	if fn == nil {
+		return fmt.Errorf("callback function must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	ro, err := r.readOnlyTransaction()
+	if err != nil {
+		return err
+	}
+	defer ro.Close()
+	return fn(ctx, r.WithTx(ro))
 }
 
 // GetActiveComponent retrieves a non-deleted component record by canonical name, populated with active dependencies.
@@ -414,39 +427,21 @@ func querySnapshotRow(ctx context.Context, q Queryable, stmt spanner.Statement, 
 }
 
 // decodeSnapshotRecord hydrates a historical record and its coordinates from a snapshot row.
-// Timestamps are supplied by the caller because snapshots do not store their own; the record is
-// built from scratch so no active component state leaks into the historical view.
+// Timestamps are supplied by the caller because snapshots do not store their own.
 func decodeSnapshotRecord(row *spanner.Row, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error) {
-	snapRec := &store.ComponentRecord{Name: canonicalName, CreateTime: createTime, UpdateTime: updateTime}
-	var configProto, accessPayload []byte
+	var snap data.ComponentSnapshot
 	for _, col := range [...]struct {
 		name string
 		dst  any
 	}{
-		{"ComponentId", &snapRec.ComponentID}, {"LockedGeneration", &snapRec.Generation},
-		{"ConfigProto", &configProto}, {"AccessPayload", &accessPayload},
+		{"ComponentId", &snap.ComponentID}, {"LockedGeneration", &snap.LockedGeneration},
+		{"ConfigProto", &snap.ConfigProto}, {"AccessPayload", &snap.AccessPayload},
 	} {
 		if err := row.ColumnByName(col.name, col.dst); err != nil {
 			return nil, nil, fmt.Errorf("failed to read %s: %w", col.name, err)
 		}
 	}
-	if err := UnmarshalConfigProto(configProto, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical config proto: %w", err)
-	}
-	if err := UnmarshalAccessStatus(accessPayload, snapRec); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal historical access status: %w", err)
-	}
-	if snapRec.Status != nil {
-		snapRec.State = snapRec.Status.State
-		obsGen := snapRec.Status.ObservedGeneration
-		snapRec.ObservedGeneration = &obsGen
-	}
-	snapRec.Etag = store.GenerateEtag(snapRec)
-	var coords *componentspb.ResolvedComponentCoordinates
-	if snapRec.Status != nil && snapRec.Status.Coordinates != nil {
-		coords = store.CloneCoordinates(snapRec.Status.Coordinates)
-	}
-	return snapRec, coords, nil
+	return data.DecodeComponentSnapshot(snap, canonicalName, createTime, updateTime)
 }
 
 // scanFenceColumns returns the fence holder from the columns that fenceColumnsSQL adds to a
@@ -539,10 +534,10 @@ func RowToComponentRecord(row *spanner.Row) (*store.ComponentRecord, error) {
 	if rec.Owner, err = scanSourceOwner(row); err != nil {
 		return nil, err
 	}
-	if err := decodeComponentPayloads(configProto, accessPayload, rec); err != nil {
+	if err := data.DecodeComponentPayloads(configProto, accessPayload, rec); err != nil {
 		return nil, err
 	}
-	finalizeComponentRecord(rec)
+	data.FinalizeComponentRecord(rec)
 	return rec, nil
 }
 
@@ -564,50 +559,4 @@ func scanSourceOwner(row *spanner.Row) (*store.SourceOwner, error) {
 		return nil, nil
 	}
 	return &store.SourceOwner{UID: uid.StringVal, Generation: generation.Int64, Namespace: namespace.StringVal, ClusterUID: clusterUID.StringVal, Epoch: epoch.Int64}, nil
-}
-
-// decodeComponentPayloads decodes the stored ConfigProto of a component into rec.Spec and rec.Labels,
-// and its AccessPayload into rec.Status.
-func decodeComponentPayloads(configProto, accessPayload []byte, rec *store.ComponentRecord) error {
-	if err := UnmarshalConfigProto(configProto, rec); err != nil {
-		return fmt.Errorf("failed to unmarshal config proto: %w", err)
-	}
-	if err := UnmarshalAccessStatus(accessPayload, rec); err != nil {
-		return fmt.Errorf("failed to unmarshal access status: %w", err)
-	}
-	return nil
-}
-
-// finalizeComponentRecord completes a decoded record: a DELETED record gets its UpdateTime as
-// DeleteTime, and Etag is derived.
-func finalizeComponentRecord(rec *store.ComponentRecord) {
-	if rec.State == componentspb.ComponentState_COMPONENT_STATE_DELETED {
-		t := rec.UpdateTime
-		rec.DeleteTime = &t
-	}
-	rec.Etag = store.GenerateEtag(rec)
-}
-
-// UnmarshalConfigProto decodes a serialized Component or ComponentSpec proto into rec.Spec and rec.Labels.
-func UnmarshalConfigProto(configBytes []byte, rec *store.ComponentRecord) error {
-	if len(configBytes) == 0 {
-		return nil
-	}
-	var comp componentspb.Component
-	if err := proto.Unmarshal(configBytes, &comp); err == nil && (comp.Spec != nil || len(comp.Labels) > 0) {
-		rec.Spec, rec.Labels = comp.Spec, store.CopyMap(comp.Labels)
-		return nil
-	}
-	rec.Spec = &componentspb.ComponentSpec{}
-	return proto.Unmarshal(configBytes, rec.Spec)
-}
-
-// UnmarshalAccessStatus decodes a serialized ComponentAccessStatus proto into rec.Status.
-func UnmarshalAccessStatus(accessBytes []byte, rec *store.ComponentRecord) error {
-	if len(accessBytes) == 0 {
-		rec.Status = nil
-		return nil
-	}
-	rec.Status = &componentspb.ComponentAccessStatus{}
-	return proto.Unmarshal(accessBytes, rec.Status)
 }

@@ -149,9 +149,9 @@ is broken.
 ### 2.1 Stand up an XMC environment
 
 **Layers.** Cluster Toolkit blueprints (`deploy/ctk_v2`) provision the GKE cluster, Spanner
-databases, Pub/Sub topics, the Log Monitor Cloud Run service, and networking. A Helm chart
-(`deploy/helm`) installs the in-cluster services. Optional addons (`deploy/addons`) bring Redpanda
-and ClickHouse for the metrics pipeline.
+databases, Pub/Sub topics and logging sink for the Log Monitor, and networking. A Helm chart
+(`deploy/helm`) installs the in-cluster services (including the Log Monitor `Deployment` by
+default). Optional addons (`deploy/addons`) bring Redpanda and ClickHouse for the metrics pipeline.
 
 **What is optional.** More than you might expect, and deliberately:
 

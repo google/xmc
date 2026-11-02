@@ -170,6 +170,112 @@ def _raise_detailed_error(errors):
     raise GithubAPIError(f"GitHub API call failed: {error_summary}")
 
 
+def get_authenticated_login(user_agent: str) -> str:
+    """Returns the GitHub login of the authenticated user (`GET /user`).
+
+    Args:
+        user_agent: User-Agent header for token / unauthenticated HTTP calls.
+
+    Returns:
+        The authenticated user's GitHub login.
+
+    Raises:
+        GithubAuthError: If GitHub authentication fails.
+        GithubAPIError: If the API call fails or the response has no string login.
+    """
+    user = call_github_api("/user", user_agent=user_agent)
+    login = user.get("login") if isinstance(user, dict) else None
+    if not isinstance(login, str) or not login:
+        raise GithubAPIError("GitHub /user response has no login.")
+    return login
+
+
+_REVIEW_THREADS_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          id
+          isResolved
+          path
+          line
+          comments(first: 100) {
+            nodes {
+              databaseId
+              body
+              url
+              author {
+                login
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+
+def list_review_threads(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    user_agent: str = "XMC-Github-Agent",
+) -> list[dict[str, Any]]:
+    """Lists all review threads on a Pull Request via GraphQL, following pagination.
+
+    Args:
+        owner: Repository owner (e.g. 'google').
+        repo: Repository name (e.g. 'xmc').
+        pr_number: Pull Request number.
+        user_agent: User-Agent header for token / unauthenticated HTTP calls.
+
+    Returns:
+        Raw GraphQL thread nodes (`id`, `isResolved`, `path`, `line`, and
+        `comments.nodes` with `databaseId`, `body`, `url`, `author.login`), in
+        GitHub's thread order, with null thread nodes dropped. Only the first
+        100 comments of each thread are returned; comment nodes may be null.
+
+    Raises:
+        GithubAPIError: If the GraphQL query returns errors or no data.
+    """
+    threads: list[dict[str, Any]] = []
+    cursor = None
+    while True:
+        data = call_github_api(
+            "/graphql",
+            method="POST",
+            payload={
+                "query": _REVIEW_THREADS_QUERY,
+                "variables": {
+                    "owner": owner,
+                    "repo": repo,
+                    "pr": int(pr_number),
+                    "cursor": cursor,
+                },
+            },
+            user_agent=user_agent,
+        )
+        if not data or "errors" in data or data.get("data") is None:
+            error_msg = data.get("errors") if data else "No response data"
+            raise GithubAPIError(f"GraphQL query failed: {error_msg}")
+
+        repository = data["data"].get("repository") or {}
+        pull_request = repository.get("pullRequest") or {}
+        review_threads = pull_request.get("reviewThreads") or {}
+        threads.extend(node for node in review_threads.get("nodes") or [] if node)
+        page_info = review_threads.get("pageInfo") or {}
+        cursor = page_info.get("endCursor")
+        if not page_info.get("hasNextPage") or not cursor:
+            return threads
+
+
 def _lookup_thread_id_for_comment(
     owner: str,
     repo: str,
@@ -178,48 +284,9 @@ def _lookup_thread_id_for_comment(
     user_agent: str,
 ) -> str:
     """Finds the GraphQL review thread node ID for a given comment database ID."""
-    query = """
-    query($owner: String!, $repo: String!, $pr: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $pr) {
-          reviewThreads(first: 100) {
-            nodes {
-              id
-              isResolved
-              comments(first: 50) {
-                nodes {
-                  databaseId
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    """
-    data = call_github_api(
-        "/graphql",
-        method="POST",
-        payload={
-            "query": query,
-            "variables": {"owner": owner, "repo": repo, "pr": int(pr_number)},
-        },
-        user_agent=user_agent,
-    )
-    if not data or "errors" in data or data.get("data") is None:
-        error_msg = data.get("errors") if data else "No response data"
-        raise GithubAPIError(f"GraphQL query failed: {error_msg}")
-
-    threads = (
-        data["data"]
-        .get("repository", {})
-        .get("pullRequest", {})
-        .get("reviewThreads", {})
-        .get("nodes", [])
-    )
-    for thread in threads:
-        for comment in thread.get("comments", {}).get("nodes", []):
-            if comment.get("databaseId") == comment_id:
+    for thread in list_review_threads(owner, repo, pr_number, user_agent=user_agent):
+        for comment in (thread.get("comments") or {}).get("nodes") or []:
+            if comment and comment.get("databaseId") == comment_id:
                 thread_id = thread.get("id")
                 if thread_id:
                     return str(thread_id)

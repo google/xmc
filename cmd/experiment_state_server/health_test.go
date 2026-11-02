@@ -16,15 +16,24 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/cms"
+	"xmanager_cloud/pkg/components/store"
 )
 
 type fakeXidClient struct {
@@ -157,8 +166,8 @@ func TestBuildCMSAuthorizer(t *testing.T) {
 	ctx := context.Background()
 
 	t.Setenv("DISABLE_AUTHENTICATION", "true")
-	if _, err := buildCMSAuthorizer(cfg, &oauth.Config{}, nil, nil).AuthorizeMutating(ctx); err != nil {
-		t.Fatalf("AuthorizeMutating() with DISABLE_AUTHENTICATION=true error = %v", err)
+	if _, err := buildCMSAuthorizer(cfg, &oauth.Config{}, nil, nil).AuthorizeMutating(ctx); err == nil {
+		t.Fatal("AuthorizeMutating() honored DISABLE_AUTHENTICATION from the environment, want only the validated config to disable authorization")
 	}
 
 	t.Setenv("DISABLE_AUTHENTICATION", "false")
@@ -185,7 +194,6 @@ func TestCMSAdmission(t *testing.T) {
 		{name: "kelvin sign does not alias the bridge service account", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "xmc-wl-sa@\u212Aproj.iam.gserviceaccount.com", want: false},
 		{name: "admits deployment principals", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "alice@example.com", want: true},
 		{name: "rejects everyone else", oauthCfg: &oauth.Config{AllowedEmails: []string{"alice@example.com"}}, email: "mallory@example.com", want: false},
-		{name: "disabled authentication admits all", oauthCfg: &oauth.Config{DisableAuthentication: true}, email: "anyone@example.com", want: true},
 	}
 
 	for _, tt := range tests {
@@ -200,4 +208,97 @@ func TestCMSAdmission(t *testing.T) {
 			}
 		})
 	}
+}
+
+type stubComponentRepo struct {
+	storage.ComponentRepository
+	records map[string]*store.ComponentRecord
+}
+
+func (r stubComponentRepo) GetActiveComponent(_ context.Context, canonicalName string) (*store.ComponentRecord, error) {
+	if rec, ok := r.records[canonicalName]; ok {
+		return rec, nil
+	}
+	return nil, store.ErrComponentNotFound
+}
+
+func (r stubComponentRepo) ReadOwnershipGauges(context.Context, time.Time) (store.OwnershipGauges, error) {
+	return store.OwnershipGauges{}, nil
+}
+
+func TestInitCMS_StoreSelection(t *testing.T) {
+	ctx := context.Background()
+	req := &componentspb.ValidateComponentRequirementRequest{
+		Name:         "components/spanner-backed-comp",
+		RequiredType: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+	}
+
+	t.Run("nil storage falls back to MemoryStore", func(t *testing.T) {
+		client, cleanup := startTestCMSServer(ctx, t, nil)
+		defer cleanup()
+
+		resp, err := client.ValidateComponentRequirement(ctx, req)
+		if err != nil {
+			t.Fatalf("ValidateComponentRequirement() on MemoryStore fallback failed: %v", err)
+		}
+		if resp.GetSatisfied() {
+			t.Errorf("ValidateComponentRequirement().Satisfied = true, want false on empty MemoryStore")
+		}
+	})
+
+	t.Run("storage wires dbstore.Store", func(t *testing.T) {
+		seeded := &store.ComponentRecord{
+			ComponentID: 42,
+			Name:        "spanner-backed-comp",
+			Spec: &componentspb.ComponentSpec{
+				Type:       componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Version:    "v1.0.0",
+				Generation: 1,
+			},
+			State:      componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			Generation: 1,
+		}
+		seeded.Etag = store.GenerateEtag(seeded)
+		st := &storage.MockStorage{
+			ComponentRepository: stubComponentRepo{
+				records: map[string]*store.ComponentRecord{"spanner-backed-comp": seeded},
+			},
+		}
+		client, cleanup := startTestCMSServer(ctx, t, st)
+		defer cleanup()
+
+		resp, err := client.ValidateComponentRequirement(ctx, req)
+		if err != nil {
+			t.Fatalf("ValidateComponentRequirement() on Storage-backed CMS failed: %v", err)
+		}
+		if !resp.GetSatisfied() || resp.GetComponent().GetName() != "components/spanner-backed-comp" {
+			t.Errorf("ValidateComponentRequirement() = %v, want satisfied components/spanner-backed-comp", resp)
+		}
+	})
+}
+
+func startTestCMSServer(ctx context.Context, t *testing.T, st storage.Storage) (componentspb.ComponentManagerServiceClient, func()) {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() failed: %v", err)
+	}
+	s := grpc.NewServer()
+	stopCMS := initCMS(ctx, s, health.NewServer(), st, cms.NewDisabledAuthorizer())
+	go func() {
+		_ = s.Serve(lis)
+	}()
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		s.Stop()
+		stopCMS()
+		t.Fatalf("grpc.NewClient() failed: %v", err)
+	}
+	cleanup := func() {
+		_ = conn.Close()
+		s.Stop()
+		stopCMS()
+	}
+	return componentspb.NewComponentManagerServiceClient(conn), cleanup
 }

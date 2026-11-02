@@ -31,8 +31,11 @@ var allDBEnvVars = []string{
 	"SPANNER_XID_DATABASE",
 	"SPANNER_QUOTA_PROJECT_ID",
 	"ess_spanner_database_name",
+	"dashboard_spanner_database_name",
+	"health_ess_spanner_database_name",
 	"spanner_database_name",
 	"xid_spanner_database_name",
+	"health_xid_spanner_database_name",
 	"ess_quota_project_id",
 	"xid_quota_project_id",
 	"quota_project_id",
@@ -127,51 +130,19 @@ func TestLoad(t *testing.T) {
 			want: Config{Backend: BackendSpanner},
 		},
 		{
-			name: "spanner backend falls back to legacy per-service env vars when SPANNER_* unset",
+			name: "spanner backend ignores deprecated per-service env vars",
 			env: map[string]string{
-				"spanner_database_name":     "projects/p/instances/i/databases/legacy-ess-db",
-				"xid_spanner_database_name": "projects/p/instances/i/databases/legacy-xid-db",
-				"quota_project_id":          "legacy-quota-proj",
+				"ess_spanner_database_name":        "projects/p/instances/i/databases/legacy-ess-db",
+				"dashboard_spanner_database_name":  "projects/p/instances/i/databases/legacy-dashboard-ess-db",
+				"health_ess_spanner_database_name": "projects/p/instances/i/databases/legacy-health-ess-db",
+				"spanner_database_name":            "projects/p/instances/i/databases/legacy-reconciler-ess-db",
+				"xid_spanner_database_name":        "projects/p/instances/i/databases/legacy-xid-db",
+				"health_xid_spanner_database_name": "projects/p/instances/i/databases/legacy-health-xid-db",
+				"ess_quota_project_id":             "legacy-ess-quota",
+				"xid_quota_project_id":             "legacy-xid-quota",
+				"quota_project_id":                 "legacy-quota",
 			},
-			want: Config{
-				Backend: BackendSpanner,
-				Spanner: Spanner{
-					EssDatabase:    "projects/p/instances/i/databases/legacy-ess-db",
-					XidDatabase:    "projects/p/instances/i/databases/legacy-xid-db",
-					QuotaProjectID: "legacy-quota-proj",
-				},
-			},
-		},
-		{
-			name: "spanner backend falls back to legacy dashboard_spanner_database_name when SPANNER_ESS_DATABASE unset",
-			env: map[string]string{
-				"dashboard_spanner_database_name": "projects/p/instances/i/databases/legacy-dashboard-ess-db",
-			},
-			want: Config{
-				Backend: BackendSpanner,
-				Spanner: Spanner{
-					EssDatabase: "projects/p/instances/i/databases/legacy-dashboard-ess-db",
-				},
-			},
-		},
-		{
-			name: "SPANNER_* settings take precedence over legacy per-service env vars",
-			env: map[string]string{
-				"SPANNER_ESS_DATABASE":      "projects/p/instances/i/databases/ess-db",
-				"ess_spanner_database_name": "projects/p/instances/i/databases/legacy-ess-db",
-				"SPANNER_XID_DATABASE":      "projects/p/instances/i/databases/xid-db",
-				"xid_spanner_database_name": "projects/p/instances/i/databases/legacy-xid-db",
-				"SPANNER_QUOTA_PROJECT_ID":  "quota-proj",
-				"ess_quota_project_id":      "legacy-quota-proj",
-			},
-			want: Config{
-				Backend: BackendSpanner,
-				Spanner: Spanner{
-					EssDatabase:    "projects/p/instances/i/databases/ess-db",
-					XidDatabase:    "projects/p/instances/i/databases/xid-db",
-					QuotaProjectID: "quota-proj",
-				},
-			},
+			want: Config{Backend: BackendSpanner},
 		},
 		{
 			name: "postgres defaults, ignoring spanner settings",

@@ -32,6 +32,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    get_authenticated_login,
     resolve_review_thread,
 )
 
@@ -39,9 +40,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
 def get_git_username() -> str:
     """Attempt to resolve the current user's authenticated GitHub/git username."""
     try:
-        res = call_github_api("/user", user_agent="XMC-PR-Review-Agent")
-        if isinstance(res, dict) and res.get("login"):
-            return str(res["login"])
+        return get_authenticated_login(user_agent="XMC-PR-Review-Agent")
     except Exception:
         pass
     return os.environ.get("USER", "unknown")

@@ -26,7 +26,6 @@ import (
 	xidpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -113,7 +112,7 @@ func (h *ExperimentHandler) fetchACLsForExperiments(ctx context.Context, experim
 			logging.Error(ctx, "Failed to validate experiment name", "error", err)
 			return fmt.Errorf("failed to validate experiment name: %w", grpcerr.ErrInternal)
 		}
-		xidFilter = append(xidFilter, fmt.Sprintf("bit_reversed_xid=%d", data.ReverseBits(xid)))
+		xidFilter = append(xidFilter, fmt.Sprintf("xid=%d", xid))
 	}
 
 	// Call the XID service to get the XID entries.

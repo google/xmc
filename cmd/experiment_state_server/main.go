@@ -31,7 +31,6 @@ import (
 	"strings"
 	"syscall"
 
-	"cloud.google.com/go/spanner"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -49,8 +48,8 @@ import (
 	"xmanager_cloud/pkg/auth/principal"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/memory"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -117,9 +116,9 @@ func main() {
 		if err != nil {
 			logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
 		}
-		stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), prodServer.SpannerClient(), cmsAuth)
+		stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
 		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
-		// Spanner client is closed.
+		// database handle is closed.
 		defer stopCMS()
 	}
 
@@ -218,7 +217,9 @@ func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.Admiss
 }
 
 func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {
-	if (oauthCfg != nil && oauthCfg.DisableAuthentication) || os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+	// oauthCfg comes from oauth.LoadConfig, which rejects DISABLE_AUTHENTICATION in binaries built
+	// without the mockauth tag; DevAuthCompiledIn also makes this bypass dead code there.
+	if oauth.DevAuthCompiledIn() && oauthCfg != nil && oauthCfg.DisableAuthentication {
 		return cms.NewDisabledAuthorizer()
 	}
 	var checker cms.AdminChecker
@@ -230,22 +231,22 @@ func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms
 
 // initCMS registers CMS on s and starts its ownership metrics collector. The returned stop
 // function cancels the collector and waits for it to exit.
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, st storage.Storage, spannerClient *spanner.Client, auth cms.CallerAuthorizer) (stop func()) {
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, st storage.Storage, auth cms.CallerAuthorizer) (stop func()) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
 	var cmsStore interface {
 		store.Store
 		store.OwnershipGaugeReader
 	}
-	if st != nil && spannerClient != nil {
-		spannerStore, err := spannerstore.NewSpannerStore(spannerClient, st)
+	if st != nil {
+		dbStore, err := dbstore.New(st)
 		if err != nil {
-			logging.Fatal(ctx, "failed to create SpannerStore for Component Manager Service", "error", err)
+			logging.Fatal(ctx, "failed to create dbstore.Store for Component Manager Service", "error", err)
 		}
-		cmsStore = spannerStore
-		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
+		cmsStore = dbStore
+		logging.Info(ctx, "Using dbstore.Store for Component Manager Service")
 	} else {
 		cmsStore = memory.NewMemoryStore()
-		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
+		logging.Warn(ctx, "Storage not active; using in-memory MemoryStore fallback for Component Manager Service")
 	}
 	collectorCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})

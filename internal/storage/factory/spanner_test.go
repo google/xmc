@@ -36,16 +36,22 @@ func TestOpen_Spanner(t *testing.T) {
 
 	for _, db := range []Database{ESS, XID} {
 		t.Run(string(db), func(t *testing.T) {
-			st, err := NewStorage(ctx, cfg, db)
+			initCtx, cancel := context.WithCancel(ctx)
+			st, err := NewStorage(initCtx, cfg, db)
 			if err != nil {
+				cancel()
 				t.Fatalf("NewStorage(%q) failed: %v", db, err)
 			}
 			defer st.Close()
 
-			wantDatabase, _ := spannerDatabase(cfg.Spanner, db)
-			if got := st.SpannerClient.DatabaseName(); got != wantDatabase {
-				t.Errorf("SpannerClient.DatabaseName() = %q, want %q", got, wantDatabase)
+			// Canceling the initialization context must not tear down the cached Spanner client.
+			cancel()
+
+			schemaClient, expectedVersion := st.SchemaVersion()
+			if schemaClient == nil || expectedVersion <= 0 {
+				t.Errorf("SchemaVersion() = (%v, %d), want non-nil client and positive expectedVersion", schemaClient, expectedVersion)
 			}
+
 			noop := func(context.Context, *storage.Transaction) error { return nil }
 			if err := st.RunInTransaction(ctx, noop); err != nil {
 				t.Errorf("RunInTransaction() failed: %v", err)

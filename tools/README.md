@@ -52,10 +52,12 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`review_pr_post_inline_comment.py`](pr_review/review_pr_post_inline_comment.py): Posts confirmed inline code review comments or replies to PR diffs.
 - [`review_pr_verify_posted.py`](pr_review/review_pr_verify_posted.py): Verifies programmatically that 100% of approved review checklist comments are present on GitHub.
 - [`fetch_pr_comment.py`](pr_review/fetch_pr_comment.py): Fetches review comments and discussion threads by URL or PR number.
-- [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags.
+- [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags, optionally resolving the thread (`--resolve`).
+- [`review_threads.py`](pr_review/review_threads.py): Lists PR review threads with resolution and reply state, and resolves unresolved threads the authenticated user has replied to.
 - [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist.
 - [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
+- [`wait_for_ci.py`](pr_review/wait_for_ci.py): Polls a PR's CI checks with backoff until they complete; on failure, reports failed checks, workflow run/job IDs, and bounded, error-anchored job log tails.
 
 ### 4. [`tools/benchmark/`](benchmark/README.md) (Skills & Rules Benchmark Suite)
 Harness for testing and evaluating skill/rule modifications (see [`tools/benchmark/README.md`](benchmark/README.md)):
@@ -82,6 +84,7 @@ Tooling and automation for release metadata extraction, SemVer calculations, and
 Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 - [`check_legacy_imports.py`](lint/check_legacy_imports.py): Ratchet lint preventing regression of google3 migration leftovers (legacy Go import roots, unresolved `xmanager_cloud/...` module paths, `compat_go_*` targets, `gazelle:resolve` overrides, `third_party/` proto paths, google3 Helm flags, legacy UI/Python paths) against the zeroed [`legacy_imports_baseline.json`](lint/legacy_imports_baseline.json). Fails when any count grows above zero. Runs in pre-commit and the lint CI job. Tracking: [#1066](https://github.com/google/xmc/issues/1066).
+- [`check_agent_doc_paths.py`](lint/check_agent_doc_paths.py): Fails when agent docs (`.agents/**/*.md`, `AGENTS.md`) reference repo paths in code spans or fenced blocks that are not tracked files or directories. Placeholders (`<name>`, `{a,b}`, `$VAR`, `*`, `[`, `...`) only require their directory prefix to exist; runtime-created and illustrative paths live in its `ALLOWLIST` with reasons, and unreferenced entries fail. Runs in pre-commit (when agent docs are staged or files are deleted/renamed; always in `--check` mode) and the lint CI job.
 
 ### 8. [`tools/migrations/components/`](migrations/components/README.md) (One-Time Component Cutover)
 Temporary migration side script (`migrate.py`) for transitioning existing umbrella-managed metrics deployments to the `stable-2026a` Component profile (`prepare`, `handoff [--undo]`, `finalize`). See [`docs/migrations/components.md`](../docs/migrations/components.md).

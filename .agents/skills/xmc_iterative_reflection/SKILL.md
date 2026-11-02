@@ -57,7 +57,6 @@ in [Section 4: Root-Cause Routing](#4-root-cause-routing).
 If `transcript.jsonl` for a conversation ID is unindexed or missing from local disk:
 1. **Audit Git History**: Run `git log --all --grep="<CONV_ID>" --stat -p` to inspect committed changes, review comments, and PR metadata.
 2. **Audit Workspace Worktrees & Reflog**: Inspect active agent worktree locations (`git worktree list`) and check `git reflog --all`.
-3. **Execute Helper Inspection**: Run `python3 tools/inspect_session.py --conv_id <CONV_ID>` to parse available git metadata and task logs cleanly without unconstrained filesystem traversals.
 
 ### Pillar 1: Tooling & Automation Gaps
 - **Signal**: Did the agent write complex shell logic, custom python one-liners, or manual regex filtering directly inside commands or chat responses?

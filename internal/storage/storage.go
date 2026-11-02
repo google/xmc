@@ -385,11 +385,13 @@ type ComponentRepository interface {
 	GetComponentWithFence(ctx context.Context, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error)
 	// ReadOwnershipGauges reads the fence and counts active owned components last seen at or before cutoff in one snapshot.
 	ReadOwnershipGauges(ctx context.Context, cutoff time.Time) (store.OwnershipGauges, error)
+	// WithReadOnlySnapshot runs fn with a repository whose reads all come from one consistent read-only snapshot.
+	WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo ComponentTxRepository) error) error
 }
 
 // ComponentTxRepository defines transactional component catalog operations. A read-only binding supports only
-// catalog and snapshot reads; in a read-write transaction, reads hold what they return (including an absent fence
-// row, e.g. via a seeded singleton row locked with FOR UPDATE in PostgreSQL) until commit.
+// catalog and snapshot reads, returning codes.FailedPrecondition on writes; in a serializable read-write transaction,
+// reads and writes execute atomically and writes stamp commit-time columns.
 type ComponentTxRepository interface {
 	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
@@ -412,6 +414,27 @@ type ComponentTxRepository interface {
 	// ReassignOwnedComponents moves every active owned component to clusterUID at epoch with no owner UID,
 	// sets SourceLastSeenTime to the commit time, leaves UpdateTime unchanged, and returns the count.
 	ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error)
+	// InsertComponent inserts rec, created at the commit time (status NULL when rec.Status is nil), with an edge to
+	// depIDs[d] for each d in rec.Dependencies. It returns codes.InvalidArgument when rec is nil, and
+	// codes.FailedPrecondition when depIDs lacks a dependency or the binding is read-only.
+	InsertComponent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error
+	// UpdateComponentIntent rewrites rec's spec, labels, status (NULL when rec.Status is nil), state, and generation
+	// and replaces its edges as InsertComponent does, with the same codes.InvalidArgument and codes.FailedPrecondition errors.
+	UpdateComponentIntent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error
+	// UpdateComponentState sets the state and access status (NULL when access is nil) of componentID, or returns
+	// codes.FailedPrecondition when the binding is read-only.
+	UpdateComponentState(ctx context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error
+	// UpdateComponentObservation writes rec's ObservedGeneration (NULL when nil) and status (NULL when rec.Status is
+	// nil), and its state when updateState is true. It returns codes.InvalidArgument when rec is nil, and
+	// codes.FailedPrecondition when the binding is read-only.
+	UpdateComponentObservation(ctx context.Context, rec *store.ComponentRecord, updateState bool) error
+	// SoftDeleteComponent marks rec DELETED, rewriting its spec and status (NULL when rec.Status is nil) from rec,
+	// and records owner when non-nil. It returns codes.InvalidArgument when rec is nil, and codes.FailedPrecondition
+	// when the binding is read-only.
+	SoftDeleteComponent(ctx context.Context, rec *store.ComponentRecord, owner *store.SourceOwner) error
+	// WriteComponentOwner records owner (a no-op when nil) on componentID with SourceLastSeenTime at the commit time
+	// and leaves UpdateTime unchanged, returning codes.FailedPrecondition when the binding is read-only.
+	WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error
 }
 
 // ComponentStore exposes the repository accessor for component catalog persistence.
@@ -488,6 +511,9 @@ type Transaction struct {
 // The provided *Transaction is valid only for the duration of fn and must not be retained.
 type TransactionRunner interface {
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
+	// RunInSerializableTransaction runs fn in a serializable read-write transaction and returns the
+	// timestamp the backend wrote to commit-time columns.
+	RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
 }
 
 // Storage defines the interface for all data persistence operations.

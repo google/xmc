@@ -17,8 +17,12 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"sync/atomic"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
@@ -108,6 +112,52 @@ func TestNewPoolValidationAndPingFailure(t *testing.T) {
 		if err == nil {
 			pool.Close()
 			t.Fatal("NewPool() = nil, want ping error on canceled context")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("errors.Is(%v, context.Canceled) = false, want true", err)
+		}
+	})
+
+	t.Run("pool outlives canceled initialization context while ping observes caller context", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("net.Listen() failed: %v", err)
+		}
+		t.Cleanup(func() { _ = ln.Close() })
+
+		var dials atomic.Int32
+		go func() {
+			for {
+				conn, acceptErr := ln.Accept()
+				if acceptErr != nil {
+					return
+				}
+				dials.Add(1)
+				_ = conn.Close()
+			}
+		}()
+
+		initCtx, cancel := context.WithCancel(context.Background())
+		dsn := fmt.Sprintf("postgres://user:pass@%s/xmc?sslmode=disable", ln.Addr().String())
+		pool, err := newPool(initCtx, dsn, 2, func(_ *pgxpool.Pool, pingCtx context.Context) error {
+			if pingCtx.Done() == nil {
+				t.Error("ping received non-cancelable context, want caller context")
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("newPool() unexpected error: %v", err)
+		}
+		t.Cleanup(pool.Close)
+
+		cancel()
+
+		pingErr := pool.Ping(context.Background())
+		if errors.Is(pingErr, context.Canceled) {
+			t.Fatalf("pool.Ping() after initCtx cancel failed with context.Canceled: %v", pingErr)
+		}
+		if dials.Load() == 0 {
+			t.Error("expected pool.Ping() to dial listener after initCtx cancel, got 0 dials")
 		}
 	})
 }

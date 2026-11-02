@@ -589,6 +589,7 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `authorized_cidr` | No | `"0.0.0.0/0"`| Authorized IP CIDR allowed to connect to GKE master |
 | `task_signature_ttl_seconds` | No | `86400` | Validity duration of task signature tokens |
 | `pause_scheduling_enabled` | No | `true` | Enables the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS |
+| `log_monitor_deployment_enabled` | No | `true` | Runs the Log Monitor as a GKE Deployment (`true`) instead of a Cloud Run service (`false`) |
 | `health_scheduling_resume_batch_size` | No | `100` | Number of paused tasks replayed per batch from Spanner during unpause resumption |
 | `health_scheduling_resume_max_backlog` | No | `500` | Maximum unprocessed tasks in `xmc-tasks-stream` before resumption worker pauses replay |
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |

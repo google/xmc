@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
@@ -73,26 +74,42 @@ type Storage struct {
 // RunInTransaction executes the given function in a Spanner read-write transaction,
 // passing a Transaction struct with repositories bound to the Spanner transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	if s.client == nil {
-		return fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
+	_, err := s.RunInSerializableTransaction(ctx, fn)
+	return err
+}
+
+// RunInSerializableTransaction executes fn in a Spanner read-write transaction (which is always
+// serializable) and returns the commit timestamp assigned by Spanner.
+func (s *Storage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+	if s == nil || s.client == nil {
+		return time.Time{}, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
 	}
-	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
-		tx := &storage.Transaction{
-			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
-			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
-			XIDs:           s.XIDRepository.WithTx(spannerTx),
-			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
-			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
-			PauseState:     s.pauseStateRepository.WithTx(spannerTx),
-			PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
-			Components:     s.componentRepository.WithTx(spannerTx),
-		}
-		return fn(txCtx, tx)
+	if fn == nil {
+		return time.Time{}, fmt.Errorf("transaction callback must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	ts, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
+		return fn(txCtx, s.newTransaction(spannerTx))
 	})
 	if status.Code(err) == codes.AlreadyExists && !errors.Is(err, grpcerr.ErrAlreadyExists) {
-		return fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
+		return time.Time{}, fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
 	}
-	return err
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts, nil
+}
+
+func (s *Storage) newTransaction(spannerTx *spanner.ReadWriteTransaction) *storage.Transaction {
+	return &storage.Transaction{
+		WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
+		Experiments:    s.ExperimentRepository.WithTx(spannerTx),
+		XIDs:           s.XIDRepository.WithTx(spannerTx),
+		StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
+		StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
+		PauseState:     s.pauseStateRepository.WithTx(spannerTx),
+		PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
+		Components:     s.componentRepository.WithTx(spannerTx),
+	}
 }
 
 // PauseState returns the repository for global pause scheduling state.

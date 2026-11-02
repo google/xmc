@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"google.golang.org/api/cloudidentity/v1beta1"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -51,7 +50,6 @@ type ProdServer struct {
 	*Server
 	storage         storage.Storage
 	dbHealth        commonhealth.ReadinessChecker
-	spannerClient   *spanner.Client
 	xidClient       xidgrpcpb.XidServiceClient
 	taskQueueClient *tq.Client
 	bgTaskWG        *sync.WaitGroup
@@ -64,14 +62,6 @@ func (p *ProdServer) HealthCheckers() (commonhealth.ReadinessChecker, xidgrpcpb.
 		return nil, nil, nil
 	}
 	return p.dbHealth, p.xidClient, p.taskQueueClient
-}
-
-// SpannerClient returns the underlying Spanner client.
-func (p *ProdServer) SpannerClient() *spanner.Client {
-	if p == nil {
-		return nil
-	}
-	return p.spannerClient
 }
 
 // Storage returns the underlying storage implementation.
@@ -288,7 +278,6 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		Server:          srv,
 		storage:         storage,
 		dbHealth:        storage,
-		spannerClient:   storage.SpannerClient,
 		xidClient:       xidClient,
 		taskQueueClient: taskQueueClient,
 		bgTaskWG:        &bgTaskWG,

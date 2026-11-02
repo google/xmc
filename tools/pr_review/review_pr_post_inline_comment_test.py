@@ -19,16 +19,37 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
-from tools.pr_review.review_pr_post_inline_comment import post_inline_comment
+from tools.pr_review.github_utils import GithubAuthError
+from tools.pr_review.review_pr_post_inline_comment import get_git_username, post_inline_comment
+
+_MODULE = "tools.pr_review.review_pr_post_inline_comment"
+
+
+class TestGetGitUsername(unittest.TestCase):
+    """Test suite for get_git_username."""
+
+    @patch(f"{_MODULE}.get_authenticated_login", return_value="reviewer1")
+    def test_returns_authenticated_login(self, mock_login):
+        self.assertEqual(get_git_username(), "reviewer1")
+        mock_login.assert_called_once_with(user_agent="XMC-PR-Review-Agent")
+
+    @patch.dict("os.environ", {"USER": "local_user"})
+    @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAuthError("no auth"))
+    def test_falls_back_to_user_env_on_failure(self, _):
+        self.assertEqual(get_git_username(), "local_user")
 
 
 class TestReviewPRPostInlineComment(unittest.TestCase):
     """Test suite for review_pr_post_inline_comment tool."""
 
+    def setUp(self):
+        login_patch = patch(f"{_MODULE}.get_authenticated_login", return_value="reviewer1")
+        login_patch.start()
+        self.addCleanup(login_patch.stop)
+
     @patch("tools.pr_review.review_pr_post_inline_comment.call_github_api")
     def test_post_inline_comment_success_new_comment(self, mock_api):
         mock_api.side_effect = [
-            {"login": "reviewer1"},  # GET /user
             {"id": 999, "html_url": "https://github.com/...", "line": 42},
         ]
         args = MagicMock()
@@ -50,7 +71,6 @@ class TestReviewPRPostInlineComment(unittest.TestCase):
     @patch("tools.pr_review.review_pr_post_inline_comment.call_github_api")
     def test_post_inline_comment_success_reply(self, mock_api):
         mock_api.side_effect = [
-            {"login": "reviewer1"},
             {"id": 1000, "html_url": "https://github.com/...", "line": 42},
         ]
         args = MagicMock()
@@ -91,7 +111,6 @@ class TestReviewPRPostInlineComment(unittest.TestCase):
     @patch("tools.pr_review.review_pr_post_inline_comment.call_github_api")
     def test_post_inline_comment_from_file_success(self, mock_api):
         mock_api.side_effect = [
-            {"login": "reviewer1"},
             {"id": 1001, "html_url": "https://github.com/...", "line": 10},
         ]
         with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as f:
@@ -141,7 +160,6 @@ class TestReviewPRPostInlineComment(unittest.TestCase):
         )
 
         mock_api.side_effect = [
-            {"login": "staff_reviewer"},
             {
                 "id": 2048,
                 "html_url": "https://github.com/google/xmc/pull/15#discussion_r2048",
@@ -170,7 +188,7 @@ class TestReviewPRPostInlineComment(unittest.TestCase):
         self.assertEqual(res["comment_id"], 2048)
 
         # Verify that exact backticks and code blocks were passed to GitHub POST payload
-        post_call = mock_api.call_args_list[1]
+        post_call = mock_api.call_args_list[0]
         posted_payload = post_call[1]["payload"]
         self.assertIn("```go\nfunc handleRequest", posted_payload["body"])
         self.assertIn("`handleRequest()`", posted_payload["body"])

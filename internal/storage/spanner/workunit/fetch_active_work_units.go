@@ -16,9 +16,7 @@ package workunit
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"strconv"
 
 	"cloud.google.com/go/spanner"
 
@@ -26,15 +24,11 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/offsetpagetoken"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
-)
-
-const (
-	defaultPageSize = int32(100)
-	maxPageSize     = int32(1000)
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
@@ -58,31 +52,6 @@ type workUnitPK struct {
 	BitReversedXid int64
 	WorkUnitId     int64
 	Creator        string
-}
-
-func decodePageToken(token string) (int64, error) {
-	if token == "" {
-		return 0, nil
-	}
-	bytes, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		bytes, err = base64.RawURLEncoding.DecodeString(token)
-		if err != nil {
-			return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-		}
-	}
-	offset, err := strconv.ParseInt(string(bytes), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-	}
-	if offset < 0 {
-		return 0, fmt.Errorf("%w: offset cannot be negative", storage.ErrInvalidPageToken)
-	}
-	return offset, nil
-}
-
-func encodePageToken(offset int64) string {
-	return base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(offset, 10)))
 }
 
 func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
@@ -197,13 +166,9 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		}, nil
 	}
 
-	pageSizeVal := pageSize
-	if pageSizeVal <= 0 {
-		pageSizeVal = defaultPageSize
-	}
-	pageSizeVal = min(pageSizeVal, maxPageSize)
+	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
 
-	offset, err := decodePageToken(pageToken)
+	offset, err := offsetpagetoken.Decode(pageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
@@ -237,7 +202,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	nextPageToken := ""
 	if int64(len(orderedPKs)) > int64(pageSizeVal) {
 		orderedPKs = orderedPKs[:pageSizeVal]
-		nextPageToken = encodePageToken(offset + int64(pageSizeVal))
+		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSizeVal))
 	}
 
 	keys := make([]spanner.KeySet, len(orderedPKs))

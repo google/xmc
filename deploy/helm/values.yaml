@@ -129,7 +129,7 @@ rodDeployment:
   gcpServiceAccount: ""
 
 logMonitorDeployment:
-  enabled: false
+  enabled: true
 
 logMonitor:
   gcpServiceAccount: ""
@@ -194,6 +194,8 @@ auth:
     clientId: "YOUR_IAP_CLIENT_ID"
   allowedOrigins: ""
   # Mock authentication is for local development only: rendering fails unless isDevEnvironment.
+  # Both mockAuth and disableAuthentication work only in binaries built with
+  # gotags = ["mockauth"]; published images refuse to start when either is true.
   mockAuth: false
   disableAuthentication: false
   # trustXForwardedProto forces the Authenticator to respect the X-Forwarded-Proto header.

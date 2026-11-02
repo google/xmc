@@ -17,10 +17,12 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
 	"xmanager_cloud/internal/storage/postgres/clilogincode"
@@ -49,7 +51,10 @@ type pauseStateRepository = pausestate.Repository
 type pausedTaskRepository = pausedtask.Repository
 type cliLoginCodeRepository = clilogincode.Repository
 
-var _ storage.Storage = (*Storage)(nil)
+var (
+	_            storage.Storage = (*Storage)(nil)
+	selectNowSQL                 = safesql.New("SELECT now()")
+)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
@@ -102,6 +107,34 @@ func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Cont
 	return pgdb.RunInTx(ctx, s.pool, func(txCtx context.Context, pgTx pgx.Tx) error {
 		return fn(txCtx, s.newTransaction(pgTx))
 	})
+}
+
+// RunInSerializableTransaction executes fn in a PostgreSQL SERIALIZABLE read-write transaction and
+// returns the transaction's now() timestamp in UTC, matching the timestamp stored by SQL writes
+// using now() in that transaction.
+func (s *Storage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+	if s == nil || s.pool == nil {
+		return time.Time{}, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	if fn == nil {
+		return time.Time{}, pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	var commitTime time.Time
+	err := pgdb.RunInSerializableTx(ctx, s.pool, func(txCtx context.Context, pgTx pgx.Tx) error {
+		commitTime = time.Time{}
+		if err := fn(txCtx, s.newTransaction(pgTx)); err != nil {
+			return err
+		}
+		if err := pgTx.QueryRow(txCtx, selectNowSQL.String()).Scan(&commitTime); err != nil {
+			return pgdb.TranslateError(err, "transaction")
+		}
+		commitTime = commitTime.UTC()
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	return commitTime, nil
 }
 
 func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {

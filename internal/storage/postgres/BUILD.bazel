@@ -24,6 +24,7 @@ go_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//internal/grpcerr",
+        "//internal/safesql",
         "//internal/storage",
         "//internal/storage/postgres/artifact",
         "//internal/storage/postgres/clilogincode",
@@ -50,9 +51,11 @@ go_test(
         "storage_test.go",
     ],
     embed = [":postgres"],
+    tags = ["local"],
     deps = [
         "//internal/grpcerr",
         "//internal/storage",
+        "//internal/storage/postgres/testing",
         "@com_github_jackc_pgx_v5//pgxpool",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
