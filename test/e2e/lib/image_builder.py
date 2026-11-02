@@ -42,6 +42,13 @@ def _get_service_specs() -> list[tuple[str, str, str]]:
     ]
     # UI frontend builder produces ui-image:latest
     specs.append(("cmd/ui", "ui_image_tarball", "ui-image:latest"))
+    specs.append(
+        (
+            "internal/storage/postgres/migrations",
+            "postgres_migrator_image_tarball",
+            "postgres_migrator_image:latest",
+        )
+    )
     return specs
 
 

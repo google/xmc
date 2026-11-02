@@ -46,9 +46,10 @@ class TestImageBuilder(unittest.TestCase):
         )
         builder = ImageBuilder(cfg)
         images = builder.build_all()
-        self.assertEqual(len(images), 6)
+        self.assertEqual(len(images), 7)
         self.assertIn("experiment_state_server_image:latest", images)
         self.assertIn("xmc_bridge_image:latest", images)
+        self.assertIn("postgres_migrator_image:latest", images)
 
     @patch.object(ImageBuilder, "_maybe_precompile_ui")
     @patch("test.e2e.lib.image_builder.run_cmd")
@@ -78,8 +79,8 @@ class TestImageBuilder(unittest.TestCase):
         )
         self.assertIn("//test/e2e/manifests:jobset_manifests", expected_targets)
         self.assertIn("//test/e2e/manifests:kueue_manifests", expected_targets)
-        self.assertEqual(len(images), 6)
-        self.assertEqual(mock_run.call_count, 8)  # 1 bazel build + 1 bazel info + 6 docker load
+        self.assertEqual(len(images), 7)
+        self.assertEqual(mock_run.call_count, 9)  # 1 bazel build + 1 bazel info + 7 docker load
 
     @patch("shutil.which", return_value="/usr/bin/node")
     @patch("os.path.isfile", return_value=False)

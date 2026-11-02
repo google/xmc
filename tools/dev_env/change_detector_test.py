@@ -274,6 +274,14 @@ class ChangeDetectorTest(unittest.TestCase):
         self.assertTrue(result.helm_upgrade_needed)
         self.assertEqual(result.services, [])
 
+    def test_detect_changes_postgres_migrations_triggers_helm_upgrade(self) -> None:
+        """Verifies PostgreSQL migration changes flag helm_upgrade_needed."""
+        result = self.detector.detect_changes(
+            files=["internal/storage/postgres/migrations/ess/000002_add_idx.up.sql"]
+        )
+        self.assertTrue(result.helm_upgrade_needed)
+        self.assertEqual(set(result.services), set(self.detector.enabled_services))
+
     def test_detect_changes_scoped_to_enabled_services(self) -> None:
         """Verifies detection respects configured enabled_services."""
         scoped_detector = ChangeDetector(

@@ -315,3 +315,16 @@ Common GCP Secrets Volume definition.
     {{- end }}
 {{- end }}
 {{- end -}}
+
+{{/*
+Reports whether the PostgreSQL schema migration Job should be rendered (database.backend is
+"postgres" and database.postgres.runMigrations is true or unset).
+*/}}
+{{- define "xmanager-cloud.postgresRunMigrations" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- $raw := true -}}
+{{- if and (hasKey $pg "runMigrations") (not (kindIs "invalid" $pg.runMigrations)) -}}
+{{- $raw = $pg.runMigrations -}}
+{{- end -}}
+{{- if and (eq (include "xmanager-cloud.dbBackend" .) "postgres") (include "xmanager-cloud.authFlagEnabled" $raw) -}}true{{- end -}}
+{{- end -}}

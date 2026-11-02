@@ -101,6 +101,7 @@ vars:
   postgres_ess_database: ""
   postgres_xid_database: ""
   postgres_ssl_mode: ""
+  run_postgres_migrations: true
 
   # Enable Foundational Component Controllers
   enable_components: false

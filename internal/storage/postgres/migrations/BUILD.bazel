@@ -38,6 +38,7 @@ go_library(
     visibility = ["//visibility:private"],
     deps = [
         "//internal/logging",
+        "//internal/storage/dbconfig",
         "//internal/storage/migrations",
         "//internal/storage/migrations/commands",
         "@com_github_golang_migrate_migrate_v4//:migrate",

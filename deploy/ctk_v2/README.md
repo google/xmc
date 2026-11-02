@@ -94,8 +94,9 @@ ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [Click
     *   **`postgres_user`** / **`postgres_password`**: Credentials used by the workloads.
     *   **`postgres_ess_database`** / **`postgres_xid_database`**: Databases for the Experiment State Server and XID service.
     *   **`postgres_ssl_mode`**: libpq `sslmode`. Empty uses the chart default (`verify-full`).
+    *   **`run_postgres_migrations`**: Runs a Kubernetes `batch/v1` `Job` to apply PostgreSQL schema migrations (`xid` and `ess`) during Helm installs and upgrades (default: `true`).
 
-> **Note:** The `tools/dev_env` deploy and upgrade tooling skips Spanner schema migrations when `database_backend` is `postgres` (overridable via the `DB_BACKEND` environment variable).
+> **Note:** The `tools/dev_env` deploy and upgrade tooling skips Spanner schema migrations when `database_backend` is `postgres` (overridable via the `DB_BACKEND` environment variable); PostgreSQL schema migrations run in-cluster via the Helm migration `Job` when `run_postgres_migrations` is `true`.
 
 ---
 

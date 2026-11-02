@@ -120,6 +120,7 @@ actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
 xmc_bridge_custom_image: "xmc_bridge_image:latest"
+postgres_migrator_custom_image: "postgres_migrator_image:latest"
 
 componentsDeployment:
   enabled: true

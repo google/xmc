@@ -541,7 +541,7 @@ class TestBuildAndPushImages(unittest.TestCase):
     @patch("tools.common.tool_utils.run_command")
     def test_build_and_push_images_default(self, mock_run):
         build_and_push_images(self.valid_config)
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 12)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],
             env={
@@ -556,6 +556,14 @@ class TestBuildAndPushImages(unittest.TestCase):
         )
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/rod_data_provider:rod_data_provider_image_push"],
+            env=ANY,
+        )
+        mock_run.assert_any_call(
+            [
+                "bazel",
+                "run",
+                "//internal/storage/postgres/migrations:postgres_migrator_image_push",
+            ],
             env=ANY,
         )
 
