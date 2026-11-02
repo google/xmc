@@ -37,7 +37,7 @@ var fetchActiveWorkUnitPKsSQL = safesql.New(
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
-	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
+	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC
 	LIMIT @limit OFFSET @offset`,
 )
 
