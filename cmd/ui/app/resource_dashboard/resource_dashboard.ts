@@ -133,11 +133,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
-    const rawTypes = this.queues()
+    const reportedTypes = this.queues()
       .flatMap((q) => q.queueCapacity ?? [])
       .map((cap) => cap.resourceType)
       .filter((type): type is string => Boolean(type));
-    return expandResourceTypesWithParents(rawTypes);
+    return expandResourceTypesWithParents(reportedTypes);
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {

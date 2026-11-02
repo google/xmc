@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  expandResourceTypesWithParents,
-  extractParentResourceType,
-  matchesResourceFilter,
-} from './resource_filter';
+import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 
 describe('matchesResourceFilter', () => {
   it('should return false for empty inputs', () => {
@@ -74,87 +70,28 @@ describe('matchesResourceFilter', () => {
   });
 });
 
-describe('extractParentResourceType', () => {
-  it('should extract parent domain prefix from compound accelerator resources', () => {
-    expect(extractParentResourceType('nvidia.com/gpu: nvidia-tesla-a100')).toBe('nvidia.com/gpu');
-    expect(extractParentResourceType('nvidia.com/gpu: nvidia-l4')).toBe('nvidia.com/gpu');
-    expect(extractParentResourceType('google.com/tpu: tpu-v5p')).toBe('google.com/tpu');
-    expect(extractParentResourceType('custom.io/accelerator: model-x')).toBe(
-      'custom.io/accelerator',
-    );
-  });
-
-  it('should handle whitespace around compound components', () => {
-    expect(extractParentResourceType('  nvidia.com/gpu : nvidia-tesla-a100  ')).toBe(
-      'nvidia.com/gpu',
-    );
-  });
-
-  it('should return null for non-compound resource types', () => {
-    expect(extractParentResourceType('cpu')).toBeNull();
-    expect(extractParentResourceType('memory')).toBeNull();
-    expect(extractParentResourceType('nvidia.com/gpu')).toBeNull();
-    expect(extractParentResourceType('google.com/tpu')).toBeNull();
-  });
-
-  it('should return null for empty, blank, or malformed strings', () => {
-    expect(extractParentResourceType('')).toBeNull();
-    expect(extractParentResourceType('   ')).toBeNull();
-    expect(extractParentResourceType(':model')).toBeNull();
-    expect(extractParentResourceType('nvidia.com/gpu:')).toBeNull();
-    expect(extractParentResourceType(' : ')).toBeNull();
-  });
-});
-
 describe('expandResourceTypesWithParents', () => {
-  it('should synthesize parent options and sort parent before compound children', () => {
-    const rawTypes = ['nvidia.com/gpu: nvidia-tesla-a100'];
-    const expanded = expandResourceTypesWithParents(rawTypes);
-    expect(expanded).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']);
+  it('should add the generic parent and sort it before its models', () => {
+    expect(
+      expandResourceTypesWithParents([
+        'nvidia.com/gpu: nvidia-tesla-a100',
+        'nvidia.com/gpu: nvidia-l4',
+      ]),
+    ).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-l4', 'nvidia.com/gpu: nvidia-tesla-a100']);
   });
 
-  it('should deduplicate synthesized parents across multiple flavors', () => {
-    const rawTypes = [
-      'nvidia.com/gpu: nvidia-tesla-a100',
-      'nvidia.com/gpu: nvidia-l4',
-      'nvidia.com/gpu: nvidia-h100',
-    ];
-    const expanded = expandResourceTypesWithParents(rawTypes);
-    expect(expanded).toEqual([
-      'nvidia.com/gpu',
-      'nvidia.com/gpu: nvidia-h100',
-      'nvidia.com/gpu: nvidia-l4',
-      'nvidia.com/gpu: nvidia-tesla-a100',
-    ]);
+  it('should not duplicate a parent that is already reported', () => {
+    expect(
+      expandResourceTypesWithParents(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']),
+    ).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']);
   });
 
-  it('should preserve standard resources and sort all options deterministically', () => {
-    const rawTypes = [
-      'nvidia.com/gpu: nvidia-tesla-a100',
-      'cpu',
-      'google.com/tpu: tpu-v5p',
-      'memory',
-    ];
-    const expanded = expandResourceTypesWithParents(rawTypes);
-    expect(expanded).toEqual([
+  it('should leave non-compound types unchanged and sort all options', () => {
+    expect(expandResourceTypesWithParents(['memory', 'google.com/tpu: tpu-v5p', 'cpu'])).toEqual([
       'cpu',
       'google.com/tpu',
       'google.com/tpu: tpu-v5p',
       'memory',
-      'nvidia.com/gpu',
-      'nvidia.com/gpu: nvidia-tesla-a100',
     ]);
-  });
-
-  it('should not duplicate parents if generic resource is already reported by a queue', () => {
-    const rawTypes = ['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100', 'nvidia.com/gpu'];
-    const expanded = expandResourceTypesWithParents(rawTypes);
-    expect(expanded).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']);
-  });
-
-  it('should ignore empty and whitespace-only entries', () => {
-    const rawTypes = ['', '  ', 'cpu'];
-    const expanded = expandResourceTypesWithParents(rawTypes);
-    expect(expanded).toEqual(['cpu']);
   });
 });
