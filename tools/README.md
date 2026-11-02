@@ -16,6 +16,7 @@ tools/
 ├── pr_review/          # GitHub PR review automation, audit generation, and comment verification
 ├── benchmark/          # Subagent trajectory benchmarks, telemetry extraction, and diff analysis
 ├── lint/               # Static analyzers, AST syntax walkers, and test determinism linters
+├── migrations/         # One-time operator migration scripts (e.g. legacy metrics -> Components)
 ├── xmc-diag/           # Cluster diagnostics and health inspection utilities
 └── *.py                # Backward-compatible forwarding wrappers
 ```
@@ -84,6 +85,9 @@ Offline syntax walkers and static validation tooling:
 - [`check_go_determinism`](lint/check_go_determinism/): Ultra-fast (<50ms) Go AST analyzer checking Go test files for `os.Setenv` usage and arbitrary second-level `time.Sleep` calls.
 - [`check_legacy_imports.py`](lint/check_legacy_imports.py): Ratchet lint preventing regression of google3 migration leftovers (legacy Go import roots, unresolved `xmanager_cloud/...` module paths, `compat_go_*` targets, `gazelle:resolve` overrides, `third_party/` proto paths, google3 Helm flags, legacy UI/Python paths) against the zeroed [`legacy_imports_baseline.json`](lint/legacy_imports_baseline.json). Fails when any count grows above zero. Runs in pre-commit and the lint CI job. Tracking: [#1066](https://github.com/google/xmc/issues/1066).
 - [`check_agent_doc_paths.py`](lint/check_agent_doc_paths.py): Fails when agent docs (`.agents/**/*.md`, `AGENTS.md`) reference repo paths in code spans or fenced blocks that are not tracked files or directories. Placeholders (`<name>`, `{a,b}`, `$VAR`, `*`, `[`, `...`) only require their directory prefix to exist; runtime-created and illustrative paths live in its `ALLOWLIST` with reasons, and unreferenced entries fail. Runs in pre-commit (when agent docs are staged or files are deleted/renamed; always in `--check` mode) and the lint CI job.
+
+### 8. [`tools/migrations/components/`](migrations/components/README.md) (One-Time Component Cutover)
+Temporary migration side script (`migrate.py`) for transitioning existing umbrella-managed metrics deployments to the `stable-2026a` Component profile (`prepare`, `handoff [--undo]`, `finalize`). See [`docs/migrations/components.md`](../docs/migrations/components.md).
 
 ---
 
