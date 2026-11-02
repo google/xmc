@@ -42,8 +42,10 @@ from collections.abc import Iterator, Sequence
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
 
-# Matches an `example_path` / `entrypoint` key, optionally opening a YAML list item.
-_KEY_RE = re.compile(r"^\s*(?:-\s+)?(?P<key>example_path|entrypoint):(?P<value>.*)$")
+# Matrix entry keys the tool reads.
+_MATRIX_KEYS = ("id", "example_path", "entrypoint")
+# Matches a tracked matrix key, optionally opening a YAML list item.
+_KEY_RE = re.compile(rf"^\s*(?:-\s+)?(?P<key>{'|'.join(_MATRIX_KEYS)}):(?P<value>.*)$")
 # Matches the first line of a YAML list item (`- key: ...`).
 _ITEM_START_RE = re.compile(r"^\s*-\s")
 # Number of trailing non-empty stderr lines kept as failure context.
@@ -92,21 +94,21 @@ def _unquote(raw: str) -> str:
     return value.split(" #", 1)[0].strip()
 
 
-def _flush_item(item: dict[str, str], entries: dict[Entrypoint, None]) -> None:
-    """Record a parsed list item as an entrypoint, rejecting half-specified items.
+def _entrypoint_from_item(item: dict[str, str]) -> Entrypoint | None:
+    """Build an entrypoint from a matrix item, rejecting half-specified items.
 
-    Items with both keys empty or absent are UI-only checks and are skipped.
+    Items with both keys empty or absent are UI-only checks and yield None.
     """
     path = item.get("example_path", "")
     entrypoint = item.get("entrypoint", "")
     if not path and not entrypoint:
-        return
+        return None
     if not path or not entrypoint:
         raise ValueError(
             f"matrix entry has example_path={path!r} and entrypoint={entrypoint!r}; "
             "both must be set (or both empty for UI-only entries)"
         )
-    entries[Entrypoint(path, entrypoint)] = None
+    return Entrypoint(path, entrypoint)
 
 
 def _matrix_lines(workflow_text: str) -> Iterator[str]:
@@ -125,16 +127,41 @@ def _matrix_lines(workflow_text: str) -> Iterator[str]:
             matrix_indent = indent
 
 
-def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
-    """Extract unique, non-empty example entrypoints from the nightly workflow.
+def parse_matrix_items(workflow_text: str) -> list[dict[str, str]]:
+    """Return the tracked keys of every YAML list item under `matrix:` blocks.
 
     Only lines under `matrix:` blocks are considered, so same-named keys in step
     inputs or other jobs are ignored. Keys are grouped per YAML list item, so
     their order, quoting style (single, double, or none), trailing comments, and
     interleaved keys do not matter.
+    """
+    items: list[dict[str, str]] = []
+    # Indentation of the `-` opening the active list item; None when outside an item,
+    # so keys after a list ends (or before the first item of a later matrix block)
+    # are never attributed to the previous item.
+    item_indent: int | None = None
+    for line in _matrix_lines(workflow_text):
+        indent = len(line) - len(line.lstrip())
+        if _ITEM_START_RE.match(line):
+            items.append({})
+            item_indent = indent
+        elif item_indent is not None and indent <= item_indent:
+            item_indent = None
+        key_match = _KEY_RE.match(line)
+        if key_match and item_indent is not None:
+            items[-1][key_match.group("key")] = _unquote(key_match.group("value"))
+    return [item for item in items if item]
+
+
+def parse_entrypoints(
+    workflow_text: str, examples_filter: frozenset[str] = frozenset()
+) -> list[Entrypoint]:
+    """Extract unique, non-empty example entrypoints from the nightly workflow.
 
     Args:
         workflow_text: Contents of the nightly examples workflow YAML.
+        examples_filter: Optional lower-cased matrix `id`s to keep, matching the
+            nightly `examples_filter` input; empty keeps every entry.
 
     Returns:
         De-duplicated entrypoints in first-seen order; entries with an empty
@@ -145,15 +172,13 @@ def parse_entrypoints(workflow_text: str) -> list[Entrypoint]:
             `entrypoint`, so matrix drift cannot silently drop examples.
     """
     entries: dict[Entrypoint, None] = {}
-    item: dict[str, str] = {}
-    for line in _matrix_lines(workflow_text):
-        if _ITEM_START_RE.match(line):
-            _flush_item(item, entries)
-            item = {}
-        key_match = _KEY_RE.match(line)
-        if key_match:
-            item[key_match.group("key")] = _unquote(key_match.group("value"))
-    _flush_item(item, entries)
+    for item in parse_matrix_items(workflow_text):
+        entry = _entrypoint_from_item(item)
+        if entry is None:
+            continue
+        if examples_filter and item.get("id", "").lower() not in examples_filter:
+            continue
+        entries[entry] = None
     return list(entries)
 
 
@@ -235,6 +260,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Print the unique matrix example paths (one per line) and exit; used by CI to "
         "install only the requirements of examples the nightly suite actually runs.",
     )
+    parser.add_argument(
+        "--examples-filter",
+        default="",
+        help="Comma-separated matrix ids to check (case-insensitive, whitespace is significant, "
+        "exactly like the nightly `examples_filter` input); empty checks every entry.",
+    )
     args = parser.parse_args(argv)
     # Subprocesses run with cwd=<example dir>, so relative paths must be anchored now.
     # absolute() (not resolve()) keeps the venv's python symlink and its site-packages.
@@ -253,15 +284,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code (0 success, 1 import failure, 2 unexpected error).
     """
     args = _parse_args(argv)
+    # Matches the nightly filter exactly: `grep -qi ",<id>,"` on ",<filter>," is
+    # case-insensitive but does not strip whitespace, so neither do we.
+    examples_filter = frozenset(part.lower() for part in args.examples_filter.split(",") if part)
     try:
-        entries = parse_entrypoints(args.workflow.read_text(encoding="utf-8"))
+        entries = parse_entrypoints(args.workflow.read_text(encoding="utf-8"), examples_filter)
     except (ValueError, OSError) as err:
         print(json.dumps({"error": f"{args.workflow}: {err}"}))
         return 2
-    if not entries:
+    if not entries and not examples_filter:
         print(json.dumps({"error": f"no example entrypoints found in {args.workflow}"}))
         return 2
     if args.list_example_paths:
+        # May be empty when the filter selects only UI-only entries (no entrypoint).
         print("\n".join(dict.fromkeys(e.example_path for e in entries)))
         return 0
     results = [smoke_entrypoint(args.venv_python, args.repo_root, e) for e in entries]

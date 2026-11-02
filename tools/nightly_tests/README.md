@@ -128,6 +128,7 @@ If an [`examples/`](../../examples/) subdirectory cannot be executed by the nigh
 
 - On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
 - On `workflow_dispatch`, optionally with an `xmanager_version` override.
+- As the `examples-import-check` job of the nightly suite, in parallel with the image builds (it doesn't gate them). It receives the nightly `xmanager_version` and `examples_filter` inputs. A failed or cancelled import check alerts OWNERS, and the alert lists every failed job.
 
 The workflow builds one combined virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and the `requirements.txt` of each example in the nightly matrix. That script also asserts local SDK provenance. This approximates nightly, which builds one venv per example: requirement files are installed one after another, so a conflict between two examples resolves last-wins instead of failing.
 

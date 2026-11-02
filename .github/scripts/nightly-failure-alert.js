@@ -250,22 +250,45 @@ function parseNeedsContext(core) {
 }
 
 /**
- * Resolves the triggerOutcome field from GitHub Actions needsContext,
- * surfacing build-example-images failures when the image build step fails.
+ * Upstream jobs whose non-success results are surfaced in the trigger outcome,
+ * in reporting priority order.
+ */
+const PRECONDITION_JOBS = ['examples-import-check', 'build-example-images'];
+
+/**
+ * Returns true when a job result indicates a problem worth reporting.
+ * @param {string|undefined} result
+ * @returns {boolean}
+ */
+function isProblemResult(result) {
+  return Boolean(result) && result !== 'success' && result !== 'skipped';
+}
+
+/**
+ * Resolves the triggerOutcome field from GitHub Actions needsContext.
+ *
+ * Lists every failed precondition job (examples import check, image build) and,
+ * when any is present, also the workload result if it failed too, so one failure
+ * cannot mask another. Falls back to the plain workload trigger result
+ * (results aggregation is reported separately, as the verification outcome).
  *
  * @param {Object} needsContext
  * @returns {string}
  */
 function resolveTriggerOutcome(needsContext) {
-  const buildResult = needsContext?.['build-example-images']?.result;
-  if (buildResult && buildResult !== 'success' && buildResult !== 'skipped') {
-    return `${buildResult} (build-example-images)`;
-  }
-  return (
+  const workload =
     needsContext?.['run-and-verify-demo-workload']?.result ||
-    needsContext?.['run-and-verify-examples']?.result ||
-    'unknown'
-  );
+    needsContext?.['run-and-verify-examples']?.result;
+  const problems = PRECONDITION_JOBS.map(job => [job, needsContext?.[job]?.result])
+    .filter(([, result]) => isProblemResult(result))
+    .map(([job, result]) => `${result} (${job})`);
+  if (problems.length === 0) {
+    return workload || 'unknown';
+  }
+  if (isProblemResult(workload)) {
+    problems.push(`${workload} (workloads)`);
+  }
+  return problems.join(', ');
 }
 
 /**
@@ -336,6 +359,7 @@ module.exports = {
   findExistingNightlyFailureIssue,
   postOrUpdateAlertIssue,
   parseNeedsContext,
+  resolveTriggerOutcome,
   buildAlertParams,
   run,
 };
