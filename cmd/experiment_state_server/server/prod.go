@@ -30,6 +30,7 @@ import (
 	xidgrpcpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/cmd/experiment_state_server/resumption"
+	"xmanager_cloud/cmd/experiment_state_server/retentionsweep"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
@@ -266,13 +267,11 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
-	if cfg.FeatureFlags.PauseSchedulingEnabled {
-		consumer, err := startResumptionConsumer(ctx, cfg, taskQueueClient, storage)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
-		}
-		cleanups = append(cleanups, consumer.Close)
+	workerCleanups, err := startBackgroundWorkers(ctx, cfg, taskQueueClient, storage)
+	if err != nil {
+		return nil, err
 	}
+	cleanups = append(cleanups, workerCleanups...)
 
 	return &ProdServer{
 		Server:          srv,
@@ -283,6 +282,29 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		bgTaskWG:        &bgTaskWG,
 		cleanup:         func() error { return runCleanups(cleanups) },
 	}, nil
+}
+
+// startBackgroundWorkers starts the resumption consumer (when pause scheduling is enabled) and the
+// expired row sweeper, and returns their cleanups in start order. On error it stops whatever it
+// already started.
+func startBackgroundWorkers(ctx context.Context, cfg *config.Config, taskQueue resumption.TaskQueue, storageClient storage.Storage) ([]func() error, error) {
+	var cleanups []func() error
+	if cfg.FeatureFlags.PauseSchedulingEnabled {
+		consumer, err := startResumptionConsumer(ctx, cfg, taskQueue, storageClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize resumption consumer: %w", err)
+		}
+		cleanups = append(cleanups, consumer.Close)
+	}
+
+	// Spanner deletes expired rows itself (ROW DELETION POLICY), so DeleteExpiredRows is a no-op
+	// there; on PostgreSQL this sweeper is what deletes them.
+	sweeper, err := retentionsweep.Start(ctx, storageClient, retentionsweep.DefaultInterval, retentionsweep.DefaultBatchSize)
+	if err != nil {
+		_ = runCleanups(cleanups)
+		return nil, fmt.Errorf("failed to start expired row sweeper: %w", err)
+	}
+	return append(cleanups, sweeper.Close), nil
 }
 
 // startResumptionConsumer wires the resumption worker to the Redis trigger stream.

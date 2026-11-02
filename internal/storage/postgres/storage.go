@@ -33,6 +33,7 @@ import (
 	"xmanager_cloud/internal/storage/postgres/pausedtask"
 	"xmanager_cloud/internal/storage/postgres/pausestate"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	"xmanager_cloud/internal/storage/postgres/retention"
 	"xmanager_cloud/internal/storage/postgres/statushistory"
 	"xmanager_cloud/internal/storage/postgres/statusmessage"
 	"xmanager_cloud/internal/storage/postgres/workunit"
@@ -50,6 +51,7 @@ type dashboardRepository = dashboard.Repository
 type pauseStateRepository = pausestate.Repository
 type pausedTaskRepository = pausedtask.Repository
 type cliLoginCodeRepository = clilogincode.Repository
+type retentionRepository = retention.Repository
 
 var (
 	_            storage.Storage = (*Storage)(nil)
@@ -67,6 +69,7 @@ type Storage struct {
 	*operationRepository
 	*statusHistoryRepository
 	*dashboardRepository
+	*retentionRepository
 	pauseStateRepository   *pauseStateRepository
 	pausedTaskRepository   *pausedTaskRepository
 	cliLoginCodeRepository *cliLoginCodeRepository
@@ -88,6 +91,7 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 		operationRepository:     operation.NewRepository(pool),
 		statusHistoryRepository: statushistory.NewRepository(pool),
 		dashboardRepository:     dashboard.NewRepository(pool),
+		retentionRepository:     retention.NewRepository(pool),
 		pauseStateRepository:    pausestate.NewRepository(pool),
 		pausedTaskRepository:    pausedtask.NewRepository(pool),
 		cliLoginCodeRepository:  clilogincode.NewRepository(pool),

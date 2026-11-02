@@ -1,0 +1,45 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "retention",
+    srcs = ["repository.go"],
+    importpath = "xmanager_cloud/internal/storage/postgres/retention",
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//internal/grpcerr",
+        "//internal/safesql",
+        "//internal/storage",
+        "//internal/storage/postgres/pgdb",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgxpool",
+    ],
+)
+
+go_test(
+    name = "retention_test",
+    srcs = ["repository_test.go"],
+    embed = [":retention"],
+    tags = ["local"],
+    deps = [
+        "//internal/grpcerr",
+        "//internal/storage/postgres/testing",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_google_go_cmp//cmp/cmpopts",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgxpool",
+    ],
+)

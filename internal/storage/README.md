@@ -43,6 +43,21 @@ Both Cloud Spanner and PostgreSQL maintain canonical full schemas (`schema/{ess,
 - **Backend-specific migrations**: If a migration only applies to one backend (such as tuning a backend-specific index), add a same-numbered no-op `.up.sql` / `.down.sql` pair in the other backend so expected schema versions (`EssExpectedSchemaVersion()`, `XidExpectedSchemaVersion()`) remain identical.
 - **Automated parity check**: [`migrations/parity_test.go`](migrations/parity_test.go) checks only that expected schema versions and canonical table names match across Spanner and PostgreSQL; it does not compare exact DDL or column definitions, which differ by SQL dialect.
 
+## Expired Rows (`ExpiredRowStore`)
+
+Some ESS tables keep rows only for a limited time:
+
+| Table | Rows expire |
+| :--- | :--- |
+| `StatusMessages` | 30 days after `CreateTime` (180 days for `ERROR` and `FATAL`) |
+| `WorkUnitStatusHistory` | 30 days after `CreateTime` |
+| `PausedTasks` | 7 days after `ProcessedTime` (pending tasks never expire) |
+| `CliLoginCodes` | 1 day after `ExpiresAt` |
+
+Cloud Spanner deletes these rows itself through the `ROW DELETION POLICY` of each table, so the Spanner `DeleteExpiredRows` is a no-op. PostgreSQL has no row TTL, so [`postgres/retention/`](postgres/retention/) deletes them: each `DeleteExpiredRows(ctx, batchSize)` call runs one transaction that takes `pg_try_advisory_xact_lock` and, only if it gets the lock, deletes up to `batchSize` expired rows from each table. A call that does not get the lock deletes nothing and returns 0, so concurrent callers never sweep at the same time. ESS calls it periodically from [`retentionsweep`](../../cmd/experiment_state_server/retentionsweep/) on every replica (see that package for the schedule and batch limits).
+
+When you add a retention policy to a table, update both the Spanner `ROW DELETION POLICY` and the PostgreSQL delete statements in [`postgres/retention/`](postgres/retention/).
+
 ## Transactions (`TransactionRunner`)
 
 Multi-step writes that touch multiple tables (for example, `restartWorkUnitExecutions`) run in the service layer via `TransactionRunner`:

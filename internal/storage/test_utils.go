@@ -482,6 +482,11 @@ func (s *MockStorage) Components() ComponentRepository {
 	return s.ComponentRepository
 }
 
+// DeleteExpiredRows mocks deleting expired rows and deletes nothing.
+func (s *MockStorage) DeleteExpiredRows(ctx context.Context, batchSize int) (int64, error) {
+	return 0, nil
+}
+
 // SaveWorkUnitExecution mocks saving a work unit execution.
 func (s *MockStorage) SaveWorkUnitExecution(ctx context.Context, execution *essmsgpb.WorkUnitExecution) error {
 	return nil
