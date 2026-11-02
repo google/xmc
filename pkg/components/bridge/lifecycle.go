@@ -393,7 +393,9 @@ func wasComponentPreviouslyActive(existing []Condition) bool {
 		return false
 	}
 	switch ready.Reason {
-	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle, ReasonDeactivationIncomplete, ReasonInitialSyncPending:
+	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle,
+		ReasonStabilityInversion, ReasonExperimentalNotAcknowledged,
+		ReasonDeactivationIncomplete, ReasonInitialSyncPending:
 		return ready.Status == ConditionStatusTrue
 	}
 	return true

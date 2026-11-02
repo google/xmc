@@ -171,6 +171,8 @@ func matchesPredicate(rec *store.ComponentRecord, p filterPredicate) bool {
 		return matchesReadyPredicate(rec, p.value)
 	case "name":
 		return matchesNamePredicate(rec.Name, p.value)
+	case "stability":
+		return matchesStabilityPredicate(rec, p.value)
 	default:
 		return false
 	}
@@ -217,6 +219,27 @@ func matchesReadyPredicate(rec *store.ComponentRecord, expected string) bool {
 func matchesNamePredicate(actualName, expected string) bool {
 	canonicalExpected := naming.CanonicalComponentName(expected)
 	return naming.CanonicalComponentName(actualName) == canonicalExpected
+}
+
+func matchesStabilityPredicate(rec *store.ComponentRecord, expected string) bool {
+	stability := effectiveStability(rec)
+	clean := strings.ToUpper(strings.TrimSpace(expected))
+	clean = strings.TrimPrefix(clean, "COMPONENT_STABILITY_")
+	stabilityStr := strings.TrimPrefix(stability.String(), "COMPONENT_STABILITY_")
+	if strings.EqualFold(stabilityStr, clean) {
+		return true
+	}
+	if num, err := strconv.Atoi(clean); err == nil && int32(stability) == int32(num) {
+		return true
+	}
+	return false
+}
+
+func effectiveStability(rec *store.ComponentRecord) componentspb.ComponentStability {
+	if rec == nil || rec.Spec == nil || rec.Spec.GetStability() == componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED {
+		return componentspb.ComponentStability_COMPONENT_STABILITY_STABLE
+	}
+	return rec.Spec.GetStability()
 }
 
 func parsePlatformHealthFilter(filter string) ([]filterPredicate, error) {
@@ -267,5 +290,5 @@ func parseSinglePredicate(clause string) (filterPredicate, error) {
 }
 
 func isValidFilterKey(k string) bool {
-	return k == "state" || k == "type" || k == "ready" || k == "name"
+	return k == "state" || k == "type" || k == "ready" || k == "name" || k == "stability"
 }

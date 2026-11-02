@@ -48,6 +48,10 @@ const (
 	ReasonDependenciesNotReady = "DependenciesNotReady"
 	// ReasonDependencyCycle marks an enabled component that is part of a spec.dependencies cycle.
 	ReasonDependencyCycle = "DependencyCycle"
+	// ReasonStabilityInversion marks a STABLE or PREVIEW component that depends on an EXPERIMENTAL component.
+	ReasonStabilityInversion = "StabilityInversion"
+	// ReasonExperimentalNotAcknowledged marks an enabled EXPERIMENTAL component without acknowledgeExperimental: true.
+	ReasonExperimentalNotAcknowledged = "ExperimentalNotAcknowledged"
 )
 
 // AccessStatus encapsulates network and access metadata (such as environment variables) for a component.
@@ -330,6 +334,10 @@ func (r *Reconciler) reconcileEnabled(ctx context.Context, in ReconcileComponent
 	if shouldStopReconcile(res) {
 		return res, nil
 	}
+	if expMsg := unacknowledgedExperimentalMessage(in, canonicalName); expMsg != "" {
+		preserveDependenciesReady(res, in.ExistingConditions)
+		return r.reportGated(ctx, in, canonicalName, res, ReasonExperimentalNotAcknowledged, expMsg)
+	}
 	if waitMsg != "" && !r.isActuated(in) {
 		return r.reportGated(ctx, in, canonicalName, res, ReasonDependenciesNotReady, waitMsg)
 	}
@@ -390,6 +398,33 @@ func dependencyCycleMessage(err error) string {
 		return ""
 	}
 	return msg
+}
+
+// stabilityInversionMessage returns the CMS status message if err (possibly wrapped) is the store's
+// STABILITY_INVERSION rejection, or "" otherwise.
+func stabilityInversionMessage(err error) string {
+	info, msg := extractErrorInfo(err)
+	if info == nil || info.GetReason() != store.ReasonStabilityInversion {
+		return ""
+	}
+	return msg
+}
+
+func stalledIntentRejection(err error) (string, string) {
+	if msg := dependencyCycleMessage(err); msg != "" {
+		return ReasonDependencyCycle, msg
+	}
+	if msg := stabilityInversionMessage(err); msg != "" {
+		return ReasonStabilityInversion, msg
+	}
+	return "", ""
+}
+
+func unacknowledgedExperimentalMessage(in ReconcileComponentInput, canonicalName string) string {
+	if in.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL || in.Spec.GetAcknowledgeExperimental() {
+		return ""
+	}
+	return fmt.Sprintf("EXPERIMENTAL component %q requires spec.acknowledgeExperimental: true when enabled", canonicalName)
 }
 
 // actuateAndEvaluate reconciles the workload (3P observation or 1P Helm release, with Helm upgrades
@@ -492,9 +527,8 @@ func (r *Reconciler) handleIntentError(ctx context.Context, in ReconcileComponen
 		setSynced(res, in, ConditionStatusTrue, ReasonCMSSynced, cmsSyncedMessage)
 		return intentErr
 	}
-	msg := dependencyCycleMessage(err)
-	if msg != "" {
-		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, ReasonDependencyCycle, msg); syncErr != nil {
+	if reason, msg := stalledIntentRejection(err); reason != "" {
+		if _, syncErr := r.reportGated(ctx, in, canonicalName, res, reason, msg); syncErr != nil {
 			return errors.Join(intentErr, syncErr)
 		}
 		return intentErr
@@ -682,6 +716,9 @@ func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 		return true
 	}
 	if findCondition(in.ExistingConditions, ConditionTypeDependenciesReady) != nil {
+		return true
+	}
+	if in.ExistingAccess != nil && len(in.ExistingAccess.EnvVars) > 0 {
 		return true
 	}
 	return wasComponentPreviouslyActive(in.ExistingConditions)
