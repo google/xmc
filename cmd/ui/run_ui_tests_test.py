@@ -81,6 +81,7 @@ class MainTest(unittest.TestCase):
             run_ui_tests.main()
 
         self.assertEqual(cm.exception.code, 3)
+        mock_run.assert_called_once()
         self.assertIn("ng test --watch=false", mock_run.call_args.args[0])
 
 
