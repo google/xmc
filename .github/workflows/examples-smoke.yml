@@ -47,7 +47,10 @@ on:
 
 concurrency:
   # Literal prefix: under workflow_call, github.workflow resolves to the caller's name.
-  group: examples-import-check-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  # Outside PRs and the merge queue (e.g. called from nightly, or dispatched), the run id
+  # makes the group unique, so a newer run never cancels a pending one (which would page
+  # OWNERS as `cancelled (examples-import-check)`).
+  group: examples-import-check-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

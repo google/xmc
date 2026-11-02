@@ -269,7 +269,8 @@ function isProblemResult(result) {
  *
  * Lists every failed precondition job (examples import check, image build) and,
  * when any is present, also the workload result if it failed too, so one failure
- * cannot mask another. Falls back to the plain workload trigger result.
+ * cannot mask another. Falls back to the plain workload trigger result
+ * (results aggregation is reported separately, as the verification outcome).
  *
  * @param {Object} needsContext
  * @returns {string}
