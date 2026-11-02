@@ -149,3 +149,11 @@ py_test(
         "local",
     ],
 )
+
+py_test(
+    name = "run_ui_tests_test",
+    srcs = [
+        "run_ui_tests.py",
+        "run_ui_tests_test.py",
+    ],
+)

@@ -222,6 +222,8 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
 
 `.githooks/pre-commit` automatically runs [`tools/run_affected_tests.py`](../tools/run_affected_tests.py) to execute the Bazel unit tests affected by your changes (scoped via [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) to match CI). To run it standalone or inspect the resolved scope (`--dry-run`), run `python3 ./tools/run_affected_tests.py --help`.
 
+To test one directory, run `bazel test //<dir>/...`. To list its test targets, run `bazel query 'tests(//<dir>/...)'`. Go code imports Bazel-generated protobuf packages, so host `go build`, `go vet`, and `go test` do not work. The UI suite (`bazel test //cmd/ui/...`, `npm test`, `npm run lint`) needs `npm ci --legacy-peer-deps` in `cmd/ui` first in every fresh checkout or worktree.
+
 ---
 
 ## Continuous Integration

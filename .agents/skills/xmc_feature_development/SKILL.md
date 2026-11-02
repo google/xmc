@@ -62,11 +62,13 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    ```
    - **Output & Exit Codes**: stdout emits structured JSON (`changed_files`, `backend_mode`, `reason`, `bazel_targets`, `other_suites`, `passed_targets`); Bazel output streams to stderr. Exits `0` when tests pass (or dry-run / nothing to run), `1` on test failures or handled errors (with failed targets and log paths in `details`), and `2` on unexpected errors.
    - **Spanner Emulator**: Pre-flights `SPANNER_EMULATOR_HOST` (default `localhost:9010`) and forwards non-default addresses via `--test_env`. Pass `--skip-emulator-check` when affected targets do not use Spanner.
-   - **Other Suites**: When `other_suites` lists the UI or Helm chart suite, run those suites before opening a PR.
+   - **Other Suites**: When `other_suites` lists the UI or Helm chart suite, run those suites before opening a PR: `bazel test //cmd/ui/...` (after `npm ci --legacy-peer-deps` in `cmd/ui`) or `bazel test //test/helm/...`.
 2. **Targeted Package Iteration (During Editing)**:
    ```bash
    bazel test //pkg/auth/oauth2/...
+   bazel query 'tests(//pkg/auth/oauth2/...)'  # list target names; never guess them
    ```
+   Never run host `go build`, `go vet`, or `go test`. They fail on the Bazel-generated protobuf packages.
 
 ---
 

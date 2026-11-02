@@ -61,6 +61,7 @@ private static readonly STATUS_CHIP_MAP = new Map<WorkUnitState, ChipStyle>([
 - Cleanly import RxJS operators directly from `'rxjs'` to optimize tree-shaking and bundle size.
 
 ## 7. Angular Component Testing, Cleanstate & DOM Interaction Standards
+- **Install Dependencies Before UI Tests & Lint**: A fresh checkout or git worktree has no installed UI dependencies (no `node_modules` directory). Run `npm ci --legacy-peer-deps` in `cmd/ui` first, as `.github/actions/run-ui-tests` does. Then run `npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox`, `npm run lint`, or `bazel test //cmd/ui/...`.
 - **Cleanstate Helper vs Mutable `let` State**: Adopt the codebase standard `cleanState`, `setupModule`, and `bootstrap` helpers from `app/testing/test` across Angular Jasmine test suites. Never declare top-level mutable `let fixture`, `let component`, or spy variables at the `describe` closure level; initializing state inside `cleanState(...)` ensures automatic `afterEach` fixture destruction (`fixture.destroy()`) and complete test isolation without memory leaks.
 - **Hermetic DI in Tests**: Always provide test doubles and mock services (e.g. `SnackbarService`, `Clipboard`, `MatDialog`) through `TestBed.configureTestingModule` / `setupModule` providers rather than casting components to `unknown` and monkey-patching private properties.
 - **Mandatory DOM Interaction Coverage**: Every Angular component test suite MUST test all interactive template workflows:

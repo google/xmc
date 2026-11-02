@@ -33,6 +33,7 @@ This document defines coding standards and conventions for Go development across
 - **Centralize Common Test Utilities**: Shared test and proto utilities must be centralized in global packages (e.g., `prototest.Modify` in `//internal/prototest`) per [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling).
 
 ## 6. Go Dependencies / Bazel
+- **Bazel-Only Go Builds & Tests**: Go packages import Bazel-generated protobuf code, so host `go build`, `go vet`, and `go test` fail. Build and test only through Bazel: `./tools/run_affected_tests.py` for the change set, or `bazel test //<dir>/...` for a directory. Never guess target names; list them with `bazel query 'tests(//<dir>/...)'`.
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
 ## 7. Go CLI Entrypoints & Exit Cleanups
