@@ -521,6 +521,119 @@ spec:
 			},
 			wantValid: true,
 		},
+		{
+			name:  "enabled EXPERIMENTAL component without acknowledgeExperimental fails EXPERIMENTAL_NOT_ACKNOWLEDGED",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-unack
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:  "enabled EXPERIMENTAL component with acknowledgeExperimental true passes",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-ack
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name:  "disabled EXPERIMENTAL component without acknowledgeExperimental passes when allowExperimental is default true",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-disabled
+spec:
+  enabled: false
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "EXPERIMENTAL component fails when staticChecks.allowExperimental is false",
+			rules: &linter.RulesConfig{
+				StaticChecks: linter.StaticChecksConfig{
+					AllowExperimental: boolPtr(false),
+				},
+			},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-forbidden
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:  "invalid spec.stability value fails INVALID_STABILITY",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: bad-stability
+spec:
+  stability: ALPHA
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_STABILITY"},
+		},
+		{
+			name:  "PREVIEW and STABLE components do not require acknowledgeExperimental",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"preview.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-comp
+spec:
+  enabled: true
+  stability: PREVIEW
+`,
+				"stable.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-comp
+spec:
+  enabled: true
+  stability: STABLE
+`,
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {

@@ -282,6 +282,93 @@ spec:
 			wantValid: false,
 			wantRule:  "DUPLICATE_COMPONENT_NAME",
 		},
+		{
+			name: "STABLE component depending on EXPERIMENTAL component fails STABILITY_INVERSION",
+			manifests: map[string]string{
+				"stable-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-comp
+spec:
+  stability: STABLE
+  dependencies:
+    - exp-comp
+`,
+				"exp-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-comp
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRule:  "STABILITY_INVERSION",
+		},
+		{
+			name: "PREVIEW component depending on EXPERIMENTAL component fails STABILITY_INVERSION",
+			manifests: map[string]string{
+				"preview-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-comp
+spec:
+  stability: PREVIEW
+  dependencies:
+    - exp-comp
+`,
+				"exp-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-comp
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRule:  "STABILITY_INVERSION",
+		},
+		{
+			name: "EXPERIMENTAL component depending on EXPERIMENTAL and STABLE components passes",
+			manifests: map[string]string{
+				"exp-parent.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-parent
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+  dependencies:
+    - exp-child
+    - stable-child
+`,
+				"exp-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-child
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+				"stable-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-child
+spec:
+  stability: STABLE
+`,
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {

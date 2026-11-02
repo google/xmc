@@ -49,6 +49,21 @@ func (c *ComponentManifest) IsEnabled() bool {
 	return *c.Spec.Enabled
 }
 
+// EffectiveStability returns the normalized stability tier ("EXPERIMENTAL", "PREVIEW", or "STABLE"),
+// treating an unset or UNSPECIFIED stability as "STABLE".
+func (c *ComponentManifest) EffectiveStability() string {
+	switch c.Spec.Stability {
+	case "EXPERIMENTAL", "COMPONENT_STABILITY_EXPERIMENTAL":
+		return "EXPERIMENTAL"
+	case "PREVIEW", "COMPONENT_STABILITY_PREVIEW":
+		return "PREVIEW"
+	case "", "STABLE", "COMPONENT_STABILITY_STABLE", "UNSPECIFIED", "COMPONENT_STABILITY_UNSPECIFIED":
+		return "STABLE"
+	default:
+		return c.Spec.Stability
+	}
+}
+
 // ComponentDependencyRef specifies a dependency name and optional SemVer constraint.
 type ComponentDependencyRef struct {
 	Name     string `yaml:"name" json:"name"`
@@ -79,18 +94,20 @@ type ComponentLifecycleCtrl struct {
 
 // ComponentManifestSpec holds the specification body of a Component manifest.
 type ComponentManifestSpec struct {
-	Enabled            *bool                    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	ComponentType      string                   `yaml:"componentType,omitempty" json:"componentType,omitempty"`
-	ComponentClass     string                   `yaml:"componentClass,omitempty" json:"componentClass,omitempty"`
-	Version            string                   `yaml:"version,omitempty" json:"version,omitempty"`
-	ChartVersion       string                   `yaml:"chartVersion,omitempty" json:"chartVersion,omitempty"`
-	ImageTag           string                   `yaml:"imageTag,omitempty" json:"imageTag,omitempty"`
-	DeletionPolicy     string                   `yaml:"deletionPolicy,omitempty" json:"deletionPolicy,omitempty"`
-	DeletionProtection bool                     `yaml:"deletionProtection,omitempty" json:"deletionProtection,omitempty"`
-	WrapperRef         *ComponentWrapperRef     `yaml:"wrapperRef,omitempty" json:"wrapperRef,omitempty"`
-	LifecycleControl   *ComponentLifecycleCtrl  `yaml:"lifecycleControl,omitempty" json:"lifecycleControl,omitempty"`
-	Parameters         map[string]string        `yaml:"parameters,omitempty" json:"parameters,omitempty"`
-	Dependencies       []ComponentDependencyRef `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
-	Manifests          []string                 `yaml:"manifests,omitempty" json:"manifests,omitempty"`
-	Description        string                   `yaml:"description,omitempty" json:"description,omitempty"`
+	Enabled                 *bool                    `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	ComponentType           string                   `yaml:"componentType,omitempty" json:"componentType,omitempty"`
+	ComponentClass          string                   `yaml:"componentClass,omitempty" json:"componentClass,omitempty"`
+	Version                 string                   `yaml:"version,omitempty" json:"version,omitempty"`
+	ChartVersion            string                   `yaml:"chartVersion,omitempty" json:"chartVersion,omitempty"`
+	ImageTag                string                   `yaml:"imageTag,omitempty" json:"imageTag,omitempty"`
+	Stability               string                   `yaml:"stability,omitempty" json:"stability,omitempty"`
+	AcknowledgeExperimental bool                     `yaml:"acknowledgeExperimental,omitempty" json:"acknowledgeExperimental,omitempty"`
+	DeletionPolicy          string                   `yaml:"deletionPolicy,omitempty" json:"deletionPolicy,omitempty"`
+	DeletionProtection      bool                     `yaml:"deletionProtection,omitempty" json:"deletionProtection,omitempty"`
+	WrapperRef              *ComponentWrapperRef     `yaml:"wrapperRef,omitempty" json:"wrapperRef,omitempty"`
+	LifecycleControl        *ComponentLifecycleCtrl  `yaml:"lifecycleControl,omitempty" json:"lifecycleControl,omitempty"`
+	Parameters              map[string]string        `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	Dependencies            []ComponentDependencyRef `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	Manifests               []string                 `yaml:"manifests,omitempty" json:"manifests,omitempty"`
+	Description             string                   `yaml:"description,omitempty" json:"description,omitempty"`
 }

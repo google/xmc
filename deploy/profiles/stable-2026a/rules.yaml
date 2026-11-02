@@ -3,6 +3,7 @@
 staticChecks:
   enforceDeletionProtection: true
   maxDrainTimeoutSeconds: 300
+  allowExperimental: true
 
 compatibilityMatrix:
   componentDependencies:
