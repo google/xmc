@@ -301,7 +301,7 @@ def _entrypoint_problem(example_dir: pathlib.Path, entrypoint: str) -> str | Non
         return f"entrypoint not found: {script}"
     try:
         has_guard = _has_main_guard(script)
-    except (SyntaxError, UnicodeDecodeError) as err:
+    except (SyntaxError, OSError, UnicodeDecodeError) as err:
         return f"failed to parse {script}: {err}"
     if not has_guard:
         return f'{script} has no top-level `if __name__ == "__main__":` guard'

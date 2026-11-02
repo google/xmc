@@ -393,6 +393,15 @@ class SmokeExecutionTest(unittest.TestCase):
                 self.assertFalse(result.ok)
                 self.assertIn(expected_error, result.error)
 
+    def test_unreadable_entrypoint_fails_that_entry(self) -> None:
+        """An OSError reading the entrypoint (e.g. permissions) fails only that entry."""
+        entry = smoke.Entrypoint("examples/ok_job", "launch.py")
+        with mock.patch.object(pathlib.Path, "read_text", side_effect=PermissionError("denied")):
+            result = smoke.smoke_entrypoint(self.python, self.repo, entry)
+        self.assertFalse(result.ok)
+        self.assertIn("failed to parse", result.error)
+        self.assertIn("denied", result.error)
+
     def test_missing_main_guard_fails_without_importing(self) -> None:
         """An entrypoint without a `__main__` guard fails before it is imported."""
         entry = self._write_example("unguarded_job", "raise SystemExit('imported!')\n")
