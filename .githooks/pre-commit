@@ -191,7 +191,7 @@ check_ui() {
     fi
   else
     echo "❌ ERROR: Local Prettier not found at $prettier_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm install"
+    echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 
@@ -207,7 +207,7 @@ check_ui() {
     fi
   else
     echo "❌ ERROR: Local ESLint not found at $eslint_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm install"
+    echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 }
