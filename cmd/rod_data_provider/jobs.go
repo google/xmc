@@ -94,15 +94,16 @@ func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []
 func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.ActiveWorkUnit, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
 	for _, item := range workUnits {
-		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, item.ExperimentTitle, now); job != nil {
+		if job := mapWorkUnitToDashboardJob(ctx, item, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
 	return jobs
 }
 
-// mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
-func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user string, experimentTitle string, now time.Time) *spb.DashboardJob {
+// mapWorkUnitToDashboardJob transforms a storage.ActiveWorkUnit domain entity into a spb.DashboardJob presentation DTO.
+func mapWorkUnitToDashboardJob(ctx context.Context, item storage.ActiveWorkUnit, now time.Time) *spb.DashboardJob {
+	wu := item.WorkUnit
 	if wu == nil {
 		return nil
 	}
@@ -114,7 +115,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user 
 	return &spb.DashboardJob{
 		Xid:                xid,
 		WorkUnitId:         wid,
-		User:               user,
+		User:               item.Author,
 		Priority:           int64(wu.GetPriority()),
 		Status:             extractWorkUnitState(wu),
 		TimeInQueueSeconds: calculateQueueDuration(wu, now),
@@ -122,7 +123,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user 
 		PositionInQueue:    extractQueuePosition(wu),
 		CreateTime:         wu.GetCreateTime(),
 		Tags:               wu.GetTags(),
-		ExperimentTitle:    experimentTitle,
+		ExperimentTitle:    item.ExperimentTitle,
 	}
 }
 

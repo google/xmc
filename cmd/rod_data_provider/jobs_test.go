@@ -399,7 +399,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		}
 	})
 
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, "", "", now)
+	job := mapWorkUnitToDashboardJob(context.Background(), storage.ActiveWorkUnit{WorkUnit: wu}, now)
 	if job == nil {
 		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
 	}

@@ -128,7 +128,7 @@ describe('QueueJobsTable Component', () => {
     const firstRow = await harness.getRowCellsText(0);
     expect(firstRow.position).toBe('N/A - running');
     expect(firstRow.jobName).toContain('Fine-Tuning Llama');
-    expect(await harness.getRowJobLinkAriaLabel(0)).toBe('View Fine-Tuning Llama');
+    expect((await harness.getRowLinks(0)).jobLinkAriaLabel).toBe('View Fine-Tuning Llama');
     expect(firstRow.status).toContain('Running');
     expect(firstRow.priority).toContain('-10');
     expect(firstRow.resources).toContain('cpu: 3000000');
@@ -140,7 +140,7 @@ describe('QueueJobsTable Component', () => {
     const secondRow = await harness.getRowCellsText(1);
     expect(secondRow.position).toBe('2');
     expect(secondRow.jobName).toContain('Experiment #53308');
-    expect(await harness.getRowJobLinkAriaLabel(1)).toBe('View Experiment #53308');
+    expect((await harness.getRowLinks(1)).jobLinkAriaLabel).toBe('View Experiment #53308');
     expect(secondRow.status).toContain('Scheduling');
     expect(secondRow.priority).toContain('100');
     expect(secondRow.resources).toContain('16 x TPU v4');
@@ -149,7 +149,7 @@ describe('QueueJobsTable Component', () => {
     const thirdRow = await harness.getRowCellsText(2);
     expect(thirdRow.position).toBe('3');
     expect(thirdRow.jobName).toContain('Experiment #53310');
-    expect(await harness.getRowJobLinkAriaLabel(2)).toBe('View Experiment #53310');
+    expect((await harness.getRowLinks(2)).jobLinkAriaLabel).toBe('View Experiment #53310');
     expect(thirdRow.status).toContain('Scheduling');
     expect(thirdRow.priority).toContain('0');
     expect(thirdRow.resources).toContain('cpu: 1000');

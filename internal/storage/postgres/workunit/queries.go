@@ -33,7 +33,7 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-// activeWorkUnitRow is a WorkUnits row joined with its parent experiment's creator.
+// activeWorkUnitRow is a WorkUnits row joined with its parent experiment's creator and title.
 type activeWorkUnitRow struct {
 	postgresdata.WorkUnitRow
 	Creator         string `db:"creator"`

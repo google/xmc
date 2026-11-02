@@ -57,18 +57,18 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
     };
   }
 
-  async getLinks(): Promise<{ jobLink: string | null; workUnitLink: string | null }> {
+  async getLinks(): Promise<{
+    jobLink: string | null;
+    jobLinkAriaLabel: string | null;
+    workUnitLink: string | null;
+  }> {
     const jobEl = await this.jobLink();
     const wuEl = await this.workunitLink();
     return {
       jobLink: jobEl ? await jobEl.getAttribute('href') : null,
+      jobLinkAriaLabel: jobEl ? await jobEl.getAttribute('aria-label') : null,
       workUnitLink: wuEl ? await wuEl.getAttribute('href') : null,
     };
-  }
-
-  async getJobLinkAriaLabel(): Promise<string | null> {
-    const jobEl = await this.jobLink();
-    return jobEl ? await jobEl.getAttribute('aria-label') : null;
   }
 }
 
@@ -114,23 +114,16 @@ export class QueueJobsTableHarness extends ComponentHarness {
     return rows[rowIndex].getCellsText();
   }
 
-  /** Gets the href attributes of the experiment and work unit links in the row at the specified index. */
-  async getRowLinks(
-    rowIndex: number,
-  ): Promise<{ jobLink: string | null; workUnitLink: string | null }> {
+  /** Gets the href and aria-label attributes of the experiment and work unit links in the row at the specified index. */
+  async getRowLinks(rowIndex: number): Promise<{
+    jobLink: string | null;
+    jobLinkAriaLabel: string | null;
+    workUnitLink: string | null;
+  }> {
     const rows = await this.tableRows();
     if (!rows[rowIndex]) {
       throw new Error(`Row index ${rowIndex} out of bounds.`);
     }
     return rows[rowIndex].getLinks();
-  }
-
-  /** Gets the aria-label of the experiment link in the row at the specified index. */
-  async getRowJobLinkAriaLabel(rowIndex: number): Promise<string | null> {
-    const rows = await this.tableRows();
-    if (!rows[rowIndex]) {
-      throw new Error(`Row index ${rowIndex} out of bounds.`);
-    }
-    return rows[rowIndex].getJobLinkAriaLabel();
   }
 }
