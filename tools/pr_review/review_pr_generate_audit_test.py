@@ -179,7 +179,6 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
             self.assertTrue(Path(out_file).exists())
             sidecar = json.loads(Path(res["sidecar_file"]).read_text(encoding="utf-8"))
             self.assertEqual(Path(res["sidecar_file"]), Path(out_file).with_suffix(".json"))
-            self.assertEqual(sidecar["schema_version"], 1)
             self.assertEqual(sidecar["mode"], "initial")
             self.assertEqual(sidecar["head_sha"], "123")
             self.assertEqual(sidecar["items"], [])

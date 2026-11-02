@@ -37,10 +37,6 @@ from tools.pr_review.github_utils import (  # noqa: E402
     list_review_threads,
 )
 
-# Version of the JSON sidecar written next to each audit markdown artifact and
-# read by review_pr_verify_posted.py.
-AUDIT_SIDECAR_SCHEMA_VERSION = 1
-
 
 def extract_task_references(description: str | None) -> list[str]:
     """Extract task and issue references from description."""
@@ -353,7 +349,7 @@ def build_audit_sidecar(
         data: PR data from `fetch_pr_audit_data`.
 
     Returns:
-        The sidecar document (`schema_version`, PR identity, and `items`).
+        The sidecar document (PR identity and `items`).
     """
     items: list[dict[str, Any]] = []
     if mode == "re-review":
@@ -371,7 +367,6 @@ def build_audit_sidecar(
             if c.get("id") and not c.get("in_reply_to_id")
         ]
     return {
-        "schema_version": AUDIT_SIDECAR_SCHEMA_VERSION,
         "owner": owner,
         "repo": repo,
         "pr_number": pr_number,

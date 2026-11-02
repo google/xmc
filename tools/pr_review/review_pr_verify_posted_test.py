@@ -186,7 +186,7 @@ _HEADING_CHECKLIST = """
 
 
 def _sidecar(items: list[Any]) -> dict[str, Any]:
-    return {"schema_version": 1, "owner": "google", "repo": "xmc", "pr_number": 10, "items": items}
+    return {"owner": "google", "repo": "xmc", "pr_number": 10, "items": items}
 
 
 def _inline_item(item_id: str, status: str, line: int = 15) -> dict[str, Any]:
@@ -324,6 +324,14 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             verify_review_comments_posted(self._args(self.md_path))
         self.assertIn("not valid JSON", ctx.exception.message)
+
+    def test_sidecar_missing_items_key_raises(self):
+        self.md_path.write_text("", encoding="utf-8")
+        self.json_path.write_text(json.dumps({"owner": "google"}), encoding="utf-8")
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self._args(self.md_path))
+        self.assertIn("has no 'items' list", ctx.exception.message)
+        self.mock_api.assert_not_called()
 
 
 class TestApprovedSidecarItems(unittest.TestCase):
