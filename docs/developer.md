@@ -332,3 +332,5 @@ To build the entire project codebase or run all decoupled standalone test suites
   bazel run //cmd/ui:ui_image_push
   bazel run //cmd/xid_service:xid_service_image_push
   ```
+
+<!-- DO NOT MERGE: throwaway skip-path proof for #1486 -->
