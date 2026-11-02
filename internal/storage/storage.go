@@ -195,8 +195,8 @@ var (
 	ErrInvalidPageToken = errors.New("invalid page_token")
 )
 
-// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
-type WorkUnitWithAuthor struct {
+// ActiveWorkUnit is a pending or running WorkUnit together with metadata from its parent experiment.
+type ActiveWorkUnit struct {
 	WorkUnit        *essmsgpb.WorkUnit
 	Author          string
 	ExperimentTitle string
@@ -204,7 +204,7 @@ type WorkUnitWithAuthor struct {
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits      []WorkUnitWithAuthor
+	WorkUnits      []ActiveWorkUnit
 	NextPageToken  string
 	TotalQueueSize int64
 }

@@ -89,8 +89,8 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []storage.WorkUnitWithAuthor {
-	return []storage.WorkUnitWithAuthor{
+func newTestWorkUnits(now time.Time) []storage.ActiveWorkUnit {
+	return []storage.ActiveWorkUnit{
 		{
 			WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
@@ -102,7 +102,7 @@ func newTestWorkUnits(now time.Time) []storage.WorkUnitWithAuthor {
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []storage.WorkUnitWithAuthor
+	workUnits      []storage.ActiveWorkUnit
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -120,7 +120,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits: []storage.WorkUnitWithAuthor{},
+			WorkUnits: []storage.ActiveWorkUnit{},
 		}, nil
 	}
 	return &storage.ActiveWorkUnitsResult{

@@ -121,7 +121,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	if len(queueNames) == 0 {
-		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.WorkUnitWithAuthor{}, NextPageToken: ""}, nil
+		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.ActiveWorkUnit{}, NextPageToken: ""}, nil
 	}
 	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
 	offset, err := offsetpagetoken.Decode(pageToken)
@@ -150,21 +150,21 @@ func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queue
 		rawRows = rawRows[:pageSize]
 		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSize))
 	}
-	workUnits, err := toWorkUnitsWithAuthor(rawRows)
+	workUnits, err := toActiveWorkUnits(rawRows)
 	if err != nil {
 		return nil, err
 	}
 	return &storage.ActiveWorkUnitsResult{WorkUnits: workUnits, NextPageToken: nextPageToken, TotalQueueSize: totalQueueSize}, nil
 }
 
-func toWorkUnitsWithAuthor(rows []activeWorkUnitRow) ([]storage.WorkUnitWithAuthor, error) {
-	res := make([]storage.WorkUnitWithAuthor, 0, len(rows))
+func toActiveWorkUnits(rows []activeWorkUnitRow) ([]storage.ActiveWorkUnit, error) {
+	res := make([]storage.ActiveWorkUnit, 0, len(rows))
 	for _, row := range rows {
 		wu, err := postgresdata.WorkUnitRowToProto(row.WorkUnitRow)
 		if err != nil {
 			return nil, err
 		}
-		res = append(res, storage.WorkUnitWithAuthor{
+		res = append(res, storage.ActiveWorkUnit{
 			WorkUnit:        wu,
 			Author:          row.Creator,
 			ExperimentTitle: row.ExperimentTitle,

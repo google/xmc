@@ -84,14 +84,14 @@ func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsR
 	return nil
 }
 
-func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []storage.WorkUnitWithAuthor, nextPageToken string) {
+func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []storage.ActiveWorkUnit, nextPageToken string) {
 	if result == nil {
 		return nil, ""
 	}
 	return result.WorkUnits, result.NextPageToken
 }
 
-func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.WorkUnitWithAuthor, now time.Time) []*spb.DashboardJob {
+func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.ActiveWorkUnit, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
 	for _, item := range workUnits {
 		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, item.ExperimentTitle, now); job != nil {
