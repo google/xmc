@@ -371,8 +371,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--examples-filter",
         default="",
-        help="Comma-separated matrix ids to check (case-insensitive), mirroring the "
-        "nightly `examples_filter` input; empty checks every entry.",
+        help="Comma-separated matrix ids to check (case-insensitive, whitespace is significant, "
+        "exactly like the nightly `examples_filter` input); empty checks every entry.",
     )
     args = parser.parse_args(argv)
     # Subprocesses run with cwd=<example dir>, so relative paths must be anchored now.
@@ -392,9 +392,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code (0 success, 1 import failure, 2 unexpected error).
     """
     args = _parse_args(argv)
-    examples_filter = frozenset(
-        part.strip().lower() for part in args.examples_filter.split(",") if part.strip()
-    )
+    # Matches the nightly filter exactly: `grep -qi ",<id>,"` on ",<filter>," is
+    # case-insensitive but does not strip whitespace, so neither do we.
+    examples_filter = frozenset(part.lower() for part in args.examples_filter.split(",") if part)
     try:
         workflow_text = args.workflow.read_text(encoding="utf-8")
         entries = parse_entrypoints(workflow_text, examples_filter)

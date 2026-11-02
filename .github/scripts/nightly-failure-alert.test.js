@@ -720,6 +720,12 @@ describe('resolveTriggerOutcome', () => {
       expected: 'failure',
     },
     { name: 'returns unknown for empty context', needs: {}, expected: 'unknown' },
+    { name: 'returns unknown for null context', needs: null, expected: 'unknown' },
+    {
+      name: 'reports unrecognized result strings as problems',
+      needs: { 'examples-import-check': { result: 'timed_out' } },
+      expected: 'timed_out (examples-import-check)',
+    },
   ];
   for (const { name, needs, expected } of cases) {
     test(name, () => {

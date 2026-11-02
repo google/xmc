@@ -439,7 +439,7 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue().split(), ["examples/ok_job", "examples/broken_job"])
 
     def test_examples_filter_selects_matrix_ids_case_insensitively(self) -> None:
-        """--examples-filter keeps only the listed matrix ids, like the nightly filter."""
+        """--examples-filter matches ids case-insensitively, whitespace-sensitively, like nightly."""
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = smoke.main(
@@ -451,7 +451,7 @@ class SmokeExecutionTest(unittest.TestCase):
                     "--workflow",
                     str(self.workflow),
                     "--examples-filter",
-                    " OK_JOB ,unknown",
+                    "OK_JOB,unknown, broken_job",
                 ]
             )
         self.assertEqual(code, 0)
