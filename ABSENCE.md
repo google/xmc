@@ -3,3 +3,5 @@
 # One GitHub username per line. Comments starting with # are ignored.
 
 pachopepe
+andrzejfudro
+
