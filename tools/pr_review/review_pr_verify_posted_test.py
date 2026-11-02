@@ -239,6 +239,23 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         self.assertIn("No approved items", ctx.exception.message)
         self.mock_api.assert_not_called()
 
+    def test_zero_sidecar_items_error_names_sidecar_path(self):
+        """The zero-items error names the sidecar file, not the markdown passed via -c."""
+        self._write(_HEADING_CHECKLIST, [_inline_item("#1", "Draft")])
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self._args(self.md_path))
+        self.assertIn(f"sidecar '{self.json_path}'", ctx.exception.message)
+
+    def test_sidecar_path_still_updates_sibling_markdown(self):
+        """Passing the .json sidecar via -c also updates its sibling markdown table."""
+        markdown = "| Item | Status | File Path | Line |\n| :--- | :--- | :--- | :--- |\n| #1 | Approved | `pkg/a.go` | 15 |\n"
+        self._write(markdown, [_inline_item("#1", "Approved")])
+
+        verify_review_comments_posted(self._args(self.json_path, mark_posted=["#1"]))
+
+        self.assertEqual(self._sidecar_statuses(), {"#1": "Posted"})
+        self.assertIn("| #1 | Posted |", self.md_path.read_text(encoding="utf-8"))
+
     def test_sidecar_items_preferred_over_markdown(self):
         """Approved sidecar items are verified even when the markdown has none."""
         self._write(

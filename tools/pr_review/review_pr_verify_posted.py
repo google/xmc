@@ -363,10 +363,12 @@ class _Checklist:
             )
         is_sidecar = path.suffix == ".json"
         self.path = path
-        self.markdown_path = None if is_sidecar else path
-        self.content = "" if is_sidecar else path.read_text(encoding="utf-8")
         self.sidecar_path = path if is_sidecar else path.with_suffix(".json")
         self.sidecar = load_sidecar(self.sidecar_path)
+        # Given the sidecar directly, still use its sibling markdown if present.
+        markdown_path = path.with_suffix(".md") if is_sidecar else path
+        self.markdown_path = markdown_path if markdown_path.is_file() else None
+        self.content = self.markdown_path.read_text(encoding="utf-8") if self.markdown_path else ""
 
     def approved_items(self) -> list[dict[str, Any]]:
         """Returns approved items from the sidecar, else parsed from the markdown."""
@@ -394,8 +396,9 @@ def _require_items(checklist: _Checklist) -> list[dict[str, Any]]:
     if items:
         return items
     source = "sidecar" if checklist.sidecar is not None else "markdown"
+    source_path = checklist.sidecar_path if checklist.sidecar is not None else checklist.path
     raise HandledError(
-        f"No approved items found in the audit checklist {source} '{checklist.path}'.",
+        f"No approved items found in the audit checklist {source} '{source_path}'.",
         "Record approved items in the JSON sidecar written by review_pr_generate_audit.py"
         " ('initial_inline' items with status 'Approved', or 're_review_thread' items with"
         " action 'RESOLVE'/'RESPOND'). The markdown fallback only reads status tables and"
