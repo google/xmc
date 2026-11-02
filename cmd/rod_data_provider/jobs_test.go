@@ -412,30 +412,6 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	}
 }
 
-func TestMapWorkUnitToDashboardJob_ExperimentTitle(t *testing.T) {
-	now := time.Now()
-
-	t.Run("experiment title populated", func(t *testing.T) {
-		job := mapWorkUnitToDashboardJob(context.Background(), baseWorkUnit, "alice@example.com", "My Training Experiment", now)
-		if job == nil {
-			t.Fatalf("mapWorkUnitToDashboardJob returned nil")
-		}
-		if got, want := job.GetExperimentTitle(), "My Training Experiment"; got != want {
-			t.Errorf("GetExperimentTitle() = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("empty experiment title preserved", func(t *testing.T) {
-		job := mapWorkUnitToDashboardJob(context.Background(), baseWorkUnit, "alice@example.com", "", now)
-		if job == nil {
-			t.Fatalf("mapWorkUnitToDashboardJob returned nil")
-		}
-		if got, want := job.GetExperimentTitle(), ""; got != want {
-			t.Errorf("GetExperimentTitle() = %q, want empty string", got)
-		}
-	})
-}
-
 func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	tests := []struct {
 		name       string

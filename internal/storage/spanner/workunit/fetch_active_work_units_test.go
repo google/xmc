@@ -156,7 +156,7 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	}
 }
 
-func TestFetchActiveWorkUnitsByQueues_ExperimentTitleCoalesce(t *testing.T) {
+func TestFetchActiveWorkUnitsByQueues_ExperimentTitle(t *testing.T) {
 	ctx := t.Context()
 	_, essClient := emulator.Setup(ctx, t)
 	store, err := spanner.NewStorage(essClient)
@@ -176,21 +176,21 @@ func TestFetchActiveWorkUnitsByQueues_ExperimentTitleCoalesce(t *testing.T) {
 	spanner.CreateAndStoreExperiment(ctx, t, store, expEmptyTitle)
 	_ = spanner.CreateBlankWorkUnit(ctx, t, store, xidEmptyTitle, 1)
 
-	resWithTitle, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, "")
+	res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, "")
 	if err != nil {
 		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
 	}
 
-	titlesByXid := make(map[string]string)
-	for _, item := range resWithTitle.WorkUnits {
-		titlesByXid[item.WorkUnit.GetName()] = item.ExperimentTitle
+	gotTitles := make(map[string]string)
+	for _, item := range res.WorkUnits {
+		gotTitles[item.WorkUnit.GetName()] = item.ExperimentTitle
 	}
-
-	if got, want := titlesByXid["experiments/201/workUnits/1"], "Custom Experiment Title"; got != want {
-		t.Errorf("experiment 201 ExperimentTitle = %q, want %q", got, want)
+	wantTitles := map[string]string{
+		"experiments/201/workUnits/1": "Custom Experiment Title",
+		"experiments/202/workUnits/1": "",
 	}
-	if got, want := titlesByXid["experiments/202/workUnits/1"], ""; got != want {
-		t.Errorf("experiment 202 ExperimentTitle = %q, want %q", got, want)
+	if diff := cmp.Diff(wantTitles, gotTitles); diff != "" {
+		t.Errorf("ExperimentTitle by work unit mismatch (-want +got):\n%s", diff)
 	}
 }
 
