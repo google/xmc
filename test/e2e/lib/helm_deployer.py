@@ -69,7 +69,6 @@ class HelmDeployer:
             "rod",
             "ess/gateway.yaml",
             "ess/httproute.yaml",
-            "ess/grpc-backend-config.yaml",
             "ess/grpc-healthcheck-policy.yaml",
             "ess/managed-certificate.yaml",
             "ess/bootstrap-tls.yaml",

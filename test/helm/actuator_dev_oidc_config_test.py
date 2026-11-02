@@ -16,9 +16,11 @@
 
 import unittest
 
-from chart_test_lib import render_template, require_helm
+from chart_test_lib import render_chart, render_template, require_helm
 
 ACTUATOR_CONFIGMAP = "templates/actuator/configmap.yaml"
+ESS_CONFIGMAP = "templates/ess/configmap.yaml"
+CLUSTER_LOCAL_ACTUATOR_URI = "https://actuator.xmanager.xmc.svc.cluster.local/actuate"
 
 
 class ActuatorDevOidcConfigTest(unittest.TestCase):
@@ -64,6 +66,21 @@ class ActuatorDevOidcConfigTest(unittest.TestCase):
         )
         self.assertIn('CLIENT_ID: ""', manifest)
         self.assertIn('OIDC_USERNAME: ""', manifest)
+
+    def test_actuator_and_ess_configmaps_use_cluster_local_actuator_uri(self) -> None:
+        """actuator-config and ess-config must use the cluster-local actuator URI, never actuator.api.*."""
+        actuator_manifest = render_template(ACTUATOR_CONFIGMAP, {})
+        ess_manifest = render_template(ESS_CONFIGMAP, {})
+        self.assertIn(f'audience: "{CLUSTER_LOCAL_ACTUATOR_URI}"', actuator_manifest)
+        self.assertNotIn("actuator.api.", actuator_manifest)
+        self.assertIn(f'ess_actuator_url: "{CLUSTER_LOCAL_ACTUATOR_URI}"', ess_manifest)
+        self.assertNotIn("actuator.api.", ess_manifest)
+
+    def test_chart_omits_legacy_ingress_backend_config(self) -> None:
+        """The Gateway API chart must not render legacy GKE Ingress BackendConfig resources."""
+        manifests = render_chart({})
+        self.assertNotIn("kind: BackendConfig", manifests)
+        self.assertNotIn("shared-backend-config", manifests)
 
 
 if __name__ == "__main__":
