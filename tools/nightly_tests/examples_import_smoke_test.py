@@ -96,6 +96,7 @@ _GUARD_SNIPPETS = {
     "reversed": 'if "__main__" == __name__:\n    pass\n',
     "missing": "import sys\n",
     "nested_only": 'def f():\n    if __name__ == "__main__":\n        pass\n',
+    "not_equal": 'if __name__ != "__main__":\n    pass\n',
 }
 
 
@@ -148,12 +149,20 @@ class ParseEntrypointsTest(unittest.TestCase):
             self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=cpu-queue")
         with mock.patch.dict("os.environ", {"QUEUE_NAME": "gpu-queue"}):
             self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=gpu-queue")
+        with mock.patch.dict("os.environ", {"QUEUE_NAME": ""}):
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=")
         with self.assertRaisesRegex(ValueError, "IMAGE_TAG"):
             smoke.expand_args("--image=${IMAGE_TAG}")
 
     def test_has_main_guard(self) -> None:
         """Only a top-level `__name__ == "__main__"` comparison counts as a guard."""
-        expected = {"standard": True, "reversed": True, "missing": False, "nested_only": False}
+        expected = {
+            "standard": True,
+            "reversed": True,
+            "missing": False,
+            "nested_only": False,
+            "not_equal": False,
+        }
         with tempfile.TemporaryDirectory() as tmp_str:
             for name, source in _GUARD_SNIPPETS.items():
                 with self.subTest(name):
@@ -343,6 +352,23 @@ class SmokeExecutionTest(unittest.TestCase):
         result = smoke.smoke_entrypoint(self.python, self.repo, entry)
         self.assertFalse(result.ok)
         self.assertIn("IMAGE_TAG", result.error)
+
+    def test_unparseable_entrypoint_fails_that_entry(self) -> None:
+        """Syntax errors or non-UTF-8 sources fail one entry instead of crashing the run."""
+        cases = (
+            ("syntax_job", b"def broken(:\n", "failed to parse"),
+            ("encoding_job", b"\xff\xfe not utf-8\n", "failed to parse"),
+        )
+        for name, source, expected_error in cases:
+            with self.subTest(name):
+                example_dir = self.repo / "examples" / name
+                example_dir.mkdir(parents=True)
+                (example_dir / "launch.py").write_bytes(source)
+                result = smoke.smoke_entrypoint(
+                    self.python, self.repo, smoke.Entrypoint(f"examples/{name}", "launch.py")
+                )
+                self.assertFalse(result.ok)
+                self.assertIn(expected_error, result.error)
 
     def test_missing_main_guard_fails_without_importing(self) -> None:
         """An entrypoint without a `__main__` guard fails before it is imported."""

@@ -238,7 +238,7 @@ def expand_args(raw_args: str) -> str:
         name = match.group("name")
         if name not in _KNOWN_PLACEHOLDERS:
             raise ValueError(f"unknown placeholder ${{{name}}} in matrix args {raw_args!r}")
-        return os.environ.get(name) or _KNOWN_PLACEHOLDERS[name]
+        return os.environ.get(name, _KNOWN_PLACEHOLDERS[name])
 
     return _PLACEHOLDER_RE.sub(_substitute, raw_args)
 
@@ -263,6 +263,8 @@ def _has_main_guard(script: pathlib.Path) -> bool:
     for node in ast.parse(script.read_text(encoding="utf-8"), filename=str(script)).body:
         if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
             continue
+        if len(node.test.ops) != 1 or not isinstance(node.test.ops[0], ast.Eq):
+            continue
         operands = [node.test.left, *node.test.comparators]
         names = {o.id for o in operands if isinstance(o, ast.Name)}
         values = {o.value for o in operands if isinstance(o, ast.Constant)}
@@ -279,7 +281,11 @@ def _entrypoint_problem(example_dir: pathlib.Path, entrypoint: str) -> str | Non
     script = example_dir / entrypoint
     if not script.is_file():
         return f"entrypoint not found: {script}"
-    if not _has_main_guard(script):
+    try:
+        has_guard = _has_main_guard(script)
+    except (SyntaxError, UnicodeDecodeError) as err:
+        return f"failed to parse {script}: {err}"
+    if not has_guard:
         return f'{script} has no top-level `if __name__ == "__main__":` guard'
     return None
 
