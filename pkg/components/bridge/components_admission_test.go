@@ -487,7 +487,7 @@ func stripCRDStabilityFields(ctx context.Context, t *testing.T, crds dynamic.Nam
 	versions, _, _ := unstructured.NestedSlice(crd.Object, "spec", "versions")
 	origVersion := versions[0].(map[string]any)
 	versionCopy := runtimeDeepCopyMap(origVersion)
-	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations")
+	removeStabilityValidationRules(versionCopy)
 	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "properties", "stability")
 	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "properties", "acknowledgeExperimental")
 	versions[0] = versionCopy
@@ -511,6 +511,28 @@ func stripCRDStabilityFields(ctx context.Context, t *testing.T, crds dynamic.Nam
 			t.Fatalf("Update(Component CRD restore) error = %v", err)
 		}
 	}
+}
+
+func removeStabilityValidationRules(versionCopy map[string]any) {
+	path := []string{"schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations"}
+	validations, found, _ := unstructured.NestedSlice(versionCopy, path...)
+	if !found {
+		return
+	}
+	var kept []any
+	for _, v := range validations {
+		if m, ok := v.(map[string]any); ok {
+			if rule, _ := m["rule"].(string); strings.Contains(rule, "stability") {
+				continue
+			}
+		}
+		kept = append(kept, v)
+	}
+	if len(kept) > 0 {
+		_ = unstructured.SetNestedSlice(versionCopy, kept, path...)
+		return
+	}
+	unstructured.RemoveNestedField(versionCopy, path...)
 }
 
 func runtimeDeepCopyMap(in map[string]any) map[string]any {
