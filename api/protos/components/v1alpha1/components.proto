@@ -72,6 +72,21 @@ enum ComponentState {
   COMPONENT_STATE_DELETED = 5;
 }
 
+// ComponentStability defines the maturity and launch-stage contract of a component.
+enum ComponentStability {
+  // Unspecified stability; treated as STABLE for backward compatibility.
+  COMPONENT_STABILITY_UNSPECIFIED = 0;
+
+  // Experimental component requiring explicit administrator acknowledgement (`acknowledge_experimental = true`) when enabled.
+  COMPONENT_STABILITY_EXPERIMENTAL = 1;
+
+  // Preview component available for early evaluation without requiring experimental acknowledgement.
+  COMPONENT_STABILITY_PREVIEW = 2;
+
+  // Production-ready stable component.
+  COMPONENT_STABILITY_STABLE = 3;
+}
+
 // WrapperRef configures reference metadata for third-party CRDs and controllers.
 message WrapperRef {
   // API Group of the target CustomResourceDefinition (e.g. "jobset.x-k8s.io").
@@ -229,6 +244,18 @@ message ComponentSpec {
   repeated string dependencies = 10 [
     (google.api.field_behavior) = OPTIONAL,
     json_name = "dependencies"
+  ];
+
+  // Catalog-owned maturity stage of the component (unset/UNSPECIFIED is treated as STABLE).
+  ComponentStability stability = 11 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "stability"
+  ];
+
+  // Administrator acknowledgement required to enable an EXPERIMENTAL component.
+  bool acknowledge_experimental = 12 [
+    (google.api.field_behavior) = OPTIONAL,
+    json_name = "acknowledgeExperimental"
   ];
 }
 

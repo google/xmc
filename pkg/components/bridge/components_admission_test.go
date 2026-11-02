@@ -401,6 +401,13 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
 		{"rejects metadata.name with the reserved xmc-cmp- release prefix", "xmc-cmp-foo", map[string]any{"enabled": true, "deletionProtection": false}, true, "must not start with 'xmc-cmp-'"},
 		{"accepts metadata.name containing xmc-cmp- after the start", "foo-xmc-cmp-bar", map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
+		{"rejects invalid stability enum value", "", map[string]any{"enabled": false, "stability": "ALPHA"}, true, "spec.stability: Unsupported value"},
+		{"rejects enabled EXPERIMENTAL component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "deletionProtection": false}, true, "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component"},
+		{"rejects enabled EXPERIMENTAL component with acknowledgeExperimental=false", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "acknowledgeExperimental": false, "deletionProtection": false}, true, "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component"},
+		{"accepts disabled EXPERIMENTAL component without acknowledgeExperimental", "", map[string]any{"enabled": false, "stability": "EXPERIMENTAL", "deletionProtection": false}, false, ""},
+		{"accepts enabled EXPERIMENTAL component with acknowledgeExperimental=true", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "acknowledgeExperimental": true, "deletionProtection": false}, false, ""},
+		{"accepts enabled PREVIEW component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "PREVIEW", "deletionProtection": false}, false, ""},
+		{"accepts enabled STABLE component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "STABLE", "deletionProtection": false}, false, ""},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -430,6 +437,85 @@ func assertDefaultSchemaFields(t *testing.T, created *unstructured.Unstructured)
 	if delPol, _, _ := unstructured.NestedString(created.Object, "spec", "deletionPolicy"); delPol != "Delete" {
 		t.Errorf("expected default spec.deletionPolicy=Delete, got %q", delPol)
 	}
+	if ackExp, found, _ := unstructured.NestedBool(created.Object, "spec", "acknowledgeExperimental"); !found || ackExp {
+		t.Errorf("expected default spec.acknowledgeExperimental=false, got %v (found=%v)", ackExp, found)
+	}
+	if stability, found, _ := unstructured.NestedString(created.Object, "spec", "stability"); found {
+		t.Errorf("expected spec.stability to default to unset, got %q (found=true)", stability)
+	}
+}
+
+// TestCRDPreExistingCROmittedStabilityFieldsUpdate verifies that a Component CR created before
+// spec.stability and spec.acknowledgeExperimental existed in the CRD schema can still be updated
+// in-place (labels, spec, status, finalizers) after the CRD is upgraded with the stability rules.
+func TestCRDPreExistingCROmittedStabilityFieldsUpdate(t *testing.T) {
+	ctx := context.Background()
+	dyn := dynamic.NewForConfigOrDie(startComponentEnvtest(t))
+	crds := dyn.Resource(componentCRDGVR)
+	comps := dyn.Resource(ComponentGVR).Namespace("default")
+	const name = "legacy-pre-stability-comp"
+
+	restoreCRD := stripCRDStabilityFields(ctx, t, crds)
+	legacyObj := newComponentManifest(name, map[string]any{"enabled": true, "deletionProtection": false})
+	pollUntil(ctx, t, "create pre-existing Component under pre-stability CRD", func() bool {
+		_, err := comps.Create(ctx, legacyObj, metav1.CreateOptions{})
+		return err == nil
+	})
+	restoreCRD()
+	pollUntil(ctx, t, "the restored stability rule to reject an unacknowledged enabled EXPERIMENTAL Component", func() bool {
+		_, err := comps.Create(ctx, newComponentManifest("exp-probe", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "deletionProtection": false}), metav1.CreateOptions{})
+		return err != nil && strings.Contains(err.Error(), "spec.acknowledgeExperimental must be set to true")
+	})
+
+	if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"metadata":{"labels":{"upgraded":"true"}},"spec":{"version":"v1.2.3"}}`), metav1.PatchOptions{}); err != nil {
+		t.Fatalf("updating pre-existing Component without stability fields failed: %v", err)
+	}
+	if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"spec":{"stability":"EXPERIMENTAL"}}`), metav1.PatchOptions{}); err == nil || !strings.Contains(err.Error(), "spec.acknowledgeExperimental must be set to true") {
+		t.Fatalf("expected patching enabled pre-existing Component to EXPERIMENTAL without acknowledgeExperimental to be rejected, got: %v", err)
+	}
+	if _, err := comps.Patch(ctx, name, types.MergePatchType, []byte(`{"spec":{"stability":"EXPERIMENTAL","acknowledgeExperimental":true}}`), metav1.PatchOptions{}); err != nil {
+		t.Fatalf("patching pre-existing Component to EXPERIMENTAL with acknowledgeExperimental=true failed: %v", err)
+	}
+}
+
+func stripCRDStabilityFields(ctx context.Context, t *testing.T, crds dynamic.NamespaceableResourceInterface) func() {
+	t.Helper()
+	crd, err := crds.Get(ctx, ComponentGVR.GroupResource().String(), metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(Component CRD) error = %v", err)
+	}
+	versions, _, _ := unstructured.NestedSlice(crd.Object, "spec", "versions")
+	origVersion := versions[0].(map[string]any)
+	versionCopy := runtimeDeepCopyMap(origVersion)
+	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations")
+	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "properties", "stability")
+	unstructured.RemoveNestedField(versionCopy, "schema", "openAPIV3Schema", "properties", "spec", "properties", "acknowledgeExperimental")
+	versions[0] = versionCopy
+	if err := unstructured.SetNestedSlice(crd.Object, versions, "spec", "versions"); err != nil {
+		t.Fatalf("SetNestedSlice(versions) error = %v", err)
+	}
+	if _, err := crds.Update(ctx, crd, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("Update(Component CRD strip stability) error = %v", err)
+	}
+	return func() {
+		latest, err := crds.Get(ctx, ComponentGVR.GroupResource().String(), metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Get(Component CRD restore) error = %v", err)
+		}
+		vers, _, _ := unstructured.NestedSlice(latest.Object, "spec", "versions")
+		vers[0] = origVersion
+		if err := unstructured.SetNestedSlice(latest.Object, vers, "spec", "versions"); err != nil {
+			t.Fatalf("SetNestedSlice(restore versions) error = %v", err)
+		}
+		if _, err := crds.Update(ctx, latest, metav1.UpdateOptions{}); err != nil {
+			t.Fatalf("Update(Component CRD restore) error = %v", err)
+		}
+	}
+}
+
+func runtimeDeepCopyMap(in map[string]any) map[string]any {
+	u := &unstructured.Unstructured{Object: in}
+	return u.DeepCopy().Object
 }
 
 func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admissionClients) {
