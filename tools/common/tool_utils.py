@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -434,7 +435,7 @@ def run_command(
 
 def _command_error(cmd: list[str], error: Exception, instruction: str) -> HandledError:
     """Converts a failed subprocess launch, timeout, or exit into a HandledError."""
-    command = " ".join(cmd)
+    command = shlex.join(cmd)
     if isinstance(error, subprocess.TimeoutExpired):
         return HandledError(f"Command timed out after {error.timeout}s: {command}", instruction)
     if isinstance(error, subprocess.CalledProcessError):

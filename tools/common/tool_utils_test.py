@@ -17,6 +17,7 @@
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -357,6 +358,7 @@ class TestRunCommandHardening(unittest.TestCase):
         with self.assertRaisesRegex(HandledError, r"exit code 1: .*\nboom") as ctx:
             self._run(cmd, handled_instruction="Fix it.")
         self.assertEqual(ctx.exception.instruction, "Fix it.")
+        self.assertIn(shlex.quote(cmd[2]), ctx.exception.message)
 
     def test_non_zero_exit_without_check_returns_result(self):
         cmd = [sys.executable, "-c", "raise SystemExit(3)"]
