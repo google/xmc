@@ -279,9 +279,9 @@ function resolveTriggerOutcome(needsContext) {
   const workload =
     needsContext?.['run-and-verify-demo-workload']?.result ||
     needsContext?.['run-and-verify-examples']?.result;
-  const problems = PRECONDITION_JOBS.filter(job => isProblemResult(needsContext?.[job]?.result)).map(
-    job => `${needsContext[job].result} (${job})`,
-  );
+  const problems = PRECONDITION_JOBS.map(job => [job, needsContext?.[job]?.result])
+    .filter(([, result]) => isProblemResult(result))
+    .map(([job, result]) => `${result} (${job})`);
   if (problems.length === 0) {
     return workload || 'unknown';
   }
