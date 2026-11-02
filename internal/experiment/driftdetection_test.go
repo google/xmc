@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 )
@@ -67,7 +68,7 @@ func TestDriftCache_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := newDriftCache()
-			cache.set(xid, false, []string{"comp-a"}, baseTime)
+			cache.set(xid, []string{"comp-a"}, nil, baseTime)
 
 			got, ok := cache.get(tt.lookupXID, tt.lookupAt)
 			if ok != tt.wantOK {
@@ -84,7 +85,7 @@ func TestDriftCache_NilReceiver(t *testing.T) {
 	var cache *driftCache
 	now := time.Now()
 
-	cache.set(1, true, nil, now)
+	cache.set(1, nil, nil, now)
 	if _, ok := cache.get(1, now); ok {
 		t.Errorf("get on nil cache ok = true, want false")
 	}
@@ -94,14 +95,14 @@ func TestDriftCache_SetEvictsExpiredEntriesAtCapacity(t *testing.T) {
 	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	cache := newDriftCache()
 	for xid := int64(0); xid < maxDriftCacheItems; xid++ {
-		cache.set(xid, true, nil, baseTime)
+		cache.set(xid, nil, nil, baseTime)
 	}
 	// Refresh one entry so it survives eviction.
 	const freshXID = int64(7)
 	later := baseTime.Add(driftCacheTTL + time.Second)
-	cache.set(freshXID, true, nil, later.Add(-time.Second))
+	cache.set(freshXID, nil, nil, later.Add(-time.Second))
 
-	cache.set(maxDriftCacheItems, false, []string{"new"}, later)
+	cache.set(maxDriftCacheItems, []string{"new"}, nil, later)
 
 	if got, want := len(cache.entries), 2; got != want {
 		t.Fatalf("len(entries) = %d, want %d after evicting expired entries", got, want)
@@ -117,9 +118,9 @@ func TestDriftCache_SetEvictsExpiredEntriesAtCapacity(t *testing.T) {
 func TestDriftCache_SetBelowCapacityKeepsExpiredEntries(t *testing.T) {
 	baseTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	cache := newDriftCache()
-	cache.set(1, true, nil, baseTime)
+	cache.set(1, nil, nil, baseTime)
 
-	cache.set(2, true, nil, baseTime.Add(driftCacheTTL+time.Second))
+	cache.set(2, nil, nil, baseTime.Add(driftCacheTTL+time.Second))
 
 	if got, want := len(cache.entries), 2; got != want {
 		t.Errorf("len(entries) = %d, want %d (no eviction below capacity)", got, want)
@@ -128,11 +129,14 @@ func TestDriftCache_SetBelowCapacityKeepsExpiredEntries(t *testing.T) {
 
 // fakeDriftStore records lookups and returns configured drift results.
 type fakeDriftStore struct {
-	diffs          []storage.ComponentDiff
-	fetchErr       error
-	fetchCalls     int
-	lastFetchXID   int64
-	lastFetchLimit int
+	diffs            []storage.ComponentDiff
+	snapshots        []storage.ExperimentSnapshotComponent
+	fetchErr         error
+	fetchSnapshotErr error
+	fetchCalls       int
+	snapshotCalls    int
+	lastFetchXID     int64
+	lastFetchLimit   int
 }
 
 func (f *fakeDriftStore) FetchDriftedComponents(_ context.Context, xid int64, limit int) ([]storage.ComponentDiff, error) {
@@ -140,6 +144,11 @@ func (f *fakeDriftStore) FetchDriftedComponents(_ context.Context, xid int64, li
 	f.lastFetchXID = xid
 	f.lastFetchLimit = limit
 	return f.diffs, f.fetchErr
+}
+
+func (f *fakeDriftStore) FetchExperimentSnapshotComponents(_ context.Context, xid int64) ([]storage.ExperimentSnapshotComponent, error) {
+	f.snapshotCalls++
+	return f.snapshots, f.fetchSnapshotErr
 }
 
 func activeStatus() *essmsgpb.ExperimentStatus {
@@ -392,5 +401,61 @@ func TestAttachDriftWarningMessage(t *testing.T) {
 				t.Errorf("attachDriftWarningMessage() mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestDriftEvaluator_Evaluate_ExperimentalComponentWarningAndCaches(t *testing.T) {
+	expName := "exp-comp"
+	stableName := "stable-comp"
+	src := &fakeDriftStore{
+		snapshots: []storage.ExperimentSnapshotComponent{
+			{
+				ComponentID:      1,
+				Name:             &expName,
+				LockedGeneration: 1,
+				Spec: &componentspb.ComponentSpec{
+					Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				},
+			},
+			{
+				ComponentID:      2,
+				Name:             &stableName,
+				LockedGeneration: 1,
+				Spec: &componentspb.ComponentSpec{
+					Stability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+				},
+			},
+		},
+	}
+	e := NewDriftEvaluator(src, true)
+	want := &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_WARNING,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: "uses experimental component exp-comp",
+	}
+
+	for i := range 2 {
+		expStatus := activeStatus()
+		if err := e.Evaluate(context.Background(), testXID, expStatus); err != nil {
+			t.Fatalf("Evaluate() call %d error = %v, want nil", i, err)
+		}
+		got := expStatus.GetStructuredStatusMessage()
+		if diff := cmp.Diff(want, got, protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+			t.Errorf("Evaluate() call %d message mismatch (-want +got):\n%s", i, diff)
+		}
+	}
+	if src.snapshotCalls != 1 {
+		t.Errorf("FetchExperimentSnapshotComponents calls = %d, want 1 with second call served from cache", src.snapshotCalls)
+	}
+}
+
+func TestDriftEvaluator_Evaluate_SnapshotLookupError(t *testing.T) {
+	errSnap := errors.New("snapshot lookup failed")
+	e := NewDriftEvaluator(&fakeDriftStore{fetchSnapshotErr: errSnap}, true)
+	expStatus := activeStatus()
+
+	err := e.Evaluate(context.Background(), testXID, expStatus)
+	if !errors.Is(err, errSnap) {
+		t.Fatalf("Evaluate() error = %v, want wrapping %v", err, errSnap)
 	}
 }

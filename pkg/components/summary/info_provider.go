@@ -87,6 +87,7 @@ type ComponentHealth struct {
 	Type          ComponentType
 	HealthState   HealthState
 	StatusMessage string
+	Stability     string
 }
 
 // ConfigParameter exposes a standardized configuration property.
@@ -169,6 +170,21 @@ func evaluateComponentHealth(c *store.ComponentRecord) ComponentHealth {
 		Type:          cType,
 		HealthState:   hState,
 		StatusMessage: msg,
+		Stability:     mapComponentStability(c.Spec),
+	}
+}
+
+func mapComponentStability(spec *componentspb.ComponentSpec) string {
+	if spec == nil {
+		return "STABLE"
+	}
+	switch spec.GetStability() {
+	case componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL:
+		return "EXPERIMENTAL"
+	case componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW:
+		return "PREVIEW"
+	default:
+		return "STABLE"
 	}
 }
 
@@ -209,6 +225,9 @@ func extractComponentConfig(c *store.ComponentRecord) ComponentConfig {
 
 	if c.Spec != nil && c.Spec.GetVersion() != "" {
 		paramsMap["version"] = c.Spec.GetVersion()
+	}
+	if c.Spec != nil && c.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED {
+		paramsMap["stability"] = mapComponentStability(c.Spec)
 	}
 
 	populateStatusParameters(paramsMap, c.Status)

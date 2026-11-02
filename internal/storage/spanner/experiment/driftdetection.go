@@ -21,6 +21,7 @@ import (
 	"cloud.google.com/go/spanner"
 	"google.golang.org/api/iterator"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/utils"
 )
 
@@ -35,6 +36,14 @@ LEFT JOIN@{JOIN_METHOD=APPLY_JOIN} Components c ON s.ComponentId = c.ComponentId
 WHERE s.BitReversedXid = @bitReversedXid
   AND (c.ComponentId IS NULL OR c.State = @deletedState OR (c.ObservedGeneration IS NOT NULL AND s.LockedGeneration != c.ObservedGeneration))
 ORDER BY c.Name ASC`
+
+	selectExperimentSnapshotComponentsSQL = `SELECT c.Name, s.LockedGeneration, s.ComponentId, s.ConfigProto
+FROM ExperimentComponentSnapshots s
+JOIN Experiments e ON s.BitReversedXid = e.BitReversedXid
+LEFT JOIN@{JOIN_METHOD=APPLY_JOIN} Components c ON s.ComponentId = c.ComponentId
+WHERE s.BitReversedXid = @bitReversedXid
+  AND e.ActiveState = 1
+ORDER BY c.Name ASC, s.ComponentId ASC`
 )
 
 // FetchDriftedComponents checks the ExperimentConsistencyInfo Spanner view and, if drifted,
@@ -150,4 +159,57 @@ func nullInt64Ptr(v spanner.NullInt64) *int64 {
 		return nil
 	}
 	return &v.Int64
+}
+
+type snapshotComponentData struct {
+	Name             spanner.NullString `spanner:"Name"`
+	LockedGeneration int64              `spanner:"LockedGeneration"`
+	ComponentID      int64              `spanner:"ComponentId"`
+	ConfigProto      []byte             `spanner:"ConfigProto"`
+}
+
+// FetchExperimentSnapshotComponents retrieves the component snapshots locked by an active experiment.
+func (r *Repository) FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]storage.ExperimentSnapshotComponent, error) {
+	stmt := spanner.Statement{
+		SQL: selectExperimentSnapshotComponentsSQL,
+		Params: map[string]any{
+			"bitReversedXid": spannerutils.ReverseBits(xid),
+		},
+	}
+	iter := r.client.Single().Query(ctx, stmt)
+	defer iter.Stop()
+
+	var snapshots []storage.ExperimentSnapshotComponent
+	for {
+		row, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading experiment snapshot component row failed: %w", err)
+		}
+		snap, err := scanSnapshotComponent(row)
+		if err != nil {
+			return nil, err
+		}
+		snapshots = append(snapshots, snap)
+	}
+	return snapshots, nil
+}
+
+func scanSnapshotComponent(row *spanner.Row) (storage.ExperimentSnapshotComponent, error) {
+	var rowData snapshotComponentData
+	if err := row.ToStruct(&rowData); err != nil {
+		return storage.ExperimentSnapshotComponent{}, fmt.Errorf("failed to convert row to struct for snapshot component: %w", err)
+	}
+	spec, err := data.DecodeComponentSpec(rowData.ConfigProto)
+	if err != nil {
+		return storage.ExperimentSnapshotComponent{}, err
+	}
+	return storage.ExperimentSnapshotComponent{
+		ComponentID:      rowData.ComponentID,
+		Name:             nullStringPtr(rowData.Name),
+		LockedGeneration: rowData.LockedGeneration,
+		Spec:             spec,
+	}, nil
 }
