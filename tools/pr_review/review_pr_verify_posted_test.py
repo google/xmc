@@ -31,7 +31,8 @@ from tools.pr_review.review_pr_verify_posted import (
     verify_review_comments_posted,
 )
 
-_MODULE = "tools.pr_review.review_pr_verify_posted"
+# Live comments are fetched via the shared github_utils.list_all_pages helper.
+_GH_API = "tools.pr_review.github_utils.call_github_api"
 
 
 class TestReviewPRVerifyPosted(unittest.TestCase):
@@ -68,7 +69,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         self.assertEqual(items[1]["thread_id"], 102)
         self.assertEqual(items[1]["action"], "RESOLVE")
 
-    @patch("tools.pr_review.review_pr_verify_posted.call_github_api")
+    @patch(_GH_API)
     def test_verify_review_comments_posted_success(self, mock_api):
         content = """
 | Item | Status | File Path | Line | Rule Reference | Proposed Inline Comment |
@@ -102,7 +103,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         self.assertEqual(res2["status"], "success")
         self.assertEqual(res2["posted_items"], 1)
 
-    @patch("tools.pr_review.review_pr_verify_posted.call_github_api")
+    @patch(_GH_API)
     def test_verify_review_comments_posted_missing_raises_handled_error(self, mock_api):
         content = """
 | Item | Status | File Path | Line | Rule Reference | Proposed Inline Comment |
@@ -124,7 +125,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         with self.assertRaises(HandledError):
             verify_review_comments_posted(args)
 
-    @patch("tools.pr_review.review_pr_verify_posted.call_github_api")
+    @patch(_GH_API)
     def test_verify_review_comments_posted_unverified_resolve(self, mock_api):
         content = """
 ### Thread ID `201` (`pkg/test.go`:L10)
@@ -208,7 +209,7 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.md_path = Path(tmp.name) / "pr_review_audit_checklist.md"
         self.json_path = self.md_path.with_suffix(".json")
-        api_patch = patch(f"{_MODULE}.call_github_api")
+        api_patch = patch(_GH_API)
         self.mock_api = api_patch.start()
         self.addCleanup(api_patch.stop)
 
@@ -250,6 +251,20 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         self.assertEqual(res["items_source"], "sidecar")
         self.assertEqual(res["total_checklist_items"], 1)
         self.assertEqual(self._sidecar_statuses(), {"#1": "Posted", "#2": "Draft"})
+
+    def test_live_comments_paginated_beyond_first_page(self):
+        """Regression: a comment beyond the first 30 (or 100) live comments is found."""
+        self._write("", [_inline_item("#1", "Approved", line=500)])
+        first_page = [{"path": "pkg/a.go", "line": n} for n in range(1, 101)]
+        self.mock_api.side_effect = [first_page, [{"path": "pkg/a.go", "line": 500}]]
+
+        res = verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(res["posted_items"], 1)
+        self.assertEqual(self.mock_api.call_count, 2)
+        endpoints = [c.args[0] for c in self.mock_api.call_args_list]
+        self.assertTrue(endpoints[0].endswith("/pulls/10/comments?page=1&per_page=100"))
+        self.assertTrue(endpoints[1].endswith("/pulls/10/comments?page=2&per_page=100"))
 
     def test_unposted_items_are_not_marked_posted(self):
         """Only verified items get the Posted status."""

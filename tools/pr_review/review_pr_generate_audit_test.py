@@ -160,11 +160,9 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
 
     @patch("tools.pr_review.review_pr_generate_audit.call_github_api")
     def test_main_initial_success(self, mock_api):
-        mock_api.side_effect = [
-            {"title": "test", "body": "desc", "head": {"sha": "123"}},
-            [{"filename": "a.py"}],
-            [],
-        ]
+        mock_api.return_value = {"title": "test", "body": "desc", "head": {"sha": "123"}}
+        # github_utils serves the paginated files and comments, then review threads.
+        self.mock_graphql.side_effect = [[{"filename": "a.py"}], [], _threads_page([])]
         with tempfile.TemporaryDirectory() as tmpdir:
             out_file = str(Path(tmpdir) / "test_audit.md")
             args = MagicMock()

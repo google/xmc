@@ -24,10 +24,40 @@ from tools.pr_review.github_utils import (
     GithubAuthError,
     call_github_api,
     get_authenticated_login,
+    list_all_pages,
     list_review_threads,
     parse_comment_url,
     resolve_review_thread,
 )
+
+
+class TestListAllPages(unittest.TestCase):
+    """Tests for list_all_pages REST pagination."""
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_follows_full_pages_until_short_page(self, mock_api):
+        mock_api.side_effect = [list(range(100)), [100, 101]]
+        self.assertEqual(list_all_pages("/repos/o/r/pulls/1/comments"), list(range(102)))
+        self.assertEqual(
+            [c.args[0] for c in mock_api.call_args_list],
+            [
+                "/repos/o/r/pulls/1/comments?page=1&per_page=100",
+                "/repos/o/r/pulls/1/comments?page=2&per_page=100",
+            ],
+        )
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_existing_query_string_and_user_agent(self, mock_api):
+        mock_api.return_value = [1]
+        self.assertEqual(list_all_pages("/x?state=all", user_agent="ua"), [1])
+        mock_api.assert_called_once_with("/x?state=all&page=1&per_page=100", user_agent="ua")
+
+    @patch("tools.pr_review.github_utils.call_github_api")
+    def test_stops_on_empty_or_non_list_page(self, mock_api):
+        mock_api.side_effect = [list(range(100)), {"message": "unexpected"}]
+        self.assertEqual(list_all_pages("/x"), list(range(100)))
+        mock_api.side_effect = [[]]
+        self.assertEqual(list_all_pages("/x"), [])
 
 
 def _threads_page(nodes, has_next=False, end_cursor=None):

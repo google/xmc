@@ -30,7 +30,7 @@ from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
-    call_github_api,
+    list_all_pages,
 )
 
 # Item statuses that mark a checklist item as approved for posting.
@@ -410,9 +410,9 @@ def _mark_posted(checklist: _Checklist, raw_ids: list[str]) -> dict[str, Any]:
 
 
 def _fetch_live_comments(args: argparse.Namespace) -> list[dict[str, Any]]:
-    """Fetches the PR's live review comments."""
+    """Fetches every live review comment of the PR, across all pages."""
     try:
-        live_comments = call_github_api(
+        return list_all_pages(
             f"/repos/{args.owner}/{args.repo}/pulls/{args.pr_number}/comments",
             user_agent="XMC-PR-Review-Agent",
         )
@@ -421,7 +421,6 @@ def _fetch_live_comments(args: argparse.Namespace) -> list[dict[str, Any]]:
             f"Failed to fetch live GitHub comments for PR #{args.pr_number}: {e}",
             "Check GitHub API connectivity and authentication credentials.",
         ) from e
-    return live_comments if isinstance(live_comments, list) else []
 
 
 def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
