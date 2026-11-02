@@ -94,7 +94,7 @@ func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []
 func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.WorkUnitWithAuthor, now time.Time) []*spb.DashboardJob {
 	var jobs []*spb.DashboardJob
 	for _, item := range workUnits {
-		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, now); job != nil {
+		if job := mapWorkUnitToDashboardJob(ctx, item.WorkUnit, item.Author, item.ExperimentTitle, now); job != nil {
 			jobs = append(jobs, job)
 		}
 	}
@@ -102,7 +102,7 @@ func mapWorkUnitsToDashboardJobs(ctx context.Context, workUnits []storage.WorkUn
 }
 
 // mapWorkUnitToDashboardJob transforms an essmsgpb.WorkUnit domain entity into a spb.DashboardJob presentation DTO.
-func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user string, now time.Time) *spb.DashboardJob {
+func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user string, experimentTitle string, now time.Time) *spb.DashboardJob {
 	if wu == nil {
 		return nil
 	}
@@ -122,6 +122,7 @@ func mapWorkUnitToDashboardJob(ctx context.Context, wu *essmsgpb.WorkUnit, user 
 		PositionInQueue:    extractQueuePosition(wu),
 		CreateTime:         wu.GetCreateTime(),
 		Tags:               wu.GetTags(),
+		ExperimentTitle:    experimentTitle,
 	}
 }
 

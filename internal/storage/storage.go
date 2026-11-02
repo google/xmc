@@ -197,8 +197,9 @@ var (
 
 // WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
 type WorkUnitWithAuthor struct {
-	WorkUnit *essmsgpb.WorkUnit
-	Author   string
+	WorkUnit        *essmsgpb.WorkUnit
+	Author          string
+	ExperimentTitle string
 }
 
 // ActiveWorkUnitsResult holds the result of querying active work units.

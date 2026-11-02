@@ -209,6 +209,9 @@ func TestRepository_FetchActiveWorkUnitsByQueues(t *testing.T) {
 			if item.Author != "user" {
 				t.Errorf("Author = %q, want \"user\"", item.Author)
 			}
+			if item.ExperimentTitle != "test" {
+				t.Errorf("ExperimentTitle = %q, want \"test\"", item.ExperimentTitle)
+			}
 			_, wid, _ := validator.ValidateWorkUnitName(item.WorkUnit.GetName())
 			gotWIDs = append(gotWIDs, wid)
 		}

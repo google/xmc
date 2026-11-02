@@ -65,6 +65,11 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
       workUnitLink: wuEl ? await wuEl.getAttribute('href') : null,
     };
   }
+
+  async getJobLinkAriaLabel(): Promise<string | null> {
+    const jobEl = await this.jobLink();
+    return jobEl ? await jobEl.getAttribute('aria-label') : null;
+  }
 }
 
 /** Harness for interacting with <xmc-queue-jobs-table> in tests. */
@@ -118,5 +123,14 @@ export class QueueJobsTableHarness extends ComponentHarness {
       throw new Error(`Row index ${rowIndex} out of bounds.`);
     }
     return rows[rowIndex].getLinks();
+  }
+
+  /** Gets the aria-label of the experiment link in the row at the specified index. */
+  async getRowJobLinkAriaLabel(rowIndex: number): Promise<string | null> {
+    const rows = await this.tableRows();
+    if (!rows[rowIndex]) {
+      throw new Error(`Row index ${rowIndex} out of bounds.`);
+    }
+    return rows[rowIndex].getJobLinkAriaLabel();
   }
 }

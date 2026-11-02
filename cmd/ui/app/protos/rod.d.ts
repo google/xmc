@@ -85,6 +85,7 @@ export interface DashboardJob {
   positionInQueue?: number;
   createTime?: string | { seconds?: number | string; nanos?: number };
   tags?: string[];
+  experimentTitle?: string;
 }
 
 export interface GetRunningAndPendingJobsRequest {

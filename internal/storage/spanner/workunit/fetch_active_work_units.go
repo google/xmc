@@ -32,7 +32,7 @@ import (
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator
+	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle
 	FROM WorkUnits wu
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
@@ -49,9 +49,10 @@ var countActiveWorkUnitsSQL = safesql.New(
 )
 
 type workUnitPK struct {
-	BitReversedXid int64
-	WorkUnitId     int64
-	Creator        string
+	BitReversedXid  int64
+	WorkUnitId      int64
+	Creator         string
+	ExperimentTitle string
 }
 
 func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
@@ -73,7 +74,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			return err
 		}
 		var bitReversedXid, workUnitId int64
-		var creator string
+		var creator, experimentTitle string
 		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
 			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
 		}
@@ -83,10 +84,14 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 		if err := row.ColumnByName("Creator", &creator); err != nil {
 			return fmt.Errorf("failed to read column Creator: %w", err)
 		}
+		if err := row.ColumnByName("ExperimentTitle", &experimentTitle); err != nil {
+			return fmt.Errorf("failed to read column ExperimentTitle: %w", err)
+		}
 		pk := workUnitPK{
-			BitReversedXid: bitReversedXid,
-			WorkUnitId:     workUnitId,
-			Creator:        creator,
+			BitReversedXid:  bitReversedXid,
+			WorkUnitId:      workUnitId,
+			Creator:         creator,
+			ExperimentTitle: experimentTitle,
 		}
 		orderedPKs = append(orderedPKs, pk)
 		return nil
@@ -141,8 +146,9 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
 		workUnits = append(workUnits, storage.WorkUnitWithAuthor{
-			WorkUnit: wu,
-			Author:   pk.Creator,
+			WorkUnit:        wu,
+			Author:          pk.Creator,
+			ExperimentTitle: pk.ExperimentTitle,
 		})
 	}
 

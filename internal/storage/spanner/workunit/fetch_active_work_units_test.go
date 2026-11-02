@@ -151,6 +151,47 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	if got, want := pageDefault.WorkUnits[0].Author, "test@example.com"; got != want {
 		t.Errorf("pageDefault.WorkUnits[0].Author = %q, want %q", got, want)
 	}
+	if got, want := pageDefault.WorkUnits[0].ExperimentTitle, "test-title"; got != want {
+		t.Errorf("pageDefault.WorkUnits[0].ExperimentTitle = %q, want %q", got, want)
+	}
+}
+
+func TestFetchActiveWorkUnitsByQueues_ExperimentTitleCoalesce(t *testing.T) {
+	ctx := t.Context()
+	_, essClient := emulator.Setup(ctx, t)
+	store, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	xidWithTitle := int64(201)
+	expWithTitle := spanner.BlankExperimentProto(xidWithTitle)
+	expWithTitle.Title = "Custom Experiment Title"
+	spanner.CreateAndStoreExperiment(ctx, t, store, expWithTitle)
+	_ = spanner.CreateBlankWorkUnit(ctx, t, store, xidWithTitle, 1)
+
+	xidEmptyTitle := int64(202)
+	expEmptyTitle := spanner.BlankExperimentProto(xidEmptyTitle)
+	expEmptyTitle.Title = ""
+	spanner.CreateAndStoreExperiment(ctx, t, store, expEmptyTitle)
+	_ = spanner.CreateBlankWorkUnit(ctx, t, store, xidEmptyTitle, 1)
+
+	resWithTitle, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 10, "")
+	if err != nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
+	}
+
+	titlesByXid := make(map[string]string)
+	for _, item := range resWithTitle.WorkUnits {
+		titlesByXid[item.WorkUnit.GetName()] = item.ExperimentTitle
+	}
+
+	if got, want := titlesByXid["experiments/201/workUnits/1"], "Custom Experiment Title"; got != want {
+		t.Errorf("experiment 201 ExperimentTitle = %q, want %q", got, want)
+	}
+	if got, want := titlesByXid["experiments/202/workUnits/1"], ""; got != want {
+		t.Errorf("experiment 202 ExperimentTitle = %q, want %q", got, want)
+	}
 }
 
 func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T) {
