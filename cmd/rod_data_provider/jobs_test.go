@@ -89,19 +89,20 @@ func newTestKueueCache() *cache.KueueCache {
 	return c
 }
 
-func newTestWorkUnits(now time.Time) []storage.WorkUnitWithAuthor {
-	return []storage.WorkUnitWithAuthor{
+func newTestWorkUnits(now time.Time) []storage.ActiveWorkUnit {
+	return []storage.ActiveWorkUnit{
 		{
 			WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
 				wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
 			}),
-			Author: "alice@example.com",
+			Author:          "alice@example.com",
+			ExperimentTitle: "Test Experiment Title",
 		},
 	}
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []storage.WorkUnitWithAuthor
+	workUnits      []storage.ActiveWorkUnit
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
@@ -119,7 +120,7 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}
 	if len(queueNames) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits: []storage.WorkUnitWithAuthor{},
+			WorkUnits: []storage.ActiveWorkUnit{},
 		}, nil
 	}
 	return &storage.ActiveWorkUnitsResult{
@@ -151,14 +152,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			req:        baseReq,
 			setupCache: newTestKueueCache,
 			fetcher: &mockWorkUnitFetcher{
-				workUnits: []storage.WorkUnitWithAuthor{
-					{
-						WorkUnit: prototest.Modify(baseWorkUnit, func(wu *essmsgpb.WorkUnit) {
-							wu.CreateTime = timestamppb.New(now.Add(-10 * time.Minute))
-						}),
-						Author: "alice@example.com",
-					},
-				},
+				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 1,
 			},
 			wantCode:           codes.OK,
@@ -343,6 +337,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 					{ResourceType: "cpu", Count: 4.0},
 					{ResourceType: "memory", Count: 8192.0},
 				},
+				ExperimentTitle: "Test Experiment Title",
 			}
 			if diff := cmp.Diff(wantJob, gotJob, protocmp.Transform(), protocmp.IgnoreFields(&spb.DashboardJob{}, "time_in_queue_seconds", "create_time")); diff != "" {
 				t.Errorf("DashboardJob mismatch (-want +got):\n%s", diff)
@@ -404,7 +399,7 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 		}
 	})
 
-	job := mapWorkUnitToDashboardJob(context.Background(), wu, "", now)
+	job := mapWorkUnitToDashboardJob(context.Background(), storage.ActiveWorkUnit{WorkUnit: wu}, now)
 	if job == nil {
 		t.Fatalf("mapWorkUnitToDashboardJob returned nil")
 	}

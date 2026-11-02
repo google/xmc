@@ -33,16 +33,17 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-// activeWorkUnitRow is a WorkUnits row joined with its parent experiment's creator.
+// activeWorkUnitRow is a WorkUnits row joined with its parent experiment's creator and title.
 type activeWorkUnitRow struct {
 	postgresdata.WorkUnitRow
-	Creator string `db:"creator"`
+	Creator         string `db:"creator"`
+	ExperimentTitle string `db:"experiment_title"`
 }
 
 var (
 	countActiveWorkUnitsSQL = safesql.New(`SELECT COUNT(*) FROM WorkUnits wu WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-	fetchActiveWorkUnitsSQL = safesql.New(`SELECT wu.Xid, wu.WorkUnitId, wu.WorkUnitType, wu.Priority, wu.Urls, wu.Tags, wu.Notes, wu.Executable, wu.ExecutionCreateTime, wu.ExecutionUpdateTime, wu.ExecutionCompleteTime, wu.ExecutionId, wu.ExecutionMetadata, wu.WorkUnitStatus, wu.CreateTime, wu.UpdateTime, COALESCE(e.Creator, '') AS Creator
+	fetchActiveWorkUnitsSQL = safesql.New(`SELECT wu.Xid, wu.WorkUnitId, wu.WorkUnitType, wu.Priority, wu.Urls, wu.Tags, wu.Notes, wu.Executable, wu.ExecutionCreateTime, wu.ExecutionUpdateTime, wu.ExecutionCompleteTime, wu.ExecutionId, wu.ExecutionMetadata, wu.WorkUnitStatus, wu.CreateTime, wu.UpdateTime, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS experiment_title
 FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL
@@ -120,7 +121,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	if len(queueNames) == 0 {
-		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.WorkUnitWithAuthor{}, NextPageToken: ""}, nil
+		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.ActiveWorkUnit{}, NextPageToken: ""}, nil
 	}
 	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
 	offset, err := offsetpagetoken.Decode(pageToken)
@@ -149,21 +150,25 @@ func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queue
 		rawRows = rawRows[:pageSize]
 		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSize))
 	}
-	workUnits, err := toWorkUnitsWithAuthor(rawRows)
+	workUnits, err := toActiveWorkUnits(rawRows)
 	if err != nil {
 		return nil, err
 	}
 	return &storage.ActiveWorkUnitsResult{WorkUnits: workUnits, NextPageToken: nextPageToken, TotalQueueSize: totalQueueSize}, nil
 }
 
-func toWorkUnitsWithAuthor(rows []activeWorkUnitRow) ([]storage.WorkUnitWithAuthor, error) {
-	res := make([]storage.WorkUnitWithAuthor, 0, len(rows))
+func toActiveWorkUnits(rows []activeWorkUnitRow) ([]storage.ActiveWorkUnit, error) {
+	res := make([]storage.ActiveWorkUnit, 0, len(rows))
 	for _, row := range rows {
 		wu, err := postgresdata.WorkUnitRowToProto(row.WorkUnitRow)
 		if err != nil {
 			return nil, err
 		}
-		res = append(res, storage.WorkUnitWithAuthor{WorkUnit: wu, Author: row.Creator})
+		res = append(res, storage.ActiveWorkUnit{
+			WorkUnit:        wu,
+			Author:          row.Creator,
+			ExperimentTitle: row.ExperimentTitle,
+		})
 	}
 	return res, nil
 }

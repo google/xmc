@@ -151,6 +151,9 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	if got, want := pageDefault.WorkUnits[0].Author, "test@example.com"; got != want {
 		t.Errorf("pageDefault.WorkUnits[0].Author = %q, want %q", got, want)
 	}
+	if got, want := pageDefault.WorkUnits[0].ExperimentTitle, "test-title"; got != want {
+		t.Errorf("pageDefault.WorkUnits[0].ExperimentTitle = %q, want %q", got, want)
+	}
 }
 
 func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T) {

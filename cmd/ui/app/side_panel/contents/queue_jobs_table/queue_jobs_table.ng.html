@@ -64,8 +64,8 @@
             <a
               class="job-link"
               [routerLink]="['/experiments', job.xid]"
-              [attr.aria-label]="'View experiment ' + job.xid"
-              >Experiment #{{ job.xid }}</a
+              [attr.aria-label]="'View ' + (job.experimentTitle || 'Experiment #' + job.xid)"
+              >{{ job.experimentTitle || 'Experiment #' + job.xid }}</a
             >
           </td>
         </ng-container>

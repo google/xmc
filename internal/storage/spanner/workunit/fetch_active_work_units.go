@@ -32,7 +32,7 @@ import (
 )
 
 var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator
+	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle
 	FROM WorkUnits wu
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
@@ -49,9 +49,10 @@ var countActiveWorkUnitsSQL = safesql.New(
 )
 
 type workUnitPK struct {
-	BitReversedXid int64
-	WorkUnitId     int64
-	Creator        string
+	BitReversedXid  int64
+	WorkUnitId      int64
+	Creator         string
+	ExperimentTitle string
 }
 
 func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
@@ -73,7 +74,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			return err
 		}
 		var bitReversedXid, workUnitId int64
-		var creator string
+		var creator, experimentTitle string
 		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
 			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
 		}
@@ -83,10 +84,14 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 		if err := row.ColumnByName("Creator", &creator); err != nil {
 			return fmt.Errorf("failed to read column Creator: %w", err)
 		}
+		if err := row.ColumnByName("ExperimentTitle", &experimentTitle); err != nil {
+			return fmt.Errorf("failed to read column ExperimentTitle: %w", err)
+		}
 		pk := workUnitPK{
-			BitReversedXid: bitReversedXid,
-			WorkUnitId:     workUnitId,
-			Creator:        creator,
+			BitReversedXid:  bitReversedXid,
+			WorkUnitId:      workUnitId,
+			Creator:         creator,
+			ExperimentTitle: experimentTitle,
 		}
 		orderedPKs = append(orderedPKs, pk)
 		return nil
@@ -97,7 +102,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	return orderedPKs, nil
 }
 
-func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]storage.WorkUnitWithAuthor, error) {
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]storage.ActiveWorkUnit, error) {
 	type workUnitKey struct {
 		bitReversedXid int64
 		workUnitId     int64
@@ -130,7 +135,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		}
 	}
 
-	workUnits := make([]storage.WorkUnitWithAuthor, 0, len(orderedPKs))
+	workUnits := make([]storage.ActiveWorkUnit, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
 		key := workUnitKey{
 			bitReversedXid: pk.BitReversedXid,
@@ -140,9 +145,10 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
-		workUnits = append(workUnits, storage.WorkUnitWithAuthor{
-			WorkUnit: wu,
-			Author:   pk.Creator,
+		workUnits = append(workUnits, storage.ActiveWorkUnit{
+			WorkUnit:        wu,
+			Author:          pk.Creator,
+			ExperimentTitle: pk.ExperimentTitle,
 		})
 	}
 
@@ -161,7 +167,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits:     []storage.WorkUnitWithAuthor{},
+			WorkUnits:     []storage.ActiveWorkUnit{},
 			NextPageToken: "",
 		}, nil
 	}
@@ -193,7 +199,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits:      []storage.WorkUnitWithAuthor{},
+			WorkUnits:      []storage.ActiveWorkUnit{},
 			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil
