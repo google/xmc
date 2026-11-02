@@ -22,13 +22,15 @@ or `--force-reinstall`) that modifies `xmanager`.
 """
 
 import argparse
+import io
 import os
 import shutil
 import subprocess
 import sys
 import venv
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import MappingProxyType
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.5.post1"
@@ -69,6 +71,33 @@ VERIFIED_MODULES = (
     "xdash",
     "xdash.auth",
 )
+
+# Local repository SDKs installed in editable mode, keyed by top-level import name.
+# Each must resolve from its repository directory, never from a same-named copy
+# bundled by another distribution (see verify_sdk_provenance). Today only `xdash` is
+# actually shadowed (by the xmanager wheel) and imported on the launcher side; `xmc` is
+# guarded for future-proofing. It is provenance-checked but not import-verified, because
+# `import xmc` needs `api.protos.metrics`, which this script does not compile.
+LOCAL_SDKS: Mapping[str, Path] = MappingProxyType(
+    {
+        "xdash": Path("sdks") / "python" / "xdash",
+        "xmc": Path("sdks") / "python" / "xmc",
+    }
+)
+
+# Defensive: marks the origin line so any stdout noise at interpreter startup (e.g. from a
+# site-wide `sitecustomize`, which `-I` does not disable) cannot be mistaken for it.
+_MODULE_ORIGIN_MARKER = "XMC_MODULE_ORIGIN="
+# Prints the marked origin file of the module named in argv[1] (empty if absent).
+_MODULE_ORIGIN_SNIPPET = (
+    "import importlib.util, sys; "
+    "spec = importlib.util.find_spec(sys.argv[1]); "
+    f"print('{_MODULE_ORIGIN_MARKER}' + (spec.origin if spec and spec.origin else ''))"
+)
+
+
+class SdkShadowedError(RuntimeError):
+    """Raised when a local SDK resolves outside its repository directory."""
 
 
 def error_exit(msg: str) -> None:
@@ -314,20 +343,94 @@ def compile_local_protos(venv_python: Path, repo_root: Path = REPO_ROOT) -> None
 def install_local_sdks(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
     """Install local repository SDKs into the virtualenv in editable mode.
 
-    Installs sdks/python/xdash with --no-deps in editable mode so xdash is available
-    to users and callers of install_xmanager.py.
+    Installs every `LOCAL_SDKS` directory present under repo_root with --no-deps in
+    editable mode so the SDKs are available to users and callers of
+    install_xmanager.py.
 
     Args:
         venv_python: Path to virtualenv python executable.
         repo_root: Root directory of the XMC repository containing sdks/.
     """
-    xdash_dir = repo_root / "sdks" / "python" / "xdash"
-    if xdash_dir.is_dir():
-        sys.stdout.write(f"Installing local xdash SDK from {xdash_dir} into virtualenv...\n")
+    for package, rel_dir in LOCAL_SDKS.items():
+        sdk_dir = repo_root / rel_dir
+        if not sdk_dir.is_dir():
+            continue
+        sys.stdout.write(f"Installing local {package} SDK from {sdk_dir} into virtualenv...\n")
         subprocess.run(
-            [str(venv_python), "-m", "pip", "install", "--no-deps", "-e", str(xdash_dir)],
+            [str(venv_python), "-m", "pip", "install", "--no-deps", "-e", str(sdk_dir)],
             check=True,
         )
+
+
+def resolve_module_origin(venv_python: Path, module: str) -> Path | None:
+    """Resolve the file a module would be loaded from inside the virtualenv.
+
+    Runs in isolated mode (-I, implying -E -s -P) so that a caller's PYTHONPATH or
+    working directory (e.g. running from `sdks/python`) cannot mask what the
+    virtualenv itself resolves; `.pth` / editable finders still load. Only the
+    marker-prefixed stdout line is parsed, defensively ignoring any startup noise.
+
+    Args:
+        venv_python: Path to virtualenv python executable.
+        module: Importable module name (e.g. "xdash").
+
+    Returns:
+        The resolved module origin path, or None if the module cannot be found.
+    """
+    result = subprocess.run(
+        [str(venv_python), "-I", "-c", _MODULE_ORIGIN_SNIPPET, module],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    marked = [
+        line.removeprefix(_MODULE_ORIGIN_MARKER).strip()
+        for line in result.stdout.splitlines()
+        if line.startswith(_MODULE_ORIGIN_MARKER)
+    ]
+    origin = marked[-1] if marked else ""
+    return Path(origin) if origin else None
+
+
+def check_sdk_provenance(module: str, origin: Path | None, expected_dir: Path) -> None:
+    """Ensure a module resolves from within its expected local SDK directory.
+
+    Args:
+        module: Importable module name.
+        origin: Resolved module origin, or None if the module was not found.
+        expected_dir: Directory the module must be loaded from.
+
+    Raises:
+        SdkShadowedError: If the module is missing or resolves outside expected_dir.
+    """
+    if origin is None:
+        raise SdkShadowedError(f"{module} is not importable; expected it under {expected_dir}")
+    if not origin.resolve().is_relative_to(expected_dir.resolve()):
+        raise SdkShadowedError(
+            f"{module} resolved to {origin}, expected under {expected_dir} "
+            "(stale copy bundled by another distribution?)"
+        )
+
+
+def verify_sdk_provenance(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
+    """Verify every installed local SDK is loaded from the repository checkout.
+
+    Guards against another distribution (e.g. the xmanager wheel) shipping a
+    same-named top-level package that silently shadows the editable install.
+
+    Args:
+        venv_python: Path to virtualenv python executable.
+        repo_root: Root directory of the XMC repository containing sdks/.
+
+    Raises:
+        SdkShadowedError: If any present local SDK resolves outside repo_root.
+    """
+    sys.stdout.write("Verifying local SDK provenance...\n")
+    for package, rel_dir in LOCAL_SDKS.items():
+        expected_dir = repo_root / rel_dir
+        if not expected_dir.is_dir():
+            continue
+        check_sdk_provenance(package, resolve_module_origin(venv_python, package), expected_dir)
 
 
 def verify_imports(venv_python: Path) -> None:
@@ -364,6 +467,12 @@ def main(raw_args: list[str] | None = None) -> None:
     install_xmanager_package(venv_python, xmanager_spec, args.requirements)
     compile_local_protos(venv_python, REPO_ROOT)
     install_local_sdks(venv_python, REPO_ROOT)
+    # Provenance runs first: a shadowed SDK would otherwise fail verify_imports with a
+    # bare CalledProcessError instead of the actionable SdkShadowedError message.
+    try:
+        verify_sdk_provenance(venv_python, REPO_ROOT)
+    except SdkShadowedError as err:
+        error_exit(str(err))
     verify_imports(venv_python)
 
     sys.stdout.write("==================================================\n")
@@ -376,4 +485,8 @@ def main(raw_args: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
+    # Line-buffer progress output so it interleaves with pip subprocess output in CI logs
+    # (stdout is block-buffered when piped, which reorders the log).
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     main()
