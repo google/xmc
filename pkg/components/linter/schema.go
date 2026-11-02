@@ -185,7 +185,7 @@ func validateComponentStability(c *ComponentManifest, line int, rules *RulesConf
 	if c.EffectiveStability() != "EXPERIMENTAL" {
 		return
 	}
-	if rules != nil && !rules.StaticChecks.IsExperimentalAllowed() {
+	if !rules.StaticChecks.IsExperimentalAllowed() {
 		res.AddError(c.FilePath, line, "EXPERIMENTAL_NOT_ACKNOWLEDGED", fmt.Sprintf("component %q has stability EXPERIMENTAL, which is disallowed by staticChecks.allowExperimental=false", c.Metadata.Name))
 		return
 	}
