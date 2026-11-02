@@ -20,6 +20,18 @@ name: 'Examples Import Check'
 on:
   pull_request:
   merge_group:
+  workflow_call:
+    inputs:
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (mirrors the nightly input)'
+        required: false
+        default: ''
+        type: string
+      examples_filter:
+        description: 'Comma-separated matrix ids to check (mirrors the nightly input)'
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       xmanager_version:
@@ -27,8 +39,14 @@ on:
         required: false
         default: ''
         type: string
+      examples_filter:
+        description: 'Comma-separated matrix ids to check (leave empty to check all)'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
+  # Literal prefix: under workflow_call, github.workflow resolves to the caller's name.
   group: examples-import-check-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -99,6 +117,7 @@ jobs:
         env:
           # Read by install_xmanager.py; empty means the default `xmanager>=...` spec.
           XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
+          EXAMPLES_FILTER: '${{ inputs.examples_filter }}'
         run: |
           set -euo pipefail
           # Only the examples the nightly matrix runs (not every examples/* directory).
@@ -106,7 +125,8 @@ jobs:
           # last-wins rather than failing; nightly installs one example per venv.
           # Captured via $(...) (not `mapfile < <(...)`) so a tool failure, e.g. exit 2
           # on matrix drift, fails this step under `set -e`.
-          example_paths_out="$(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths)"
+          example_paths_out="$(python3 tools/nightly_tests/examples_import_smoke.py \
+            --list-example-paths --examples-filter "${EXAMPLES_FILTER}")"
           mapfile -t example_paths <<< "${example_paths_out}"
           req_args=()
           for example_path in "${example_paths[@]}"; do
@@ -114,7 +134,8 @@ jobs:
               req_args+=(--requirements "${example_path}/requirements.txt")
             fi
           done
-          if [ "${#req_args[@]}" -eq 0 ]; then
+          # A filter may select only UI-only entries, which have no requirements.
+          if [ "${#req_args[@]}" -eq 0 ] && [ -z "${EXAMPLES_FILTER}" ]; then
             echo "::error::No requirements.txt found for the nightly matrix examples."
             exit 1
           fi
@@ -122,7 +143,10 @@ jobs:
 
       - name: 'Import-Check Nightly Example Entrypoints'
         if: steps.gate.outputs.run == 'true'
+        env:
+          EXAMPLES_FILTER: '${{ inputs.examples_filter }}'
         run: |
           set -euo pipefail
           "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/examples_import_smoke.py \
-            --venv-python "${GITHUB_WORKSPACE}/.venv/bin/python3"
+            --venv-python "${GITHUB_WORKSPACE}/.venv/bin/python3" \
+            --examples-filter "${EXAMPLES_FILTER}"

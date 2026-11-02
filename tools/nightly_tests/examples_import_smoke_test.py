@@ -251,6 +251,38 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(stdout.getvalue().split(), ["examples/ok_job", "examples/broken_job"])
 
+    def test_examples_filter_selects_matrix_ids_case_insensitively(self) -> None:
+        """--examples-filter keeps only the listed matrix ids, like the nightly filter."""
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            code = smoke.main(
+                [
+                    "--venv-python",
+                    str(self.python),
+                    "--repo-root",
+                    str(self.repo),
+                    "--workflow",
+                    str(self.workflow),
+                    "--examples-filter",
+                    " OK_JOB ,unknown",
+                ]
+            )
+        self.assertEqual(code, 0)
+        report = json.loads(stdout.getvalue())
+        self.assertEqual([r["example_path"] for r in report["results"]], ["examples/ok_job"])
+
+    def test_examples_filter_with_only_ui_entries_succeeds_empty(self) -> None:
+        """A filter selecting only UI-only entries checks and lists nothing, and succeeds."""
+        base = ["--workflow", str(self.workflow), "--examples-filter", "ui_only"]
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            self.assertEqual(smoke.main(base), 0)
+        self.assertEqual(json.loads(stdout.getvalue()), {"results": []})
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            self.assertEqual(smoke.main([*base, "--list-example-paths"]), 0)
+        self.assertEqual(stdout.getvalue().strip(), "")
+
 
 if __name__ == "__main__":
     unittest.main()
