@@ -129,7 +129,7 @@ If an [`examples/`](../../examples/) subdirectory cannot be executed by the nigh
 - On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
 - As the `examples-import-check` job of the nightly suite, in parallel with the image builds.
 
-The workflow builds a virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and every `examples/*/requirements.txt`. That script also asserts local SDK provenance. The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and executes the entrypoint's module body (imports and flag definitions) in its own subprocess. `app.run(main)` never runs, so nothing is launched and no cluster or credentials are needed.
+The workflow builds a virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and every `examples/*/requirements.txt`. That script also asserts local SDK provenance. The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and plainly imports the entrypoint module (e.g. `import launch`, so its imports and flag definitions run) in its own subprocess. One subprocess per example keeps absl flags and same-named sibling modules such as `worker.py` isolated. `app.run(main)` never runs, because an imported module's `__name__` isn't `__main__`, so nothing is launched and no cluster or credentials are needed.
 
 > [!NOTE]
 > The check covers imports and flag definitions only. Runtime behavior is still verified by the nightly workload suite.

@@ -172,6 +172,16 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("entrypoint not found", result.error)
 
+    def test_non_importable_entrypoint_name_is_reported(self) -> None:
+        """Entrypoints that cannot be imported by module name fail with a clear reason."""
+        for entrypoint in ("my-launch.py", "launch", "2launch.py"):
+            with self.subTest(entrypoint=entrypoint):
+                result = smoke.smoke_entrypoint(
+                    self.python, self.repo, smoke.Entrypoint("examples/ok_job", entrypoint)
+                )
+                self.assertFalse(result.ok)
+                self.assertIn("not an importable module file", result.error)
+
     def test_blocking_import_times_out(self) -> None:
         """An entrypoint that blocks at import time fails with a timeout, not a hang."""
         slow_dir = self.repo / "examples" / "slow_job"

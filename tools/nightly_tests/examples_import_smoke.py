@@ -16,10 +16,10 @@
 """Import smoke check for the example entrypoints run by the Nightly Examples E2E suite.
 
 Discovers every `(example_path, entrypoint)` pair from the nightly workflow matrix
-and executes each entrypoint's module body (imports and absl flag definitions) in a
-dedicated subprocess of the given virtualenv interpreter, mirroring the nightly
+and plainly imports each entrypoint module (imports and absl flag definitions run) in
+a dedicated subprocess of the given virtualenv interpreter, mirroring the nightly
 launch step's working directory and PYTHONPATH. `app.run(main)` is never reached
-because the module is executed under a non-`__main__` name, so no workload is
+because an imported module's `__name__` is not `__main__`, so no workload is
 launched and no cluster or credentials are required.
 
 Exit codes: 0 when all entrypoints import cleanly, 1 when any entrypoint fails,
@@ -50,16 +50,15 @@ _ITEM_START_RE = re.compile(r"^\s*-\s")
 _STDERR_TAIL_LINES = 5
 # Per-entrypoint import budget, so one blocking import cannot hang the whole report.
 _IMPORT_TIMEOUT_SECONDS = 120
-# Executes the entrypoint the way an import would: the module body (imports, absl flag
-# definitions) runs, but `__name__` is set to a non-"__main__" value, so the
-# `if __name__ == "__main__": app.run(main)` guard is skipped and nothing is launched.
-# runpy.run_path loads by file path rather than `import launch`, which avoids name clashes
-# between the many examples' `launch.py` modules and sys.modules caching. sys.argv is
-# reset to [script] so argv[0] matches `python3 <script>`; runpy keeps argv[0] equal to
-# the path it is given, so the script path is intentionally passed through relative.
+# Plainly imports the entrypoint module (e.g. `import launch`) inside a per-example
+# subprocess whose cwd/PYTHONPATH is the example dir. The module body (imports, absl flag
+# definitions) runs with `__name__ == "launch"`, so `app.run(main)` is never reached.
+# One subprocess per example keeps the absl flag registry and sibling modules (several
+# examples ship their own `worker.py`) isolated, as in the nightly suite. sys.argv is
+# reset to [script] so argv[0] matches `python3 <script>`.
 _RUN_SNIPPET = (
-    "import runpy, sys; script = sys.argv[1]; sys.argv = [script]; "
-    "runpy.run_path(script, run_name='__examples_smoke__')"
+    "import importlib, sys; script = sys.argv[1]; sys.argv = [script]; "
+    "importlib.import_module(script.removesuffix('.py'))"
 )
 
 
@@ -170,6 +169,16 @@ def _entrypoint_env(example_dir: pathlib.Path, repo_root: pathlib.Path) -> dict[
     return env
 
 
+def _entrypoint_problem(example_dir: pathlib.Path, entrypoint: str) -> str | None:
+    """Return why an entrypoint cannot be import-checked, or None if it can."""
+    module = entrypoint.removesuffix(".py")
+    if module == entrypoint or not module.isidentifier():
+        return f"entrypoint {entrypoint!r} is not an importable module file (<identifier>.py)"
+    if not (example_dir / entrypoint).is_file():
+        return f"entrypoint not found: {example_dir / entrypoint}"
+    return None
+
+
 def smoke_entrypoint(
     venv_python: pathlib.Path, repo_root: pathlib.Path, entry: Entrypoint
 ) -> SmokeResult:
@@ -185,8 +194,9 @@ def smoke_entrypoint(
     """
     example_dir = repo_root / entry.example_path
     failed = functools.partial(SmokeResult, entry.example_path, entry.entrypoint, False)
-    if not (example_dir / entry.entrypoint).is_file():
-        return failed(f"entrypoint not found: {example_dir / entry.entrypoint}")
+    problem = _entrypoint_problem(example_dir, entry.entrypoint)
+    if problem:
+        return failed(problem)
     try:
         proc = subprocess.run(
             [str(venv_python), "-c", _RUN_SNIPPET, entry.entrypoint],
