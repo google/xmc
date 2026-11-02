@@ -48,7 +48,7 @@ func ValidateIntentStability(catalog map[string]*store.ComponentRecord, canonica
 	if stability != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
 		for _, dep := range deps {
 			depRec := catalog[dep]
-			if depRec != nil && !store.IsDeletedRecord(depRec) && depRec.Spec.GetStability() == componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
+			if depRec != nil && !store.IsDeletedRecord(depRec) && depRec.Spec != nil && depRec.Spec.GetStability() == componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
 				return stabilityInversionError(canonicalName, stability, dep)
 			}
 		}
@@ -63,7 +63,7 @@ func validateExperimentalDependents(catalog map[string]*store.ComponentRecord, e
 		if name == experimentalDep || rec == nil || store.IsDeletedRecord(rec) {
 			continue
 		}
-		if rec.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL && slices.Contains(rec.Dependencies, experimentalDep) {
+		if rec.Spec != nil && rec.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL && slices.Contains(rec.Dependencies, experimentalDep) {
 			names = append(names, name)
 		}
 	}

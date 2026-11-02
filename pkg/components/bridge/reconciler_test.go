@@ -1421,7 +1421,7 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonExperimentalNotAcknowledged, StalledStatus: ConditionStatusTrue,
 				DependenciesReady: ConditionStatusTrue, SetCalls: 1, EnsureCalls: 0,
 			},
-			wantMsg: `EXPERIMENTAL component "ingestion" requires spec.acknowledgeExperimental: true when enabled`,
+			wantMsg: `EXPERIMENTAL component "ingestion" requires spec.acknowledgeExperimental: true when enabled; running workload is left in place`,
 		},
 	}
 	for _, tt := range tests {

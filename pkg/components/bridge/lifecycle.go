@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -394,9 +395,10 @@ func wasComponentPreviouslyActive(existing []Condition) bool {
 	}
 	switch ready.Reason {
 	case "", reasonComponentDisabled, ReasonDependenciesNotReady, ReasonDependencyCycle,
-		ReasonStabilityInversion, ReasonExperimentalNotAcknowledged,
 		ReasonDeactivationIncomplete, ReasonInitialSyncPending:
 		return ready.Status == ConditionStatusTrue
+	case ReasonStabilityInversion, ReasonExperimentalNotAcknowledged:
+		return ready.Status == ConditionStatusTrue || strings.HasSuffix(ready.Message, runningWorkloadHeldSuffix)
 	}
 	return true
 }

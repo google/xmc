@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -191,7 +192,7 @@ func parseDeletionPolicy(m map[string]any) componentspb.DeletionPolicy {
 // parseStability parses the stability string field into its corresponding protobuf enum.
 // When omitted or unrecognized, it returns COMPONENT_STABILITY_UNSPECIFIED (treated as STABLE).
 func parseStability(m map[string]any) componentspb.ComponentStability {
-	switch extractStr(m, "stability") {
+	switch strings.ToUpper(strings.TrimSpace(extractStr(m, "stability"))) {
 	case "EXPERIMENTAL", "COMPONENT_STABILITY_EXPERIMENTAL":
 		return componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
 	case "PREVIEW", "COMPONENT_STABILITY_PREVIEW":

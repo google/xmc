@@ -724,6 +724,8 @@ func (r *Reconciler) isActuated(in ReconcileComponentInput) bool {
 	return wasComponentPreviouslyActive(in.ExistingConditions)
 }
 
+const runningWorkloadHeldSuffix = "; running workload is left in place"
+
 // setDependenciesReadyCondition records the informational DependenciesReady condition for an actuated
 // component; waitMsg is empty when every dependency is ready.
 func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentInput, waitMsg string) {
@@ -731,7 +733,7 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 		setCondition(&res.Conditions, in.ExistingConditions, ConditionTypeDependenciesReady, ConditionStatusTrue, in.Generation, "AllDependenciesReady", "All dependencies are ready")
 		return
 	}
-	held := "; running workload is left in place"
+	held := runningWorkloadHeldSuffix
 	if in.Spec.GetType() == componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT {
 		held = "; Helm upgrades are held, running workload is left in place"
 	}
@@ -743,8 +745,12 @@ func setDependenciesReadyCondition(res *ReconcileResult, in ReconcileComponentIn
 // generation changes, so details would go stale). NotFound is tolerated: it may not be registered yet.
 func (r *Reconciler) reportGated(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, reason, msg string) (*ReconcileResult, error) {
 	res.State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
-	if r.isActuated(in) || reason == ReasonHelmUpgradePending {
+	actuated := r.isActuated(in)
+	if actuated || reason == ReasonHelmUpgradePending {
 		preserveExistingAccess(res, in.ExistingAccess)
+	}
+	if actuated && (reason == ReasonExperimentalNotAcknowledged || reason == ReasonStabilityInversion) && !strings.HasSuffix(msg, runningWorkloadHeldSuffix) {
+		msg += runningWorkloadHeldSuffix
 	}
 	setReadiness(res, in, ConditionStatusFalse, reason, msg)
 	// Compared before syncObservedToCMS, which rewrites Ready on a source conflict.
