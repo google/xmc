@@ -127,9 +127,9 @@ If an [`examples/`](../../examples/) subdirectory cannot be executed by the nigh
 [`examples_import_smoke.py`](examples_import_smoke.py) (tested by [`examples_import_smoke_test.py`](examples_import_smoke_test.py)) catches example import regressions, such as a missing SDK symbol or a stale package shadowing a local SDK, before they reach the nightly suite. [`.github/workflows/examples-smoke.yml`](../../.github/workflows/examples-smoke.yml) runs it:
 
 - On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
-- As the `examples-import-check` job of the nightly suite, in parallel with the image builds.
+- On `workflow_dispatch`, optionally with an `xmanager_version` override.
 
-The workflow builds one combined virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and the `requirements.txt` of each example in the nightly matrix. That script also asserts local SDK provenance. This approximates nightly, which builds one venv per example: requirement files are installed one after another, so a conflict between two examples resolves last-wins instead of failing. The workflow also honors the nightly `xmanager_version` override.
+The workflow builds one combined virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and the `requirements.txt` of each example in the nightly matrix. That script also asserts local SDK provenance. This approximates nightly, which builds one venv per example: requirement files are installed one after another, so a conflict between two examples resolves last-wins instead of failing.
 
 The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and plainly imports the entrypoint module (e.g. `import launch`) in its own subprocess, with the nightly launch step's working directory, `PYTHONPATH` and `sys.argv[0]`. Each example needs its own subprocess for three reasons: 12 of the 13 entrypoints share the module name `launch`, absl's flag registry is process-global (two examples define `--queue`), and each import gets a 30s timeout. `app.run(main)` never runs, because an imported module's `__name__` isn't `__main__`, so nothing is launched and no cluster or credentials are needed.
 

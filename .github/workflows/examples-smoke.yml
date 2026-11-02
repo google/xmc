@@ -20,13 +20,6 @@ name: 'Examples Import Check'
 on:
   pull_request:
   merge_group:
-  workflow_call:
-    inputs:
-      xmanager_version:
-        description: 'Optional xmanager PyPI version override (mirrors the nightly input)'
-        required: false
-        default: ''
-        type: string
   workflow_dispatch:
     inputs:
       xmanager_version:
@@ -36,7 +29,6 @@ on:
         type: string
 
 concurrency:
-  # Literal prefix: under workflow_call, github.workflow resolves to the caller's name.
   group: examples-import-check-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
