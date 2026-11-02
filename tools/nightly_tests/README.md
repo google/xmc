@@ -134,9 +134,13 @@ The workflow builds one combined virtualenv with [`install_xmanager.py`](../../d
 
 The tool then reads the nightly matrix and runs each check in its own subprocess, with a 30s timeout per check:
 1. **Entrypoint import:** plainly imports the entrypoint module (e.g. `import launch`) with the nightly launch step's working directory, `PYTHONPATH` and `sys.argv[0]`. Each example needs its own subprocess because 12 of the 13 entrypoints share the module name `launch` and absl's flag registry is process-global (two examples define `--queue`).
-2. **Matrix args:** if the entrypoint module defines absl flags, the matrix `args` are parsed against them after the import, so a renamed or removed flag fails. `${QUEUE_NAME}` expands as in nightly; any other `${...}` placeholder fails. Entrypoints that parse arguments with argparse inside `main()` (`managed_xprof_artifact_job`, `xdash_dashboard`) can't be checked without running `main()`, so they're skipped. Each distinct `(entrypoint, args)` row is checked.
+2. **Matrix args:** if the entrypoint module defines absl flags, the matrix `args` are parsed against them the way `app.run` would, so a renamed or removed flag, a failed flag validator, or a leftover positional argument fails.
+   - Args are tokenized like nightly's `eval echo`: quotes are removed and words are re-split on whitespace.
+   - `${QUEUE_NAME}` expands as in nightly. Any other placeholder or shell expansion (`$VAR`, `${VAR:-x}`, `$(...)`) fails.
+   - Entrypoints that parse arguments with argparse inside `main()` (`managed_xprof_artifact_job`, `xdash_dashboard`) can't be checked without running `main()`, so they're skipped. So are flags defined in a helper module rather than in the entrypoint itself.
+   - Each distinct `(entrypoint, args)` row is checked.
 3. **Main guard:** the entrypoint must have a top-level `if __name__ == "__main__":` block; this is verified statically, before the import.
-4. **Verify modules:** each matrix `verify_module` is imported from the repo root, as the nightly `python -m <module>` would. This includes the UI-only entries.
+4. **Verify modules:** each matrix `verify_module`, including those of UI-only entries, has its body run from the repo root via `runpy.run_module`, as nightly's `python -m <module>` would, but without its `__main__` block. Caveat: the combined venv could satisfy a verify module's dependency through another example's requirements, which nightly's per-example venv wouldn't.
 
 `app.run(main)` never runs, so nothing is launched and no cluster or credentials are needed.
 

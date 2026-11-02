@@ -87,6 +87,7 @@ _FLAGS_ENTRYPOINT = textwrap.dedent(
     from absl import flags
     flags.DEFINE_string("queue", None, "Target queue.")
     flags.DEFINE_integer("num_work_units", 1, "Work units.")
+    flags.mark_flag_as_required("queue")
     if __name__ == "__main__":
         raise SystemExit("main must not run during smoke checks")
     """
@@ -144,15 +145,34 @@ class ParseEntrypointsTest(unittest.TestCase):
         self.assertEqual(smoke.parse_verify_modules(workflow, frozenset({"ui"})), ["pkg.ui_verify"])
 
     def test_expand_args(self) -> None:
-        """Known placeholders expand (env first, then default); unknown ones are rejected."""
+        """Placeholders expand and tokens split like nightly's `eval echo`; others fail."""
         with mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=cpu-queue")
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue=cpu-queue"])
         with mock.patch.dict("os.environ", {"QUEUE_NAME": "gpu-queue"}):
-            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=gpu-queue")
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue=gpu-queue"])
         with mock.patch.dict("os.environ", {"QUEUE_NAME": ""}):
-            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), "--queue=")
-        with self.assertRaisesRegex(ValueError, "IMAGE_TAG"):
-            smoke.expand_args("--image=${IMAGE_TAG}")
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue="])
+        tokenized: tuple[tuple[str, list[str]], ...] = (
+            (
+                '--endpoint="localhost:50051" --create-experiments',
+                ["--endpoint=localhost:50051", "--create-experiments"],
+            ),
+            ('--name="a b"', ["--name=a", "b"]),
+            ("", []),
+        )
+        for raw, expected in tokenized:
+            with self.subTest(raw=raw):
+                self.assertEqual(smoke.expand_args(raw), expected)
+        rejected = (
+            "--image=${IMAGE_TAG}",
+            "--queue=$QUEUE_NAME",
+            "--q=${QUEUE_NAME:-x}",
+            "--q=$(id)",
+            '--q="open',
+        )
+        for raw in rejected:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                smoke.expand_args(raw)
 
     def test_has_main_guard(self) -> None:
         """Only a top-level `__name__ == "__main__"` comparison counts as a guard."""
@@ -330,6 +350,9 @@ class SmokeExecutionTest(unittest.TestCase):
             ("valid", "--queue=${QUEUE_NAME} --num_work_units=3", True, ""),
             ("renamed_flag", "--queue_name=${QUEUE_NAME}", False, "queue_name"),
             ("bad_type", "--num_work_units=three", False, "num_work_units"),
+            ("positional_leftover", "--queue=x extra", False, "unexpected positional args"),
+            ("quoted_value_split_like_nightly", '--queue="a b"', False, "unexpected positional"),
+            ("validators_run_without_args", "", False, "queue"),
         )
         for name, args, expected_ok, expected_error in cases:
             with self.subTest(name):
@@ -387,7 +410,7 @@ class SmokeExecutionTest(unittest.TestCase):
         (pkg / "broken_verify.py").write_text("from json import nope\n", encoding="utf-8")
         ok = smoke.smoke_verify_module(self.python, self.repo, "verify_pkg.ok_verify")
         broken = smoke.smoke_verify_module(self.python, self.repo, "verify_pkg.broken_verify")
-        self.assertEqual((ok.ok, ok.kind), (True, "verify_module"), ok.error)
+        self.assertEqual((ok.ok, ok.kind, ok.example_path), (True, "verify_module", ""), ok.error)
         self.assertFalse(broken.ok)
         self.assertIn("nope", broken.error)
 

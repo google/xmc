@@ -41,10 +41,12 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import textwrap
 from collections.abc import Iterator, Sequence
+from typing import Literal
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
@@ -71,27 +73,31 @@ _IMPORT_TIMEOUT_SECONDS = 30
 # `launch` (sys.modules would return the first one cached), absl's flag registry is
 # process-global (simple_job and workunit_artifact_job both define --queue), and each
 # import gets its own timeout. sys.argv is reset to [script] so argv[0] matches
-# `python3 <script>`. When the module itself defined absl flags, the matrix args are
-# parsed against them; argparse-based entrypoints parse inside main() and are skipped.
+# `python3 <script>`. Tokens after the script are the matrix args, already tokenized as
+# nightly would. When the entrypoint module itself defined absl flags, they are parsed
+# like `app.run` does (always, so flag validators run even without args), and leftover
+# positional args fail, as the absl entrypoints' `main()` rejects them. argparse-based
+# entrypoints parse inside main() and are skipped.
 _RUN_SNIPPET = textwrap.dedent(
     """\
-    import importlib, shlex, sys
-    script, raw_args = sys.argv[1], sys.argv[2]
+    import importlib, sys
+    script, args = sys.argv[1], sys.argv[2:]
     sys.argv = [script]
     module = script.removesuffix(".py")
     importlib.import_module(module)
-    args = shlex.split(raw_args)
-    if args:
-        from absl import flags
-        if module in flags.FLAGS.flags_by_module_dict():
-            flags.FLAGS([script, *args])
+    absl_flags = sys.modules.get("absl.flags")
+    if absl_flags and module in absl_flags.FLAGS.flags_by_module_dict():
+        rest = absl_flags.FLAGS([script, *args])
+        if len(rest) > 1:
+            sys.exit(f"unexpected positional args: {rest[1:]}")
     """
 )
-# Imports a verify module by name from the repo root (cwd), like `python -m <module>`.
-_VERIFY_SNIPPET = "import importlib, sys; importlib.import_module(sys.argv[1])"
+# Runs a verify module's body from the repo root the way `python -m <module>` does
+# (via runpy, not cached under its import name), but without its `__main__` block.
+_VERIFY_SNIPPET = "import runpy, sys; runpy.run_module(sys.argv[1], run_name='__examples_smoke__')"
 
 
-@dataclasses.dataclass(frozen=True, order=True)
+@dataclasses.dataclass(frozen=True)
 class Entrypoint:
     """An example entrypoint launched by the nightly suite, with its matrix args."""
 
@@ -102,14 +108,18 @@ class Entrypoint:
 
 @dataclasses.dataclass(frozen=True)
 class SmokeResult:
-    """Outcome of one check: an entrypoint import (+ args) or a verify-module import."""
+    """Outcome of one check: an entrypoint import (+ args) or a verify-module import.
+
+    For `kind == "verify_module"`, `example_path` is empty and `entrypoint` holds the
+    module name.
+    """
 
     example_path: str
     entrypoint: str
     ok: bool
     error: str = ""
     args: str = ""
-    kind: str = "entrypoint"
+    kind: Literal["entrypoint", "verify_module"] = "entrypoint"
 
 
 def _unquote(raw: str) -> str:
@@ -226,12 +236,17 @@ def parse_verify_modules(
     return list(dict.fromkeys(module for module in modules if module))
 
 
-def expand_args(raw_args: str) -> str:
-    """Expand the `${VAR}` placeholders the nightly launch step defines.
+def expand_args(raw_args: str) -> list[str]:
+    """Expand and tokenize matrix args the way the nightly launch step does.
+
+    Nightly runs `EVAL_ARGS=$(eval echo "${RAW_ARGS}")` and passes `${EVAL_ARGS}`
+    unquoted: quotes are removed, `echo` joins the words, and the shell splits again
+    on whitespace (so a quoted value containing spaces becomes several tokens).
 
     Raises:
-        ValueError: For any placeholder the nightly step does not define, so it
-            cannot pass here as a literal string and fail nightly (or vice versa).
+        ValueError: For a placeholder the nightly step does not define, any other
+            shell expansion (e.g. `$VAR`, `${VAR:-x}`, `$(...)`), or unbalanced
+            quotes, so nothing passes here as a literal and differs in nightly.
     """
 
     def _substitute(match: re.Match[str]) -> str:
@@ -240,7 +255,10 @@ def expand_args(raw_args: str) -> str:
             raise ValueError(f"unknown placeholder ${{{name}}} in matrix args {raw_args!r}")
         return os.environ.get(name, _KNOWN_PLACEHOLDERS[name])
 
-    return _PLACEHOLDER_RE.sub(_substitute, raw_args)
+    expanded = _PLACEHOLDER_RE.sub(_substitute, raw_args)
+    if "$" in expanded or "`" in expanded:
+        raise ValueError(f"unsupported shell expansion in matrix args {raw_args!r}")
+    return " ".join(shlex.split(expanded)).split()
 
 
 def _stderr_tail(text: str) -> str:
@@ -326,22 +344,22 @@ def smoke_entrypoint(
     """
     example_dir = repo_root / entry.example_path
     result = functools.partial(SmokeResult, entry.example_path, entry.entrypoint, args=entry.args)
-    problem = _entrypoint_problem(example_dir, entry.entrypoint)
-    if problem is None:
-        try:
-            expanded = expand_args(entry.args)
-        except ValueError as err:
-            return result(ok=False, error=str(err))
-        cmd = [str(venv_python), "-c", _RUN_SNIPPET, entry.entrypoint, expanded]
-        # Mirrors the nightly launch step: PYTHONPATH=<example dir>:<repo root>.
-        problem = _run_probe(cmd, example_dir, _pythonpath_env(example_dir, repo_root))
+    if problem := _entrypoint_problem(example_dir, entry.entrypoint):
+        return result(ok=False, error=problem)
+    try:
+        tokens = expand_args(entry.args)
+    except ValueError as err:
+        return result(ok=False, error=str(err))
+    cmd = [str(venv_python), "-c", _RUN_SNIPPET, entry.entrypoint, *tokens]
+    # Mirrors the nightly launch step: PYTHONPATH=<example dir>:<repo root>.
+    problem = _run_probe(cmd, example_dir, _pythonpath_env(example_dir, repo_root))
     return result(ok=problem is None, error=problem or "")
 
 
 def smoke_verify_module(
     venv_python: pathlib.Path, repo_root: pathlib.Path, module: str
 ) -> SmokeResult:
-    """Import one verify module from the repo root in an isolated subprocess.
+    """Run one verify module's body from the repo root in an isolated subprocess.
 
     Nightly runs `python -m <module>` with cwd = repo root, which puts the repo root
     on sys.path; it is added explicitly here because `-c` with a safe-path
@@ -349,7 +367,7 @@ def smoke_verify_module(
     """
     cmd = [str(venv_python), "-c", _VERIFY_SNIPPET, module]
     problem = _run_probe(cmd, repo_root, _pythonpath_env(repo_root))
-    return SmokeResult(".", module, ok=problem is None, error=problem or "", kind="verify_module")
+    return SmokeResult("", module, ok=problem is None, error=problem or "", kind="verify_module")
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
