@@ -51,7 +51,7 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`review_pr_post_inline_comment.py`](pr_review/review_pr_post_inline_comment.py): Posts confirmed inline code review comments or replies to PR diffs.
 - [`review_pr_verify_posted.py`](pr_review/review_pr_verify_posted.py): Verifies programmatically that 100% of approved review checklist comments are present on GitHub.
 - [`fetch_pr_comment.py`](pr_review/fetch_pr_comment.py): Fetches review comments and discussion threads by URL or PR number.
-- [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags, optionally resolving the thread (`--resolve`).
+- [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags, optionally resolving the thread (`--resolve`). Outputs only the reply `id`, `html_url`, `in_reply_to`, and `resolved` status.
 - [`review_threads.py`](pr_review/review_threads.py): Lists PR review threads with resolution and reply state, and resolves unresolved threads the authenticated user has replied to.
 - [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist.

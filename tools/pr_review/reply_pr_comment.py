@@ -147,8 +147,32 @@ def reply_comment(args):
         )
 
     if getattr(args, "resolve", False) is not True:
-        return response
-    return _resolve_replied_thread(parsed, response)
+        return _summarize_reply(parsed, response, resolved=False)
+    resolved = _resolve_replied_thread(parsed, response)
+    return _summarize_reply(parsed, response, resolved=bool(resolved.get("is_resolved")))
+
+
+def _summarize_reply(parsed: dict, response: dict, resolved: bool) -> dict:
+    """Reduces the posted reply to the fields callers need.
+
+    The raw GitHub response carries the full `diff_hunk`, body, and user
+    objects (several KB per reply), which only bloats tool output.
+
+    Args:
+        parsed: Parsed comment URL components from `parse_comment_url`.
+        response: GitHub API response of the posted reply.
+        resolved: Whether this call resolved the comment's review thread.
+
+    Returns:
+        The reply `id`, `html_url`, the `in_reply_to` comment ID, and `resolved`.
+    """
+    reply = response if isinstance(response, dict) else {}
+    return {
+        "id": reply.get("id"),
+        "html_url": reply.get("html_url"),
+        "in_reply_to": reply.get("in_reply_to_id") or parsed["comment_id"],
+        "resolved": resolved,
+    }
 
 
 def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
@@ -159,14 +183,14 @@ def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
         response: GitHub API response of the posted reply.
 
     Returns:
-        The reply response with a `resolved_thread` entry added.
+        The `resolve_review_thread` result (`thread_id`, `is_resolved`).
 
     Raises:
         HandledError: If the thread cannot be resolved. The reply is already
             posted at that point, so the error details carry the reply ID.
     """
     try:
-        resolved = resolve_review_thread(
+        return resolve_review_thread(
             parsed["owner"],
             parsed["repo"],
             int(parsed["pull_number"]),
@@ -184,7 +208,6 @@ def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
             " permission to resolve review threads.",
             details={"reply_id": reply_id, "comment_id": parsed["comment_id"]},
         ) from e
-    return {**response, "resolved_thread": resolved}
 
 
 def main():
