@@ -84,9 +84,17 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(non_tty.returncode, 1)
         self.assertIn("Interactive TTY confirmation required", non_tty.stdout + non_tty.stderr)
 
-        for ok_desc in ("", "0.16.0-36-g726f0edb5", "0.17.0", "0.18.2", "0.18.2-3-gabcdef0"):
+        for ok_desc in ("", "0.17.0-4-gfc398e3af", "0.18.0", "0.18.2", "0.18.2-3-gabcdef0"):
             migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=ok_desc)
-        for bad_desc in ("0.15.0", "0.16.0", "0.19.0", "0.19.0-2-gabcdef0", "1.0.0"):
+        for bad_desc in (
+            "0.15.0",
+            "0.16.0",
+            "0.16.0-36-g726f0edb5",
+            "0.17.0",
+            "0.19.0",
+            "0.19.0-2-gabcdef0",
+            "1.0.0",
+        ):
             with self.assertRaises(HandledError):
                 migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=bad_desc)
         with tempfile.TemporaryDirectory() as tmp:
@@ -95,11 +103,12 @@ class PrepareTests(unittest.TestCase):
                 migrate._verify_target_codebase(bad_chart)
             gw_tpl = bad_chart / "components/ingestion-gateway/templates/deployment.yaml"
             gw_tpl.parent.mkdir(parents=True, exist_ok=True)
-            gw_tpl.write_text("# pre-0.17 template", encoding="utf-8")
+            gw_tpl.write_text("# pre-0.18 template", encoding="utf-8")
             with self.assertRaises(HandledError):
                 migrate._verify_target_codebase(bad_chart)
 
-        migrate._verify_source_env({"imageTag": "0.16.0"}, require_legacy=True)
+        migrate._verify_source_env({"imageTag": "0.17.0"}, require_legacy=True)
+        migrate._verify_source_env({"imageTag": "0.18.0"}, require_legacy=True)
         migrate._verify_source_env(
             {"imageTag": "v0.4.0", "ingestionGatewayDeployment": {"enabled": True}},
             require_legacy=True,

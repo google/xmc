@@ -4,14 +4,14 @@ This runbook guides platform operators through the one-time, zero-downtime migra
 
 > [!IMPORTANT]
 > **Supported XMC Versions (`from` -> `target`)**:
-> - **Source (`from`)**: Any existing XMC installation running legacy umbrella mode (`enable_components: false` / `componentsDeployment.enabled=false`) — including `0.4.0`–`0.16.x` deployments with live `ingestion-gateway` workloads (and `0.17.0`–`0.18.x` clusters that have not yet enabled components). Pre-`0.4.0` clusters or installations where `ingestionGatewayDeployment.enabled=false` are also handled safely (`handoff` is a no-op).
-> - **Target (`to`)**: XMC **`0.17.0` – `0.18.x`**. Targets `<= 0.16.0` are unsupported (missing `stable-2026a` `ingestion-gateway` parameter/schema parity, multi-broker resolution, and `--profile-values` support). Complete this cutover on `0.17.0`–`0.18.x` before upgrading to `0.19.0`, where legacy non-component metrics templates are slated for removal.
+> - **Source (`from`)**: Any existing XMC installation running legacy umbrella mode (`enable_components: false` / `componentsDeployment.enabled=false`) — including `0.4.0`–`0.17.x` deployments with live `ingestion-gateway` workloads (and `0.18.x` clusters that have not yet enabled components). Pre-`0.4.0` clusters or installations where `ingestionGatewayDeployment.enabled=false` are also handled safely (`handoff` is a no-op).
+> - **Target (`to`)**: XMC **`0.18.0` – `0.18.x`**. Targets `<= 0.17.0` are unsupported (`0.17.0` shipped prior to this migration CLI, and `<= 0.16.0` lacks `stable-2026a` `ingestion-gateway` parameter/schema parity, multi-broker resolution, and `--profile-values` support). Complete this cutover on `0.18.x` before upgrading to `0.19.0`, where legacy non-component metrics templates are slated for removal.
 
 ---
 
 ## Prerequisites
 
-- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` in an **interactive terminal** with cluster admin access to the target namespace (default: `xmc`). Each `migrate.py` subcommand verifies the source cluster and local codebase match the `0.17.0`–`0.18.x` window and prompts for interactive `yes` confirmation on `stdin` (non-TTY invocations abort automatically).
+- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` in an **interactive terminal** with cluster admin access to the target namespace (default: `xmc`). Each `migrate.py` subcommand verifies the source cluster and local codebase match the `0.18.x` transition window and prompts for interactive `yes` confirmation on `stdin` (non-TTY invocations abort automatically).
 - Updated XMC container images (including `xmc-bridge` and `ingestion-gateway`) built and pushed to your registry (see [INSTALL.md](../../INSTALL.md#step-2-build-and-push-updated-container-images)).
 - **`xmc-bridge` Workload Identity binding (older Cluster Toolkit deployments)**: If your cluster was provisioned before `module.xmc_wi_binding_xmc_bridge` was added to the `compute` group (and you upgrade only `xmc_app`), ensure `<namespace>/xmc-bridge-sa` holds `roles/iam.workloadIdentityUser` on `<deployment_name>-xmc-wl-sa@<project_id>.iam.gserviceaccount.com` (for example via `terraform -chdir=ctk-out/<deployment_name>/compute apply -target=module.xmc_wi_binding_xmc_bridge` after reviewing `terraform plan`).
 
