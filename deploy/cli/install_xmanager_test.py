@@ -517,6 +517,20 @@ class TestInstallXmanager(unittest.TestCase):
                     with self.assertRaisesRegex(install_xmanager.SdkShadowedError, expected_error):
                         install_xmanager.check_sdk_provenance("xdash", origin, expected_dir)
 
+    def test_check_sdk_provenance_symlinked_checkout(self) -> None:
+        """Test provenance holds when the checkout is reached through a symlink (worktrees)."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            real_sdk = root / "real_checkout" / "sdks" / "python" / "xdash"
+            real_sdk.mkdir(parents=True)
+            (real_sdk / "__init__.py").write_text("", encoding="utf-8")
+            link = root / "worktree_link"
+            link.symlink_to(root / "real_checkout", target_is_directory=True)
+            linked_sdk = link / "sdks" / "python" / "xdash"
+
+            install_xmanager.check_sdk_provenance("xdash", real_sdk / "__init__.py", linked_sdk)
+            install_xmanager.check_sdk_provenance("xdash", linked_sdk / "__init__.py", real_sdk)
+
     def test_verify_sdk_provenance_checks_present_sdks(self) -> None:
         """Test verify_sdk_provenance resolves and checks only SDK dirs present in the repo."""
         venv_python = Path("/mock/venv/bin/python3")

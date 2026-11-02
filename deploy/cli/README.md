@@ -22,7 +22,7 @@ It automates:
 2. Upgrading `pip`, installing any `-r` / `--requirements` files, and installing `xmanager` and XMC client dependencies from PyPI.
 3. Compiling the local XMC API protos from `api/protos` (`experiment`, `xid`, and `dashboard`) directly into `site-packages/xmanager_cloud` via `grpc_tools.protoc` so local proto changes take effect immediately without waiting for a PyPI release.
 4. Purging the obsolete wheel-bundled `site-packages/xdash` package and installing local repository SDKs `sdks/python/xdash` and `sdks/python/xmc` in editable mode (`pip install --no-deps -e`).
-5. Verifying SDK provenance: `xdash` and `xmc` must resolve from `sdks/python/<sdk>` in the repository checkout. The script fails if a same-named package shipped by another distribution (such as a stale copy bundled in the `xmanager` wheel) shadows the editable install. This runs before the import check so that a shadowed SDK produces this actionable error rather than a bare import failure.
+5. Verifying SDK provenance: `xdash` and `xmc` must resolve from `sdks/python/<sdk>` in the repository checkout. The script fails if a same-named package shipped by another distribution (such as the stale `xdash` copy bundled in the `xmanager` wheel) shadows the editable install. This runs before the import check so that a shadowed SDK produces this actionable error rather than a bare import failure. `xmc` is checked for provenance only: `import xmc` needs `api.protos.metrics`, which this script doesn't compile, so it isn't importable in this venv (worker images compile it themselves).
 6. Verifying that `xmanager.xm_cloud`, `xdash`, `xdash.auth`, and the compiled XMC gRPC proto modules import cleanly.
 
 #### Prerequisites

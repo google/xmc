@@ -22,6 +22,7 @@ or `--force-reinstall`) that modifies `xmanager`.
 """
 
 import argparse
+import io
 import os
 import shutil
 import subprocess
@@ -73,7 +74,10 @@ VERIFIED_MODULES = (
 
 # Local repository SDKs installed in editable mode, keyed by top-level import name.
 # Each must resolve from its repository directory, never from a same-named copy
-# bundled by another distribution (see verify_sdk_provenance).
+# bundled by another distribution (see verify_sdk_provenance). Today only `xdash` is
+# actually shadowed (by the xmanager wheel) and imported on the launcher side; `xmc` is
+# guarded for future-proofing. It is provenance-checked but not import-verified, because
+# `import xmc` needs `api.protos.metrics`, which this script does not compile.
 LOCAL_SDKS: Mapping[str, Path] = MappingProxyType(
     {
         "xdash": Path("sdks") / "python" / "xdash",
@@ -81,7 +85,8 @@ LOCAL_SDKS: Mapping[str, Path] = MappingProxyType(
     }
 )
 
-# Marks the origin line so interpreter startup noise on stdout cannot be mistaken for it.
+# Defensive: marks the origin line so any stdout noise at interpreter startup (e.g. from a
+# site-wide `sitecustomize`, which `-I` does not disable) cannot be mistaken for it.
 _MODULE_ORIGIN_MARKER = "XMC_MODULE_ORIGIN="
 # Prints the marked origin file of the module named in argv[1] (empty if absent).
 _MODULE_ORIGIN_SNIPPET = (
@@ -360,10 +365,10 @@ def install_local_sdks(venv_python: Path, repo_root: Path = REPO_ROOT) -> None:
 def resolve_module_origin(venv_python: Path, module: str) -> Path | None:
     """Resolve the file a module would be loaded from inside the virtualenv.
 
-    Runs in isolated mode (-I) so that PYTHONPATH and the current working
-    directory cannot mask what the virtualenv itself resolves. Only the
-    marker-prefixed stdout line is parsed, so startup noise (e.g. warnings
-    printed by `sitecustomize`) is ignored.
+    Runs in isolated mode (-I, implying -E -s -P) so that a caller's PYTHONPATH or
+    working directory (e.g. running from `sdks/python`) cannot mask what the
+    virtualenv itself resolves; `.pth` / editable finders still load. Only the
+    marker-prefixed stdout line is parsed, defensively ignoring any startup noise.
 
     Args:
         venv_python: Path to virtualenv python executable.
@@ -480,4 +485,8 @@ def main(raw_args: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
+    # Line-buffer progress output so it interleaves with pip subprocess output in CI logs
+    # (stdout is block-buffered when piped, which reorders the log).
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(line_buffering=True)
     main()
