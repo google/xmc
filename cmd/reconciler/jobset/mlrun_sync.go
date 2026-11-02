@@ -109,8 +109,11 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	mlRunURL, skipMLRunCreation := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
-		mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
-		r.cacheMLRunURL(xid, wid, eid, mlRunURL)
+		var confirmed bool
+		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+		if confirmed {
+			r.cacheMLRunURL(xid, wid, eid, mlRunURL)
+		}
 	}
 	mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	return mlRunURL
@@ -141,13 +144,14 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 }
 
 // ensureMLRunCreated creates (or, on conflict, upserts) the single MLRun tracking
-// record for a ManagedXprof execution and returns its URL.
+// record for a ManagedXprof execution and returns its URL and whether the
+// creation or upsert succeeded.
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
 	if r.MLRunClient == nil || jobSet == nil {
-		return ""
+		return "", false
 	}
 	if jobSet.CreationTimestamp.IsZero() {
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
@@ -165,9 +169,10 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
 		}
 		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
-		return ""
+		return "", false
 	}
-	return r.stampExistingSessionsOnlyLabel(ctx, mlRunID)
+	url := r.stampExistingSessionsOnlyLabel(ctx, mlRunID)
+	return url, url != ""
 }
 
 // stampExistingSessionsOnlyLabel stamps list_existing_sessions_only post-creation
@@ -204,16 +209,16 @@ func withExistingSessionsOnlyLabel(labels map[string]string) map[string]string {
 // and, if the run is not one we own, updates it with our ManagedXprof fields so
 // enrichment is applied even to runs created by other producers. A run we already
 // own is returned as an idempotent success without an update.
-func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) string {
+func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) (string, bool) {
 	existingID := resolveExistingMLRunID(createErr, mlRunID)
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
 		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject()), false
 	}
 	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
-		return r.mlRunURL(existing, existingID)
+		return r.mlRunURL(existing, existingID), true
 	}
 
 	logging.Info(ctx, "Updating existing MLRun with ManagedXprof fields", "mlRunID", existingID)
@@ -225,9 +230,9 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject()), false
 	}
-	return r.mlRunURL(res, existingID)
+	return r.mlRunURL(res, existingID), true
 }
 
 // getMLRunURL extracts the MLRun URL from the WorkUnitExecution metadata safely.
