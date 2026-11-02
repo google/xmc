@@ -104,10 +104,13 @@ jobs:
           # Only the examples the nightly matrix runs (not every examples/* directory).
           # Files are installed sequentially, so a cross-example conflict resolves
           # last-wins rather than failing; nightly installs one example per venv.
-          mapfile -t example_paths < <(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths)
+          # Captured via $(...) (not `mapfile < <(...)`) so a tool failure, e.g. exit 2
+          # on matrix drift, fails this step under `set -e`.
+          example_paths_out="$(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths)"
+          mapfile -t example_paths <<< "${example_paths_out}"
           req_args=()
           for example_path in "${example_paths[@]}"; do
-            if [ -f "${example_path}/requirements.txt" ]; then
+            if [ -n "${example_path}" ] && [ -f "${example_path}/requirements.txt" ]; then
               req_args+=(--requirements "${example_path}/requirements.txt")
             fi
           done
