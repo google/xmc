@@ -32,6 +32,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    list_review_threads,
 )
 
 
@@ -109,47 +110,17 @@ def _get_resolved_thread_ids(
 ) -> set[int]:
     """Retrieve set of resolved review thread comment IDs via GraphQL API or telemetry tag check."""
     resolved_ids: set[int] = set()
-    query = """
-    query($owner: String!, $repo: String!, $pr_number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $pr_number) {
-          reviewThreads(first: 100) {
-            nodes {
-              isResolved
-              comments(first: 1) {
-                nodes {
-                  databaseId
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    """
     try:
-        res = call_github_api(
-            "/graphql",
-            method="POST",
-            payload={
-                "query": query,
-                "variables": {"owner": owner, "repo": repo, "pr_number": pr_number},
-            },
-        )
-        threads = (
-            (res.get("data") or {})
-            .get("repository", {})
-            .get("pullRequest", {})
-            .get("reviewThreads", {})
-            .get("nodes", [])
-        )
-        for thread in threads:
-            if thread.get("isResolved"):
-                comment_nodes = (thread.get("comments") or {}).get("nodes", [])
-                if comment_nodes and comment_nodes[0].get("databaseId"):
-                    resolved_ids.add(int(comment_nodes[0]["databaseId"]))
-    except Exception:
-        pass
+        threads = list_review_threads(owner, repo, pr_number, user_agent="XMC-PR-Review-Agent")
+    except (GithubAuthError, GithubAPIError):
+        threads = []
+    for thread in threads:
+        if not thread.get("isResolved"):
+            continue
+        comment_nodes = (thread.get("comments") or {}).get("nodes") or []
+        first_comment = comment_nodes[0] if comment_nodes else None
+        if first_comment and first_comment.get("databaseId"):
+            resolved_ids.add(int(first_comment["databaseId"]))
 
     for c in comments:
         cid = c.get("id")
