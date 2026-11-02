@@ -54,8 +54,8 @@ func TestLoadConfig(t *testing.T) {
 	registerConfigs()
 
 	cfg := Load()
-	if cfg.QuotaProjectID != "xmc-project" {
-		t.Errorf("Load().QuotaProjectID = %q, want %q", cfg.QuotaProjectID, "xmc-project")
+	if cfg.QuotaProjectID != "" {
+		t.Errorf("Load().QuotaProjectID = %q, want empty string", cfg.QuotaProjectID)
 	}
 	if cfg.MetricsPort != 8082 {
 		t.Errorf("Load().MetricsPort = %d, want 8082", cfg.MetricsPort)

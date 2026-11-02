@@ -16,6 +16,7 @@ package config
 
 import (
 	"flag"
+	"os"
 	"testing"
 )
 
@@ -87,8 +88,8 @@ func TestConfig_RegisterFlags(t *testing.T) {
 	var c Config
 	c.registerFlags(fs)
 
-	if c.Audience != "https://xmc.example.com" {
-		t.Errorf("default c.Audience = %q, want %q", c.Audience, "https://xmc.example.com")
+	if c.Audience != "" {
+		t.Errorf("default c.Audience = %q, want empty string", c.Audience)
 	}
 
 	args := []string{
@@ -108,6 +109,19 @@ func TestConfig_RegisterFlags(t *testing.T) {
 }
 
 func TestConfig_RegisterConfigs(t *testing.T) {
+	for _, k := range []string{"xid_grpc_port", "xid_quota_project_id", "xid_jwks_url"} {
+		t.Setenv(k, "")
+		if err := os.Unsetenv(k); err != nil {
+			t.Fatalf("os.Unsetenv(%q) failed: %v", k, err)
+		}
+	}
+
+	var defaultCfg Config
+	defaultCfg.registerConfigs()
+	if defaultCfg.QuotaProjectID != "" {
+		t.Errorf("default c.QuotaProjectID = %q, want empty string", defaultCfg.QuotaProjectID)
+	}
+
 	t.Setenv("xid_grpc_port", "9090")
 	t.Setenv("xid_quota_project_id", "my-test-proj")
 	t.Setenv("xid_jwks_url", "https://auth.example.com/keys")

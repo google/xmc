@@ -94,7 +94,7 @@ graph TD
 
 ### 1. Tier 1: Pure Domain Constructor (`server.New(p Params) (*Server, error)`)
 - **Interface-Only `Params` Struct**: Accepts a `Params` parameter object containing **pure domain interfaces** (`storage.Storage`, `auth.AuthorizerInterface`, `taskqueue.Client`).
-- **Fail-Fast Dependency Validation**: Validates all required dependencies on initialization and returns descriptive errors on nil/missing parameters (`go/go-style/decisions#panics`). NEVER panic in constructors.
+- **Fail-Fast Dependency Validation**: Validates all required dependencies on initialization and returns descriptive errors on nil/missing parameters (https://google.github.io/styleguide/go/decisions#dont-panic). NEVER panic in constructors.
 - **Zero Cloud SDK Instantiation**: Never instantiate concrete cloud SDKs (Spanner, Redis, K8s, Cloud Identity) or perform external I/O directly in `server.New`.
 - **Ergonomic Test Fixtures (`newTestServer(t, opts...)`)**: Unit tests inject fast in-memory fakes or doubles via functional test fixtures with zero cloud SDK overhead.
 

@@ -245,47 +245,10 @@ To extract this telemetry and output it as a raw JSON dataset, run:
 
 ## 7. Build, Push, and GKE Redeployment
 
-Using the `.env` configuration file, the agent updates the deployment environment.
+To rebuild, push, and redeploy affected services to a GKE cluster:
 
-### Target Environment (Extracted from `.env`)
-- **GCP Project ID**: `<project_id>`
-- **GKE Cluster**: `<cluster_name>`
-- **GCP Region**: `<region>`
-- **K8S Namespace**: `xmc`
-- **Artifact Registry Target**: `us-docker.pkg.dev/<project_id>/xmc`
-
-### Rebuild and Push Containers
-For each affected binary (e.g. `xid_service`), the agent sets up the environment variables and runs the push script:
-```bash
-PROJECT_ID="<project_id>"
-
-# Set build environment variables
-export XMC_ACR_TARGET="us-docker.pkg.dev/${PROJECT_ID}/xmc"
-export XMC_ENV="dev"
-
-# Build and push the container image to GCP Artifact Registry
-bazel run //cmd/xid_service:xid_service_image_push
-```
-
-### Rollout Restart in GKE Cluster
-The agent initiates a rolling update to download the newly pushed image (tagged `:latest`):
-
-```bash
-PROJECT_ID="<project_id>"
-CLUSTER_NAME="<cluster_name>"
-REGION="<region>"
-
-# 1. Authenticate to the GKE Cluster
-gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-    --region "${REGION}" \
-    --project "${PROJECT_ID}"
-
-# 2. Restart the deployment to pick up the updated container image
-kubectl rollout restart deployment/xid-service-deployment -n xmc
-
-# 3. Monitor rollout status
-kubectl rollout status deployment/xid-service-deployment -n xmc
-```
+1. Follow the [XMC Upgrade Environment](../xmc_upgrade/SKILL.md) skill for the affected services (`python3 tools/dev_env/dev_env.py gke-upgrade --only images`, then `--only restart`).
+2. If neither `deploy/ctk_v2/xmanager-cloud-deployment.yaml` nor a local `.env` (from `.env.example`) exists, stop and ask the user for the target environment. Do not guess project, cluster, or region values.
 
 ---
 

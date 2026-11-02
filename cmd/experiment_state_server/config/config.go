@@ -74,8 +74,8 @@ func init() {
 
 // registerConfigs loads ConfigMap managed values using configutil.
 func (c *Config) registerConfigs() {
-	configutil.StringEnv(&c.ProjectID, "ess_gcp_project_id", "xmc-project")
-	configutil.StringEnv(&c.QuotaProjectID, "ess_quota_project_id", "xmc-project")
+	configutil.StringEnv(&c.ProjectID, "ess_gcp_project_id", "")
+	configutil.StringEnv(&c.QuotaProjectID, "ess_quota_project_id", "")
 	configutil.StringEnv(&c.XidServiceAddr, "ess_xid_service_addr", "localhost:50053")
 	configutil.StringEnv(&c.EndpointURL, "ess_endpoint_url", "http://localhost:50051")
 	configutil.StringEnv(&c.ActuatorURL, "ess_actuator_url", "https://actuator.xmanager.xmc.svc.cluster.local/actuate")
