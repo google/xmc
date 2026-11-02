@@ -14,6 +14,7 @@
 
 """Unit tests for review_pr_generate_audit tool."""
 
+import json
 import os
 import tempfile
 import unittest
@@ -24,6 +25,7 @@ from unittest.mock import MagicMock, patch
 from tools.common.tool_utils import HandledError
 from tools.pr_review.github_utils import GithubAPIError
 from tools.pr_review.review_pr_generate_audit import (
+    build_audit_sidecar,
     extract_task_references,
     format_initial_audit_markdown,
     format_rereview_audit_markdown,
@@ -177,6 +179,46 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
             self.assertEqual(res["status"], "success")
             self.assertEqual(res["file_count"], 1)
             self.assertTrue(Path(out_file).exists())
+            sidecar = json.loads(Path(res["sidecar_file"]).read_text(encoding="utf-8"))
+            self.assertEqual(Path(res["sidecar_file"]), Path(out_file).with_suffix(".json"))
+            self.assertEqual(sidecar["schema_version"], 1)
+            self.assertEqual(sidecar["mode"], "initial")
+            self.assertEqual(sidecar["head_sha"], "123")
+            self.assertEqual(sidecar["items"], [])
+
+    def test_build_audit_sidecar_rereview_lists_root_threads(self):
+        data = {
+            "pr_info": {"head": {"sha": "abc"}},
+            "comments": [
+                _comment(101, path="pkg/a.go", line=15),
+                {**_comment(201), "in_reply_to_id": 101},
+                {**_comment(102), "line": None, "original_line": 7},
+            ],
+        }
+        sidecar = build_audit_sidecar("google", "xmc", 42, "re-review", data)
+        self.assertEqual(
+            sidecar["items"],
+            [
+                {
+                    "item_id": "101",
+                    "type": "re_review_thread",
+                    "thread_id": 101,
+                    "file_path": "pkg/a.go",
+                    "line": 15,
+                    "action": None,
+                    "status": "Pending",
+                },
+                {
+                    "item_id": "102",
+                    "type": "re_review_thread",
+                    "thread_id": 102,
+                    "file_path": "a.go",
+                    "line": 7,
+                    "action": None,
+                    "status": "Pending",
+                },
+            ],
+        )
 
     @patch("tools.pr_review.review_pr_generate_audit.call_github_api")
     def test_main_api_error_raises_handled_error(self, mock_api):

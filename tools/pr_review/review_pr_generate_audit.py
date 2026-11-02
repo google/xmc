@@ -17,6 +17,7 @@
 
 import argparse
 import collections
+import json
 import os
 import re
 import sys
@@ -34,6 +35,10 @@ from tools.pr_review.github_utils import (  # noqa: E402
     call_github_api,
     list_review_threads,
 )
+
+# Version of the JSON sidecar written next to each audit markdown artifact and
+# read by review_pr_verify_posted.py.
+AUDIT_SIDECAR_SCHEMA_VERSION = 1
 
 
 def extract_task_references(description: str | None) -> list[str]:
@@ -350,6 +355,52 @@ def format_rereview_audit_markdown(
 """
 
 
+def build_audit_sidecar(
+    owner: str, repo: str, pr_number: int, mode: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Builds the machine-readable JSON sidecar of an audit artifact.
+
+    The sidecar is the source of truth for `review_pr_verify_posted.py`, so item
+    statuses never depend on hand-edited markdown. Initial mode starts with no
+    items; re-review mode lists every root thread with a null `action` for the
+    reviewer to set to `RESOLVE` or `RESPOND`.
+
+    Args:
+        owner: Repository owner.
+        repo: Repository name.
+        pr_number: Pull Request number.
+        mode: Audit mode, `initial` or `re-review`.
+        data: PR data from `fetch_pr_audit_data`.
+
+    Returns:
+        The sidecar document (`schema_version`, PR identity, and `items`).
+    """
+    items: list[dict[str, Any]] = []
+    if mode == "re-review":
+        items = [
+            {
+                "item_id": str(c.get("id")),
+                "type": "re_review_thread",
+                "thread_id": c.get("id"),
+                "file_path": c.get("path"),
+                "line": c.get("line") or c.get("original_line"),
+                "action": None,
+                "status": "Pending",
+            }
+            for c in data["comments"]
+            if c.get("id") and not c.get("in_reply_to_id")
+        ]
+    return {
+        "schema_version": AUDIT_SIDECAR_SCHEMA_VERSION,
+        "owner": owner,
+        "repo": repo,
+        "pr_number": pr_number,
+        "mode": mode,
+        "head_sha": ((data["pr_info"] or {}).get("head") or {}).get("sha"),
+        "items": items,
+    }
+
+
 def main(args: argparse.Namespace) -> dict[str, Any]:
     """Execute PR audit checklist generation."""
     data = fetch_pr_audit_data(args.owner, args.repo, args.pr_number)
@@ -363,6 +414,9 @@ def main(args: argparse.Namespace) -> dict[str, Any]:
 
     out_path = resolve_output_path(args.output, args.conv_id, default_filename)
     out_path.write_text(content, encoding="utf-8")
+    sidecar_path = out_path.with_suffix(".json")
+    sidecar = build_audit_sidecar(args.owner, args.repo, args.pr_number, args.mode, data)
+    sidecar_path.write_text(json.dumps(sidecar, indent=2) + "\n", encoding="utf-8")
 
     return {
         "status": "success",
@@ -371,6 +425,7 @@ def main(args: argparse.Namespace) -> dict[str, Any]:
         "repo": args.repo,
         "pr_number": args.pr_number,
         "output_file": str(out_path.resolve()),
+        "sidecar_file": str(sidecar_path.resolve()),
         "file_count": len(data["files"]),
         "existing_comment_count": len(data["comments"]),
     }
