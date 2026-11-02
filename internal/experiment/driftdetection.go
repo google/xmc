@@ -146,9 +146,9 @@ func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *ess
 }
 
 func attachComponentWarnings(expStatus *essmsgpb.ExperimentStatus, diffs, experimentalNames []string) {
-	for _, name := range experimentalNames {
-		msg := formatExperimentalWarningMessage(name)
-		attachWarningMessage(expStatus, msg, msg.GetUserFacingText())
+	if len(experimentalNames) > 0 {
+		msg := formatExperimentalWarningMessage(experimentalNames)
+		attachWarningMessage(expStatus, msg, "uses experimental component")
 	}
 	if len(diffs) > 0 {
 		attachDriftWarningMessage(expStatus, formatDriftWarningMessage(diffs))
@@ -163,7 +163,7 @@ func (e *DriftEvaluator) fetchExperimentalSnapshotNames(ctx context.Context, xid
 	}
 	var names []string
 	for _, snap := range snapshots {
-		if snap.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
+		if snap.Spec == nil || snap.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
 			continue
 		}
 		if len(names) >= maxDriftDetails {
@@ -225,12 +225,18 @@ func formatDriftWarningMessage(diffs []string) *essmsgpb.StructuredMessage {
 	}
 }
 
-// formatExperimentalWarningMessage constructs a StructuredMessage with WARNING severity for an experimental component.
-func formatExperimentalWarningMessage(componentName string) *essmsgpb.StructuredMessage {
+// formatExperimentalWarningMessage constructs a StructuredMessage with WARNING severity for experimental components.
+func formatExperimentalWarningMessage(componentNames []string) *essmsgpb.StructuredMessage {
+	warningText := "uses experimental component"
+	if len(componentNames) == 1 {
+		warningText = fmt.Sprintf("uses experimental component %s", componentNames[0])
+	} else if len(componentNames) > 1 {
+		warningText = fmt.Sprintf("uses experimental components: %s", strings.Join(componentNames, ", "))
+	}
 	return &essmsgpb.StructuredMessage{
 		Severity:       essmsgpb.StructuredMessage_WARNING,
 		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
-		UserFacingText: fmt.Sprintf("uses experimental component %s", componentName),
+		UserFacingText: warningText,
 		CreateTime:     timestamppb.Now(),
 	}
 }
