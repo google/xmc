@@ -74,10 +74,9 @@ jobs:
           persist-credentials: false
           # paths-filter v3.0.2 has no native merge_group support: it diffs against the base
           # SHA via `git fetch origin <sha>`, which fails on this private repo without
-          # persisted credentials. Full history avoids that fetch. PRs use the REST API, so
-          # they keep a shallow clone.
-          # Note: '0' and '1' are quoted because numeric 0 is falsy in GitHub Actions expressions.
-          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '1' }}
+          # persisted credentials. Full history avoids that fetch (consistent with lint.yml
+          # and unit-tests.yml) and ensures pull_request runs exercise the same checkout path.
+          fetch-depth: 0
 
       - name: 'Check Changed Paths'
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
