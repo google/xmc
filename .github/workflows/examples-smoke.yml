@@ -62,7 +62,8 @@ jobs:
     # individual steps are skipped when no relevant paths changed.
     name: 'Examples Import Check'
     runs-on: 'arc-runner-set'
-    timeout-minutes: 15
+    # ~31 checks x 30s worst case, plus the venv build, stays under this budget.
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: read
@@ -90,6 +91,8 @@ jobs:
               - 'deploy/cli/**'
               - 'api/protos/**'
               - 'tools/nightly_tests/examples_import_smoke.py'
+              - 'tools/nightly_tests/examples_verification/**'
+              - 'tools/nightly_tests/verification/**'
               - '.github/workflows/examples-smoke.yml'
               - '.github/workflows/nightly-examples-e2e.yml'
 

@@ -106,5 +106,9 @@ py_test(
     size = "small",
     srcs = ["examples_import_smoke_test.py"],
     imports = ["../.."],
-    deps = [":examples_import_smoke_lib"],
+    deps = [
+        ":examples_import_smoke_lib",
+        # Child processes import absl to exercise matrix-args parsing.
+        "@absl_py//absl/flags",
+    ],
 )

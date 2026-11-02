@@ -15,6 +15,7 @@
 
 """Unit tests for examples_import_smoke."""
 
+import dataclasses
 import io
 import json
 import pathlib
@@ -41,6 +42,7 @@ _WORKFLOW = textwrap.dedent(
               - id: 'ok_job_again'
                 example_path: 'examples/ok_job'
                 entrypoint: 'launch.py'
+                args: '--queue=x'
               - id: 'broken_job'
                 example_path: 'examples/broken_job'
                 entrypoint: 'create.py'
@@ -75,8 +77,28 @@ _BROKEN_ENTRYPOINT = textwrap.dedent(
     import atexit, sys
     atexit.register(lambda: print("WARNING: trailing cleanup log", file=sys.stderr))
     from json import resolve_auth_headers
+    if __name__ == "__main__":
+        pass
     """
 )
+# Defines absl flags at module level, like simple_job/launch.py.
+_FLAGS_ENTRYPOINT = textwrap.dedent(
+    """\
+    from absl import flags
+    flags.DEFINE_string("queue", None, "Target queue.")
+    flags.DEFINE_integer("num_work_units", 1, "Work units.")
+    flags.mark_flag_as_required("queue")
+    if __name__ == "__main__":
+        raise SystemExit("main must not run during smoke checks")
+    """
+)
+_GUARD_SNIPPETS = {
+    "standard": 'if __name__ == "__main__":\n    pass\n',
+    "reversed": 'if "__main__" == __name__:\n    pass\n',
+    "missing": "import sys\n",
+    "nested_only": 'def f():\n    if __name__ == "__main__":\n        pass\n',
+    "not_equal": 'if __name__ != "__main__":\n    pass\n',
+}
 
 
 class ParseEntrypointsTest(unittest.TestCase):
@@ -87,10 +109,86 @@ class ParseEntrypointsTest(unittest.TestCase):
         self.assertEqual(
             smoke.parse_entrypoints(_WORKFLOW),
             [
-                smoke.Entrypoint("examples/ok_job", "launch.py"),
+                smoke.Entrypoint("examples/ok_job", "launch.py", "--queue=x"),
                 smoke.Entrypoint("examples/broken_job", "create.py"),
             ],
         )
+
+    def test_same_entrypoint_with_different_args_is_kept(self) -> None:
+        """Matrix rows that differ only in args are checked separately."""
+        workflow = _WORKFLOW.replace("args: '--queue=x'", "args: '--queue=y'", 1)
+        self.assertEqual(
+            [e.args for e in smoke.parse_entrypoints(workflow)], ["--queue=y", "--queue=x", ""]
+        )
+
+    def test_parse_verify_modules_includes_ui_only_entries(self) -> None:
+        """Verify modules are collected for every entry, deduped, honoring the filter."""
+        workflow = textwrap.dedent(
+            """\
+            matrix:
+              example:
+                - id: 'a'
+                  example_path: 'examples/a'
+                  entrypoint: 'launch.py'
+                  verify_module: 'pkg.a_verify'
+                - id: 'a_again'
+                  example_path: 'examples/a'
+                  entrypoint: 'launch.py'
+                  verify_module: 'pkg.a_verify'
+                - id: 'ui'
+                  example_path: ''
+                  entrypoint: ''
+                  verify_module: 'pkg.ui_verify'
+            """
+        )
+        self.assertEqual(smoke.parse_verify_modules(workflow), ["pkg.a_verify", "pkg.ui_verify"])
+        self.assertEqual(smoke.parse_verify_modules(workflow, frozenset({"ui"})), ["pkg.ui_verify"])
+
+    def test_expand_args(self) -> None:
+        """Placeholders expand and tokens split like nightly's `eval echo`; others fail."""
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue=cpu-queue"])
+        with mock.patch.dict("os.environ", {"QUEUE_NAME": "gpu-queue"}):
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue=gpu-queue"])
+        with mock.patch.dict("os.environ", {"QUEUE_NAME": ""}):
+            self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue="])
+        tokenized: tuple[tuple[str, list[str]], ...] = (
+            (
+                '--endpoint="localhost:50051" --create-experiments',
+                ["--endpoint=localhost:50051", "--create-experiments"],
+            ),
+            ('--name="a b"', ["--name=a", "b"]),
+            ("", []),
+        )
+        for raw, expected in tokenized:
+            with self.subTest(raw=raw):
+                self.assertEqual(smoke.expand_args(raw), expected)
+        rejected = (
+            "--image=${IMAGE_TAG}",
+            "--queue=$QUEUE_NAME",
+            "--q=${QUEUE_NAME:-x}",
+            "--q=$(id)",
+            '--q="open',
+        )
+        for raw in rejected:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                smoke.expand_args(raw)
+
+    def test_has_main_guard(self) -> None:
+        """Only a top-level `__name__ == "__main__"` comparison counts as a guard."""
+        expected = {
+            "standard": True,
+            "reversed": True,
+            "missing": False,
+            "nested_only": False,
+            "not_equal": False,
+        }
+        with tempfile.TemporaryDirectory() as tmp_str:
+            for name, source in _GUARD_SNIPPETS.items():
+                with self.subTest(name):
+                    script = pathlib.Path(tmp_str) / f"{name}.py"
+                    script.write_text(source, encoding="utf-8")
+                    self.assertEqual(smoke._has_main_guard(script), expected[name])
 
     def test_tolerates_formatting_variations(self) -> None:
         """Quoting style, key order, interleaved keys, and comments do not matter."""
@@ -218,7 +316,10 @@ class SmokeExecutionTest(unittest.TestCase):
         """An entrypoint that blocks at import time fails with a timeout, not a hang."""
         slow_dir = self.repo / "examples" / "slow_job"
         slow_dir.mkdir(parents=True)
-        (slow_dir / "launch.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        (slow_dir / "launch.py").write_text(
+            'import time\ntime.sleep(30)\nif __name__ == "__main__":\n    pass\n',
+            encoding="utf-8",
+        )
         with mock.patch.object(smoke, "_IMPORT_TIMEOUT_SECONDS", 1):
             result = smoke.smoke_entrypoint(
                 self.python, self.repo, smoke.Entrypoint("examples/slow_job", "launch.py")
@@ -235,6 +336,92 @@ class SmokeExecutionTest(unittest.TestCase):
         )
         self.assertFalse(result.ok)
         self.assertIn("failed to start", result.error)
+
+    def _write_example(self, name: str, source: str) -> smoke.Entrypoint:
+        example_dir = self.repo / "examples" / name
+        example_dir.mkdir(parents=True)
+        (example_dir / "launch.py").write_text(source, encoding="utf-8")
+        return smoke.Entrypoint(f"examples/{name}", "launch.py")
+
+    def test_absl_args_are_parsed_against_module_flags(self) -> None:
+        """Matrix args must match the module's absl flags; unknown flags fail."""
+        entry = self._write_example("flags_job", _FLAGS_ENTRYPOINT)
+        cases = (
+            ("valid", "--queue=${QUEUE_NAME} --num_work_units=3", True, ""),
+            ("renamed_flag", "--queue_name=${QUEUE_NAME}", False, "queue_name"),
+            ("bad_type", "--num_work_units=three", False, "num_work_units"),
+            ("positional_leftover", "--queue=x extra", False, "unexpected positional args"),
+            ("quoted_value_split_like_nightly", '--queue="a b"', False, "unexpected positional"),
+            ("validators_run_without_args", "", False, "queue"),
+        )
+        for name, args, expected_ok, expected_error in cases:
+            with self.subTest(name):
+                result = smoke.smoke_entrypoint(
+                    self.python, self.repo, dataclasses.replace(entry, args=args)
+                )
+                self.assertEqual(result.ok, expected_ok, result.error)
+                self.assertIn(expected_error, result.error)
+
+    def test_args_are_ignored_for_modules_without_absl_flags(self) -> None:
+        """argparse-style entrypoints (flags parsed inside main) skip args parsing."""
+        entry = smoke.Entrypoint(
+            "examples/ok_job", "launch.py", "--endpoint=x --create-experiments"
+        )
+        self.assertTrue(smoke.smoke_entrypoint(self.python, self.repo, entry).ok)
+
+    def test_unknown_placeholder_fails_entry(self) -> None:
+        """An args placeholder the nightly step does not define fails that entry."""
+        entry = smoke.Entrypoint("examples/ok_job", "launch.py", "--image=${IMAGE_TAG}")
+        result = smoke.smoke_entrypoint(self.python, self.repo, entry)
+        self.assertFalse(result.ok)
+        self.assertIn("IMAGE_TAG", result.error)
+
+    def test_unparseable_entrypoint_fails_that_entry(self) -> None:
+        """Syntax errors or non-UTF-8 sources fail one entry instead of crashing the run."""
+        cases = (
+            ("syntax_job", b"def broken(:\n", "failed to parse"),
+            ("encoding_job", b"\xff\xfe not utf-8\n", "failed to parse"),
+        )
+        for name, source, expected_error in cases:
+            with self.subTest(name):
+                example_dir = self.repo / "examples" / name
+                example_dir.mkdir(parents=True)
+                (example_dir / "launch.py").write_bytes(source)
+                result = smoke.smoke_entrypoint(
+                    self.python, self.repo, smoke.Entrypoint(f"examples/{name}", "launch.py")
+                )
+                self.assertFalse(result.ok)
+                self.assertIn(expected_error, result.error)
+
+    def test_unreadable_entrypoint_fails_that_entry(self) -> None:
+        """An OSError reading the entrypoint (e.g. permissions) fails only that entry."""
+        entry = smoke.Entrypoint("examples/ok_job", "launch.py")
+        with mock.patch.object(pathlib.Path, "read_text", side_effect=PermissionError("denied")):
+            result = smoke.smoke_entrypoint(self.python, self.repo, entry)
+        self.assertFalse(result.ok)
+        self.assertIn("failed to parse", result.error)
+        self.assertIn("denied", result.error)
+
+    def test_missing_main_guard_fails_without_importing(self) -> None:
+        """An entrypoint without a `__main__` guard fails before it is imported."""
+        entry = self._write_example("unguarded_job", "raise SystemExit('imported!')\n")
+        result = smoke.smoke_entrypoint(self.python, self.repo, entry)
+        self.assertFalse(result.ok)
+        self.assertIn("guard", result.error)
+        self.assertNotIn("imported!", result.error)
+
+    def test_verify_modules_import_from_repo_root(self) -> None:
+        """Verify modules import by name from the repo root; broken ones fail."""
+        pkg = self.repo / "verify_pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "ok_verify.py").write_text("import verify_pkg\n", encoding="utf-8")
+        (pkg / "broken_verify.py").write_text("from json import nope\n", encoding="utf-8")
+        ok = smoke.smoke_verify_module(self.python, self.repo, "verify_pkg.ok_verify")
+        broken = smoke.smoke_verify_module(self.python, self.repo, "verify_pkg.broken_verify")
+        self.assertEqual((ok.ok, ok.kind, ok.example_path), (True, "verify_module", ""), ok.error)
+        self.assertFalse(broken.ok)
+        self.assertIn("nope", broken.error)
 
     def test_relative_paths_are_anchored(self) -> None:
         """Relative --repo-root/--venv-python are made absolute before cwd changes."""

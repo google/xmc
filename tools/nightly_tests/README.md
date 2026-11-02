@@ -126,21 +126,32 @@ If an [`examples/`](../../examples/) subdirectory cannot be executed by the nigh
 
 [`examples_import_smoke.py`](examples_import_smoke.py) (tested by [`examples_import_smoke_test.py`](examples_import_smoke_test.py)) catches example import regressions, such as a missing SDK symbol or a stale package shadowing a local SDK, before they reach the nightly suite. [`.github/workflows/examples-smoke.yml`](../../.github/workflows/examples-smoke.yml) runs it:
 
-- On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
+- On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, `tools/nightly_tests/{examples_verification,verification}/`, or the related workflows. Other PRs report success without running.
 - On `workflow_dispatch`, optionally with an `xmanager_version` override.
 - As the `examples-import-check` job of the nightly suite, in parallel with the image builds (it doesn't gate them). It receives the nightly `xmanager_version` and `examples_filter` inputs. A failed or cancelled import check alerts OWNERS, and the alert lists every failed job.
 
 The workflow builds one combined virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and the `requirements.txt` of each example in the nightly matrix. That script also asserts local SDK provenance. This approximates nightly, which builds one venv per example: requirement files are installed one after another, so a conflict between two examples resolves last-wins instead of failing.
 
-The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and plainly imports the entrypoint module (e.g. `import launch`) in its own subprocess, with the nightly launch step's working directory, `PYTHONPATH` and `sys.argv[0]`. Each example needs its own subprocess for three reasons: 12 of the 13 entrypoints share the module name `launch`, absl's flag registry is process-global (two examples define `--queue`), and each import gets a 30s timeout. `app.run(main)` never runs, because an imported module's `__name__` isn't `__main__`, so nothing is launched and no cluster or credentials are needed.
+The tool then reads the nightly matrix and runs each check in its own subprocess, with a 30s timeout per check:
+1. **Entrypoint import:** plainly imports the entrypoint module (e.g. `import launch`) with the nightly launch step's working directory, `PYTHONPATH` and `sys.argv[0]`. Each example needs its own subprocess because 12 of the 13 entrypoints share the module name `launch` and absl's flag registry is process-global (two examples define `--queue`).
+2. **Matrix args:** if the entrypoint module defines absl flags, the matrix `args` are parsed against them the way `app.run` would, so a renamed or removed flag, a failed flag validator, or a leftover positional argument fails.
+   - Args are tokenized like nightly's `eval echo`: quotes are removed and words are re-split on whitespace.
+   - `${QUEUE_NAME}` expands as in nightly. Any other placeholder or shell expansion (`$VAR`, `${VAR:-x}`, `$(...)`) fails.
+   - Entrypoints that parse arguments with argparse inside `main()` (`managed_xprof_artifact_job`, `xdash_dashboard`) can't be checked without running `main()`, so they're skipped. So are flags defined in a helper module rather than in the entrypoint itself.
+   - Each distinct `(entrypoint, args)` row is checked.
+3. **Main guard:** the entrypoint must have a top-level `if __name__ == "__main__":` block; this is verified statically, before the import.
+4. **Verify modules:** each matrix `verify_module`, including those of UI-only entries, has its body run from the repo root via `runpy.run_module`, as nightly's `python -m <module>` would, but without its `__main__` block. Caveat: the combined venv could satisfy a verify module's dependency through another example's requirements, which nightly's per-example venv wouldn't.
+
+`app.run(main)` never runs, so nothing is launched and no cluster or credentials are needed.
 
 > [!NOTE]
-> Scope: the check covers import-time behavior of the launch entrypoints only, meaning module imports and module-level flag definitions. It doesn't parse the matrix `args`, run `main()`, or import the `verify_module`s. Runtime behavior is still verified by the nightly workload suite.
+> Scope: import time only. The check doesn't run `main()` or any verifier logic. Runtime behavior is still verified by the nightly workload suite.
 
 ### Contract for example entrypoints
 The check assumes, and every nightly example currently satisfies, the following. New examples must too:
 - The entrypoint is an importable `<identifier>.py` file at the example root.
-- `main()` is only called under `if __name__ == "__main__":`. An unguarded `app.run(main)` would run during the check.
+- `main()` is only called under a top-level `if __name__ == "__main__":` (enforced by check 3).
+- Flags passed in the matrix `args` are absl flags defined in the entrypoint module (checked by check 2), or are parsed by argparse inside `main()`.
 - Nothing at import time needs the nightly launch environment (`XMANAGER_ENDPOINT`, `XMC_AUTH_TOKEN`, network, cluster). Module-level `dotenv.load_dotenv()` and flag definitions are fine.
 - A `sys.exit()` at import time is reported as success, so don't exit at import time.
 
