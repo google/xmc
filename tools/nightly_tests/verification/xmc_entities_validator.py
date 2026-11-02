@@ -769,7 +769,7 @@ def stop_work_units(stub: Any, xid: str) -> None:
     print(f"  [✓] Stopped pending WorkUnits for experiments/{xid}")
 
 
-def _normalize_artifact_type(type_name: str) -> str:
+def normalize_artifact_type(type_name: str) -> str:
     """Normalizes artifact type string (e.g., 'ChartArtifact' -> 'chart')."""
     base = type_name.strip().split(".")[-1]
     snake = re.sub(r"(?<!^)(?=[A-Z])", "_", base).lower()
@@ -801,7 +801,7 @@ def _extract_artifact_payload_info(art: Any) -> tuple[str, Any]:
     )
     if not which:
         return "", None
-    return _normalize_artifact_type(which), getattr(payload, which, None)
+    return normalize_artifact_type(which), getattr(payload, which, None)
 
 
 def _extract_chart_artifact_details(art_name: str, chart: Any) -> tuple[list[str], str]:
@@ -815,7 +815,35 @@ def _extract_chart_artifact_details(art_name: str, chart: Any) -> tuple[list[str
     return list(getattr(chart, "metric_names", [])), getattr(chart, "title", "")
 
 
-def _process_single_artifact(art: Any) -> dict[str, Any]:
+def _extract_managed_xprof_details(
+    art: Any, art_name: str, payload: Any, require_url: bool
+) -> tuple[str, str, str]:
+    """Validates ManagedXprofArtifact metadata and optional enriched xprof_url."""
+    title = str(getattr(payload, "display_name", "") or "").strip()
+    if not title:
+        raise AssertionError(f"ManagedXprofArtifact '{art_name}' has an empty display_name.")
+    xprof_url = ""
+    if (xprof_obj := getattr(payload, "xprof", None)) is not None:
+        xprof_url = str(getattr(xprof_obj, "xprof_url", "") or "").strip()
+    top_url = ""
+    if (art_url_obj := getattr(art, "url", None)) is not None:
+        top_url = str(getattr(art_url_obj, "url", "") or "").strip()
+    if xprof_url:
+        if not xprof_url.startswith(("http://", "https://")):
+            raise AssertionError(
+                f"ManagedXprofArtifact '{art_name}' has invalid xprof_url '{xprof_url}'."
+            )
+        if top_url and top_url != xprof_url:
+            raise AssertionError(
+                f"ManagedXprofArtifact '{art_name}' url mismatch: "
+                f"xprof_url='{xprof_url}', artifact.url='{top_url}'."
+            )
+    elif require_url:
+        return "pending_managed_xprof", title, ""
+    return "managed_xprof", title, xprof_url
+
+
+def _process_single_artifact(art: Any, require_managed_xprof_url: bool = False) -> dict[str, Any]:
     """Processes a single artifact object into normalized metadata dictionary."""
     art_name = getattr(art, "name", "")
     norm_type, payload = _extract_artifact_payload_info(art)
@@ -831,6 +859,10 @@ def _process_single_artifact(art: Any) -> dict[str, Any]:
         if not url_str.strip():
             raise AssertionError(f"Found URL artifact '{art_name}' with empty URL field.")
         title = getattr(payload, "display_name", "")
+    elif norm_type == "managed_xprof" and payload is not None:
+        satisfied_type, title, url_str = _extract_managed_xprof_details(
+            art, art_name, payload, require_managed_xprof_url
+        )
     return {
         "name": art_name,
         "parent": getattr(art, "parent", ""),
@@ -858,6 +890,12 @@ def _verify_artifacts_satisfied(
         return True
     if not timed_out:
         return False
+    if "managed_xprof" in missing_types and "pending_managed_xprof" in found_types:
+        raise AssertionError(
+            f"ManagedXprofArtifact found in {parent_name}, but payload.xprof.xprof_url "
+            "remained empty (Reconciler did not write mlrun_url or cluster lacks "
+            "managed_xprof_gcs_bucket)."
+        )
     if missing_types:
         raise AssertionError(
             f"Expected artifact types {missing_types} not found in {parent_name}. "
@@ -877,10 +915,11 @@ def validate_artifacts(
     expected_metric_names: Sequence[str] | None = None,
     timeout_sec: int = 60,
     poll_interval_sec: int = 2,
+    require_managed_xprof_url: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetches and validates artifacts associated with an Experiment or WorkUnit."""
     parent = f"experiments/{xid}/workUnits/{wid}" if wid is not None else f"experiments/{xid}"
-    exp_types = {_normalize_artifact_type(t) for t in (expected_artifact_types or ())}
+    exp_types = {normalize_artifact_type(t) for t in (expected_artifact_types or ())}
     exp_metrics = set(expected_metric_names or ())
     start_time = time.monotonic()
 
@@ -888,7 +927,7 @@ def validate_artifacts(
         elapsed = time.monotonic() - start_time
         raw = _fetch_raw_artifacts(stub, parent, elapsed, timeout_sec)
         if raw is not None:
-            results = [_process_single_artifact(art) for art in raw]
+            results = [_process_single_artifact(art, require_managed_xprof_url) for art in raw]
             if _verify_artifacts_satisfied(
                 results, exp_types, exp_metrics, parent, elapsed >= timeout_sec
             ):

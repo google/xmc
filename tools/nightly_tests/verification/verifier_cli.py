@@ -71,6 +71,13 @@ flags.DEFINE_string(
     None,
     "Expected title pattern for the experiment or dashboard",
 )
+flags.DEFINE_enum(
+    "require_managed_xprof_url",
+    "auto",
+    ["auto", "true", "false"],
+    "Whether ManagedXprof artifacts must expose an enriched xprof_url "
+    "(auto enforces when ConfigMap managed-xprof-gcs-config exists in K8s).",
+)
 flags.DEFINE_string("ui_base_url", None, "Base URL of the XMC Web UI")
 flags.DEFINE_string("auth_token", None, "Optional Bearer/IAP auth token")
 flags.DEFINE_bool("headless", True, "Run browser in headless mode")
@@ -79,7 +86,11 @@ flags.DEFINE_string("screenshots_dir", None, "Target directory for diagnostic sc
 
 def get_flag(flags_obj: Any, name: str, default: Any = None) -> Any:
     """Safely retrieves a flag value from absl FLAGS or a mock SimpleNamespace."""
-    return default if (val := getattr(flags_obj, name, None)) is None else val
+    try:
+        val = getattr(flags_obj, name, None)
+    except flags.UnparsedFlagAccessError:
+        return default
+    return default if val is None else val
 
 
 def validate_argv(argv: Sequence[str]) -> None:

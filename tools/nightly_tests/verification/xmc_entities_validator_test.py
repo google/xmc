@@ -755,14 +755,14 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     # =========================================================================
 
     def test_normalize_artifact_type(self) -> None:
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("ChartArtifact"), "chart")
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("UrlArtifact"), "url")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("ChartArtifact"), "chart")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("UrlArtifact"), "url")
         self.assertEqual(
-            xmc_entities_validator._normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
+            xmc_entities_validator.normalize_artifact_type("ManagedXprofArtifact"), "managed_xprof"
         )
-        self.assertEqual(xmc_entities_validator._normalize_artifact_type("chart"), "chart")
+        self.assertEqual(xmc_entities_validator.normalize_artifact_type("chart"), "chart")
         self.assertEqual(
-            xmc_entities_validator._normalize_artifact_type("ArtifactPayload.chart"), "chart"
+            xmc_entities_validator.normalize_artifact_type("ArtifactPayload.chart"), "chart"
         )
 
     def test_validate_artifacts_success_with_chart_and_url(self) -> None:
@@ -985,6 +985,104 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 poll_interval_sec=0,
             )
         self.assertIn("Found URL artifact 'artifacts/99' with empty URL field", str(ctx.exception))
+
+    def test_validate_artifacts_managed_xprof_lenient_and_strict_url(self) -> None:
+        stub = mock.MagicMock()
+
+        def make_mx_art(
+            display_name: str = "exp_1",
+            xprof_url: str | None = "",
+            top_url: str = "",
+        ) -> SimpleNamespace:
+            mx_obj = SimpleNamespace(
+                display_name=display_name,
+                run_group="group_1",
+                xprof=SimpleNamespace(xprof_url=xprof_url) if xprof_url is not None else None,
+            )
+            return SimpleNamespace(
+                name="artifacts/77",
+                parent="experiments/10/workUnits/1",
+                url=SimpleNamespace(url=top_url) if top_url else None,
+                payload=SimpleNamespace(
+                    managed_xprof=mx_obj,
+                    WhichOneof=lambda f: "managed_xprof" if f == "type" else None,
+                ),
+            )
+
+        # Lenient mode succeeds even when xprof_url or payload.xprof is not populated.
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[make_mx_art(xprof_url=None)])
+        res = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["ManagedXprofArtifact"],
+            timeout_sec=1,
+            poll_interval_sec=0,
+            require_managed_xprof_url=False,
+        )
+        self.assertEqual(res[0]["normalized_type"], "managed_xprof")
+        self.assertEqual(res[0]["title"], "exp_1")
+        self.assertEqual(res[0]["url"], "")
+
+        # Strict mode polls while xprof_url is empty, then passes once enriched.
+        valid_url = (
+            "https://console.cloud.google.com/kubernetes/aiml/run/details/"
+            "us-central1/run-1?project=p&tab=profiles"
+        )
+        stub.ListArtifacts.reset_mock()
+        stub.ListArtifacts.side_effect = [
+            SimpleNamespace(artifacts=[make_mx_art(xprof_url="")]),
+            SimpleNamespace(artifacts=[make_mx_art(xprof_url=valid_url, top_url=valid_url)]),
+        ]
+        res_strict = xmc_entities_validator.validate_artifacts(
+            stub=stub,
+            xid="10",
+            wid="1",
+            expected_artifact_types=["ManagedXprofArtifact"],
+            timeout_sec=5,
+            poll_interval_sec=0,
+            require_managed_xprof_url=True,
+        )
+        self.assertEqual(stub.ListArtifacts.call_count, 2)
+        self.assertEqual(res_strict[0]["url"], valid_url)
+
+        # Strict mode raises clear diagnostic error on timeout when xprof_url stays empty.
+        stub.ListArtifacts.side_effect = None
+        stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[make_mx_art(xprof_url="")])
+        with self.assertRaises(AssertionError) as ctx:
+            xmc_entities_validator.validate_artifacts(
+                stub=stub,
+                xid="10",
+                wid="1",
+                expected_artifact_types=["managed_xprof"],
+                timeout_sec=0,
+                poll_interval_sec=0,
+                require_managed_xprof_url=True,
+            )
+        self.assertIn("xprof_url remained empty", str(ctx.exception))
+        self.assertIn("mlrun_url", str(ctx.exception))
+
+        # Empty display_name, invalid scheme, and top-level art.url mismatch raise AssertionError.
+        for bad_art, expected_msg in (
+            (make_mx_art(display_name="   "), "empty display_name"),
+            (make_mx_art(xprof_url="gs://bucket/not-http"), "invalid xprof_url"),
+            (
+                make_mx_art(xprof_url=valid_url, top_url="https://console.cloud.google.com/other"),
+                "url mismatch",
+            ),
+        ):
+            stub.ListArtifacts.return_value = SimpleNamespace(artifacts=[bad_art])
+            with self.assertRaises(AssertionError) as bad_ctx:
+                xmc_entities_validator.validate_artifacts(
+                    stub=stub,
+                    xid="10",
+                    wid="1",
+                    expected_artifact_types=["managed_xprof"],
+                    timeout_sec=1,
+                    poll_interval_sec=0,
+                    require_managed_xprof_url=True,
+                )
+            self.assertIn(expected_msg, str(bad_ctx.exception))
 
     # =========================================================================
     # Phase 2: validate_dashboard Tests
