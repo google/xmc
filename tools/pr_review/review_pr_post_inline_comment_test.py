@@ -19,7 +19,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
-from tools.pr_review.github_utils import GithubAuthError
+from tools.pr_review.github_utils import GithubAPIError, GithubAuthError
 from tools.pr_review.review_pr_post_inline_comment import get_git_username, post_inline_comment
 
 _MODULE = "tools.pr_review.review_pr_post_inline_comment"
@@ -35,8 +35,29 @@ class TestGetGitUsername(unittest.TestCase):
 
     @patch.dict("os.environ", {"USER": "local_user"})
     @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAuthError("no auth"))
-    def test_falls_back_to_user_env_on_failure(self, _):
-        self.assertEqual(get_git_username(), "local_user")
+    def test_auth_failure_raises_without_user_env_fallback(self, _):
+        with self.assertRaises(HandledError) as ctx:
+            get_git_username()
+        self.assertIn("no auth", str(ctx.exception))
+        self.assertNotIn("local_user", str(ctx.exception))
+
+    @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAPIError("no login"))
+    def test_api_failure_raises(self, _):
+        with self.assertRaises(HandledError):
+            get_git_username()
+
+    @patch(f"{_MODULE}.call_github_api")
+    @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAuthError("no auth"))
+    def test_post_inline_comment_login_failure_posts_nothing(self, _, mock_api):
+        args = MagicMock()
+        args.resolve_thread = None
+        args.message = "hello"
+        args.message_file = None
+        args.in_reply_to = 101
+
+        with self.assertRaises(HandledError):
+            post_inline_comment(args)
+        mock_api.assert_not_called()
 
 
 class TestReviewPRPostInlineComment(unittest.TestCase):
