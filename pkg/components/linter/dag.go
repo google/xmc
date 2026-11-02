@@ -55,10 +55,18 @@ func checkDependencyCompleteness(compManifests []*ComponentManifest, compMap map
 			if cEnabled && !depComp.IsEnabled() && !dep.Optional {
 				res.AddError(c.FilePath, line, "DISABLED_DEPENDENCY", fmt.Sprintf("enabled component %q depends on disabled component %q", cName, depName))
 			}
-			if depComp.EffectiveStability() == "EXPERIMENTAL" && (c.EffectiveStability() == "STABLE" || c.EffectiveStability() == "PREVIEW") {
-				res.AddError(c.FilePath, line, "STABILITY_INVERSION", fmt.Sprintf("stability inversion: %s component %q cannot depend on EXPERIMENTAL component %q", c.EffectiveStability(), cName, depName))
-			}
+			checkStabilityInversion(c, depComp, cName, depName, line, res)
 		}
+	}
+}
+
+func checkStabilityInversion(c, depComp *ComponentManifest, cName, depName string, line int, res *ValidationResult) {
+	if c == nil || depComp == nil || depComp.EffectiveStability() != "EXPERIMENTAL" {
+		return
+	}
+	cStability := c.EffectiveStability()
+	if cStability == "STABLE" || cStability == "PREVIEW" {
+		res.AddError(c.FilePath, line, "STABILITY_INVERSION", fmt.Sprintf("stability inversion: %s component %q cannot depend on EXPERIMENTAL component %q", cStability, cName, depName))
 	}
 }
 

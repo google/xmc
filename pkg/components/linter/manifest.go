@@ -52,6 +52,9 @@ func (c *ComponentManifest) IsEnabled() bool {
 // EffectiveStability returns the normalized stability tier ("EXPERIMENTAL", "PREVIEW", or "STABLE"),
 // treating an unset or UNSPECIFIED stability as "STABLE".
 func (c *ComponentManifest) EffectiveStability() string {
+	if c == nil {
+		return "STABLE"
+	}
 	switch c.Spec.Stability {
 	case "EXPERIMENTAL", "COMPONENT_STABILITY_EXPERIMENTAL":
 		return "EXPERIMENTAL"
