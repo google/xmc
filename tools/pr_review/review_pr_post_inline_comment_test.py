@@ -50,6 +50,9 @@ class TestGetGitUsername(unittest.TestCase):
     @patch(f"{_MODULE}.get_authenticated_login", side_effect=GithubAuthError("no auth"))
     def test_post_inline_comment_login_failure_posts_nothing(self, _, mock_api):
         args = MagicMock()
+        args.owner = "google"
+        args.repo = "xmc"
+        args.pr_number = 15
         args.resolve_thread = None
         args.message = "hello"
         args.message_file = None
