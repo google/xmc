@@ -234,48 +234,70 @@ func TestEnsureMLRunCreated(t *testing.T) {
 
 func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 	tests := []struct {
-		name     string
-		storage  ReconcilerStorage
-		wantURL  string
-		wantSkip bool
+		name          string
+		storage       ReconcilerStorage
+		wantURL       string
+		wantSkip      bool
+		wantCachedURL string
 	}{
 		{
-			name:     "nil storage",
-			storage:  nil,
-			wantURL:  "",
-			wantSkip: false,
+			name:          "nil storage",
+			storage:       nil,
+			wantURL:       "",
+			wantSkip:      false,
+			wantCachedURL: "",
 		},
 		{
-			name:     "fetch error returns empty and false",
-			storage:  &mockStorageUpdater{fetchErr: errors.New("fetch error")},
-			wantURL:  "",
-			wantSkip: false,
+			name:          "fetch error returns empty and false",
+			storage:       &mockStorageUpdater{fetchErr: errors.New("fetch error")},
+			wantURL:       "",
+			wantSkip:      false,
+			wantCachedURL: "",
 		},
 		{
-			name: "running execution with mlrun url",
+			name: "running execution with matching eid caches mlrun url",
 			storage: &mockStorageUpdater{
 				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
 					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
 					Metadata: &spb.WorkUnitExecutionMetadata{
 						MlrunUrl: "https://mlrun.example.com/123",
 					},
 				},
 			},
-			wantURL:  "https://mlrun.example.com/123",
-			wantSkip: false,
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      false,
+			wantCachedURL: "https://mlrun.example.com/123",
 		},
 		{
-			name: "terminal status sets skip to true",
+			name: "stale execution mlrun url is not cached under reconciled eid",
 			storage: &mockStorageUpdater{
 				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/2",
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      false,
+			wantCachedURL: "",
+		},
+		{
+			name: "terminal status sets skip to true and caches matching eid url",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
 					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_COMPLETED},
 					Metadata: &spb.WorkUnitExecutionMetadata{
 						MlrunUrl: "https://mlrun.example.com/123",
 					},
 				},
 			},
-			wantURL:  "https://mlrun.example.com/123",
-			wantSkip: true,
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      true,
+			wantCachedURL: "https://mlrun.example.com/123",
 		},
 	}
 
@@ -285,6 +307,9 @@ func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1, 1)
 			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
 				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
+			}
+			if gotCached := r.getCachedMLRunURL(1, 1, 1); gotCached != tc.wantCachedURL {
+				t.Errorf("getCachedMLRunURL(1, 1, 1) = %q, want %q", gotCached, tc.wantCachedURL)
 			}
 		})
 	}

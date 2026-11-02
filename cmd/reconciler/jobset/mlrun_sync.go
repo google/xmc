@@ -208,12 +208,14 @@ func withExistingSessionsOnlyLabel(labels map[string]string) map[string]string {
 // (its id is carried in the conflict error, falling back to our deterministic id)
 // and, if the run is not one we own, updates it with our ManagedXprof fields so
 // enrichment is applied even to runs created by other producers. A run we already
-// own is returned as an idempotent success without an update.
+// own is returned as an idempotent success without an update. It returns the run
+// URL and whether the run was confirmed; on GetMLRun/UpdateMLRun failure it returns
+// a best-effort console URL with false so callers do not cache it.
 func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) (string, bool) {
 	existingID := resolveExistingMLRunID(createErr, mlRunID)
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
-		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
+		logging.Warn(ctx, "MLRun already exists but could not be fetched; returning unconfirmed console URL fallback", "mlRunID", existingID, "error", err)
 		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject()), false
 	}
 	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
