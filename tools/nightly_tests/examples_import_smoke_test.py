@@ -127,6 +127,38 @@ class ParseEntrypointsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "create.py"):
             smoke.parse_entrypoints(broken)
 
+    def test_keys_outside_list_items_are_not_attributed(self) -> None:
+        """Keys after a list ends, or before a later block's first item, stay unattached."""
+        workflow = textwrap.dedent(
+            """\
+            jobs:
+              a:
+                strategy:
+                  matrix:
+                    example:
+                      - id: 'first'
+                        example_path: 'examples/a'
+                        entrypoint: 'launch.py'
+                    id: 'not_an_item_key'
+              b:
+                strategy:
+                  matrix:
+                    id: 'stray'
+                    entrypoint: 'stray.py'
+                    example:
+                      - id: 'second'
+                        example_path: 'examples/b'
+                        entrypoint: 'launch.py'
+            """
+        )
+        self.assertEqual(
+            smoke.parse_matrix_items(workflow),
+            [
+                {"id": "first", "example_path": "examples/a", "entrypoint": "launch.py"},
+                {"id": "second", "example_path": "examples/b", "entrypoint": "launch.py"},
+            ],
+        )
+
 
 class SmokeExecutionTest(unittest.TestCase):
     """Tests for smoke_entrypoint and main using real subprocesses."""

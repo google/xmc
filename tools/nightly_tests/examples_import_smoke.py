@@ -136,11 +136,19 @@ def parse_matrix_items(workflow_text: str) -> list[dict[str, str]]:
     interleaved keys do not matter.
     """
     items: list[dict[str, str]] = []
+    # Indentation of the `-` opening the active list item; None when outside an item,
+    # so keys after a list ends (or before the first item of a later matrix block)
+    # are never attributed to the previous item.
+    item_indent: int | None = None
     for line in _matrix_lines(workflow_text):
+        indent = len(line) - len(line.lstrip())
         if _ITEM_START_RE.match(line):
             items.append({})
+            item_indent = indent
+        elif item_indent is not None and indent <= item_indent:
+            item_indent = None
         key_match = _KEY_RE.match(line)
-        if key_match and items:
+        if key_match and item_indent is not None:
             items[-1][key_match.group("key")] = _unquote(key_match.group("value"))
     return [item for item in items if item]
 
