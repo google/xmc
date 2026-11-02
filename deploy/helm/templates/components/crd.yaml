@@ -88,7 +88,7 @@ spec:
               required:
                 - enabled
               x-kubernetes-validations:
-                - rule: "!(self.enabled && has(self.stability) && self.stability == 'EXPERIMENTAL') || self.acknowledgeExperimental == true"
+                - rule: "!self.enabled || !has(self.stability) || self.stability != 'EXPERIMENTAL' || (has(self.acknowledgeExperimental) && self.acknowledgeExperimental)"
                   message: "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component (spec.stability == 'EXPERIMENTAL')."
               properties:
                 enabled:

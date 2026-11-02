@@ -463,7 +463,7 @@ func TestCRDPreExistingCROmittedStabilityFieldsUpdate(t *testing.T) {
 	})
 	restoreCRD()
 	pollUntil(ctx, t, "the restored stability rule to reject an unacknowledged enabled EXPERIMENTAL Component", func() bool {
-		_, err := comps.Create(ctx, newComponentManifest("exp-probe", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "deletionProtection": false}), metav1.CreateOptions{})
+		_, err := comps.Create(ctx, newComponentManifest("exp-probe", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "deletionProtection": false}), metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
 		return err != nil && strings.Contains(err.Error(), "spec.acknowledgeExperimental must be set to true")
 	})
 
