@@ -60,6 +60,9 @@ func checkDependencyCompleteness(compManifests []*ComponentManifest, compMap map
 	}
 }
 
+// checkStabilityInversion enforces the XMC Component Stability Contract (matching runtime CMS
+// ValidateIntentStability): STABLE and PREVIEW components must not depend on EXPERIMENTAL
+// components, while STABLE components are permitted to depend on PREVIEW components.
 func checkStabilityInversion(c, depComp *ComponentManifest, cName, depName string, line int, res *ValidationResult) {
 	if c == nil || depComp == nil || depComp.EffectiveStability() != "EXPERIMENTAL" {
 		return
