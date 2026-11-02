@@ -64,7 +64,7 @@ describe('ResourceDashboard Container', () => {
     ],
   };
 
-  cleanState(() => {
+  const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
@@ -227,5 +227,37 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await card1.isSelected()).toBeTrue();
+  });
+
+  it('should synthesize generic parent in dropdown and match specific compound queue when selected', async () => {
+    const mockA100Queue: QueueOverview = {
+      queueName: 'a100-gpu-queue',
+      queueCapacity: [
+        {
+          resourceType: 'nvidia.com/gpu: nvidia-tesla-a100',
+          totalCapacity: 64,
+          freeCapacity: 56,
+        },
+      ],
+    };
+    state.resourceService.getClusterQueues.and.returnValue(
+      of({ queues: [mockA100Queue, mockCpuQueue] } as ListClusterQueuesResponse),
+    );
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
+    const options = await finderHarness.getResourceTypeOptions();
+    expect(options).toEqual(['-', 'cpu', 'nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']);
+
+    await finderHarness.setAmountValue('32');
+    await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
+    await flush();
+
+    const queueListHarness = (await dashboard.getQueueList())!;
+    expect(await queueListHarness.getQueueCardCount()).toBe(1);
+    expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('a100-gpu-queue');
   });
 });
