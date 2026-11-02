@@ -44,7 +44,7 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		Parameters:              parseParameters(specMap),
 		Dependencies:            parseDependencies(specMap),
 		Stability:               parseStability(specMap),
-		AcknowledgeExperimental: extractBool(specMap, "acknowledgeExperimental", false),
+		AcknowledgeExperimental: extractBool(specMap, "acknowledgeExperimental", extractBool(specMap, "acknowledge_experimental", false)),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
 }

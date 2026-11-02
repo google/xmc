@@ -503,6 +503,12 @@ func TestParseSpecFromUnstructured_Stability(t *testing.T) {
 			wantAck:       true,
 		},
 		{
+			name:          "EXPERIMENTAL with snake_case acknowledge_experimental true",
+			spec:          map[string]any{"stability": "EXPERIMENTAL", "acknowledge_experimental": true},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantAck:       true,
+		},
+		{
 			name:          "PREVIEW prefixed string",
 			spec:          map[string]any{"stability": "COMPONENT_STABILITY_PREVIEW"},
 			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW,
