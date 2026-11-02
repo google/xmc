@@ -119,3 +119,34 @@ Export `<example_name>_verify.py` in `exports_files` and add the corresponding `
 Adding a nightly verification suite is the default expectation for all examples (including GPU/TPU examples via Pattern B above).
 
 If an [`examples/`](../../examples/) subdirectory cannot be executed by the nightly GKE workflow (such as static YAML catalogs or local-only `xm_local` scripts), add its directory name with an explanatory comment to the exemption set in [`check_examples_coverage.py`](check_examples_coverage.py).
+
+---
+
+## 4. Per-PR Examples Import Check
+
+[`examples_import_smoke.py`](examples_import_smoke.py) (tested by [`examples_import_smoke_test.py`](examples_import_smoke_test.py)) catches example import regressions, such as a missing SDK symbol or a stale package shadowing a local SDK, before they reach the nightly suite. [`.github/workflows/examples-smoke.yml`](../../.github/workflows/examples-smoke.yml) runs it:
+
+- On every PR and merge-queue run that touches `examples/`, `sdks/python/`, `deploy/cli/`, `api/protos/`, or the related workflows. Other PRs report success without running.
+- On `workflow_dispatch`, optionally with an `xmanager_version` override.
+
+The workflow builds one combined virtualenv with [`install_xmanager.py`](../../deploy/cli/install_xmanager.py) and the `requirements.txt` of each example in the nightly matrix. That script also asserts local SDK provenance. This approximates nightly, which builds one venv per example: requirement files are installed one after another, so a conflict between two examples resolves last-wins instead of failing.
+
+The tool then reads each `(example_path, entrypoint)` pair from the nightly matrix and plainly imports the entrypoint module (e.g. `import launch`) in its own subprocess, with the nightly launch step's working directory, `PYTHONPATH` and `sys.argv[0]`. Each example needs its own subprocess for three reasons: 12 of the 13 entrypoints share the module name `launch`, absl's flag registry is process-global (two examples define `--queue`), and each import gets a 30s timeout. `app.run(main)` never runs, because an imported module's `__name__` isn't `__main__`, so nothing is launched and no cluster or credentials are needed.
+
+> [!NOTE]
+> Scope: the check covers import-time behavior of the launch entrypoints only, meaning module imports and module-level flag definitions. It doesn't parse the matrix `args`, run `main()`, or import the `verify_module`s. Runtime behavior is still verified by the nightly workload suite.
+
+### Contract for example entrypoints
+The check assumes, and every nightly example currently satisfies, the following. New examples must too:
+- The entrypoint is an importable `<identifier>.py` file at the example root.
+- `main()` is only called under `if __name__ == "__main__":`. An unguarded `app.run(main)` would run during the check.
+- Nothing at import time needs the nightly launch environment (`XMANAGER_ENDPOINT`, `XMC_AUTH_TOKEN`, network, cluster). Module-level `dotenv.load_dotenv()` and flag definitions are fine.
+- A `sys.exit()` at import time is reported as success, so don't exit at import time.
+
+Run it locally:
+
+```bash
+python3 deploy/cli/install_xmanager.py --venv .venv \
+  $(for p in $(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths); do printf -- '--requirements %s/requirements.txt ' "$p"; done)
+.venv/bin/python3 tools/nightly_tests/examples_import_smoke.py --venv-python .venv/bin/python3
+```
