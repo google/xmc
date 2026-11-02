@@ -62,7 +62,7 @@ func (l *Linter) validateComponentManifest(c *ComponentManifest, rules *RulesCon
 	if c.Spec.ComponentType != "" && !isValidComponentType(c.Spec.ComponentType) {
 		res.AddError(c.FilePath, line, "INVALID_COMPONENT_TYPE", fmt.Sprintf("invalid spec.componentType %q", c.Spec.ComponentType))
 	}
-	validateComponentStability(c, line, rules, res)
+	validateComponentStability(c, line, rules.StaticChecks, res)
 	if c.Spec.DeletionPolicy != "" && !isValidDeletionPolicy(c.Spec.DeletionPolicy) {
 		res.AddError(c.FilePath, line, "INVALID_DELETION_POLICY", fmt.Sprintf("invalid spec.deletionPolicy %q", c.Spec.DeletionPolicy))
 	} else if isLegacyDeletionPolicy(c.Spec.DeletionPolicy) {
@@ -177,7 +177,7 @@ func isLegacyDeletionPolicy(dp string) bool {
 	return t == "DELETE" || t == "ORPHAN" || t == "DELETION_POLICY_DELETE" || t == "DELETION_POLICY_ORPHAN" || t == "UNSPECIFIED"
 }
 
-func validateComponentStability(c *ComponentManifest, line int, rules *RulesConfig, res *ValidationResult) {
+func validateComponentStability(c *ComponentManifest, line int, checks StaticChecksConfig, res *ValidationResult) {
 	if c.Spec.Stability != "" && !isValidStability(c.Spec.Stability) {
 		res.AddError(c.FilePath, line, "INVALID_STABILITY", fmt.Sprintf("invalid spec.stability %q; must be EXPERIMENTAL, PREVIEW, or STABLE", c.Spec.Stability))
 		return
@@ -185,7 +185,7 @@ func validateComponentStability(c *ComponentManifest, line int, rules *RulesConf
 	if c.EffectiveStability() != "EXPERIMENTAL" {
 		return
 	}
-	if !rules.StaticChecks.IsExperimentalAllowed() {
+	if !checks.IsExperimentalAllowed() {
 		res.AddError(c.FilePath, line, "EXPERIMENTAL_NOT_ACKNOWLEDGED", fmt.Sprintf("component %q has stability EXPERIMENTAL, which is disallowed by staticChecks.allowExperimental=false", c.Metadata.Name))
 		return
 	}
