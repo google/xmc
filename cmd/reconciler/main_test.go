@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 )
@@ -45,6 +46,13 @@ func TestNewMLRunCreatorReturnsNilInterfaceOnError(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
+	t.Setenv("quota_project_id", "")
+	if err := os.Unsetenv("quota_project_id"); err != nil {
+		t.Fatalf("os.Unsetenv(quota_project_id) failed: %v", err)
+	}
+	t.Cleanup(registerConfigs)
+	registerConfigs()
+
 	cfg := Load()
 	if cfg.QuotaProjectID != "xmc-project" {
 		t.Errorf("Load().QuotaProjectID = %q, want %q", cfg.QuotaProjectID, "xmc-project")
