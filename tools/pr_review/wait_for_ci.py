@@ -163,21 +163,23 @@ def _check_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
     return ("CheckRun", entry.get("workflowName") or "", entry.get("name") or "")
 
 
-def _recency_key(entry: dict[str, Any]) -> tuple[bool, str, str, int, int]:
-    """Orders runs of one check from oldest to newest.
+def _recency_key(entry: dict[str, Any]) -> tuple[int, int, bool, str, str]:
+    """Orders runs of one check from oldest to newest by creation order.
 
-    Unfinished runs rank newest because a concurrency group cancels the older
-    run, never the newer one. ISO-8601 UTC timestamps compare lexically; the
-    run and job IDs, which increase monotonically, break same-second ties.
+    GitHub Actions job and run IDs increase monotonically and exist as soon as a
+    job is queued, so they order runs by when they were created: a re-run job
+    gets a newer job ID within its run, and a hung older run cannot shadow a
+    newer completed one. Checks without an Actions URL fall back to ranking
+    unfinished runs newest, then ISO-8601 UTC timestamps, which compare lexically.
     """
     ref = parse_run_reference(entry.get("detailsUrl") or entry.get("targetUrl") or "")
     run_id, job_id = (int(ref[1]), int(ref[2] or 0)) if ref else (0, 0)
     return (
+        job_id,
+        run_id,
         classify_check(entry).state == PENDING,
         entry.get("startedAt") or "",
         entry.get("completedAt") or "",
-        run_id,
-        job_id,
     )
 
 
@@ -188,6 +190,10 @@ def latest_runs(rollup: list[dict[str, Any]]) -> list[dict[str, Any]]:
     cancels the runs for the previous push. Those CANCELLED runs stay in the
     rollup for the same head commit, so judging every entry would report them as
     failures. A cancelled run that is the newest run of its check still counts.
+
+    The rollup does not expose a run's trigger event, so runs of the same job
+    started by different events (e.g. `pull_request` and `workflow_dispatch`)
+    on one commit collapse into a single check judged by its newest run.
 
     Args:
       rollup: Raw `statusCheckRollup` entries.

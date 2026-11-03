@@ -185,9 +185,10 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(parse_rollup('{"statusCheckRollup": null}'), [])
 
 
-def _run_at(name, started, conclusion="SUCCESS", run_id=1, workflow="CI", **kwargs):
-    """Builds a timestamped CheckRun entry from a given workflow run."""
-    url = f"https://github.com/google/xmc/actions/runs/{run_id}/job/{run_id}0"
+def _run_at(name, started, conclusion="SUCCESS", run_id=1, job_id=None, workflow="CI", **kwargs):
+    """Builds a timestamped CheckRun entry for one job of a workflow run."""
+    job_id = job_id if job_id is not None else run_id * 10
+    url = f"https://github.com/google/xmc/actions/runs/{run_id}/job/{job_id}"
     entry = _check_run(name, conclusion=conclusion, url=url, **kwargs)
     return entry | {"workflowName": workflow, "startedAt": started}
 
@@ -208,14 +209,46 @@ class TestLatestRuns(unittest.TestCase):
         new = _run_at("lint", "2026-01-01T00:00:09Z", conclusion="CANCELLED", run_id=6)
         self.assertEqual(latest_runs([old, new]), [new])
 
-    def test_pending_run_ranks_newest(self):
-        """An unfinished run supersedes completed runs whatever its timestamp."""
+    def test_queued_newer_run_supersedes_completed_run(self):
+        """A queued run with newer IDs wins despite its zero start timestamp."""
         done = _run_at("lint", "2026-01-01T00:00:09Z", conclusion="CANCELLED", run_id=5)
         queued = _run_at("lint", "0001-01-01T00:00:00Z", status="QUEUED", conclusion=None, run_id=6)
         self.assertEqual(latest_runs([done, queued]), [queued])
 
-    def test_same_second_tie_broken_by_run_id(self):
-        """Runs started in the same second are ordered by run ID."""
+    def test_newer_completed_run_supersedes_older_pending_run(self):
+        """A hung older pending run does not shadow a newer completed run."""
+        old_pending = _run_at(
+            "lint", "2026-01-01T00:00:01Z", status="IN_PROGRESS", conclusion=None, run_id=5
+        )
+        new_completed = _run_at("lint", "2026-01-01T00:00:09Z", run_id=6)
+        self.assertEqual(latest_runs([new_completed, old_pending]), [new_completed])
+
+    def test_rerun_job_supersedes_original_job(self):
+        """A re-run keeps its run ID but gets a newer job ID, which wins."""
+        failed = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="FAILURE", job_id=50)
+        rerun = _run_at("lint", "2026-01-01T00:00:01Z", job_id=70)
+        self.assertEqual(latest_runs([rerun, failed]), [rerun])
+
+    def test_rerun_of_older_run_supersedes_newer_run(self):
+        """Job IDs order before run IDs, so re-running an older run's job wins."""
+        newer_run = _run_at(
+            "lint", "2026-01-01T00:00:05Z", conclusion="FAILURE", run_id=6, job_id=60
+        )
+        rerun = _run_at("lint", "2026-01-01T00:00:09Z", run_id=5, job_id=90)
+        self.assertEqual(latest_runs([rerun, newer_run]), [rerun])
+
+    def test_non_actions_checks_fall_back_to_pending_then_timestamps(self):
+        """Without Actions IDs, unfinished runs rank newest, then later starts."""
+        old = {"__typename": "StatusContext", "context": "ext", "state": "FAILURE"}
+        pending = {"__typename": "StatusContext", "context": "ext", "state": "PENDING"}
+        self.assertEqual(latest_runs([pending, old]), [pending])
+        early = _check_run("ext", conclusion="FAILURE", url="")
+        late = _check_run("ext", url="")
+        early["startedAt"], late["startedAt"] = "2026-01-01T00:00:01Z", "2026-01-01T00:00:09Z"
+        self.assertEqual(latest_runs([late, early]), [late])
+
+    def test_same_second_tie_broken_by_ids(self):
+        """Runs started in the same second are ordered by their IDs."""
         old = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="CANCELLED", run_id=5)
         new = _run_at("lint", "2026-01-01T00:00:01Z", run_id=6)
         self.assertEqual(latest_runs([new, old]), [new])
