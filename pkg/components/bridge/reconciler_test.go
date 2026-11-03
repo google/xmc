@@ -1638,7 +1638,7 @@ func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynCl
 	cr := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
 		"metadata": map[string]any{"name": "ssa-merge-comp", "namespace": "default"},
-		"spec":     map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true},
+		"spec":     map[string]any{"enabled": true, "stability": "STABLE", "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true},
 	}}
 	created, err := compClient.Create(ctx, cr, metav1.CreateOptions{})
 	if err != nil {
@@ -2092,7 +2092,7 @@ func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dy
 		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
 		"metadata": map[string]any{"name": "ray-broken-wrapper", "namespace": "default"},
 		"spec": map[string]any{
-			"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+			"enabled": true, "stability": "STABLE", "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 			"wrapperRef": map[string]any{"group": "ray.io", "version": "v1", "kind": "RayCluster", "name": "ray-malformed"},
 		},
 	}}

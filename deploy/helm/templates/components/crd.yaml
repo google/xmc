@@ -87,8 +87,9 @@ spec:
               type: object
               required:
                 - enabled
+                - stability
               x-kubernetes-validations:
-                - rule: "!self.enabled || !has(self.stability) || self.stability != 'EXPERIMENTAL' || (has(self.acknowledgeExperimental) && self.acknowledgeExperimental)"
+                - rule: "!self.enabled || self.stability != 'EXPERIMENTAL' || (has(self.acknowledgeExperimental) && self.acknowledgeExperimental)"
                   message: "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component (spec.stability == 'EXPERIMENTAL')."
               properties:
                 enabled:
@@ -100,7 +101,7 @@ spec:
                     - EXPERIMENTAL
                     - PREVIEW
                     - STABLE
-                  description: "Catalog-owned maturity stage of the component (unset is treated as STABLE for backward compatibility)."
+                  description: "Catalog-owned maturity stage of the component (EXPERIMENTAL, PREVIEW, or STABLE)."
                 acknowledgeExperimental:
                   type: boolean
                   default: false
