@@ -30,6 +30,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    list_review_threads,
 )
 
 
@@ -81,64 +82,10 @@ def _parse_graphql_nodes(nodes: Sequence[dict[str, Any] | None]) -> list[dict[st
 
 def _fetch_graphql_unresolved_comments(
     owner: str, repo: str, pr_number: int
-) -> list[dict[str, Any]] | None:
-    """Fetches unresolved comments using GitHub GraphQL API."""
-    query = """
-    query($owner: String!, $repo: String!, $pr_number: Int!, $cursor: String) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $pr_number) {
-          reviewThreads(first: 100, after: $cursor) {
-            pageInfo {
-              hasNextPage
-              endCursor
-            }
-            nodes {
-              isResolved
-              path
-              line
-              comments(first: 50) {
-                nodes {
-                  id
-                  databaseId
-                  body
-                  url
-                  author {
-                    login
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    """
-    cursor = None
-    all_items = []
-    while True:
-        variables = {
-            "owner": owner,
-            "repo": repo,
-            "pr_number": pr_number,
-            "cursor": cursor,
-        }
-        payload = {"query": query, "variables": variables}
-        res = call_github_api("/graphql", method="POST", payload=payload)
-        if not isinstance(res, dict):
-            return None
-        data = res.get("data")
-        repository = data.get("repository") if data else None
-        pull_request = repository.get("pullRequest") if repository else None
-        if not pull_request:
-            return None
-        threads_info = pull_request.get("reviewThreads") or {}
-        nodes = threads_info.get("nodes") or []
-        all_items.extend(_parse_graphql_nodes(nodes))
-        page_info = threads_info.get("pageInfo") or {}
-        if not page_info.get("hasNextPage"):
-            break
-        cursor = page_info.get("endCursor")
-    return all_items
+) -> list[dict[str, Any]]:
+    """Fetches unresolved comments via the shared paginated review-thread query."""
+    threads = list_review_threads(owner, repo, pr_number, user_agent="XMC-Checklist-Generator")
+    return _parse_graphql_nodes(threads)
 
 
 def _parse_rest_comment(comment: dict[str, Any]) -> dict[str, Any]:
@@ -179,10 +126,8 @@ def _fetch_rest_comments(owner: str, repo: str, pr_number: int) -> list[dict[str
 def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dict[str, Any]]:
     """Fetches unresolved PR review comments via GraphQL API with REST fallback."""
     try:
-        items = _fetch_graphql_unresolved_comments(owner, repo, pr_number)
-        if items is not None:
-            return items
-    except Exception:
+        return _fetch_graphql_unresolved_comments(owner, repo, pr_number)
+    except (GithubAuthError, GithubAPIError):
         pass
 
     try:
