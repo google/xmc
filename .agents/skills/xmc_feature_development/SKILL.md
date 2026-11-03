@@ -48,6 +48,8 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 2. **Decouple Mocks & Baseline Test Fixtures**:
    - Centralize shared helpers in global/shared packages.
    - Define baseline test fixtures and express test cases as concise deltas (e.g., using `prototest.Modify`).
+   - **Parsers and linters**: test against the hardest real constructs in the target corpus (nested or long code fences, redirects, URLs, labels), not only minimal synthetic inputs.
+   - **Polling and wait tools**: test every state transition, including the exact deadline boundary.
 3. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
 
