@@ -85,20 +85,12 @@
         "hpo": {
           "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
           "properties": {
-            "imageTag": { "type": "string" },
             "parameters": {
               "type": "object",
-              "additionalProperties": { "$ref": "#/definitions/parameterValue" },
-              "properties": {
-                "maxTrialBudget": { "$ref": "#/definitions/parameterValue" },
-                "maxParallelTrials": { "$ref": "#/definitions/parameterValue" }
-              }
+              "additionalProperties": false
             }
           },
-          "propertyNames": {
-            "description": "commonKeys plus imageTag.",
-            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
-          }
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
         }
       }
     }

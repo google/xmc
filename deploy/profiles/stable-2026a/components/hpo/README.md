@@ -25,22 +25,16 @@ The following fields are structural constants of the HPO blueprint defined in [`
 
 ---
 
-## 2. Configuration & Parameter Mapping ([`values.yaml`](values.yaml))
+## 2. Configuration & Value Mapping ([`values.yaml`](values.yaml))
 
-All entries in `spec.parameters` are serialized as quoted strings (`| toString | quote`) to comply with the `components.xmc.dev` CRD schema (`additionalProperties: { type: string }`) and `component-linter` validation:
-
-| Parameter | Default | Target Spec Field | Description |
+| Value | Default | Target Spec Field | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `hpo` Component CR in the catalog. |
 | `acknowledgeExperimental` | *(omitted)* | `spec.acknowledgeExperimental` | Explicit administrator acknowledgement required when `enabled: true` because `stability` is `EXPERIMENTAL`. |
 | `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace` | Target Kubernetes namespace for the `Component` CR and actuated workload resources. |
-| `global.imageTag` | `""` | `spec.imageTag` | Profile-wide container image tag override; takes precedence over per-component `imageTag` when non-empty. |
-| `imageTag` | `"latest"` | `spec.imageTag` | Per-component fallback container image tag used when `global.imageTag` is empty. |
 | `deletionProtection` | `true` | `spec.deletionProtection` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `["vizier", "clickhouse"]` | `spec.dependencies` | Upstream XMC Component names required before `hpo` is actuated. |
-| `parameters.maxTrialBudget` | `"1000"` | `spec.parameters.maxTrialBudget` | Upper ceiling on `StudyConfig.max_trials`; study budgets exceeding this cap are clamped with a warning. |
-| `parameters.maxParallelTrials` | `"100"` | `spec.parameters.maxParallelTrials` | Upper ceiling on `StudyConfig.max_parallel_trials`; parallel trial counts exceeding this cap are clamped with a warning. |
 
 ---
 

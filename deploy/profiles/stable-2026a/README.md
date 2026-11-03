@@ -117,16 +117,16 @@ Per-component overrides live under `components.<name>` and are deep-merged over 
 | Key | Components | Description |
 | :--- | :--- | :--- |
 | `global.platformProfile` | all | Fixed to `stable-2026a`. |
-| `global.imageTag` | `ingestion-gateway`, `hpo` | Image tag rendered into `spec.imageTag`. |
+| `global.imageTag` | `ingestion-gateway` | Image tag rendered into `spec.imageTag`. |
 | Other `global.*` keys | none | Accepted so the profile can be nested under a wrapper chart with its own globals; the component templates ignore them. |
 | `enabled` | all | Renders `spec.enabled`. |
 | `namespace` | all | Namespace of the `Component` CR. Must be a DNS-1123 label. |
 | `deletionProtection` | all | Renders `spec.deletionProtection`. |
 | `deletionPolicy` | all | `Delete` or `Orphan`. |
 | `acknowledgeExperimental` | all | Renders `spec.acknowledgeExperimental` to opt into enabling an `EXPERIMENTAL` component (`vizier`, `hpo`). |
-| `parameters` | all | Component parameters. `redpanda`, `clickhouse`, and `vizier` accept only the parameters documented in their READMEs; `ingestion-gateway` and `hpo` pass extra keys through. |
+| `parameters` | all | Component parameters. `redpanda`, `clickhouse`, `vizier`, and `hpo` accept only the parameters documented in their READMEs; `ingestion-gateway` passes extra keys through. |
 | `dependencies` | all | Component names rendered into `spec.dependencies`. |
-| `imageTag` | `ingestion-gateway`, `hpo` | Used when `global.imageTag` is empty. |
+| `imageTag` | `ingestion-gateway` | Used when `global.imageTag` is empty. |
 
 These keys are rejected by the schema:
 

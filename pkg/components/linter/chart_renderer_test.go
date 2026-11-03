@@ -389,17 +389,12 @@ parameters:
 					ComponentClass:     "hyperparameter-optimization",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
-					ImageTag:           "latest",
 					Stability:          "EXPERIMENTAL",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Dependencies: []linter.ComponentDependencyRef{
 						{Name: "vizier"},
 						{Name: "clickhouse"},
-					},
-					Parameters: map[string]string{
-						"maxTrialBudget":    "1000",
-						"maxParallelTrials": "100",
 					},
 				},
 			},
