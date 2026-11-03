@@ -28,7 +28,6 @@ from tools.pr_review.review_pr_workspace import (
     build_pr_meta,
     checkout_pr_head,
     find_last_reviewed_sha,
-    measure_delta,
     measure_rereview_delta,
     prepare_review_workspace,
 )
@@ -53,15 +52,31 @@ def _data(**pr_overrides: Any) -> dict[str, Any]:
 
 
 class FakeGit:
-    """Records git invocations and serves canned stdout per git subcommand."""
+    """Records git invocations and serves canned stdout per git subcommand.
 
-    def __init__(self, status: str = "", diff: str = "diff --git a/a.py b/a.py\n"):
+    `git cat-file -e <sha>^{commit}` fails for SHAs in `missing`.
+    """
+
+    def __init__(
+        self,
+        status: str = "",
+        diff: str = "diff --git a/a.py b/a.py\n",
+        missing: frozenset[str] = frozenset(),
+    ):
         self.calls: list[list[str]] = []
         self._stdout = {"status": status, "diff": diff}
+        self._missing = missing
 
     def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
         self.calls.append(cmd)
+        if cmd[1] == "cat-file":
+            code = 1 if cmd[3].removesuffix("^{commit}") in self._missing else 0
+            return subprocess.CompletedProcess(cmd, code, stdout="")
         return subprocess.CompletedProcess(cmd, 0, stdout=self._stdout.get(cmd[1], ""))
+
+    def subcommands(self) -> list[str]:
+        """Returns the git subcommands run, in order, excluding object lookups."""
+        return [c[1] for c in self.calls if c[1] != "cat-file"]
 
 
 class TestCheckoutPrHead(unittest.TestCase):
@@ -79,14 +94,14 @@ class TestCheckoutPrHead(unittest.TestCase):
             result = checkout_pr_head("head1")
         self.assertFalse(result["checked_out"])
         self.assertEqual(result["checkout_command"], "git checkout --detach head1")
-        self.assertNotIn("checkout", [c[1] for c in git.calls])
+        self.assertNotIn("checkout", git.subcommands())
 
 
 class TestPrepareReviewWorkspace(unittest.TestCase):
     """Tests for prepare_review_workspace."""
 
     def test_writes_inputs_and_checks_out(self):
-        git = FakeGit()
+        git = FakeGit(missing=frozenset({"base1"}))
         delta = {"since_sha": "old1", "changed_lines": 4}
         with tempfile.TemporaryDirectory() as tmpdir, patch(f"{_MODULE}.run_command", git):
             out = Path(tmpdir) / "session"
@@ -98,10 +113,11 @@ class TestPrepareReviewWorkspace(unittest.TestCase):
             )
             meta = json.loads((out / "pr_meta.json").read_text(encoding="utf-8"))
             threads = json.loads((out / "review_threads.json").read_text(encoding="utf-8"))
-        self.assertEqual(
-            git.calls[0],
+        self.assertIn(
             ["git", "fetch", "--no-tags", "origin", "pull/7/head", "base1"],
+            git.calls,
         )
+        self.assertEqual(git.subcommands(), ["fetch", "diff", "status", "checkout"])
         self.assertIn(["git", "diff", "base1...head1"], git.calls)
         self.assertEqual(git.calls[-1], ["git", "checkout", "--detach", "head1"])
         self.assertEqual(meta["base_sha"], "base1")
@@ -111,13 +127,27 @@ class TestPrepareReviewWorkspace(unittest.TestCase):
         self.assertTrue(result["checked_out"])
         self.assertTrue(result["diff_file"].endswith("pr.diff"))
 
+    def test_local_base_is_not_fetched_by_sha(self):
+        git = FakeGit()
+        with tempfile.TemporaryDirectory() as tmpdir, patch(f"{_MODULE}.run_command", git):
+            prepare_review_workspace("google", "xmc", 7, _data(), Path(tmpdir))
+        self.assertIn(["git", "fetch", "--no-tags", "origin", "pull/7/head"], git.calls)
+
+    def test_head_moved_during_fetch_raises_before_diff(self):
+        git = FakeGit(missing=frozenset({"head1"}))
+        with tempfile.TemporaryDirectory() as tmpdir, patch(f"{_MODULE}.run_command", git):
+            with self.assertRaisesRegex(HandledError, "PR changed during the run"):
+                prepare_review_workspace("google", "xmc", 7, _data(), Path(tmpdir))
+            self.assertFalse((Path(tmpdir) / "pr.diff").exists())
+        self.assertEqual(git.subcommands(), ["fetch"])
+
     def test_without_checkout_leaves_head_alone(self):
         git = FakeGit()
         with tempfile.TemporaryDirectory() as tmpdir, patch(f"{_MODULE}.run_command", git):
             result = prepare_review_workspace("google", "xmc", 7, _data(), Path(tmpdir))
             meta = json.loads((Path(tmpdir) / "pr_meta.json").read_text(encoding="utf-8"))
         self.assertFalse(result["checked_out"])
-        self.assertNotIn("checkout", [c[1] for c in git.calls])
+        self.assertNotIn("checkout", git.subcommands())
         self.assertNotIn("rereview_delta", meta)
 
     def test_missing_shas_raise_before_git(self):
@@ -143,7 +173,7 @@ class TestBuildPrMeta(unittest.TestCase):
 
 
 class TestReReviewDelta(unittest.TestCase):
-    """Tests for find_last_reviewed_sha, measure_delta, and measure_rereview_delta."""
+    """Tests for find_last_reviewed_sha and measure_rereview_delta."""
 
     @patch(f"{_MODULE}.list_all_pages")
     @patch(f"{_MODULE}.get_authenticated_login", return_value="me")
@@ -153,6 +183,7 @@ class TestReReviewDelta(unittest.TestCase):
             {"user": {"login": "other"}, "commit_id": "c2"},
             {"user": {"login": "me"}, "commit_id": "c3"},
             {"user": {"login": "me"}, "commit_id": None},
+            {"user": {"login": "me"}, "commit_id": "draft", "state": "PENDING"},
         ]
         self.assertEqual(find_last_reviewed_sha("google", "xmc", 7), "c3")
         self.assertEqual(mock_pages.call_args.args[0], "/repos/google/xmc/pulls/7/reviews")
@@ -179,8 +210,8 @@ class TestReReviewDelta(unittest.TestCase):
                 {"filename": "b.py", "additions": 50, "deletions": 0},
             ]
         }
-        small = measure_delta("google", "xmc", "old1", "head1", threshold=200)
-        large = measure_delta("google", "xmc", "old1", "head1", threshold=199)
+        small = measure_rereview_delta("google", "xmc", 7, "head1", "old1", threshold=200)
+        large = measure_rereview_delta("google", "xmc", 7, "head1", "old1", threshold=199)
         self.assertEqual(mock_api.call_args.args[0], "/repos/google/xmc/compare/old1...head1")
         self.assertEqual(small["changed_lines"], 200)
         self.assertEqual(small["changed_files"], ["a.py", "b.py"])

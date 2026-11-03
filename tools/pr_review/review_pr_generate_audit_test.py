@@ -267,11 +267,31 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
         self.assertEqual(res["threads_error"], "GraphQL down")
 
     @patch(f"{_AUDIT}.call_github_api")
-    def test_main_checkout_without_out_dir_raises(self, mock_api):
-        mock_api.return_value = {"title": "t", "head": {"sha": "123"}}
-        self.mock_graphql.side_effect = [[], [], _threads_page([])]
+    def test_main_checkout_without_out_dir_raises_before_fetching(self, mock_api):
         with self.assertRaisesRegex(HandledError, "--checkout requires --out-dir"):
             main(build_parser().parse_args(["google", "xmc", "10", "--checkout"]))
+        mock_api.assert_not_called()
+        self.mock_graphql.assert_not_called()
+
+    @patch(f"{_AUDIT}.prepare_review_workspace")
+    @patch(f"{_AUDIT}.measure_rereview_delta")
+    @patch(f"{_AUDIT}.call_github_api")
+    def test_main_rereview_without_out_dir_still_reports_delta(self, mock_api, mock_delta, mock_ws):
+        mock_api.return_value = {"title": "t", "head": {"sha": "head1"}}
+        self.mock_graphql.side_effect = [[], [], _threads_page([])]
+        mock_delta.return_value = {
+            "since_sha": None,
+            "full_review_recommended": True,
+            "reason": "No earlier review found.",
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = Path(tmpdir) / "report.md"
+            argv = ["google", "xmc", "10", "--mode", "re-review", "-o", str(out_file)]
+            res = main(build_parser().parse_args(argv))
+            report = out_file.read_text(encoding="utf-8")
+        mock_ws.assert_not_called()
+        self.assertTrue(res["rereview_delta"]["full_review_recommended"])
+        self.assertIn("- **Delta Since Last Review** (`none`): FULL REVIEW RECOMMENDED", report)
 
     def test_resolve_output_path_out_dir_precedence(self):
         with tempfile.TemporaryDirectory() as tmpdir:

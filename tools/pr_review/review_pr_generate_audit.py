@@ -425,8 +425,6 @@ def build_audit_sidecar(
 
 def _prepare_workspace(args: argparse.Namespace, data: dict[str, Any]) -> dict[str, Any]:
     """Measures the re-review delta and writes the PR-head review inputs when requested."""
-    if args.checkout and not args.out_dir:
-        raise HandledError("--checkout requires --out-dir.", "Pass --out-dir <session_dir>.")
     if args.mode == "re-review":
         head_sha = ((data["pr_info"] or {}).get("head") or {}).get("sha") or ""
         data["rereview_delta"] = measure_rereview_delta(
@@ -453,6 +451,8 @@ def _prepare_workspace(args: argparse.Namespace, data: dict[str, Any]) -> dict[s
 
 def main(args: argparse.Namespace) -> dict[str, Any]:
     """Execute PR audit checklist generation."""
+    if args.checkout and not args.out_dir:
+        raise HandledError("--checkout requires --out-dir.", "Pass --out-dir <session_dir>.")
     data = fetch_pr_audit_data(args.owner, args.repo, args.pr_number)
     workspace = _prepare_workspace(args, data)
 

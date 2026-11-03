@@ -56,13 +56,35 @@ def _git(args: list[str]) -> str:
     return proc.stdout
 
 
-def fetch_pr_head(remote: str, pr_number: int, base_sha: str) -> None:
-    """Fetches the PR head and the base commit so both exist locally.
+def _has_commit(sha: str) -> bool:
+    """Returns whether `sha` names a commit in the local repository."""
+    proc = run_command(
+        ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+        check=False,
+        capture_output=True,
+        log_cmd=False,
+        handled_instruction=_GIT_INSTRUCTION,
+    )
+    return proc.returncode == 0
 
-    The base is fetched by SHA, not branch name, because stacked PRs keep
+
+def fetch_pr_head(remote: str, pr_number: int, base_sha: str, head_sha: str) -> None:
+    """Fetches the PR head, plus the base commit when it is not already local.
+
+    A missing base is fetched by SHA, not branch name, because stacked PRs keep
     pointing at a base branch that is deleted once it merges.
+
+    Raises:
+        HandledError: If the fetch fails, or `head_sha` is still missing because
+            the PR head moved after it was read from the API.
     """
-    _git(["fetch", "--no-tags", remote, f"pull/{pr_number}/head", base_sha])
+    base = [] if _has_commit(base_sha) else [base_sha]
+    _git(["fetch", "--no-tags", remote, f"pull/{pr_number}/head", *base])
+    if not _has_commit(head_sha):
+        raise HandledError(
+            f"PR head {head_sha} was not fetched; the PR changed during the run.",
+            "Re-run the tool to pick up the new head.",
+        )
 
 
 def checkout_pr_head(head_sha: str) -> dict[str, Any]:
@@ -108,13 +130,15 @@ def build_pr_meta(owner: str, repo: str, pr_number: int, data: dict[str, Any]) -
 
 
 def find_last_reviewed_sha(owner: str, repo: str, pr_number: int) -> str | None:
-    """Returns the commit of the latest review submitted by the authenticated user."""
+    """Returns the commit of the authenticated user's latest submitted (non-pending) review."""
     login = get_authenticated_login(_USER_AGENT)
     reviews = list_all_pages(f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews", _USER_AGENT)
     shas = [
         r["commit_id"]
         for r in reviews
-        if (r.get("user") or {}).get("login") == login and r.get("commit_id")
+        if (r.get("user") or {}).get("login") == login
+        and r.get("commit_id")
+        and r.get("state") != "PENDING"
     ]
     return shas[-1] if shas else None
 
@@ -130,27 +154,10 @@ def _unknown_delta(since_sha: str | None, reason: str) -> dict[str, Any]:
     }
 
 
-def measure_delta(
-    owner: str, repo: str, since_sha: str | None, head_sha: str, threshold: int
+def _compare_delta(
+    owner: str, repo: str, since_sha: str, head_sha: str, threshold: int
 ) -> dict[str, Any]:
-    """Counts lines changed between the last reviewed commit and the PR head.
-
-    The count comes from GitHub's `since...head` comparison, so commits merged in
-    from the base branch are included; the error only over-recommends a full review.
-
-    Args:
-        owner: Repository owner.
-        repo: Repository name.
-        since_sha: Last reviewed commit, or None when there is no earlier review.
-        head_sha: Current PR head commit.
-        threshold: Changed-line count above which a full review is recommended.
-
-    Returns:
-        `since_sha`, `changed_lines` (None when unknown), `changed_files`,
-        `full_review_recommended`, and `reason`.
-    """
-    if not since_sha:
-        return _unknown_delta(None, "No earlier review found.")
+    """Counts lines changed in GitHub's `since...head` comparison against `threshold`."""
     try:
         compare = call_github_api(
             f"/repos/{owner}/{repo}/compare/{since_sha}...{head_sha}", user_agent=_USER_AGENT
@@ -181,7 +188,12 @@ def measure_rereview_delta(
     since_sha: str | None = None,
     threshold: int = DEFAULT_FULL_REVIEW_THRESHOLD,
 ) -> dict[str, Any]:
-    """Measures the delta since `since_sha`, defaulting to the user's last review.
+    """Counts lines changed since `since_sha`, defaulting to the user's last review.
+
+    The count comes from GitHub's `since...head` comparison, so commits merged in
+    from the base branch or a rebase inflate it; the error only over-recommends a
+    full review. With no earlier review or no comparison, the size is unknown and
+    a full review is recommended.
 
     Args:
         owner: Repository owner.
@@ -192,14 +204,17 @@ def measure_rereview_delta(
         threshold: Changed-line count above which a full review is recommended.
 
     Returns:
-        The `measure_delta` result.
+        `since_sha`, `changed_lines` (None when unknown), `changed_files`,
+        `full_review_recommended`, and `reason`.
     """
     if not since_sha:
         try:
             since_sha = find_last_reviewed_sha(owner, repo, pr_number)
         except (GithubAuthError, GithubAPIError) as e:
             return _unknown_delta(None, f"Cannot look up the last review: {e}")
-    return measure_delta(owner, repo, since_sha, head_sha, threshold)
+    if not since_sha:
+        return _unknown_delta(None, "No earlier review found.")
+    return _compare_delta(owner, repo, since_sha, head_sha, threshold)
 
 
 def prepare_review_workspace(
@@ -223,7 +238,7 @@ def prepare_review_workspace(
         out_dir: Directory receiving `pr.diff`, `pr_meta.json`, `review_threads.json`.
         checkout: Whether to check out the PR head detached in the current worktree.
         remote: Git remote that hosts the PR.
-        rereview_delta: Result of `measure_delta`, recorded in `pr_meta.json`.
+        rereview_delta: Result of `measure_rereview_delta`, recorded in `pr_meta.json`.
 
     Returns:
         Paths of the written files plus the checkout result.
@@ -237,7 +252,7 @@ def prepare_review_workspace(
             f"PR {owner}/{repo}#{pr_number} response has no base or head SHA.",
             "Re-run the tool; if it persists, check the PR exists and is not deleted.",
         )
-    fetch_pr_head(remote, pr_number, meta["base_sha"])
+    fetch_pr_head(remote, pr_number, meta["base_sha"], meta["head_sha"])
     out_dir.mkdir(parents=True, exist_ok=True)
     diff_path = out_dir / "pr.diff"
     diff = _git(["diff", f"{meta['base_sha']}...{meta['head_sha']}"])

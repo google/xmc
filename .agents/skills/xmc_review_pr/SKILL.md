@@ -26,6 +26,7 @@ graph TD
     H --> I["Phase 6: 1-to-1 Posted Verification (review_pr_verify_posted.py)"]
 
     C -->|"Mode B: Re-Review"| J["Phase 1: Author Reply & Delta Inspection"]
+    J -->|"full_review_recommended"| D
     J --> K["Phase 2: Evaluate Author Claims, Pushback & Substantial Deltas"]
     K --> L["Phase 3: Markdown Iteration Report (pr_rereview_audit_report.md in session dir)"]
     L --> M["Phase 4: Explicit Confirmation Gate for Resolving/Counter-Replying"]
@@ -61,6 +62,8 @@ Before launching deep code analysis or subagent review panels, the agent must in
    *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` plus its machine-readable sidecar `pr_review_audit_checklist.json` inside `<session_scratch_dir>` (a directory outside the repository).*
 
    *With `--out-dir` it also fetches `pull/<pr_number>/head` and writes the review inputs there: `pr.diff` (base...head), `pr_meta.json` (base/head refs and SHAs, file list with +/- counts), and `review_threads.json`. `--checkout` checks the PR head out detached so every file you read is the PR's version. When tracked files have local changes, it skips the checkout and returns `checked_out: false` plus the exact `checkout_command`; it never discards local work. Commit or stash, then run that command, or review from `pr.diff` only.*
+
+   *`--checkout` moves HEAD of the worktree you run it in, and later `tools/` invocations then run at the PR's version. Prefer a dedicated review worktree (`git worktree add --detach <review_dir>`, then run the tool from `<review_dir>`). When reviewing in your own worktree, note the current branch first and return with `git switch -` after the review.*
 
    > [!IMPORTANT]
    > Never review PR files from a worktree that is not at `pr_meta.json`'s `head_sha`. Take base/head SHAs and the diff from `pr_meta.json` and `pr.diff`; do not guess `gh pr view --json` field names (`baseRefOid` does not exist on older `gh` releases) or chain `gh`/`git rev-parse` calls.
@@ -229,7 +232,7 @@ python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> -
 ```
 *This generates `pr_rereview_audit_report.md` inside `<session_scratch_dir>` indexing every open review thread, original reviewer text, and author response, plus the sidecar `pr_rereview_audit_report.json` listing each root thread with `"action": null`. When recommending an action, rewrite the sidecar with `"action": "RESOLVE"` or `"action": "RESPOND"` for that thread; threads left `null` are skipped by verification. It also writes the same review inputs as Mode A (`pr.diff`, `pr_meta.json`, `review_threads.json`) and checks out the PR head under the same dirty-worktree rule.*
 
-*The output's `rereview_delta` (also in `pr_meta.json` and the report header) counts lines changed since the commit of your latest review (override with `--since-sha`). Without an earlier review, or when that commit can no longer be compared (rewritten history), the size is unknown and `full_review_recommended` is `true`.*
+*The output's `rereview_delta` (also in `pr_meta.json` and the report header) counts lines changed since the commit of your latest review (override with `--since-sha`). Without an earlier review, or when that commit cannot be compared, the size is unknown; after a rebase or force-push it is usually over-counted. Both cases set `full_review_recommended` to `true`.*
 
 > [!IMPORTANT]
 > **Escalate on a large delta**: When `full_review_recommended` is `true` (more than `--full-review-threshold` changed lines, default 200, or unknown), run a full Mode A review on the new head in addition to the thread checks below, and tell the user why. Never limit a re-review to old threads when most of the code is new.
@@ -241,7 +244,7 @@ For every discussion thread indexed in the audit report, apply critical engineer
 1. **Bucket 1: Already Resolved on GitHub UI (`is_resolved == True`)**:
    - **Policy**: **Respect & Skip.** Human reviewer explicitly clicked "Resolve conversation" on GitHub. List in `pr_rereview_audit_report.md` as `[ALREADY RESOLVED ON GITHUB]` requiring **zero action**.
 2. **Bucket 2: Author Claims "Applied / Fixed" on Open Thread**:
-   - Inspect the latest diff delta at that line and file path (`git diff <rereview_delta.since_sha> <head_sha> -- <path>` when `since_sha` is known, else `pr.diff`).
+   - Inspect the latest diff delta at that line and file path: `git diff <rereview_delta.since_sha> <head_sha> -- <path>` when `since_sha` is known (run `git fetch <remote> <since_sha>` first if it is not local, e.g. after a force-push), else `pr.diff`.
    - **Verification**: Verify whether the fix was *actually applied cleanly and correctly* or if it introduced edge-case regressions.
    - **Outcome Classification**:
      * *Verified Fixed*: Mark `<Audit Verification Status: - [x] Verified Fixed>` and propose Recommended Action: `[RESOLVE]` with justification.
