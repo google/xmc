@@ -28,7 +28,7 @@ This document provides standards for skill architecture, workflow automation, an
 
 ## 5. Helper Tool Execution Policy & Safety Constraints
 - **Tool Source Code Isolation Policy**: Agents MUST NOT open, view, or read the Python source code of helper tools in `tools/` or skill script directories. Use `--help` to inspect tool parameters, inputs, and usage flags.
-- **Structured Output & Error Code Parsing**: All helper tools output structured JSON data. Agents MUST check exit codes:
+- **Structured Output & Error Code Parsing**: All helper tools output structured JSON data. Agents MUST check exit codes (summarized in [Helper Tool Exit Codes](../AGENTS.md#universal-architectural-principles); details below):
   - **Exit Code 0**: Success. Read `"result"` payload from stdout JSON.
   - **Exit Code 1**: Handled Error. Parse `"message"` and `"instruction"` fields to remediate inputs. CLI linter and ratchet gates invoked in `.githooks/pre-commit` with `stdout` redirected (`>/dev/null`, such as `tools/lint/check_legacy_imports.py` and `tools/nightly_tests/check_examples_coverage.py`) MUST emit failure JSON payloads and diagnostics to `sys.stderr` so error details remain visible in hook and CI output.
   - **Exit Code 2**: Unhandled Error. Inspect `"message"` and `"traceback"` fields to determine root cause.

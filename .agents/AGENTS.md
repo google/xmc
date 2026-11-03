@@ -12,6 +12,7 @@ This root guidelines document defines high-level universal engineering principle
 4. **Context Preservation & Subagent Delegation**: Prevent main context bloat by modularizing rules into purpose-built files and offloading verbose log analysis, heavy test runs, or exploratory searches to worker subagents.
 5. **Documentation Alignment**: Synchronize relevant repository markdown files (such as `README.md`, `INSTALL.md`, and component docs), inline comments, schemas, and skills in the same PR whenever system behavior or API contracts change.
 6. **Iterative Reflection & Meta-Learning**: Following PR review comment resolutions, major implementations, or user request, audit session trajectories and review feedback using the [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) and validate candidate rule improvements with the [Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md).
+7. **Helper Tool Exit Codes**: Tools under `tools/` print JSON and exit `0` on success, `1` on a handled error (follow `instruction`), `2` on an unhandled error (read `traceback`), and `130` when interrupted (`error_type: "interrupted"`). Before rerunning an interrupted or failed tool, check for and clean up partially applied side effects.
 
 ---
 

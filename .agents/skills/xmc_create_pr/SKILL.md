@@ -17,7 +17,7 @@ This skill provides step-by-step procedures for creating, updating, and managing
 When invoking helper tools under `tools/` (e.g., `update_pr_description.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: Run tools with `--help` to inspect parameters and usage.
-3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error, 130 when interrupted by Ctrl-C).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON; check the exit code per [Helper Tool Exit Codes](../../AGENTS.md#universal-architectural-principles).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
 
 ---

@@ -26,7 +26,7 @@ import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, NoReturn, TextIO
 
 DEFAULT_BACKEND = "spanner"
 
@@ -162,36 +162,35 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         sys.exit(0)
 
     except KeyboardInterrupt:
-        output = {
-            "status": "error",
-            "error_type": "interrupted",
-            "message": "Interrupted by Ctrl-C before the tool finished.",
-            "instruction": "Rerun the tool; check for partially applied changes first.",
-        }
-        print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(130)
+        _exit_with_error(
+            "interrupted",
+            "Interrupted by Ctrl-C before the tool finished.",
+            130,
+            instruction="Rerun the tool; check for partially applied changes first.",
+        )
 
     except HandledError as e:
-        output = {
-            "status": "error",
-            "error_type": "handled",
-            "message": e.message,
-            "instruction": e.instruction,
-        }
+        fields: dict[str, Any] = {"instruction": e.instruction}
         if e.details is not None:
-            output["details"] = dict(e.details)
-        print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(1)
+            fields["details"] = dict(e.details)
+        _exit_with_error("handled", e.message, 1, **fields)
 
     except Exception as e:
-        output = {
-            "status": "error",
-            "error_type": "unhandled",
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        }
-        print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(2)
+        _exit_with_error("unhandled", str(e), 2, traceback=traceback.format_exc())
+
+
+def _exit_with_error(error_type: str, message: str, exit_code: int, **fields: Any) -> NoReturn:
+    """Prints the standard error JSON to stderr and exits with exit_code.
+
+    Args:
+        error_type: The "error_type" value, e.g. "handled".
+        message: The human-readable "message" value.
+        exit_code: The process exit code.
+        **fields: Extra JSON fields, e.g. instruction, details, or traceback.
+    """
+    output = {"status": "error", "error_type": error_type, "message": message, **fields}
+    print(json.dumps(output, indent=2), file=sys.stderr)
+    sys.exit(exit_code)
 
 
 # Config validation schemas
