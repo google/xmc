@@ -48,17 +48,17 @@ export class ResizeDividerComponent implements OnDestroy {
     if (!container) {
       return;
     }
+    // Container geometry is captured once per drag: dragging only changes child flex-basis.
+    const { left, width } = container.getBoundingClientRect();
+    if (width <= 0) {
+      return;
+    }
     event.preventDefault();
     this.stopResize();
     this.isDragging.set(true);
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const { left, width } = container.getBoundingClientRect();
-      if (width <= 0) {
-        return;
-      }
+    const onMouseMove = (moveEvent: MouseEvent) =>
       this.splitRatio.set(this.clampRatio(((moveEvent.clientX - left) / width) * 100));
-    };
     const onMouseUp = () => this.stopResize();
 
     window.addEventListener('mousemove', onMouseMove);
