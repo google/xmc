@@ -125,10 +125,16 @@ class TestGithubUtils(unittest.TestCase):
         mock_which.return_value = "/usr/bin/gh"
         mock_run.return_value = MagicMock(stdout="{}")
 
-        call_github_api("/repos/o/r/issues/1/comments", method="POST", payload={"body": "hi"})
+        res = call_github_api("/repos/o/r/issues/1/comments", method="POST", payload={"body": "hi"})
 
-        self.assertEqual(mock_run.call_args.args[0][-2:], ["--input", "-"])
-        self.assertEqual(mock_run.call_args.kwargs["input_text"], '{"body": "hi"}')
+        self.assertEqual(res, {})
+        mock_run.assert_called_once_with(
+            ["gh", "api", "-X", "POST", "/repos/o/r/issues/1/comments", "--input", "-"],
+            capture_output=True,
+            log_cmd=False,
+            log_on_error=False,
+            input_text='{"body": "hi"}',
+        )
 
     @patch("shutil.which")
     @patch("tools.pr_review.github_utils.run_command")
