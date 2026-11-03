@@ -40,7 +40,9 @@ export function processUrls(urls: Url[], data: Experiment | WorkUnit): Processed
   const replacements = buildReplacements(data);
   return urls
     .map((url) => {
-      const { processedUrl, disableReason } = fillPlaceholders(url.url!, replacements);
+      const { processedUrl, disableReason } = url.url
+        ? fillPlaceholders(url.url, replacements)
+        : { processedUrl: undefined, disableReason: WAITING_FOR_DATA_REASON };
       const icon = url.icon || 'link';
       return {
         ...url,

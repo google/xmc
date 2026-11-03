@@ -123,7 +123,10 @@ limitations under the License.
               </a>
             }
           } @else {
-            <span [matTooltip]="url.disableReason || 'Waiting for data...'">
+            <span
+              class="disabled-url-wrapper"
+              [matTooltip]="url.disableReason || 'Waiting for data...'"
+            >
               <button type="button" mat-icon-button disabled>
                 <mat-icon>pending</mat-icon>
               </button>

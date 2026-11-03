@@ -230,4 +230,18 @@ describe('UrlProcessor', () => {
     expect(processedUrls[1].icon).toBe('article');
     expect(processedUrls[2].icon).toBe('link');
   });
+
+  it('should safely handle undefined url field without throwing', () => {
+    const urls: Url[] = [
+      {
+        displayName: 'Missing URL string',
+        priority: 1,
+      },
+    ];
+    const processedUrls = processUrls(urls, EXPERIMENT_1);
+    expect(processedUrls.length).toBe(1);
+    expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Waiting for data...');
+    expect(processedUrls[0].icon).toBe('link');
+  });
 });
