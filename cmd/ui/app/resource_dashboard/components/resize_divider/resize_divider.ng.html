@@ -23,6 +23,8 @@
   [attr.aria-valuemin]="minRatio"
   [attr.aria-valuemax]="maxRatio"
   [attr.aria-valuenow]="ariaValueNow()"
+  [attr.aria-valuetext]="'Queue list ' + ariaValueNow() + '%'"
+  [attr.aria-controls]="controls()"
   [class.is-dragging]="isDragging()"
   (pointerdown)="startResize($event)"
   (dblclick)="resetResize()"

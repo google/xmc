@@ -25,7 +25,11 @@ import { ResizeDividerHarness } from './resize_divider_harness';
   template: `
     <div #container class="test-split-container">
       @if (showDivider()) {
-        <xmc-rod-resize-divider [containerElement]="container" [(splitRatio)]="splitRatio" />
+        <xmc-rod-resize-divider
+          controls="left-pane"
+          [containerElement]="container"
+          [(splitRatio)]="splitRatio"
+        />
       }
     </div>
   `,
@@ -64,6 +68,8 @@ describe('ResizeDividerComponent', () => {
     expect(attrs.ariaValueMin).toBe('20');
     expect(attrs.ariaValueMax).toBe('80');
     expect(attrs.ariaValueNow).toBe('50');
+    expect(attrs.ariaValueText).toBe('Queue list 50%');
+    expect(attrs.ariaControls).toBe('left-pane');
     expect(await divider.isDragging()).toBeFalse();
   });
 

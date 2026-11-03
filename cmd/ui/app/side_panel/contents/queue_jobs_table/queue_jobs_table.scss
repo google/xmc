@@ -117,3 +117,8 @@ button.full-width-toggle-btn.mat-mdc-outlined-button {
     color: #ffffff;
   }
 }
+
+// Lets wide job rows scroll horizontally when the containing pane is narrow.
+.jobs-table-container {
+  overflow-x: auto;
+}

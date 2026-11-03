@@ -48,6 +48,8 @@ const KEYBOARD_STEP_BY_KEY: Readonly<Record<string, number>> = {
 export class ResizeDividerComponent implements OnDestroy {
   /** Flex container whose full width maps to a 0–100% split ratio. */
   readonly containerElement = input.required<HTMLElement>();
+  /** Element id of the left pane whose width the divider controls (aria-controls). */
+  readonly controls = input.required<string>();
   /** Width of the left pane as a percentage of the container width. */
   readonly splitRatio = model<number>(DEFAULT_SPLIT_RATIO_PERCENT);
 
