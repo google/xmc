@@ -326,6 +326,22 @@ class TestToolUtils(unittest.TestCase):
         self.assertIn("instruction", output)
         self.assertNotIn("traceback", output)
 
+    def test_run_tool_keyboard_interrupt_during_venv_bootstrap(self):
+        """Ctrl-C while the tooling venv bootstraps is also reported as JSON."""
+        main_fn = MagicMock()
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("tools.common.tool_utils.ensure_venv", side_effect=KeyboardInterrupt),
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        self.assertEqual(json.loads(captured_stderr.getvalue())["error_type"], "interrupted")
+        main_fn.assert_not_called()
+
 
 class TestLogStreams(unittest.TestCase):
     """Tests for the stream parameter of the logging and command helpers."""

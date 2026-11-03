@@ -152,8 +152,8 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
       2: Unhandled error
       130: Interrupted by Ctrl-C (SIGINT), reported as error_type "interrupted"
     """
-    ensure_venv()
     try:
+        ensure_venv()
         args = parser.parse_args()
         result = main_fn(args)
 
