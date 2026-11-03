@@ -323,8 +323,10 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page = mock.MagicMock()
         session._page = mock_page
         session.http_errors = ["500 https://xmc.example.com/v1/clusterqueues"]
+        session.page_errors = ["TypeError: null"]
         session.wait_for_selector_with_retry("xmc-queue-card", 5000)
         self.assertEqual(session.http_errors, [])
+        self.assertEqual(session.page_errors, [])
         mock_page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
 
         session2 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
@@ -333,6 +335,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         mock_page2.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
         session2.wait_for_selector_with_retry("xmc-queue-card", 5000)
         mock_page2.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        self.assertEqual(mock_page2.wait_for_selector.call_count, 2)
 
     def test_navigate_to_experiment_success(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession(
