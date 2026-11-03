@@ -30,6 +30,8 @@ export class ResizeDividerHarness extends ComponentHarness {
     ariaValueMin: string | null;
     ariaValueMax: string | null;
     ariaValueNow: string | null;
+    ariaValueText: string | null;
+    ariaControls: string | null;
   }> {
     const el = await this.separator();
     return {
@@ -39,6 +41,8 @@ export class ResizeDividerHarness extends ComponentHarness {
       ariaValueMin: await el.getAttribute('aria-valuemin'),
       ariaValueMax: await el.getAttribute('aria-valuemax'),
       ariaValueNow: await el.getAttribute('aria-valuenow'),
+      ariaValueText: await el.getAttribute('aria-valuetext'),
+      ariaControls: await el.getAttribute('aria-controls'),
     };
   }
 
