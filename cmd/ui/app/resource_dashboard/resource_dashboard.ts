@@ -95,9 +95,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly isDragging = signal<boolean>(false);
 
   protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
-  protected readonly rightPaneFlex = computed(() =>
-    this.isJobsFullWidth() ? '1 1 100%' : `1 1 ${100 - this.splitRatio()}%`,
-  );
+  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;

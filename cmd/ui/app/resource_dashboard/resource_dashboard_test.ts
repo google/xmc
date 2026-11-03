@@ -290,7 +290,6 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getResizeDivider()).toBeNull();
     expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
-    expect(await dashboard.getRightPaneStyle()).toContain('100%');
 
     const fullWidthJobsHarness = (await dashboard.getQueueJobsTable())!;
     const exitBtn = (await fullWidthJobsHarness.getFullWidthToggleBtn())!;
