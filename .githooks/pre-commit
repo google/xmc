@@ -15,9 +15,13 @@ AUTOSTAGE_STATE=""
 # new one, so filter D also matches paths renamed away. Cross-file gates (whose
 # result depends on files other than the edited ones) include D so they also run
 # when a staged delete or rename removes a file that other files depend on.
+# core.quotePath=false keeps non-ASCII paths unquoted so anchored patterns match.
 staged_paths_match() {
   local diff_filter="$1" pattern="$2" paths
-  paths=$(git diff --cached --name-only --no-renames --diff-filter="${diff_filter}")
+  paths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter="${diff_filter}")
+  if [ -z "${paths}" ]; then
+    return 1
+  fi
   grep -qE -- "${pattern}" <<<"${paths}"
 }
 
@@ -161,7 +165,7 @@ check_examples_coverage() {
 check_agent_doc_paths() {
   # In fix mode, only run when agent docs are staged, or when staged deletes or
   # renames could orphan a path an agent doc references, to keep the hook fast.
-  if [ "$MODE" = "fix" ] && ! staged_paths_match AM '^\.agents/.*\.md$|(^|/)AGENTS\.md$' && ! staged_paths_match D '.'; then
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AM '^\.agents/.*\.md$|(^|/)AGENTS\.md$' && ! staged_paths_match D '.'; then
     return
   fi
   echo "--> Checking Agent Doc Path References..."
@@ -314,15 +318,28 @@ check_python() {
   fi
 }
 
+# Lists the tracked files of the CI mypy file list, skipping untracked files and
+# tracked files deleted from the working tree but not staged.
+mypy_tracked_files() {
+  local pathspecs=('sdks/python/xmc/*.py' 'tools/*.py' 'deploy/*.py' 'cmd/ui/*.py')
+  git -c core.quotePath=false ls-files -- "${pathspecs[@]}" \
+    | grep -vxF -f <(git -c core.quotePath=false ls-files --deleted -- "${pathspecs[@]}") \
+    | grep -vE '(^|/)(venv|node_modules|ctk-out)/|(^|/)bazel-|(^|/)dev_env\.py$' || true
+}
+
 check_mypy() {
   # mypy is cross-module: an edit, delete or rename can break unchanged
-  # importers, so fix mode checks the same repo-wide file list as CI whenever a
-  # relevant Python file is staged, deleted or renamed.
-  if [ "$MODE" = "fix" ] && ! staged_paths_match AMD '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$'; then
+  # importers, so fix mode checks the tracked files of the CI file list whenever
+  # a relevant Python file is staged, deleted or renamed.
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$'; then
     return
   fi
   local py_files
-  py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
+  if [ "${MODE}" = "check" ]; then
+    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
+  else
+    py_files=$(mypy_tracked_files)
+  fi
 
   if [ -z "$py_files" ]; then
     return
@@ -403,7 +420,7 @@ check_terraform() {
 check_tflint() {
   # TFLint lints whole modules, so fix mode also runs it when a staged delete or
   # rename removes a .tf file that the remaining module files depend on.
-  if [ "$MODE" = "check" ]; then
+  if [ "${MODE}" = "check" ]; then
     if [ -z "$(find deploy -type f -name "*.tf" || true)" ]; then return; fi
   elif ! staged_paths_match AMD '\.tf$'; then
     return
@@ -430,14 +447,9 @@ check_tflint() {
 check_helm() {
   # helm lint covers the whole chart, so fix mode runs it for any staged add,
   # modify, delete or rename under deploy/helm/.
-  local helm_files=""
-  if [ "$MODE" = "check" ]; then
-    helm_files=$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)
-  elif staged_paths_match AMD '^deploy/helm/'; then
-    helm_files="deploy/helm"
-  fi
-
-  if [ -z "$helm_files" ]; then
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^deploy/helm/'; then
     return
   fi
 
@@ -456,14 +468,9 @@ check_helm() {
 check_security() {
   # Trivy scans all of deploy/, so fix mode runs it for any staged add, modify,
   # delete or rename under deploy/.
-  local sec_files=""
-  if [ "$MODE" = "check" ]; then
-    sec_files=$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) || true)
-  elif staged_paths_match AMD '^deploy/'; then
-    sec_files="deploy"
-  fi
-
-  if [ -z "$sec_files" ]; then
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^deploy/'; then
     return
   fi
 
