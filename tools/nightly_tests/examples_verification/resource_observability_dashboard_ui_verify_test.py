@@ -79,21 +79,21 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
         session = mock.MagicMock()
         page1_rows = [_make_row_mock("1", "N/A - running"), _make_row_mock("2", "1")]
         page2_rows = [_make_row_mock("3", "2")]
-        state: dict[str, Any] = {"page": 0, "filter_args": []}
+        link_locator = mock.sentinel.experiment_link_locator
+        expected_link_sel = 'a.job-link[href="/experiments/36272"]'
+        state: dict[str, Any] = {"page": 0, "filter_args": [], "link_selectors": []}
 
         def _locator_side_effect(selector: str) -> Any:
+            if selector == expected_link_sel:
+                state["link_selectors"].append(selector)
+                return link_locator
             loc = mock.MagicMock()
             if selector == sel.JOBS_TABLE_ROW_SEL:
                 current = page1_rows if state["page"] == 0 else page2_rows
                 filtered = mock.MagicMock()
                 filtered.count.return_value = len(current)
                 filtered.nth.side_effect = lambda idx: current[idx]
-
-                def _record_filter(**kwargs: Any) -> Any:
-                    state["filter_args"].append(kwargs)
-                    return filtered
-
-                loc.filter.side_effect = _record_filter
+                loc.filter.side_effect = lambda **kw: (state["filter_args"].append(kw), filtered)[1]
             elif selector == sel.JOBS_NEXT_PAGE_BTN_SEL:
                 loc.count.return_value = 1 if state["page"] == 0 else 0
                 loc.first.click.side_effect = lambda: state.__setitem__("page", 1)
@@ -104,14 +104,34 @@ class ResourceObservabilityDashboardUIVerifyTest(unittest.TestCase):
             session, "cpu-cluster-queue", "gpu-cluster-queue", "experiments/36272"
         )
         self.assertEqual(state["page"], 1)
-        self.assertEqual(state["filter_args"], [{"has_text": "Experiment #36272"}] * 2)
+        self.assertEqual(state["link_selectors"], [expected_link_sel] * 2)
+        self.assertEqual(state["filter_args"], [{"has": link_locator}] * 2)
 
-        state["page"] = 0
-        with self.assertRaises(ui_entities_validator.UIVerificationError) as err_ctx:
+    def test_verify_work_units_in_jobs_table_captures_failure_screenshot(self) -> None:
+        session = mock.MagicMock()
+        session.take_screenshot.return_value = "/tmp/shots/ui_rod_jobs_table_failure.png"
+        rod_verify._verify_work_units_in_jobs_table(
+            session, "cpu-cluster-queue", "gpu-cluster-queue", None
+        )
+        session.take_screenshot.assert_not_called()
+
+        with (
+            mock.patch.object(rod_verify, "_collect_xid_work_unit_positions", return_value={}),
+            mock.patch.object(rod_verify, "_select_queue_card_by_name") as mock_select,
+            self.assertRaises(ui_entities_validator.UIVerificationError) as err_ctx,
+        ):
+            rod_verify._verify_work_units_in_jobs_table(
+                session, "cpu-cluster-queue", "gpu-cluster-queue", "experiments/36272"
+            )
+        session.take_screenshot.assert_called_once_with("ui_rod_jobs_table_failure.png")
+        self.assertEqual(mock_select.call_count, 22)
+        self.assertIn("ui_rod_jobs_table_failure.png", str(err_ctx.exception))
+
+        with self.assertRaises(ui_entities_validator.UIVerificationError) as bad_xid_ctx:
             rod_verify._verify_work_units_in_jobs_table(
                 session, "cpu-cluster-queue", "gpu-cluster-queue", "invalid-xid"
             )
-        self.assertIn("Invalid numeric XID: 'invalid-xid'", str(err_ctx.exception))
+        self.assertIn("Invalid numeric XID: 'invalid-xid'", str(bad_xid_ctx.exception))
 
     def test_main_passes_keyword_args_and_stops_work_units_in_finally(self) -> None:
         flag_vals = {
