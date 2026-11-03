@@ -35,8 +35,8 @@ func TestMatrix_SemVerCompatibility(t *testing.T) {
 			name:  "satisfies manifest-level SemVer constraint",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.2.0 <2.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.4.2\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { stability: STABLE, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.2.0 <2.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { stability: STABLE, version: \"1.4.2\" }\n",
 			},
 			wantValid: true,
 		},
@@ -91,6 +91,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   version: "0.2.0"
 `,
 				"cert-manager.yaml": `
@@ -99,6 +100,7 @@ kind: Component
 metadata:
   name: cert-manager
 spec:
+  stability: STABLE
   version: "1.12.4"
 `,
 			},
@@ -198,6 +200,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   version: "0.2.0"
 `,
 			},
@@ -229,6 +232,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   version: "1.0.0"
 `,
 			},
@@ -259,7 +263,8 @@ apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: jobset
-spec: {}
+spec:
+  stability: STABLE
 `,
 			},
 			wantValid: true,
@@ -288,6 +293,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   enabled: false
   version: "1.0.0"
 `,
@@ -406,8 +412,8 @@ spec:
 			name:  "dependency component has empty version string",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: {}\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { stability: STABLE, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \">=1.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { stability: STABLE }\n",
 			},
 			wantValid: true,
 		},
@@ -429,8 +435,8 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"1.0.0\" }\n",
-				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: {}\n",
+				"jobset.yaml":       "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { stability: STABLE, version: \"1.0.0\" }\n",
+				"cert-manager.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: cert-manager }\nspec: { stability: STABLE }\n",
 			},
 			wantValid: true,
 		},
@@ -438,8 +444,8 @@ spec:
 			name:  "disabled requiring component in manifest dependencies is skipped",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: false, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\" }] }\n",
-				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { version: \"1.8.0\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { stability: STABLE, enabled: false, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\" }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { stability: STABLE, version: \"1.8.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -447,8 +453,8 @@ spec:
 			name:  "disabled target dependency component in manifest dependencies is skipped",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
-				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\", optional: true }] }\n",
-				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { enabled: false, version: \"1.8.0\" }\n",
+				"comp-a.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-a }\nspec: { stability: STABLE, enabled: true, version: \"1.0.0\", dependencies: [{ name: comp-b, version: \"^2.0.0\", optional: true }] }\n",
+				"comp-b.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: comp-b }\nspec: { stability: STABLE, enabled: false, version: \"1.8.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -580,6 +586,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   version: "0.2.0"
 `,
 			},
@@ -647,7 +654,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { enabled: false, version: \"1.0.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { stability: STABLE, enabled: false, version: \"1.0.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -675,6 +682,7 @@ kind: Component
 metadata:
   name: jobset
 spec:
+  stability: STABLE
   version: "0.2.0"
 `,
 			},
@@ -858,7 +866,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { stability: STABLE, version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -971,7 +979,7 @@ spec:
 				},
 			},
 			manifests: map[string]string{
-				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { version: \"0.2.0\" }\n",
+				"jobset.yaml": "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: jobset }\nspec: { stability: STABLE, version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -1020,7 +1028,7 @@ func TestMatrix_OrRequirements(t *testing.T) {
 		}
 	}
 
-	gatewayManifest := "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: ingestion-gateway }\nspec: { version: \"0.1.0\" }\n"
+	gatewayManifest := "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: ingestion-gateway }\nspec: { stability: STABLE, version: \"0.1.0\" }\n"
 
 	tests := []struct {
 		name      string
@@ -1038,7 +1046,7 @@ func TestMatrix_OrRequirements(t *testing.T) {
 			),
 			manifests: map[string]string{
 				"ingestion-gateway.yaml": gatewayManifest,
-				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { version: \"0.1.0\" }\n",
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { stability: STABLE, version: \"0.1.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -1050,8 +1058,8 @@ func TestMatrix_OrRequirements(t *testing.T) {
 			),
 			manifests: map[string]string{
 				"ingestion-gateway.yaml": gatewayManifest,
-				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: false, version: \"0.1.0\" }\n",
-				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { enabled: true, version: \"0.2.0\" }\n",
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { stability: STABLE, enabled: false, version: \"0.1.0\" }\n",
+				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { stability: STABLE, enabled: true, version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -1063,8 +1071,8 @@ func TestMatrix_OrRequirements(t *testing.T) {
 			),
 			manifests: map[string]string{
 				"ingestion-gateway.yaml": gatewayManifest,
-				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { enabled: true, version: \"0.1.0\" }\n",
-				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { enabled: true, version: \"0.2.0\" }\n",
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { stability: STABLE, enabled: true, version: \"0.1.0\" }\n",
+				"pubsub.yaml":            "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: pubsub }\nspec: { stability: STABLE, enabled: true, version: \"0.2.0\" }\n",
 			},
 			wantValid: true,
 		},
@@ -1076,7 +1084,7 @@ func TestMatrix_OrRequirements(t *testing.T) {
 			),
 			manifests: map[string]string{
 				"ingestion-gateway.yaml": gatewayManifest,
-				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: {}\n",
+				"redpanda.yaml":          "apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: redpanda }\nspec: { stability: STABLE }\n",
 			},
 			wantValid: true,
 		},

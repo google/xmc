@@ -230,6 +230,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "event-stream",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -263,6 +264,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -315,6 +317,7 @@ parameters:
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: false,
 					DeletionPolicy:     "Orphan",
 					Parameters: map[string]string{
@@ -470,6 +473,7 @@ metadata:
   name: {{ .Release.Name | quote }}
   namespace: "xmc"
 spec:
+  stability: "STABLE"
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   chartVersion: {{ .Values.emptyList | default "1.0.0" | quote }}
   parameters:
@@ -546,6 +550,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			ComponentClass:     "metrics-ingestion",
 			Version:            "0.1.0",
 			ChartVersion:       "0.1.0",
+			Stability:          "STABLE",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
