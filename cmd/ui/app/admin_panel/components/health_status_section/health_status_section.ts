@@ -43,6 +43,7 @@ export interface ComponentHealth {
   type?: string;
   healthState?: string;
   errorMessage?: string;
+  stability?: string;
 }
 
 /** Component representing XMC services health details. */

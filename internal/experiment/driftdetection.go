@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
@@ -34,9 +35,9 @@ const (
 )
 
 type driftCacheEntry struct {
-	isConsistent bool
-	diffs        []string
-	expiresAt    time.Time
+	diffs             []string
+	experimentalNames []string
+	expiresAt         time.Time
 }
 
 type driftCache struct {
@@ -63,7 +64,7 @@ func (c *driftCache) get(xid int64, now time.Time) (driftCacheEntry, bool) {
 	return entry, true
 }
 
-func (c *driftCache) set(xid int64, isConsistent bool, diffs []string, now time.Time) {
+func (c *driftCache) set(xid int64, diffs, experimentalNames []string, now time.Time) {
 	if c == nil {
 		return
 	}
@@ -79,19 +80,20 @@ func (c *driftCache) set(xid int64, isConsistent bool, diffs []string, now time.
 	}
 
 	c.entries[xid] = driftCacheEntry{
-		isConsistent: isConsistent,
-		diffs:        diffs,
-		expiresAt:    now.Add(driftCacheTTL),
+		diffs:             diffs,
+		experimentalNames: experimentalNames,
+		expiresAt:         now.Add(driftCacheTTL),
 	}
 }
 
-// DriftStore provides the storage lookup required to evaluate experiment component drift.
+// DriftStore provides the storage lookup required to evaluate experiment component drift and stability.
 type DriftStore interface {
 	FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]storage.ComponentDiff, error)
+	FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]storage.ExperimentSnapshotComponent, error)
 }
 
-// DriftEvaluator detects component drift for active experiments and caches results per experiment
-// for a short TTL.
+// DriftEvaluator detects component drift and experimental component usage for active experiments
+// and caches results per experiment for a short TTL.
 type DriftEvaluator struct {
 	store            DriftStore
 	enableComponents bool
@@ -109,7 +111,8 @@ func NewDriftEvaluator(store DriftStore, enableComponents bool) *DriftEvaluator 
 }
 
 // Evaluate checks whether an active experiment's component snapshots have diverged
-// from live component catalog generations. If drift is detected, a warning notice is attached to the status.
+// from live component catalog generations or reference experimental components. If drift or
+// experimental component usage is detected, warning notices are attached to the status.
 func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *essmsgpb.ExperimentStatus) error {
 	if !e.enableComponents {
 		return nil
@@ -120,10 +123,7 @@ func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *ess
 
 	now := time.Now()
 	if entry, ok := e.driftCache.get(xid, now); ok {
-		if entry.isConsistent {
-			return nil
-		}
-		attachDriftWarningMessage(expStatus, formatDriftWarningMessage(entry.diffs))
+		attachComponentWarnings(expStatus, entry.diffs, entry.experimentalNames)
 		return nil
 	}
 
@@ -131,17 +131,52 @@ func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *ess
 	if err != nil {
 		return fmt.Errorf("failed to fetch drift details: %w", err)
 	}
-	if len(diffs) == 0 {
-		e.driftCache.set(xid, true, nil, now)
-		return nil
+	experimentalNames, err := e.fetchExperimentalSnapshotNames(ctx, xid)
+	if err != nil {
+		return fmt.Errorf("failed to fetch experimental snapshot components: %w", err)
 	}
 
-	e.driftCache.set(xid, false, diffs, now)
-	driftMsg := formatDriftWarningMessage(diffs)
-	attachDriftWarningMessage(expStatus, driftMsg)
-	logging.Warn(ctx, "Attached component drift warning notice", "xid", xid, "warning", driftMsg.GetUserFacingText())
+	e.driftCache.set(xid, diffs, experimentalNames, now)
+	prevText := expStatus.GetStructuredStatusMessage().GetUserFacingText()
+	attachComponentWarnings(expStatus, diffs, experimentalNames)
+	if updatedText := expStatus.GetStructuredStatusMessage().GetUserFacingText(); updatedText != prevText {
+		logging.Warn(ctx, "Attached component warning notice", "xid", xid, "warning", updatedText)
+	}
 
 	return nil
+}
+
+func attachComponentWarnings(expStatus *essmsgpb.ExperimentStatus, diffs, experimentalNames []string) {
+	if len(experimentalNames) > 0 {
+		msg := formatExperimentalWarningMessage(experimentalNames)
+		attachWarningMessage(expStatus, msg, "uses experimental component")
+	}
+	if len(diffs) > 0 {
+		attachDriftWarningMessage(expStatus, formatDriftWarningMessage(diffs))
+	}
+}
+
+// fetchExperimentalSnapshotNames returns the names of snapshotted EXPERIMENTAL components.
+func (e *DriftEvaluator) fetchExperimentalSnapshotNames(ctx context.Context, xid int64) ([]string, error) {
+	snapshots, err := e.store.FetchExperimentSnapshotComponents(ctx, xid)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, snap := range snapshots {
+		if snap.Spec == nil || snap.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL {
+			continue
+		}
+		if len(names) >= maxDriftDetails {
+			break
+		}
+		name := fmt.Sprintf("component_id=%d", snap.ComponentID)
+		if snap.Name != nil && *snap.Name != "" {
+			name = *snap.Name
+		}
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 // fetchDriftDetails queries drifted component generation comparisons for an experiment.
@@ -191,11 +226,32 @@ func formatDriftWarningMessage(diffs []string) *essmsgpb.StructuredMessage {
 	}
 }
 
+// formatExperimentalWarningMessage constructs a StructuredMessage with WARNING severity for experimental components.
+func formatExperimentalWarningMessage(componentNames []string) *essmsgpb.StructuredMessage {
+	warningText := "uses experimental component"
+	if len(componentNames) == 1 {
+		warningText = fmt.Sprintf("uses experimental component %s", componentNames[0])
+	} else if len(componentNames) > 1 {
+		warningText = fmt.Sprintf("uses experimental components: %s", strings.Join(componentNames, ", "))
+	}
+	return &essmsgpb.StructuredMessage{
+		Severity:       essmsgpb.StructuredMessage_WARNING,
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		UserFacingText: warningText,
+		CreateTime:     timestamppb.Now(),
+	}
+}
+
 // attachDriftWarningMessage safely sets or merges the drift notice into expStatus.
 func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *essmsgpb.StructuredMessage) {
+	attachWarningMessage(expStatus, driftMsg, "Component drift detected")
+}
+
+// attachWarningMessage safely sets or merges warningMsg into expStatus unless dedupSubstring is already present.
+func attachWarningMessage(expStatus *essmsgpb.ExperimentStatus, warningMsg *essmsgpb.StructuredMessage, dedupSubstring string) {
 	currentMsg := expStatus.GetStructuredStatusMessage()
 	if currentMsg == nil {
-		expStatus.StructuredStatusMessage = driftMsg
+		expStatus.StructuredStatusMessage = warningMsg
 		return
 	}
 
@@ -204,8 +260,8 @@ func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *e
 		return
 	}
 
-	// Prevent duplicate drift notices.
-	if strings.Contains(currentMsg.GetUserFacingText(), "Component drift detected") {
+	// Prevent duplicate warning notices.
+	if dedupSubstring != "" && strings.Contains(currentMsg.GetUserFacingText(), dedupSubstring) {
 		return
 	}
 
@@ -215,8 +271,8 @@ func attachDriftWarningMessage(expStatus *essmsgpb.ExperimentStatus, driftMsg *e
 	}
 
 	if currentMsg.GetUserFacingText() == "" {
-		currentMsg.UserFacingText = driftMsg.GetUserFacingText()
+		currentMsg.UserFacingText = warningMsg.GetUserFacingText()
 		return
 	}
-	currentMsg.UserFacingText = fmt.Sprintf("%s; %s", currentMsg.GetUserFacingText(), driftMsg.GetUserFacingText())
+	currentMsg.UserFacingText = fmt.Sprintf("%s; %s", currentMsg.GetUserFacingText(), warningMsg.GetUserFacingText())
 }

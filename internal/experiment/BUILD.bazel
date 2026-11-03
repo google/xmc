@@ -24,6 +24,7 @@ go_library(
     importpath = "xmanager_cloud/internal/experiment",
     visibility = ["//visibility:public"],
     deps = [
+        "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
         "//internal/logging",
@@ -47,6 +48,7 @@ go_test(
     ],
     embed = [":experiment"],
     deps = [
+        "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
         "//internal/storage",
