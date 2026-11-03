@@ -230,7 +230,8 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected onFindMatchingQueues(query: ResourceRequirementQuery) {
     this.activeQuery.set(query);
-    // Matching queues are shown in the queue list, which full-width mode hides.
+    // Every finder change (including its initial emit when the tab is re-entered) re-filters the
+    // queue list, which full-width mode hides, so leave full width to show the results.
     this.isJobsFullWidth.set(false);
   }
 }

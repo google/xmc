@@ -282,6 +282,9 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getResizeDivider()).toBeNull();
     expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
+    const container = (await dashboard.getSplitContainerDimensions())!;
+    const rightPane = (await dashboard.getRightPaneDimensions())!;
+    expect(rightPane.width).toBeCloseTo(container.width, 0);
     expect(await toggleBtn.getText()).toContain('Exit full width');
     expect(await jobsTable.getFullWidthToggleIconName()).toBe('fullscreen_exit');
 

@@ -71,6 +71,12 @@ export class ResourceDashboardHarness extends ComponentHarness {
     return pane ? pane.getAttribute('style') : null;
   }
 
+  /** Gets the on-screen position and size of the right jobs pane if present. */
+  async getRightPaneDimensions(): Promise<ElementDimensions | null> {
+    const pane = await this.jobsSidePane();
+    return pane ? pane.getDimensions() : null;
+  }
+
   /** Returns true when the right jobs pane has full-width mode active. */
   async isRightPaneFullWidth(): Promise<boolean> {
     const pane = await this.jobsSidePane();
