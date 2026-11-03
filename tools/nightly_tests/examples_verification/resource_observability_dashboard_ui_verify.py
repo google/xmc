@@ -118,10 +118,7 @@ def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, xid: s
             _select_queue_card_by_name(session, alt)
             session.settle_and_wait_fonts(1500)
             _select_queue_card_by_name(session, cq)
-    shot = session.take_screenshot("ui_rod_jobs_table_failure.png")
-    raise UIError(
-        f"Missing XID {norm_xid} work units {EXPECTED_WORK_UNITS} in '{cq}': {pos} -> {shot}"
-    )
+    raise UIError(f"Missing XID {norm_xid} work units {EXPECTED_WORK_UNITS} in '{cq}': {pos}")
 
 
 def assert_queue_selection_and_jobs_pane(
