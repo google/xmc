@@ -17,7 +17,7 @@ This document outlines coding standards, style guidelines, and best practices fo
 
 ## 3. Unit Testing & Bazel Execution Protocol
 - **Standard `unittest` Framework**: Standardize test suites using the Python standard library `unittest` module (with tests named via `_test.py` suffix alongside target source files).
-- **Testing Scope & Cohesion**: Adhere to the 1-to-1 file test cohesion rules defined in [Core Engineering Standards](../core_engineering.md#5-strict-testing-coverage--pr-granularity), including exemptions for standalone example scripts under `examples/`.
+- **Testing Scope & Cohesion**: Adhere to the 1-to-1 file test cohesion rules defined in [Core Engineering Standards](../core_engineering.md#5-strict-testing-coverage--pr-granularity), including exemptions for standalone example scripts under `examples/` and thin E2E entrypoints under `tools/nightly_tests/examples_verification/`.
 - **Hermetic Testing**: Isolate tests from external environment side-effects (file system mutations, process invocations, network RPCs) using `unittest.mock.patch` to keep unit test suites fast, deterministic, and self-contained.
 - **Mandatory Bazel Test Execution**: Because Python packages in this repository rely on Bazel-generated Protobuf bindings (`api.protos...`), tests MUST be run using Bazel. ALWAYS execute unit tests via `./tools/run_affected_tests.py`, `bazel test //<dir>/...`, or a target listed by `bazel query 'tests(//<dir>/...)'` (never a guessed target name). Do NOT attempt direct system `python3 -m unittest` or `pip install` invocations outside of Bazel.
 

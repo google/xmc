@@ -98,6 +98,7 @@ py_binary(
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:resource_observability_parsing",
         "//tools/nightly_tests/verification:ui_entities_validator_lib",
         "//tools/nightly_tests/verification:verification_report",
         "//tools/nightly_tests/verification:verifier_cli",
