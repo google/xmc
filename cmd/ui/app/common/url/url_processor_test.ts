@@ -79,7 +79,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, EXPERIMENT_1);
     expect(processedUrls.length).toBe(2);
     expect(processedUrls[0].processedUrl).toBeUndefined();
-    expect(processedUrls[0].disableReason).toBe('Waiting for data...');
+    expect(processedUrls[0].disableReason).toBe('Unavailable: required metadata is missing');
     expect(processedUrls[0].displayName).toBe('Test URL 2');
     expect(processedUrls[1].processedUrl).toBe('http://test.com/1');
     expect(processedUrls[1].disableReason).toBeUndefined();
@@ -163,7 +163,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, unadmittedWorkUnit);
     expect(processedUrls.length).toBe(2);
     expect(processedUrls[0].processedUrl).toBeUndefined();
-    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
+    expect(processedUrls[0].disableReason).toBe('Unavailable: no executing cluster assigned');
     expect(processedUrls[1].processedUrl).toBe('http://logs.com/1/1?project=mgmt-project');
     expect(processedUrls[1].disableReason).toBeUndefined();
   });
@@ -185,7 +185,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, partialClusterWorkUnit);
     expect(processedUrls.length).toBe(1);
     expect(processedUrls[0].processedUrl).toBeUndefined();
-    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
+    expect(processedUrls[0].disableReason).toBe('Unavailable: no executing cluster assigned');
   });
 
   it('should return undefined processedUrl for work unit with missing metadata', () => {
@@ -200,7 +200,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, WORK_UNIT_2);
     expect(processedUrls.length).toBe(1);
     expect(processedUrls[0].processedUrl).toBeUndefined();
-    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
+    expect(processedUrls[0].disableReason).toBe('Unavailable: no executing cluster assigned');
     expect(processedUrls[0].displayName).toBe('Test URL');
   });
 
@@ -241,7 +241,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, EXPERIMENT_1);
     expect(processedUrls.length).toBe(1);
     expect(processedUrls[0].processedUrl).toBeUndefined();
-    expect(processedUrls[0].disableReason).toBe('Waiting for data...');
+    expect(processedUrls[0].disableReason).toBe('Unavailable: required metadata is missing');
     expect(processedUrls[0].icon).toBe('link');
   });
 });

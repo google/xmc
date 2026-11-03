@@ -16,8 +16,8 @@ import { Experiment, Url, WorkUnit } from 'app/protos/experiment_state_server';
 import { parseExperimentName, parseWorkUnitName } from '../resource_name_extractor';
 
 const EXECUTING_CLUSTER_KEYS = new Set(['PROJECT', 'LOCATION', 'CLUSTER']);
-const WAITING_FOR_CLUSTER_REASON = 'Waiting for executing cluster assignment...';
-const WAITING_FOR_DATA_REASON = 'Waiting for data...';
+const NO_EXECUTING_CLUSTER_REASON = 'Unavailable: no executing cluster assigned';
+const MISSING_METADATA_REASON = 'Unavailable: required metadata is missing';
 
 /**
  * Interface for Urls after processing.
@@ -42,7 +42,7 @@ export function processUrls(urls: Url[], data: Experiment | WorkUnit): Processed
     .map((url) => {
       const { processedUrl, disableReason } = url.url
         ? fillPlaceholders(url.url, replacements)
-        : { processedUrl: undefined, disableReason: WAITING_FOR_DATA_REASON };
+        : { processedUrl: undefined, disableReason: MISSING_METADATA_REASON };
       const icon = url.icon || 'link';
       return {
         ...url,
@@ -103,6 +103,6 @@ function fillPlaceholders(
   const missingExecutingCluster = [...missingKeys].some((key) => EXECUTING_CLUSTER_KEYS.has(key));
   return {
     processedUrl: undefined,
-    disableReason: missingExecutingCluster ? WAITING_FOR_CLUSTER_REASON : WAITING_FOR_DATA_REASON,
+    disableReason: missingExecutingCluster ? NO_EXECUTING_CLUSTER_REASON : MISSING_METADATA_REASON,
   };
 }

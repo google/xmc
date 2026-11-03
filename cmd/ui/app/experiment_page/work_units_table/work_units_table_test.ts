@@ -315,7 +315,7 @@ describe('WorkUnitsTable Component', () => {
       expect(await button.isDisabled()).toBeTrue();
       const tooltip = await cell.getHarness(MatTooltipHarness);
       await tooltip.show();
-      expect(await tooltip.getTooltipText()).toBe('Waiting for executing cluster assignment...');
+      expect(await tooltip.getTooltipText()).toBe('Unavailable: no executing cluster assigned');
     });
   });
 

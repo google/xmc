@@ -125,7 +125,7 @@ limitations under the License.
           } @else {
             <span
               class="disabled-url-wrapper"
-              [matTooltip]="url.disableReason || 'Waiting for data...'"
+              [matTooltip]="url.disableReason || 'Unavailable: required metadata is missing'"
             >
               <button type="button" mat-icon-button disabled>
                 <mat-icon>pending</mat-icon>
