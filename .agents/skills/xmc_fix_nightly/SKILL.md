@@ -82,8 +82,8 @@ Check recent `origin/main` commits (`git log origin/main --oneline -n 20`) and m
 
 2. **Implement & Verify a Minimal, Single-Responsibility Fix**:
    Follow [XMC Feature Development](../xmc_feature_development/SKILL.md) and language rules under [`.agents/rules/languages/`](../../rules/languages/):
-   - Fix only the root cause; do not bundle unrelated cleanups or unrequested diagnostic hooks.
-   - **Test Cohesion Boundary**: Add unit tests for production packages and shared helpers in [`tools/nightly_tests/verification/`](../../../tools/nightly_tests/verification/), while keeping standalone E2E scripts in [`tools/nightly_tests/examples_verification/`](../../../tools/nightly_tests/examples_verification/) free of brittle mock `*_verify_test.py` files.
+   - Fix the root cause without bundling unrelated refactors or cleanups.
+   - Add or update unit tests per [Strict Testing Coverage](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity) and the verifier conventions in [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md). Never delete or weaken existing tests or assertions to make a nightly run pass.
    - Stage explicit modified paths (never blind `git add -A`) and run `./.githooks/pre-commit` and affected Bazel tests until 100% green per [XMC Create PR — Section 2](../xmc_create_pr/SKILL.md#2-pre-commit-hooks--commit-creation) and [XMC Feature Development — Section 3](../xmc_feature_development/SKILL.md#3-test-execution-via-affected-tests-tool).
 
 ---
