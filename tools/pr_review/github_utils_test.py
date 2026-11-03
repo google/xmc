@@ -97,7 +97,7 @@ class TestGithubUtils(unittest.TestCase):
         self.assertIsNone(res)
 
     @patch("shutil.which")
-    @patch("subprocess.run")
+    @patch("tools.pr_review.github_utils.run_command")
     def test_call_github_api_gh_cli_success(self, mock_run, mock_which):
         """Test calling GitHub API using gh CLI."""
         mock_which.return_value = "/usr/bin/gh"
@@ -110,11 +110,28 @@ class TestGithubUtils(unittest.TestCase):
         self.assertEqual(res["id"], 1234)
         self.assertEqual(res["body"], "test comment")
 
-        mock_run.assert_called_once()
-        self.assertIn("gh", mock_run.call_args[0][0])
+        mock_run.assert_called_once_with(
+            ["gh", "api", "-X", "GET", "/repos/google/xmc/pulls/comments/1234"],
+            capture_output=True,
+            log_cmd=False,
+            log_on_error=False,
+            input_text=None,
+        )
 
     @patch("shutil.which")
-    @patch("subprocess.run")
+    @patch("tools.pr_review.github_utils.run_command")
+    def test_call_github_api_gh_cli_sends_payload_on_stdin(self, mock_run, mock_which):
+        """A payload is passed to gh as JSON on stdin via --input -."""
+        mock_which.return_value = "/usr/bin/gh"
+        mock_run.return_value = MagicMock(stdout="{}")
+
+        call_github_api("/repos/o/r/issues/1/comments", method="POST", payload={"body": "hi"})
+
+        self.assertEqual(mock_run.call_args.args[0][-2:], ["--input", "-"])
+        self.assertEqual(mock_run.call_args.kwargs["input_text"], '{"body": "hi"}')
+
+    @patch("shutil.which")
+    @patch("tools.pr_review.github_utils.run_command")
     @patch("os.environ.get")
     @patch("urllib.request.urlopen")
     def test_call_github_api_gh_cli_fails_fallback_to_token_success(
@@ -199,7 +216,7 @@ class TestGithubUtils(unittest.TestCase):
         self.assertIn("[unauthenticated] Exception: HTTP 404 Not Found", str(ctx.exception))
 
     @patch("shutil.which")
-    @patch("subprocess.run")
+    @patch("tools.pr_review.github_utils.run_command")
     @patch("os.environ.get")
     @patch("urllib.request.urlopen")
     def test_call_github_api_all_credentials_fail_raises_auth_error(
@@ -229,7 +246,7 @@ class TestGithubUtils(unittest.TestCase):
         )
 
     @patch("shutil.which")
-    @patch("subprocess.run")
+    @patch("tools.pr_review.github_utils.run_command")
     @patch("os.environ.get")
     @patch("urllib.request.urlopen")
     def test_call_github_api_all_credentials_fail_raises_api_error_for_non_auth_failure(
