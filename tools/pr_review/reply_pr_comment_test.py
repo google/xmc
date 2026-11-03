@@ -441,7 +441,14 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         )
         call_patch = patch(
             "tools.pr_review.reply_pr_comment.call_github_api",
-            return_value={"id": 5678},
+            return_value={
+                "id": 5678,
+                "html_url": "https://github.com/google/xmc/pull/29#discussion_r5678",
+                "in_reply_to_id": 1234,
+                "diff_hunk": "@@ -1,3 +1,3 @@\n" + "-old\n+new\n" * 200,
+                "body": "done",
+                "user": {"login": "test_user"},
+            },
         )
         login_patch = patch(
             "tools.pr_review.reply_pr_comment.get_authenticated_login",
@@ -474,8 +481,15 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         mock_resolve.assert_called_once_with(
             "google", "xmc", 29, 1234, user_agent="XMC-Comment-Replier-Agent"
         )
-        self.assertEqual(res["id"], 5678)
-        self.assertEqual(res["resolved_thread"]["thread_id"], "PRRT_1")
+        self.assertEqual(
+            res,
+            {
+                "id": 5678,
+                "html_url": "https://github.com/google/xmc/pull/29#discussion_r5678",
+                "in_reply_to": 1234,
+                "resolved": True,
+            },
+        )
 
     @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
     def test_without_resolve_flag_does_not_resolve(self, mock_resolve):
@@ -485,7 +499,16 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         res = reply_comment(self.args)
 
         mock_resolve.assert_not_called()
-        self.assertEqual(res, {"id": 5678})
+        self.assertFalse(res["resolved"])
+
+    def test_output_omits_raw_response_fields(self):
+        """Test bulky API response fields (diff_hunk, body, user) are not echoed."""
+        self.args.resolve = False
+
+        res = reply_comment(self.args)
+
+        self.assertEqual(set(res), {"id", "html_url", "in_reply_to", "resolved"})
+        self.assertEqual(res["in_reply_to"], 1234)
 
     @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
     def test_resolve_failure_reports_posted_reply(self, mock_resolve):

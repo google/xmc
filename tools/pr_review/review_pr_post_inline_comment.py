@@ -17,7 +17,6 @@
 
 import argparse
 import json
-import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,12 +37,22 @@ from tools.pr_review.github_utils import (  # noqa: E402
 
 
 def get_git_username() -> str:
-    """Attempt to resolve the current user's authenticated GitHub/git username."""
+    """Returns the authenticated GitHub login for comment telemetry.
+
+    There is deliberately no fallback to the local OS username: it differs from
+    the GitHub login, so a silent fallback corrupts telemetry and any reviewer
+    identity comparison built on it.
+
+    Raises:
+        HandledError: If the GitHub login cannot be resolved.
+    """
     try:
         return get_authenticated_login(user_agent="XMC-PR-Review-Agent")
-    except Exception:
-        pass
-    return os.environ.get("USER", "unknown")
+    except (GithubAuthError, GithubAPIError) as e:
+        raise HandledError(
+            f"Failed to resolve the authenticated GitHub login: {e}",
+            "Authenticate with 'gh auth login' or set a valid GITHUB_TOKEN, then retry.",
+        ) from e
 
 
 def _handle_resolve_thread(
