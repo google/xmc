@@ -22,9 +22,9 @@
   title="Drag to resize sections (double-click to reset)"
   [attr.aria-valuemin]="minRatio"
   [attr.aria-valuemax]="maxRatio"
-  [attr.aria-valuenow]="splitRatio()"
+  [attr.aria-valuenow]="ariaValueNow()"
   [class.is-dragging]="isDragging()"
-  (mousedown)="startResize($event)"
+  (pointerdown)="startResize($event)"
   (dblclick)="resetResize()"
   (keydown)="onKeyDown($event)"
 ></div>

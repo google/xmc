@@ -12,14 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, input, model, OnDestroy, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+  model,
+  OnDestroy,
+  signal,
+} from '@angular/core';
 
 export const DEFAULT_SPLIT_RATIO_PERCENT = 50;
 const MIN_SPLIT_RATIO_PERCENT = 20;
 const MAX_SPLIT_RATIO_PERCENT = 80;
 const KEYBOARD_RESIZE_STEP_PERCENT = 5;
-const PRIMARY_MOUSE_BUTTON = 0;
-const PRIMARY_MOUSE_BUTTON_MASK = 1;
+const PRIMARY_BUTTON = 0;
+const PRIMARY_BUTTON_MASK = 1;
 
 const KEYBOARD_STEP_BY_KEY: Readonly<Record<string, number>> = {
   ArrowLeft: -KEYBOARD_RESIZE_STEP_PERCENT,
@@ -46,11 +54,12 @@ export class ResizeDividerComponent implements OnDestroy {
   protected readonly isDragging = signal<boolean>(false);
   protected readonly minRatio = MIN_SPLIT_RATIO_PERCENT;
   protected readonly maxRatio = MAX_SPLIT_RATIO_PERCENT;
+  protected readonly ariaValueNow = computed(() => Math.round(this.splitRatio()));
 
   private cleanupDragListeners: (() => void) | null = null;
 
-  protected startResize(event: MouseEvent): void {
-    if (event.button !== PRIMARY_MOUSE_BUTTON) {
+  protected startResize(event: PointerEvent): void {
+    if (event.button !== PRIMARY_BUTTON) {
       return;
     }
     // Container geometry is captured once per drag: dragging only changes child flex-basis.
@@ -91,21 +100,23 @@ export class ResizeDividerComponent implements OnDestroy {
   }
 
   private listenToDrag(left: number, width: number): void {
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      // A release outside the window (e.g. over a context menu) may never deliver mouseup.
-      if ((moveEvent.buttons & PRIMARY_MOUSE_BUTTON_MASK) === 0) {
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      // A release outside the window (e.g. over a context menu) may never deliver pointerup.
+      if ((moveEvent.buttons & PRIMARY_BUTTON_MASK) === 0) {
         this.stopResize();
         return;
       }
       this.splitRatio.set(this.clampRatio(((moveEvent.clientX - left) / width) * 100));
     };
-    const onMouseUp = () => this.stopResize();
+    const onPointerEnd = () => this.stopResize();
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
     this.cleanupDragListeners = () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
     };
   }
 

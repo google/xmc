@@ -67,7 +67,7 @@ describe('ResizeDividerComponent', () => {
     expect(await divider.isDragging()).toBeFalse();
   });
 
-  it('should update splitRatio while dragging, clamp to [20, 80], and detach listeners on mouseup', async () => {
+  it('should update splitRatio while dragging, clamp to [20, 80], and detach listeners on pointerup', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
     const rectSpy = stubContainerRect(host, 100, 1000);
@@ -79,6 +79,9 @@ describe('ResizeDividerComponent', () => {
 
     await divider.moveDragTo(450);
     expect(host.splitRatio()).toBe(35);
+    expect((await divider.getAttributes()).ariaValueNow).toBe('35');
+
+    await divider.moveDragTo(453.7);
     expect((await divider.getAttributes()).ariaValueNow).toBe('35');
 
     await divider.moveDragTo(120);
@@ -94,7 +97,7 @@ describe('ResizeDividerComponent', () => {
     expect(host.splitRatio()).toBe(80);
   });
 
-  it('should ignore non-primary mouse buttons', async () => {
+  it('should ignore non-primary pointer buttons', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
     stubContainerRect(host, 0, 1000);
@@ -188,11 +191,13 @@ describe('ResizeDividerComponent', () => {
     await divider.startDrag(500);
     expect(await divider.isDragging()).toBeTrue();
 
+    const removeListenerSpy = spyOn(window, 'removeEventListener').and.callThrough();
     host.showDivider.set(false);
     await flush();
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, buttons: 1, bubbles: true }));
-    await flush();
-    expect(host.splitRatio()).toBe(50);
+    const removedEvents = removeListenerSpy.calls.allArgs().map(([type]) => type);
+    expect(removedEvents).toEqual(
+      jasmine.arrayContaining(['pointermove', 'pointerup', 'pointercancel']),
+    );
   });
 });
