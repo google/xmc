@@ -64,6 +64,11 @@ export const WORK_UNIT_1: any = {
         location: 'us-central1',
         clusterName: 'test-cluster',
       },
+      executingCluster: {
+        project: 'test-project',
+        location: 'us-central1',
+        clusterName: 'test-cluster',
+      },
       resourceName: 'test-resource',
       namespace: 'test-namespace',
       serviceAccount: 'test-sa',

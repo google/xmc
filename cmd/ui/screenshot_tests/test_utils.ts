@@ -614,6 +614,11 @@ export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
         location: 'us-central1',
         clusterName: 'xmc-gke-prod-01',
       },
+      executingCluster: {
+        project: 'xmanager-prod',
+        location: 'us-central1',
+        clusterName: 'xmc-gke-prod-01',
+      },
       resourceName: 'gemini-run42-coordinator',
       namespace: 'xmc-workloads',
       serviceAccount: 'xmc-workload-sa@xmanager-prod.iam.gserviceaccount.com',

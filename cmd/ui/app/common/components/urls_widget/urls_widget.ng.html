@@ -28,10 +28,12 @@ limitations under the License.
           {{ url.displayName }}
         </a>
       } @else {
-        <button type="button" class="url-button" disabled matTooltip="Waiting for data...">
-          <mat-icon class="url-icon">pending</mat-icon>
-          {{ url.displayName }}
-        </button>
+        <span [matTooltip]="url.disableReason || 'Waiting for data...'">
+          <button type="button" class="url-button" disabled>
+            <mat-icon class="url-icon">pending</mat-icon>
+            {{ url.displayName }}
+          </button>
+        </span>
       }
     }
   </mat-card-content>

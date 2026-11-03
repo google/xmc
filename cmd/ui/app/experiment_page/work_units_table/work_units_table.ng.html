@@ -123,9 +123,11 @@ limitations under the License.
               </a>
             }
           } @else {
-            <button type="button" mat-icon-button disabled matTooltip="Waiting for data...">
-              <mat-icon>pending</mat-icon>
-            </button>
+            <span [matTooltip]="url.disableReason || 'Waiting for data...'">
+              <button type="button" mat-icon-button disabled>
+                <mat-icon>pending</mat-icon>
+              </button>
+            </span>
           }
         }
       </td>

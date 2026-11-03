@@ -15,59 +15,92 @@ import { Experiment, Url, WorkUnit } from 'app/protos/experiment_state_server';
 
 import { parseExperimentName, parseWorkUnitName } from '../resource_name_extractor';
 
+const EXECUTING_CLUSTER_KEYS = new Set(['PROJECT', 'LOCATION', 'CLUSTER']);
+const WAITING_FOR_CLUSTER_REASON = 'Waiting for executing cluster assignment...';
+const WAITING_FOR_DATA_REASON = 'Waiting for data...';
+
 /**
  * Interface for Urls after processing.
  */
 export interface ProcessedUrl extends Url {
   processedUrl: string | undefined;
   icon: string;
+  disableReason?: string;
+}
+
+interface PlaceholderResult {
+  processedUrl: string | undefined;
+  disableReason?: string;
 }
 
 /**
  * Processes a list of URLs, replacing placeholders and sorting by priority.
  */
 export function processUrls(urls: Url[], data: Experiment | WorkUnit): ProcessedUrl[] {
+  const replacements = buildReplacements(data);
   return urls
     .map((url) => {
-      const processedUrl = fillPlaceholders(url.url!, data);
+      const { processedUrl, disableReason } = fillPlaceholders(url.url!, replacements);
       const icon = url.icon || 'link';
-      return { ...url, processedUrl, icon };
+      return {
+        ...url,
+        processedUrl,
+        icon,
+        ...(disableReason ? { disableReason } : {}),
+      };
     })
     .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 }
 
-function fillPlaceholders(urlString: string, data: Experiment | WorkUnit): string | undefined {
+function buildReplacements(data: Experiment | WorkUnit): Record<string, string | null | undefined> {
   const wu = data.name ? parseWorkUnitName(data.name) : null;
   const xid = wu ? wu.xid : data.name ? parseExperimentName(data.name) : null;
-  const wid = wu ? wu.wid : undefined;
-
   const replacements: Record<string, string | null | undefined> = {
     XID: xid,
-    WID: wid,
+    WID: wu ? wu.wid : undefined,
     CREATED: data.createTime,
   };
 
-  const metadata =
-    'currentWorkUnitExecution' in data
-      ? (data as WorkUnit).currentWorkUnitExecution?.metadata
-      : undefined;
-  if (metadata) {
-    replacements['RESOURCE_NAME'] = metadata.resourceName;
-    replacements['NAMESPACE'] = metadata.namespace;
-    replacements['SERVICE_ACCOUNT'] = metadata.serviceAccount;
-    if (metadata.managementCluster) {
-      replacements['PROJECT'] = metadata.managementCluster.project;
-      replacements['LOCATION'] = metadata.managementCluster.location;
-      replacements['CLUSTER'] = metadata.managementCluster.clusterName;
-    }
+  if ('currentWorkUnitExecution' in data && data.currentWorkUnitExecution?.metadata) {
+    applyExecutionMetadata(replacements, data.currentWorkUnitExecution.metadata);
   }
+  return replacements;
+}
 
-  let missingValue = false;
-  const processedUrl = urlString.replace(/\$\{(\w+)\}/g, (match, key) => {
+function applyExecutionMetadata(
+  replacements: Record<string, string | null | undefined>,
+  metadata: NonNullable<NonNullable<WorkUnit['currentWorkUnitExecution']>['metadata']>,
+): void {
+  replacements['RESOURCE_NAME'] = metadata.resourceName;
+  replacements['NAMESPACE'] = metadata.namespace;
+  replacements['SERVICE_ACCOUNT'] = metadata.serviceAccount;
+  replacements['MGMT_PROJECT'] = metadata.managementCluster?.project;
+  if (metadata.executingCluster) {
+    replacements['PROJECT'] = metadata.executingCluster.project;
+    replacements['LOCATION'] = metadata.executingCluster.location;
+    replacements['CLUSTER'] = metadata.executingCluster.clusterName;
+  }
+}
+
+function fillPlaceholders(
+  urlString: string,
+  replacements: Record<string, string | null | undefined>,
+): PlaceholderResult {
+  const missingKeys = new Set<string>();
+  const processedUrl = urlString.replace(/\$\{(\w+)\}/g, (match, key: string) => {
     const value = replacements[key];
-    if (!value) missingValue = true;
+    if (!value) {
+      missingKeys.add(key);
+    }
     return value || match;
   });
 
-  return missingValue ? undefined : processedUrl;
+  if (missingKeys.size === 0) {
+    return { processedUrl };
+  }
+  const missingExecutingCluster = [...missingKeys].some((key) => EXECUTING_CLUSTER_KEYS.has(key));
+  return {
+    processedUrl: undefined,
+    disableReason: missingExecutingCluster ? WAITING_FOR_CLUSTER_REASON : WAITING_FOR_DATA_REASON,
+  };
 }

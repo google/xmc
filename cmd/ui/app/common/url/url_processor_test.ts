@@ -11,10 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { Url } from 'app/protos/experiment_state_server';
+import { Url, WorkUnit } from 'app/protos/experiment_state_server';
 
 import { EXPERIMENT_1, WORK_UNIT_1, WORK_UNIT_2 } from '../mock_data';
 import { processUrls } from './url_processor';
+
+type ExecutionMetadata = NonNullable<NonNullable<WorkUnit['currentWorkUnitExecution']>['metadata']>;
+
+const BASE_MANAGEMENT_CLUSTER = {
+  project: 'mgmt-project',
+  location: 'us-central1',
+  clusterName: 'mgmt-cluster',
+};
+
+function createWorkUnitWithMetadata(overrides: Partial<ExecutionMetadata>): WorkUnit {
+  return {
+    name: 'experiments/1/workUnits/1',
+    createTime: '2026-06-08T00:00:00Z',
+    currentWorkUnitExecution: {
+      metadata: {
+        managementCluster: BASE_MANAGEMENT_CLUSTER,
+        resourceName: 'test-resource',
+        namespace: 'test-namespace',
+        ...overrides,
+      },
+    },
+  };
+}
 
 describe('UrlProcessor', () => {
   it('should process experiment urls and sort by priority', () => {
@@ -56,8 +79,10 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, EXPERIMENT_1);
     expect(processedUrls.length).toBe(2);
     expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Waiting for data...');
     expect(processedUrls[0].displayName).toBe('Test URL 2');
     expect(processedUrls[1].processedUrl).toBe('http://test.com/1');
+    expect(processedUrls[1].disableReason).toBeUndefined();
     expect(processedUrls[1].displayName).toBe('Test URL');
   });
 
@@ -91,6 +116,78 @@ describe('UrlProcessor', () => {
     );
   });
 
+  it('should resolve executingCluster and managementCluster placeholders distinctly', () => {
+    const workUnit = createWorkUnitWithMetadata({
+      executingCluster: {
+        project: 'worker-project',
+        location: 'us-east1',
+        clusterName: 'worker-cluster',
+      },
+    });
+    const urls: Url[] = [
+      {
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}',
+        displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+      {
+        url: 'http://logs.com/${XID}/${WID}?project=${MGMT_PROJECT}',
+        displayName: 'Debug Work Unit',
+        priority: 2,
+      },
+    ];
+    const processedUrls = processUrls(urls, workUnit);
+    expect(processedUrls.length).toBe(2);
+    expect(processedUrls[0].processedUrl).toBe(
+      'http://gke.com/worker-project/us-east1/worker-cluster/test-namespace/test-resource',
+    );
+    expect(processedUrls[0].disableReason).toBeUndefined();
+    expect(processedUrls[1].processedUrl).toBe('http://logs.com/1/1?project=mgmt-project');
+    expect(processedUrls[1].disableReason).toBeUndefined();
+  });
+
+  it('should disable executingCluster urls when executingCluster is missing while resolving MGMT_PROJECT', () => {
+    const unadmittedWorkUnit = createWorkUnitWithMetadata({});
+    const urls: Url[] = [
+      {
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}',
+        displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+      {
+        url: 'http://logs.com/${XID}/${WID}?project=${MGMT_PROJECT}',
+        displayName: 'Debug Work Unit',
+        priority: 2,
+      },
+    ];
+    const processedUrls = processUrls(urls, unadmittedWorkUnit);
+    expect(processedUrls.length).toBe(2);
+    expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
+    expect(processedUrls[1].processedUrl).toBe('http://logs.com/1/1?project=mgmt-project');
+    expect(processedUrls[1].disableReason).toBeUndefined();
+  });
+
+  it('should not fall back to managementCluster when executingCluster is partially populated', () => {
+    const partialClusterWorkUnit = createWorkUnitWithMetadata({
+      executingCluster: {
+        project: 'worker-project',
+        location: 'us-east1',
+      },
+    });
+    const urls: Url[] = [
+      {
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}',
+        displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+    ];
+    const processedUrls = processUrls(urls, partialClusterWorkUnit);
+    expect(processedUrls.length).toBe(1);
+    expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
+  });
+
   it('should return undefined processedUrl for work unit with missing metadata', () => {
     const urls: Url[] = [
       {
@@ -103,6 +200,7 @@ describe('UrlProcessor', () => {
     const processedUrls = processUrls(urls, WORK_UNIT_2);
     expect(processedUrls.length).toBe(1);
     expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Waiting for executing cluster assignment...');
     expect(processedUrls[0].displayName).toBe('Test URL');
   });
 
