@@ -22,6 +22,7 @@ import {
   OnDestroy,
   OnInit,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
@@ -55,6 +56,11 @@ const DEFAULT_SPLIT_RATIO_PERCENT = 50;
 const MIN_SPLIT_RATIO_PERCENT = 20;
 const MAX_SPLIT_RATIO_PERCENT = 80;
 const KEYBOARD_RESIZE_STEP_PERCENT = 5;
+
+const KEYBOARD_STEP_BY_KEY: Readonly<Record<string, number>> = {
+  ArrowLeft: -KEYBOARD_RESIZE_STEP_PERCENT,
+  ArrowRight: KEYBOARD_RESIZE_STEP_PERCENT,
+};
 
 function clampSplitRatio(ratio: number): number {
   return Math.max(MIN_SPLIT_RATIO_PERCENT, Math.min(MAX_SPLIT_RATIO_PERCENT, ratio));
@@ -98,7 +104,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly isJobsFullWidth = signal<boolean>(false);
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
   protected readonly isDragging = signal<boolean>(false);
-  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly splitContainer = viewChild<ElementRef<HTMLDivElement>>('splitContainer');
   private cleanupDragListeners: (() => void) | null = null;
 
   protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
@@ -106,31 +112,23 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     this.isJobsFullWidth() ? '1 1 100%' : `1 1 ${100 - this.splitRatio()}%`,
   );
 
-  protected onFullWidthChange(isFullWidth: boolean): void {
-    this.isJobsFullWidth.set(isFullWidth);
-  }
-
   protected startResize(event: MouseEvent): void {
-    event.preventDefault();
-    this.stopResize();
-    const container =
-      this.elementRef.nativeElement.querySelector<HTMLElement>('.rod-split-container');
+    const container = this.splitContainer()?.nativeElement;
     if (!container) {
       return;
     }
-
+    event.preventDefault();
+    this.stopResize();
     this.isDragging.set(true);
+
     const onMouseMove = (moveEvent: MouseEvent) => {
-      const rect = container.getBoundingClientRect();
-      if (rect.width <= 0) {
+      const { left, width } = container.getBoundingClientRect();
+      if (width <= 0) {
         return;
       }
-      const offsetX = Math.max(0, moveEvent.clientX - rect.left);
-      this.splitRatio.set(clampSplitRatio((offsetX / rect.width) * 100));
+      this.splitRatio.set(clampSplitRatio(((moveEvent.clientX - left) / width) * 100));
     };
-    const onMouseUp = () => {
-      this.stopResize();
-    };
+    const onMouseUp = () => this.stopResize();
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -143,9 +141,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   private stopResize(): void {
     this.cleanupDragListeners?.();
     this.cleanupDragListeners = null;
-    if (this.isDragging()) {
-      this.isDragging.set(false);
-    }
+    this.isDragging.set(false);
   }
 
   protected resetResize(): void {
@@ -153,14 +149,10 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected onDividerKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'ArrowLeft') {
+    const step = KEYBOARD_STEP_BY_KEY[event.key];
+    if (step !== undefined) {
       event.preventDefault();
-      this.splitRatio.update((ratio) => clampSplitRatio(ratio - KEYBOARD_RESIZE_STEP_PERCENT));
-      return;
-    }
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      this.splitRatio.update((ratio) => clampSplitRatio(ratio + KEYBOARD_RESIZE_STEP_PERCENT));
+      this.splitRatio.update((ratio) => clampSplitRatio(ratio + step));
       return;
     }
     if (event.key === 'Enter' || event.key === ' ') {

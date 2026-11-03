@@ -20,29 +20,17 @@
         Jobs in the queue ({{ tableControls.totalCount() }})
       </h3>
       @if (showFullWidthToggle()) {
-        @if (isFullWidth()) {
-          <button
-            type="button"
-            mat-flat-button
-            color="primary"
-            class="full-width-toggle-btn active"
-            (click)="fullWidthChange.emit(false)"
-          >
-            <mat-icon aria-hidden="true">fullscreen_exit</mat-icon>
-            Exit full width
-          </button>
-        } @else {
-          <button
-            type="button"
-            mat-stroked-button
-            color="primary"
-            class="full-width-toggle-btn"
-            (click)="fullWidthChange.emit(true)"
-          >
-            <mat-icon aria-hidden="true">fullscreen</mat-icon>
-            View in full width
-          </button>
-        }
+        <button
+          type="button"
+          mat-stroked-button
+          class="full-width-toggle-btn"
+          [class.active]="isFullWidth()"
+          [attr.aria-pressed]="isFullWidth()"
+          (click)="toggleFullWidth()"
+        >
+          <mat-icon aria-hidden="true">{{ fullWidthToggleIcon() }}</mat-icon>
+          {{ fullWidthToggleLabel() }}
+        </button>
       }
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>

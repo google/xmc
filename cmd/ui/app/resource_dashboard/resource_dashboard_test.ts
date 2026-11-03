@@ -266,11 +266,7 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
-    const containerEl = (await dashboard.getSplitContainerNativeElement())!;
-    spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
-      left: 0,
-      width: 1000,
-    } as DOMRect);
+    await stubSplitContainerWidth(dashboard, 1000);
 
     // Resize to 35% / 65% first so we can verify custom ratio restoration after exiting full width
     await dashboard.startResizeDrag(500);
@@ -323,11 +319,7 @@ describe('ResourceDashboard Container', () => {
     expect(attrs.title).toBe('Drag to resize sections (double-click to reset)');
     expect(attrs.ariaValueNow).toBe('50');
 
-    const containerEl = (await dashboard.getSplitContainerNativeElement())!;
-    spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
-      left: 0,
-      width: 1000,
-    } as DOMRect);
+    await stubSplitContainerWidth(dashboard, 1000);
 
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
@@ -378,3 +370,14 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
   });
 });
+
+async function stubSplitContainerWidth(
+  dashboard: ResourceDashboardHarness,
+  width: number,
+): Promise<void> {
+  const containerEl = (await dashboard.getSplitContainerNativeElement())!;
+  spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
+    left: 0,
+    width,
+  } as DOMRect);
+}

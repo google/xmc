@@ -28,6 +28,7 @@ export class ResourceDashboardHarness extends ComponentHarness {
   private readonly splitContainer = this.locatorForOptional('.rod-split-container');
   private readonly mainContent = this.locatorForOptional('.rod-main-content');
   private readonly resizeDivider = this.locatorForOptional('.rod-resize-divider');
+  private readonly requiredResizeDivider = this.locatorFor('.rod-resize-divider');
   private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
 
   /** Gets the subnav tabs harness. */
@@ -105,28 +106,16 @@ export class ResourceDashboardHarness extends ComponentHarness {
 
   /** Starts a resize drag gesture on the vertical divider. */
   async startResizeDrag(clientX = 500): Promise<void> {
-    const divider = await this.resizeDivider();
-    if (!divider) {
-      throw new Error('Resize divider is not rendered.');
-    }
-    await divider.dispatchEvent('mousedown', { clientX });
+    await (await this.requiredResizeDivider()).dispatchEvent('mousedown', { clientX });
   }
 
   /** Double-clicks the vertical resize divider to reset column widths. */
   async doubleClickResizeDivider(): Promise<void> {
-    const divider = await this.resizeDivider();
-    if (!divider) {
-      throw new Error('Resize divider is not rendered.');
-    }
-    await divider.dispatchEvent('dblclick');
+    await (await this.requiredResizeDivider()).dispatchEvent('dblclick');
   }
 
   /** Dispatches a keyboard event on the vertical resize divider. */
   async pressResizeDividerKey(key: string): Promise<void> {
-    const divider = await this.resizeDivider();
-    if (!divider) {
-      throw new Error('Resize divider is not rendered.');
-    }
-    await divider.dispatchEvent('keydown', { key });
+    await (await this.requiredResizeDivider()).dispatchEvent('keydown', { key });
   }
 }

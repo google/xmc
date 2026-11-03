@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatIconHarness } from '@angular/material/icon/testing';
 import { MatPaginatorHarness } from '@angular/material/paginator/testing';
 
 /** Harness for interacting with individual rows inside <xmc-queue-jobs-table>. */
@@ -83,7 +84,9 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly fullWidthToggleBtn = this.locatorForOptional(
     MatButtonHarness.with({ selector: '.full-width-toggle-btn' }),
   );
-  private readonly fullWidthToggleIcon = this.locatorForOptional('.full-width-toggle-btn mat-icon');
+  private readonly fullWidthToggleIcon = this.locatorForOptional(
+    MatIconHarness.with({ ancestor: '.full-width-toggle-btn' }),
+  );
 
   async getFullWidthToggleBtn(): Promise<MatButtonHarness | null> {
     return this.fullWidthToggleBtn();
@@ -91,15 +94,12 @@ export class QueueJobsTableHarness extends ComponentHarness {
 
   async getFullWidthToggleIconName(): Promise<string | null> {
     const icon = await this.fullWidthToggleIcon();
-    return icon ? (await icon.text()).trim() : null;
+    return icon ? icon.getName() : null;
   }
 
   async isFullWidthToggleActive(): Promise<boolean> {
     const btn = await this.fullWidthToggleBtn();
-    if (!btn) {
-      return false;
-    }
-    return (await btn.host()).hasClass('active');
+    return btn ? (await btn.host()).hasClass('active') : false;
   }
 
   /** Gets the MatPaginatorHarness for the table if present. */

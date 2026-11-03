@@ -19,7 +19,7 @@ import {
   effect,
   inject,
   input,
-  output,
+  model,
   signal,
   untracked,
 } from '@angular/core';
@@ -74,8 +74,18 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   public readonly queueName = input<string>('gpu-cluster-queue');
 
   public readonly showFullWidthToggle = input<boolean>(false);
-  public readonly isFullWidth = input<boolean>(false);
-  public readonly fullWidthChange = output<boolean>();
+  public readonly isFullWidth = model<boolean>(false);
+
+  protected readonly fullWidthToggleIcon = computed(() =>
+    this.isFullWidth() ? 'fullscreen_exit' : 'fullscreen',
+  );
+  protected readonly fullWidthToggleLabel = computed(() =>
+    this.isFullWidth() ? 'Exit full width' : 'View in full width',
+  );
+
+  protected toggleFullWidth(): void {
+    this.isFullWidth.update((fullWidth) => !fullWidth);
+  }
 
   protected readonly activeQueueName = computed(
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
