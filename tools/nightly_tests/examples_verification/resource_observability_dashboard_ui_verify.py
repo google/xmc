@@ -16,12 +16,12 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from typing import Any, TypeAlias
 
 from tools.nightly_tests.verification import (
     ess_session as ess,
+    resource_observability_parsing as rod_parsing,
     ui_css_selectors as sel,
     ui_entities_validator,
     verification_report as rep,
@@ -31,26 +31,21 @@ from tools.nightly_tests.verification import (
 
 FLAGS = cli.FLAGS
 
-EXPECTED_CLUSTER_QUEUES = ("cpu-cluster-queue", "gpu-cluster-queue", "tpu-cluster-queue")
-EXPECTED_FIRST_CARD_FLAVOR, EXPECTED_RUNNING_POS = "cpu", "N/A - running"
+EXPECTED_FIRST_CARD_FLAVOR = "cpu"
 EXPECTED_WORK_UNITS, VELOCITY_TIMEFRAMES = ("1", "2", "3"), ("1h", "24h", "7d")
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
-
-
-def _resolve_cluster_queue(expected_queue: str | None) -> str:
-    """Resolves a submit queue or cluster queue name to its rendered cluster queue title."""
-    cq = expected_queue or EXPECTED_CLUSTER_QUEUES[0]
-    return cq if cq.endswith("-cluster-queue") else cq.replace("-queue", "-cluster-queue")
 
 
 def _extract_and_verify_queue_titles(session: Session, expected_q: str | None) -> list[str]:
     """Extracts rendered queue card titles and verifies expected cluster queues are present."""
     raw = session.page.locator(sel.QUEUE_TITLE_SEL).all_inner_texts()
     titles = [t.strip() for t in raw if t.strip()]
-    if missing := [q for q in EXPECTED_CLUSTER_QUEUES if q not in titles]:
+    if missing := [q for q in rod_parsing.EXPECTED_CLUSTER_QUEUES if q not in titles]:
         raise UIError(f"Missing expected queues {missing} in rendered queues: {titles}")
-    if expected_q and not ({expected_q, _resolve_cluster_queue(expected_q)} & set(titles)):
+    if expected_q and not (
+        {expected_q, rod_parsing.resolve_cluster_queue(expected_q)} & set(titles)
+    ):
         raise UIError(f"Missing '{expected_q}' in {titles}")
     return titles
 
@@ -110,8 +105,7 @@ def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, xid: s
     norm_xid = ui_entities_validator.parse_numeric_xid(xid)
     for attempt in range(12):
         pos = _collect_xid_work_unit_positions(session, norm_xid)
-        vals = [pos.get(w, "") for w in EXPECTED_WORK_UNITS]
-        if all(v == EXPECTED_RUNNING_POS or v.isdigit() for v in vals):
+        if all(rod_parsing.is_valid_queue_position(pos.get(w, "")) for w in EXPECTED_WORK_UNITS):
             print(f"  [✓] Verified '{cq}' Jobs table has XID {norm_xid} work units: {pos}")
             return
         if attempt < 11:
@@ -125,7 +119,7 @@ def assert_queue_selection_and_jobs_pane(
     session: Session, queues: Sequence[str], expected_q: str | None = None, xid: str | None = None
 ) -> str:
     """Clicks queue cards and verifies the Jobs in the Queue side pane and active work units."""
-    target_cq = _resolve_cluster_queue(expected_q)
+    target_cq = rod_parsing.resolve_cluster_queue(expected_q)
     alt_cq = next((q for q in queues if q != target_cq), target_cq)
     _select_queue_card_by_name(session, alt_cq)
     actual_name = _select_queue_card_by_name(session, target_cq)
@@ -150,18 +144,13 @@ def _select_primary_resource(session: Session, timeout_ms: int) -> str:
     return name
 
 
-def _parse_velocity_rate(metric_text: str) -> float:
-    """Extracts the numeric velocity rate from a display string such as '0.13 jobs/hr'."""
-    return float(m.group(1)) if (m := re.search(r"([0-9]+(?:\.[0-9]+)?)", metric_text)) else 0.0
-
-
 def _verify_expected_queue_positive_7d_velocity(session: Session, q: str | None, ms: int) -> None:
     """Verifies that the expected queue card displays positive velocity under the 7d period."""
-    target_cq = _resolve_cluster_queue(q)
+    target_cq = rod_parsing.resolve_cluster_queue(q)
     card = session.page.locator(sel.QUEUE_CARD_SEL).filter(has_text=target_cq).first
     card.locator(sel.PREDICTABILITY_STATS_GRID_SEL).first.wait_for(state="visible", timeout=ms)
     vals = [t.strip() for t in card.locator(sel.PREDICTABILITY_METRIC_VAL_SEL).all_inner_texts()]
-    if not any(_parse_velocity_rate(v) > 0 for v in vals[:2]):
+    if not any(rod_parsing.parse_velocity_rate(v) > 0 for v in vals[:2]):
         raise UIError(f"Expected positive 7d velocity on '{target_cq}', got metrics: {vals}")
     print(f"  [✓] Verified positive 7d velocity on '{target_cq}': {vals[:2]}")
 
