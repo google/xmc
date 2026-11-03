@@ -20,7 +20,7 @@ from chart_test_lib import render_chart, render_template, require_helm
 
 ACTUATOR_CONFIGMAP = "templates/actuator/configmap.yaml"
 ESS_CONFIGMAP = "templates/ess/configmap.yaml"
-CLUSTER_LOCAL_ACTUATOR_URI = "https://actuator.xmanager.xmc.svc.cluster.local/actuate"
+CLUSTER_LOCAL_ACTUATOR_URI = "https://actuator.xmc.svc.cluster.local/actuate"
 
 
 class ActuatorDevOidcConfigTest(unittest.TestCase):

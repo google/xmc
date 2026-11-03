@@ -26,7 +26,7 @@ data:
   quota_project_id: {{ .Values.projectId | quote }}
   redis_addr: {{ .Values.redisAddr | quote }}
   xmanager_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
-  audience: "https://actuator.xmanager.xmc.svc.cluster.local/actuate"
+  audience: "https://actuator.xmc.svc.cluster.local/actuate"
   enable_components: {{ .Values.componentsDeployment.enabled | quote }}
   jwks_url: {{ if and .Values.auth .Values.auth.jwksUrl }}{{ .Values.auth.jwksUrl | quote }}{{ else if and .Values.auth .Values.auth.issuerUrl }}{{ printf "%s/keys" (.Values.auth.issuerUrl | trimSuffix "/") | quote }}{{ else }}""{{ end }}
   oidc_issuer_url: {{ if and .Values.auth .Values.auth.issuerUrl }}{{ .Values.auth.issuerUrl | quote }}{{ else }}""{{ end }}
