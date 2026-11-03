@@ -37,6 +37,6 @@ Key tools for PR comment processing:
 
 ## 3. Commit Management During PR Review Rounds
 - **Incremental Follow-Up Commits**: When addressing review comments, authors must ALWAYS append new, distinct commits to the PR branch.
-- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations. Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
+- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations (except restacking your own unmerged stack branches, per [GitHub Authoring Standards §4](github_authoring_and_prs.md#4-post-pr-creation-workflow--addressing-review-feedback-policy)). Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
 - **Merge-Time Squashing**: Commit cleanup and squashing is handled at merge time via GitHub's "Squash and merge" feature or when landing the PR, never during intermediate review feedback cycles.
 
