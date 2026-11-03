@@ -168,7 +168,7 @@ Earlier bridge versions attached `finalizers.xmc.dev/deletion-protection` instea
 
 `xmc-bridge` never blocks a deletion itself: `spec.deletionProtection` is enforced only by the `component-deletion-protection` admission policy, so a deletion the policy admits, such as one issued by the namespace controller, always runs the bridge cleanup.
 
-For `spec.stability: EXPERIMENTAL`, the CRD CEL validation rule rejects enabling the component unless `spec.acknowledgeExperimental: true` is set.
+For `spec.stability: EXPERIMENTAL`, the CRD CEL validation rule rejects enabling the component unless `spec.acknowledgeExperimental: true` is set. As defense in depth, if an enabled `EXPERIMENTAL` CR without `spec.acknowledgeExperimental: true` reaches `xmc-bridge`, the controller sets `Ready=False, Stalled=True, Reason=ExperimentalNotAcknowledged` and holds upgrades without uninstalling or tearing down any previously running workload.
 
 Removing the CRD is a deliberate manual step. While `xmc-bridge` is still running, so it can release each CR's finalizer, delete every Component CR (see the profile's [Disable or Uninstall](../../deploy/profiles/stable-2026a/README.md#disable-or-uninstall) flow). Then run `kubectl delete crd components.xmc.dev`, and remove the kept policy with `kubectl delete validatingadmissionpolicybinding component-deletion-protection-binding` and `kubectl delete validatingadmissionpolicy component-deletion-protection`.
 
