@@ -10,8 +10,8 @@ Every runnable example under [`examples/`](../../examples/) is executed nightly 
 
 `tools/nightly_tests/` is organized into two primary packages:
 
-- **[`verification/`](verification/) ([`BUILD.bazel`](verification/BUILD.bazel))**: Shared verification primitives, session managers, backend entity pollers, and Playwright Web UI helpers, where logic modules are each paired with a `*_test.py` unit test suite.
-- **[`examples_verification/`](examples_verification/) ([`BUILD.bazel`](examples_verification/BUILD.bazel))**: Concrete E2E verification entrypoints for individual runnable workloads and Web UI routes.
+- **[`verification/`](verification/) ([`BUILD.bazel`](verification/BUILD.bazel))**: Shared verification primitives, session managers, backend entity pollers, Playwright Web UI helpers, and pure parsing/decision modules, where logic modules are each paired with a `*_test.py` unit test suite.
+- **[`examples_verification/`](examples_verification/) ([`BUILD.bazel`](examples_verification/BUILD.bazel))**: Concrete E2E verification entrypoints for individual runnable workloads and Web UI routes. These modules stay thin: they compose [`verification/`](verification/) primitives with workload-specific DOM/RPC assertions and constants, and are exercised only by the nightly E2E run (no per-verifier `*_test.py`). Any pure parsing, normalization, or decision logic that runs without a live cluster or browser (e.g., extracting numbers from UI text, mapping queue names, validating ID or position formats) MUST live in a [`verification/`](verification/) module with a paired `*_test.py`, because the nightly run cannot detect a bug that makes a verifier silently pass.
 
 The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)) runs in three stages:
 
@@ -28,6 +28,7 @@ The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`
 - [`verification/workload_verification.py`](verification/workload_verification.py): End-to-end verification orchestrators for batch workloads and standalone dashboards.
 - [`verification/xmc_entities_validator.py`](verification/xmc_entities_validator.py): Polling and assertions for ESS gRPC entities (Experiments, WorkUnits, JobSets, Artifacts, MultiKueue), ClickHouse metrics, and Dashboard Service charts.
 - [`verification/ui_entities_validator.py`](verification/ui_entities_validator.py) & [`verification/ui_css_selectors.py`](verification/ui_css_selectors.py): Authenticated Playwright Chromium browser sessions, route navigation, shared Angular CSS selectors, screenshot capture, and runtime/network error assertions.
+- [`verification/resource_observability_parsing.py`](verification/resource_observability_parsing.py): Pure queue-name normalization, velocity rate extraction, and queue position predicates for Resource Observability Dashboard checks.
 
 ### Out-of-the-Box Verification Capabilities
 
@@ -62,7 +63,7 @@ When adding a new example under [`examples/`](../../examples/) or a new UI E2E c
 > [!IMPORTANT]
 > **Shared Dirty-Environment Setup (`xmc-nightly`)**: Nightly E2E and UI verification suites execute against a long-lived shared cluster (`xmc-nightly`, analogous to staging and multi-tenant dev clusters) populated with thousands of pre-existing historical entities from prior runs. Verifiers and test suites MUST NEVER assume the environment is clean, empty, or low-cardinality, or that newly created entities appear on an unfiltered first page. Always scope queries by target XID/dashboard ID, use server-side filtering (`AIP-160`), paginate across pages, or navigate directly to the resource URL (`/experiments/<xid>`, `/dashboards/<dashboard_id>`) rather than scanning truncated list pages.
 
-Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` following one of the canonical patterns below:
+Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` following one of the canonical patterns below. Keep it a thin entrypoint: put any pure parsing or decision logic in a unit-tested [`verification/`](verification/) module (see [Architecture](#1-architecture--execution-lifecycle)).
 
 - **Pattern A — Standard CPU Workload**: For workloads that schedule onto `cpu-queue` and run to completion.
   - Minimal baseline: [`examples_verification/simple_job_verify.py`](examples_verification/simple_job_verify.py)

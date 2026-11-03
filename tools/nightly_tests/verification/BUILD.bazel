@@ -22,6 +22,8 @@ exports_files([
     "endpoint_resolution_test.py",
     "ess_session.py",
     "ess_session_test.py",
+    "resource_observability_parsing.py",
+    "resource_observability_parsing_test.py",
     "ui_css_selectors.py",
     "ui_entities_validator.py",
     "ui_entities_validator_test.py",
@@ -85,6 +87,12 @@ py_library(
         ":endpoint_resolution",
         ":xmc_entities_validator_lib",
     ],
+)
+
+py_library(
+    name = "resource_observability_parsing",
+    srcs = ["resource_observability_parsing.py"],
+    imports = ["../../.."],
 )
 
 py_library(
@@ -152,6 +160,16 @@ py_test(
     imports = ["../../.."],
     deps = [
         ":ess_session",
+    ],
+)
+
+py_test(
+    name = "resource_observability_parsing_test",
+    size = "small",
+    srcs = ["resource_observability_parsing_test.py"],
+    imports = ["../../.."],
+    deps = [
+        ":resource_observability_parsing",
     ],
 )
 
