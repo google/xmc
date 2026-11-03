@@ -24,6 +24,7 @@
 .rod-resize-divider {
   width: 12px;
   cursor: col-resize;
+  touch-action: none;
   display: flex;
   justify-content: center;
 }

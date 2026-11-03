@@ -52,7 +52,7 @@ export class ResizeDividerHarness extends ComponentHarness {
 
   /** Starts a pointer resize drag gesture on the divider. */
   async startDrag(clientX = 500, button = 0): Promise<void> {
-    await (await this.separator()).dispatchEvent('mousedown', { clientX, button });
+    await (await this.separator()).dispatchEvent('pointerdown', { clientX, button });
   }
 
   /**
@@ -60,13 +60,13 @@ export class ResizeDividerHarness extends ComponentHarness {
    * dispatched there. `buttons` defaults to the primary button being held.
    */
   async moveDragTo(clientX: number, buttons = 1): Promise<void> {
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX, buttons, bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX, buttons, bubbles: true }));
     await this.forceStabilize();
   }
 
   /** Releases the pointer to end an active drag. */
   async endDrag(): Promise<void> {
-    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
     await this.forceStabilize();
   }
 
