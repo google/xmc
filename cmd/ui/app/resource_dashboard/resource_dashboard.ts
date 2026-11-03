@@ -91,7 +91,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly isSecondaryLoading = signal<boolean>(true);
 
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
-  protected readonly isDragging = signal<boolean>(false);
 
   protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
   protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);

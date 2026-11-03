@@ -25,20 +25,22 @@ import { ResizeDividerHarness } from './resize_divider_harness';
   template: `
     <div #container class="test-split-container">
       @if (showDivider()) {
-        <xmc-rod-resize-divider
-          [containerElement]="container"
-          [(splitRatio)]="splitRatio"
-          [(isDragging)]="isDragging"
-        />
+        <xmc-rod-resize-divider [containerElement]="container" [(splitRatio)]="splitRatio" />
       }
     </div>
   `,
 })
 class TestHostComponent {
   readonly splitRatio = signal<number>(50);
-  readonly isDragging = signal<boolean>(false);
   readonly showDivider = signal<boolean>(true);
   readonly containerRef = viewChild.required<ElementRef<HTMLDivElement>>('container');
+}
+
+function stubContainerRect(host: TestHostComponent, left: number, width: number): jasmine.Spy {
+  return spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
+    left,
+    width,
+  } as DOMRect);
 }
 
 describe('ResizeDividerComponent', () => {
@@ -57,7 +59,7 @@ describe('ResizeDividerComponent', () => {
     const attrs = await divider.getAttributes();
 
     expect(attrs.role).toBe('separator');
-    expect(attrs.ariaLabel).toBe('Drag to resize sections (double-click to reset)');
+    expect(attrs.ariaLabel).toBe('Resize queue list and jobs panes');
     expect(attrs.title).toBe('Drag to resize sections (double-click to reset)');
     expect(attrs.ariaValueMin).toBe('20');
     expect(attrs.ariaValueMax).toBe('80');
@@ -68,40 +70,56 @@ describe('ResizeDividerComponent', () => {
   it('should update splitRatio while dragging, clamp to [20, 80], and detach listeners on mouseup', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
-
-    const rectSpy = spyOn(
-      host.containerRef().nativeElement,
-      'getBoundingClientRect',
-    ).and.returnValue({
-      left: 100,
-      width: 1000,
-    } as DOMRect);
+    const rectSpy = stubContainerRect(host, 100, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
     await divider.startDrag(600);
-    await flush();
-    expect(host.isDragging()).toBeTrue();
     expect(await divider.isDragging()).toBeTrue();
+    expect(await divider.isFocused()).toBeTrue();
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 450, bubbles: true }));
-    await flush();
+    await divider.moveDragTo(450);
     expect(host.splitRatio()).toBe(35);
+    expect((await divider.getAttributes()).ariaValueNow).toBe('35');
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 120, bubbles: true }));
-    await flush();
+    await divider.moveDragTo(120);
     expect(host.splitRatio()).toBe(20);
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 1050, bubbles: true }));
-    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    await flush();
+    await divider.moveDragTo(1050);
+    await divider.endDrag();
     expect(host.splitRatio()).toBe(80);
-    expect(host.isDragging()).toBeFalse();
     expect(await divider.isDragging()).toBeFalse();
     expect(rectSpy).toHaveBeenCalledTimes(1);
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 500, bubbles: true }));
-    await flush();
+    await divider.moveDragTo(500);
     expect(host.splitRatio()).toBe(80);
+  });
+
+  it('should ignore non-primary mouse buttons', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    stubContainerRect(host, 0, 1000);
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag(500, 2);
+    expect(await divider.isDragging()).toBeFalse();
+
+    await divider.moveDragTo(300);
+    expect(host.splitRatio()).toBe(50);
+  });
+
+  it('should stop dragging when the pointer moves with the primary button released', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    stubContainerRect(host, 0, 1000);
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag(500);
+    await divider.moveDragTo(300, 0);
+    expect(await divider.isDragging()).toBeFalse();
+    expect(host.splitRatio()).toBe(50);
+
+    await divider.moveDragTo(400);
+    expect(host.splitRatio()).toBe(50);
   });
 
   it('should reset on double-click and support ArrowLeft, ArrowRight, Enter, and Space keys', async () => {
@@ -111,66 +129,69 @@ describe('ResizeDividerComponent', () => {
 
     const divider = await getHarness(ResizeDividerHarness);
     await divider.doubleClick();
-    await flush();
     expect(host.splitRatio()).toBe(50);
 
     await divider.pressKey('ArrowLeft');
-    await flush();
     expect(host.splitRatio()).toBe(45);
 
     await divider.pressKey('ArrowRight');
     await divider.pressKey('ArrowRight');
-    await flush();
+    expect(host.splitRatio()).toBe(55);
+    expect((await divider.getAttributes()).ariaValueNow).toBe('55');
+
+    await divider.pressKey('Tab');
     expect(host.splitRatio()).toBe(55);
 
     await divider.pressKey('Enter');
-    await flush();
     expect(host.splitRatio()).toBe(50);
 
     host.splitRatio.set(30);
     await flush();
     await divider.pressKey(' ');
-    await flush();
     expect(host.splitRatio()).toBe(50);
+  });
+
+  it('should clamp keyboard resizing at the [20, 80] bounds', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.splitRatio.set(20);
+    await flush();
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.pressKey('ArrowLeft');
+    expect(host.splitRatio()).toBe(20);
+
+    host.splitRatio.set(80);
+    await flush();
+    await divider.pressKey('ArrowRight');
+    expect(host.splitRatio()).toBe(80);
   });
 
   it('should not start dragging when the container has zero width', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
-    spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
-      left: 0,
-      width: 0,
-    } as DOMRect);
+    stubContainerRect(host, 0, 0);
 
     const divider = await getHarness(ResizeDividerHarness);
     await divider.startDrag(500);
-    await flush();
-    expect(host.isDragging()).toBeFalse();
     expect(await divider.isDragging()).toBeFalse();
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
-    await flush();
+    await divider.moveDragTo(300);
     expect(host.splitRatio()).toBe(50);
   });
 
-  it('should detach drag listeners and stop dragging when destroyed mid-drag', async () => {
+  it('should detach drag listeners when destroyed mid-drag', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
-    spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
-      left: 0,
-      width: 1000,
-    } as DOMRect);
+    stubContainerRect(host, 0, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
     await divider.startDrag(500);
-    await flush();
-    expect(host.isDragging()).toBeTrue();
+    expect(await divider.isDragging()).toBeTrue();
 
     host.showDivider.set(false);
     await flush();
-    expect(host.isDragging()).toBeFalse();
 
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, buttons: 1, bubbles: true }));
     await flush();
     expect(host.splitRatio()).toBe(50);
   });
