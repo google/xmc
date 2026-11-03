@@ -318,59 +318,40 @@ check_python() {
   fi
 }
 
-# Lists the tracked files of the CI mypy file list, skipping untracked files and
-# tracked files deleted from the working tree but not staged.
-mypy_tracked_files() {
-  local pathspecs=('sdks/python/xmc/*.py' 'tools/*.py' 'deploy/*.py' 'cmd/ui/*.py')
-  git -c core.quotePath=false ls-files -- "${pathspecs[@]}" \
-    | grep -vxF -f <(git -c core.quotePath=false ls-files --deleted -- "${pathspecs[@]}") \
-    | grep -vE '(^|/)(venv|node_modules|ctk-out)/|(^|/)bazel-|(^|/)dev_env\.py$' || true
-}
-
 check_mypy() {
   # mypy is cross-module: an edit, delete or rename can break unchanged
-  # importers, so fix mode checks the tracked files of the CI file list whenever
-  # a relevant Python file is staged, deleted or renamed.
-  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$'; then
-    return
-  fi
-  local py_files
-  if [ "${MODE}" = "check" ]; then
-    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
-  else
-    py_files=$(mypy_tracked_files)
-  fi
-
-  if [ -z "$py_files" ]; then
+  # importers, so fix mode runs it whenever a Python file is staged, deleted or
+  # renamed. [tool.mypy] in pyproject.toml defines the checked files, as in CI.
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '\.py$'; then
     return
   fi
 
-  local mypy_bin=""
+  local mypy_cmd=()
   if [ -f "./tools/common/venv/bin/mypy" ]; then
-    mypy_bin="./tools/common/venv/bin/mypy"
+    mypy_cmd=("./tools/common/venv/bin/mypy")
   elif [ -f "./tools/venv/bin/mypy" ]; then
-    mypy_bin="./tools/venv/bin/mypy"
+    mypy_cmd=("./tools/venv/bin/mypy")
   elif command -v mypy >/dev/null 2>&1; then
-    mypy_bin="mypy"
+    mypy_cmd=("mypy")
   elif [ -f "${HOME}/.local/bin/mypy" ]; then
-    mypy_bin="${HOME}/.local/bin/mypy"
+    mypy_cmd=("${HOME}/.local/bin/mypy")
   elif python3 -m mypy --version >/dev/null 2>&1; then
-    mypy_bin="python3 -m mypy"
+    mypy_cmd=("python3" "-m" "mypy")
   fi
 
-  if [ -z "${mypy_bin}" ]; then
+  if [ "${#mypy_cmd[@]}" -eq 0 ]; then
     echo "--> mypy not found; attempting automatic installation into ./tools/common/venv..."
     if [ ! -x "./tools/common/venv/bin/pip" ]; then
       python3 -m venv ./tools/common/venv >/dev/null 2>&1 || true
     fi
     if [ -x "./tools/common/venv/bin/pip" ] && ./tools/common/venv/bin/pip install --quiet mypy >/dev/null 2>&1; then
-      mypy_bin="./tools/common/venv/bin/mypy"
+      mypy_cmd=("./tools/common/venv/bin/mypy")
     fi
   fi
 
-  if [ -n "${mypy_bin}" ]; then
+  if [ "${#mypy_cmd[@]}" -gt 0 ]; then
     echo "--> Running Mypy Static Type Checker..."
-    if ! $mypy_bin $py_files; then
+    if ! "${mypy_cmd[@]}"; then
       echo "❌ Mypy type check failed."
       FAILED=1
     fi

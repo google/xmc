@@ -86,7 +86,9 @@ convention = "google"
 combine-as-imports = true
 
 [tool.mypy]
-files = ["."]
+# Single source of truth for mypy's scope: CI and .githooks/pre-commit run bare
+# `mypy` with no file arguments.
+files = ["sdks/python/xmc", "tools", "deploy", "cmd/ui"]
 disallow_subclassing_any = true
 ignore_missing_imports = true
 explicit_package_bases = true
@@ -100,5 +102,5 @@ exclude = [
     '(^|/)bazel-',
     '(^|/)ctk-out/',
     '(^|/)test/regression/',
-    '(^|/)tools/dev_env\\.py$',
+    '(^|/)dev_env\.py$',
 ]
