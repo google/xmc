@@ -260,4 +260,63 @@ describe('ResourceDashboard Container', () => {
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('a100-gpu-queue');
   });
+
+  it('should integrate with ResizeDividerComponent for pointer drag, bounds clamping, dblclick, and keyboard resize', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const divider = (await dashboard.getResizeDivider())!;
+
+    const attrs = await divider.getAttributes();
+    expect(attrs.role).toBe('separator');
+    expect(attrs.ariaLabel).toBe('Drag to resize sections (double-click to reset)');
+    expect(attrs.title).toBe('Drag to resize sections (double-click to reset)');
+    expect(attrs.ariaValueNow).toBe('50');
+
+    await stubSplitContainerWidth(dashboard, 1000);
+
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+
+    // Drag to 30% / 70%
+    await divider.startDrag(500);
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('30%');
+    expect(await dashboard.getRightPaneStyle()).toContain('70%');
+
+    // Clamp maximum at 80% and release
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 950, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('80%');
+    expect(await dashboard.getRightPaneStyle()).toContain('20%');
+
+    // Double-click resets back to 50% / 50%
+    await divider.doubleClick();
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+
+    // Keyboard ArrowLeft / Enter integration
+    await divider.pressKey('ArrowLeft');
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('45%');
+
+    await divider.pressKey('Enter');
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+  });
 });
+
+async function stubSplitContainerWidth(
+  dashboard: ResourceDashboardHarness,
+  width: number,
+): Promise<void> {
+  const containerEl = (await dashboard.getSplitContainerNativeElement())!;
+  spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
+    left: 0,
+    width,
+  } as DOMRect);
+}

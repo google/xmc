@@ -13,16 +13,22 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 
 import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
 import { QueueListHarness } from './components/queue_list/queue_list_harness';
+import { ResizeDividerHarness } from './components/resize_divider/resize_divider_harness';
 import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harness';
 
 /** Harness for interacting with <xmc-resource-dashboard> in tests. */
 export class ResourceDashboardHarness extends ComponentHarness {
   static hostSelector = 'xmc-resource-dashboard';
+
+  private readonly splitContainer = this.locatorForOptional('.rod-split-container');
+  private readonly mainContent = this.locatorForOptional('.rod-main-content');
+  private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
 
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {
@@ -39,6 +45,11 @@ export class ResourceDashboardHarness extends ComponentHarness {
     return this.locatorForOptional(QueueListHarness)();
   }
 
+  /** Gets the resize divider harness if present. */
+  async getResizeDivider(): Promise<ResizeDividerHarness | null> {
+    return this.locatorForOptional(ResizeDividerHarness)();
+  }
+
   /** Gets the queue jobs table harness if present. */
   async getQueueJobsTable(): Promise<QueueJobsTableHarness | null> {
     return this.locatorForOptional(QueueJobsTableHarness)();
@@ -47,5 +58,23 @@ export class ResourceDashboardHarness extends ComponentHarness {
   /** Gets the WIP banner harness if present. */
   async getWipBanner(): Promise<WipBannerHarness | null> {
     return this.locatorForOptional(WipBannerHarness)();
+  }
+
+  /** Gets the inline style string of the left queue-list pane if present. */
+  async getLeftPaneStyle(): Promise<string | null> {
+    const pane = await this.mainContent();
+    return pane ? pane.getAttribute('style') : null;
+  }
+
+  /** Gets the inline style string of the right jobs side pane if present. */
+  async getRightPaneStyle(): Promise<string | null> {
+    const pane = await this.jobsSidePane();
+    return pane ? pane.getAttribute('style') : null;
+  }
+
+  /** Gets the native split container element for geometry stubbing in unit tests. */
+  async getSplitContainerNativeElement(): Promise<Element | null> {
+    const container = await this.splitContainer();
+    return container ? TestbedHarnessEnvironment.getNativeElement(container) : null;
   }
 }
