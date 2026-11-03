@@ -29,6 +29,10 @@ spec:
   componentClass: "event-stream"
   version: {{ .Chart.Version | default "0.1.0" | quote }}
   chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
+  stability: {{ .Values.stability | default "STABLE" | quote }}
+  {{- if hasKey .Values "acknowledgeExperimental" }}
+  acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
+  {{- end }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- $params := .Values.parameters | default dict }}

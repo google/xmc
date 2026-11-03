@@ -16,6 +16,9 @@
 # Disabled by default to preserve existing non-component deployments (enable_components: false).
 enabled: false
 
+# Release maturity tier declared by the catalog ("EXPERIMENTAL", "PREVIEW", or "STABLE").
+stability: STABLE
+
 # Target Kubernetes namespace where the Component CR and Redpanda resources reside.
 # Defaults to .Release.Namespace when non-default, or "xmc".
 namespace: ""
