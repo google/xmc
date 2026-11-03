@@ -90,6 +90,18 @@ vars:
   clickhouse_user: "default"
   clickhouse_password: ""
 
+  # Storage backend: "spanner" (default) or "postgres". With "postgres", Spanner is not
+  # provisioned and the workloads connect to the PostgreSQL instance below
+  # (see README > Database Backend).
+  database_backend: "spanner"
+  postgres_host: ""
+  postgres_port: 5432
+  postgres_user: ""
+  postgres_password: ""
+  postgres_ess_database: ""
+  postgres_xid_database: ""
+  postgres_ssl_mode: ""
+
   # Enable Foundational Component Controllers
   enable_components: false
 
@@ -97,7 +109,7 @@ vars:
   rod_deployment_enabled: true
 
   # Run Log Monitor as a GKE Deployment instead of a Cloud Run service
-  log_monitor_deployment_enabled: false
+  log_monitor_deployment_enabled: true
 
   # Enable Health Service (backs the Admin Panel)
   health_service_deployment_enabled: true

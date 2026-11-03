@@ -17,6 +17,8 @@
 import io
 import json
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -36,9 +38,11 @@ from tools.common.tool_utils import (
     load_and_validate_config,
     log_info,
     parse_bool_flag,
+    parse_semver_prefix,
     parse_yaml_vars,
     run_command,
     run_tool,
+    verify_helm_min_version,
 )
 
 
@@ -311,6 +315,64 @@ class TestLogStreams(unittest.TestCase):
         self.assertTrue(captured_call.kwargs["capture_output"])
 
 
+class TestRunCommandHardening(unittest.TestCase):
+    """Tests for run_command stdin, timeout, decoding, and HandledError options."""
+
+    _BAD_BYTES = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"]
+
+    def _run(self, cmd: list[str], **kwargs):
+        return run_command(cmd, capture_output=True, log_cmd=False, log_on_error=False, **kwargs)
+
+    def test_input_text_is_written_to_stdin(self):
+        cmd = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        self.assertEqual(self._run(cmd, input_text="abc").stdout.strip(), "ABC")
+
+    def test_errors_replace_tolerates_undecodable_output(self):
+        self.assertEqual(self._run(self._BAD_BYTES, errors="replace").stdout, "ok\ufffd")
+
+    def test_default_decoding_stays_strict(self):
+        with self.assertRaises(UnicodeDecodeError):
+            self._run(self._BAD_BYTES)
+
+    def test_raw_exceptions_without_handled_instruction(self):
+        with self.assertRaises(FileNotFoundError):
+            self._run(["xmc-nonexistent-binary"])
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self._run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.2)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self._run([sys.executable, "-c", "raise SystemExit(3)"])
+
+    def test_missing_binary_raises_handled_error(self):
+        with self.assertRaisesRegex(HandledError, "Cannot run xmc-nonexistent-binary") as ctx:
+            self._run(["xmc-nonexistent-binary"], handled_instruction="Install it.")
+        self.assertEqual(ctx.exception.instruction, "Install it.")
+        self.assertIsInstance(ctx.exception.__cause__, FileNotFoundError)
+
+    def test_timeout_raises_handled_error(self):
+        cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
+        with self.assertRaisesRegex(HandledError, r"timed out after 0\.2s"):
+            self._run(cmd, timeout=0.2, handled_instruction="Retry.")
+
+    def test_non_zero_exit_raises_handled_error_with_stderr(self):
+        cmd = [sys.executable, "-c", "import sys; sys.exit('boom')"]
+        with self.assertRaisesRegex(HandledError, r"exit code 1: .*\nboom") as ctx:
+            self._run(cmd, handled_instruction="Fix it.")
+        self.assertEqual(ctx.exception.instruction, "Fix it.")
+        self.assertIn(shlex.quote(cmd[2]), ctx.exception.message)
+
+    def test_non_zero_exit_without_check_returns_result(self):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        result = self._run(cmd, check=False, handled_instruction="Unused.")
+        self.assertEqual(result.returncode, 3)
+
+    @patch("tools.common.tool_utils.log_error")
+    def test_handled_failure_still_logs_when_requested(self, mock_log_error):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        with self.assertRaises(HandledError):
+            run_command(cmd, capture_output=True, log_cmd=False, handled_instruction="Fix it.")
+        mock_log_error.assert_called_once()
+
+
 class TestConfigLoader(unittest.TestCase):
     """Test suite for config loader in tool_utils."""
 
@@ -424,16 +486,46 @@ class TestConfigLoader(unittest.TestCase):
         self.assertEqual(config.environment, "dev")
 
     def test_load_and_validate_config_log_monitor_flag_yaml(self):
-        yaml_with_log_monitor = self.valid_yaml + "\n  log_monitor_deployment_enabled: true\n"
-        self.config_path.write_text(yaml_with_log_monitor, encoding="utf-8")
-        config = load_and_validate_config(str(self.config_path))
-        self.assertTrue(config.log_monitor_deployment_enabled)
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        default_config = load_and_validate_config(str(self.config_path))
+        self.assertTrue(default_config.log_monitor_deployment_enabled)
 
-    @patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "true"})
+        yaml_without_log_monitor = self.valid_yaml + "\n  log_monitor_deployment_enabled: false\n"
+        self.config_path.write_text(yaml_without_log_monitor, encoding="utf-8")
+        config = load_and_validate_config(str(self.config_path))
+        self.assertFalse(config.log_monitor_deployment_enabled)
+
+    @patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "false"})
     def test_load_and_validate_config_log_monitor_flag_env(self):
         self.config_path.write_text(self.valid_yaml, encoding="utf-8")
         config = load_and_validate_config(str(self.config_path))
-        self.assertTrue(config.log_monitor_deployment_enabled)
+        self.assertFalse(config.log_monitor_deployment_enabled)
+
+    def test_load_and_validate_config_database_backend_yaml_and_validation(self):
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        self.assertEqual(
+            load_and_validate_config(str(self.config_path)).database_backend, "spanner"
+        )
+
+        self.config_path.write_text(
+            self.valid_yaml + "\n  database_backend: postgres\n", encoding="utf-8"
+        )
+        self.assertEqual(
+            load_and_validate_config(str(self.config_path)).database_backend, "postgres"
+        )
+
+        self.config_path.write_text(
+            self.valid_yaml + "\n  database_backend: mysql\n", encoding="utf-8"
+        )
+        with self.assertRaises(ValueError) as cm:
+            load_and_validate_config(str(self.config_path))
+        self.assertIn("database_backend", str(cm.exception))
+
+    @patch.dict(os.environ, {"DB_BACKEND": "postgres"})
+    def test_load_and_validate_config_database_backend_env(self):
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        config = load_and_validate_config(str(self.config_path))
+        self.assertEqual(config.database_backend, "postgres")
 
     def test_load_and_validate_config_with_defaults(self):
         minimal_yaml = """vars:
@@ -591,6 +683,49 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         )
         self.assertTrue(cmd[5].endswith("deploy/profiles/stable-2026a"))
         self.assertEqual(cmd[6:], ["-n", "xmc", "--wait"])
+
+    @patch("tools.common.tool_utils.Path.is_file", return_value=True)
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
+        cfg = replace(
+            self.base_config,
+            enable_components=True,
+            namespace="tenant-a",
+            profile_values="/tmp/profile-values.yaml",
+        )
+        deploy_component_profile(cfg)
+        mock_is_file.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        self.assertEqual(cmd[6:], ["-f", "/tmp/profile-values.yaml", "-n", "tenant-a", "--wait"])
+
+    @patch("tools.common.tool_utils.Path.is_file", return_value=False)
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
+        cfg = replace(
+            self.base_config,
+            enable_components=True,
+            profile_values="/tmp/missing-profile-values.yaml",
+        )
+        with self.assertRaises(FileNotFoundError):
+            deploy_component_profile(cfg)
+        mock_run.assert_not_called()
+
+    def test_parse_semver_prefix(self):
+        self.assertEqual(parse_semver_prefix("v3.14.2+g0a1b2c"), (3, 14, 2))
+        self.assertEqual(parse_semver_prefix("v3.14"), (3, 14, 0))
+        self.assertEqual(parse_semver_prefix("3"), (3, 0, 0))
+        self.assertEqual(parse_semver_prefix("v3.14-rc1"), (3, 14, 0))
+        self.assertEqual(parse_semver_prefix("v3.14+build2"), (3, 14, 0))
+        with self.assertRaises(ValueError):
+            parse_semver_prefix("invalid")
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_verify_helm_min_version(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="v3.15.0\n")
+        self.assertEqual(verify_helm_min_version(), "v3.15.0")
+        mock_run.return_value = MagicMock(stdout="v3.13.3\n")
+        with self.assertRaises(RuntimeError):
+            verify_helm_min_version()
 
 
 if __name__ == "__main__":

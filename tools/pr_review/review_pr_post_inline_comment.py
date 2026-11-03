@@ -17,9 +17,8 @@
 
 import argparse
 import json
-import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -32,19 +31,28 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    get_authenticated_login,
     resolve_review_thread,
 )
 
 
 def get_git_username() -> str:
-    """Attempt to resolve the current user's authenticated GitHub/git username."""
+    """Returns the authenticated GitHub login for comment telemetry.
+
+    There is deliberately no fallback to the local OS username: it differs from
+    the GitHub login, so a silent fallback corrupts telemetry and any reviewer
+    identity comparison built on it.
+
+    Raises:
+        HandledError: If the GitHub login cannot be resolved.
+    """
     try:
-        res = call_github_api("/user", user_agent="XMC-PR-Review-Agent")
-        if isinstance(res, dict) and res.get("login"):
-            return str(res["login"])
-    except Exception:
-        pass
-    return os.environ.get("USER", "unknown")
+        return get_authenticated_login(user_agent="XMC-PR-Review-Agent")
+    except (GithubAuthError, GithubAPIError) as e:
+        raise HandledError(
+            f"Failed to resolve the authenticated GitHub login: {e}",
+            "Authenticate with 'gh auth login' or set a valid GITHUB_TOKEN, then retry.",
+        ) from e
 
 
 def _handle_resolve_thread(
@@ -126,7 +134,7 @@ def post_inline_comment(args: argparse.Namespace) -> dict[str, Any]:
     raw_message = _read_comment_message(args.message, args.message_file)
 
     # Append audit usage telemetry
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
     user = get_git_username()
     telemetry = {
         "git_username": user,

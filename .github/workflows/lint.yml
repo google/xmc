@@ -137,6 +137,12 @@ jobs:
         run: |
           python3 tools/nightly_tests/check_examples_coverage.py
 
+      - name: 'Check Agent Doc Path References'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_agent_doc_paths.py
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff
@@ -186,7 +192,7 @@ jobs:
 
       - name: 'Install UI Dependencies'
         if: steps.changes.outputs.ui == 'true'
-        run: npm ci --legacy-peer-deps --prefer-offline --no-audit
+        run: npm ci --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
       - name: 'Run Prettier Check'

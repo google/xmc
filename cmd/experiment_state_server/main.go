@@ -31,7 +31,6 @@ import (
 	"strings"
 	"syscall"
 
-	"cloud.google.com/go/spanner"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -44,11 +43,13 @@ import (
 	authz "xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/tlsutil"
+	"xmanager_cloud/internal/storage"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/auth/principal"
 	"xmanager_cloud/pkg/components/cms"
 	"xmanager_cloud/pkg/components/store"
+	"xmanager_cloud/pkg/components/store/dbstore"
 	"xmanager_cloud/pkg/components/store/memory"
-	spannerstore "xmanager_cloud/pkg/components/store/spanner"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -115,9 +116,9 @@ func main() {
 		if err != nil {
 			logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
 		}
-		stopCMS := initCMS(ctx, s, healthServer, prodServer.SpannerClient(), cmsAuth)
+		stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
 		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
-		// Spanner client is closed.
+		// database handle is closed.
 		defer stopCMS()
 	}
 
@@ -187,12 +188,13 @@ func newCMSAuthorizer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.C
 }
 
 type cmsAdmissionChecker struct {
+	// invokerSA is in canonical form (see principal.Normalize).
 	invokerSA string
 	delegate  authz.AdmissionChecker
 }
 
 func (c cmsAdmissionChecker) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
-	if c.invokerSA != "" && strings.EqualFold(strings.TrimSpace(email), c.invokerSA) {
+	if c.invokerSA != "" && principal.Normalize(email) == c.invokerSA {
 		return true, nil
 	}
 	return c.delegate.IsUserAuthorized(ctx, email)
@@ -209,13 +211,15 @@ func cmsAdmission(invokerSA string, oauthAuth *oauth.Authenticator) authz.Admiss
 		return nil
 	}
 	return cmsAdmissionChecker{
-		invokerSA: strings.TrimSpace(invokerSA),
+		invokerSA: principal.Normalize(invokerSA),
 		delegate:  delegate,
 	}
 }
 
 func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms.UserAuthenticator, adminChecker cms.AdminChecker) cms.CallerAuthorizer {
-	if (oauthCfg != nil && oauthCfg.DisableAuthentication) || os.Getenv("DISABLE_AUTHENTICATION") == "true" {
+	// oauthCfg comes from oauth.LoadConfig, which rejects DISABLE_AUTHENTICATION in binaries built
+	// without the mockauth tag; DevAuthCompiledIn also makes this bypass dead code there.
+	if oauth.DevAuthCompiledIn() && oauthCfg != nil && oauthCfg.DisableAuthentication {
 		return cms.NewDisabledAuthorizer()
 	}
 	var checker cms.AdminChecker
@@ -227,18 +231,22 @@ func buildCMSAuthorizer(cfg *config.Config, oauthCfg *oauth.Config, userAuth cms
 
 // initCMS registers CMS on s and starts its ownership metrics collector. The returned stop
 // function cancels the collector and waits for it to exit.
-func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, spannerClient *spanner.Client, auth cms.CallerAuthorizer) (stop func()) {
+func initCMS(ctx context.Context, s *grpc.Server, healthServer *health.Server, st storage.Storage, auth cms.CallerAuthorizer) (stop func()) {
 	logging.Info(ctx, "Initializing Component Manager Service (CMS)...")
 	var cmsStore interface {
 		store.Store
 		store.OwnershipGaugeReader
 	}
-	if spannerClient != nil {
-		cmsStore = spannerstore.NewSpannerStore(spannerClient)
-		logging.Info(ctx, "Using SpannerStore for Component Manager Service")
+	if st != nil {
+		dbStore, err := dbstore.New(st)
+		if err != nil {
+			logging.Fatal(ctx, "failed to create dbstore.Store for Component Manager Service", "error", err)
+		}
+		cmsStore = dbStore
+		logging.Info(ctx, "Using dbstore.Store for Component Manager Service")
 	} else {
 		cmsStore = memory.NewMemoryStore()
-		logging.Warn(ctx, "Spanner client not initialized; using in-memory MemoryStore fallback for Component Manager Service")
+		logging.Warn(ctx, "Storage not active; using in-memory MemoryStore fallback for Component Manager Service")
 	}
 	collectorCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})

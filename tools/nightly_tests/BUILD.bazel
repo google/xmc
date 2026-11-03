@@ -22,6 +22,8 @@ exports_files([
     "README.md",
     "check_examples_coverage.py",
     "check_examples_coverage_test.py",
+    "examples_import_smoke.py",
+    "examples_import_smoke_test.py",
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
@@ -85,4 +87,28 @@ py_test(
     srcs = ["check_examples_coverage_test.py"],
     imports = ["../.."],
     deps = [":check_examples_coverage_lib"],
+)
+
+py_library(
+    name = "examples_import_smoke_lib",
+    srcs = ["examples_import_smoke.py"],
+    imports = ["../.."],
+)
+
+py_binary(
+    name = "examples_import_smoke",
+    srcs = ["examples_import_smoke.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "examples_import_smoke_test",
+    size = "small",
+    srcs = ["examples_import_smoke_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":examples_import_smoke_lib",
+        # Child processes import absl to exercise matrix-args parsing.
+        "@absl_py//absl/flags",
+    ],
 )

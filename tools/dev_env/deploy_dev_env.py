@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_info,
     log_success,
     run_command,
+    verify_helm_min_version,
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 from tools.dev_env.upgrade_dev_env import (  # noqa: E402
@@ -106,6 +108,11 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
     p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
     p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
+    p.add_argument(
+        "--profile-values",
+        default=None,
+        help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
+    )
     parsed_args = p.parse_args(args)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
@@ -272,6 +279,15 @@ def run_checks(config: DeploymentConfig, dns_project: str, dns_zone: str) -> Non
     log_info("Running pre-flight dependency checks...")
     _verify_binaries()
     _check_terraform_version()
+    if config.enable_components:
+        try:
+            verify_helm_min_version()
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
+            error_exit(f"Failed Helm version check: {e}")
+        if config.profile_values and not pathlib.Path(config.profile_values).is_file():
+            error_exit(
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
+            )
     _check_gcp_project_alignment(config.project_id)
     _check_dns_access(dns_project, dns_zone)
     log_success("All pre-flight checks passed.")
@@ -854,6 +870,11 @@ def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
         resume_cmd += "--skip-migrations "
     if getattr(args, "skip_verification", False):
         resume_cmd += "--skip-verification "
+    if getattr(args, "enable_components", None) is not None:
+        flag = "--enable-components" if args.enable_components else "--no-enable-components"
+        resume_cmd += f"{flag} "
+    if getattr(args, "profile_values", None):
+        resume_cmd += f"--profile-values {shlex.quote(args.profile_values)} "
     if args.only:
         resume_cmd += f"--only {current_step}"
     else:
@@ -881,6 +902,8 @@ def run_deployment(args: argparse.Namespace) -> None:
     config = load_and_validate_config(args.config)
     if getattr(args, "enable_components", None) is not None:
         config = replace(config, enable_components=bool(args.enable_components))
+    if getattr(args, "profile_values", None):
+        config = replace(config, profile_values=args.profile_values)
 
     run_checks(config, args.dns_project, args.dns_zone)
     step_map = _build_step_map(args, config)

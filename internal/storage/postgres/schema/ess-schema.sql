@@ -109,8 +109,8 @@ CREATE TABLE WorkUnits (
 
 CREATE INDEX WorkUnitsByQueueName ON WorkUnits (QueueName);
 -- Partial index for active work unit queries by position.
-CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (QueueName, SortPhase DESC, PositionInQueue ASC, CreateTime ASC, WorkUnitId ASC)
-  INCLUDE (IsPendingOrRunningJob, Xid) WHERE IsPendingOrRunningJob IS NOT NULL;
+CREATE INDEX WorkUnitsByQueueAndPosition ON WorkUnits (QueueName, SortPhase DESC, PositionInQueue ASC, CreateTime ASC, WorkUnitId ASC, Xid ASC)
+  INCLUDE (IsPendingOrRunningJob) WHERE IsPendingOrRunningJob IS NOT NULL;
 
 -- Table that holds the list of operations.
 CREATE TABLE Operations (

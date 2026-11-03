@@ -811,6 +811,7 @@ def verify_cms_bridge_reconciliation() -> None:
                 "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
                 "componentClass": "database",
                 "version": "v1.0.0",
+                "stability": "STABLE",
                 "enabled": False,
                 "deletionProtection": False,
                 "parameters": {"authCheck": "true"},

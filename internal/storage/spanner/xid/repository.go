@@ -62,7 +62,13 @@ func NewRepository(client *spanner.Client) (*Repository, error) {
 		return nil, fmt.Errorf("spanner client must not be nil")
 	}
 
-	xidsQueryGen, err := querytools.NewQueryGenerator(xidschema.XidTables, nil, nil, nil)
+	xidsQueryGen, err := querytools.NewQueryGenerator(
+		xidschema.XidTables,
+		nil,
+		nil,
+		nil,
+		querytools.RestrictionRewriter(RewriteXidRestriction),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Xids query generator: %w", err)
 	}

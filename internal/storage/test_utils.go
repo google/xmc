@@ -165,6 +165,8 @@ type MockStorage struct {
 	ExperimentStatus                  *essmsgpb.ExperimentStatus
 	DriftedComponents                 []ComponentDiff
 	FetchDriftedComponentsErr         error
+	ExperimentSnapshotComponents      []ExperimentSnapshotComponent
+	FetchExperimentSnapshotErr        error
 	FetchWorkUnitErr                  error
 	WorkUnit                          *essmsgpb.WorkUnit
 	FetchCurrentWorkUnitExecutionErr  error
@@ -228,6 +230,8 @@ type MockStorage struct {
 	// RunInTransactionAttempts is how many times RunInTransaction invokes fn, simulating
 	// Spanner re-running the closure after an abort. Values below 2 invoke fn once.
 	RunInTransactionAttempts int
+	// CommitTime is returned by RunInSerializableTransaction when non-zero; otherwise time.Now() is returned.
+	CommitTime time.Time
 	// UpdatedExperiment records the last experiment passed to UpdateExperimentStatus.
 	UpdatedExperiment *essmsgpb.Experiment
 	// UpdatedExperimentResources records the last experiment passed to UpdateExperimentResources.
@@ -236,9 +240,10 @@ type MockStorage struct {
 	PauseStateRepository   PauseStateRepository
 	PausedTaskRepository   PausedTaskRepository
 	CLILoginCodeRepository CLILoginCodeRepository
+	ComponentRepository    ComponentRepository
 	// Transaction optionally overrides Transaction.XIDs, Transaction.StatusMessages,
-	// Transaction.StatusHistory, Transaction.PauseState, and Transaction.PausedTasks
-	// passed to RunInTransaction callbacks; other fields are ignored.
+	// Transaction.StatusHistory, Transaction.PauseState, Transaction.PausedTasks, and
+	// Transaction.Components passed to RunInTransaction callbacks; other fields are ignored.
 	Transaction *Transaction
 }
 
@@ -281,6 +286,14 @@ func (s *MockStorage) FetchDriftedComponents(ctx context.Context, xid int64, lim
 		return s.DriftedComponents[:limit], nil
 	}
 	return s.DriftedComponents, nil
+}
+
+// FetchExperimentSnapshotComponents mocks fetching locked experiment component snapshots.
+func (s *MockStorage) FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]ExperimentSnapshotComponent, error) {
+	if s.FetchExperimentSnapshotErr != nil {
+		return nil, s.FetchExperimentSnapshotErr
+	}
+	return s.ExperimentSnapshotComponents, nil
 }
 
 // FetchWorkUnit mocks work unit fetching. Like real storage, it returns a fresh copy on every call.
@@ -391,6 +404,7 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 	}
 	pauseStateTx, _ := s.PauseStateRepository.(PauseStateTxRepository)
 	pausedTaskTx, _ := s.PausedTaskRepository.(PausedTaskTxRepository)
+	componentsTx, _ := s.ComponentRepository.(ComponentTxRepository)
 	xidsTx := s.XidTxRepository
 	if xidsTx == nil {
 		xidsTx = &MockXidTxRepository{FetchErr: s.FetchErr}
@@ -411,6 +425,7 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		StatusHistory:  statusHistTx,
 		PauseState:     pauseStateTx,
 		PausedTasks:    pausedTaskTx,
+		Components:     componentsTx,
 	}
 	applyTransactionOverrides(tx, s.Transaction)
 	for attempt := 1; attempt < s.RunInTransactionAttempts; attempt++ {
@@ -419,6 +434,18 @@ func (s *MockStorage) RunInTransaction(ctx context.Context, fn func(ctx context.
 		}
 	}
 	return fn(ctx, tx)
+}
+
+// RunInSerializableTransaction mocks running a function within a serializable transaction and
+// returns CommitTime when set, or time.Now() otherwise.
+func (s *MockStorage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error) {
+	if err := s.RunInTransaction(ctx, fn); err != nil {
+		return time.Time{}, err
+	}
+	if !s.CommitTime.IsZero() {
+		return s.CommitTime, nil
+	}
+	return time.Now(), nil
 }
 
 func applyTransactionOverrides(tx, overrides *Transaction) {
@@ -440,6 +467,9 @@ func applyTransactionOverrides(tx, overrides *Transaction) {
 	if overrides.PausedTasks != nil {
 		tx.PausedTasks = overrides.PausedTasks
 	}
+	if overrides.Components != nil {
+		tx.Components = overrides.Components
+	}
 }
 
 // PauseState returns the configured pause state repository (nil if unset).
@@ -455,6 +485,16 @@ func (s *MockStorage) PausedTasks() PausedTaskRepository {
 // CLILoginCodes returns the configured CLI login code repository (nil if unset).
 func (s *MockStorage) CLILoginCodes() CLILoginCodeRepository {
 	return s.CLILoginCodeRepository
+}
+
+// Components returns the configured component repository (nil if unset).
+func (s *MockStorage) Components() ComponentRepository {
+	return s.ComponentRepository
+}
+
+// DeleteExpiredRows mocks deleting expired rows and deletes nothing.
+func (s *MockStorage) DeleteExpiredRows(ctx context.Context, batchSize int) (int64, error) {
+	return 0, nil
 }
 
 // SaveWorkUnitExecution mocks saving a work unit execution.

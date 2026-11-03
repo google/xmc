@@ -44,7 +44,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
 *   **`pause_scheduling_enabled`**: Boolean flag (`true`/`false`, default: `true`). Set to `true` to enable the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS (`XMC_PAUSE_SCHEDULING_ENABLED`). Resumption batch size and backlog throttling can be tuned via `health_scheduling_resume_batch_size` (default: `100`) and `health_scheduling_resume_max_backlog` (default: `500`).
-*   **`log_monitor_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Controls whether the Log Monitor runs as a GKE Deployment (`true`) or as a Cloud Run service (`false`).
+*   **`log_monitor_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Controls whether the Log Monitor runs as a GKE Deployment (`true`) or as a Cloud Run service (`false`).
 *   **`enable_components`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision foundational component controllers. With components enabled, `enable_metrics` no longer deploys the Ingestion Gateway from the umbrella chart; the gateway becomes an optional component. Declare its `Component` CR through the [`stable-2026a` profile](../profiles/stable-2026a/README.md); `xmc-bridge` then installs the workload from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md).
 *   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
@@ -84,6 +84,18 @@ ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [Click
 *   **`clickhouse_database`**: Database holding the metrics tables (default: `default`).
 *   **`clickhouse_user`**: ClickHouse username (default: `default`).
 *   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap. The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that do enable it should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
+
+### Database Backend (Spanner or PostgreSQL)
+**`database_backend`** selects the storage backend: `spanner` (default) or `postgres`.
+*   **`spanner`**: The blueprint provisions the Cloud Spanner instance, the ESS and XID databases, and applies their schemas. Existing deployments are unaffected.
+*   **`postgres`**: Spanner, its schema appliers, and the `spanner.googleapis.com` API are skipped, and the log monitor runs in-cluster (the Cloud Run log monitor only supports Spanner). Point the workloads at your PostgreSQL instance with:
+    *   **`postgres_host`**: PostgreSQL hostname reachable from the cluster.
+    *   **`postgres_port`**: PostgreSQL port (default: `5432`).
+    *   **`postgres_user`** / **`postgres_password`**: Credentials used by the workloads.
+    *   **`postgres_ess_database`** / **`postgres_xid_database`**: Databases for the Experiment State Server and XID service.
+    *   **`postgres_ssl_mode`**: libpq `sslmode`. Empty uses the chart default (`verify-full`).
+
+> **Note:** The `tools/dev_env` deploy and upgrade tooling skips Spanner schema migrations when `database_backend` is `postgres` (overridable via the `DB_BACKEND` environment variable).
 
 ---
 

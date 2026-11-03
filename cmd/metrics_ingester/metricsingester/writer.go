@@ -37,6 +37,8 @@ type ClickHouseWriter struct {
 	conn BatchPreparer
 }
 
+var _ MetricWriter = (*ClickHouseWriter)(nil)
+
 // NewClickHouseWriter returns a writer that inserts through conn.
 func NewClickHouseWriter(conn BatchPreparer) *ClickHouseWriter {
 	return &ClickHouseWriter{conn: conn}

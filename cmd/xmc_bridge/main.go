@@ -275,17 +275,30 @@ func BuildStatusMap(res *bridge.ReconcileResult) map[string]any {
 	return bridge.BuildStatusMap(res)
 }
 
+// dialCMS creates the CMS gRPC client authenticated with the bridge's CMS credentials.
+func dialCMS(ctx context.Context, address string) (*grpc.ClientConn, error) {
+	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", address)
+	cmsCreds, err := bridge.NewCMSTokenCredentials(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve CMS credentials: %w", err)
+	}
+	conn, err := grpc.NewClient(
+		address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(cmsCreds),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to CMS at %q: %w", address, err)
+	}
+	return conn, nil
+}
+
 // RunBridge initializes all dependencies (CMS gRPC client, Kubernetes clients, WorkloadManager and
 // Reconciler) and runs the Component controller until ctx is cancelled.
 func RunBridge(ctx context.Context, cfg *Config) error {
-	logging.Info(ctx, "Connecting to Component Manager Service (CMS)", "address", cfg.CMSAddress)
-	conn, err := grpc.NewClient(
-		cfg.CMSAddress,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(bridge.NewCMSTokenCredentials(ctx)),
-	)
+	conn, err := dialCMS(ctx, cfg.CMSAddress)
 	if err != nil {
-		return fmt.Errorf("failed to connect to CMS at %q: %w", cfg.CMSAddress, err)
+		return err
 	}
 	defer conn.Close()
 

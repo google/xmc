@@ -61,11 +61,10 @@ spec:
           name: grpc-port
         envFrom:
         - configMapRef:
-            name: rod-data-provider-config
-        - configMapRef:
             name: db-config
         env:
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         readinessProbe:
           httpGet:
             path: /readyz

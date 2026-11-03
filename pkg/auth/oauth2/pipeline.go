@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sync/singleflight"
 	"google.golang.org/api/idtoken"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
 var ErrAdminRoleNotConfigured = errors.New("admin IAM role not configured")
@@ -165,33 +166,37 @@ func (a *Authenticator) getIamPolicy(ctx context.Context) (*iampb.Policy, error)
 
 // IsUserAuthorized implements the 3-stage Hybrid Pipeline: Local Email Allowlist -> Domain Allowlist -> GCP IAM Policy Check.
 func (a *Authenticator) IsUserAuthorized(ctx context.Context, email string) (bool, error) {
-	if a.Config != nil && a.Config.DisableAuthentication {
+	if DevAuthCompiledIn() && a.Config.DisableAuthentication {
 		return true, nil
 	}
-	emailLower := strings.ToLower(strings.TrimSpace(email))
+	canonicalEmail := principal.Normalize(email)
 
 	// If all allowlists and ProjectID are blank, fail closed unless DisableAuthentication is true.
 	if len(a.Config.AllowedEmails) == 0 && len(a.Config.AllowedDomains) == 0 && a.Config.GCPProjectID == "" {
 		return false, fmt.Errorf("fail-closed: AllowedEmails, AllowedDomains, and GCPProjectID are all empty; access is denied unless DISABLE_AUTHENTICATION=true")
 	}
+	// An empty identity must never match a blank (misconfigured) allowlist entry.
+	if canonicalEmail == "" {
+		return false, nil
+	}
 
 	// 1. STAGE 1: Local Guest/Admin Email Allowlist Check (Fast Path)
 	if len(a.Config.AllowedEmails) > 0 {
 		for _, allowedEmail := range a.Config.AllowedEmails {
-			if strings.ToLower(strings.TrimSpace(allowedEmail)) == emailLower {
+			if principal.Normalize(allowedEmail) == canonicalEmail {
 				return true, nil
 			}
 		}
 	}
 
 	// 2. STAGE 2: Local Domain Allowlist Check (Fast Path)
-	if a.isAllowedDomain(emailDomain(emailLower)) {
+	if a.isAllowedDomain(emailDomain(canonicalEmail)) {
 		return true, nil
 	}
 
 	// 3. STAGE 3: GCP IAM Fallback Check
 	if a.Config.GCPProjectID != "" {
-		return a.IsUserAuthorizedViaIAM(ctx, emailLower)
+		return a.IsUserAuthorizedViaIAM(ctx, canonicalEmail)
 	}
 
 	return false, nil
@@ -207,15 +212,15 @@ func emailDomain(email string) string {
 	return parts[1]
 }
 
-// isAllowedDomain reports whether domain is in AllowedDomains, ignoring case and surrounding
-// spaces. An empty domain is never allowed.
+// isAllowedDomain reports whether domain is in AllowedDomains, compared in canonical form (see
+// principal.Normalize). An empty domain is never allowed.
 func (a *Authenticator) isAllowedDomain(domain string) bool {
-	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = principal.Normalize(domain)
 	if domain == "" {
 		return false
 	}
 	for _, allowedDomain := range a.Config.AllowedDomains {
-		if strings.ToLower(strings.TrimSpace(allowedDomain)) == domain {
+		if principal.Normalize(allowedDomain) == domain {
 			return true
 		}
 	}
@@ -230,7 +235,7 @@ func (a *Authenticator) IsUserAuthorizedViaIAM(ctx context.Context, email string
 // IsUserAuthorizedForRoleViaIAM queries Google Cloud Resource Manager API to verify IAM role mappings for a specific role.
 func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email string, role string) (bool, error) {
 	role = strings.TrimSpace(role)
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = principal.Normalize(email)
 	if role == "" || email == "" {
 		return false, nil
 	}
@@ -252,8 +257,8 @@ func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email
 	for _, binding := range policy.Bindings {
 		if binding.Role == role {
 			for _, member := range binding.Members {
-				memberLower := strings.ToLower(member)
-				if memberLower == userPrincipal || memberLower == saPrincipal || (domainPrincipal != "" && memberLower == domainPrincipal) {
+				canonicalMember := principal.Normalize(member)
+				if canonicalMember == userPrincipal || canonicalMember == saPrincipal || (domainPrincipal != "" && canonicalMember == domainPrincipal) {
 					return true, nil
 				}
 			}
@@ -264,10 +269,10 @@ func (a *Authenticator) IsUserAuthorizedForRoleViaIAM(ctx context.Context, email
 }
 
 // IsAdmin checks if the given user email has admin privileges.
-// If DisableAuthentication is true, it always returns true.
+// If DisableAuthentication is true in a binary built with the mockauth tag, it always returns true.
 // If AdminIAMRole is not configured, it returns ErrAdminRoleNotConfigured.
 func (a *Authenticator) IsAdmin(ctx context.Context, email string) (bool, error) {
-	if a.Config.DisableAuthentication {
+	if DevAuthCompiledIn() && a.Config.DisableAuthentication {
 		return true, nil
 	}
 	adminRole := a.Config.AdminIAMRole

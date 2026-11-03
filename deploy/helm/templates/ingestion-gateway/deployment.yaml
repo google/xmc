@@ -1,5 +1,5 @@
 {{- /* With components enabled, the ingestion-gateway component chart owns the gateway. */ -}}
-{{- if and .Values.ingestionGatewayDeployment.enabled (not .Values.componentsDeployment.enabled) -}}
+{{- if and (default (dict) .Values.ingestionGatewayDeployment).enabled (not (default (dict) .Values.componentsDeployment).enabled) -}}
 {{- $sasl := .Values.ingestionGatewayDeployment.sasl | default dict -}}
 {{- $tls := .Values.ingestionGatewayDeployment.tls | default dict -}}
 {{- $useSasl := and $sasl.enabled $sasl.secretName -}}

@@ -26,6 +26,9 @@ spec:
       app: health-service
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/health-service/configmap.yaml") . | sha256sum }}
+        checksum/db-config: {{ include (print $.Template.BasePath "/db-config.yaml") . | sha256sum }}
       labels:
         app: health-service
     spec:
@@ -109,6 +112,7 @@ spec:
               name: redis-secret
               key: redis-password
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
+        {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
             name: health-config

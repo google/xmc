@@ -28,15 +28,13 @@ data:
   {{- else }}
   health_log_monitor_resource_name: {{ .Values.healthService.logMonitorResourceName | quote }}
   {{- end }}
-  health_ess_spanner_database_name: {{ .Values.experimentStateServer.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/experiment-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
-  health_xid_spanner_database_name: {{ .Values.xidService.spannerDatabaseName | default (printf "projects/%s/instances/xmc-%s/databases/xids-db-%s" .Values.projectId .Values.environment .Values.environment) | quote }}
   health_redis_addr: {{ .Values.redisAddr | quote }}
   health_observability_url: {{ .Values.healthService.observabilityUrl | quote }}
   health_app_version: {{ .Values.imageTag | quote }}
   health_status_cache_ttl: {{ .Values.healthService.cacheTTL | quote }}
   health_status_force_refresh_max_requests: {{ .Values.healthService.forceRefreshMaxRequests | quote }}
   health_status_force_refresh_window: {{ .Values.healthService.forceRefreshWindow | quote }}
-  enable_components: {{ .Values.componentsDeployment.enabled | default false | quote }}
+  enable_components: {{ (default (dict) .Values.componentsDeployment).enabled | default false | quote }}
   health_scheduling_resume_batch_size: {{ .Values.healthService.schedulingResumeBatchSize | default 100 | quote }}
   health_scheduling_resume_max_backlog: {{ .Values.healthService.schedulingResumeMaxBacklog | default 500 | quote }}
 {{- end }}

@@ -18,12 +18,14 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 )
 
 func newLazyTestPool(t *testing.T) *pgxpool.Pool {
@@ -83,13 +85,13 @@ func TestStorage(t *testing.T) {
 		{
 			name: "newTransaction",
 			check: func(t *testing.T) {
-				// Populating all 7 Transaction fields is verified here; binding the DBTX
+				// Populating all 8 Transaction fields is verified here; binding the DBTX
 				// handle into each wrapper's unexported tx field is covered by the
 				// per-subpackage TestNewRepository_BindsPoolAndTx tests.
-				tx := s.newTransaction(&fakeTx{})
+				tx := s.newTransaction(s.pool)
 				if tx.WorkUnits == nil || tx.Experiments == nil || tx.XIDs == nil ||
 					tx.StatusMessages == nil || tx.StatusHistory == nil ||
-					tx.PauseState == nil || tx.PausedTasks == nil {
+					tx.PauseState == nil || tx.PausedTasks == nil || tx.Components == nil {
 					t.Errorf("newTransaction() returned incomplete transaction: %+v", tx)
 				}
 			},
@@ -99,6 +101,22 @@ func TestStorage(t *testing.T) {
 			check: func(t *testing.T) {
 				if s.cliLoginCodeRepository == nil || s.CLILoginCodes() != s.cliLoginCodeRepository {
 					t.Error("CLILoginCodes() did not return initialized cliLoginCodeRepository")
+				}
+			},
+		},
+		{
+			name: "Components",
+			check: func(t *testing.T) {
+				if s.componentRepository == nil || s.Components() != s.componentRepository {
+					t.Error("Components() did not return initialized componentRepository")
+				}
+			},
+		},
+		{
+			name: "DeleteExpiredRows",
+			check: func(t *testing.T) {
+				if s.retentionRepository == nil {
+					t.Error("NewStorage() did not initialize retentionRepository")
 				}
 			},
 		},
@@ -135,6 +153,32 @@ func TestStorage(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "RunInSerializableTransaction nil pool",
+			check: func(t *testing.T) {
+				ts, err := (&Storage{}).RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+					return nil
+				})
+				if got := status.Code(err); got != codes.FailedPrecondition {
+					t.Errorf("RunInSerializableTransaction() code = %v, want %v (err: %v)", got, codes.FailedPrecondition, err)
+				}
+				if !ts.IsZero() {
+					t.Errorf("RunInSerializableTransaction() timestamp = %v, want zero", ts)
+				}
+			},
+		},
+		{
+			name: "RunInSerializableTransaction nil callback",
+			check: func(t *testing.T) {
+				ts, err := s.RunInSerializableTransaction(ctx, nil)
+				if got := status.Code(err); got != codes.InvalidArgument {
+					t.Errorf("RunInSerializableTransaction(nil) code = %v, want %v (err: %v)", got, codes.InvalidArgument, err)
+				}
+				if !ts.IsZero() {
+					t.Errorf("RunInSerializableTransaction(nil) timestamp = %v, want zero", ts)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -144,41 +188,48 @@ func TestStorage(t *testing.T) {
 	}
 }
 
-func TestStorage_RunInTransactionUsesBeginner(t *testing.T) {
-	callbackErr := errors.New("callback failed")
-	tests := []struct {
-		name           string
-		fnErr          error
-		wantCommitted  int
-		wantRolledBack int
-	}{
-		{name: "commits after the callback succeeds", wantCommitted: 1},
-		{name: "rolls back when the callback fails", fnErr: callbackErr, wantRolledBack: 1},
+func TestStorage_RunInSerializableTransaction(t *testing.T) {
+	ctx := context.Background()
+	_, pool := postgrestest.Setup(ctx, t)
+	s, err := NewStorage(pool)
+	if err != nil {
+		t.Fatalf("NewStorage() failed: %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s, err := NewStorage(newLazyTestPool(t))
-			if err != nil {
-				t.Fatalf("NewStorage() failed: %v", err)
-			}
-			pgTx := &fakeTx{}
-			s.beginner = &fakeBeginner{txs: []*fakeTx{pgTx}}
+	commitTime, err := s.RunInSerializableTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		return tx.PauseState.Set(txCtx, &storage.PauseSchedulingState{SchedulingPaused: true})
+	})
+	if err != nil {
+		t.Fatalf("RunInSerializableTransaction() failed: %v", err)
+	}
+	if commitTime.IsZero() || commitTime.Location() != time.UTC {
+		t.Errorf("commitTime = %v (%v), want non-zero UTC timestamp", commitTime, commitTime.Location())
+	}
 
-			var gotTx *storage.Transaction
-			err = s.RunInTransaction(context.Background(), func(_ context.Context, tx *storage.Transaction) error {
-				gotTx = tx
-				return tt.fnErr
-			})
-			if !errors.Is(err, tt.fnErr) {
-				t.Fatalf("RunInTransaction() error = %v, want %v", err, tt.fnErr)
-			}
-			if gotTx == nil {
-				t.Error("RunInTransaction() did not pass a transaction to the callback")
-			}
-			if pgTx.committed != tt.wantCommitted || pgTx.rolledBack != tt.wantRolledBack {
-				t.Errorf("committed=%d rolledBack=%d, want %d/%d", pgTx.committed, pgTx.rolledBack, tt.wantCommitted, tt.wantRolledBack)
-			}
-		})
+	stored, err := s.PauseState().Get(ctx)
+	if err != nil {
+		t.Fatalf("PauseState().Get() failed: %v", err)
+	}
+	if !stored.SchedulingPaused || !commitTime.Equal(stored.UpdatedAt) {
+		t.Errorf("stored = (%v, %v), want (true, %v)", stored.SchedulingPaused, stored.UpdatedAt, commitTime)
+	}
+
+	callbackErr := errors.New("callback failed")
+	got, err := s.RunInSerializableTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
+		if err := tx.PauseState.Set(txCtx, &storage.PauseSchedulingState{SchedulingPaused: false}); err != nil {
+			return err
+		}
+		return callbackErr
+	})
+	if !errors.Is(err, callbackErr) || !got.IsZero() {
+		t.Errorf("RunInSerializableTransaction(callbackErr) = (%v, %v), want (zero, %v)", got, err, callbackErr)
+	}
+
+	afterRollback, err := s.PauseState().Get(ctx)
+	if err != nil {
+		t.Fatalf("PauseState().Get() after rollback failed: %v", err)
+	}
+	if !afterRollback.SchedulingPaused {
+		t.Error("PauseState().SchedulingPaused = false after rollback, want true")
 	}
 }

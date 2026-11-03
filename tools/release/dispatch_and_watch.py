@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -169,7 +169,7 @@ def _find_existing_run(
 
 def _dispatch_workflow(workflow: str, ref: str, repo_dir: Path | None) -> str:
     """Dispatches workflow run and returns ISO timestamp of dispatch."""
-    dispatched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    dispatched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     res = _run_gh(["workflow", "run", workflow, "--ref", ref], repo_dir)
     if res.returncode != 0:
         raise HandledError(

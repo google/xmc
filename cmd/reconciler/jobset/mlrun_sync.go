@@ -47,12 +47,58 @@ type MLRunCreator interface {
 	UpdateMLRun(ctx context.Context, name string, opts *hypercomputeclient.UpdateMLRunOptions) (map[string]any, error)
 }
 
+type mlRunCacheKey struct {
+	xid int64
+	wid int64
+	eid int64
+}
+
+// maxMLRunURLCacheEntries caps the in-memory MLRun URL cache so memory stays
+// bounded even if JobSets disappear without going through finalizer eviction.
+const maxMLRunURLCacheEntries = 10000
+
+func (r *Reconciler) getCachedMLRunURL(xid, wid, eid int64) string {
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	return r.mlRunURLCache[mlRunCacheKey{xid: xid, wid: wid, eid: eid}]
+}
+
+func (r *Reconciler) cacheMLRunURL(xid, wid, eid int64, url string) {
+	if url == "" {
+		return
+	}
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	if r.mlRunURLCache == nil {
+		r.mlRunURLCache = make(map[mlRunCacheKey]string)
+	} else if len(r.mlRunURLCache) >= maxMLRunURLCacheEntries {
+		clear(r.mlRunURLCache)
+	}
+	r.mlRunURLCache[mlRunCacheKey{xid: xid, wid: wid, eid: eid}] = url
+}
+
+func (r *Reconciler) evictCachedMLRunURLs(xid, wid, eid int64) {
+	r.mlRunCacheMu.Lock()
+	defer r.mlRunCacheMu.Unlock()
+	for k := range r.mlRunURLCache {
+		if k.xid == xid && k.wid == wid && k.eid <= eid {
+			delete(r.mlRunURLCache, k)
+		}
+	}
+}
+
 // syncMLRun resolves ManagedXprof metadata for a JobSet and ensures its MLRun
 // tracking record is created or reused when ManagedXprof is enabled.
 func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64) string {
 	mlRunStart := time.Now()
 	mxEnvs := getManagedXprofEnvs(jobSet)
 	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
+	if gcsPath != "" {
+		if cached := r.getCachedMLRunURL(xid, wid, eid); cached != "" {
+			mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
+			return cached
+		}
+	}
 	if gcsPath != "" && (displayName == "" || runGroup == "") {
 		displayName, runGroup = r.lookupManagedXprofArtifact(ctx, xid, wid)
 	}
@@ -63,7 +109,11 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	mlRunURL, skipMLRunCreation := r.checkWorkUnitStatusAndMLRun(ctx, xid, wid, eid)
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
-		mlRunURL = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+		var confirmed bool
+		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+		if confirmed {
+			r.cacheMLRunURL(xid, wid, eid, mlRunURL)
+		}
 	}
 	mlRunSyncDuration.Observe(time.Since(mlRunStart).Seconds())
 	return mlRunURL
@@ -94,13 +144,14 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 }
 
 // ensureMLRunCreated creates (or, on conflict, upserts) the single MLRun tracking
-// record for a ManagedXprof execution and returns its URL.
+// record for a ManagedXprof execution and returns its URL and whether the
+// creation or upsert succeeded.
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) string {
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
 	if r.MLRunClient == nil || jobSet == nil {
-		return ""
+		return "", false
 	}
 	if jobSet.CreationTimestamp.IsZero() {
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
@@ -118,9 +169,10 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 			return r.upsertExistingMLRun(ctx, err, mlRunID, displayName, runGroup, labels, artifacts)
 		}
 		logging.Error(ctx, "Failed to create MLRun for ManagedXprof execution", "mlRunID", mlRunID, "error", err)
-		return ""
+		return "", false
 	}
-	return r.stampExistingSessionsOnlyLabel(ctx, mlRunID)
+	url := r.stampExistingSessionsOnlyLabel(ctx, mlRunID)
+	return url, url != ""
 }
 
 // stampExistingSessionsOnlyLabel stamps list_existing_sessions_only post-creation
@@ -156,17 +208,19 @@ func withExistingSessionsOnlyLabel(labels map[string]string) map[string]string {
 // (its id is carried in the conflict error, falling back to our deterministic id)
 // and, if the run is not one we own, updates it with our ManagedXprof fields so
 // enrichment is applied even to runs created by other producers. A run we already
-// own is returned as an idempotent success without an update.
-func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) string {
+// own is returned as an idempotent success without an update. It returns the run
+// URL and whether the run was confirmed; on GetMLRun/UpdateMLRun failure it returns
+// a best-effort console URL with false so callers do not cache it.
+func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, mlRunID, displayName, runGroup string, labels map[string]string, artifacts map[string]string) (string, bool) {
 	existingID := resolveExistingMLRunID(createErr, mlRunID)
 	existing, err := r.MLRunClient.GetMLRun(ctx, existingID)
 	if err != nil {
-		logging.Warn(ctx, "MLRun already exists but could not be fetched; treating as success", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		logging.Warn(ctx, "MLRun already exists but could not be fetched; returning unconfirmed console URL fallback", "mlRunID", existingID, "error", err)
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject()), false
 	}
 	if mlRunOwnedByXManager(existing) && mlRunHasLabel(existing, listExistingSessionsOnlyLabel, "true") {
 		logging.Info(ctx, "MLRun already exists and is owned by XManager; treating as success", "mlRunID", existingID)
-		return r.mlRunURL(existing, existingID)
+		return r.mlRunURL(existing, existingID), true
 	}
 
 	logging.Info(ctx, "Updating existing MLRun with ManagedXprof fields", "mlRunID", existingID)
@@ -178,9 +232,9 @@ func (r *Reconciler) upsertExistingMLRun(ctx context.Context, createErr error, m
 	})
 	if err != nil {
 		logging.Error(ctx, "Failed to update existing MLRun for ManagedXprof execution", "mlRunID", existingID, "error", err)
-		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject())
+		return constructDiagnosticsConsoleURL(r.consoleLocation(), existingID, r.consoleProject()), false
 	}
-	return r.mlRunURL(res, existingID)
+	return r.mlRunURL(res, existingID), true
 }
 
 // getMLRunURL extracts the MLRun URL from the WorkUnitExecution metadata safely.
@@ -219,6 +273,8 @@ func (r *Reconciler) checkWorkUnitStatusAndMLRun(ctx context.Context, xid, wid, 
 	mlRunURL := getMLRunURL(execution)
 	if execution != nil && mlRunURL != "" && isStaleExecutionForMLRun(execution.GetName(), eid) {
 		logging.Warn(ctx, "Reusing MLRun URL from a different current execution than the one being reconciled; possible re-execution race.", "reconciledEID", eid, "xid", xid, "wid", wid, "executionName", execution.GetName())
+	} else if mlRunURL != "" {
+		r.cacheMLRunURL(xid, wid, eid, mlRunURL)
 	}
 
 	if execution != nil && isTerminalState(execution.GetStatus().GetState()) {

@@ -30,6 +30,57 @@ from tools.pr_review.generate_review_checklist import (
 )
 from tools.pr_review.github_utils import GithubAPIError, GithubAuthError
 
+# GraphQL review threads go through the shared github_utils.list_review_threads;
+# the REST fallback calls the name imported into generate_review_checklist.
+_GRAPHQL_API = "tools.pr_review.github_utils.call_github_api"
+_REST_API = "tools.pr_review.generate_review_checklist.call_github_api"
+
+
+def _thread(
+    comment_id: int,
+    resolved: bool = False,
+    path: str = "file.py",
+    line: int = 1,
+    body: str = "Comment",
+) -> dict[str, Any]:
+    """Builds a GraphQL review thread node with a single comment."""
+    return {
+        "id": f"PRRT_{comment_id}",
+        "isResolved": resolved,
+        "path": path,
+        "line": line,
+        "comments": {
+            "nodes": [
+                {
+                    "databaseId": comment_id,
+                    "body": body,
+                    "url": f"https://github.com/google/xmc/pull/145#discussion_r{comment_id}",
+                    "author": {"login": "dev1"},
+                }
+            ]
+        },
+    }
+
+
+def _threads_page(
+    nodes: list[dict[str, Any] | None],
+    has_next: bool = False,
+    cursor: str | None = None,
+) -> dict[str, Any]:
+    """Builds one GraphQL reviewThreads response page."""
+    return {
+        "data": {
+            "repository": {
+                "pullRequest": {
+                    "reviewThreads": {
+                        "pageInfo": {"hasNextPage": has_next, "endCursor": cursor},
+                        "nodes": nodes,
+                    }
+                }
+            }
+        }
+    }
+
 
 class TestGenerateReviewChecklist(unittest.TestCase):
     """Test suite for generate_review_checklist tool functions."""
@@ -116,69 +167,79 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         self.assertEqual(item["comment_id"], 101)
         self.assertEqual(item["author"], "unknown")
 
-    @patch("tools.pr_review.generate_review_checklist.call_github_api")
+    @patch(_GRAPHQL_API)
     def test_fetch_unresolved_comments_graphql(self, mock_api):
         """Test fetch_unresolved_comments returns GraphQL results when available."""
-        mock_api.return_value = {
-            "data": {
-                "repository": {
-                    "pullRequest": {
-                        "reviewThreads": {
-                            "pageInfo": {"hasNextPage": False},
-                            "nodes": [
-                                {
-                                    "isResolved": False,
-                                    "path": "main.go",
-                                    "line": 15,
-                                    "comments": {
-                                        "nodes": [
-                                            {
-                                                "id": "c1",
-                                                "databaseId": 101,
-                                                "body": "Fix error handling",
-                                                "url": "https://github.com/owner/repo/pull/145#discussion_r101",
-                                                "author": {"login": "dev1"},
-                                            }
-                                        ]
-                                    },
-                                }
-                            ],
-                        }
-                    }
-                }
-            }
-        }
+        mock_api.return_value = _threads_page(
+            [_thread(101, path="main.go", line=15, body="Fix error handling")]
+        )
         items = fetch_unresolved_comments("google", "xmc", 145)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["comment_id"], 101)
+        self.assertEqual(items[0]["file_path"], "main.go")
+        self.assertEqual(items[0]["author"], "dev1")
 
-    @patch("tools.pr_review.generate_review_checklist.call_github_api")
-    def test_fetch_unresolved_comments_rest_fallback(self, mock_api):
+    @patch(_REST_API)
+    @patch(_GRAPHQL_API)
+    def test_fetch_unresolved_comments_graphql_multi_page(self, mock_api, mock_rest):
+        """Test GraphQL pagination follows endCursor across pages."""
+        mock_api.side_effect = [
+            _threads_page([_thread(1)], has_next=True, cursor="c1"),
+            _threads_page([_thread(2, resolved=True), _thread(3)]),
+        ]
+        items = fetch_unresolved_comments("google", "xmc", 145)
+        self.assertEqual([i["comment_id"] for i in items], [1, 3])
+        self.assertEqual(mock_api.call_count, 2)
+        second_vars = mock_api.call_args_list[1].kwargs["payload"]["variables"]
+        self.assertEqual(second_vars["cursor"], "c1")
+        mock_rest.assert_not_called()
+
+    @patch(_REST_API)
+    @patch(_GRAPHQL_API)
+    def test_fetch_unresolved_comments_null_end_cursor_stops(self, mock_api, mock_rest):
+        """Regression: hasNextPage with a null endCursor must not paginate forever."""
+        mock_api.return_value = _threads_page([_thread(1)], has_next=True, cursor=None)
+        items = fetch_unresolved_comments("google", "xmc", 145)
+        self.assertEqual([i["comment_id"] for i in items], [1])
+        mock_api.assert_called_once()
+        mock_rest.assert_not_called()
+
+    @patch(_GRAPHQL_API)
+    def test_fetch_unresolved_comments_null_nodes_tolerated(self, mock_api):
+        """Test null thread nodes, null comment lists, and null comments are skipped."""
+        null_comments = _thread(2)
+        null_comments["comments"] = None
+        null_first_comment = _thread(3)
+        null_first_comment["comments"]["nodes"] = [None]
+        mock_api.return_value = _threads_page([None, _thread(1), null_comments, null_first_comment])
+        items = fetch_unresolved_comments("google", "xmc", 145)
+        self.assertEqual([i["comment_id"] for i in items], [1])
+
+    @patch(_REST_API)
+    @patch(_GRAPHQL_API)
+    def test_fetch_unresolved_comments_rest_fallback(self, mock_api, mock_rest):
         """Test fetch_unresolved_comments falls back to REST API if GraphQL fails."""
-
-        def side_effect(endpoint, **kwargs):
-            if endpoint == "/graphql":
-                raise GithubAPIError("GraphQL error")
-            return [
-                {
-                    "id": 201,
-                    "user": {"login": "dev2"},
-                    "path": "pkg/auth.go",
-                    "line": 30,
-                    "body": "Simplify check",
-                    "html_url": "https://github.com/owner/repo/pull/145#discussion_r201",
-                }
-            ]
-
-        mock_api.side_effect = side_effect
+        mock_api.side_effect = GithubAPIError("GraphQL error")
+        mock_rest.return_value = [
+            {
+                "id": 201,
+                "user": {"login": "dev2"},
+                "path": "pkg/auth.go",
+                "line": 30,
+                "body": "Simplify check",
+                "html_url": "https://github.com/owner/repo/pull/145#discussion_r201",
+            }
+        ]
         items = fetch_unresolved_comments("google", "xmc", 145)
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["comment_id"], 201)
 
-    @patch("tools.pr_review.generate_review_checklist.call_github_api")
-    def test_fetch_unresolved_comments_auth_error(self, mock_api):
+    @patch(_REST_API)
+    @patch(_GRAPHQL_API)
+    def test_fetch_unresolved_comments_auth_error(self, mock_api, mock_rest):
         """Test fetch_unresolved_comments handles GithubAuthError."""
         mock_api.side_effect = GithubAuthError("Authentication failed")
+        mock_rest.side_effect = GithubAuthError("Authentication failed")
         with self.assertRaises(HandledError) as ctx:
             fetch_unresolved_comments("google", "xmc", 145)
         self.assertIn("Authentication failed", ctx.exception.message)

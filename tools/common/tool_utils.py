@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -26,6 +27,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
+
+DEFAULT_BACKEND = "spanner"
 
 
 @dataclass(kw_only=True)
@@ -41,7 +44,9 @@ class DeploymentConfig:
     namespace: str = "xmc"
     domain_name: str | None = None
     enable_components: bool = False
-    log_monitor_deployment_enabled: bool = False
+    log_monitor_deployment_enabled: bool = True
+    database_backend: str = DEFAULT_BACKEND
+    profile_values: str | None = None
 
     @property
     def gke_cluster(self) -> str:
@@ -202,7 +207,23 @@ ENV_VAR_MAPPING = {
     "XMC_BASE_DOMAIN": "domain_name",
     "ENABLE_COMPONENTS": "enable_components",
     "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
+    "DB_BACKEND": "database_backend",
 }
+
+SUPPORTED_DATABASE_BACKENDS: tuple[str, ...] = ("spanner", "postgres")
+
+
+def _resolve_database_backend(raw: Any) -> str:
+    """Normalizes and validates database_backend against supported backends."""
+    backend = str(raw).strip().lower() if raw is not None else DEFAULT_BACKEND
+    if not backend:
+        backend = DEFAULT_BACKEND
+    if backend not in SUPPORTED_DATABASE_BACKENDS:
+        raise ValueError(
+            f"Field 'database_backend' value '{raw}' is invalid. "
+            f"Must be one of: {', '.join(SUPPORTED_DATABASE_BACKENDS)}"
+        )
+    return backend
 
 
 def parse_bool_flag(val: Any) -> bool:
@@ -306,8 +327,9 @@ def load_and_validate_config(
         namespace=config.get("namespace", "xmc"),
         enable_components=parse_bool_flag(config.get("enable_components", False)),
         log_monitor_deployment_enabled=parse_bool_flag(
-            config.get("log_monitor_deployment_enabled", False)
+            config.get("log_monitor_deployment_enabled", True)
         ),
+        database_backend=_resolve_database_backend(config.get("database_backend", DEFAULT_BACKEND)),
     )
 
 
@@ -342,6 +364,11 @@ def run_command(
     log_cmd: bool = True,
     cwd: Path | str | None = None,
     stream: TextIO | None = None,
+    *,
+    input_text: str | None = None,
+    timeout: float | None = None,
+    errors: str | None = None,
+    handled_instruction: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -356,12 +383,25 @@ def run_command(
         stream: Optional file-backed text stream, e.g. sys.stderr, that receives the command
             log line and, unless capture_output is set, the command's stdout instead of
             stdout. Tools that print JSON to stdout use it to keep stdout clean.
+        input_text: Optional text written to the command's stdin.
+        timeout: Optional limit in seconds after which the command is killed and
+            subprocess.TimeoutExpired is raised.
+        errors: Optional decoding error handler for captured output, e.g. "replace" to
+            substitute undecodable bytes instead of raising UnicodeDecodeError. None keeps
+            strict decoding.
+        handled_instruction: Optional remediation hint. When set, a missing or
+            non-executable binary (OSError), a timeout, or a non-zero exit with check=True
+            raises HandledError carrying this instruction instead of the raw exception.
 
     Returns:
         A subprocess.CompletedProcess object.
 
     Raises:
-        subprocess.CalledProcessError: If the command fails and check=True.
+        subprocess.CalledProcessError: If the command fails, check=True and
+            handled_instruction is None.
+        subprocess.TimeoutExpired: If timeout elapses and handled_instruction is None.
+        OSError: If the command cannot be started and handled_instruction is None.
+        HandledError: If any of the above occurs and handled_instruction is set.
     """
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}", stream=stream)
@@ -377,11 +417,32 @@ def run_command(
             capture_output=capture_output,
             cwd=str(cwd) if cwd else None,
             stdout=None if capture_output else stream,
+            input=input_text,
+            timeout=timeout,
+            errors=errors,
         )
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")
-        raise
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+    except (OSError, subprocess.TimeoutExpired) as e:
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+
+
+def _command_error(cmd: list[str], error: Exception, instruction: str) -> HandledError:
+    """Converts a failed subprocess launch, timeout, or exit into a HandledError."""
+    command = shlex.join(cmd)
+    if isinstance(error, subprocess.TimeoutExpired):
+        return HandledError(f"Command timed out after {error.timeout}s: {command}", instruction)
+    if isinstance(error, subprocess.CalledProcessError):
+        stderr = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        message = f"Command failed with exit code {error.returncode}: {command}"
+        return HandledError(f"{message}\n{stderr}" if stderr else message, instruction)
+    return HandledError(f"Cannot run {cmd[0]}: {error}", instruction)
 
 
 def configure_docker_auth(config: DeploymentConfig) -> None:
@@ -451,24 +512,75 @@ def build_and_push_images(config: DeploymentConfig) -> None:
     log_success("All XMC service container images compiled and pushed from current branch state.")
 
 
+MIN_HELM_VERSION = "3.14.0"
+
+
+def parse_semver_prefix(raw: str) -> tuple[int, int, int]:
+    """Extracts a (major, minor, patch) integer tuple from a version string.
+
+    Args:
+        raw: Version string to parse (e.g. 'v3.14.2+g0a1b2c' or 'v3.14').
+
+    Returns:
+        Tuple of (major, minor, patch) integers, zero-padded if fewer than 3 parts.
+
+    Raises:
+        ValueError: If raw contains no numeric version segments.
+    """
+    version_part = raw.split("+")[0].split("-")[0]
+    parts = [int(p) for p in re.findall(r"\d+", version_part)[:3]]
+    if not parts:
+        raise ValueError(f"Could not parse semantic version from '{raw}'.")
+    while len(parts) < 3:
+        parts.append(0)
+    return parts[0], parts[1], parts[2]
+
+
+def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
+    """Verifies the installed Helm CLI meets min_version (required for --reset-then-reuse-values).
+
+    Args:
+        min_version: Minimum required semantic version string.
+
+    Returns:
+        Detected raw Helm CLI version string.
+
+    Raises:
+        RuntimeError: If the installed Helm version is older than min_version.
+        ValueError: If Helm or min_version output cannot be parsed.
+    """
+    out = run_command(
+        ["helm", "version", "--template={{.Version}}"],
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+    ).stdout.strip()
+    if parse_semver_prefix(out) < parse_semver_prefix(min_version):
+        raise RuntimeError(f"Helm version must be >= {min_version} (found: {out}).")
+    return out
+
+
 def deploy_component_profile(config: DeploymentConfig) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled."""
+    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+
+    Args:
+        config: Loaded DeploymentConfig instance.
+
+    Raises:
+        FileNotFoundError: If config.profile_values is specified and missing.
+    """
     if not config.enable_components:
         return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
+    cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
+    if config.profile_values:
+        if not Path(config.profile_values).is_file():
+            raise FileNotFoundError(
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
+            )
+        cmd.extend(["-f", config.profile_values])
+    cmd.extend(["-n", ns, "--wait"])
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
-    run_command(
-        [
-            "helm",
-            "upgrade",
-            "--install",
-            "--reset-then-reuse-values",
-            "xmc-profile",
-            chart,
-            "-n",
-            ns,
-            "--wait",
-        ]
-    )
+    run_command(cmd)
     log_success("Default component profile (stable-2026a) deployed.")

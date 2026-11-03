@@ -19,7 +19,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
-| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | Cloud Run service | HTTP health endpoint | Terraform module |
+| Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (or Cloud Run service) | HTTP `8080` (health) | `logMonitorDeployment.enabled` (default `true`) |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
 Container images are pinned per service through the `*_custom_image` values in
@@ -116,14 +116,15 @@ The operator-facing diagnostic and scheduling control surface, reachable at `/v1
 
 Backs the metrics visualisation experience. Dashboard and chart *definitions* are CRUD resources in
 Spanner (`CreateDashboard`, `ListCharts`, `UpdateChart`, …); chart *data* is produced on demand by
-`GetChartData`, which compiles the chart definition into a ClickHouse query.
+`GetChartData`, which compiles the chart definition into a ClickHouse or BigQuery query depending on
+the active `METRICS_STORE` (`clickhouse` or `bigquery`).
 
 The query compiler is [`internal/dashboard/dataengine`](../../internal/dashboard/dataengine): it
 turns predicates, series definitions, and summary boxes into SQL executed through
-[`pkg/clickhouse`](../../pkg/clickhouse). Keeping the engine separate from the RPC handlers means
-chart semantics are unit-testable without a server.
+[`pkg/clickhouse`](../../pkg/clickhouse) or [`pkg/bigquery`](../../pkg/bigquery). Keeping the engine
+separate from the RPC handlers means chart semantics are unit-testable without a server.
 
-**Depends on:** Cloud Spanner, ClickHouse, Cloud Identity API.
+**Depends on:** Cloud Spanner, ClickHouse or BigQuery, Cloud Identity API.
 
 ### 2.5 ROD Data Provider
 
@@ -287,7 +288,9 @@ versions, dependency graph, and rollout state. RPCs cover lifecycle intent
 `ValidateComponentRequirement`, `GetPlatformHealth`).
 
 [`pkg/components/store`](../../pkg/components/store) provides the in-memory graph with prospective
-DAG cycle detection, so an invalid dependency edge is rejected before it is persisted.
+DAG cycle detection and stability-contract validation (`EXPERIMENTAL`/`PREVIEW`/`STABLE` with
+`STABILITY_INVERSION` prevention), so an invalid dependency edge or stability inversion is rejected
+before it is persisted.
 
 ### 5.2 XMC Bridge
 

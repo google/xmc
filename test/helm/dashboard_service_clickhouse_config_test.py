@@ -189,6 +189,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             {"metrics.enabled": "true", "metrics.clickhouse.password": "s3cret"},
         )
 
+        self.assertRegex(manifest, r"(?m)^apiVersion: v1$")
         self.assertIn("name: clickhouse-secret", manifest)
         self.assertIn('clickhouse-password: "s3cret"', manifest)
 
@@ -234,8 +235,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_CONFIGMAP, {"dashboardServiceDeployment.enabled": "true"}
         )
 
-        # Deprecated: retained for one-release rollout compatibility until db-config images roll out.
-        self.assertIn("dashboard_spanner_database_name:", manifest)
         self.assertIn("dashboard_xid_service_addr:", manifest)
         self.assertIn('enable_components: "false"', manifest)
         self.assertIn("components_namespace:", manifest)
@@ -315,6 +314,30 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         self.assertIn("name: dashboard-service-components-reader", manifest)
         self.assertIn('resourceNames: ["clickhouse"]', manifest)
         self.assertNotIn('resources: ["secrets"]', manifest)
+
+    def test_custom_clickhouse_secret_name_wired_across_deployment_secret_and_rbac(self) -> None:
+        """Overriding metrics.clickhouse.secretName updates the Secret, env secretKeyRef, and Role."""
+        values = {
+            "dashboardServiceDeployment.enabled": "true",
+            "componentsDeployment.enabled": "true",
+            "metrics.enabled": "true",
+            "metrics.clickhouse.secretName": "custom-ch-secret",
+            "metrics.clickhouse.password": "s3cret",
+        }
+        deployment = render_template(DASHBOARD_DEPLOYMENT, values)
+        secret = render_template(CLICKHOUSE_SECRET, values)
+        rbac = render_template(DASHBOARD_SERVICEACCOUNT, values)
+
+        self.assertIn(
+            "- name: CLICKHOUSE_PASSWORD\n"
+            "          valueFrom:\n"
+            "            secretKeyRef:\n"
+            "              name: custom-ch-secret\n"
+            "              key: clickhouse-password",
+            deployment,
+        )
+        self.assertIn("name: custom-ch-secret", secret)
+        self.assertIn('resourceNames: ["custom-ch-secret"]', rbac)
 
 
 if __name__ == "__main__":

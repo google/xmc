@@ -17,6 +17,7 @@
 
 import io
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -290,6 +291,45 @@ class TestInstallXmanager(unittest.TestCase):
             install_xmanager.stage_local_protos(root / "empty_repo", root / "site-packages")
         self.assertIn("Local proto directory not found", stderr.getvalue())
 
+    def test_cleanup_stale_bundled_packages_removes_directory(self) -> None:
+        """Test cleanup_stale_bundled_packages purges wheel-provided xdash directory."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            stale_xdash = site_pkgs / "xdash"
+            stale_xdash.mkdir(parents=True)
+            (stale_xdash / "__init__.py").write_text("", encoding="utf-8")
+            (stale_xdash / "builders.py").write_text("", encoding="utf-8")
+            (stale_xdash / "auth.py").write_text("", encoding="utf-8")
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertFalse(stale_xdash.exists())
+
+    def test_cleanup_stale_bundled_packages_noop_when_missing(self) -> None:
+        """Test cleanup_stale_bundled_packages completes cleanly when xdash does not exist."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            site_pkgs = Path(tmp_str) / "site-packages"
+            site_pkgs.mkdir(parents=True)
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertFalse((site_pkgs / "xdash").exists())
+
+    def test_cleanup_stale_bundled_packages_preserves_symlinks(self) -> None:
+        """Test cleanup_stale_bundled_packages does not delete symlinked directories."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            site_pkgs = root / "site-packages"
+            site_pkgs.mkdir(parents=True)
+            external_dir = root / "external_xdash"
+            external_dir.mkdir(parents=True)
+            (external_dir / "__init__.py").write_text("", encoding="utf-8")
+
+            symlink_xdash = site_pkgs / "xdash"
+            symlink_xdash.symlink_to(external_dir, target_is_directory=True)
+
+            install_xmanager.cleanup_stale_bundled_packages(site_pkgs)
+            self.assertTrue(symlink_xdash.is_symlink())
+            self.assertTrue(external_dir.exists())
+
     def test_compile_local_protos(self) -> None:
         """Test compile_local_protos ensures operations.proto and invokes grpc_tools.protoc."""
         venv_python = Path("/mock/venv/bin/python3")
@@ -303,6 +343,9 @@ class TestInstallXmanager(unittest.TestCase):
                 return_value=(site_pkgs, grpc_proto),
             ),
             mock.patch(
+                "install_xmanager.cleanup_stale_bundled_packages",
+            ) as mock_cleanup,
+            mock.patch(
                 "install_xmanager._ensure_longrunning_operations_proto",
             ) as mock_ensure_ops,
             mock.patch(
@@ -313,6 +356,7 @@ class TestInstallXmanager(unittest.TestCase):
         ):
             install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
 
+        mock_cleanup.assert_called_once_with(site_pkgs)
         mock_ensure_ops.assert_called_once_with(site_pkgs)
         mock_run.assert_called_once_with(
             [
@@ -338,6 +382,9 @@ class TestInstallXmanager(unittest.TestCase):
                 "install_xmanager.resolve_venv_proto_paths",
                 return_value=(site_pkgs, grpc_proto),
             ),
+            mock.patch(
+                "install_xmanager.cleanup_stale_bundled_packages",
+            ) as mock_cleanup,
             mock.patch("install_xmanager._ensure_longrunning_operations_proto"),
             mock.patch("install_xmanager.stage_local_protos", return_value=["api.proto"]),
             mock.patch(
@@ -347,6 +394,176 @@ class TestInstallXmanager(unittest.TestCase):
             self.assertRaises(subprocess.CalledProcessError),
         ):
             install_xmanager.compile_local_protos(venv_python, Path("/mock/repo"))
+
+        mock_cleanup.assert_called_once_with(site_pkgs)
+
+    def test_install_local_sdks_invokes_pip_for_each_present_sdk(self) -> None:
+        """Test install_local_sdks installs every present LOCAL_SDKS dir with --no-deps."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_str:
+            repo_root = Path(tmp_str)
+            for rel_dir in install_xmanager.LOCAL_SDKS.values():
+                (repo_root / rel_dir).mkdir(parents=True)
+
+            with mock.patch("subprocess.run") as mock_run:
+                install_xmanager.install_local_sdks(venv_python, repo_root)
+
+            self.assertEqual(
+                mock_run.call_args_list,
+                [
+                    mock.call(
+                        [
+                            "/mock/venv/bin/python3",
+                            "-m",
+                            "pip",
+                            "install",
+                            "--no-deps",
+                            "-e",
+                            str(repo_root / rel_dir),
+                        ],
+                        check=True,
+                    )
+                    for rel_dir in install_xmanager.LOCAL_SDKS.values()
+                ],
+            )
+
+    def test_install_local_sdks_skips_missing_sdk(self) -> None:
+        """Test install_local_sdks only installs SDK directories that exist."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_str:
+            repo_root = Path(tmp_str)
+            xdash_dir = repo_root / install_xmanager.LOCAL_SDKS["xdash"]
+            xdash_dir.mkdir(parents=True)
+
+            with mock.patch("subprocess.run") as mock_run:
+                install_xmanager.install_local_sdks(venv_python, repo_root)
+
+            mock_run.assert_called_once_with(
+                [
+                    "/mock/venv/bin/python3",
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-deps",
+                    "-e",
+                    str(xdash_dir),
+                ],
+                check=True,
+            )
+
+    def test_install_local_sdks_noop_when_missing(self) -> None:
+        """Test install_local_sdks cleanly no-ops when no SDK directory is present."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_str:
+            repo_root = Path(tmp_str)
+
+            with mock.patch("subprocess.run") as mock_run:
+                install_xmanager.install_local_sdks(venv_python, repo_root)
+
+            mock_run.assert_not_called()
+
+    def test_resolve_module_origin(self) -> None:
+        """Test resolve_module_origin parses only the marked origin line in isolated mode."""
+        venv_python = Path("/mock/venv/bin/python3")
+        marker = install_xmanager._MODULE_ORIGIN_MARKER
+        origin = "/repo/sdks/python/xdash/__init__.py"
+        cases = (
+            ("clean", f"{marker}{origin}\n", Path(origin)),
+            ("startup_noise_before", f"Warning: deprecated\n{marker}{origin}\n", Path(origin)),
+            ("noise_after", f"{marker}{origin}\nbye\n", Path(origin)),
+            ("not_found", f"{marker}\n", None),
+            ("no_marker", "Warning: deprecated\n", None),
+        )
+        for name, stdout, expected in cases:
+            with self.subTest(name):
+                completed = subprocess.CompletedProcess(
+                    args=[], returncode=0, stdout=stdout, stderr=""
+                )
+                with mock.patch("subprocess.run", return_value=completed) as mock_run:
+                    resolved = install_xmanager.resolve_module_origin(venv_python, "xdash")
+
+                self.assertEqual(resolved, expected)
+                mock_run.assert_called_once_with(
+                    [
+                        "/mock/venv/bin/python3",
+                        "-I",
+                        "-c",
+                        install_xmanager._MODULE_ORIGIN_SNIPPET,
+                        "xdash",
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+
+    def test_check_sdk_provenance(self) -> None:
+        """Test check_sdk_provenance accepts repo origins and rejects shadowed or missing ones."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            expected_dir = root / "repo" / "sdks" / "python" / "xdash"
+            shadow = root / "venv" / "site-packages" / "xdash" / "__init__.py"
+            cases = (
+                ("repo_origin", expected_dir / "__init__.py", None),
+                ("nested_repo_origin", expected_dir / "sub" / "mod.py", None),
+                ("shadowed_by_site_packages", shadow, f"resolved to {shadow}"),
+                ("sibling_prefix_dir", root / "repo/sdks/python/xdash_old/__init__.py", "resolved"),
+                ("not_importable", None, "is not importable"),
+            )
+            for name, origin, expected_error in cases:
+                with self.subTest(name):
+                    if expected_error is None:
+                        install_xmanager.check_sdk_provenance("xdash", origin, expected_dir)
+                        continue
+                    with self.assertRaisesRegex(install_xmanager.SdkShadowedError, expected_error):
+                        install_xmanager.check_sdk_provenance("xdash", origin, expected_dir)
+
+    def test_check_sdk_provenance_symlinked_checkout(self) -> None:
+        """Test provenance holds when the checkout is reached through a symlink (worktrees)."""
+        with tempfile.TemporaryDirectory() as tmp_str:
+            root = Path(tmp_str)
+            real_sdk = root / "real_checkout" / "sdks" / "python" / "xdash"
+            real_sdk.mkdir(parents=True)
+            (real_sdk / "__init__.py").write_text("", encoding="utf-8")
+            link = root / "worktree_link"
+            link.symlink_to(root / "real_checkout", target_is_directory=True)
+            linked_sdk = link / "sdks" / "python" / "xdash"
+
+            install_xmanager.check_sdk_provenance("xdash", real_sdk / "__init__.py", linked_sdk)
+            install_xmanager.check_sdk_provenance("xdash", linked_sdk / "__init__.py", real_sdk)
+
+    def test_verify_sdk_provenance_checks_present_sdks(self) -> None:
+        """Test verify_sdk_provenance resolves and checks only SDK dirs present in the repo."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_str:
+            repo_root = Path(tmp_str)
+            xdash_dir = repo_root / install_xmanager.LOCAL_SDKS["xdash"]
+            xdash_dir.mkdir(parents=True)
+            origin = xdash_dir / "__init__.py"
+
+            with (
+                mock.patch(
+                    "install_xmanager.resolve_module_origin", return_value=origin
+                ) as mock_resolve,
+                mock.patch("install_xmanager.check_sdk_provenance") as mock_check,
+            ):
+                install_xmanager.verify_sdk_provenance(venv_python, repo_root)
+
+            mock_resolve.assert_called_once_with(venv_python, "xdash")
+            mock_check.assert_called_once_with("xdash", origin, xdash_dir)
+
+    def test_verify_sdk_provenance_propagates_shadowing(self) -> None:
+        """Test verify_sdk_provenance raises SdkShadowedError for a wheel-shadowed SDK."""
+        venv_python = Path("/mock/venv/bin/python3")
+        with tempfile.TemporaryDirectory() as tmp_str:
+            repo_root = Path(tmp_str)
+            (repo_root / install_xmanager.LOCAL_SDKS["xdash"]).mkdir(parents=True)
+            shadow = Path("/mock/venv/site-packages/xdash/__init__.py")
+
+            with (
+                mock.patch("install_xmanager.resolve_module_origin", return_value=shadow),
+                self.assertRaises(install_xmanager.SdkShadowedError),
+            ):
+                install_xmanager.verify_sdk_provenance(venv_python, repo_root)
 
     def test_verify_imports(self) -> None:
         """Test verify_imports checks all required XManager and proto modules."""
@@ -361,7 +578,9 @@ class TestInstallXmanager(unittest.TestCase):
                 check=True,
             )
 
+    @mock.patch("install_xmanager.verify_sdk_provenance")
     @mock.patch("install_xmanager.verify_imports")
+    @mock.patch("install_xmanager.install_local_sdks")
     @mock.patch("install_xmanager.compile_local_protos")
     @mock.patch("install_xmanager.install_xmanager_package")
     @mock.patch("install_xmanager.setup_virtualenv")
@@ -370,7 +589,9 @@ class TestInstallXmanager(unittest.TestCase):
         mock_venv: mock.Mock,
         mock_install: mock.Mock,
         mock_compile: mock.Mock,
+        mock_install_sdks: mock.Mock,
         mock_verify: mock.Mock,
+        mock_provenance: mock.Mock,
     ) -> None:
         """Test main execution flow with mocked external operations."""
         mock_venv.return_value = Path("/mock/venv/bin/python3")
@@ -397,7 +618,67 @@ class TestInstallXmanager(unittest.TestCase):
             Path("/mock/venv/bin/python3"),
             install_xmanager.REPO_ROOT,
         )
+        mock_install_sdks.assert_called_once_with(
+            Path("/mock/venv/bin/python3"),
+            install_xmanager.REPO_ROOT,
+        )
         mock_verify.assert_called_once_with(Path("/mock/venv/bin/python3"))
+        mock_provenance.assert_called_once_with(
+            Path("/mock/venv/bin/python3"),
+            install_xmanager.REPO_ROOT,
+        )
+
+    def test_main_checks_provenance_before_imports(self) -> None:
+        """Test main runs the provenance check before verify_imports for actionable errors."""
+        calls = mock.Mock()
+        with (
+            mock.patch(
+                "install_xmanager.setup_virtualenv",
+                return_value=Path("/mock/venv/bin/python3"),
+            ),
+            mock.patch("install_xmanager.install_xmanager_package"),
+            mock.patch("install_xmanager.compile_local_protos"),
+            mock.patch("install_xmanager.install_local_sdks"),
+            mock.patch("install_xmanager.verify_sdk_provenance", calls.provenance),
+            mock.patch("install_xmanager.verify_imports", calls.imports),
+            tempfile.TemporaryDirectory() as tmp_venv,
+        ):
+            install_xmanager.main(["--venv", tmp_venv])
+
+        self.assertEqual([c[0] for c in calls.mock_calls], ["provenance", "imports"])
+
+    def test_resolve_module_origin_with_real_interpreter(self) -> None:
+        """Test the origin probe snippet end-to-end with the current stdlib interpreter."""
+        python = Path(sys.executable)
+        json_origin = install_xmanager.resolve_module_origin(python, "json")
+        self.assertIsNotNone(json_origin)
+        assert json_origin is not None
+        self.assertEqual(json_origin.parent.name, "json")
+        self.assertIsNone(install_xmanager.resolve_module_origin(python, "no_such_module_xyz"))
+
+    @mock.patch(
+        "install_xmanager.verify_sdk_provenance",
+        side_effect=install_xmanager.SdkShadowedError("xdash resolved to /stale"),
+    )
+    @mock.patch("install_xmanager.verify_imports")
+    @mock.patch("install_xmanager.install_local_sdks")
+    @mock.patch("install_xmanager.compile_local_protos")
+    @mock.patch("install_xmanager.install_xmanager_package")
+    @mock.patch(
+        "install_xmanager.setup_virtualenv",
+        return_value=Path("/mock/venv/bin/python3"),
+    )
+    def test_main_exits_when_sdk_shadowed(self, *_mocks: mock.Mock) -> None:
+        """Test main exits non-zero with the shadowing details when provenance fails."""
+        with (
+            tempfile.TemporaryDirectory() as tmp_venv,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+            self.assertRaises(SystemExit) as ctx,
+        ):
+            install_xmanager.main(["--venv", tmp_venv])
+
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertIn("xdash resolved to /stale", stderr.getvalue())
 
 
 if __name__ == "__main__":

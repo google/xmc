@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -256,6 +257,16 @@ class CheckLegacyImportsEndToEndTest(unittest.TestCase):
         (self.root / cli.BASELINE_RELPATH).parent.mkdir(parents=True)
         self._run(update=True, baseline=None)
         self.assertTrue((self.root / cli.BASELINE_RELPATH).is_file())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "needs byte-string file names")
+    def test_non_utf8_tracked_path_is_tolerated(self):
+        self._write_and_track(os.fsdecode(b"bad\xff.txt"), "x\n")
+        self.assertIn("bad\ufffd.txt", cli.list_tracked_files(self.root))
+
+    def test_outside_git_repository_raises_handled_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(HandledError, "git ls-files -z"):
+                cli.list_tracked_files(Path(tmp))
 
 
 if __name__ == "__main__":

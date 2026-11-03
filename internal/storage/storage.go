@@ -23,10 +23,12 @@ import (
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // ExperimentUpdate represents an update to an experiment.
@@ -114,6 +116,15 @@ type ComponentDiff struct {
 	State *int64
 }
 
+// ExperimentSnapshotComponent describes a single component snapshot locked by an experiment.
+type ExperimentSnapshotComponent struct {
+	ComponentID int64
+	// Name is nil when the component is missing from the catalog.
+	Name             *string
+	LockedGeneration int64
+	Spec             *componentspb.ComponentSpec
+}
+
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
 	// FetchExperiment retrieves an experiment by its unique ID.
@@ -127,6 +138,10 @@ type ExperimentStore interface {
 	// the experiment's snapshot. It returns an empty slice for consistent, inactive, or snapshot-free
 	// experiments. A limit <= 0 returns all drifted components.
 	FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]ComponentDiff, error)
+
+	// FetchExperimentSnapshotComponents retrieves the component snapshots locked by an active
+	// experiment, ordered by name. It returns an empty slice for inactive or snapshot-free experiments.
+	FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]ExperimentSnapshotComponent, error)
 
 	// ListExperiments retrieves a list of experiments matching the given filter. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.
@@ -193,15 +208,16 @@ var (
 	ErrInvalidPageToken = errors.New("invalid page_token")
 )
 
-// WorkUnitWithAuthor wraps a WorkUnit proto with author metadata.
-type WorkUnitWithAuthor struct {
-	WorkUnit *essmsgpb.WorkUnit
-	Author   string
+// ActiveWorkUnit is a pending or running WorkUnit together with metadata from its parent experiment.
+type ActiveWorkUnit struct {
+	WorkUnit        *essmsgpb.WorkUnit
+	Author          string
+	ExperimentTitle string
 }
 
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
-	WorkUnits      []WorkUnitWithAuthor
+	WorkUnits      []ActiveWorkUnit
 	NextPageToken  string
 	TotalQueueSize int64
 }
@@ -368,6 +384,90 @@ type CLILoginCodeStore interface {
 	CLILoginCodes() CLILoginCodeRepository
 }
 
+// ExpiredRowStore deletes rows whose retention period has elapsed: StatusMessages and
+// WorkUnitStatusHistory rows past their ExpirationTime, processed PausedTasks rows past their
+// ExpirationTime, and CliLoginCodes rows more than one day past their ExpiresAt.
+type ExpiredRowStore interface {
+	// DeleteExpiredRows deletes up to batchSize expired rows from each of those tables in one
+	// transaction and returns the total number of rows deleted (0 on error). Concurrent calls never
+	// sweep at the same time: a call that cannot take the backend's sweep lock does not wait for it,
+	// deletes nothing and returns 0. Backends that expire these rows natively (Cloud Spanner's
+	// ROW DELETION POLICY) also return 0. batchSize must be positive.
+	DeleteExpiredRows(ctx context.Context, batchSize int) (int64, error)
+}
+
+// ComponentRepository defines read operations for component catalog persistence on the storage facade.
+// A read that finds no matching component returns store.ErrComponentNotFound itself, not another NotFound error.
+type ComponentRepository interface {
+	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
+	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	// GetComponentByID returns the non-deleted record of componentID with its active dependencies sorted by name.
+	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
+	// ListActiveComponents returns every non-deleted record keyed by canonical name, each with its active
+	// dependencies, read from one consistent snapshot.
+	ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
+	// GetComponentWithFence returns the active record of canonicalName and the ownership fence holder (nil before
+	// the first declaration) from one snapshot.
+	GetComponentWithFence(ctx context.Context, canonicalName string) (*store.ComponentRecord, *store.ClusterIdentity, error)
+	// ReadOwnershipGauges reads the fence and counts active owned components last seen at or before cutoff in one snapshot.
+	ReadOwnershipGauges(ctx context.Context, cutoff time.Time) (store.OwnershipGauges, error)
+	// WithReadOnlySnapshot runs fn with a repository whose reads all come from one consistent read-only snapshot.
+	WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo ComponentTxRepository) error) error
+}
+
+// ComponentTxRepository defines transactional component catalog operations. A read-only binding supports only
+// catalog and snapshot reads, returning codes.FailedPrecondition on writes; in a serializable read-write transaction,
+// reads and writes execute atomically and writes stamp commit-time columns.
+type ComponentTxRepository interface {
+	// GetActiveComponent returns the non-deleted record of canonicalName with its active dependencies sorted by name.
+	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+	// GetComponentByID returns the non-deleted record of componentID with its active dependencies sorted by name.
+	GetComponentByID(ctx context.Context, componentID int64) (*store.ComponentRecord, error)
+	// ListActiveComponents returns every non-deleted record keyed by canonical name with its active dependencies.
+	ListActiveComponents(ctx context.Context) (map[string]*store.ComponentRecord, error)
+	// GetSnapshotByID returns the snapshot of componentID at generation stamped with createTime and updateTime
+	// (Dependencies nil), or codes.NotFound when missing.
+	GetSnapshotByID(ctx context.Context, componentID, generation int64, canonicalName string, createTime, updateTime time.Time) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
+	// GetSnapshotByName returns the snapshot at generation of the newest component named canonicalName (including
+	// deleted ones), stamped with that component's timestamps, or codes.NotFound when missing.
+	GetSnapshotByName(ctx context.Context, canonicalName string, generation int64) (*store.ComponentRecord, *componentspb.ResolvedComponentCoordinates, error)
+	// ReadFence returns the ownership fence holder, or nil before the first declaration.
+	ReadFence(ctx context.Context) (*store.ClusterIdentity, error)
+	// RefreshFence updates LastSeenTime to the commit time and, when newName is non-nil, ActiveClusterName.
+	RefreshFence(ctx context.Context, newName *string) error
+	// ReplaceFence writes cluster as the fence holder with DeclaredTime and LastSeenTime at commit time.
+	ReplaceFence(ctx context.Context, cluster store.ClusterIdentity) error
+	// ReassignOwnedComponents moves every active owned component to clusterUID at epoch with no owner UID,
+	// sets SourceLastSeenTime to the commit time, leaves UpdateTime unchanged, and returns the count.
+	ReassignOwnedComponents(ctx context.Context, clusterUID string, epoch int64) (int64, error)
+	// InsertComponent inserts rec, created at the commit time (status NULL when rec.Status is nil), with an edge to
+	// depIDs[d] for each d in rec.Dependencies. It returns codes.InvalidArgument when rec is nil, and
+	// codes.FailedPrecondition when depIDs lacks a dependency or the binding is read-only.
+	InsertComponent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error
+	// UpdateComponentIntent rewrites rec's spec, labels, status (NULL when rec.Status is nil), state, and generation
+	// and replaces its edges as InsertComponent does, with the same codes.InvalidArgument and codes.FailedPrecondition errors.
+	UpdateComponentIntent(ctx context.Context, rec *store.ComponentRecord, depIDs map[string]int64) error
+	// UpdateComponentState sets the state and access status (NULL when access is nil) of componentID, or returns
+	// codes.FailedPrecondition when the binding is read-only.
+	UpdateComponentState(ctx context.Context, componentID int64, state componentspb.ComponentState, access *componentspb.ComponentAccessStatus) error
+	// UpdateComponentObservation writes rec's ObservedGeneration (NULL when nil) and status (NULL when rec.Status is
+	// nil), and its state when updateState is true. It returns codes.InvalidArgument when rec is nil, and
+	// codes.FailedPrecondition when the binding is read-only.
+	UpdateComponentObservation(ctx context.Context, rec *store.ComponentRecord, updateState bool) error
+	// SoftDeleteComponent marks rec DELETED, rewriting its spec and status (NULL when rec.Status is nil) from rec,
+	// and records owner when non-nil. It returns codes.InvalidArgument when rec is nil, and codes.FailedPrecondition
+	// when the binding is read-only.
+	SoftDeleteComponent(ctx context.Context, rec *store.ComponentRecord, owner *store.SourceOwner) error
+	// WriteComponentOwner records owner (a no-op when nil) on componentID with SourceLastSeenTime at the commit time
+	// and leaves UpdateTime unchanged, returning codes.FailedPrecondition when the binding is read-only.
+	WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error
+}
+
+// ComponentStore exposes the repository accessor for component catalog persistence.
+type ComponentStore interface {
+	Components() ComponentRepository
+}
+
 // WorkUnitTxRepository defines work unit operations scoped to a read-write transaction.
 type WorkUnitTxRepository interface {
 	// FetchNextWorkUnitID retrieves the next available work unit ID for an experiment within the transaction.
@@ -427,6 +527,7 @@ type Transaction struct {
 	StatusHistory  StatusHistoryTxRepository
 	PauseState     PauseStateTxRepository
 	PausedTasks    PausedTaskTxRepository
+	Components     ComponentTxRepository
 }
 
 // TransactionRunner executes an operation within a read-write transaction.
@@ -436,6 +537,9 @@ type Transaction struct {
 // The provided *Transaction is valid only for the duration of fn and must not be retained.
 type TransactionRunner interface {
 	RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) error
+	// RunInSerializableTransaction runs fn in a serializable read-write transaction and returns the
+	// timestamp the backend wrote to commit-time columns.
+	RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *Transaction) error) (time.Time, error)
 }
 
 // Storage defines the interface for all data persistence operations.
@@ -451,4 +555,6 @@ type Storage interface {
 	XidEntryStore
 	PauseSchedulingStore
 	CLILoginCodeStore
+	ComponentStore
+	ExpiredRowStore
 }

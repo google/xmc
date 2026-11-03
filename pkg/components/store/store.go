@@ -186,7 +186,7 @@ type Store interface {
 	// driven by UpdateObservedGeneration). Validation still runs first, so dependency cycles and
 	// unregistered or soft-deleted dependencies are reported even for an unchanged intent; the
 	// latter as FailedPrecondition with a message starting with DependencyNotFoundMessagePrefix.
-	// SpannerStore answers an unchanged intent from one strong read, without a read-write
+	// dbstore.Store answers an unchanged intent from one strong read, without a read-write
 	// transaction, only when all its dependencies are registered and active; committed state never
 	// holds a cycle, so the outcome is the same. Changed and new intents pay that extra read before
 	// the read-write transaction.

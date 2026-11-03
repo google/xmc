@@ -111,11 +111,13 @@ func (h *ArtifactHandler) UpdateArtifact(ctx context.Context, req *msgpb.UpdateA
 			UpdateMask: updateMask,
 		}
 
-		if _, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request); err != nil {
+		updatedXidEntry, err := h.xidClient.UpdateXidEntry(propagateIAPJWT(ctx), request)
+		if err != nil {
 			logging.Error(ctx, "Failed to update XID entry", "error", err)
 			return nil, fmt.Errorf("failed to update XID entry: %w (%v)", grpcerr.ErrInternal, err)
 		}
-		returnedArtifact.Acls = xidEntryForUpdate.GetAcls()
+		// Return the ACLs as stored by the XID service, which normalizes principals.
+		returnedArtifact.Acls = updatedXidEntry.GetAcls()
 	} else {
 		returnedArtifact.Acls = xidEntry.GetAcls()
 	}

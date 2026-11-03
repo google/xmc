@@ -64,9 +64,7 @@ def generate_metric_records(
         A list of row dicts matching the xmc_metrics MergeTree schema.
     """
     records: list[dict[str, Any]] = []
-    base_time = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-        seconds=total_steps * 10
-    )
+    base_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=total_steps * 10)
 
     random.seed(42 + xid + work_unit_id)
 

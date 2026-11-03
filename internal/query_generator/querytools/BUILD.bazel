@@ -29,6 +29,7 @@ go_test(
     name = "querytools_test",
     srcs = ["query_generator_test.go"],
     embed = [":querytools"],
+    race = "on",
     deps = [
         "//api/filter:filter_expression_go_proto",
         "//api/filter/go/filter",
@@ -42,6 +43,7 @@ go_test(
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

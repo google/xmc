@@ -348,6 +348,16 @@ alias(
     actual = "//tools/pr_review:update_pr_description",
 )
 
+alias(
+    name = "wait_for_ci_lib",
+    actual = "//tools/pr_review:wait_for_ci_lib",
+)
+
+alias(
+    name = "wait_for_ci",
+    actual = "//tools/pr_review:wait_for_ci",
+)
+
 # Benchmark
 alias(
     name = "compare_trajectories_lib",

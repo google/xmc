@@ -18,7 +18,7 @@ import json
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -45,12 +45,12 @@ class TestAnalyzeCIPerformance(unittest.TestCase):
     def test_parse_iso_timestamp_valid_z(self):
         """Test parsing valid ISO timestamp with trailing Z."""
         dt = parse_iso_timestamp("2026-08-20T12:00:00Z")
-        self.assertEqual(dt, datetime(2026, 8, 20, 12, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(dt, datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC))
 
     def test_parse_iso_timestamp_valid_offset(self):
         """Test parsing valid ISO timestamp with explicit timezone offset."""
         dt = parse_iso_timestamp("2026-08-20T14:00:00+02:00")
-        self.assertEqual(dt, datetime(2026, 8, 20, 12, 0, 0, tzinfo=timezone.utc))
+        self.assertEqual(dt, datetime(2026, 8, 20, 12, 0, 0, tzinfo=UTC))
 
     def test_parse_iso_timestamp_invalid(self):
         """Test parsing malformed ISO timestamp raises HandledError."""
@@ -148,7 +148,7 @@ class TestAnalyzeCIPerformance(unittest.TestCase):
                 "status": "completed",
             },
         ]
-        since_dt = datetime(2026, 8, 20, 9, 0, 0, tzinfo=timezone.utc)
+        since_dt = datetime(2026, 8, 20, 9, 0, 0, tzinfo=UTC)
         filtered = filter_runs(runs, workflow_name="XMC Unit Tests", since_dt=since_dt)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["created_at"], "2026-08-20T10:00:00Z")
@@ -160,7 +160,7 @@ class TestAnalyzeCIPerformance(unittest.TestCase):
             {"created_at": "2026-08-20T09:30:00Z"},
             {"created_at": "2026-08-20T11:00:00Z"},
         ]
-        cutoff = datetime(2026, 8, 20, 9, 0, 0, tzinfo=timezone.utc)
+        cutoff = datetime(2026, 8, 20, 9, 0, 0, tzinfo=UTC)
         before, after = split_runs_by_compare_time(runs, cutoff)
         self.assertEqual(len(before), 1)
         self.assertEqual(before[0]["created_at"], "2026-08-20T08:00:00Z")

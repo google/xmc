@@ -93,6 +93,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 		wantBucket      string
 		wantUpdateCalls int
 		wantEmptyURL    bool
+		wantConfirmed   bool
 	}{
 		{
 			name:            "nil client",
@@ -100,6 +101,8 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			jobSet:          jobSet,
 			wantCalls:       0,
 			wantUpdateCalls: 0,
+			wantEmptyURL:    true,
+			wantConfirmed:   false,
 		},
 		{
 			name:            "nil jobSet",
@@ -107,6 +110,8 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			jobSet:          nil,
 			wantCalls:       0,
 			wantUpdateCalls: 0,
+			wantEmptyURL:    true,
+			wantConfirmed:   false,
 		},
 		{
 			name:            "successful creation with correct options",
@@ -117,6 +122,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,
+			wantConfirmed:   true,
 		},
 		{
 			name:            "creation error handled without panic",
@@ -128,6 +134,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 0,
 			wantEmptyURL:    true,
+			wantConfirmed:   false,
 		},
 		{
 			name:            "successful creation with zero creation timestamp leaves CreateTime empty",
@@ -138,6 +145,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantGroup:       "group-abc",
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,
+			wantConfirmed:   true,
 		},
 		{
 			name:            "update failure returns empty url",
@@ -149,6 +157,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 			wantBucket:      "gs://bucket/folder",
 			wantUpdateCalls: 1,
 			wantEmptyURL:    true,
+			wantConfirmed:   false,
 		},
 	}
 
@@ -161,9 +170,12 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				ClusterName: "cluster-a",
 				MLRunClient: tc.client,
 			}
-			gotURL := r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			gotURL, gotConfirmed := r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 			if tc.wantEmptyURL && gotURL != "" {
-				t.Errorf("ensureMLRunCreated() = %q, want empty", gotURL)
+				t.Errorf("ensureMLRunCreated() url = %q, want empty", gotURL)
+			}
+			if gotConfirmed != tc.wantConfirmed {
+				t.Errorf("ensureMLRunCreated() confirmed = %v, want %v", gotConfirmed, tc.wantConfirmed)
 			}
 
 			if !ok {
@@ -222,48 +234,70 @@ func TestEnsureMLRunCreated(t *testing.T) {
 
 func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 	tests := []struct {
-		name     string
-		storage  ReconcilerStorage
-		wantURL  string
-		wantSkip bool
+		name          string
+		storage       ReconcilerStorage
+		wantURL       string
+		wantSkip      bool
+		wantCachedURL string
 	}{
 		{
-			name:     "nil storage",
-			storage:  nil,
-			wantURL:  "",
-			wantSkip: false,
+			name:          "nil storage",
+			storage:       nil,
+			wantURL:       "",
+			wantSkip:      false,
+			wantCachedURL: "",
 		},
 		{
-			name:     "fetch error returns empty and false",
-			storage:  &mockStorageUpdater{fetchErr: errors.New("fetch error")},
-			wantURL:  "",
-			wantSkip: false,
+			name:          "fetch error returns empty and false",
+			storage:       &mockStorageUpdater{fetchErr: errors.New("fetch error")},
+			wantURL:       "",
+			wantSkip:      false,
+			wantCachedURL: "",
 		},
 		{
-			name: "running execution with mlrun url",
+			name: "running execution with matching eid caches mlrun url",
 			storage: &mockStorageUpdater{
 				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
 					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
 					Metadata: &spb.WorkUnitExecutionMetadata{
 						MlrunUrl: "https://mlrun.example.com/123",
 					},
 				},
 			},
-			wantURL:  "https://mlrun.example.com/123",
-			wantSkip: false,
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      false,
+			wantCachedURL: "https://mlrun.example.com/123",
 		},
 		{
-			name: "terminal status sets skip to true",
+			name: "stale execution mlrun url is not cached under reconciled eid",
 			storage: &mockStorageUpdater{
 				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/2",
+					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+					Metadata: &spb.WorkUnitExecutionMetadata{
+						MlrunUrl: "https://mlrun.example.com/123",
+					},
+				},
+			},
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      false,
+			wantCachedURL: "",
+		},
+		{
+			name: "terminal status sets skip to true and caches matching eid url",
+			storage: &mockStorageUpdater{
+				fetchRes: &spb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
 					Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_COMPLETED},
 					Metadata: &spb.WorkUnitExecutionMetadata{
 						MlrunUrl: "https://mlrun.example.com/123",
 					},
 				},
 			},
-			wantURL:  "https://mlrun.example.com/123",
-			wantSkip: true,
+			wantURL:       "https://mlrun.example.com/123",
+			wantSkip:      true,
+			wantCachedURL: "https://mlrun.example.com/123",
 		},
 	}
 
@@ -273,6 +307,9 @@ func TestCheckWorkUnitStatusAndMLRun(t *testing.T) {
 			gotURL, gotSkip := r.checkWorkUnitStatusAndMLRun(context.Background(), 1, 1, 1)
 			if gotURL != tc.wantURL || gotSkip != tc.wantSkip {
 				t.Errorf("checkWorkUnitStatusAndMLRun() = (%q, %v), want (%q, %v)", gotURL, gotSkip, tc.wantURL, tc.wantSkip)
+			}
+			if gotCached := r.getCachedMLRunURL(1, 1, 1); gotCached != tc.wantCachedURL {
+				t.Errorf("getCachedMLRunURL(1, 1, 1) = %q, want %q", gotCached, tc.wantCachedURL)
 			}
 		})
 	}
@@ -284,6 +321,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 		name            string
 		client          *mockMLRunCreator
 		wantURLContains string
+		wantConfirmed   bool
 		wantGetCalls    int
 		wantUpdateCalls int
 	}{
@@ -296,6 +334,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 				},
 			}},
 			wantURLContains: "console.cloud.google.com",
+			wantConfirmed:   true,
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
 		},
@@ -308,6 +347,7 @@ func TestUpsertExistingMLRun(t *testing.T) {
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
 			wantURLContains: "https://mlrun/updated",
+			wantConfirmed:   true,
 			wantGetCalls:    1,
 			wantUpdateCalls: 1,
 		},
@@ -318,23 +358,39 @@ func TestUpsertExistingMLRun(t *testing.T) {
 				updateRes: map[string]any{"url": "https://mlrun/updated"},
 			},
 			wantURLContains: "https://mlrun/updated",
+			wantConfirmed:   true,
 			wantGetCalls:    1,
 			wantUpdateCalls: 1,
 		},
 		{
-			name:            "get failure is treated as success via console url",
+			name:            "get failure returns unconfirmed console url fallback",
 			client:          &mockMLRunCreator{getErr: errors.New("not found")},
 			wantURLContains: "console.cloud.google.com",
+			wantConfirmed:   false,
 			wantGetCalls:    1,
 			wantUpdateCalls: 0,
+		},
+		{
+			name: "update failure returns unconfirmed console url fallback",
+			client: &mockMLRunCreator{
+				getRes:    map[string]any{"labels": map[string]any{"created_by": "someone-else"}},
+				updateErr: errors.New("update failed"),
+			},
+			wantURLContains: "console.cloud.google.com",
+			wantConfirmed:   false,
+			wantGetCalls:    1,
+			wantUpdateCalls: 1,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Reconciler{Project: "proj", Location: "us-central1", ClusterName: "clus", MLRunClient: tc.client}
-			got := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
+			got, gotConfirmed := r.upsertExistingMLRun(context.Background(), conflictErr, "xmc-fallback-id", "disp", "grp", buildMLRunLabels(1, 2), map[string]string{"gcs_path": "gs://b/o"})
 			if !strings.Contains(got, tc.wantURLContains) {
 				t.Errorf("upsertExistingMLRun() = %q, want containing %q", got, tc.wantURLContains)
+			}
+			if gotConfirmed != tc.wantConfirmed {
+				t.Errorf("upsertExistingMLRun() confirmed = %v, want %v", gotConfirmed, tc.wantConfirmed)
 			}
 			if tc.client.getCalls != tc.wantGetCalls {
 				t.Errorf("getCalls = %d, want %d", tc.client.getCalls, tc.wantGetCalls)
@@ -378,5 +434,119 @@ func TestIsStaleExecutionForMLRun(t *testing.T) {
 				t.Errorf("isStaleExecutionForMLRun(%q, %d) = %v, want %v", tc.executionName, tc.reconciledEID, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSyncMLRunCachesURLBeforeBatchFlushAndEvictsOnDelete(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := withManagedXprofEnvs(&v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "test-ns",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	})
+	// Storage simulates the 250ms batcher flush window: MlrunUrl is still empty in ESS.
+	storage := &mockStorageUpdater{
+		fetchRes: &spb.WorkUnitExecution{
+			Name:     "experiments/10/workUnits/20/executions/30",
+			Status:   &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+			Metadata: &spb.WorkUnitExecutionMetadata{MlrunUrl: ""},
+		},
+	}
+	client := &mockMLRunCreator{
+		retRes:    map[string]any{"name": "op-123", "url": "https://mlrun/op-123"},
+		updateRes: map[string]any{"url": "https://mlrun/op-123"},
+	}
+	r := &Reconciler{
+		Project:     "test-proj",
+		Location:    "us-central1",
+		ClusterName: "cluster-a",
+		Storage:     storage,
+		MLRunClient: client,
+	}
+
+	const wantURL = "https://mlrun/op-123?tab=profiles"
+	got1 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got1 != wantURL {
+		t.Fatalf("first syncMLRun() = %q, want %q", got1, wantURL)
+	}
+
+	// Second reconcile arrives ~70ms later before batcher flushes MlrunUrl to Spanner.
+	got2 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got2 != wantURL {
+		t.Fatalf("second syncMLRun() = %q, want %q", got2, wantURL)
+	}
+	if client.createCalls != 1 {
+		t.Errorf("createCalls = %d, want 1 (duplicate CreateMLRun during batch flush window)", client.createCalls)
+	}
+	if client.updateCalls != 1 {
+		t.Errorf("updateCalls = %d, want 1", client.updateCalls)
+	}
+
+	// Evicting on JobSet deletion must drop cached entries with EID <= 30.
+	r.evictPendingJobSetUpdate(10, 20, 30)
+	got3 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got3 != wantURL {
+		t.Fatalf("third syncMLRun() after eviction = %q, want %q", got3, wantURL)
+	}
+	if client.createCalls != 2 {
+		t.Errorf("createCalls after eviction = %d, want 2", client.createCalls)
+	}
+}
+
+func TestSyncMLRunDoesNotCacheUnconfirmedFallbackURL(t *testing.T) {
+	now := time.UnixMilli(1680000000000)
+	jobSet := withManagedXprofEnvs(&v1alpha2.JobSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "test-jobset",
+			Namespace:         "test-ns",
+			CreationTimestamp: metav1.NewTime(now),
+		},
+	})
+	storage := &mockStorageUpdater{
+		fetchRes: &spb.WorkUnitExecution{
+			Name:     "experiments/10/workUnits/20/executions/30",
+			Status:   &spb.WorkUnitStatus{State: spb.WorkUnitStatus_RUNNING},
+			Metadata: &spb.WorkUnitExecutionMetadata{MlrunUrl: ""},
+		},
+	}
+	conflictErr := &hypercomputeclient.APIError{StatusCode: http.StatusConflict, Body: "ALREADY_EXISTS"}
+	client := &mockMLRunCreator{
+		retErr:    conflictErr,
+		getRes:    map[string]any{"labels": map[string]any{"created_by": "someone-else"}},
+		updateErr: errors.New("transient update error"),
+	}
+	r := &Reconciler{
+		Project:     "test-proj",
+		Location:    "us-central1",
+		ClusterName: "cluster-a",
+		Storage:     storage,
+		MLRunClient: client,
+	}
+
+	// First reconcile hits 409 + UpdateMLRun error and returns fallback console URL,
+	// which must not be cached so the next reconcile retries enrichment.
+	got1 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if !strings.Contains(got1, "console.cloud.google.com") {
+		t.Fatalf("first syncMLRun() = %q, want fallback console URL", got1)
+	}
+	if cached := r.getCachedMLRunURL(10, 20, 30); cached != "" {
+		t.Fatalf("getCachedMLRunURL() = %q after unconfirmed fallback, want empty", cached)
+	}
+
+	// Second reconcile succeeds on UpdateMLRun and caches the confirmed URL.
+	client.updateErr = nil
+	client.updateRes = map[string]any{"url": "https://mlrun/enriched"}
+	const wantEnrichedURL = "https://mlrun/enriched?tab=profiles"
+	got2 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	if got2 != wantEnrichedURL {
+		t.Fatalf("second syncMLRun() = %q, want %q", got2, wantEnrichedURL)
+	}
+	if client.updateCalls != 2 {
+		t.Errorf("updateCalls = %d, want 2 (retry after unconfirmed fallback)", client.updateCalls)
+	}
+	if cached := r.getCachedMLRunURL(10, 20, 30); cached != wantEnrichedURL {
+		t.Errorf("getCachedMLRunURL() = %q, want %q", cached, wantEnrichedURL)
 	}
 }

@@ -20,6 +20,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"xmanager_cloud/pkg/auth/principal"
 )
 
 var (
@@ -108,8 +109,10 @@ func (a *Authorizer) AuthorizeMutating(ctx context.Context) (string, error) {
 	return "", status.Errorf(codes.PermissionDenied, "caller %q is not authorized to mutate component state", email)
 }
 
+// normalizeIdentity returns email in canonical principal form (see principal.Normalize) with any
+// IAP "accounts.google.com:" prefix removed.
 func normalizeIdentity(email string) string {
-	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(email)), "accounts.google.com:")
+	return strings.TrimPrefix(principal.Normalize(email), "accounts.google.com:")
 }
 
 type disabledAuthorizer struct{}

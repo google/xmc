@@ -1,0 +1,159 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Approximates the Nightly Examples E2E venv (install_xmanager.py + the requirements of
+# the examples in the nightly matrix, in one combined venv) and import-checks every
+# nightly example entrypoint. No cluster, credentials, or workload launches are involved.
+name: 'Examples Import Check'
+
+on:
+  pull_request:
+  merge_group:
+  workflow_call:
+    inputs:
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override (mirrors the nightly input)'
+        required: false
+        default: ''
+        type: string
+      examples_filter:
+        description: 'Comma-separated matrix ids to check (mirrors the nightly input)'
+        required: false
+        default: ''
+        type: string
+  workflow_dispatch:
+    inputs:
+      xmanager_version:
+        description: 'Optional xmanager PyPI version override'
+        required: false
+        default: ''
+        type: string
+      examples_filter:
+        description: 'Comma-separated matrix ids to check (leave empty to check all)'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  # Literal prefix: under workflow_call, github.workflow resolves to the caller's name.
+  # Outside PRs and the merge queue (e.g. called from nightly, or dispatched), the run id
+  # makes the group unique, so a newer run never cancels a pending one (which would page
+  # OWNERS as `cancelled (examples-import-check)`).
+  group: examples-import-check-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}${{ (github.event_name != 'pull_request' && github.event_name != 'merge_group') && format('-{0}', github.run_id) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  examples-import-check:
+    # Always runs so the check reports a status when used as a required check;
+    # individual steps are skipped when no relevant paths changed.
+    name: 'Examples Import Check'
+    runs-on: 'arc-runner-set'
+    # ~31 checks x 30s worst case, plus the venv build, stays under this budget.
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+          # paths-filter v3.0.2 has no native merge_group support: it diffs against the base
+          # SHA via `git fetch origin <sha>`, which fails on this private repo without
+          # persisted credentials. Full history avoids that fetch. PRs use the REST API, so
+          # they keep a shallow clone.
+          # Note: '0' and '1' are quoted because numeric 0 is falsy in GitHub Actions expressions.
+          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '1' }}
+
+      - name: 'Check Changed Paths'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        uses: 'dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36' # v3.0.2
+        id: changes
+        with:
+          base: ${{ github.event.merge_group.base_sha }}
+          filters: |
+            examples:
+              - 'examples/**'
+              - 'sdks/python/**'
+              - 'deploy/cli/**'
+              - 'api/protos/**'
+              - 'tools/nightly_tests/examples_import_smoke.py'
+              - 'tools/nightly_tests/examples_verification/**'
+              - 'tools/nightly_tests/verification/**'
+              - '.github/workflows/examples-smoke.yml'
+              - '.github/workflows/nightly-examples-e2e.yml'
+
+      - name: 'Decide Whether To Run'
+        id: gate
+        env:
+          EVENT_NAME: '${{ github.event_name }}'
+          PATHS_CHANGED: '${{ steps.changes.outputs.examples }}'
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" != "pull_request" ] && [ "${EVENT_NAME}" != "merge_group" ]; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+          elif [ "${PATHS_CHANGED}" = "true" ]; then
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "No example-related paths changed; skipping import check."
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: 'Set up Python 3.13'
+        if: steps.gate.outputs.run == 'true'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
+      - name: 'Build Examples Virtualenv'
+        if: steps.gate.outputs.run == 'true'
+        env:
+          # Read by install_xmanager.py; empty means the default `xmanager>=...` spec.
+          XMANAGER_VERSION: '${{ inputs.xmanager_version }}'
+          EXAMPLES_FILTER: '${{ inputs.examples_filter }}'
+        run: |
+          set -euo pipefail
+          # Only the examples the nightly matrix runs (not every examples/* directory).
+          # Files are installed sequentially, so a cross-example conflict resolves
+          # last-wins rather than failing; nightly installs one example per venv.
+          # Captured via $(...) (not `mapfile < <(...)`) so a tool failure, e.g. exit 2
+          # on matrix drift, fails this step under `set -e`.
+          example_paths_out="$(python3 tools/nightly_tests/examples_import_smoke.py \
+            --list-example-paths --examples-filter "${EXAMPLES_FILTER}")"
+          mapfile -t example_paths <<< "${example_paths_out}"
+          req_args=()
+          for example_path in "${example_paths[@]}"; do
+            if [ -n "${example_path}" ] && [ -f "${example_path}/requirements.txt" ]; then
+              req_args+=(--requirements "${example_path}/requirements.txt")
+            fi
+          done
+          # A filter may select only UI-only entries, which have no requirements.
+          if [ "${#req_args[@]}" -eq 0 ] && [ -z "${EXAMPLES_FILTER}" ]; then
+            echo "::error::No requirements.txt found for the nightly matrix examples."
+            exit 1
+          fi
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv" "${req_args[@]}"
+
+      - name: 'Import-Check Nightly Example Entrypoints'
+        if: steps.gate.outputs.run == 'true'
+        env:
+          EXAMPLES_FILTER: '${{ inputs.examples_filter }}'
+        run: |
+          set -euo pipefail
+          "${GITHUB_WORKSPACE}/.venv/bin/python3" tools/nightly_tests/examples_import_smoke.py \
+            --venv-python "${GITHUB_WORKSPACE}/.venv/bin/python3" \
+            --examples-filter "${EXAMPLES_FILTER}"

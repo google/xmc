@@ -24,16 +24,17 @@ global:
 
 # Per-component overrides, deep-merged over components/<name>/values.yaml.
 # Allowed keys for every component:
-#   enabled            - bool, renders spec.enabled.
-#   namespace          - string, Component CR namespace (DNS-1123 label).
-#   deletionProtection - bool, renders spec.deletionProtection (false is honored).
-#   deletionPolicy     - "Delete" or "Orphan".
-#   parameters         - map of component parameters (see each component README).
-#   dependencies       - list of component names the component depends on.
+#   enabled                 - bool, renders spec.enabled.
+#   namespace               - string, Component CR namespace (DNS-1123 label).
+#   deletionProtection      - bool, renders spec.deletionProtection (false is honored).
+#   deletionPolicy          - "Delete" or "Orphan".
+#   acknowledgeExperimental - bool, renders spec.acknowledgeExperimental to opt into EXPERIMENTAL components.
+#   parameters              - map of component parameters (see each component README).
+#   dependencies            - list of component names the component depends on.
 # ingestion-gateway additionally accepts imageTag, a fallback used only when
 # global.imageTag is empty.
-# Component identity (componentClass) and chart versions are fixed by the
-# catalog and cannot be overridden.
+# Component identity (componentClass), stability, and chart versions are fixed by
+# the catalog and cannot be overridden.
 components:
   redpanda:
     enabled: false

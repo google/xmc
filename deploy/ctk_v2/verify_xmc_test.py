@@ -137,25 +137,29 @@ vars:
             self.assertFalse(verify_xmc._resolve_log_monitor_deployment_enabled())
 
     def test_resolve_log_monitor_deployment_enabled_from_yaml(self):
-        yaml_content = """
-vars:
-  log_monitor_deployment_enabled: true
-"""
         mock_path = mock.MagicMock(spec=pathlib.Path)
         mock_path.is_file.return_value = True
-        mock_path.read_text.return_value = yaml_content
 
         with mock.patch.dict(os.environ, {}, clear=True):
+            mock_path.read_text.return_value = "vars:\n  log_monitor_deployment_enabled: true\n"
+            self.assertTrue(
+                verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
+            )
+            mock_path.read_text.return_value = "vars:\n  log_monitor_deployment_enabled: false\n"
+            self.assertFalse(
+                verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
+            )
+            mock_path.read_text.return_value = "vars:\n  environment: dev\n"
             self.assertTrue(
                 verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
             )
 
-    def test_resolve_log_monitor_deployment_enabled_default_false(self):
+    def test_resolve_log_monitor_deployment_enabled_default_true(self):
         mock_path = mock.MagicMock(spec=pathlib.Path)
         mock_path.is_file.return_value = False
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertFalse(
+            self.assertTrue(
                 verify_xmc._resolve_log_monitor_deployment_enabled(config_path=mock_path)
             )
 

@@ -31,6 +31,11 @@ class UIEntitiesValidatorTest(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.enterContext(mock.patch.object(os, "makedirs"))
+        self.enterContext(
+            mock.patch.object(
+                ui_entities_validator.xdash_auth, "load_cached_cli_token", return_value=None
+            )
+        )
 
     def _create_mock_playwright(self) -> tuple[Any, Any, Any, Any]:
         """Creates a mocked Playwright hierarchy with selector-aware mock page state."""
@@ -312,6 +317,46 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         )
         session.settle_and_wait_fonts(timeout_ms=100)
         session._page.wait_for_timeout.assert_called_with(100)
+
+    def test_wait_for_selector_with_retry_handles_timeout_and_http_errors(self) -> None:
+        clean = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        clean._page = mock.MagicMock()
+        clean.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        clean._page.wait_for_selector.assert_called_once_with("xmc-queue-card", timeout=5000)
+        clean._page.reload.assert_not_called()
+
+        for http_errs, page_errs in (
+            (["500 https://xmc.example.com/v1/clusterqueues"], []),
+            ([], ["TypeError: null"]),
+            (["500 https://xmc.example.com/v1/clusterqueues"], ["TypeError: null"]),
+        ):
+            with self.subTest(http_errs=http_errs, page_errs=page_errs):
+                session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+                mock_page = mock.MagicMock()
+                session._page = mock_page
+                session.http_errors = list(http_errs)
+                session.page_errors = list(page_errs)
+                session.wait_for_selector_with_retry("xmc-queue-card", 5000)
+                self.assertEqual(session.http_errors, [])
+                self.assertEqual(session.page_errors, [])
+                mock_page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+                self.assertEqual(mock_page.wait_for_selector.call_count, 2)
+
+        session2 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page2 = mock.MagicMock()
+        session2._page = mock_page2
+        mock_page2.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
+        session2.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        mock_page2.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        self.assertEqual(mock_page2.wait_for_selector.call_count, 2)
+
+        session3 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page3 = mock.MagicMock()
+        session3._page = mock_page3
+        mock_page3.wait_for_selector.side_effect = [RuntimeError("t1"), RuntimeError("t2")]
+        with self.assertRaisesRegex(RuntimeError, "t2"):
+            session3.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        self.assertEqual(mock_page3.wait_for_selector.call_count, 2)
 
     def test_navigate_to_experiment_success(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession(
@@ -629,6 +674,32 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         self.assertEqual(s.auth_token, "tok-1")
         self.assertFalse(s.headless)
         self.assertEqual(s.screenshots_dir, "/tmp/s")
+
+    def test_session_init_falls_back_to_cached_cli_token(self) -> None:
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(
+                ui_entities_validator.xdash_auth,
+                "load_cached_cli_token",
+                return_value="cli-browser-tok",
+            ) as mock_cli_tok,
+        ):
+            s = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com/")
+        mock_cli_tok.assert_called_once_with("https://xmc.example.com")
+        self.assertEqual(s.auth_token, "cli-browser-tok")
+
+        # Schemeless ui_base_url does not trigger CLI token auto-discovery
+        with (
+            mock.patch.dict("os.environ", {}, clear=True),
+            mock.patch.object(
+                ui_entities_validator.xdash_auth,
+                "load_cached_cli_token",
+                return_value="cli-browser-tok",
+            ) as mock_cli_tok_schemeless,
+        ):
+            s_no_scheme = ui_entities_validator.XMCUIBrowserSession("xmc.example.com")
+        mock_cli_tok_schemeless.assert_not_called()
+        self.assertIsNone(s_no_scheme.auth_token)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,44 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//go:build !mockauth
+
+package bridge
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	xmcoauth "xmanager_cloud/pkg/auth/oauth2"
+)
+
+func TestNewCMSTokenCredentialsFailsClosedWithoutMockAuthTag(t *testing.T) {
+	tests := []struct{ name, mockAuth, disableAuth string }{
+		{name: "MOCK_AUTH", mockAuth: "true", disableAuth: "false"},
+		{name: "DISABLE_AUTHENTICATION", mockAuth: "false", disableAuth: "true"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISABLE_AUTHENTICATION", tt.disableAuth)
+			t.Setenv("MOCK_AUTH", tt.mockAuth)
+			t.Setenv("JWT_SECRET", "0123456789abcdef0123456789abcdef")
+
+			creds, err := NewCMSTokenCredentials(context.Background())
+			if !errors.Is(err, xmcoauth.ErrDevAuthNotCompiledIn) || creds != nil {
+				t.Fatalf("NewCMSTokenCredentials() = (%v, %v), want (nil, %v)", creds, err, xmcoauth.ErrDevAuthNotCompiledIn)
+			}
+		})
+	}
+}

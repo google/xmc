@@ -40,12 +40,7 @@ func openPostgres(ctx context.Context, cfg dbconfig.Postgres, db Database) (*Sto
 		pool.Close()
 		return nil, fmt.Errorf("failed to create postgres storage for %s: %w", db, err)
 	}
-	return &Storage{
-		Storage:         st,
-		schemaVersion:   health.NewPostgresHealthClient(pool),
-		expectedVersion: expectedVersion,
-		closeFn:         pool.Close,
-	}, nil
+	return New(st, health.NewPostgresHealthClient(pool), expectedVersion, pool.Close), nil
 }
 
 // postgresDatabase returns the connection URL of db and the PostgreSQL schema version that this

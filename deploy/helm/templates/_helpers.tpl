@@ -132,7 +132,8 @@ Common OAuth environment variables for XMC services.
 DISABLE_AUTHENTICATION turns off authorization checks (for example CMS authorization and admin
 checks), and mock authentication accepts any caller, so the chart refuses to render either
 outside development environments. Both checks parse the flags the way the backend reads the
-DISABLE_AUTHENTICATION and MOCK_AUTH environment variables.
+DISABLE_AUTHENTICATION and MOCK_AUTH environment variables. Both flags additionally require
+binaries built with gotags = ["mockauth"]; published images refuse to start when either is true.
 */}}
 {{- define "xmanager-cloud.oauthEnv" -}}
 {{- if and (include "xmanager-cloud.authFlagEnabled" .Values.auth.disableAuthentication) (not .Values.isDevEnvironment) -}}
@@ -212,14 +213,22 @@ DISABLE_AUTHENTICATION and MOCK_AUTH environment variables.
 {{- end -}}
 
 {{/*
+Kubernetes Secret name holding the ClickHouse password when CSI is disabled.
+*/}}
+{{- define "xmanager-cloud.clickhouseSecretName" -}}
+{{- $clickhouse := default (dict) (default (dict) .Values.metrics).clickhouse -}}
+{{- $clickhouse.secretName | default "clickhouse-secret" -}}
+{{- end -}}
+
+{{/*
 ClickHouse connection environment variables for XMC services backed by the metrics pipeline.
 Consumed by pkg/clickhouse.GetOptions. The password follows the same two paths as the JWT and
 OAuth client secrets above: with the CSI driver enabled it is read from the file Secret Manager
-mounts, and otherwise from the clickhouse-secret Secret rendered by
-templates/metrics/clickhouse-secret.yaml out of a Helm value.
+mounts, and otherwise from the ClickHouse Secret (metrics.clickhouse.secretName, default
+clickhouse-secret) rendered by templates/metrics/clickhouse-secret.yaml out of a Helm value.
 */}}
 {{- define "xmanager-cloud.clickhouseEnv" -}}
-{{- $clickhouse := (default (dict) .Values.metrics.clickhouse) -}}
+{{- $clickhouse := default (dict) (default (dict) .Values.metrics).clickhouse -}}
 - name: CLICKHOUSE_HOST
   value: {{ $clickhouse.host | default "clickhouse.xmc-metrics.svc.cluster.local" | quote }}
 - name: CLICKHOUSE_PORT
@@ -228,14 +237,14 @@ templates/metrics/clickhouse-secret.yaml out of a Helm value.
   value: {{ $clickhouse.database | default "default" | quote }}
 - name: CLICKHOUSE_USER
   value: {{ $clickhouse.user | default "default" | quote }}
-{{- if .Values.secrets.csi.enabled }}
+{{- if (default (dict) (default (dict) .Values.secrets).csi).enabled }}
 - name: CLICKHOUSE_PASSWORD_FILE
   value: "/etc/gcp-secrets/clickhouse-password"
 {{- else }}
 - name: CLICKHOUSE_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: clickhouse-secret
+      name: {{ include "xmanager-cloud.clickhouseSecretName" . }}
       key: clickhouse-password
 {{- end }}
 {{- end -}}
@@ -264,10 +273,25 @@ environment.
 {{- end -}}
 
 {{/*
+PostgreSQL password environment variable for XMC services when database.backend is "postgres".
+Consumed by internal/storage/dbconfig.Load from the postgres-secret Secret rendered by
+templates/postgres-secret.yaml out of a Helm value.
+*/}}
+{{- define "xmanager-cloud.postgresEnv" -}}
+{{- if eq (include "xmanager-cloud.dbBackend" .) "postgres" -}}
+- name: POSTGRES_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: postgres-secret
+      key: postgres-password
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}
-{{- if .Values.secrets.csi.enabled }}
+{{- if (default (dict) (default (dict) .Values.secrets).csi).enabled }}
 - name: gcp-secrets-volume
   csi:
     driver: secrets-store-gke.csi.k8s.io

@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"cloud.google.com/go/spanner"
 	"google.golang.org/grpc/codes"
@@ -27,6 +28,7 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner/artifact"
 	"xmanager_cloud/internal/storage/spanner/clilogincode"
+	"xmanager_cloud/internal/storage/spanner/component"
 	"xmanager_cloud/internal/storage/spanner/dashboard"
 	"xmanager_cloud/internal/storage/spanner/experiment"
 	"xmanager_cloud/internal/storage/spanner/operation"
@@ -66,30 +68,48 @@ type Storage struct {
 	pauseStateRepository   *PauseStateRepository
 	pausedTaskRepository   *PausedTaskRepository
 	cliLoginCodeRepository *CLILoginCodeRepository
+	componentRepository    *component.Repository
 }
 
 // RunInTransaction executes the given function in a Spanner read-write transaction,
 // passing a Transaction struct with repositories bound to the Spanner transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	if s.client == nil {
-		return fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
+	_, err := s.RunInSerializableTransaction(ctx, fn)
+	return err
+}
+
+// RunInSerializableTransaction executes fn in a Spanner read-write transaction (which is always
+// serializable) and returns the commit timestamp assigned by Spanner.
+func (s *Storage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+	if s == nil || s.client == nil {
+		return time.Time{}, fmt.Errorf("spanner client must not be nil: %w", grpcerr.ErrFailedPrecondition)
 	}
-	_, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
-		tx := &storage.Transaction{
-			WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
-			Experiments:    s.ExperimentRepository.WithTx(spannerTx),
-			XIDs:           s.XIDRepository.WithTx(spannerTx),
-			StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
-			StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
-			PauseState:     s.pauseStateRepository.WithTx(spannerTx),
-			PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
-		}
-		return fn(txCtx, tx)
+	if fn == nil {
+		return time.Time{}, fmt.Errorf("transaction callback must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	ts, err := s.client.ReadWriteTransaction(ctx, func(txCtx context.Context, spannerTx *spanner.ReadWriteTransaction) error {
+		return fn(txCtx, s.newTransaction(spannerTx))
 	})
 	if status.Code(err) == codes.AlreadyExists && !errors.Is(err, grpcerr.ErrAlreadyExists) {
-		return fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
+		return time.Time{}, fmt.Errorf("%w: %v", grpcerr.ErrAlreadyExists, err)
 	}
-	return err
+	if err != nil {
+		return time.Time{}, err
+	}
+	return ts, nil
+}
+
+func (s *Storage) newTransaction(spannerTx *spanner.ReadWriteTransaction) *storage.Transaction {
+	return &storage.Transaction{
+		WorkUnits:      s.WorkUnitRepository.WithTx(spannerTx),
+		Experiments:    s.ExperimentRepository.WithTx(spannerTx),
+		XIDs:           s.XIDRepository.WithTx(spannerTx),
+		StatusMessages: s.StatusMessageRepository.WithTx(spannerTx),
+		StatusHistory:  s.StatusHistoryRepository.WithTx(spannerTx),
+		PauseState:     s.pauseStateRepository.WithTx(spannerTx),
+		PausedTasks:    s.pausedTaskRepository.WithTx(spannerTx),
+		Components:     s.componentRepository.WithTx(spannerTx),
+	}
 }
 
 // PauseState returns the repository for global pause scheduling state.
@@ -105,6 +125,17 @@ func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 // CLILoginCodes returns the repository for one-time CLI login codes.
 func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
 	return s.cliLoginCodeRepository
+}
+
+// Components returns the repository for component catalog persistence.
+func (s *Storage) Components() storage.ComponentRepository {
+	return s.componentRepository
+}
+
+// DeleteExpiredRows deletes nothing and returns 0, because the ROW DELETION POLICY of each table
+// already makes Cloud Spanner delete expired rows.
+func (s *Storage) DeleteExpiredRows(context.Context, int) (int64, error) {
+	return 0, nil
 }
 
 // NewStorage creates a new instance of the Spanner-backed storage.
@@ -178,5 +209,6 @@ func NewStorage(client *spanner.Client) (*Storage, error) {
 		pauseStateRepository:    pauseStateRepo,
 		pausedTaskRepository:    pausedTaskRepo,
 		cliLoginCodeRepository:  cliLoginCodeRepo,
+		componentRepository:     component.NewRepository(client),
 	}, nil
 }

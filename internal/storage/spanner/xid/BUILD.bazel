@@ -25,6 +25,7 @@ go_library(
     importpath = "xmanager_cloud/internal/storage/spanner/xid",
     visibility = ["//visibility:public"],
     deps = [
+        "//api/filter:filter_expression_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
         "//internal/logging",
@@ -41,6 +42,7 @@ go_library(
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -53,6 +55,7 @@ go_test(
         "listxidentries_test.go",
     ],
     deps = [
+        "//api/filter:filter_expression_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
         "//internal/storage",

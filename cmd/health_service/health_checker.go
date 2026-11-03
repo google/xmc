@@ -24,6 +24,7 @@ import (
 	spb "xmanager_cloud/api/protos/health"
 	health "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/storage/dbconfig"
 	"xmanager_cloud/pkg/components/summary"
 
 	run "google.golang.org/api/run/v2"
@@ -36,31 +37,27 @@ type RedisPingClient interface {
 	Ping(ctx context.Context) error
 }
 
-// LazySpannerCheckerProvider provides lazy access to Spanner health clients and custom components provider.
-type LazySpannerCheckerProvider interface {
+// LazyDBCheckerProvider provides lazy access to database schema version health clients and custom components provider.
+type LazyDBCheckerProvider interface {
 	LazyComponentsProvider
-	EssHealthClient(ctx context.Context) (health.SpannerHealthClient, error)
-	XidHealthClient(ctx context.Context) (health.SpannerHealthClient, error)
+	EssHealth(ctx context.Context) (health.SchemaVersionClient, int64, error)
+	XidHealth(ctx context.Context) (health.SchemaVersionClient, int64, error)
 }
 
 type HealthCheckerParams struct {
-	Config                   *Config
-	LazySpanner              LazySpannerCheckerProvider
-	RedisClient              RedisPingClient
-	CloudRunService          *run.Service
-	EssExpectedSchemaVersion int64
-	XidExpectedSchemaVersion int64
+	Config          *Config
+	LazyDB          LazyDBCheckerProvider
+	RedisClient     RedisPingClient
+	CloudRunService *run.Service
 }
 
 type HealthChecker struct {
-	cfg                      *Config
-	httpClient               *http.Client
-	xidConn                  *grpc.ClientConn
-	lazySpanner              LazySpannerCheckerProvider
-	redisClient              RedisPingClient
-	cloudRunService          *run.Service
-	essExpectedSchemaVersion int64
-	xidExpectedSchemaVersion int64
+	cfg             *Config
+	httpClient      *http.Client
+	xidConn         *grpc.ClientConn
+	lazyDB          LazyDBCheckerProvider
+	redisClient     RedisPingClient
+	cloudRunService *run.Service
 }
 
 func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
@@ -80,12 +77,10 @@ func NewHealthChecker(params HealthCheckerParams) (*HealthChecker, error) {
 		httpClient: &http.Client{
 			Timeout: 3 * time.Second,
 		},
-		xidConn:                  conn,
-		lazySpanner:              params.LazySpanner,
-		redisClient:              params.RedisClient,
-		cloudRunService:          params.CloudRunService,
-		essExpectedSchemaVersion: params.EssExpectedSchemaVersion,
-		xidExpectedSchemaVersion: params.XidExpectedSchemaVersion,
+		xidConn:         conn,
+		lazyDB:          params.LazyDB,
+		redisClient:     params.RedisClient,
+		cloudRunService: params.CloudRunService,
 	}, nil
 }
 
@@ -118,26 +113,26 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 		}(i, target)
 	}
 
-	// 2. Run Spanner database checks in parallel (ESS and XID only)
+	// 2. Run database checks in parallel (ESS and XID only)
 	var essComp, xidComp *spb.ComponentHealth
 	var essVersion, xidVersion string
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		essComp, essVersion = c.CheckSpannerESS(ctx)
+		essComp, essVersion = c.CheckESSDatabase(ctx)
 	}()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		xidComp, xidVersion = c.CheckSpannerXID(ctx)
+		xidComp, xidVersion = c.CheckXIDDatabase(ctx)
 	}()
 
 	// 3. Run custom component checks in parallel if enabled
 	var customCompHealths []summary.ComponentHealth
 	var customCompErr error
 
-	checkComponents := c.cfg != nil && c.cfg.EnableComponents && c.cfg.EssSpannerDatabase != "" && c.lazySpanner != nil
+	checkComponents := c.cfg != nil && c.cfg.EnableComponents && c.lazyDB != nil
 	if checkComponents {
 		wg.Add(1)
 		go func() {
@@ -150,7 +145,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 
 	wg.Wait()
 
-	// 4. Append Spanner results to the components list
+	// 4. Append database results to the components list
 	components = append(components, essComp, xidComp)
 
 	// 5. Append custom components health if enabled
@@ -169,7 +164,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 }
 
 func (c *HealthChecker) checkCustomComponents(ctx context.Context) ([]summary.ComponentHealth, error) {
-	provider, err := c.lazySpanner.ComponentsProvider(ctx)
+	provider, err := c.lazyDB.ComponentsProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -215,6 +210,7 @@ func convertCustomComponentHealth(ch summary.ComponentHealth) *spb.ComponentHeal
 		Type:         spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
 		HealthState:  hState,
 		ErrorMessage: errMsg,
+		Stability:    ch.Stability,
 	}
 }
 
@@ -265,38 +261,68 @@ func (c *HealthChecker) getCheckTargets() []checkTarget {
 	}
 }
 
-func (c *HealthChecker) CheckSpannerESS(ctx context.Context) (*spb.ComponentHealth, string) {
-	if c.lazySpanner == nil {
-		return spannerNotInitializedHealth("Spanner ESS"), ""
+func (c *HealthChecker) essDBComponentName() string {
+	if c.cfg == nil {
+		return "unknown"
 	}
-	client, err := c.lazySpanner.EssHealthClient(ctx)
-	if err != nil {
-		return spannerDatabaseErrorHealth("Spanner ESS", err), ""
+	switch c.cfg.DB.Backend {
+	case dbconfig.BackendSpanner:
+		return "Spanner ESS"
+	case dbconfig.BackendPostgres:
+		return "Postgres ESS"
+	default:
+		return "unknown"
 	}
-	return c.checkSpannerComponent(ctx, "Spanner ESS", client, c.essExpectedSchemaVersion)
 }
 
-func (c *HealthChecker) CheckSpannerXID(ctx context.Context) (*spb.ComponentHealth, string) {
-	if c.lazySpanner == nil {
-		return spannerNotInitializedHealth("Spanner XID"), ""
+func (c *HealthChecker) xidDBComponentName() string {
+	if c.cfg == nil {
+		return "unknown"
 	}
-	client, err := c.lazySpanner.XidHealthClient(ctx)
-	if err != nil {
-		return spannerDatabaseErrorHealth("Spanner XID", err), ""
+	switch c.cfg.DB.Backend {
+	case dbconfig.BackendSpanner:
+		return "Spanner XID"
+	case dbconfig.BackendPostgres:
+		return "Postgres XID"
+	default:
+		return "unknown"
 	}
-	return c.checkSpannerComponent(ctx, "Spanner XID", client, c.xidExpectedSchemaVersion)
 }
 
-func spannerNotInitializedHealth(name string) *spb.ComponentHealth {
+func (c *HealthChecker) CheckESSDatabase(ctx context.Context) (*spb.ComponentHealth, string) {
+	name := c.essDBComponentName()
+	if c.lazyDB == nil {
+		return databaseNotInitializedHealth(name), ""
+	}
+	client, expectedVersion, err := c.lazyDB.EssHealth(ctx)
+	if err != nil {
+		return databaseErrorHealth(name, err), ""
+	}
+	return c.checkDatabaseComponent(ctx, name, client, expectedVersion)
+}
+
+func (c *HealthChecker) CheckXIDDatabase(ctx context.Context) (*spb.ComponentHealth, string) {
+	name := c.xidDBComponentName()
+	if c.lazyDB == nil {
+		return databaseNotInitializedHealth(name), ""
+	}
+	client, expectedVersion, err := c.lazyDB.XidHealth(ctx)
+	if err != nil {
+		return databaseErrorHealth(name, err), ""
+	}
+	return c.checkDatabaseComponent(ctx, name, client, expectedVersion)
+}
+
+func databaseNotInitializedHealth(name string) *spb.ComponentHealth {
 	return &spb.ComponentHealth{
 		Name:         name,
 		Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
 		HealthState:  spb.HealthState_HEALTH_STATE_UNHEALTHY,
-		ErrorMessage: "spanner client not initialized",
+		ErrorMessage: "database client not initialized",
 	}
 }
 
-func spannerDatabaseErrorHealth(name string, err error) *spb.ComponentHealth {
+func databaseErrorHealth(name string, err error) *spb.ComponentHealth {
 	return &spb.ComponentHealth{
 		Name:         name,
 		Type:         spb.ComponentType_COMPONENT_TYPE_EXTERNAL_DEPENDENCY,
@@ -381,14 +407,14 @@ func (c *HealthChecker) checkGRPCComponent(ctx context.Context, name string, con
 	}
 }
 
-func (c *HealthChecker) checkSpannerComponent(ctx context.Context, name string, client health.SpannerHealthClient, expectedVersion int64) (*spb.ComponentHealth, string) {
+func (c *HealthChecker) checkDatabaseComponent(ctx context.Context, name string, client health.SchemaVersionClient, expectedVersion int64) (*spb.ComponentHealth, string) {
 	if client == nil {
-		return spannerNotInitializedHealth(name), ""
+		return databaseNotInitializedHealth(name), ""
 	}
 
 	versionVal, dirty, err := client.QuerySchemaVersion(ctx)
 	if err != nil {
-		return spannerDatabaseErrorHealth(name, err), ""
+		return databaseErrorHealth(name, err), ""
 	}
 
 	versionStr := fmt.Sprintf("%d", versionVal)

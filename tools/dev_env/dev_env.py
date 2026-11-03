@@ -317,6 +317,12 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         default=None,
         help="GCP IAM Service Account email for workload identity.",
     )
+    p.add_argument(
+        "--profile-values",
+        dest="profile_values",
+        default=None,
+        help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
+    )
 
 
 def _add_deploy_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:

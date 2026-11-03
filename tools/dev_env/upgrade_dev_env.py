@@ -21,6 +21,7 @@ the latest code in the current repository branch.
 import argparse
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -44,6 +45,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_info,
     log_success,
     run_command,
+    verify_helm_min_version,
 )
 from tools.dev_env.blueprint_compiler import compile_blueprint  # noqa: E402
 
@@ -103,6 +105,11 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help="Automatically run pending migrations if detected.",
     )
     parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--profile-values",
+        default=None,
+        help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
+    )
 
     parsed = parser.parse_args(args)
 
@@ -146,6 +153,15 @@ def step_check(config: UpgradeConfig) -> None:
     for binary in ["gcloud", "kubectl", "helm", "bazel"]:
         if not shutil.which(binary):
             error_exit(f"Required CLI tool '{binary}' is not installed or not in PATH.")
+    if config.enable_components:
+        try:
+            verify_helm_min_version()
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
+            error_exit(f"Failed Helm version check: {e}")
+        if config.profile_values and not Path(config.profile_values).is_file():
+            error_exit(
+                f"Profile values file '{config.profile_values}' does not exist or is not a file."
+            )
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
     if not gcluster_path.is_file() or not os.access(gcluster_path, os.X_OK):
@@ -294,6 +310,10 @@ def check_pending_migrations(config: DeploymentConfig) -> list[tuple[str, str, s
     Returns:
       List of (migrations_dir, spanner_instance, db_name) tuples with pending migrations.
     """
+    if config.database_backend == "postgres":
+        log_info("Skipping Spanner migration check because database_backend is 'postgres'.")
+        return []
+
     log_info("Checking for pending database migrations...")
     spanner_instance = f"xmc-{config.environment}"
     targets = [
@@ -531,6 +551,39 @@ def execute_step(step_name: str, config: UpgradeConfig) -> None:
     step_fn(config)
 
 
+def _build_resume_cmd(args: argparse.Namespace, config: UpgradeConfig, step: str) -> str:
+    """Constructs the suggested command to resume a failed upgrade.
+
+    Args:
+        args: Parsed command-line arguments.
+        config: Loaded UpgradeConfig instance.
+        step: Pipeline step name that failed.
+
+    Returns:
+        Shell-safe command string for resuming or re-running the step.
+    """
+    cmd = f"python3 tools/dev_env/upgrade_dev_env.py --config {shlex.quote(config.config_path)}"
+    if getattr(args, "run_migrations", False):
+        cmd += " --run-migrations"
+    if getattr(args, "enable_components", None) is not None:
+        flag = "--enable-components" if args.enable_components else "--no-enable-components"
+        cmd += f" {flag}"
+    if getattr(args, "profile_values", None):
+        cmd += f" --profile-values {shlex.quote(args.profile_values)}"
+    step_flag = "--only" if args.only else "--start-from"
+    return f"{cmd} {step_flag} {step}"
+
+
+def _run_step_or_exit(args: argparse.Namespace, config: UpgradeConfig, step: str) -> None:
+    """Executes a single pipeline step or prints a recovery command and exits."""
+    try:
+        execute_step(step, config)
+    except (subprocess.CalledProcessError, OSError) as e:
+        print(f"\n{RED}Error executing step '{step}': {e}{NC}")
+        print(f"Suggested recovery command:\n  {_build_resume_cmd(args, config, step)}")
+        sys.exit(1)
+
+
 def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[str]) -> None:
     """Executes the upgrade pipeline according to --only or --start-from.
 
@@ -540,15 +593,7 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
       steps: Ordered list of pipeline step names.
     """
     if args.only:
-        try:
-            execute_step(args.only, config)
-        except subprocess.CalledProcessError as e:
-            print(f"\n{RED}Error executing step '{args.only}': {e}{NC}")
-            print(
-                "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                f" --config {config.config_path} --start-from {args.only}"
-            )
-            sys.exit(1)
+        _run_step_or_exit(args, config, args.only)
         return
 
     should_run = not bool(args.start_from)
@@ -556,15 +601,7 @@ def run_pipeline(args: argparse.Namespace, config: UpgradeConfig, steps: list[st
         if step == args.start_from:
             should_run = True
         if should_run:
-            try:
-                execute_step(step, config)
-            except subprocess.CalledProcessError as e:
-                print(f"\n{RED}Error executing step '{step}': {e}{NC}")
-                print(
-                    "Suggested recovery command:\n  python3 tools/dev_env/upgrade_dev_env.py"
-                    f" --config {config.config_path} --start-from {step}"
-                )
-                sys.exit(1)
+            _run_step_or_exit(args, config, step)
 
     log_success("Upgrade completed end-to-end successfully!")
 
@@ -578,6 +615,8 @@ def run_upgrade(args: argparse.Namespace) -> None:
     config = load_config(args.config, run_migrations=args.run_migrations)
     if getattr(args, "enable_components", None) is not None:
         config = replace(config, enable_components=args.enable_components)
+    if getattr(args, "profile_values", None):
+        config = replace(config, profile_values=args.profile_values)
     run_pipeline(args, config, STEPS)
 
 

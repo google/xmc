@@ -16,9 +16,7 @@ package workunit
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"strconv"
 
 	"cloud.google.com/go/spanner"
 
@@ -26,24 +24,20 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/offsetpagetoken"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
 )
 
-const (
-	defaultPageSize = int32(100)
-	maxPageSize     = int32(1000)
-)
-
 var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator
+	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle
 	FROM WorkUnits wu
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
 	  AND wu.IsPendingOrRunningJob IS NOT NULL
-	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC
+	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC
 	LIMIT @limit OFFSET @offset`,
 )
 
@@ -55,34 +49,10 @@ var countActiveWorkUnitsSQL = safesql.New(
 )
 
 type workUnitPK struct {
-	BitReversedXid int64
-	WorkUnitId     int64
-	Creator        string
-}
-
-func decodePageToken(token string) (int64, error) {
-	if token == "" {
-		return 0, nil
-	}
-	bytes, err := base64.URLEncoding.DecodeString(token)
-	if err != nil {
-		bytes, err = base64.RawURLEncoding.DecodeString(token)
-		if err != nil {
-			return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-		}
-	}
-	offset, err := strconv.ParseInt(string(bytes), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %v", storage.ErrInvalidPageToken, err)
-	}
-	if offset < 0 {
-		return 0, fmt.Errorf("%w: offset cannot be negative", storage.ErrInvalidPageToken)
-	}
-	return offset, nil
-}
-
-func encodePageToken(offset int64) string {
-	return base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(offset, 10)))
+	BitReversedXid  int64
+	WorkUnitId      int64
+	Creator         string
+	ExperimentTitle string
 }
 
 func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
@@ -104,7 +74,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 			return err
 		}
 		var bitReversedXid, workUnitId int64
-		var creator string
+		var creator, experimentTitle string
 		if err := row.ColumnByName("BitReversedXid", &bitReversedXid); err != nil {
 			return fmt.Errorf("failed to read column BitReversedXid: %w", err)
 		}
@@ -114,10 +84,14 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 		if err := row.ColumnByName("Creator", &creator); err != nil {
 			return fmt.Errorf("failed to read column Creator: %w", err)
 		}
+		if err := row.ColumnByName("ExperimentTitle", &experimentTitle); err != nil {
+			return fmt.Errorf("failed to read column ExperimentTitle: %w", err)
+		}
 		pk := workUnitPK{
-			BitReversedXid: bitReversedXid,
-			WorkUnitId:     workUnitId,
-			Creator:        creator,
+			BitReversedXid:  bitReversedXid,
+			WorkUnitId:      workUnitId,
+			Creator:         creator,
+			ExperimentTitle: experimentTitle,
 		}
 		orderedPKs = append(orderedPKs, pk)
 		return nil
@@ -128,7 +102,7 @@ func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransactio
 	return orderedPKs, nil
 }
 
-func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]storage.WorkUnitWithAuthor, error) {
+func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, keySetList []spanner.KeySet, orderedPKs []workUnitPK) ([]storage.ActiveWorkUnit, error) {
 	type workUnitKey struct {
 		bitReversedXid int64
 		workUnitId     int64
@@ -161,7 +135,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		}
 	}
 
-	workUnits := make([]storage.WorkUnitWithAuthor, 0, len(orderedPKs))
+	workUnits := make([]storage.ActiveWorkUnit, 0, len(orderedPKs))
 	for _, pk := range orderedPKs {
 		key := workUnitKey{
 			bitReversedXid: pk.BitReversedXid,
@@ -171,9 +145,10 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 		if !ok {
 			return nil, fmt.Errorf("work unit with PK (BitReversedXid: %d, WorkUnitId: %d) missing from batch read result", pk.BitReversedXid, pk.WorkUnitId)
 		}
-		workUnits = append(workUnits, storage.WorkUnitWithAuthor{
-			WorkUnit: wu,
-			Author:   pk.Creator,
+		workUnits = append(workUnits, storage.ActiveWorkUnit{
+			WorkUnit:        wu,
+			Author:          pk.Creator,
+			ExperimentTitle: pk.ExperimentTitle,
 		})
 	}
 
@@ -192,18 +167,14 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(queueNames) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits:     []storage.WorkUnitWithAuthor{},
+			WorkUnits:     []storage.ActiveWorkUnit{},
 			NextPageToken: "",
 		}, nil
 	}
 
-	pageSizeVal := pageSize
-	if pageSizeVal <= 0 {
-		pageSizeVal = defaultPageSize
-	}
-	pageSizeVal = min(pageSizeVal, maxPageSize)
+	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
 
-	offset, err := decodePageToken(pageToken)
+	offset, err := offsetpagetoken.Decode(pageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
@@ -228,7 +199,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 
 	if len(orderedPKs) == 0 {
 		return &storage.ActiveWorkUnitsResult{
-			WorkUnits:      []storage.WorkUnitWithAuthor{},
+			WorkUnits:      []storage.ActiveWorkUnit{},
 			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil
@@ -237,7 +208,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	nextPageToken := ""
 	if int64(len(orderedPKs)) > int64(pageSizeVal) {
 		orderedPKs = orderedPKs[:pageSizeVal]
-		nextPageToken = encodePageToken(offset + int64(pageSizeVal))
+		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSizeVal))
 	}
 
 	keys := make([]spanner.KeySet, len(orderedPKs))

@@ -37,6 +37,10 @@ import {
 import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
+  DEFAULT_SPLIT_RATIO_PERCENT,
+  ResizeDividerComponent,
+} from './components/resize_divider/resize_divider';
+import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
   SmartResourceFinderComponent,
@@ -47,7 +51,7 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { matchesResourceFilter } from './resource_filter';
+import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
 
 /**
@@ -64,6 +68,7 @@ import { mapPeriodToRangePreset } from './resource_velocity';
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,
+    ResizeDividerComponent,
     QueueJobsTable,
     WipBannerComponent,
   ],
@@ -84,6 +89,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
+
+  protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
+
+  protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
+  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
@@ -133,14 +143,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   protected readonly availableResourceTypes = computed<string[]>(() => {
-    return [
-      ...new Set(
-        this.queues()
-          .flatMap((q) => q.queueCapacity ?? [])
-          .map((cap) => cap.resourceType)
-          .filter((type): type is string => Boolean(type)),
-      ),
-    ].sort();
+    const reportedTypes = this.queues()
+      .flatMap((q) => q.queueCapacity ?? [])
+      .map((cap) => cap.resourceType)
+      .filter((type): type is string => Boolean(type));
+    return expandResourceTypesWithParents(reportedTypes);
   });
 
   protected readonly activeResourceFilters = computed<string[]>(() => {

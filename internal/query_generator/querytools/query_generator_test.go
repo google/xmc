@@ -14,6 +14,8 @@
 package querytools
 
 import (
+	"strings"
+	"sync"
 	"testing"
 
 	"cloud.google.com/go/spanner"
@@ -28,6 +30,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	fpb "xmanager_cloud/api/filter"
@@ -665,15 +668,28 @@ func TestGenerateQueryChoosesCorrectIndex(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			if _, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), []TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
+			stmt := spannerdialect.NewStatement(nil)
+			if _, _, err = qg.GenerateQuery(stmt, []TableField{AlbumSingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 10, 0, nil, nil); err != nil {
 				t.Fatalf("Error generating query: %v", err)
 			}
 
-			if _, ok := tt.wantIndexes[qg.LastFromTable()]; !ok {
-				t.Errorf("Query generator with base filter %q and user filter %q chose index %q, want one of %v", tt.baseFilterExp, tt.userFilter, qg.LastFromTable(), tt.wantIndexes)
+			gotTable := selectedTableFromSQL(stmt.Spanner().SQL, AlbumsTables)
+			if _, ok := tt.wantIndexes[gotTable]; !ok {
+				t.Errorf("Query generator with base filter %q and user filter %q chose index %q (SQL %q), want one of %v", tt.baseFilterExp, tt.userFilter, gotTable, stmt.Spanner().SQL, tt.wantIndexes)
 			}
 		})
 	}
+}
+
+func selectedTableFromSQL(sql string, tables []TableView) TableName {
+	sql = strings.TrimSpace(sql)
+	for _, t := range tables {
+		clause := " FROM " + t.NameClause.String()
+		if strings.Contains(sql, clause+" ") || strings.HasSuffix(sql, clause) {
+			return t.Name
+		}
+	}
+	return ""
 }
 
 func TestRewritePhrases(t *testing.T) {
@@ -1553,6 +1569,39 @@ func TestGeneratePostgresQuery(t *testing.T) {
 			userFilter:  `SingerId = foo.bar`,
 			wantErrCode: codes.InvalidArgument,
 		},
+		{
+			name:       "RestrictionRewriter rewrites field and value before SQL generation",
+			userFilter: `AlbumId = 10`,
+			options: []Option{
+				RestrictionRewriter(func(r *fpb.Restriction) (*fpb.Restriction, error) {
+					if r.GetLhs().GetValue() != string(AlbumIDTableField) {
+						return r, nil
+					}
+					return fpb.Restriction_builder{
+						Comparator: r.GetComparator(),
+						Lhs:        fpb.Expression_builder{Value: proto.String(string(SingerIDTableField))}.Build(),
+						Rhs:        fpb.Expression_builder{Value: proto.String("99")}.Build(),
+					}.Build(), nil
+				}),
+			},
+			wantStmt: &postgresdialect.Statement{
+				SQL:  "SELECT a.AlbumTitle, a.AlbumId FROM Albums a WHERE (a.SingerId = $1) ORDER BY a.SingerId, a.AlbumId",
+				Args: []any{int64(99)},
+			},
+			wantFieldToIdxMap: map[TableField]int{
+				AlbumIDTableField: 1,
+			},
+		},
+		{
+			name:       "RestrictionRewriter error rejects the filter",
+			userFilter: `AlbumId = 10`,
+			options: []Option{
+				RestrictionRewriter(func(r *fpb.Restriction) (*fpb.Restriction, error) {
+					return nil, status.Error(codes.InvalidArgument, "custom restriction error")
+				}),
+			},
+			wantErrCode: codes.InvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1600,4 +1649,50 @@ func TestGeneratePostgresQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateQueryConcurrent(t *testing.T) {
+	qg, err := NewOptimizableGenerator(AlbumsTables, nil, nil, nil, true, false)
+	if err != nil {
+		t.Fatalf("NewOptimizableGenerator() failed: %v", err)
+	}
+	type queryCase struct {
+		exp       *fpb.Expression
+		wantTable TableName
+	}
+	rawCases := []struct {
+		filter    string
+		wantTable TableName
+	}{
+		{filter: `SingerId = "123"`, wantTable: AlbumsTableName},
+		{filter: `Rating = 5`, wantTable: AlbumsByTitleReleaseDateRatingTableName},
+		{filter: `AlbumTitle = "Killer Queen" AND AlbumId = "123"`, wantTable: AlbumsByTitleAlbumIDReleaseDateTableName},
+	}
+	cases := make([]queryCase, len(rawCases))
+	for i, rc := range rawCases {
+		exp, err := filter.ParseExpressionWithOptions(fpb.ExpressionParserOptions_builder{}.Build(), rc.filter)
+		if err != nil {
+			t.Fatalf("ParseExpressionWithOptions(%q) failed: %v", rc.filter, err)
+		}
+		cases[i] = queryCase{exp: exp, wantTable: rc.wantTable}
+	}
+
+	var wg sync.WaitGroup
+	for g := range 16 {
+		wg.Go(func() {
+			for i := range 20 {
+				qc := cases[(g+i)%len(cases)]
+				stmt := spannerdialect.NewStatement(nil)
+				if _, _, err := qg.GenerateQuery(stmt, []TableField{AlbumSingerIDTableField}, nil, nil, qc.exp, nil, 10, 0, nil, nil); err != nil {
+					t.Errorf("goroutine %d iter %d: GenerateQuery() failed: %v", g, i, err)
+					return
+				}
+				if gotTable := selectedTableFromSQL(stmt.Spanner().SQL, AlbumsTables); gotTable != qc.wantTable {
+					t.Errorf("goroutine %d iter %d: selectedTableFromSQL(%q) = %q, want %q", g, i, stmt.Spanner().SQL, gotTable, qc.wantTable)
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
 }

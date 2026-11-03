@@ -25,17 +25,22 @@ import (
 )
 
 // NewPool parses the PostgreSQL DSN, configures the connection pool (applying maxConns when > 0),
-// creates the pool, and verifies database connectivity via Ping.
+// creates the pool with a context detached from caller cancellation, and verifies database
+// connectivity via Ping using ctx.
 func NewPool(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, error) {
+	return newPool(ctx, dsn, maxConns, (*pgxpool.Pool).Ping)
+}
+
+func newPool(ctx context.Context, dsn string, maxConns int32, ping func(*pgxpool.Pool, context.Context) error) (*pgxpool.Pool, error) {
 	poolCfg, err := parsePoolConfig(dsn, maxConns)
 	if err != nil {
 		return nil, err
 	}
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	pool, err := pgxpool.NewWithConfig(context.WithoutCancel(ctx), poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create postgres connection pool: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
+	if err := ping(pool, ctx); err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping postgres database: %w", err)
 	}

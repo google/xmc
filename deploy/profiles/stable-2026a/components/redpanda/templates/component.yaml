@@ -16,7 +16,7 @@ apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: "redpanda"
-  namespace: {{ .Values.namespace | default "xmc" | quote }}
+  namespace: {{ .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) | quote }}
   labels:
     xmc.dev/profile: "stable-2026a"
     app.kubernetes.io/name: "redpanda"
@@ -29,6 +29,10 @@ spec:
   componentClass: "event-stream"
   version: {{ .Chart.Version | default "0.1.0" | quote }}
   chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
+  stability: {{ .Values.stability | default "STABLE" | quote }}
+  {{- if hasKey .Values "acknowledgeExperimental" }}
+  acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
+  {{- end }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
   {{- $params := .Values.parameters | default dict }}

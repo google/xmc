@@ -337,6 +337,37 @@ func TestApplySpecUpdateMask(t *testing.T) {
 			paths:    []string{"version"},
 			wantSpec: &componentspb.ComponentSpec{Version: "v2.0.0", Dependencies: []string{"redpanda"}},
 		},
+		{
+			name: "UpdateStabilityAndAcknowledgeExperimentalSnakeCase",
+			base: &componentspb.ComponentSpec{Version: "v1.0.0"},
+			update: &componentspb.ComponentSpec{
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+			},
+			paths: []string{"stability", "acknowledge_experimental"},
+			wantSpec: &componentspb.ComponentSpec{
+				Version:                 "v1.0.0",
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+			},
+		},
+		{
+			name: "UpdateAcknowledgeExperimentalCamelCase",
+			base: &componentspb.ComponentSpec{
+				Version:                 "v1.0.0",
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+			},
+			update: &componentspb.ComponentSpec{
+				AcknowledgeExperimental: false,
+			},
+			paths: []string{"acknowledgeExperimental"},
+			wantSpec: &componentspb.ComponentSpec{
+				Version:                 "v1.0.0",
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: false,
+			},
+		},
 	}
 
 	for _, tc := range tests {

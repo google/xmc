@@ -124,7 +124,7 @@ func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.Co
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Component manifest mismatch (-want +got):\n%s", diff)
 	}
-	validateManifestAgainstCRD(t, crdPath, &got)
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 }
 
 func stageChartFile(t *testing.T, srcPath, dstPath string) {
@@ -230,6 +230,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "event-stream",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -263,6 +264,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -315,6 +317,7 @@ parameters:
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: false,
 					DeletionPolicy:     "Orphan",
 					Parameters: map[string]string{
@@ -359,6 +362,7 @@ type crdSchemaDoc struct {
 				OpenAPIV3Schema struct {
 					Properties struct {
 						Spec struct {
+							Required   []string `yaml:"required"`
 							Properties struct {
 								WrapperRef struct {
 									Properties struct {
@@ -379,7 +383,7 @@ type crdSchemaDoc struct {
 	} `yaml:"spec"`
 }
 
-func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.ComponentManifest) {
+func validateManifestAgainstCRD(t *testing.T, crdPath string, rendered []byte, comp *linter.ComponentManifest) {
 	t.Helper()
 	rawCRD, err := os.ReadFile(crdPath)
 	if err != nil {
@@ -400,6 +404,17 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 	wantAPIVersion := crd.Spec.Group + "/" + version.Name
 	if comp.APIVersion != wantAPIVersion || comp.Kind != crd.Spec.Names.Kind {
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
+	}
+
+	var rawDoc map[string]any
+	if err := yaml.Unmarshal(rendered, &rawDoc); err != nil {
+		t.Fatalf("failed to unmarshal rendered manifest map: %v", err)
+	}
+	rawSpec, _ := rawDoc["spec"].(map[string]any)
+	for _, reqField := range version.Schema.OpenAPIV3Schema.Properties.Spec.Required {
+		if val, ok := rawSpec[reqField]; !ok || val == nil || fmt.Sprint(val) == "" {
+			t.Errorf("rendered manifest %q missing CRD required spec.%s field", comp.Metadata.Name, reqField)
+		}
 	}
 
 	if comp.Spec.WrapperRef != nil {
@@ -458,6 +473,7 @@ metadata:
   name: {{ .Release.Name | quote }}
   namespace: "xmc"
 spec:
+  stability: "STABLE"
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   chartVersion: {{ .Values.emptyList | default "1.0.0" | quote }}
   parameters:
@@ -534,6 +550,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			ComponentClass:     "metrics-ingestion",
 			Version:            "0.1.0",
 			ChartVersion:       "0.1.0",
+			Stability:          "STABLE",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
@@ -553,6 +570,8 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Ingestion Gateway Component manifest mismatch (-want +got):\n%s", diff)
 	}
+	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)
@@ -794,6 +813,10 @@ func renderStable2026aProfile(t *testing.T, profileDir string, components map[st
 }
 
 func renderChartWithValues(chartRoot, releaseName string, overrides map[string]any) (map[string]string, error) {
+	return renderChartWithNamespace(chartRoot, releaseName, "xmc", overrides)
+}
+
+func renderChartWithNamespace(chartRoot, releaseName, namespace string, overrides map[string]any) (map[string]string, error) {
 	ch, err := loader.LoadDir(chartRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
@@ -803,7 +826,7 @@ func renderChartWithValues(chartRoot, releaseName string, overrides map[string]a
 	}
 	releaseOpts := chartutil.ReleaseOptions{
 		Name:      releaseName,
-		Namespace: "xmc",
+		Namespace: namespace,
 		Revision:  1,
 		IsInstall: true,
 	}
@@ -817,4 +840,192 @@ func renderChartWithValues(chartRoot, releaseName string, overrides map[string]a
 		return nil, fmt.Errorf("failed to render Helm chart in %s: %w", chartRoot, err)
 	}
 	return rendered, nil
+}
+
+func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
+	t.Parallel()
+	igDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", "ingestion-gateway"))
+
+	t.Run("sasl tls hpa resources and custom namespace via bridge values", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "custom-ns", map[string]any{
+			"namespace": "custom-ns",
+			"ingestionGatewayDeployment": map[string]any{
+				"enabled":            true,
+				"serviceAccountName": "custom-ig-sa",
+				"hpaEnabled":         true,
+				"hpaMinReplicas":     int64(3),
+				"hpaMaxReplicas":     int64(12),
+				"saslEnabled":        true,
+				"saslMechanism":      "SCRAM-SHA-512",
+				"saslSecretName":     "kafka-sasl-sec",
+				"tlsEnabled":         true,
+				"tlsSecretName":      "kafka-tls-sec",
+				"tlsCaFile":          "/etc/kafka/tls/ca.crt",
+				"tlsCertFile":        "/etc/kafka/tls/tls.crt",
+				"tlsKeyFile":         "/etc/kafka/tls/tls.key",
+				"cpuRequest":         "250m",
+				"memoryRequest":      "512Mi",
+				"cpuLimit":           "1000m",
+				"memoryLimit":        "2Gi",
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		for _, want := range []string{
+			`serviceAccountName: "custom-ig-sa"`,
+			"runAsNonRoot: true",
+			`"-components_namespace=custom-ns"`,
+			`"-sasl_enabled=true"`,
+			`"-sasl_mechanism=SCRAM-SHA-512"`,
+			`"-sasl_credentials_dir=/etc/kafka/credentials"`,
+			`secretName: "kafka-sasl-sec"`,
+			`"-tls_enabled=true"`,
+			`"-tls_ca_file=/etc/kafka/tls/ca.crt"`,
+			`"-tls_cert_file=/etc/kafka/tls/tls.crt"`,
+			`"-tls_key_file=/etc/kafka/tls/tls.key"`,
+			`secretName: "kafka-tls-sec"`,
+			"minReplicas: 3",
+			"maxReplicas: 12",
+			"cpu: 250m",
+			"memory: 512Mi",
+			"cpu: 1000m",
+			"memory: 2Gi",
+			`namespace: "custom-ns"`,
+		} {
+			if !strings.Contains(dep, want) {
+				t.Errorf("expected %q in rendered workload:\n%s", want, dep)
+			}
+		}
+		depSpec := manifestSpecByKind(t, dep, "Deployment")
+		if _, hasReplicas := depSpec["replicas"]; hasReplicas {
+			t.Errorf("expected Deployment.spec.replicas omitted when hpaEnabled=true, got %v", depSpec["replicas"])
+		}
+	})
+
+	t.Run("hpa disabled scale to zero and standalone parameters.image parity", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "ingestion-gateway", "xmc", map[string]any{
+			"deployWorkload": true,
+			"parameters": map[string]any{
+				"image":                         "gcr.io/custom/ig@sha256:abcdef0123456789",
+				"hpaEnabled":                    "FALSE",
+				"replicas":                      0,
+				"tlsEnabled":                    "TRUE",
+				"projectId":                     "custom-proj",
+				"terminationGracePeriodSeconds": 40,
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		if strings.Contains(dep, "kind: HorizontalPodAutoscaler") {
+			t.Errorf("expected HorizontalPodAutoscaler omitted when hpaEnabled=FALSE:\n%s", dep)
+		}
+		if !strings.Contains(dep, "replicas: 0") {
+			t.Errorf("expected static replicas: 0 preserved when hpaEnabled=FALSE:\n%s", dep)
+		}
+		if !strings.Contains(dep, `image: "gcr.io/custom/ig@sha256:abcdef0123456789"`) {
+			t.Errorf("expected standalone parameters.image to resolve container image:\n%s", dep)
+		}
+		if !strings.Contains(dep, `"-project_id=custom-proj"`) || !strings.Contains(dep, "terminationGracePeriodSeconds: 40") {
+			t.Errorf("expected standalone parameters.projectId and terminationGracePeriodSeconds applied:\n%s", dep)
+		}
+		if !strings.Contains(dep, `"-tls_enabled=true"`) || strings.Contains(dep, "kafka-tls-credentials") {
+			t.Errorf("expected -tls_enabled=true without kafka-tls-credentials volume when tlsSecretName is empty:\n%s", dep)
+		}
+	})
+
+	t.Run("empty scalar overrides keep hpa and replicas defaults and tls disabled omits cert flags", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "xmc", map[string]any{
+			"sasl": map[string]any{"enabled": true, "secretName": "fallback-sasl-sec"},
+			"ingestionGatewayDeployment": map[string]any{
+				"enabled":     true,
+				"hpaEnabled":  "",
+				"replicas":    "",
+				"saslEnabled": "",
+				"tlsEnabled":  false,
+				"tlsCaFile":   "/etc/kafka/tls/ca.crt",
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		if !strings.Contains(dep, "kind: HorizontalPodAutoscaler") {
+			t.Errorf("expected empty hpaEnabled override to preserve HPA default=true:\n%s", dep)
+		}
+		if !strings.Contains(dep, `"-sasl_enabled=true"`) || !strings.Contains(dep, `secretName: "fallback-sasl-sec"`) {
+			t.Errorf("expected empty saslEnabled override to fall back to sasl.enabled=true:\n%s", dep)
+		}
+		if strings.Contains(dep, "-tls_ca_file=") {
+			t.Errorf("expected -tls_ca_file omitted when tlsEnabled=false:\n%s", dep)
+		}
+	})
+
+	t.Run("empty tlsEnabled override falls back to tls.enabled", func(t *testing.T) {
+		t.Parallel()
+		rendered, err := renderChartWithNamespace(igDir, "xmc-cmp-ingestion-gateway", "xmc", map[string]any{
+			"tls": map[string]any{"enabled": true, "secretName": "fallback-tls-sec"},
+			"ingestionGatewayDeployment": map[string]any{
+				"enabled":    true,
+				"tlsEnabled": "",
+			},
+		})
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace failed: %v", err)
+		}
+		dep := rendered["ingestion-gateway/templates/deployment.yaml"]
+		assertWellFormedManifests(t, dep)
+		if !strings.Contains(dep, `"-tls_enabled=true"`) || !strings.Contains(dep, `secretName: "fallback-tls-sec"`) {
+			t.Errorf("expected empty tlsEnabled override to fall back to tls.enabled=true:\n%s", dep)
+		}
+	})
+}
+
+func TestStable2026aCustomReleaseNamespace(t *testing.T) {
+	t.Parallel()
+	profileDir := resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a"))
+
+	for _, tc := range []struct {
+		releaseNS string
+		wantNS    string
+	}{
+		{releaseNS: "default", wantNS: "xmc"},
+		{releaseNS: "tenant-prod", wantNS: "tenant-prod"},
+	} {
+		t.Run(tc.releaseNS, func(t *testing.T) {
+			t.Parallel()
+			rendered, err := renderChartWithNamespace(profileDir, "xmc-profile", tc.releaseNS, nil)
+			if err != nil {
+				t.Fatalf("renderChartWithNamespace(%q) failed: %v", tc.releaseNS, err)
+			}
+			dec := yaml.NewDecoder(strings.NewReader(rendered["xmc-profile-stable-2026a/templates/components.yaml"]))
+			count := 0
+			for {
+				var cm linter.ComponentManifest
+				err := dec.Decode(&cm)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("decode failed: %v", err)
+				}
+				count++
+				if cm.Metadata.Namespace != tc.wantNS {
+					t.Errorf("%s metadata.namespace = %q, want %q", cm.Metadata.Name, cm.Metadata.Namespace, tc.wantNS)
+				}
+			}
+			if count != 3 {
+				t.Errorf("decoded %d Component CRs, want 3", count)
+			}
+		})
+	}
 }

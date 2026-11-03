@@ -19,7 +19,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
@@ -146,5 +150,63 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	}
 	if got, want := pageDefault.WorkUnits[0].Author, "test@example.com"; got != want {
 		t.Errorf("pageDefault.WorkUnits[0].Author = %q, want %q", got, want)
+	}
+	if got, want := pageDefault.WorkUnits[0].ExperimentTitle, "test-title"; got != want {
+		t.Errorf("pageDefault.WorkUnits[0].ExperimentTitle = %q, want %q", got, want)
+	}
+}
+
+func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T) {
+	ctx := t.Context()
+	_, essClient := emulator.Setup(ctx, t)
+	store, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+
+	// ReverseBits orders [101, 104, 102], whereas logical Xid ASC orders [101, 102, 104].
+	seedTiedActiveWorkUnits(ctx, t, store, []int64{104, 102, 101}, "tie-queue")
+
+	var gotNames []string
+	token := ""
+	for i := range 3 {
+		res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token)
+		if err != nil {
+			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
+		}
+		for _, item := range res.WorkUnits {
+			gotNames = append(gotNames, item.WorkUnit.GetName())
+		}
+		token = res.NextPageToken
+	}
+	wantNames := []string{"experiments/101/workUnits/1", "experiments/102/workUnits/1", "experiments/104/workUnits/1"}
+	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+		t.Errorf("cross-experiment Xid tie-breaker mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func seedTiedActiveWorkUnits(ctx context.Context, t *testing.T, store *spanner.Storage, xids []int64, queueName string) {
+	t.Helper()
+	fixedTS := timestamppb.New(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	for _, xid := range xids {
+		_ = spanner.CreateBlankExperiment(ctx, t, store, xid)
+	}
+	err := store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		for _, xid := range xids {
+			wu := spanner.BlankWorkUnitProto(xid, 1)
+			wu.CreateTime = fixedTS
+			wu.UpdateTime = fixedTS
+			wu.Executable.SchedulingConstraints.QueueName = queueName
+			wu.CurrentWorkUnitExecution.CreateTime = fixedTS
+			wu.CurrentWorkUnitExecution.UpdateTime = fixedTS
+			wu.CurrentWorkUnitExecution.Status.State = essmsgpb.WorkUnitStatus_RUNNING
+			if err := tx.WorkUnits.InsertWorkUnit(ctx, wu); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("seedTiedActiveWorkUnits RunInTransaction failed: %v", err)
 	}
 }

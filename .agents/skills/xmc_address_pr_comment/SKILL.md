@@ -40,7 +40,7 @@ graph TD
 
 ## Guidelines for Using CLI Tools
 
-When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/common/build_oci.py`):
+When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/pr_review/review_threads.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
 3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
@@ -142,7 +142,7 @@ Each `go_binary` mapped above is associated with an OCI image builder and GKE de
 | Bazel Target | Push Command Target | Helm Template File | GKE Deployment Name |
 | :--- | :--- | :--- | :--- |
 | `//cmd/xid_service:xid_service` | `//cmd/xid_service:xid_service_image_push` | `deploy/helm/templates/xid/deployment.yaml` | `xid-service-deployment` |
-| `//cmd/experiment_state_server` | `//cmd/experiment_state_server:ess_image_push` | `deploy/helm/templates/ess/deployment.yaml` | `experiment-state-server-deployment` |
+| `//cmd/experiment_state_server` | `//cmd/experiment_state_server:experiment_state_server_image_push` | `deploy/helm/templates/ess/deployment.yaml` | `experiment-state-server-deployment` |
 | `//cmd/actuator:actuator` | `//cmd/actuator:actuator_image_push` | `deploy/helm/templates/actuator/deployment.yaml` | `actuator-deployment` |
 | `//cmd/reconciler:reconciler` | `//cmd/reconciler:reconciler_image_push` | `deploy/helm/templates/reconciler/deployment.yaml` | `reconciler-deployment` |
 | `//cmd/log_monitor:log_monitor` | `//cmd/log_monitor:log_monitor_image_push` | N/A | N/A |
@@ -212,6 +212,13 @@ git push origin HEAD
 > NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
+### Verify CI on the Pushed Commit (`Adopt` Items Only)
+After the [CI wait buffer](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period), block on CI for the new head commit with the helper tool instead of polling bare `gh pr checks` (which exits `8` while checks are pending):
+```bash
+./tools/pr_review/wait_for_ci.py <pr_number>
+```
+Exit `0` means all checks passed; on exit `1`, triage `failed_checks` and their bounded `log_tail` fields from its error JSON rather than fetching full CI logs.
+
 ### Post GitHub Comment Notification
 The agent runs the helper script `tools/pr_review/reply_pr_comment.py` to reply to each comment according to its disposition (a code fix summary and commit SHA for `Adopt` items, or the technical pushback / deferral rationale drafted in Section 4 for `Push Back` / `Defer` items):
 ```bash
@@ -229,6 +236,27 @@ EOF
 
 > [!WARNING]
 > **Backtick Subshell Command Safety**: Avoid passing double-quoted strings containing backticks (`` ` ``) directly on the command line (e.g. `./tools/pr_review/reply_pr_comment.py "<url>" "Fixed `func_name()`"`). Bash evaluates backticks in double-quoted strings as subshell commands prior to executing python, causing unwanted command execution or syntax errors. Always use `--message-file` (or `-f`) when the reply message contains backticks or markdown code formatting.
+
+### Resolve Review Threads
+For `Adopt` items, pass `--resolve` so the tool resolves the comment's review thread right after posting the reply (via `github_utils.resolve_review_thread`). Leave `Push Back` / `Defer` threads unresolved so the reviewer can adjudicate, unless the user instructs otherwise:
+```bash
+./tools/pr_review/reply_pr_comment.py "<github_comment_url>" --message-file reply_message.txt --resolve
+```
+
+If `--resolve` fails after the reply was posted, the tool exits with a handled error carrying the `reply_id`; do NOT re-post the reply, retry resolution only.
+
+To audit thread state or batch-resolve threads you have already replied to, use `tools/pr_review/review_threads.py` (it paginates and identifies your replies via the authenticated `gh` / `GITHUB_TOKEN` user):
+```bash
+# List threads: thread_id, path:line, is_resolved, replied_by_me, first-comment snippet
+./tools/pr_review/review_threads.py list <owner> <repo> <pr_number> --unresolved-only
+
+# Preview, then resolve only unresolved threads that have a reply from you
+./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pr_number> --dry-run
+./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pr_number>
+```
+
+> [!IMPORTANT]
+> Do NOT hand-write `gh api graphql` `resolveReviewThread` loops. Always run `resolve-replied --dry-run` first and confirm the candidate list matches the threads you intend to resolve (e.g. it excludes `Push Back` replies you want left open).
 
 ### Usage Telemetry Tracking
 When `tools/pr_review/reply_pr_comment.py` successfully posts a reply, it appends a hidden HTML comment block containing public usage metadata (authenticated GitHub user, comment ID, PR number, and UTC timestamp) to the comment body:

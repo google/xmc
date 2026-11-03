@@ -58,10 +58,6 @@ type QueryGenerator interface {
 	// and any error that occurred.
 	GenerateQuery(stmt queryfilter.Statement, selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (map[TableField]int, Unnester, error)
 
-	// LastFromTable returns the table that was last selected from. This is filled in after calling
-	// GenerateQuery(). This is generally to be used for logging or metric purposes by the client.
-	LastFromTable() TableName
-
 	// Tables returns the tables that can be used for queries.
 	Tables() []TableView
 }
@@ -208,6 +204,13 @@ func (q *queryGen) translateRestriction(r *fpb.Restriction) *fpb.Restriction {
 }
 
 func (q *queryGen) translateRestrictionWithValidation(r *fpb.Restriction) (*fpb.Restriction, error) {
+	if q.options.restrictionRewriter != nil {
+		rewritten, err := q.options.restrictionRewriter(r)
+		if err != nil {
+			return r, err
+		}
+		r = rewritten
+	}
 	if len(q.options.rewrites) > 0 {
 		r = PhraseMap(q.options.rewrites)(r)
 	}
@@ -503,8 +506,6 @@ type queryGen struct {
 	optimizeOrderBy bool
 
 	options options
-
-	lastFromTable TableName
 }
 
 // Tables returns the tables available to this QueryGenerator.
@@ -512,9 +513,13 @@ func (q *queryGen) Tables() []TableView {
 	return q.tables
 }
 
+// RestrictionRewriteFunc rewrites or validates a filter restriction before SQL generation.
+type RestrictionRewriteFunc func(r *fpb.Restriction) (*fpb.Restriction, error)
+
 type options struct {
-	rewrites           map[string]map[string]string
-	deduplicateSelects bool
+	rewrites            map[string]map[string]string
+	restrictionRewriter RestrictionRewriteFunc
+	deduplicateSelects  bool
 }
 
 // Option is an optional argument to generating queries.
@@ -532,6 +537,14 @@ func (o optionwrap) set(out *options) {
 func EnumRewrites(rewrites map[string]map[string]string) Option {
 	return optionwrap(func(out *options) {
 		out.rewrites = rewrites
+	})
+}
+
+// RestrictionRewriter registers a callback that rewrites or validates each filter restriction
+// before SQL generation. Returning an error rejects the filter.
+func RestrictionRewriter(rewriter RestrictionRewriteFunc) Option {
+	return optionwrap(func(out *options) {
+		out.restrictionRewriter = rewriter
 	})
 }
 
@@ -767,7 +780,6 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 		logging.Info(context.Background(), "Skipping candidate table", "candidateTable", ct.t.Name, "currentBestTable", bestTable.t.Name)
 	}
 	fromTable := bestTable.t
-	q.lastFromTable = fromTable.Name
 
 	// Create a set to lookup whether a field is a selectField.
 	sfs := make(map[TableField]bool, len(selectFields))
@@ -1068,12 +1080,6 @@ func resolveOrderedPageTokenFields(pageTokenFields, orderByFields []UserOrderedI
 		orderedPtFields = append(orderedPtFields, ob)
 	}
 	return orderedPtFields, nil
-}
-
-// LastFromTable returns the table that was last selected from. This is filled in after calling
-// GenerateQuery(). This is generally to be used for logging or metric purposes by the client.
-func (q *queryGen) LastFromTable() TableName {
-	return q.lastFromTable
 }
 
 // appendPageTokenFields adds WHERE conditions to stmt to enforce pagination conditions for
@@ -1452,6 +1458,7 @@ func (q *queryGen) scoutUserFilterMembers(userFilterExp *fpb.Expression, fullTex
 			equalityFilters[a.Name] = true
 			return a.Type, nil
 		},
+		RestrictionTranslate: q.translateRestriction,
 	}
 	filtervisitor.Visit(&ev, userFilterExp)
 	return nil

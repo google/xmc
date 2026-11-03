@@ -103,6 +103,7 @@ go_deps.gazelle_override(
     build_file_generation = "on",
     directives = [
         "gazelle:default_visibility //visibility:public",
+        "gazelle:go_visibility //visibility:public",
     ],
     path = "cloud.google.com/go",
 )
@@ -143,6 +144,7 @@ use_repo(
     "com_github_tink_crypto_tink_go_v2",
     "com_github_twmb_franz_go",
     "com_github_twmb_franz_go_pkg_kadm",
+    "com_google_cloud_go_bigquery",
     "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_iam",
     "com_google_cloud_go_longrunning",

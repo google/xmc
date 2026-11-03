@@ -17,19 +17,23 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/artifact"
 	"xmanager_cloud/internal/storage/postgres/clilogincode"
+	"xmanager_cloud/internal/storage/postgres/component"
 	"xmanager_cloud/internal/storage/postgres/dashboard"
 	"xmanager_cloud/internal/storage/postgres/experiment"
 	"xmanager_cloud/internal/storage/postgres/operation"
 	"xmanager_cloud/internal/storage/postgres/pausedtask"
 	"xmanager_cloud/internal/storage/postgres/pausestate"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
+	"xmanager_cloud/internal/storage/postgres/retention"
 	"xmanager_cloud/internal/storage/postgres/statushistory"
 	"xmanager_cloud/internal/storage/postgres/statusmessage"
 	"xmanager_cloud/internal/storage/postgres/workunit"
@@ -47,13 +51,16 @@ type dashboardRepository = dashboard.Repository
 type pauseStateRepository = pausestate.Repository
 type pausedTaskRepository = pausedtask.Repository
 type cliLoginCodeRepository = clilogincode.Repository
+type retentionRepository = retention.Repository
 
-var _ storage.Storage = (*Storage)(nil)
+var (
+	_            storage.Storage = (*Storage)(nil)
+	selectNowSQL                 = safesql.New("SELECT now()")
+)
 
 // Storage implements the storage.Storage interface using PostgreSQL.
 type Storage struct {
-	// beginner starts the transactions of RunInTransaction; NewStorage sets it to the pool.
-	beginner txBeginner
+	pool *pgxpool.Pool
 	*experimentRepository
 	*workUnitRepository
 	*artifactRepository
@@ -62,9 +69,11 @@ type Storage struct {
 	*operationRepository
 	*statusHistoryRepository
 	*dashboardRepository
+	*retentionRepository
 	pauseStateRepository   *pauseStateRepository
 	pausedTaskRepository   *pausedTaskRepository
 	cliLoginCodeRepository *cliLoginCodeRepository
+	componentRepository    *component.Repository
 }
 
 // NewStorage creates a new instance of the PostgreSQL-backed storage.
@@ -73,7 +82,7 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	return &Storage{
-		beginner:                pool,
+		pool:                    pool,
 		experimentRepository:    experiment.NewRepository(pool),
 		workUnitRepository:      workunit.NewRepository(pool),
 		artifactRepository:      artifact.NewRepository(pool),
@@ -82,24 +91,54 @@ func NewStorage(pool *pgxpool.Pool) (*Storage, error) {
 		operationRepository:     operation.NewRepository(pool),
 		statusHistoryRepository: statushistory.NewRepository(pool),
 		dashboardRepository:     dashboard.NewRepository(pool),
+		retentionRepository:     retention.NewRepository(pool),
 		pauseStateRepository:    pausestate.NewRepository(pool),
 		pausedTaskRepository:    pausedtask.NewRepository(pool),
 		cliLoginCodeRepository:  clilogincode.NewRepository(pool),
+		componentRepository:     component.NewRepository(pool),
 	}, nil
 }
 
 // RunInTransaction executes the given function in a PostgreSQL read-write transaction,
 // passing a Transaction struct with repositories bound to the PostgreSQL transaction.
 func (s *Storage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
-	if s == nil || s.beginner == nil {
+	if s == nil || s.pool == nil {
 		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	if fn == nil {
 		return pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
-	return runInTx(ctx, s.beginner, defaultTxRetryConfig, func(txCtx context.Context, pgTx pgx.Tx) error {
+	return pgdb.RunInTx(ctx, s.pool, func(txCtx context.Context, pgTx pgx.Tx) error {
 		return fn(txCtx, s.newTransaction(pgTx))
 	})
+}
+
+// RunInSerializableTransaction executes fn in a PostgreSQL SERIALIZABLE read-write transaction and
+// returns the transaction's now() timestamp in UTC, matching the timestamp stored by SQL writes
+// using now() in that transaction.
+func (s *Storage) RunInSerializableTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) (time.Time, error) {
+	if s == nil || s.pool == nil {
+		return time.Time{}, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	if fn == nil {
+		return time.Time{}, pgdb.WrapStatusError("transaction callback must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	var commitTime time.Time
+	err := pgdb.RunInSerializableTx(ctx, s.pool, func(txCtx context.Context, pgTx pgx.Tx) error {
+		commitTime = time.Time{}
+		if err := fn(txCtx, s.newTransaction(pgTx)); err != nil {
+			return err
+		}
+		if err := pgTx.QueryRow(txCtx, selectNowSQL.String()).Scan(&commitTime); err != nil {
+			return pgdb.TranslateError(err, "transaction")
+		}
+		commitTime = commitTime.UTC()
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	return commitTime, nil
 }
 
 func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {
@@ -111,6 +150,7 @@ func (s *Storage) newTransaction(tx pgdb.DBTX) *storage.Transaction {
 		StatusHistory:  s.statusHistoryRepository.WithTx(tx),
 		PauseState:     s.pauseStateRepository.WithTx(tx),
 		PausedTasks:    s.pausedTaskRepository.WithTx(tx),
+		Components:     s.componentRepository.WithTx(tx),
 	}
 }
 
@@ -127,4 +167,9 @@ func (s *Storage) PausedTasks() storage.PausedTaskRepository {
 // CLILoginCodes returns the repository for one-time CLI login codes.
 func (s *Storage) CLILoginCodes() storage.CLILoginCodeRepository {
 	return s.cliLoginCodeRepository
+}
+
+// Components returns the repository for component catalog persistence.
+func (s *Storage) Components() storage.ComponentRepository {
+	return s.componentRepository
 }

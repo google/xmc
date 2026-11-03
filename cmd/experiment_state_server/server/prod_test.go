@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"xmanager_cloud/cmd/experiment_state_server/config"
+	"xmanager_cloud/internal/storage"
 )
 
 func TestProdServer_Close(t *testing.T) {
@@ -122,6 +123,20 @@ func TestNewProd_Validation(t *testing.T) {
 	})
 }
 
+func TestStartBackgroundWorkers_StartsExpiredRowSweeper(t *testing.T) {
+	t.Parallel()
+	cleanups, err := startBackgroundWorkers(t.Context(), &config.Config{}, nil, &storage.MockStorage{})
+	if err != nil {
+		t.Fatalf("startBackgroundWorkers() unexpected error: %v", err)
+	}
+	if len(cleanups) != 1 {
+		t.Fatalf("len(cleanups) = %d, want 1 (the expired row sweeper)", len(cleanups))
+	}
+	if err := runCleanups(cleanups); err != nil {
+		t.Errorf("runCleanups() = %v, want nil", err)
+	}
+}
+
 func TestProdServer_HealthCheckers(t *testing.T) {
 	t.Parallel()
 
@@ -131,9 +146,6 @@ func TestProdServer_HealthCheckers(t *testing.T) {
 		sp, xid, tq := ps.HealthCheckers()
 		if sp != nil || xid != nil || tq != nil {
 			t.Errorf("HealthCheckers() on nil ProdServer = (%v, %v, %v), want all nil", sp, xid, tq)
-		}
-		if ps.SpannerClient() != nil {
-			t.Errorf("SpannerClient() on nil ProdServer = %v, want nil", ps.SpannerClient())
 		}
 		if ps.Storage() != nil {
 			t.Errorf("Storage() on nil ProdServer = %v, want nil", ps.Storage())

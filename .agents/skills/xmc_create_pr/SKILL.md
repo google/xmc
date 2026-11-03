@@ -49,11 +49,12 @@ Before making commits or opening a PR:
 
 Before creating any commit:
 
-1. **Run Pre-Commit Formatting & Affected Tests Protocol**:
+1. **Stage, Then Run Pre-Commit Formatting & Affected Tests Protocol**:
    ```bash
-   ./.githooks/pre-commit && git add .
+   git add <changed_paths>
+   ./.githooks/pre-commit
    ```
-   This runs repository formatters/linters and executes `python3 ./tools/run_affected_tests.py --skip-emulator-check` once linters pass.
+   Stage first: the hook auto-restages formatter fixes only for fully staged files (opt out with `XMC_PRECOMMIT_NO_AUTOSTAGE=1`). It exits 1 on unfixed lint errors or on fixes to partially staged or unstaged files; review those (`git diff`), stage them, and re-run. Once linters pass it executes `python3 ./tools/run_affected_tests.py --skip-emulator-check`, skipped when every staged path is Markdown or under `docs/`.
 2. **Format Conventional Commit Message**:
    Format the commit message header using `<type>(<scope>): <summary>` (e.g., `feat(auth): add OAuth2 token refresh support`).
 3. **Include Mandatory Context & Tags**:
@@ -168,6 +169,13 @@ When updating an existing Pull Request description:
 
 1. After creating or updating a Pull Request, pause execution for approximately **2 minutes** (120 seconds).
 2. Allow GitHub CI status checks and automated PR review passes to run and produce initial status checks before proceeding to subsequent workflow steps.
+3. **Wait for CI Completion via Helper Tool**: After the buffer, block on CI with:
+   ```bash
+   ./tools/pr_review/wait_for_ci.py <pr_number> [--repo owner/name] [--timeout 1800] [--interval 30]
+   ```
+   The tool polls with backoff until every check completes, exits `0` when all pass, `1` on failure or timeout, and `2` on an unexpected internal error. On failure its error JSON lists `failed_checks`, each with its workflow `run_id`, `job_id`, and a bounded `log_tail` (up to 80 lines of the job log ending at its last `##[error]` line; tune with `--log-lines`).
+   > [!IMPORTANT]
+   > Do NOT poll with bare `gh pr checks` (it exits `8` while checks are pending, breaking `&&` chains), do NOT pass check/job IDs to `gh run list --workflow` or use `gh pr checks --json` (unsupported by older `gh` releases), and do NOT rely on `gh run view --log-failed` (prints nothing on some `gh` releases). Use `wait_for_ci.py` output instead of dumping full CI logs.
 
 ---
 
@@ -182,7 +190,7 @@ Pull Requests in XMC MUST always be created as Draft PRs by default.
 ### Rules & Guardrails:
 1. **Draft State Default**: All newly created PRs remain in Draft state throughout development, testing, and automated review iterations.
 2. **Generic Authorizations Insufficient**: General instructions like "proceed", "continue", "finish", "all done", "looks good", or "resolve comments" authorize local fixes or test verification, but **DO NOT authorize converting a Draft PR to Open**.
-3. **Mandatory Confirmation Prompt**: Even after all CI checks pass (`gh pr checks`) and 100% of review comments are resolved, the agent MUST NOT run `gh pr ready`. Instead, the agent reports completion and explicitly asks:
+3. **Mandatory Confirmation Prompt**: Even after all CI checks pass (`./tools/pr_review/wait_for_ci.py <pr_number>` exits `0`) and 100% of review comments are resolved, the agent MUST NOT run `gh pr ready`. Instead, the agent reports completion and explicitly asks:
    > *"All CI checks have passed and all review comments have been resolved for Draft PR #<pr_number>."*
    > 
    > *"Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)"*
@@ -207,4 +215,4 @@ When creating and managing Pull Requests, follow this mandatory 5-step lifecycle
 4. **Address Review Comments**:
    Triage each comment's technical validity, rule alignment, and PR scope impact per [Comment Validity & Pushback Triage](../xmc_address_pr_comment/SKILL.md#25-comment-validity--pushback-triage-mandatory-before-planning-edits) (adopting valid fixes vs. posting technical pushback replies when a suggestion conflicts with repository rules or scope boundaries), commit and push adopted updates, post inline thread replies (`./tools/pr_review/reply_pr_comment.py`), and verify 1-to-1 resolution (`./tools/pr_review/verify_pr_comment_resolution.py`).
 5. **Verify CI Checks & Draft Status Report (Requires Explicit Confirmation Gate to Convert)**:
-   Verify CI status with `gh pr checks <pr_number>`. When checks pass and all comments are resolved, report the final state to the user. Do NOT automatically convert the PR to open. Explicitly ask for user confirmation per Section 6 ('*Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)*'). Only if explicitly confirmed by the user, execute: `gh pr ready <pr_number>`
+   Verify CI status with `./tools/pr_review/wait_for_ci.py <pr_number>` (see [Section 5](#5-ci-wait-buffer-period)). When checks pass and all comments are resolved, report the final state to the user. Do NOT automatically convert the PR to open. Explicitly ask for user confirmation per Section 6 ('*Would you like me to convert Pull Request #<pr_number> from Draft to Open (ready for review)? (Y/n)*'). Only if explicitly confirmed by the user, execute: `gh pr ready <pr_number>`

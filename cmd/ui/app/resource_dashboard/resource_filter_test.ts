@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { matchesResourceFilter } from './resource_filter';
+import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 
 describe('matchesResourceFilter', () => {
   it('should return false for empty inputs', () => {
@@ -67,5 +67,31 @@ describe('matchesResourceFilter', () => {
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-tesla-a100', 'a100')).toBeTrue();
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-tesla-a100', 'tesla')).toBeTrue();
     expect(matchesResourceFilter('nvidia.com/gpu: nvidia-l4', 'l4')).toBeTrue();
+  });
+});
+
+describe('expandResourceTypesWithParents', () => {
+  it('should add the generic parent and sort it before its models', () => {
+    expect(
+      expandResourceTypesWithParents([
+        'nvidia.com/gpu: nvidia-tesla-a100',
+        'nvidia.com/gpu: nvidia-l4',
+      ]),
+    ).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-l4', 'nvidia.com/gpu: nvidia-tesla-a100']);
+  });
+
+  it('should not duplicate a parent that is already reported', () => {
+    expect(
+      expandResourceTypesWithParents(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']),
+    ).toEqual(['nvidia.com/gpu', 'nvidia.com/gpu: nvidia-tesla-a100']);
+  });
+
+  it('should leave non-compound types unchanged and sort all options', () => {
+    expect(expandResourceTypesWithParents(['memory', 'google.com/tpu: tpu-v5p', 'cpu'])).toEqual([
+      'cpu',
+      'google.com/tpu',
+      'google.com/tpu: tpu-v5p',
+      'memory',
+    ]);
   });
 });

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -110,6 +111,12 @@ type Reconciler struct {
 	// now returns the current time; injectable so tests can control the
 	// STOPPED-write retry budget.
 	now func() time.Time
+
+	// mlRunCacheMu guards mlRunURLCache across concurrent reconciles so
+	// back-to-back JobSet events within the batcher flush window do not
+	// trigger duplicate CreateMLRun RPCs for the same execution.
+	mlRunCacheMu  sync.Mutex
+	mlRunURLCache map[mlRunCacheKey]string
 }
 
 // NewReconciler creates and validates a new JobSet Reconciler.
@@ -256,13 +263,14 @@ func (r *Reconciler) buildDeletionUpdate(ctx context.Context, jobSet *v1alpha2.J
 	}
 }
 
-// evictPendingJobSetUpdate removes any pending JobsetSource batcher entry for
-// (xid, wid) with EID <= eid so a stale non-terminal update cannot flush after
-// the synchronous deletion write completes.
+// evictPendingJobSetUpdate removes any pending JobsetSource batcher entry and
+// cached MLRun URL for (xid, wid) with EID <= eid so a stale non-terminal
+// update cannot flush after the synchronous deletion write completes.
 func (r *Reconciler) evictPendingJobSetUpdate(xid, wid, eid int64) {
 	if r.Batcher != nil {
 		r.Batcher.Remove(xid, wid, eid, shared.JobsetSource)
 	}
+	r.evictCachedMLRunURLs(xid, wid, eid)
 }
 
 // persistStoppedOnDelete synchronously writes the terminal status for a

@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	xmcbigquery "xmanager_cloud/pkg/bigquery"
 	"xmanager_cloud/pkg/clickhouse"
 	dataenginetest "xmanager_cloud/test/dataengine"
 )
@@ -54,6 +55,40 @@ func TestDataEngineLive(t *testing.T) {
 					t.Fatalf("Test case failed golden diff:\n%s", res.Diff)
 				}
 				t.Fatalf("Test case failed")
+			}
+		})
+	}
+}
+
+func TestDataEngineBigQueryLive(t *testing.T) {
+	_ = dataenginetest.LoadEnvFile(".env")
+	if !xmcbigquery.Configured() {
+		t.Skip("Skipping live BigQuery test (BIGQUERY_DATASET is not set)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	bqOpts, err := xmcbigquery.GetOptions()
+	if err != nil {
+		t.Skipf("Skipping live BigQuery test (options incomplete): %v", err)
+	}
+	conn, err := xmcbigquery.ConnectWithOptions(ctx, bqOpts)
+	if err != nil {
+		t.Skipf("Skipping live BigQuery test (BigQuery not reachable): %v", err)
+	}
+	_ = conn.Close()
+
+	opts := dataenginetest.DefaultHarnessOptions()
+	opts.Store = dataenginetest.StoreBigQuery
+	opts.CleanData = true
+	results, err := dataenginetest.Run(ctx, opts)
+	if err != nil {
+		t.Fatalf("BigQuery DataEngine test harness execution failed: %v", err)
+	}
+	for _, res := range results {
+		t.Run(res.TestCaseID, func(t *testing.T) {
+			if !res.Passed {
+				t.Fatalf("Test case failed (err=%v):\n%s", res.Error, res.Diff)
 			}
 		})
 	}

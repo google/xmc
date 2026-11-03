@@ -720,6 +720,26 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertFalse(parsed_neg.enable_health_service)
         self.assertFalse(parsed_neg.enable_dashboard_service)
 
+    def test_parser_profile_values_flag(self) -> None:
+        """Verifies --profile-values parses across gke-upgrade and gke-deploy."""
+        parsed_upgrade = self.parser.parse_args(["gke-upgrade", "--profile-values", "/tmp/pv.yaml"])
+        self.assertEqual(parsed_upgrade.profile_values, "/tmp/pv.yaml")
+
+        parsed_deploy = self.parser.parse_args(
+            [
+                "gke-deploy",
+                "--config",
+                "cfg.yaml",
+                "--dns-project",
+                "dns-proj",
+                "--dns-zone",
+                "dns-zone",
+                "--profile-values",
+                "/tmp/pv.yaml",
+            ]
+        )
+        self.assertEqual(parsed_deploy.profile_values, "/tmp/pv.yaml")
+
 
 if __name__ == "__main__":
     unittest.main()

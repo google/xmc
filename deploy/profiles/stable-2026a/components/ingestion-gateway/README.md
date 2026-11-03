@@ -28,13 +28,25 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | Parameter | Default | Target Flag / Spec Field | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `ingestion-gateway` Component CR in the catalog. |
+| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace`, `-components_namespace`, & `RoleBinding.subjects` | Target Kubernetes namespace for the `Component` CR and component reader RBAC subject. |
 | `deployWorkload` | `false` | Template guard | When `true` (or when `ingestionGatewayDeployment.enabled=true` via `xmc-bridge`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`). |
 | `global.imageTag` | `""` | `spec.imageTag` & Container `image` | Overrides the container image tag across both the `Component` CR (`spec.imageTag`) and the `Deployment` container spec (`{{ repository }}:{{ global.imageTag }}`). |
+| `imageTag` | `""` | `spec.imageTag` & Container `image` | Per-component fallback image tag used when `global.imageTag` is empty. |
 | `parameters.port` | `8080` (`"8080"`) | `-port`, `containerPort`, `Service.spec.ports` | HTTP/gRPC port exposed by the Ingestion Gateway container and ClusterIP Service. |
 | `parameters.redpandaBrokers` | `"redpanda-0.redpanda.xmc.svc.cluster.local:9092"` | `-redpanda_brokers` | Static fallback Kafka broker addresses when dynamic discovery from `Component/redpanda` is inactive. |
 | `parameters.topicName` | `"xmc-metrics"` | `-topic_name` | Default Kafka topic for ingested telemetry and experiment metrics. |
 | `parameters.minPartitions` | `128` (`"128"`) | `-min_partitions` | Minimum partition count when auto-creating the Kafka topic. |
-| `parameters.minReplicas` | `1` (`"1"`) | `-min_replicas` | Minimum replication factor for the Kafka topic (matches the umbrella chart default). |
+| `parameters.minReplicas` | `1` (`"1"`) | `-min_replicas` | Minimum replication factor for the Kafka topic. |
+| `parameters.serviceAccountName` | `"default"` | `PodSpec.serviceAccountName` & `RoleBinding.subjects` | ServiceAccount bound to the gateway pods and `ingestion-gateway-components-reader` RoleBinding. |
+| `parameters.image` | `""` | Container `image` | Optional full container image override (including tag or `@sha256:...` digest). |
+| `parameters.imageRepository` | `""` | Container `image` | Optional custom image repository paired with `imageTag` / `global.imageTag`. |
+| `parameters.hpaEnabled` | `true` | `HorizontalPodAutoscaler` guard | Renders `ingestion-gateway-hpa` when `true`; when `false`, omits HPA and sets static `Deployment.spec.replicas`. |
+| `parameters.hpaMinReplicas` / `parameters.hpaMaxReplicas` | `2` / `10` | `HPA.spec.minReplicas` / `maxReplicas` | Autoscaler replica bounds when `hpaEnabled` is `true`. |
+| `parameters.replicas` | `1` | `Deployment.spec.replicas` | Static replica count used only when `hpaEnabled` is `false`. |
+| `parameters.saslEnabled` / `parameters.saslMechanism` / `parameters.saslSecretName` | `false` / `"SCRAM-SHA-256"` / `""` | `-sasl_*` & `kafka-sasl-credentials` volume | Kafka SASL authentication flags and mounted credentials `Secret`. |
+| `parameters.tlsEnabled` / `parameters.tlsSecretName` | `false` / `""` | `-tls_enabled` & `kafka-tls-credentials` volume | Kafka TLS flag and optional CA/mTLS `Secret` mounted at `/etc/kafka/tls`. |
+| `parameters.tlsCaFile` / `parameters.tlsCertFile` / `parameters.tlsKeyFile` | `""` / `""` / `""` | `-tls_ca_file` / `-tls_cert_file` / `-tls_key_file` | Optional CA and client mTLS certificate/key file paths (for example under `/etc/kafka/tls/`). |
+| `parameters.cpuRequest` / `parameters.memoryRequest` / `parameters.cpuLimit` / `parameters.memoryLimit` | `"10m"` / `"64Mi"` / `"100m"` / `"256Mi"` | `Container.resources` | Flat scalar overrides for container CPU/memory requests and limits. |
 
 ---
 

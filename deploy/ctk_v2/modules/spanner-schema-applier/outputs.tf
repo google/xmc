@@ -14,5 +14,5 @@
 
 output "applied" {
   description = "Pass this to another applier's `depends_on_anchor` to order that one after this one. The value is the resource's id rather than a constant, because a constant carries no dependency and the consumer would run first."
-  value       = null_resource.apply_schema.id
+  value       = var.enabled ? null_resource.apply_schema[0].id : "skipped"
 }

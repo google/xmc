@@ -172,21 +172,23 @@ func parseDurationSeconds(s string) (int, error) {
 // UnmarshalYAML handles flexible dependencies formats (list of strings, list of objects, maps).
 func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 	var raw struct {
-		Enabled            *bool                   `yaml:"enabled,omitempty"`
-		Type               string                  `yaml:"type,omitempty"`
-		ComponentType      string                  `yaml:"componentType,omitempty"`
-		ComponentClass     string                  `yaml:"componentClass,omitempty"`
-		Version            string                  `yaml:"version,omitempty"`
-		ChartVersion       string                  `yaml:"chartVersion,omitempty"`
-		ImageTag           string                  `yaml:"imageTag,omitempty"`
-		DeletionPolicy     string                  `yaml:"deletionPolicy,omitempty"`
-		DeletionProtection bool                    `yaml:"deletionProtection,omitempty"`
-		WrapperRef         *ComponentWrapperRef    `yaml:"wrapperRef,omitempty"`
-		LifecycleControl   *ComponentLifecycleCtrl `yaml:"lifecycleControl,omitempty"`
-		Parameters         yaml.Node               `yaml:"parameters,omitempty"`
-		Dependencies       yaml.Node               `yaml:"dependencies,omitempty"`
-		Manifests          []string                `yaml:"manifests,omitempty"`
-		Description        string                  `yaml:"description,omitempty"`
+		Enabled                 *bool                   `yaml:"enabled,omitempty"`
+		Type                    string                  `yaml:"type,omitempty"`
+		ComponentType           string                  `yaml:"componentType,omitempty"`
+		ComponentClass          string                  `yaml:"componentClass,omitempty"`
+		Version                 string                  `yaml:"version,omitempty"`
+		ChartVersion            string                  `yaml:"chartVersion,omitempty"`
+		ImageTag                string                  `yaml:"imageTag,omitempty"`
+		Stability               string                  `yaml:"stability,omitempty"`
+		AcknowledgeExperimental bool                    `yaml:"acknowledgeExperimental,omitempty"`
+		DeletionPolicy          string                  `yaml:"deletionPolicy,omitempty"`
+		DeletionProtection      bool                    `yaml:"deletionProtection,omitempty"`
+		WrapperRef              *ComponentWrapperRef    `yaml:"wrapperRef,omitempty"`
+		LifecycleControl        *ComponentLifecycleCtrl `yaml:"lifecycleControl,omitempty"`
+		Parameters              yaml.Node               `yaml:"parameters,omitempty"`
+		Dependencies            yaml.Node               `yaml:"dependencies,omitempty"`
+		Manifests               []string                `yaml:"manifests,omitempty"`
+		Description             string                  `yaml:"description,omitempty"`
 	}
 	if err := node.Decode(&raw); err != nil {
 		return err
@@ -194,6 +196,7 @@ func (s *ComponentManifestSpec) UnmarshalYAML(node *yaml.Node) error {
 	s.Enabled = raw.Enabled
 	s.ComponentType = firstNonEmpty(raw.ComponentType, raw.Type)
 	s.ComponentClass, s.ChartVersion, s.ImageTag = raw.ComponentClass, raw.ChartVersion, raw.ImageTag
+	s.Stability, s.AcknowledgeExperimental = strings.TrimSpace(raw.Stability), raw.AcknowledgeExperimental
 	s.Version, s.DeletionPolicy, s.DeletionProtection = firstNonEmpty(raw.Version, raw.ChartVersion), raw.DeletionPolicy, raw.DeletionProtection
 	s.WrapperRef, s.LifecycleControl, s.Manifests, s.Description = raw.WrapperRef, raw.LifecycleControl, raw.Manifests, raw.Description
 	if err := s.decodeParameters(&raw.Parameters); err != nil {

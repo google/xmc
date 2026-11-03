@@ -11,8 +11,8 @@ The Components subsystem coordinates component definitions, versioning, and runt
 - **Source of Truth (SOT)**: Google Cloud Spanner acts as the authoritative relational database storing the global component catalog, versions, dependencies, and rollout states.
 - **Component Manager Service (CMS)**: A gRPC service hosted within the Experiment Service Server (ESS) providing control plane APIs for component registration, dependency validation, and lifecycle operations.
 - **GitOps Bridge (`cmd/xmc-bridge`)**: A bidirectional synchronizer reconciling Kubernetes Custom Resources (`Component.xmc.dev`) with the authoritative Spanner catalog.
-- **Production Spanner Store (`pkg/components/store/spanner_store.go`)**: A production Cloud Spanner persistence driver with ACID read-write transactions, prospective cycle checking, soft-deletion active name index release, and snapshot queries.
-- **In-Memory Store (`pkg/components/store/memory_store.go`)**: A thread-safe in-memory cache and test double implementation.
+- **Database Store (`pkg/components/store/dbstore/dbstore.go`)**: A `storage.Storage`-backed production persistence driver with ACID read-write transactions, prospective cycle checking, soft-deletion active name index release, and snapshot queries.
+- **In-Memory Store (`pkg/components/store/memory/memory_store.go`)**: A thread-safe in-memory cache and test double implementation.
 - **Dynamic Drift Detection (`internal/experiment/driftdetection.go`)**: Evaluates component drift dynamically on ESS experiment read endpoints (`GetExperiment`, `GetExperimentStatus`) by querying Cloud Spanner's `ExperimentConsistencyInfo` view, surfacing warnings to the UI console.
 
 ```
@@ -23,7 +23,7 @@ The Components subsystem coordinates component definitions, versioning, and runt
 │  └─────────────────────────┬─────────────────────────┘  │
 │                            │                            │
 │  ┌─────────────────────────▼─────────────────────────┐  │
-│  │         Storage Engine (SpannerStore / Memory)    │  │
+│  │         Storage Engine (dbstore.Store / Memory)   │  │
 │  │   ┌─────────────────────┬─────────────────────┐   │  │
 │  │   │ Dependency Parser   │ Graph Validator     │   │  │
 │  │   │ & Normalization     │ (3-Color DFS)       │   │  │
@@ -52,11 +52,11 @@ All sources are merged into a single canonical, deduplicated, sorted set that is
 
 **Idempotent intent**: the bridge re-applies intent on every pass with the CR `metadata.generation` as `ComponentSpec.generation`, so `SetComponentIntent` must be idempotent. Both stores share one definition of an unchanged intent: a desired generation that is not newer than the stored generation (`0` means unspecified), with equal labels, dependencies, and spec (ignoring `spec.generation`). An unchanged intent is a no-op: no generation bump, snapshot, `UpdateTime` write, or re-queue, and the state and status are not reset (CMS state is driven by `UpdateObservedGeneration`), so an `ENABLED` component stays `ENABLED` and its generation does not drift past snapshot locks. Validation still runs first, so dependency cycles and unregistered dependencies are still reported for an unchanged intent. A changed intent sets the generation to the desired generation if newer, else to the stored generation + 1, and resets the state to `COMPONENT_STATE_PENDING_RECONCILIATION`.
 
-**Spanner read-only fast path**: steady-state passes re-apply unchanged intents, so `SpannerStore` first reads the component and its registered dependencies with one strong single-use read. If the intent is unchanged at that read and all of its dependencies are registered and active, it returns the stored record without a read-write transaction; skipping the cycle check is safe because committed state never holds a cycle. A deregistered dependency counts as a change because the read returns only registered dependencies. Any other outcome (a change, a missing or deregistered dependency, a new component, or a read error) falls through to the read-write transaction, which re-reads the catalog and decides authoritatively, so a write that lands between the two reads is never lost. Changed and new intents therefore pay one extra strong read before the read-write transaction.
+**Spanner read-only fast path**: steady-state passes re-apply unchanged intents, so `dbstore.Store` first reads the component and its registered dependencies with one strong single-use read. If the intent is unchanged at that read and all of its dependencies are registered and active, it returns the stored record without a read-write transaction; skipping the cycle check is safe because committed state never holds a cycle. A deregistered dependency counts as a change because the read returns only registered dependencies. Any other outcome (a change, a missing or deregistered dependency, a new component, or a read error) falls through to the read-write transaction, which re-reads the catalog and decides authoritatively, so a write that lands between the two reads is never lost. Changed and new intents therefore pay one extra strong read before the read-write transaction.
 
 **Legacy inflated generations**: records written before intents were idempotent may have a CMS generation above the CR generation. They keep the higher number, and later CR edits bump from it. This affects only pre-fix development data because Components have not launched; recreate affected records to realign CMS and CR generations.
 
-**Error contract**: machine-readable store rejections carry a `google.rpc.ErrorInfo` with domain `components.xmc.dev` (`store.ErrorInfoDomain`, built by `errorWithInfo` in `pkg/components/store/error_info.go`); callers branch on its `reason`, never on the message. They all use code `FailedPrecondition`, never `Aborted`, which the Spanner client retries when a read-write transaction body returns it. Every reason carries `operation`, the RPC name, in its metadata: `DEPENDENCY_NOT_REGISTERED` and `DEPENDENCY_CYCLE` (`SetComponentIntent`), and `ACTIVE_DEPENDENTS_EXIST` (`PrepareDeactivation`, non-cascading `ExecuteDeletion`). The bridge still matches the legacy `DependencyNotFoundMessagePrefix` and the cycle message until it switches to the reasons.
+**Error contract**: machine-readable store rejections carry a `google.rpc.ErrorInfo` with domain `components.xmc.dev` (`store.ErrorInfoDomain`, built by `ErrorWithInfo` in `pkg/components/store/error_info.go`); callers branch on its `reason`, never on the message. They all use code `FailedPrecondition`, never `Aborted`, which the Spanner client retries when a read-write transaction body returns it. Every reason carries `operation`, the RPC name, in its metadata: `DEPENDENCY_NOT_REGISTERED`, `DEPENDENCY_CYCLE`, and `STABILITY_INVERSION` (`SetComponentIntent`), and `ACTIVE_DEPENDENTS_EXIST` (`PrepareDeactivation`, non-cascading `ExecuteDeletion`).
 
 **Sourced intents & owner**: a `SetComponentIntentRequest` with `source` (a `RequestSource`: the CR `uid`, `generation` and `namespace`, the `cluster` `uid` and `epoch`, and an optional `expected_owner_uid`) is applied by `SetSourcedComponentIntent`, which orders intents by the source instead of by `spec.generation`, so the CMS generation is independent of the CR generation. Every write records the source as the owner of the record in the `SourceUid`, `SourceGeneration`, `SourceNamespace`, `SourceClusterUid` and `SourceEpoch` columns, with `SourceLastSeenTime` at the commit time. Both stores share one planner (`planIntent` in `pkg/components/store/intent_change.go`; the owner model is in `source_ownership.go`). No wall clock is compared:
 
@@ -77,7 +77,7 @@ Ownership rejections carry metadata `operation`, `owner_namespace`, `owner_uid` 
 
 **Ownership fence**: CMS accepts component writes from one cluster at a time. Its database outlives any single GKE cluster, so another cluster can reach the same CMS: a rebuilt or disaster-recovery cluster, the new cluster of a migration, or a second environment misconfigured to point at the same database. Ownership (above) records the owner's cluster, so the CRs of a new cluster are rejected (R6), and the same-cluster CAS cannot help across clusters. The fence gives an explicit, reviewable handover: the new cluster declares a higher epoch, takes over the owned components, and adopts them in place. Meanwhile the previous cluster, if it is still running, can no longer change them. This is not multi-cluster support: there is exactly one active writer per CMS.
 
-A takeover moves owned components to the new holder, whose intents adopt them (R2), while the fence (below) rejects intents from the fenced-out cluster. `DeclareClusterEpoch(cluster{uid, name, epoch})` maintains the `ComponentOwnershipFence` row (`FenceId = 1`; `pkg/components/store/ownership_fence.go`, `spanner_ownership_fence.go`). The `uid` must be a lowercase hyphenated UUID (the kube-system Namespace UID) and the `name` a DNS-1123 label; otherwise the call fails with `InvalidArgument`. Like the other mutating RPCs, it is limited to the authorized controller service account (the bridge) or a platform admin; other callers get `PermissionDenied`. The response reports the active cluster and an `outcome`:
+A takeover moves owned components to the new holder, whose intents adopt them (R2), while the fence (below) rejects intents from the fenced-out cluster. `DeclareClusterEpoch(cluster{uid, name, epoch})` maintains the `ComponentOwnershipFence` row (`FenceId = 1`; `pkg/components/store/ownership/ownership_fence.go`, `pkg/components/store/dbstore/ownership_fence.go`). The `uid` must be a lowercase hyphenated UUID (the kube-system Namespace UID) and the `name` a DNS-1123 label; otherwise the call fails with `InvalidArgument`. Like the other mutating RPCs, it is limited to the authorized controller service account (the bridge) or a platform admin; other callers get `PermissionDenied`. The response reports the active cluster and an `outcome`:
 
 | Fence vs declaration | `outcome` or rejection |
 | :--- | :--- |
@@ -198,9 +198,9 @@ The `ComponentManagerService` exposes standard AIP-compliant gRPC RPCs for exter
 
 ---
 
-### 5. Production Cloud Spanner Persistence Driver (`pkg/components/store/spanner_store.go`)
+### 5. Production Database Persistence Driver (`pkg/components/store/dbstore/dbstore.go`)
 
-`SpannerStore` provides the production database persistence layer implementing the `store.Store` interface against Cloud Spanner.
+`dbstore.Store` provides the production database persistence layer implementing the `store.Store` interface against `storage.Storage` (backed by Cloud Spanner via `internal/storage/spanner/component`).
 
 #### Relational Table Schema
 - **`Components`**: Stores component intent and status (`ComponentId`, `Name`, `ComponentClass`, `ConfigProto`, `AccessPayload`, `State`, `Generation`, `ObservedGeneration`, `CreateTime`, `UpdateTime`, `ActiveName`).
@@ -326,3 +326,23 @@ WorkUnits consume components at runtime through the Actuator daemon without quer
 3. **Placement Gating**: Actuator blocks placement and requeues the task if required components are missing (hydration lag), disabled, or unhealthy (`Ready=False`/`Unknown`).
 4. **Drift Warning**: If a component's generation drifts past the snapshot lock, Actuator allows placement but logs a warning and annotates the JobSet with `xmc.dev/component-drift-warning`.
 5. **Configuration Injection**: Actuator injects plain environment variables (`status.access.envVars`) into all primary and init containers across all replicated jobs.
+
+---
+
+## 7. Component Stability Contract
+
+Every `Component` declares a required stability level via `spec.stability` (`STABLE`, `PREVIEW`, or `EXPERIMENTAL`) and optional acknowledgement via `spec.acknowledgeExperimental` (default `false`):
+
+| Tier | Protobuf Enum | Launch Stage & Upgrade Contract | Admin Enablement (`acknowledgeExperimental`) | Dependency Inversion (`STABILITY_INVERSION`) | Observability & Surfacing |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`STABLE`** | `COMPONENT_STABILITY_STABLE` | Production-supported GA component; upgrades preserve backward compatibility within the profile's support window. | Enabled with `spec.enabled: true` alone. | Cannot depend on `EXPERIMENTAL` components (`STABLE -> PREVIEW` and `STABLE -> STABLE` are permitted). | Green `STABLE` badge in Admin Panel; `stability=STABLE` in `xmc-diag`; no ESS snapshot warning. |
+| **`PREVIEW`** | `COMPONENT_STABILITY_PREVIEW` | Feature-complete pre-GA component available for early evaluation before full GA support guarantees apply. | Enabled with `spec.enabled: true` alone (does not require `acknowledgeExperimental: true`). | Cannot depend on `EXPERIMENTAL` components (`PREVIEW -> PREVIEW` and `PREVIEW -> STABLE` are permitted). | Amber `PREVIEW` badge in Admin Panel; `stability=PREVIEW` in `xmc-diag`; no ESS snapshot warning. |
+| **`EXPERIMENTAL`** | `COMPONENT_STABILITY_EXPERIMENTAL` | Early-stage component that may introduce breaking changes or data loss across upgrades. | Requires explicit `spec.acknowledgeExperimental: true` when `spec.enabled` is `true`. | Can depend on `EXPERIMENTAL`, `PREVIEW`, or `STABLE` components. | Red `EXPERIMENTAL` badge in Admin Panel; `stability=EXPERIMENTAL` in `xmc-diag`; ESS attaches `WARNING` (`uses experimental component <name>` / `uses experimental components: <names>`). |
+
+### Multi-Layer Enforcement
+
+1. **Kubernetes CEL Admission (`components.xmc.dev` CRD)**: Requires `spec.stability` on every `Component` CR and rejects `kubectl apply` / `helm upgrade` of an enabled `EXPERIMENTAL` `Component` unless `spec.acknowledgeExperimental == true`. Disabled (`spec.enabled: false`) `EXPERIMENTAL` components are admitted so profiles can ship disabled-by-default experimental components.
+2. **Bridge Controller Defense-in-Depth (`pkg/components/bridge`)**: If an unacknowledged enabled `EXPERIMENTAL` CR reaches reconciliation, `xmc-bridge` sets `Ready=False, Stalled=True, Reason=ExperimentalNotAcknowledged` and holds upgrades without tearing down any running workload.
+3. **CMS Catalog & Dependency Inversion (`pkg/components/cms`)**: `SetComponentIntent` blocks `STABILITY_INVERSION` (`codes.FailedPrecondition`) whenever a `STABLE` or `PREVIEW` component depends on an `EXPERIMENTAL` component (checked both when a `STABLE`/`PREVIEW` component declares dependencies and when an upstream dependency attempts to downgrade its stability to `EXPERIMENTAL` while a `STABLE`/`PREVIEW` dependent exists).
+4. **Offline Linter (`cmd/component-linter`)**: Requires `spec.stability` (`REQUIRED_FIELD`) and enforces `staticChecks.allowExperimental` in profile `rules.yaml`, unacknowledged `EXPERIMENTAL` rejection (`EXPERIMENTAL_NOT_ACKNOWLEDGED`), and static DAG `STABILITY_INVERSION` checks.
+5. **Observability & Surfacing**: ESS attaches a `WARNING` structured status message (`uses experimental component <name>` / `uses experimental components: <names>`) to active experiments whose locked snapshots reference an `EXPERIMENTAL` component; the Health Service, Admin Panel UI, and `xmc-diag` surface each component's stability badge.

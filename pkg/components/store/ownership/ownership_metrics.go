@@ -184,7 +184,7 @@ func RecordOwnershipGauges(g store.OwnershipGauges) {
 }
 
 // isOwnerStale reports whether rec is an active owned record whose SourceLastSeenTime is at or
-// before cutoff. It matches the WHERE clause of SpannerStore's stale-owner count.
+// before cutoff. It matches the WHERE clause of dbstore.Store's stale-owner count.
 func isOwnerStale(rec *store.ComponentRecord, cutoff time.Time) bool {
 	if store.IsDeletedRecord(rec) || rec.Owner == nil || rec.SourceLastSeenTime.IsZero() {
 		return false

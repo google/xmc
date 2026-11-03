@@ -71,9 +71,11 @@ jobs:
 
       - name: 'Install Playwright and Dependencies'
         run: |
-          python3 -m venv "${GITHUB_WORKSPACE}/.venv"
+          python3 deploy/cli/install_xmanager.py --venv "${GITHUB_WORKSPACE}/.venv"
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install absl-py playwright==1.51.0
-          "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium --with-deps
+          # --with-deps is omitted: arc-runner-set pre-bakes Chromium system libraries and
+          # its unbounded apt-get update can hang until the job timeout.
+          timeout --kill-after=30 300 "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium
 
       - name: 'Capture Golden UI Routes and Build Static Gallery'
         id: capture

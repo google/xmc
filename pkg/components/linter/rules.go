@@ -29,8 +29,15 @@ import (
 
 // StaticChecksConfig specifies toggles and limits for schema and security scope checks.
 type StaticChecksConfig struct {
-	EnforceDeletionProtection bool `yaml:"enforceDeletionProtection" json:"enforceDeletionProtection"`
-	MaxDrainTimeoutSeconds    int  `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
+	EnforceDeletionProtection bool  `yaml:"enforceDeletionProtection" json:"enforceDeletionProtection"`
+	MaxDrainTimeoutSeconds    int   `yaml:"maxDrainTimeoutSeconds" json:"maxDrainTimeoutSeconds"`
+	AllowExperimental         *bool `yaml:"allowExperimental,omitempty" json:"allowExperimental,omitempty"`
+}
+
+// IsExperimentalAllowed reports whether experimental components are permitted by the profile rules.
+// Defaults to true when AllowExperimental is nil.
+func (s StaticChecksConfig) IsExperimentalAllowed() bool {
+	return s.AllowExperimental == nil || *s.AllowExperimental
 }
 
 // DependencyRequirement defines a required dependency and its SemVer constraint,

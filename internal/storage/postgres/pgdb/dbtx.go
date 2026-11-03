@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 // DBTX is the common query and execution interface satisfied by both *pgxpool.Pool and pgx.Tx.
@@ -41,4 +42,31 @@ func FromPool(pool *pgxpool.Pool) DBTX {
 		return nil
 	}
 	return pool
+}
+
+// QueryRow executes sql, scans a single row into Row by column name, and translates any error.
+func QueryRow[Row any](ctx context.Context, db DBTX, sql, entity string, args ...any) (Row, error) {
+	var zero Row
+	if db == nil {
+		return zero, WrapStatusError("postgres database handle must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	rows, err := db.Query(ctx, sql, args...)
+	if err != nil {
+		return zero, TranslateError(err, entity)
+	}
+	row, err := pgx.CollectOneRow(rows, pgx.RowToStructByNameLax[Row])
+	return row, TranslateError(err, entity)
+}
+
+// QueryRows executes sql, scans all returned rows into a slice of Row by column name, and translates any error.
+func QueryRows[Row any](ctx context.Context, db DBTX, sql, entity string, args ...any) ([]Row, error) {
+	if db == nil {
+		return nil, WrapStatusError("postgres database handle must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	rows, err := db.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, TranslateError(err, entity)
+	}
+	collected, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[Row])
+	return collected, TranslateError(err, entity)
 }

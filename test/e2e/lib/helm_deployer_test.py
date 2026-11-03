@@ -172,9 +172,16 @@ class TestHelmDeployer(unittest.TestCase):
     def test_prepare_helm_chart_prunes_unsupported_resources_and_keeps_kueue_dev_and_wpc(self):
         src_helm = os.path.join(self.cfg.temp_dir, "workspace_helm")
         os.makedirs(os.path.join(src_helm, "templates", "certs"), exist_ok=True)
+        os.makedirs(os.path.join(src_helm, "templates", "log-monitor"), exist_ok=True)
         os.makedirs(os.path.join(src_helm, "templates", "kueue-dev"), exist_ok=True)
         os.makedirs(os.path.join(src_helm, "templates", "wpc"), exist_ok=True)
         os.makedirs(os.path.join(src_helm, "templates", "ess"), exist_ok=True)
+        with open(
+            os.path.join(src_helm, "templates", "log-monitor", "deployment.yaml"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("kind: Deployment\n")
         with open(
             os.path.join(src_helm, "templates", "kueue-dev", "cpu-queue.yaml"),
             "w",
@@ -229,6 +236,9 @@ class TestHelmDeployer(unittest.TestCase):
             )
         )
         self.assertFalse(os.path.exists(os.path.join(self.deployer.helm_dir, "templates", "certs")))
+        self.assertFalse(
+            os.path.exists(os.path.join(self.deployer.helm_dir, "templates", "log-monitor"))
+        )
         self.assertFalse(
             os.path.exists(os.path.join(self.deployer.helm_dir, "templates", "ess", "gateway.yaml"))
         )
