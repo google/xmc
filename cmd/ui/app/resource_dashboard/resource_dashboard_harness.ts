@@ -29,6 +29,28 @@ export class ResourceDashboardHarness extends ComponentHarness {
   private readonly mainContent = this.locatorForOptional('.rod-main-content');
   private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
 
+  /** Checks whether the split container is in full-width stacked mode. */
+  async isSplitContainerFullWidth(): Promise<boolean> {
+    const container = await this.splitContainer();
+    return container ? container.hasClass('full-width') : false;
+  }
+
+  /** Gets the bounding box dimensions of the split container and its child panes. */
+  async getSplitLayoutDimensions(): Promise<{
+    container: ElementDimensions | null;
+    mainContent: ElementDimensions | null;
+    jobsPane: ElementDimensions | null;
+  }> {
+    const container = await this.splitContainer();
+    const mainContent = await this.mainContent();
+    const jobsPane = await this.jobsSidePane();
+    return {
+      container: container ? await container.getDimensions() : null,
+      mainContent: mainContent ? await mainContent.getDimensions() : null,
+      jobsPane: jobsPane ? await jobsPane.getDimensions() : null,
+    };
+  }
+
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {
     return this.locatorFor(RodSubnavTabsHarness)();

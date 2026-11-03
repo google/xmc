@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -51,6 +52,7 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
+import { readJobsFullWidthCookie, writeJobsFullWidthCookie } from './jobs_layout_preference';
 import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
 
@@ -75,6 +77,7 @@ import { mapPeriodToRangePreset } from './resource_velocity';
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);
+  private readonly document = inject(DOCUMENT);
   private readonly route = inject(ActivatedRoute);
   private readonly resourceService = inject(ResourceService);
 
@@ -89,6 +92,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
+  protected readonly isJobsFullWidth = signal<boolean>(readJobsFullWidthCookie(this.document));
 
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
 
@@ -102,6 +106,10 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   constructor() {
     this.setupSecondaryDataSubscription();
+
+    effect(() => {
+      writeJobsFullWidthCookie(this.document, this.isJobsFullWidth());
+    });
 
     effect(() => {
       const queues = this.queues();

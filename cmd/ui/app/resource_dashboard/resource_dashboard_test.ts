@@ -29,6 +29,11 @@ import {
   setupObservableMatchers,
 } from 'app/testing/test';
 
+import {
+  JOBS_FULL_WIDTH_COOKIE_NAME,
+  readJobsFullWidthCookie,
+  writeJobsFullWidthCookie,
+} from './jobs_layout_preference';
 import { ResourceDashboard } from './resource_dashboard';
 import { ResourceDashboardHarness } from './resource_dashboard_harness';
 
@@ -65,6 +70,7 @@ describe('ResourceDashboard Container', () => {
   };
 
   const state = cleanState(() => {
+    document.cookie = `${JOBS_FULL_WIDTH_COOKIE_NAME}=false; Path=/; Max-Age=0`;
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
@@ -93,6 +99,10 @@ describe('ResourceDashboard Container', () => {
     });
     return { resourceService };
   }, beforeEach);
+
+  afterEach(() => {
+    document.cookie = `${JOBS_FULL_WIDTH_COOKIE_NAME}=false; Path=/; Max-Age=0`;
+  });
 
   it('should render subnav tabs, smart resource finder, resolved cluster queues, and queue jobs table', async () => {
     bootstrap(TestHostComponent);
@@ -281,5 +291,86 @@ describe('ResourceDashboard Container', () => {
     await divider.doubleClick();
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
+  });
+
+  it('should toggle full-width mode, stack panes vertically at 100% width, and persist preference to cookie', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
+    expect(readJobsFullWidthCookie(document)).toBeFalse();
+
+    const jobsTable = (await dashboard.getQueueJobsTable())!;
+    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+    expect(toggleBtn).not.toBeNull();
+    expect(await toggleBtn.getText()).toContain('View in full width');
+
+    await toggleBtn.click();
+    await flush();
+
+    expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
+    expect(readJobsFullWidthCookie(document)).toBeTrue();
+    expect(await dashboard.getQueueList()).not.toBeNull();
+    expect(await dashboard.getQueueJobsTable()).not.toBeNull();
+
+    const fullWidthDims = await dashboard.getSplitLayoutDimensions();
+    expect(fullWidthDims.container).not.toBeNull();
+    expect(fullWidthDims.mainContent).not.toBeNull();
+    expect(fullWidthDims.jobsPane).not.toBeNull();
+    expect(fullWidthDims.mainContent!.width).toBeCloseTo(fullWidthDims.container!.width, 0);
+    expect(fullWidthDims.jobsPane!.width).toBeCloseTo(fullWidthDims.container!.width, 0);
+    expect(fullWidthDims.mainContent!.top).toBeGreaterThanOrEqual(
+      fullWidthDims.jobsPane!.top + fullWidthDims.jobsPane!.height,
+    );
+
+    await toggleBtn.click();
+    await flush();
+
+    expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
+    expect(readJobsFullWidthCookie(document)).toBeFalse();
+  });
+
+  it('should initialize in full-width mode when xmc_jobs_full_width=true cookie is already set', async () => {
+    writeJobsFullWidthCookie(document, true);
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
+
+    const jobsTable = (await dashboard.getQueueJobsTable())!;
+    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+    expect(await toggleBtn.getText()).toContain('Exit full width');
+    expect(await jobsTable.isFullWidthToggleActive()).toBeTrue();
+  });
+
+  it('should preserve full-width mode across Smart Resource Finder searches and tab switches', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const jobsTable = (await dashboard.getQueueJobsTable())!;
+    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+
+    await toggleBtn.click();
+    await flush();
+    expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
+
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
+    await finderHarness.setAmountValue('100');
+    await flush();
+    expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
+    expect(readJobsFullWidthCookie(document)).toBeTrue();
+
+    const tabsHarness = await dashboard.getSubnavTabs();
+    await tabsHarness.clickTab(1);
+    await flush();
+    await tabsHarness.clickTab(0);
+    await flush();
+
+    expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
+    expect(readJobsFullWidthCookie(document)).toBeTrue();
   });
 });

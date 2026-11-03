@@ -57,6 +57,21 @@ xmc-smart-resource-finder {
   padding-left: 12px;
 }
 
+.rod-split-container.full-width {
+  flex-direction: column-reverse;
+  align-items: stretch;
+
+  .rod-main-content,
+  .jobs-side-pane {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .jobs-side-pane {
+    position: static;
+  }
+}
+
 .resource-availability-container {
   display: block;
   width: 100%;

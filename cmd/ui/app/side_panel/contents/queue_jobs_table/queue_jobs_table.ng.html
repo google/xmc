@@ -19,6 +19,18 @@
       <h3 id="queue-jobs-title" class="jobs-card-title">
         Jobs in the queue ({{ tableControls.totalCount() }})
       </h3>
+      @if (showFullWidthToggle()) {
+        <button
+          type="button"
+          mat-stroked-button
+          class="full-width-toggle-btn"
+          [class.active]="isFullWidth()"
+          (click)="toggleFullWidth()"
+        >
+          <mat-icon aria-hidden="true">{{ fullWidthToggleIcon() }}</mat-icon>
+          {{ fullWidthToggleLabel() }}
+        </button>
+      }
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
     <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
