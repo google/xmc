@@ -288,7 +288,9 @@ versions, dependency graph, and rollout state. RPCs cover lifecycle intent
 `ValidateComponentRequirement`, `GetPlatformHealth`).
 
 [`pkg/components/store`](../../pkg/components/store) provides the in-memory graph with prospective
-DAG cycle detection, so an invalid dependency edge is rejected before it is persisted.
+DAG cycle detection and stability-contract validation (`EXPERIMENTAL`/`PREVIEW`/`STABLE` with
+`STABILITY_INVERSION` prevention), so an invalid dependency edge or stability inversion is rejected
+before it is persisted.
 
 ### 5.2 XMC Bridge
 

@@ -1670,3 +1670,58 @@ func TestCMSServer_OwnershipMetrics(t *testing.T) {
 		t.Errorf("SOURCE_INCARNATION_MISMATCH conflicts = %v, want %v", got, mismatchBefore+1)
 	}
 }
+
+func TestCMSServer_SetComponentIntent_StabilityValidationAndInversion(t *testing.T) {
+	ctx := context.Background()
+	ms := memory.NewMemoryStore()
+	server := NewServer(ms, WithAuthorizer(NewDisabledAuthorizer()))
+
+	// 1. Out-of-range ComponentStability enum value is rejected with InvalidArgument.
+	_, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "bad-stability",
+		Spec: &componentspb.ComponentSpec{
+			Type:      componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:   "v1.0.0",
+			Stability: componentspb.ComponentStability(99),
+		},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("SetComponentIntent(invalid stability) code = %v, want InvalidArgument", status.Code(err))
+	}
+
+	// 2. Register an EXPERIMENTAL component and verify round-trip and GetPlatformHealth filter.
+	if _, err := server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "exp-engine",
+		Spec: &componentspb.ComponentSpec{
+			Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:                 "v1.0.0",
+			Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			AcknowledgeExperimental: true,
+		},
+	}); err != nil {
+		t.Fatalf("SetComponentIntent(exp-engine) error = %v", err)
+	}
+
+	// 3. STABLE component depending on EXPERIMENTAL component is rejected with STABILITY_INVERSION.
+	_, err = server.SetComponentIntent(ctx, &componentspb.SetComponentIntentRequest{
+		Name: "stable-gateway",
+		Spec: &componentspb.ComponentSpec{
+			Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+			Version:      "v1.0.0",
+			Stability:    componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+			Dependencies: []string{"exp-engine"},
+		},
+	})
+	if status.Code(err) != codes.FailedPrecondition || store.ErrorInfoReason(err) != store.ReasonStabilityInversion {
+		t.Fatalf("SetComponentIntent(stable-gateway -> exp-engine) error = %v, want FailedPrecondition with %s", err, store.ReasonStabilityInversion)
+	}
+
+	// 4. GetPlatformHealth filters by stability=EXPERIMENTAL.
+	healthResp, err := server.GetPlatformHealth(ctx, &componentspb.GetPlatformHealthRequest{Filter: "stability=EXPERIMENTAL"})
+	if err != nil {
+		t.Fatalf("GetPlatformHealth(stability=EXPERIMENTAL) error = %v", err)
+	}
+	if len(healthResp.GetComponents()) != 1 || healthResp.GetComponents()[0].GetName() != "components/exp-engine" {
+		t.Errorf("GetPlatformHealth(stability=EXPERIMENTAL) = %+v, want [components/exp-engine]", healthResp.GetComponents())
+	}
+}

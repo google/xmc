@@ -124,7 +124,7 @@ func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.Co
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Component manifest mismatch (-want +got):\n%s", diff)
 	}
-	validateManifestAgainstCRD(t, crdPath, &got)
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 }
 
 func stageChartFile(t *testing.T, srcPath, dstPath string) {
@@ -230,6 +230,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "event-stream",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -263,6 +264,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -315,6 +317,7 @@ parameters:
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: false,
 					DeletionPolicy:     "Orphan",
 					Parameters: map[string]string{
@@ -359,6 +362,7 @@ type crdSchemaDoc struct {
 				OpenAPIV3Schema struct {
 					Properties struct {
 						Spec struct {
+							Required   []string `yaml:"required"`
 							Properties struct {
 								WrapperRef struct {
 									Properties struct {
@@ -379,7 +383,7 @@ type crdSchemaDoc struct {
 	} `yaml:"spec"`
 }
 
-func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.ComponentManifest) {
+func validateManifestAgainstCRD(t *testing.T, crdPath string, rendered []byte, comp *linter.ComponentManifest) {
 	t.Helper()
 	rawCRD, err := os.ReadFile(crdPath)
 	if err != nil {
@@ -400,6 +404,17 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 	wantAPIVersion := crd.Spec.Group + "/" + version.Name
 	if comp.APIVersion != wantAPIVersion || comp.Kind != crd.Spec.Names.Kind {
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
+	}
+
+	var rawDoc map[string]any
+	if err := yaml.Unmarshal(rendered, &rawDoc); err != nil {
+		t.Fatalf("failed to unmarshal rendered manifest map: %v", err)
+	}
+	rawSpec, _ := rawDoc["spec"].(map[string]any)
+	for _, reqField := range version.Schema.OpenAPIV3Schema.Properties.Spec.Required {
+		if val, ok := rawSpec[reqField]; !ok || val == nil || fmt.Sprint(val) == "" {
+			t.Errorf("rendered manifest %q missing CRD required spec.%s field", comp.Metadata.Name, reqField)
+		}
 	}
 
 	if comp.Spec.WrapperRef != nil {
@@ -458,6 +473,7 @@ metadata:
   name: {{ .Release.Name | quote }}
   namespace: "xmc"
 spec:
+  stability: "STABLE"
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   chartVersion: {{ .Values.emptyList | default "1.0.0" | quote }}
   parameters:
@@ -534,6 +550,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			ComponentClass:     "metrics-ingestion",
 			Version:            "0.1.0",
 			ChartVersion:       "0.1.0",
+			Stability:          "STABLE",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
@@ -553,6 +570,8 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Ingestion Gateway Component manifest mismatch (-want +got):\n%s", diff)
 	}
+	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)

@@ -57,7 +57,7 @@ func TestStable2026a_OverridesMatchStandalone(t *testing.T) {
 		overrides map[string]any
 	}{
 		{name: "redpanda overrides", component: "redpanda", overrides: map[string]any{"enabled": true, "namespace": "data",
-			"deletionProtection": false, "deletionPolicy": "Orphan", "parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"}}},
+			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"}}},
 		{name: "clickhouse overrides", component: "clickhouse", overrides: map[string]any{"enabled": true,
 			"parameters": map[string]any{"host": "ch.example.internal", "httpPort": 18123}}},
 		{name: "ingestion-gateway overrides", component: "ingestion-gateway", overrides: map[string]any{"enabled": true, "imageTag": "v9",
@@ -76,7 +76,7 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 
 	s := stable2026a()
 	docs := profilecontract.RenderDocs(t, profilecontract.LoadProfile(t, s), map[string]any{"global": map[string]any{"imageTag": "v2"}, "components": map[string]any{
-		"redpanda": map[string]any{"deletionProtection": false}, "ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}}}})
+		"redpanda": map[string]any{"deletionProtection": false, "acknowledgeExperimental": false}, "ingestion-gateway": map[string]any{"enabled": true, "acknowledgeExperimental": true, "dependencies": []any{}}}})
 	tests := []struct {
 		name      string
 		component string
@@ -84,7 +84,10 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 		want      any
 	}{
 		{name: "deletionProtection false wins over default true", component: "redpanda", field: "deletionProtection", want: false},
-		{name: "untouched component keeps default", component: "clickhouse", field: "deletionProtection", want: true},
+		{name: "acknowledgeExperimental false is rendered when explicitly set", component: "redpanda", field: "acknowledgeExperimental", want: false},
+		{name: "acknowledgeExperimental true is rendered when explicitly set", component: "ingestion-gateway", field: "acknowledgeExperimental", want: true},
+		{name: "untouched component keeps default deletionProtection", component: "clickhouse", field: "deletionProtection", want: true},
+		{name: "untouched component renders catalog STABLE stability", component: "clickhouse", field: "stability", want: "STABLE"},
 		{name: "empty dependencies list replaces defaults", component: "ingestion-gateway", field: "dependencies", want: nil},
 		{name: "global imageTag reaches component", component: "ingestion-gateway", field: "imageTag", want: "v2"},
 	}

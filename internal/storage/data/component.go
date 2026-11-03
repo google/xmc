@@ -129,6 +129,15 @@ func DecodeComponentSnapshot(snap ComponentSnapshot, canonicalName string, creat
 	return rec, coords, nil
 }
 
+// DecodeComponentSpec decodes a serialized Component or ComponentSpec proto into a ComponentSpec.
+func DecodeComponentSpec(configBytes []byte) (*componentspb.ComponentSpec, error) {
+	var rec store.ComponentRecord
+	if err := unmarshalComponentConfig(configBytes, &rec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config proto: %w", err)
+	}
+	return rec.Spec, nil
+}
+
 // unmarshalComponentConfig decodes a serialized Component or ComponentSpec proto into rec.Spec and rec.Labels.
 func unmarshalComponentConfig(configBytes []byte, rec *store.ComponentRecord) error {
 	if len(configBytes) == 0 {

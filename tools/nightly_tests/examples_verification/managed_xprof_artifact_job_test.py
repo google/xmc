@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for init container job workload in XMC.
+"""Validation script for ManagedXprof artifact workload in XMC.
 
-Asserts that the Init Container Job experiment and its associated WorkUnit
-were correctly created, configured with init containers, and executed to completion.
+Asserts that the ManagedXprof WorkUnit Artifact experiment and its WorkUnit were
+correctly created, scheduled to the expected queue, configured with ManagedXprof
+artifact payloads attached during execution lifecycle, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.init_container_job_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.managed_xprof_artifact_job_test --xid=25
 """
 
 from __future__ import annotations
@@ -29,28 +30,28 @@ from typing import Any
 
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
-EXPECTED_TITLE_PATTERN: str = "Init Container Validation Experiment"
-EXPECTED_JOB_NAME: str = "init-worker"
-EXPECTED_INIT_CONTAINER: str = "init-setup"
-EXPECTED_PRIMARY_SPEC: str = "primary-worker"
+EXPECTED_TITLE_PATTERN: str = "ManagedXprof WorkUnit Artifact Example"
+EXPECTED_WORKER_NAMES: tuple[str, ...] = ("programmatic-xprof-worker",)
+EXPECTED_ARTIFACT_TYPES: tuple[str, ...] = ("managed_xprof",)
 EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
     {
-        "name": EXPECTED_JOB_NAME,
+        "name": "programmatic-xprof-worker",
         "replicas": 1,
-        "init_containers": [EXPECTED_INIT_CONTAINER],
-        "primary_container": EXPECTED_PRIMARY_SPEC,
+        "spec": "programmatic-xprof-worker",
     }
 ]
 
 
 def main(argv: Sequence[str]) -> None:
-    """Main verification routine for init_container_job workload."""
+    """Main verification routine for managed_xprof_artifact_job workload."""
     workload_verification.verify_standard_workload(
         argv,
-        banner_title="XMC Init Container Job Verification & Assertions",
-        summary_title="ALL INIT CONTAINER JOB ASSERTIONS PASSED SUCCESSFULLY!",
+        banner_title="XMC ManagedXprof Artifact Job Verification & Assertions",
+        summary_title="ALL MANAGED XPROF ARTIFACT ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
+        expected_worker_names=EXPECTED_WORKER_NAMES,
+        expected_artifact_types=EXPECTED_ARTIFACT_TYPES,
     )
 
 

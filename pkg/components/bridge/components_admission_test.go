@@ -390,6 +390,7 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		errContains string
 	}{
 		{"rejects missing required spec.enabled", "", map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"}, true, "spec.enabled: Required value"},
+		{"rejects missing required spec.stability", "", map[string]any{"enabled": true, "stability": nil}, true, "spec.stability: Required value"},
 		{"rejects invalid deletionPolicy value", "", map[string]any{"enabled": true, "deletionPolicy": "Retain"}, true, "deletionPolicy"},
 		{"rejects negative lifecycleControl.drainTimeoutSeconds", "", map[string]any{"enabled": true, "lifecycleControl": map[string]any{"drainTimeoutSeconds": -5}}, true, "drainTimeoutSeconds"},
 		{"rejects 3P wrapper without wrapperRef or parameters", "", map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER"}, true, "either wrapperRef or parameters must be specified when componentType is COMPONENT_TYPE_CUSTOM_3P_WRAPPER"},
@@ -401,6 +402,13 @@ func verifyCRDSchemaAndCELRules(ctx context.Context, t *testing.T, compClient dy
 		{"rejects metadata.name exceeding 45 characters", strings.Repeat("a", 46), map[string]any{"enabled": true, "deletionProtection": false}, true, "metadata.name must be at most 45 characters"},
 		{"rejects metadata.name with the reserved xmc-cmp- release prefix", "xmc-cmp-foo", map[string]any{"enabled": true, "deletionProtection": false}, true, "must not start with 'xmc-cmp-'"},
 		{"accepts metadata.name containing xmc-cmp- after the start", "foo-xmc-cmp-bar", map[string]any{"enabled": true, "deletionProtection": false}, false, ""},
+		{"rejects invalid stability enum value", "", map[string]any{"enabled": false, "stability": "ALPHA"}, true, "spec.stability: Unsupported value"},
+		{"rejects enabled EXPERIMENTAL component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "deletionProtection": false}, true, "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component"},
+		{"rejects enabled EXPERIMENTAL component with acknowledgeExperimental=false", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "acknowledgeExperimental": false, "deletionProtection": false}, true, "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component"},
+		{"accepts disabled EXPERIMENTAL component without acknowledgeExperimental", "", map[string]any{"enabled": false, "stability": "EXPERIMENTAL", "deletionProtection": false}, false, ""},
+		{"accepts enabled EXPERIMENTAL component with acknowledgeExperimental=true", "", map[string]any{"enabled": true, "stability": "EXPERIMENTAL", "acknowledgeExperimental": true, "deletionProtection": false}, false, ""},
+		{"accepts enabled PREVIEW component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "PREVIEW", "deletionProtection": false}, false, ""},
+		{"accepts enabled STABLE component without acknowledgeExperimental", "", map[string]any{"enabled": true, "stability": "STABLE", "deletionProtection": false}, false, ""},
 	}
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -429,6 +437,12 @@ func assertDefaultSchemaFields(t *testing.T, created *unstructured.Unstructured)
 	}
 	if delPol, _, _ := unstructured.NestedString(created.Object, "spec", "deletionPolicy"); delPol != "Delete" {
 		t.Errorf("expected default spec.deletionPolicy=Delete, got %q", delPol)
+	}
+	if ackExp, found, _ := unstructured.NestedBool(created.Object, "spec", "acknowledgeExperimental"); !found || ackExp {
+		t.Errorf("expected default spec.acknowledgeExperimental=false, got %v (found=%v)", ackExp, found)
+	}
+	if stability, _, _ := unstructured.NestedString(created.Object, "spec", "stability"); stability != "STABLE" {
+		t.Errorf("expected spec.stability=STABLE, got %q", stability)
 	}
 }
 
@@ -474,8 +488,17 @@ func verifyDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admi
 }
 
 func newComponentManifest(name string, spec map[string]any) *unstructured.Unstructured {
+	clonedSpec := make(map[string]any, len(spec)+1)
+	for k, v := range spec {
+		clonedSpec[k] = v
+	}
+	if v, exists := clonedSpec["stability"]; !exists {
+		clonedSpec["stability"] = "STABLE"
+	} else if v == nil {
+		delete(clonedSpec, "stability")
+	}
 	return &unstructured.Unstructured{
-		Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": name, "namespace": "default"}, "spec": spec},
+		Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": name, "namespace": "default"}, "spec": clonedSpec},
 	}
 }
 

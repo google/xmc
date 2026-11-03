@@ -96,6 +96,9 @@ func (m *MemoryStore) setIntent(name string, spec *componentspb.ComponentSpec, l
 	if _, err := dependency.ValidateIntentDependencies(m.componentsByName, canonicalName, deps); err != nil {
 		return nil, err
 	}
+	if err := dependency.ValidateIntentStability(m.componentsByName, canonicalName, spec.GetStability(), deps); err != nil {
+		return nil, err
+	}
 	if rec != nil {
 		m.applyIntentPlanLocked(rec, plan, spec, labels, deps, src, now)
 		if plan.Write != ownership.WriteNothing {

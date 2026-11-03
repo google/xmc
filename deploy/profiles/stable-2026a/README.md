@@ -94,6 +94,19 @@ components:
 
 Renders with `deletionProtection: false` intentionally fail the component linter, because the profile [`rules.yaml`](rules.yaml) sets `enforceDeletionProtection: true`. Apply these teardown and removal steps without the lint gate.
 
+### Experimental components
+
+Catalog components declare a `spec.stability` level (`EXPERIMENTAL`, `PREVIEW`, or `STABLE`) in their component chart's `values.yaml`. `STABLE` and `PREVIEW` components can be enabled with `enabled: true` alone. Enabling an `EXPERIMENTAL` component requires an explicit acknowledgement in your admin values:
+
+```yaml
+components:
+  <name>:
+    enabled: true
+    acknowledgeExperimental: true
+```
+
+Without `acknowledgeExperimental: true`, an enabled `EXPERIMENTAL` component is rejected by Kubernetes CRD CEL validation at admission time. Admins cannot override `stability` through profile values.
+
 ## Values Contract
 
 Per-component overrides live under `components.<name>` and are deep-merged over that component's `values.yaml`. Explicit `false`, `0`, and `""` overrides are honored, and lists (such as `dependencies`) replace the defaults. `null` overrides are not supported: the schema rejects most of them, and Helm drops the rest so the component default applies. Use `[]` or an explicit value instead.
@@ -107,13 +120,14 @@ Per-component overrides live under `components.<name>` and are deep-merged over 
 | `namespace` | all | Namespace of the `Component` CR. Must be a DNS-1123 label. |
 | `deletionProtection` | all | Renders `spec.deletionProtection`. |
 | `deletionPolicy` | all | `Delete` or `Orphan`. |
+| `acknowledgeExperimental` | all | Renders `spec.acknowledgeExperimental` to opt into enabling an `EXPERIMENTAL` component. |
 | `parameters` | all | Component parameters. `redpanda` and `clickhouse` accept only the parameters documented in their READMEs; `ingestion-gateway` passes extra keys through. |
 | `dependencies` | all | Component names rendered into `spec.dependencies`. |
 | `imageTag` | `ingestion-gateway` | Used when `global.imageTag` is empty. |
 
 These keys are rejected by the schema:
 
-- `componentClass` and chart or component versions, because the catalog fixes component identity. Each component's `components/<name>/Chart.yaml` is the only version pin.
+- `componentClass`, `stability`, and chart or component versions, because the catalog fixes component identity and maturity level. Each component's `components/<name>/Chart.yaml` is the only version pin.
 - Workload keys such as `deployWorkload`, because the profile never renders workloads.
 
 ## Runtime Dependencies

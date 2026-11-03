@@ -279,6 +279,44 @@ describe('WorkUnitsTable Component', () => {
         'There are no GKE resources for stopped work units',
       );
     });
+
+    it('should show executing cluster assignment tooltip when cluster placeholders are unresolved', async () => {
+      state.workUnitsService.searchWorkUnits.and.returnValue(
+        of({
+          workUnits: [
+            {
+              name: 'experiments/1/workUnits/5',
+              createTime: '2023-10-27T10:04:00Z',
+              currentWorkUnitExecution: {
+                status: { state: 'SCHEDULING' },
+                metadata: {
+                  managementCluster: {
+                    project: 'mgmt-project',
+                    location: 'us-central1',
+                    clusterName: 'mgmt-cluster',
+                  },
+                },
+              },
+              urls: [
+                {
+                  displayName: 'GKE Dashboard',
+                  url: 'http://gke-dashboard/${PROJECT}/${LOCATION}/${CLUSTER}',
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      bootstrap(WorkUnitsTable, { xid: '1' });
+      const harness = await getHarness(WorkUnitsTableHarness);
+      const cell = (await harness.getUrlsCell(0))!;
+      const button = await cell.getHarness(MatButtonHarness.with({ text: 'pending' }));
+
+      expect(await button.isDisabled()).toBeTrue();
+      const tooltip = await cell.getHarness(MatTooltipHarness);
+      await tooltip.show();
+      expect(await tooltip.getTooltipText()).toBe('Unavailable: no executing cluster assigned');
+    });
   });
 
   describe('Run Profile button', () => {
