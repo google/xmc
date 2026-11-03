@@ -138,6 +138,31 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 				EID: 1,
 				WorkUnitExecution: &spb.WorkUnitExecution{
 					Metadata: &spb.WorkUnitExecutionMetadata{
+						ExecutingCluster:      nil,
+						MultiKueueClusterName: "",
+						ResourceFlavor:        "",
+						NodeSelectors:         nil,
+					},
+				},
+				UpdateMask: &fmpb.FieldMask{Paths: []string{"metadata.executing_cluster", "metadata.multi_kueue_cluster_name", "metadata.resource_flavor", "metadata.node_selectors"}},
+			},
+		},
+		{
+			name: "locally admitted no clustername",
+			workload: &v1beta1.Workload{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec:       workloadSpecWithNecessaryLabels,
+				Status: v1beta1.WorkloadStatus{
+					Admission: &v1beta1.Admission{
+						ClusterQueue: "local-queue",
+					},
+				},
+			},
+			want: &storagepkg.WorkUnitExecutionUpdate{
+				WID: 1,
+				EID: 1,
+				WorkUnitExecution: &spb.WorkUnitExecution{
+					Metadata: &spb.WorkUnitExecutionMetadata{
 						ExecutingCluster:      mgmtClusterInfo,
 						MultiKueueClusterName: "",
 						ResourceFlavor:        "",
