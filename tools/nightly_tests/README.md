@@ -11,7 +11,7 @@ Every runnable example under [`examples/`](../../examples/) is executed nightly 
 `tools/nightly_tests/` is organized into two primary packages:
 
 - **[`verification/`](verification/) ([`BUILD.bazel`](verification/BUILD.bazel))**: Shared verification primitives, session managers, backend entity pollers, and Playwright Web UI helpers, where logic modules are each paired with a `*_test.py` unit test suite.
-- **[`examples_verification/`](examples_verification/) ([`BUILD.bazel`](examples_verification/BUILD.bazel))**: Concrete E2E verification entrypoints and unit tests for individual runnable workloads and Web UI routes.
+- **[`examples_verification/`](examples_verification/) ([`BUILD.bazel`](examples_verification/BUILD.bazel))**: Concrete E2E verification entrypoints for individual runnable workloads and Web UI routes.
 
 The Nightly Examples E2E workflow ([`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)) runs in three stages:
 
@@ -48,7 +48,7 @@ Refer to these implementations in [`examples_verification/`](examples_verificati
 
 - [`examples_verification/simple_job_ui_verify.py`](examples_verification/simple_job_ui_verify.py): Experiment Overview page (`/experiments/<xid>`), header metadata, and Work Units table hydration.
 - [`examples_verification/metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py): Piggybacks on [`metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) (`--verify_ui=true`) to verify `/dashboards` search filtering, `/dashboards/exp_<xid>_overview` KPI boxes, WorkUnit deep-links, and ECharts canvas rendering.
-- [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py) (tested by [`examples_verification/resource_observability_dashboard_ui_verify_test.py`](examples_verification/resource_observability_dashboard_ui_verify_test.py)): Resource Observability Dashboard (`/resources`), covering Cluster Queue cards, queue selection, the queued jobs table (optionally workload-backed via `--xid`), and the Smart Resource Finder tab.
+- [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py): Resource Observability Dashboard (`/resources`), covering Cluster Queue cards, queue selection, the queued jobs table (optionally workload-backed via `--xid`), and the Smart Resource Finder tab.
 - [`examples_verification/admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py): Standalone UI verifier for the Admin Panel (`/admin`), covering route access, System Info cards, Services Health statuses and refresh, and Configuration Entries filtering.
 
 ---
@@ -62,7 +62,7 @@ When adding a new example under [`examples/`](../../examples/) or a new UI E2E c
 > [!IMPORTANT]
 > **Shared Dirty-Environment Setup (`xmc-nightly`)**: Nightly E2E and UI verification suites execute against a long-lived shared cluster (`xmc-nightly`, analogous to staging and multi-tenant dev clusters) populated with thousands of pre-existing historical entities from prior runs. Verifiers and test suites MUST NEVER assume the environment is clean, empty, or low-cardinality, or that newly created entities appear on an unfiltered first page. Always scope queries by target XID/dashboard ID, use server-side filtering (`AIP-160`), paginate across pages, or navigate directly to the resource URL (`/experiments/<xid>`, `/dashboards/<dashboard_id>`) rather than scanning truncated list pages.
 
-Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` (and a matching `<example_name>_verify_test.py` unit test) following one of the canonical patterns below:
+Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` following one of the canonical patterns below:
 
 - **Pattern A — Standard CPU Workload**: For workloads that schedule onto `cpu-queue` and run to completion.
   - Minimal baseline: [`examples_verification/simple_job_verify.py`](examples_verification/simple_job_verify.py)
@@ -76,12 +76,12 @@ Create `tools/nightly_tests/examples_verification/<example_name>_verify.py` (and
   - Standalone dashboard verification: [`examples_verification/xdash_dashboard_verify.py`](examples_verification/xdash_dashboard_verify.py)
 - **Pattern D — Playwright Web UI E2E Verifier**:
   - Piggybacked on a backend workload via `--verify_ui=true`: see [`examples_verification/metrics_dashboard_job_verify.py`](examples_verification/metrics_dashboard_job_verify.py) and [`examples_verification/metrics_dashboard_ui_verify.py`](examples_verification/metrics_dashboard_ui_verify.py).
-  - Optionally workload-backed global UI route verifier (accepts `--xid` to verify queued/running work units and stops them on exit): see [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py) (tested by [`examples_verification/resource_observability_dashboard_ui_verify_test.py`](examples_verification/resource_observability_dashboard_ui_verify_test.py)).
+  - Optionally workload-backed global UI route verifier (accepts `--xid` to verify queued/running work units and stops them on exit): see [`examples_verification/resource_observability_dashboard_ui_verify.py`](examples_verification/resource_observability_dashboard_ui_verify.py).
   - Standalone global UI route verifier (no workload launch required): see [`examples_verification/admin_panel_ui_verify.py`](examples_verification/admin_panel_ui_verify.py).
 
 ### Step 2: Register Bazel Targets in [`examples_verification/BUILD.bazel`](examples_verification/BUILD.bazel)
 
-Export `<example_name>_verify.py` in `exports_files` and add the corresponding `py_binary` (and `py_test`) targets in [`examples_verification/BUILD.bazel`](examples_verification/BUILD.bazel), following the existing targets in that file.
+Export `<example_name>_verify.py` in `exports_files` and add the corresponding `py_binary` target in [`examples_verification/BUILD.bazel`](examples_verification/BUILD.bazel), following the existing targets in that file.
 
 ### Step 3: Wire the Scenario in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml)
 
