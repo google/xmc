@@ -89,7 +89,11 @@ func writeComponentsSection(sb *strings.Builder, comp ComponentsReport) {
 		sb.WriteString("  Skipped: true\n")
 	}
 	for _, c := range comp.Components {
-		fmt.Fprintf(sb, "  Component %s: enabled=%t state=%s ready=%t healthy=%t\n", c.Name, c.Enabled, c.State, c.Ready, c.Healthy)
+		stability := c.Stability
+		if stability == "" {
+			stability = "STABLE"
+		}
+		fmt.Fprintf(sb, "  Component %s: enabled=%t state=%s ready=%t healthy=%t stability=%s\n", c.Name, c.Enabled, c.State, c.Ready, c.Healthy, stability)
 	}
 	for _, kv := range [][2]string{{"Reason", comp.Reason}, {"Error", comp.Error}} {
 		if kv[1] != "" {

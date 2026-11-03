@@ -334,7 +334,7 @@ func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindCluste
 			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
 		}
 	}
-	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "version": version}
+	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "stability": "STABLE", "version": version}
 	if len(wrapperRef) > 0 {
 		spec["wrapperRef"] = wrapperRef
 	}

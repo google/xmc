@@ -17,10 +17,10 @@
 
 Scans `examples/` subdirectories and verifies that every example is either:
 1. Fully wired into the Nightly Examples E2E suite:
-   - `tools/nightly_tests/examples_verification/<name>_verify.py` exists,
-   - `tools/nightly_tests/examples_verification/BUILD.bazel` defines `py_binary` `<name>_verify`,
+   - `tools/nightly_tests/examples_verification/<name>_test.py` exists,
+   - `tools/nightly_tests/examples_verification/BUILD.bazel` defines `py_binary` `<name>_test`,
    - `.github/workflows/nightly-examples-e2e.yml` includes `examples/<name>` and
-     `tools.nightly_tests.examples_verification.<name>_verify`; OR
+     `tools.nightly_tests.examples_verification.<name>_test`; OR
 2. Explicitly opted out in `EXEMPT_EXAMPLES`.
 """
 
@@ -39,7 +39,7 @@ REQUIRED_WIRING_COUNT: int = 3
 # Single source of truth for `examples/<name>` directories intentionally
 # excluded from the Nightly Examples E2E pipeline (`.github/workflows/nightly-examples-e2e.yml`).
 # During pre-commit and CI linting (`lint.yml`), every subdirectory under `examples/`
-# must either provide all 3 nightly verification targets (`<name>_verify.py`,
+# must either provide all 3 nightly verification targets (`<name>_test.py`,
 # `BUILD.bazel` py_binary target, and workflow matrix entry) or be listed in
 # `EXEMPT_EXAMPLES`. When adding an entry, please include a code comment
 # explaining why nightly E2E verification does not apply.
@@ -70,18 +70,18 @@ def collect_missing_wiring(
 ) -> list[str]:
     """Returns which of the 3 nightly verification wiring entries are missing for `name`."""
     missing: list[str] = []
-    if not (examples_verification_dir / f"{name}_verify.py").is_file():
-        missing.append(f"tools/nightly_tests/examples_verification/{name}_verify.py")
-    if not re.search(rf'name\s*=\s*["\']{re.escape(name)}_verify["\']', build_text):
+    if not (examples_verification_dir / f"{name}_test.py").is_file():
+        missing.append(f"tools/nightly_tests/examples_verification/{name}_test.py")
+    if not re.search(rf'name\s*=\s*["\']{re.escape(name)}_test["\']', build_text):
         missing.append(
-            f"py_binary '{name}_verify' in tools/nightly_tests/examples_verification/BUILD.bazel"
+            f"py_binary '{name}_test' in tools/nightly_tests/examples_verification/BUILD.bazel"
         )
     if (
         f"examples/{name}" not in workflow_text
-        or f"tools.nightly_tests.examples_verification.{name}_verify" not in workflow_text
+        or f"tools.nightly_tests.examples_verification.{name}_test" not in workflow_text
     ):
         missing.append(
-            f"matrix entry ('examples/{name}' & 'tools.nightly_tests.examples_verification.{name}_verify') "
+            f"matrix entry ('examples/{name}' & 'tools.nightly_tests.examples_verification.{name}_test') "
             "in .github/workflows/nightly-examples-e2e.yml"
         )
     return missing

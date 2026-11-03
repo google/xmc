@@ -64,6 +64,10 @@ tr.mat-mdc-row:not(.detail-row):hover {
   text-align: right;
 }
 
+.disabled-url-wrapper {
+  display: inline-block;
+}
+
 .error-message {
   color: var(--mat-sys-error);
   margin: 16px;

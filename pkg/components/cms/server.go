@@ -163,6 +163,9 @@ func (s *Server) SetComponentIntent(ctx context.Context, req *componentspb.SetCo
 			return nil, status.Errorf(codes.InvalidArgument, "invalid component version %q: %v", version, err)
 		}
 	}
+	if _, ok := componentspb.ComponentStability_name[int32(specToSet.GetStability())]; !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid component stability %d", specToSet.GetStability())
+	}
 	deps, err := canonicalDependencies(canonicalName, specToSet.GetDependencies())
 	if err != nil {
 		return nil, err

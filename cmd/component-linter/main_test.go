@@ -39,7 +39,7 @@ func TestRun_CLI(t *testing.T) {
 	t.Run("valid directory returns exit 0 for text and json output", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "c1.yaml"), []byte("apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "c1.yaml"), []byte("apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0, stability: STABLE }\n"), 0644); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 		var outText, errText, outJSON, errJSON bytes.Buffer
@@ -86,7 +86,7 @@ func TestRun_CLI(t *testing.T) {
 	t.Run("rules config flag validation", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "c1.yaml"), []byte("apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0 }\n"), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "c1.yaml"), []byte("apiVersion: xmc.dev/v1alpha1\nkind: Component\nmetadata: { name: c1 }\nspec: { version: 1.0.0, stability: STABLE }\n"), 0644); err != nil {
 			t.Fatalf("write failed: %v", err)
 		}
 		rulesPath := filepath.Join(dir, "rules.yaml")

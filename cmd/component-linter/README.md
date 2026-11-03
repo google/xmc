@@ -189,6 +189,7 @@ The schema validation layer (`pkg/components/linter/schema.go`) verifies baselin
 - **3P Wrapper CRD References**: For `COMPONENT_TYPE_CUSTOM_3P_WRAPPER`, requires `spec.wrapperRef.group` (`crdGroup`), `version` (`crdVersion`), `kind` (`crdKind`), and `name` (`targetName`) to be non-empty (`MISSING_WRAPPER_REF`, `INVALID_WRAPPER_REF`), and validates that `observedGenerationPath` and `readyConditionPath` match `^\$\.status\..+`. For 1P components, forbids `wrapperRef`.
 - **String Parameters Validation**: Enforces that `spec.parameters` entries resolve to scalar string values (`!!str`) matching the CRD `additionalProperties: { type: string }` schema.
 - **Deletion Policy & Protection**: Asserts `spec.deletionPolicy` is valid (`Delete` or `Orphan`; legacy `DELETE`, `ORPHAN`, or `DELETION_POLICY_*` values emit a `DEPRECATED_DELETION_POLICY` warning). If `staticChecks.enforceDeletionProtection: true` is enabled, asserts `spec.deletionProtection == true` (`DELETION_PROTECTION_REQUIRED`).
+- **Component Stability & Acknowledgement**: Requires `spec.stability` to be non-empty (`REQUIRED_FIELD`) and validates it is one of `EXPERIMENTAL`, `PREVIEW`, or `STABLE` (`INVALID_STABILITY`). When `spec.enabled: true` and `spec.stability: EXPERIMENTAL` without `spec.acknowledgeExperimental: true`, or when `staticChecks.allowExperimental: false` is set in `rules.yaml`, emits `EXPERIMENTAL_NOT_ACKNOWLEDGED`.
 - **Lifecycle Drain Timeout Boundaries**: Validates that `spec.lifecycleControl.drainTimeoutSeconds` is non-negative and does not exceed `staticChecks.maxDrainTimeoutSeconds` (`DRAIN_TIMEOUT_EXCEEDED`).
 
 ### Rules Configuration Schema (`rules.yaml`)
@@ -197,6 +198,7 @@ The schema validation layer (`pkg/components/linter/schema.go`) verifies baselin
 staticChecks:
   enforceDeletionProtection: false
   maxDrainTimeoutSeconds: 3600
+  allowExperimental: true
 ```
 
 ---
@@ -227,6 +229,7 @@ flowchart LR
 - **Missing Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ must exist in the scanned manifest set (`MISSING_DEPENDENCY`).
 - **Disabled Dependency Assertion**: If component $A$ is enabled and requires component $B$, component $B$ cannot have `spec.enabled: false` (`DISABLED_DEPENDENCY`).
 - **Optional Dependencies (`optional: true`)**: Optional dependencies may be omitted or disabled without raising errors. If present and enabled, their version constraints are validated during compatibility matrix checking.
+- **Stability Inversion Guard**: Rejects `STABLE` or `PREVIEW` components that declare a dependency on an `EXPERIMENTAL` component (`STABILITY_INVERSION`).
 - **Duplicate Prevention**: Rejects multiple manifests defining the same component `metadata.name` across directories (`DUPLICATE_COMPONENT_NAME`).
 
 ---

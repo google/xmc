@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests.examples_verification import simple_job_verify
+from tools.nightly_tests.examples_verification import simple_job_test
 from tools.nightly_tests.verification import (
     verifier_cli,
     workload_verification,
@@ -34,7 +34,7 @@ verifier_cli.flags.DEFINE_string(
 
 
 def _assert_multikueue_workload(stub: Any, xid: str) -> None:
-    simple_job_verify.assert_all_work_unit_specs(stub, xid)
+    simple_job_test.assert_all_work_unit_specs(stub, xid)
     cluster = verifier_cli.get_flag(
         verifier_cli.FLAGS, "expected_worker_cluster", DEFAULT_WORKER_CLUSTER
     )
@@ -47,13 +47,13 @@ def main(argv: Sequence[str]) -> None:
     cli_flags: Any = verifier_cli.FLAGS
     if "expected_queue" in cli_flags and not cli_flags["expected_queue"].present:
         cli_flags.expected_queue = DEFAULT_QUEUE
-    count = verifier_cli.resolve_expected_work_units(simple_job_verify.DEFAULT_WORK_UNITS)
+    count = verifier_cli.resolve_expected_work_units(simple_job_test.DEFAULT_WORK_UNITS)
     workers = [f"demo-worker-{i}" for i in range(1, count + 1)] if count > 1 else ["demo-worker"]
     workload_verification.verify_standard_workload(
         argv,
         banner_title="XMC MultiKueue Delegated Job Verification & Assertions",
         summary_title="ALL MULTIKUEUE JOB ASSERTIONS PASSED SUCCESSFULLY!",
-        expected_title_pattern=simple_job_verify.EXPECTED_TITLE_PATTERN,
+        expected_title_pattern=simple_job_test.EXPECTED_TITLE_PATTERN,
         expected_worker_names=workers,
         extra_step=_assert_multikueue_workload,
     )

@@ -197,4 +197,23 @@ describe('HealthStatusGroupCardComponent', () => {
     expect(await harness.getStatusText()).toBe('DEGRADED');
     expect(await harness.hasDegradedStatus()).toBeTrue();
   });
+
+  it('should render component stability badge when stability is provided', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.components.set([
+      {
+        name: 'exp-plugin',
+        type: ComponentType.CUSTOM_COMPONENT,
+        healthState: HealthState.HEALTHY,
+        stability: 'EXPERIMENTAL',
+      },
+    ]);
+    await flush();
+
+    const harness = await getHarness(HealthStatusGroupCardHarness);
+    const items = await harness.getItemTexts();
+    expect(items.length).toBe(1);
+    expect(items[0]).toContain('exp-plugin');
+    expect(items[0]).toContain('EXPERIMENTAL');
+  });
 });

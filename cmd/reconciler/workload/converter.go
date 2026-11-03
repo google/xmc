@@ -79,9 +79,13 @@ type MultiKueueClusterResult struct {
 
 // getMultiKueueClusterInfo retrieves the ClusterInfo and MultiKueueCluster name associated with the Workload.
 // If the Workload's status has a ClusterName, it fetches the corresponding MultiKueueCluster
-// and extracts the ClusterInfo from its labels. Otherwise, it returns the provided mgmtClusterInfo.
+// and extracts the ClusterInfo from its labels. If no ClusterName is set, it returns the provided
+// mgmtClusterInfo only when the Workload has been admitted locally; before admission, it returns nil.
 func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, mgmtClusterInfo *spb.ClusterInfo, reader client.Reader) (MultiKueueClusterResult, error) {
 	if workload.Status.ClusterName == nil || *workload.Status.ClusterName == "" {
+		if workload.Status.Admission == nil {
+			return MultiKueueClusterResult{ClusterInfo: nil, ClusterName: ""}, nil
+		}
 		return MultiKueueClusterResult{ClusterInfo: mgmtClusterInfo, ClusterName: ""}, nil
 	}
 	clusterName := *workload.Status.ClusterName

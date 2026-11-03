@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with the
 expected JobSet specification, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.simple_job_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.simple_job_test --xid=16
 """
 
 from __future__ import annotations

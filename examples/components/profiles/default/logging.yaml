@@ -18,6 +18,7 @@ metadata:
   name: logging
 spec:
   enabled: true
+  stability: STABLE
   componentType: CUSTOM_1P_COMPONENT
   version: "1.0.0"
   description: Centralized logging and telemetry exporter component.

@@ -1218,9 +1218,83 @@ func TestSpannerStore_GetPlatformHealth(t *testing.T) {
 }
 
 func testGetPlatformHealth(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
-	_, err := s.GetPlatformHealth(ctx, "", 10, "")
-	if status.Code(err) != codes.Unimplemented {
-		t.Errorf("expected Unimplemented code for GetPlatformHealth, got %v", err)
+	stableSpec := &componentspb.ComponentSpec{
+		Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version: "v1.0.0",
+	}
+	expSpec := &componentspb.ComponentSpec{
+		Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:                 "v1.0.0",
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}
+	if _, err := s.SetComponentIntent(ctx, "stable-comp", stableSpec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent(stable-comp) failed: %v", err)
+	}
+	if _, err := s.SetComponentIntent(ctx, "exp-comp", expSpec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent(exp-comp) failed: %v", err)
+	}
+	if _, err := s.UpdateObservedGeneration(ctx, "stable-comp", 1, &componentspb.ComponentAccessStatus{Ready: true}, componentspb.ComponentState_COMPONENT_STATE_ENABLED, "OK"); err != nil {
+		t.Fatalf("UpdateObservedGeneration(stable-comp) failed: %v", err)
+	}
+
+	respExp, err := s.GetPlatformHealth(ctx, "stability=EXPERIMENTAL", 10, "")
+	if err != nil {
+		t.Fatalf("GetPlatformHealth(stability=EXPERIMENTAL) failed: %v", err)
+	}
+	if len(respExp.GetComponents()) != 1 || respExp.GetComponents()[0].GetName() != "components/exp-comp" {
+		t.Errorf("GetPlatformHealth(stability=EXPERIMENTAL) = %+v, want [components/exp-comp]", respExp.GetComponents())
+	}
+
+	respStable, err := s.GetPlatformHealth(ctx, "stability=STABLE", 10, "")
+	if err != nil {
+		t.Fatalf("GetPlatformHealth(stability=STABLE) failed: %v", err)
+	}
+	if len(respStable.GetComponents()) != 1 || respStable.GetComponents()[0].GetName() != "components/stable-comp" {
+		t.Errorf("GetPlatformHealth(stability=STABLE) = %+v, want [components/stable-comp]", respStable.GetComponents())
+	}
+}
+
+func TestSpannerStore_SetComponentIntent_StabilityInversionRejection(t *testing.T) {
+	forEachDBBackend(t, testSetComponentIntentStabilityInversionRejection)
+}
+
+func testSetComponentIntentStabilityInversionRejection(ctx context.Context, t *testing.T, s *dbstore.Store, _ dbstoretest.Rows) {
+	expSpec := &componentspb.ComponentSpec{
+		Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:                 "v1.0.0",
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}
+	if _, err := s.SetComponentIntent(ctx, "exp-base", expSpec, nil, 1); err != nil {
+		t.Fatalf("failed to create exp-base: %v", err)
+	}
+
+	// 1. STABLE component depending on EXPERIMENTAL component is rejected.
+	stableSpec := &componentspb.ComponentSpec{
+		Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:      "v1.0.0",
+		Stability:    componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+		Dependencies: []string{"exp-base"},
+	}
+	if _, err := s.SetComponentIntent(ctx, "stable-app", stableSpec, nil, 1); status.Code(err) != codes.FailedPrecondition || store.ErrorInfoReason(err) != store.ReasonStabilityInversion {
+		t.Fatalf("SetComponentIntent(stable-app -> exp-base) error = %v, want FailedPrecondition with %s", err, store.ReasonStabilityInversion)
+	}
+
+	// 2. EXPERIMENTAL component depending on EXPERIMENTAL component succeeds, and round-trips stability fields.
+	expConsumerSpec := &componentspb.ComponentSpec{
+		Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:                 "v1.0.0",
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+		Dependencies:            []string{"exp-base"},
+	}
+	rec, err := s.SetComponentIntent(ctx, "exp-consumer", expConsumerSpec, nil, 1)
+	if err != nil {
+		t.Fatalf("SetComponentIntent(exp-consumer -> exp-base) failed: %v", err)
+	}
+	if rec.Spec.GetStability() != componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL || !rec.Spec.GetAcknowledgeExperimental() {
+		t.Errorf("round-tripped Spec stability fields = (%v, %v), want (EXPERIMENTAL, true)", rec.Spec.GetStability(), rec.Spec.GetAcknowledgeExperimental())
 	}
 }
 
