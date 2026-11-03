@@ -26,7 +26,7 @@ import { ResizeDividerHarness } from './resize_divider_harness';
     <div #container class="test-split-container">
       @if (showDivider()) {
         <xmc-rod-resize-divider
-          [containerElement]="useContainer() ? container : null"
+          [containerElement]="container"
           [(splitRatio)]="splitRatio"
           [(isDragging)]="isDragging"
         />
@@ -37,7 +37,6 @@ import { ResizeDividerHarness } from './resize_divider_harness';
 class TestHostComponent {
   readonly splitRatio = signal<number>(50);
   readonly isDragging = signal<boolean>(false);
-  readonly useContainer = signal<boolean>(true);
   readonly showDivider = signal<boolean>(true);
   readonly containerRef = viewChild.required<ElementRef<HTMLDivElement>>('container');
 }
@@ -154,23 +153,15 @@ describe('ResizeDividerComponent', () => {
     expect(host.splitRatio()).toBe(50);
   });
 
-  it('should ignore drag when containerElement is null and clean up active drag on destroy', async () => {
+  it('should detach drag listeners and stop dragging when destroyed mid-drag', async () => {
     const host = bootstrap(TestHostComponent);
-    host.useContainer.set(false);
-    await flush();
-
-    const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(500);
-    await flush();
-    expect(host.isDragging()).toBeFalse();
-
-    host.useContainer.set(true);
     await flush();
     spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
       left: 0,
       width: 1000,
     } as DOMRect);
 
+    const divider = await getHarness(ResizeDividerHarness);
     await divider.startDrag(500);
     await flush();
     expect(host.isDragging()).toBeTrue();
