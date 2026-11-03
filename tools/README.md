@@ -48,7 +48,7 @@ Playbooks and unified CLI for deploying, upgrading, and managing local/remote de
 ### 3. `tools/pr_review/` (PR Review & GitHub Automation)
 Utilities supporting multi-agent PR review and authoring workflows:
 - [`github_utils.py`](pr_review/github_utils.py): Robust GitHub REST and GraphQL API client with automatic token resolution (`gh auth` / `GITHUB_TOKEN`).
-- [`review_pr_generate_audit.py`](pr_review/review_pr_generate_audit.py): Generates interactive Markdown review audit checklists and existing comment deduplication indexes.
+- [`review_pr_generate_audit.py`](pr_review/review_pr_generate_audit.py): Generates interactive Markdown review audit checklists and existing comment deduplication indexes. With `--out-dir` it fetches the PR head (`--checkout` checks it out detached when tracked files are clean) and writes `pr.diff`, `pr_meta.json`, and `review_threads.json`; in re-review mode it reports lines changed since your last review and recommends a full review above `--full-review-threshold`.
 - [`review_pr_post_inline_comment.py`](pr_review/review_pr_post_inline_comment.py): Posts confirmed inline code review comments or replies to PR diffs.
 - [`review_pr_verify_posted.py`](pr_review/review_pr_verify_posted.py): Verifies programmatically that 100% of approved review checklist comments are present on GitHub. Reads the JSON sidecar written by `review_pr_generate_audit.py` (markdown fallback), fails when no approved items are found, and records items as posted via `--mark-posted`.
 - [`fetch_pr_comment.py`](pr_review/fetch_pr_comment.py): Fetches review comments and discussion threads by URL or PR number.

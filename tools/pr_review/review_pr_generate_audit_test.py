@@ -20,12 +20,13 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from tools.common.tool_utils import HandledError
 from tools.pr_review.github_utils import GithubAPIError
 from tools.pr_review.review_pr_generate_audit import (
     build_audit_sidecar,
+    build_parser,
     extract_task_references,
     format_initial_audit_markdown,
     format_rereview_audit_markdown,
@@ -34,6 +35,7 @@ from tools.pr_review.review_pr_generate_audit import (
 )
 
 _GRAPHQL_API = "tools.pr_review.github_utils.call_github_api"
+_AUDIT = "tools.pr_review.review_pr_generate_audit"
 
 
 def _threads_page(
@@ -165,13 +167,7 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
         self.mock_graphql.side_effect = [[{"filename": "a.py"}], [], _threads_page([])]
         with tempfile.TemporaryDirectory() as tmpdir:
             out_file = str(Path(tmpdir) / "test_audit.md")
-            args = MagicMock()
-            args.owner = "google"
-            args.repo = "xmc"
-            args.pr_number = 10
-            args.mode = "initial"
-            args.output = out_file
-            args.conv_id = None
+            args = build_parser().parse_args(["google", "xmc", "10", "-o", out_file])
 
             res = main(args)
             self.assertEqual(res["status"], "success")
@@ -220,16 +216,80 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
     @patch("tools.pr_review.review_pr_generate_audit.call_github_api")
     def test_main_api_error_raises_handled_error(self, mock_api):
         mock_api.side_effect = GithubAPIError("404 Not Found")
-        args = MagicMock()
-        args.owner = "google"
-        args.repo = "xmc"
-        args.pr_number = 10
-        args.mode = "initial"
-        args.output = "/tmp/out.md"
-        args.conv_id = None
+        args = build_parser().parse_args(["google", "xmc", "10", "-o", "/tmp/out.md"])
 
         with self.assertRaises(HandledError):
             main(args)
+
+    @patch(f"{_AUDIT}.prepare_review_workspace")
+    @patch(f"{_AUDIT}.measure_rereview_delta")
+    @patch(f"{_AUDIT}.call_github_api")
+    def test_main_rereview_with_out_dir_prepares_workspace(self, mock_api, mock_delta, mock_ws):
+        mock_api.return_value = {"title": "t", "head": {"sha": "head1"}}
+        self.mock_graphql.side_effect = [[], [_comment(101)], _threads_page([])]
+        delta = {
+            "since_sha": "old1",
+            "changed_lines": 500,
+            "changed_files": ["a.go"],
+            "full_review_recommended": True,
+            "reason": "500 changed lines > threshold 200.",
+        }
+        mock_delta.return_value = delta
+        mock_ws.return_value = {"checked_out": True, "diff_file": "/x/pr.diff"}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = ["google", "xmc", "10", "--mode", "re-review", "--out-dir", tmpdir]
+            res = main(build_parser().parse_args([*argv, "--checkout", "--since-sha", "old1"]))
+
+            report = Path(res["output_file"])
+            self.assertEqual(report, Path(tmpdir).resolve() / "pr_rereview_audit_report.md")
+            self.assertIn("FULL REVIEW RECOMMENDED", report.read_text(encoding="utf-8"))
+        mock_delta.assert_called_once_with(
+            "google", "xmc", 10, "head1", since_sha="old1", threshold=200
+        )
+        self.assertEqual(mock_ws.call_args.kwargs["checkout"], True)
+        self.assertEqual(mock_ws.call_args.kwargs["rereview_delta"], delta)
+        self.assertEqual(mock_ws.call_args.args[3]["threads"], [])
+        self.assertEqual(res["rereview_delta"], delta)
+        self.assertTrue(res["checked_out"])
+        self.assertEqual(res["diff_file"], "/x/pr.diff")
+
+    @patch(f"{_AUDIT}.prepare_review_workspace")
+    @patch(f"{_AUDIT}.call_github_api")
+    def test_main_without_out_dir_skips_workspace(self, mock_api, mock_ws):
+        mock_api.return_value = {"title": "t", "head": {"sha": "123"}}
+        self.mock_graphql.side_effect = [[], [], GithubAPIError("GraphQL down")]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_file = str(Path(tmpdir) / "audit.md")
+            res = main(build_parser().parse_args(["google", "xmc", "10", "-o", out_file]))
+        mock_ws.assert_not_called()
+        self.assertNotIn("diff_file", res)
+        self.assertNotIn("rereview_delta", res)
+        self.assertEqual(res["threads_error"], "GraphQL down")
+
+    @patch(f"{_AUDIT}.call_github_api")
+    def test_main_checkout_without_out_dir_raises(self, mock_api):
+        mock_api.return_value = {"title": "t", "head": {"sha": "123"}}
+        self.mock_graphql.side_effect = [[], [], _threads_page([])]
+        with self.assertRaisesRegex(HandledError, "--checkout requires --out-dir"):
+            main(build_parser().parse_args(["google", "xmc", "10", "--checkout"]))
+
+    def test_resolve_output_path_out_dir_precedence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = str(Path(tmpdir) / "session")
+            self.assertEqual(
+                resolve_output_path("", "conv", "a.md", out_dir), Path(out_dir) / "a.md"
+            )
+            self.assertTrue(Path(out_dir).is_dir())
+            self.assertEqual(
+                resolve_output_path("/tmp/x.md", "", "a.md", out_dir), Path("/tmp/x.md")
+            )
+
+    def test_format_rereview_without_delta_has_no_delta_line(self):
+        md = format_rereview_audit_markdown(
+            "google", "xmc", 42, {"pr_info": {"title": "t"}, "comments": [], "threads": []}
+        )
+        self.assertNotIn("Delta Since Last Review", md)
+        self.mock_graphql.assert_not_called()
 
     def _initial_data(self, comments: list[dict[str, Any]]) -> dict[str, Any]:
         return {"pr_info": {"title": "t", "body": "b"}, "files": [], "comments": comments}
