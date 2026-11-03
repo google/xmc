@@ -38,6 +38,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | PR Sizing & Vertical Splitting | [XMC PR Split Verification Skill](skills/xmc_pr_split_verification/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
 | Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
+| Nightly E2E Investigation & Fix | [XMC Fix Nightly Skill](skills/xmc_fix_nightly/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Release Orchestration | [XMC Release Skill](skills/xmc_release/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Release Notes Generation | [XMC Generate Release Notes Skill](skills/xmc_generate_release_notes/SKILL.md) & [Release Notes Taxonomy](skills/xmc_generate_release_notes/references/release_notes_taxonomy.md) |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
@@ -56,6 +57,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 - 🛠️ [Skills & Automation Guidelines](rules/skills_and_automation.md): Extracting complex logic into testable Python scripts, applying DRY/KISS to skills, preventing context creep, and delegating work to subagents.
 - 🪜 [Rule Authoring Standards](rules/rule_authoring_standards.md): Root-cause routing via the seven-rung control ladder (Eliminate, Automate, Tool, Route, Document, Annotate, Discard), the mandatory Lint-First Test, the causal chain requirement gating discard, the invariant-vs-procedure applicability router, evidence-based boundary derivation (positive/negative/undecided sets, two-positive minimum, complement-aware search), the merge-first rule budget, and the documented deviation protocol.
 - 🚀 [XMC Release Skill](skills/xmc_release/SKILL.md): End-to-end release orchestration playbook coordinating deployment to nightly, automated E2E and visual snapshot verification, abort gates, structured release notes synthesis, and confirmed publishing.
+- 🌙 [XMC Fix Nightly Skill](skills/xmc_fix_nightly/SKILL.md): End-to-end playbook for discovering broken Nightly Examples E2E runs on `main`, triaging code regressions vs. nightly cluster drift, implementing minimal fixes in an isolated worktree, opening a Draft PR, and proving the fix via branch E2E execution.
 
 ### GitHub & PR Workflows
 - 🚀 [GitHub Authoring & PR Creation](rules/github_authoring_and_prs.md): Git branch prefixes (`feat/`, `fix/`, `refactor/`, `docs/`, `test/`, `chore/`, `koder/`), mandatory session initialization branch check policy, Conventional Commit standards, PR sizing gates, PR title & body formatting rules, mandatory assumptions disclosure in PR bodies, mandatory tags (`TAG=agy`), pre-commit linter policy, forbidden raw log dumps, and CI wait buffer policy.
