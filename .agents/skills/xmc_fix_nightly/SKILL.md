@@ -127,7 +127,7 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
      date -u +%Y-%m-%dT%H:%M:%SZ
      gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
      ```
-     Find the dispatched run. `--created` excludes older runs on the same commit, such as an earlier dispatch with a different `examples_filter`, so an older run is never mistaken for proof. If the list is empty, the new run has not registered yet, so re-run this single command after a few seconds:
+     Find the dispatched run. `--created` excludes older runs on the same commit, such as an earlier dispatch with a different `examples_filter`, so they cannot be mistaken for proof. If the list is empty, the new run has not registered yet, so re-run this single command after a few seconds. If it is still empty after about a minute, check the Actions UI for the run and for local clock skew. If more than one run is listed, stop and inspect them instead of picking one:
      ```bash
      SLUG="${SLUG:-<kebab-case-slug>}"
      BRANCH_NAME="fix/nightly-${SLUG}"
