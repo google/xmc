@@ -269,9 +269,9 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
 
-    const { left, width } = (await dashboard.getSplitContainerDimensions())!;
+    const { left } = (await dashboard.getSplitContainerDimensions())!;
     const divider = (await dashboard.getResizeDivider())!;
-    await divider.startDrag(left + width / 2);
+    await divider.startDrag();
     // Dragging to the container edges clamps the split, which keeps the assertion layout-independent.
     await divider.moveDragTo(left);
     await divider.endDrag();

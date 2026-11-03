@@ -71,7 +71,7 @@ export class ResizeDividerComponent implements OnDestroy {
     (event.currentTarget as HTMLElement).focus({ preventScroll: true });
     this.stopResize();
     this.isDragging.set(true);
-    this.listenToDrag(left, width);
+    this.listenToDrag(event.pointerId, left, width);
   }
 
   protected resetResize(): void {
@@ -99,8 +99,11 @@ export class ResizeDividerComponent implements OnDestroy {
     return Math.max(MIN_SPLIT_RATIO_PERCENT, Math.min(MAX_SPLIT_RATIO_PERCENT, ratio));
   }
 
-  private listenToDrag(left: number, width: number): void {
+  private listenToDrag(pointerId: number, left: number, width: number): void {
     const onPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
       // A release outside the window (e.g. over a context menu) may never deliver pointerup.
       if ((moveEvent.buttons & PRIMARY_BUTTON_MASK) === 0) {
         this.stopResize();
@@ -108,7 +111,11 @@ export class ResizeDividerComponent implements OnDestroy {
       }
       this.splitRatio.set(this.clampRatio(((moveEvent.clientX - left) / width) * 100));
     };
-    const onPointerEnd = () => this.stopResize();
+    const onPointerEnd = (endEvent: PointerEvent) => {
+      if (endEvent.pointerId === pointerId) {
+        this.stopResize();
+      }
+    };
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerEnd);
