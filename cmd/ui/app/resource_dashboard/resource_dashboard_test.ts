@@ -268,7 +268,7 @@ describe('ResourceDashboard Container', () => {
     const dashboard = await getHarness(ResourceDashboardHarness);
     const { left } = (await dashboard.getSplitContainerDimensions())!;
     const divider = (await dashboard.getResizeDivider())!;
-    await divider.startDrag(left + 1);
+    await divider.startDrag();
     await divider.moveDragTo(left);
     await divider.endDrag();
     expect(await dashboard.getLeftPaneStyle()).toContain('20%');
@@ -304,6 +304,7 @@ describe('ResourceDashboard Container', () => {
     const toggleBtn = (await (await dashboard.getQueueJobsTable())!.getFullWidthToggleBtn())!;
     await toggleBtn.click();
     expect(await dashboard.getQueueList()).toBeNull();
+    expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
 
     await (await dashboard.getSmartResourceFinder())!.setAmountValue('100');
     await flush();
@@ -311,6 +312,23 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.isRightPaneFullWidth()).toBeFalse();
     const queueList = (await dashboard.getQueueList())!;
     expect(await queueList.getQueueCardCount()).toBe(1);
+  });
+
+  it('should exit full width when the Smart resource finder tab is re-entered', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    await (await (await dashboard.getQueueJobsTable())!.getFullWidthToggleBtn())!.click();
+    expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
+
+    const tabsHarness = await dashboard.getSubnavTabs();
+    await tabsHarness.clickTab(1);
+    await tabsHarness.clickTab(0);
+    await flush();
+
+    expect(await dashboard.isRightPaneFullWidth()).toBeFalse();
+    expect(await dashboard.getQueueList()).not.toBeNull();
   });
 
   it('should bind the resize divider split ratio to both pane widths', async () => {
