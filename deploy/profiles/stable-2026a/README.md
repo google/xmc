@@ -105,7 +105,7 @@ components:
     acknowledgeExperimental: true
 ```
 
-Without `acknowledgeExperimental: true`, an enabled `EXPERIMENTAL` component is rejected by `component-linter` (`EXPERIMENTAL_NOT_ACKNOWLEDGED`), by Kubernetes CRD CEL validation at admission time, and by `xmc-bridge` (`Reason=ExperimentalNotAcknowledged`). Admins cannot override `stability` through profile values.
+Without `acknowledgeExperimental: true`, an enabled `EXPERIMENTAL` component is rejected by Kubernetes CRD CEL validation at admission time. Admins cannot override `stability` through profile values.
 
 ## Values Contract
 
