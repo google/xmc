@@ -340,4 +340,22 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen');
     expect(await harness.isFullWidthToggleActive()).toBeFalse();
   });
+
+  it('should reflect a parent-driven isFullWidth value in the toggle button', async () => {
+    const hostComponent = bootstrap(TestHostComponent);
+    hostComponent.showFullWidthToggle.set(true);
+    hostComponent.isFullWidth.set(true);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const toggleBtn = (await harness.getFullWidthToggleBtn())!;
+    expect(await toggleBtn.getText()).toContain('Exit full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await harness.isFullWidthToggleActive()).toBeTrue();
+
+    hostComponent.isFullWidth.set(false);
+    await flush();
+    expect(await toggleBtn.getText()).toContain('View in full width');
+    expect(await harness.isFullWidthToggleActive()).toBeFalse();
+  });
 });
