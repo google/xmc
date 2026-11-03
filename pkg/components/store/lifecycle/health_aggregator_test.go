@@ -57,8 +57,9 @@ func createTestComponentsMap() map[string]*store.ComponentRecord {
 			Name:  "comp-unhealthy-not-ready",
 			State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 			Spec: &componentspb.ComponentSpec{
-				Type:    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
-				Version: "v1.0.0",
+				Type:      componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+				Version:   "v1.0.0",
+				Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
 			},
 			Status: &componentspb.ComponentAccessStatus{
 				State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
@@ -198,6 +199,34 @@ func TestAggregatePlatformHealth_FilteringAndCounts(t *testing.T) {
 			wantTotal:     1,
 			wantHealthy:   1,
 			wantUnhealthy: 0,
+		},
+		{
+			name:          "Filter_StabilityExperimental",
+			filter:        "stability=EXPERIMENTAL",
+			wantTotal:     1,
+			wantHealthy:   0,
+			wantUnhealthy: 1,
+		},
+		{
+			name:          "Filter_StabilityStableIncludesUnspecifiedDefault",
+			filter:        "stability=STABLE",
+			wantTotal:     4,
+			wantHealthy:   2,
+			wantUnhealthy: 2,
+		},
+		{
+			name:          "Filter_StabilityWithPrefix",
+			filter:        "stability=COMPONENT_STABILITY_EXPERIMENTAL",
+			wantTotal:     1,
+			wantHealthy:   0,
+			wantUnhealthy: 1,
+		},
+		{
+			name:          "Filter_StabilityNumeric",
+			filter:        "stability=1",
+			wantTotal:     1,
+			wantHealthy:   0,
+			wantUnhealthy: 1,
 		},
 		{
 			name:          "CompoundFilter_And",

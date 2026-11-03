@@ -482,3 +482,64 @@ func TestParseAccessFromUnstructured(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSpecFromUnstructured_Stability(t *testing.T) {
+	tests := []struct {
+		name          string
+		spec          map[string]any
+		wantStability componentspb.ComponentStability
+		wantAck       bool
+	}{
+		{
+			name:          "omitted fields default to UNSPECIFIED and false",
+			spec:          map[string]any{"version": "v1.0.0"},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED,
+			wantAck:       false,
+		},
+		{
+			name:          "EXPERIMENTAL short string with acknowledgeExperimental true",
+			spec:          map[string]any{"stability": "EXPERIMENTAL", "acknowledgeExperimental": true},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantAck:       true,
+		},
+		{
+			name:          "EXPERIMENTAL with snake_case acknowledge_experimental true",
+			spec:          map[string]any{"stability": "EXPERIMENTAL", "acknowledge_experimental": true},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantAck:       true,
+		},
+		{
+			name:          "PREVIEW prefixed string",
+			spec:          map[string]any{"stability": "COMPONENT_STABILITY_PREVIEW"},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW,
+			wantAck:       false,
+		},
+		{
+			name:          "STABLE short string",
+			spec:          map[string]any{"stability": "STABLE"},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+			wantAck:       false,
+		},
+		{
+			name:          "lowercase and whitespace-padded experimental string is normalized",
+			spec:          map[string]any{"stability": "  experimental  "},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantAck:       false,
+		},
+		{
+			name:          "unrecognized stability string defaults to UNSPECIFIED",
+			spec:          map[string]any{"stability": "INVALID_TIER"},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED,
+			wantAck:       false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, _ := ParseSpecFromUnstructured(tt.spec)
+			if got.GetStability() != tt.wantStability || got.GetAcknowledgeExperimental() != tt.wantAck {
+				t.Errorf("ParseSpecFromUnstructured() stability=(%v, %v), want (%v, %v)",
+					got.GetStability(), got.GetAcknowledgeExperimental(), tt.wantStability, tt.wantAck)
+			}
+		})
+	}
+}

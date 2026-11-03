@@ -393,6 +393,7 @@ func testSameClusterRecreateAdoptsCMSRecord(t *testing.T, cfg *rest.Config) {
 		rec, err := cmsStore.SetSourcedComponentIntent(ctx, "env-recreate-db", &componentspb.ComponentSpec{
 			Type:           componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
 			Version:        ver,
+			Stability:      componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
 			DeletionPolicy: componentspb.DeletionPolicy_DELETION_POLICY_DELETE,
 		}, nil, store.RequestSource{
 			UID: oldUID, Generation: gen, Namespace: ns, ClusterUID: testPrimaryClusterUID, Epoch: 1,

@@ -33,6 +33,8 @@ import (
 //   - "generation"
 //   - "parameters"
 //   - "dependencies"
+//   - "stability"
+//   - "acknowledge_experimental", "acknowledgeExperimental"
 //
 // Unmapped, unknown, or sub-nested paths are ignored without mutating other fields.
 // If base is nil, an empty ComponentSpec is used as the base (useful for creation with update_mask).
@@ -80,6 +82,12 @@ func applyScalarOrEnumField(result, update *componentspb.ComponentSpec, path str
 		return true
 	case "generation":
 		result.Generation = update.GetGeneration()
+		return true
+	case "stability":
+		result.Stability = update.GetStability()
+		return true
+	case "acknowledge_experimental", "acknowledgeExperimental":
+		result.AcknowledgeExperimental = update.GetAcknowledgeExperimental()
 		return true
 	default:
 		return false
