@@ -32,6 +32,7 @@ from tools.pr_review.wait_for_ci import (
     MalformedResponseError,
     build_parser,
     classify_check,
+    latest_runs,
     parse_rollup,
     parse_run_reference,
     trim_job_log,
@@ -184,6 +185,52 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(parse_rollup('{"statusCheckRollup": null}'), [])
 
 
+def _run_at(name, started, conclusion="SUCCESS", run_id=1, workflow="CI", **kwargs):
+    """Builds a timestamped CheckRun entry from a given workflow run."""
+    url = f"https://github.com/google/xmc/actions/runs/{run_id}/job/{run_id}0"
+    entry = _check_run(name, conclusion=conclusion, url=url, **kwargs)
+    return entry | {"workflowName": workflow, "startedAt": started}
+
+
+class TestLatestRuns(unittest.TestCase):
+    """Tests for collapsing repeated runs of a check to the newest one."""
+
+    def test_superseded_cancelled_run_is_dropped(self):
+        """A cancelled run replaced by a newer run of the same check is ignored."""
+        old = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="CANCELLED", run_id=5)
+        new = _run_at("lint", "2026-01-01T00:00:09Z", run_id=6)
+        self.assertEqual(latest_runs([old, new]), [new])
+        self.assertEqual(latest_runs([new, old]), [new])
+
+    def test_latest_cancelled_run_is_kept(self):
+        """A cancelled run that is the newest run of its check still counts."""
+        old = _run_at("lint", "2026-01-01T00:00:01Z", run_id=5)
+        new = _run_at("lint", "2026-01-01T00:00:09Z", conclusion="CANCELLED", run_id=6)
+        self.assertEqual(latest_runs([old, new]), [new])
+
+    def test_pending_run_ranks_newest(self):
+        """An unfinished run supersedes completed runs whatever its timestamp."""
+        done = _run_at("lint", "2026-01-01T00:00:09Z", conclusion="CANCELLED", run_id=5)
+        queued = _run_at("lint", "0001-01-01T00:00:00Z", status="QUEUED", conclusion=None, run_id=6)
+        self.assertEqual(latest_runs([done, queued]), [queued])
+
+    def test_same_second_tie_broken_by_run_id(self):
+        """Runs started in the same second are ordered by run ID."""
+        old = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="CANCELLED", run_id=5)
+        new = _run_at("lint", "2026-01-01T00:00:01Z", run_id=6)
+        self.assertEqual(latest_runs([new, old]), [new])
+
+    def test_distinct_checks_are_kept_in_first_seen_order(self):
+        """Different names, workflows, and status contexts are never collapsed."""
+        entries = [
+            _run_at("unit", "2026-01-01T00:00:01Z", workflow="A"),
+            _run_at("unit", "2026-01-01T00:00:01Z", workflow="B"),
+            _run_at("lint", "2026-01-01T00:00:01Z", workflow="A"),
+            {"__typename": "StatusContext", "context": "unit", "state": "SUCCESS"},
+        ]
+        self.assertEqual(latest_runs(entries), entries)
+
+
 @patch("tools.pr_review.wait_for_ci.log_info", MagicMock())
 @patch("tools.pr_review.wait_for_ci.subprocess.run")
 class TestWaitForCI(unittest.TestCase):
@@ -217,6 +264,15 @@ class TestWaitForCI(unittest.TestCase):
             check=True,
             timeout=wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
         )
+
+    def test_superseded_cancelled_run_is_not_a_failure(self, mock_run):
+        """Cancelled runs replaced by a later push are excluded from the verdict."""
+        cancelled = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="CANCELLED", run_id=5)
+        rollup = _rollup(cancelled, _run_at("lint", "2026-01-01T00:00:09Z", run_id=6))
+        mock_run.side_effect = [rollup, rollup]
+        res = self._run()
+        self.assertEqual(res["outcome"], "success")
+        self.assertEqual(res["checks"], {PENDING: 0, PASSED: 1, FAILED: 0})
 
     def test_late_registered_check_is_not_false_pass(self, mock_run):
         """A new check appearing after an all-green poll resets settlement."""
