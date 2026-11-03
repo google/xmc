@@ -57,7 +57,7 @@ Before launching deep code analysis or subagent review panels, the agent must in
    ```bash
    python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
-   *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` inside `<appDataDir>/brain/<conv_id>/`.*
+   *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` plus its machine-readable sidecar `pr_review_audit_checklist.json` inside `<appDataDir>/brain/<conv_id>/`.*
 
 2. **Present Scoping Summary & Open Direction Window**:
    Display PR metadata, touched package matrix, task references, and ask the user for guidance **before launching subagent reviews**:
@@ -131,6 +131,15 @@ Each proposed item in `pr_review_audit_checklist.md` must specify:
 * **Priority**: `Blocker` / `Actionable Optimization` / `Clarity Question` / `Nit`
 * **Proposed Inline Comment Text** (with concrete git diff block suggestions where applicable)
 
+#### JSON Sidecar: Source of Truth for Item Status
+`review_pr_verify_posted.py` reads proposed items from `pr_review_audit_checklist.json` (falling back to the markdown only when no sidecar exists) and fails when it finds zero approved items. Keep the markdown for human reading, and record every Group A item in the sidecar's `items` list by rewriting the whole JSON file (never exact-match edits of table cells):
+
+```json
+{"item_id": "#1", "type": "initial_inline", "status": "Draft", "file_path": "pkg/auth/handler.go", "line": 152, "rule": "core_engineering.md#2-kiss", "proposed": "Use an early guard return."}
+```
+
+After the Phase 4 confirmation, rewrite confirmed items with `"status": "Approved"`. Never set `Posted` by hand: use `--mark-posted` (Phase 5) or the verification run (Phase 6).
+
 ---
 
 ### Phase 4: Mandatory Explicit Confirmation Gate (Zero Unconfirmed or Misleading Posting)
@@ -177,6 +186,11 @@ For each user-approved item:
        --line <line_number> \
        -f comment_body.md
    ```
+3. Record the item as posted (updates the sidecar and the markdown table; no hand edits):
+   ```bash
+   python3 tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
+       -c <appDataDir>/brain/<conv_id>/pr_review_audit_checklist.md --mark-posted '#1'
+   ```
 
 ---
 
@@ -188,8 +202,8 @@ Before completing the review session:
    python3 tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
        -c <appDataDir>/brain/<conv_id>/pr_review_audit_checklist.md
    ```
-2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff.
-3. Update artifact item statuses to `[x] Posted`.
+2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff. A non-zero exit with `No approved items found` means the sidecar was never populated; fix the sidecar instead of editing the markdown.
+3. The tool sets verified items to `Posted` in the sidecar and markdown itself; do not edit statuses by hand.
 
 ---
 
@@ -202,7 +216,7 @@ Run the audit generator script in `re-review` mode:
 ```bash
 python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-review --conv-id <conversation_id>
 ```
-*This generates `pr_rereview_audit_report.md` inside `<appDataDir>/brain/<conv_id>/` indexing every open review thread, original reviewer text, and author response.*
+*This generates `pr_rereview_audit_report.md` inside `<appDataDir>/brain/<conv_id>/` indexing every open review thread, original reviewer text, and author response, plus the sidecar `pr_rereview_audit_report.json` listing each root thread with `"action": null`. When recommending an action, rewrite the sidecar with `"action": "RESOLVE"` or `"action": "RESPOND"` for that thread; threads left `null` are skipped by verification.*
 
 ### Phase 2: Evaluate Author Claims, Pushback & Substantial Deltas
 
@@ -257,4 +271,5 @@ Because the re-review analysis is saved as a markdown document in `<appDataDir>/
 * For every confirmed thread:
   * If `[RESPOND]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
   * If `[RESOLVE]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL. To inspect current thread state (thread IDs, `path:line`, resolution, whether you replied), run `tools/pr_review/review_threads.py list <owner> <repo> <pr_number>`; never hand-write `gh api graphql` calls.
-* Run programmatic verification check (`tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> <checklist_file>`).
+* After resolving a thread, record it with `tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <appDataDir>/brain/<conv_id>/pr_rereview_audit_report.md --mark-posted <thread_id>`.
+* Run programmatic verification check (`tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <appDataDir>/brain/<conv_id>/pr_rereview_audit_report.md`).

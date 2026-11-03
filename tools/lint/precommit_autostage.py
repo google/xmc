@@ -27,7 +27,6 @@ ignored. Progress goes to stderr; stdout carries only the JSON result.
 import argparse
 import dataclasses
 import json
-import subprocess
 import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -37,7 +36,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.common.tool_utils import HandledError, run_command, run_tool  # noqa: E402
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,8 +97,17 @@ def plan_restage(
 
 
 def _git(repo: Path, *args: str, stdin: str | None = None) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=repo, check=True, capture_output=True, text=True, input=stdin
+    # surrogateescape round-trips non-UTF-8 path bytes when they are fed back to git.
+    return run_command(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        input_text=stdin,
+        errors="surrogateescape",
+        handled_instruction="Fix the reported git error and re-run git commit, or set "
+        "XMC_PRECOMMIT_NO_AUTOSTAGE=1 to bypass auto-restaging.",
     ).stdout
 
 

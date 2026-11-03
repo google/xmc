@@ -16,6 +16,7 @@
 """Helper CLI script to verify that 100% of approved PR review comments were posted inline to GitHub."""
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -29,8 +30,11 @@ from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
-    call_github_api,
+    list_all_pages,
 )
+
+# Item statuses that mark a checklist item as approved for posting.
+_APPROVED_STATUS = re.compile(r"\b(approved|confirmed|posted)\b|\[x\]", re.IGNORECASE)
 
 
 def _parse_table_column_indices(headers: list[str]) -> dict[str, int]:
@@ -82,9 +86,7 @@ def _parse_markdown_table_items(lines: list[str]) -> list[dict[str, Any]]:
                 row = [c.strip() for c in lines[i].strip("|").split("|")]
                 if cols["status"] != -1 and cols["status"] < len(row):
                     raw_status = row[cols["status"]]
-                    if re.search(
-                        r"\b(approved|confirmed|posted)\b|\[x\]", raw_status, re.IGNORECASE
-                    ):
+                    if _APPROVED_STATUS.search(raw_status):
                         raw_id = (
                             row[cols["id"]]
                             if cols["id"] != -1 and cols["id"] < len(row)
@@ -182,6 +184,85 @@ def parse_checklist_approved_items(content: str) -> list[dict[str, Any]]:
     return items
 
 
+def _item_key(item: dict[str, Any]) -> str:
+    """Returns the normalized ID of a checklist item (`#1` and `1` are equal)."""
+    return _normalize_id(item.get("item_id") or item.get("thread_id"))
+
+
+def _normalize_id(raw_id: Any) -> str:
+    """Normalizes an item ID for comparison by dropping whitespace and a leading `#`."""
+    return str(raw_id).strip().lstrip("#").strip()
+
+
+def load_sidecar(sidecar_path: Path) -> dict[str, Any] | None:
+    """Loads the JSON sidecar written by review_pr_generate_audit.py.
+
+    Args:
+        sidecar_path: Path of the `.json` sidecar.
+
+    Returns:
+        The sidecar document, or None if the file does not exist.
+
+    Raises:
+        HandledError: If the sidecar is not valid JSON or has no `items` list.
+    """
+    if not sidecar_path.is_file():
+        return None
+    try:
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise HandledError(
+            f"Audit sidecar '{sidecar_path}' is not valid JSON: {e}",
+            "Regenerate it with review_pr_generate_audit.py or fix the JSON syntax.",
+        ) from e
+    if not isinstance(sidecar, dict) or not isinstance(sidecar.get("items"), list):
+        raise HandledError(
+            f"Audit sidecar '{sidecar_path}' has no 'items' list.",
+            "Regenerate it with review_pr_generate_audit.py.",
+        )
+    return sidecar
+
+
+def _as_positive_int(value: Any) -> int | None:
+    """Returns `value` as an int >= 1, accepting integer strings like "15".
+
+    Bools are rejected even though they are ints, as are floats and any value
+    that does not parse to a positive integer.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
+    """Returns the actionable sidecar items in the shape of the markdown parsers.
+
+    Initial inline items count when their status is Approved, Confirmed, or
+    Posted and they target a file line; re-review threads count when their
+    action is RESOLVE or RESPOND. Integer strings are accepted for `line` and
+    `thread_id`; items with malformed values are skipped.
+    """
+    items: list[dict[str, Any]] = []
+    for item in sidecar["items"]:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "")
+        if item.get("type") == "initial_inline":
+            line = _as_positive_int(item.get("line"))
+            if _APPROVED_STATUS.search(status) and item.get("file_path") and line:
+                items.append({**item, "item_id": str(item.get("item_id")), "line": line})
+        elif item.get("type") == "re_review_thread":
+            action = str(item.get("action") or "").upper()
+            thread_id = _as_positive_int(item.get("thread_id"))
+            if action in ("RESOLVE", "RESPOND") and thread_id:
+                items.append({**item, "thread_id": thread_id, "action": action})
+    return items
+
+
 def _is_initial_inline_posted(
     item: dict[str, Any],
     live_comments: list[dict[str, Any]],
@@ -209,7 +290,7 @@ def _is_re_review_thread_posted(
         return False, f"Recommended response on Thread ID `{thread_id}` has not been posted"
 
     if item["action"] == "RESOLVE":
-        is_checked = False
+        is_checked = str(item.get("status") or "").lower() == "posted"
         thread_header = f"### Thread ID `{thread_id}`"
         if thread_header in content:
             start_idx = content.find(thread_header)
@@ -217,7 +298,7 @@ def _is_re_review_thread_posted(
             thread_block = (
                 content[start_idx:next_thread_idx] if next_thread_idx != -1 else content[start_idx:]
             )
-            is_checked = "- **Audit Verification Status**: `- [x]" in thread_block
+            is_checked = is_checked or "- **Audit Verification Status**: `- [x]" in thread_block
         has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
         if is_checked or has_reply:
             return True, None
@@ -233,14 +314,18 @@ def _verify_all_checklist_items(
     items: list[dict[str, Any]],
     content: str,
     live_comments: list[dict[str, Any]],
-) -> tuple[int, list[str]]:
-    """Iterates through checklist items and verifies each against live GitHub comments."""
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Verifies each checklist item against live GitHub comments.
+
+    Returns:
+        The verified items and a description of every unposted item.
+    """
     unposted: list[str] = []
-    verified_count = 0
+    verified: list[dict[str, Any]] = []
     for item in items:
         if item["type"] == "initial_inline":
             if _is_initial_inline_posted(item, live_comments):
-                verified_count += 1
+                verified.append(item)
             else:
                 unposted.append(
                     f"Approved comment '{item['item_id']}' on {item['file_path']}:L{item['line']} missing from live PR diff"
@@ -248,51 +333,101 @@ def _verify_all_checklist_items(
         elif item["type"] == "re_review_thread":
             ok, err = _is_re_review_thread_posted(item, content, live_comments)
             if ok:
-                verified_count += 1
+                verified.append(item)
             elif err:
                 unposted.append(err)
-    return verified_count, unposted
+    return verified, unposted
 
 
-def _mark_items_as_posted(content: str, items: list[dict[str, Any]]) -> str:
-    """Updates the audit checklist content marking approved items as Posted."""
+def _mark_items_as_posted(content: str, item_ids: set[str]) -> str:
+    """Rewrites the status of the given table items from Approved/Confirmed to Posted."""
     updated_content = content
-    for item in items:
-        if item["type"] == "initial_inline":
-            pattern = re.compile(
-                rf"(\|\s*{re.escape(item['item_id'])}\s*\|\s*)(Approved|Confirmed)(\s*\|)",
-                re.IGNORECASE,
-            )
-            updated_content = pattern.sub(r"\1Posted\3", updated_content)
+    for item_id in item_ids:
+        pattern = re.compile(
+            rf"(\|\s*#?{re.escape(item_id)}\s*\|\s*)(Approved|Confirmed)(\s*\|)",
+            re.IGNORECASE,
+        )
+        updated_content = pattern.sub(r"\1Posted\3", updated_content)
     return updated_content
 
 
-def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
-    """Verify approved audit checklist items against actual posted inline GitHub comments."""
-    checklist_path = Path(args.checklist_file)
-    if not checklist_path.is_file():
+class _Checklist:
+    """An audit checklist: its markdown artifact and optional JSON sidecar."""
+
+    def __init__(self, checklist_file: str):
+        path = Path(checklist_file)
+        if not path.is_file():
+            raise HandledError(
+                f"Audit checklist file '{checklist_file}' does not exist.",
+                "Ensure the checklist artifact file path is valid and present in the conversation artifact directory.",
+            )
+        is_sidecar = path.suffix == ".json"
+        self.path = path
+        self.sidecar_path = path if is_sidecar else path.with_suffix(".json")
+        self.sidecar = load_sidecar(self.sidecar_path)
+        # Given the sidecar directly, still use its sibling markdown if present.
+        markdown_path = path.with_suffix(".md") if is_sidecar else path
+        self.markdown_path = markdown_path if markdown_path.is_file() else None
+        self.content = self.markdown_path.read_text(encoding="utf-8") if self.markdown_path else ""
+
+    def approved_items(self) -> list[dict[str, Any]]:
+        """Returns approved items from the sidecar, else parsed from the markdown."""
+        if self.sidecar is not None:
+            return approved_sidecar_items(self.sidecar)
+        return parse_checklist_approved_items(self.content)
+
+    def record_posted(self, item_ids: set[str]) -> None:
+        """Sets the status of the given items to Posted in the sidecar and markdown."""
+        if self.sidecar is not None:
+            for item in self.sidecar["items"]:
+                if isinstance(item, dict) and _item_key(item) in item_ids:
+                    item["status"] = "Posted"
+            self.sidecar_path.write_text(
+                json.dumps(self.sidecar, indent=2) + "\n", encoding="utf-8"
+            )
+        if self.markdown_path is not None:
+            updated = _mark_items_as_posted(self.content, item_ids)
+            self.markdown_path.write_text(updated, encoding="utf-8")
+
+
+def _require_items(checklist: _Checklist) -> list[dict[str, Any]]:
+    """Returns the approved checklist items, failing loudly when there are none."""
+    items = checklist.approved_items()
+    if items:
+        return items
+    source = "sidecar" if checklist.sidecar is not None else "markdown"
+    source_path = checklist.sidecar_path if checklist.sidecar is not None else checklist.path
+    raise HandledError(
+        f"No approved items found in the audit checklist {source} '{source_path}'.",
+        "Record approved items in the JSON sidecar written by review_pr_generate_audit.py"
+        " ('initial_inline' items with status 'Approved', or 're_review_thread' items with"
+        " action 'RESOLVE'/'RESPOND'). The markdown fallback only reads status tables and"
+        " '### Thread ID' blocks.",
+    )
+
+
+def _mark_posted(checklist: _Checklist, raw_ids: list[str]) -> dict[str, Any]:
+    """Records the given approved items as Posted without contacting GitHub."""
+    known = {_item_key(item) for item in _require_items(checklist)}
+    requested = {_normalize_id(raw_id) for raw_id in raw_ids}
+    unknown = sorted(requested - known)
+    if unknown:
         raise HandledError(
-            f"Audit checklist file '{args.checklist_file}' does not exist.",
-            "Ensure the checklist artifact file path is valid and present in the conversation artifact directory.",
+            f"Unknown or unapproved checklist item(s): {', '.join(unknown)}.",
+            f"Pass IDs of approved items. Approved item IDs: {', '.join(sorted(known))}.",
         )
+    checklist.record_posted(requested)
+    return {
+        "status": "success",
+        "checklist_file": str(checklist.path.resolve()),
+        "marked_posted": sorted(requested),
+    }
 
-    content = checklist_path.read_text(encoding="utf-8")
-    items = parse_checklist_approved_items(content)
 
-    if not items:
-        # Check if there are any unchecked - [ ] interactive checklist items in general
-        raw_checkboxes = re.findall(r"-\s*\[\s*\]\s*(.*)", content)
-        return {
-            "status": "warning",
-            "message": "No explicit approved table rows or thread re-review actions detected.",
-            "raw_open_checkbox_count": len(raw_checkboxes),
-            "total_checklist_items": 0,
-            "posted_items": 0,
-            "unposted_items": [],
-        }
-
+def _fetch_live_comments(args: argparse.Namespace) -> list[dict[str, Any]]:
+    """Fetches every live review comment of the PR, across all pages."""
     try:
-        live_comments = call_github_api(
+        return list_all_pages(
             f"/repos/{args.owner}/{args.repo}/pulls/{args.pr_number}/comments",
             user_agent="XMC-PR-Review-Agent",
         )
@@ -302,14 +437,23 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
             "Check GitHub API connectivity and authentication credentials.",
         ) from e
 
-    if not isinstance(live_comments, list):
-        live_comments = []
 
-    verified_count, unposted = _verify_all_checklist_items(items, content, live_comments)
+def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
+    """Verify approved audit checklist items against actual posted inline GitHub comments.
 
-    # Update checklist file marking approved items as verified/posted
-    updated_content = _mark_items_as_posted(content, items)
-    checklist_path.write_text(updated_content, encoding="utf-8")
+    Reads items from the JSON sidecar next to the checklist (markdown fallback),
+    fails when no approved items are found, and records verified items as
+    Posted. With `--mark-posted`, only records the given items as Posted.
+    """
+    checklist = _Checklist(args.checklist_file)
+    mark_posted_ids = getattr(args, "mark_posted", None)
+    if isinstance(mark_posted_ids, list) and mark_posted_ids:
+        return _mark_posted(checklist, mark_posted_ids)
+
+    items = _require_items(checklist)
+    live_comments = _fetch_live_comments(args)
+    verified, unposted = _verify_all_checklist_items(items, checklist.content, live_comments)
+    checklist.record_posted({_item_key(item) for item in verified})
 
     if unposted:
         raise HandledError(
@@ -324,9 +468,10 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
         "owner": args.owner,
         "repo": args.repo,
         "pr_number": args.pr_number,
-        "checklist_file": str(checklist_path.resolve()),
+        "checklist_file": str(checklist.path.resolve()),
+        "items_source": "sidecar" if checklist.sidecar is not None else "markdown",
         "total_checklist_items": len(items),
-        "posted_items": verified_count,
+        "posted_items": len(verified),
         "unposted_items": [],
     }
 
@@ -342,7 +487,19 @@ def build_parser() -> argparse.ArgumentParser:
         "-c",
         "--checklist-file",
         required=True,
-        help="Path to the audit checklist artifact file in conversation directory.",
+        help=(
+            "Path to the audit checklist markdown artifact (its '.json' sidecar is read when"
+            " present) or to the sidecar itself."
+        ),
+    )
+    parser.add_argument(
+        "--mark-posted",
+        nargs="+",
+        metavar="ITEM_ID",
+        help=(
+            "Record the given approved item IDs (e.g. '#1' or a thread ID) as Posted in the"
+            " sidecar and markdown, without contacting GitHub."
+        ),
     )
     return parser
 

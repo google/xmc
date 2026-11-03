@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import traceback
@@ -363,6 +364,11 @@ def run_command(
     log_cmd: bool = True,
     cwd: Path | str | None = None,
     stream: TextIO | None = None,
+    *,
+    input_text: str | None = None,
+    timeout: float | None = None,
+    errors: str | None = None,
+    handled_instruction: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -377,12 +383,25 @@ def run_command(
         stream: Optional file-backed text stream, e.g. sys.stderr, that receives the command
             log line and, unless capture_output is set, the command's stdout instead of
             stdout. Tools that print JSON to stdout use it to keep stdout clean.
+        input_text: Optional text written to the command's stdin.
+        timeout: Optional limit in seconds after which the command is killed and
+            subprocess.TimeoutExpired is raised.
+        errors: Optional decoding error handler for captured output, e.g. "replace" to
+            substitute undecodable bytes instead of raising UnicodeDecodeError. None keeps
+            strict decoding.
+        handled_instruction: Optional remediation hint. When set, a missing or
+            non-executable binary (OSError), a timeout, or a non-zero exit with check=True
+            raises HandledError carrying this instruction instead of the raw exception.
 
     Returns:
         A subprocess.CompletedProcess object.
 
     Raises:
-        subprocess.CalledProcessError: If the command fails and check=True.
+        subprocess.CalledProcessError: If the command fails, check=True and
+            handled_instruction is None.
+        subprocess.TimeoutExpired: If timeout elapses and handled_instruction is None.
+        OSError: If the command cannot be started and handled_instruction is None.
+        HandledError: If any of the above occurs and handled_instruction is set.
     """
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}", stream=stream)
@@ -398,11 +417,32 @@ def run_command(
             capture_output=capture_output,
             cwd=str(cwd) if cwd else None,
             stdout=None if capture_output else stream,
+            input=input_text,
+            timeout=timeout,
+            errors=errors,
         )
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")
-        raise
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+    except (OSError, subprocess.TimeoutExpired) as e:
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+
+
+def _command_error(cmd: list[str], error: Exception, instruction: str) -> HandledError:
+    """Converts a failed subprocess launch, timeout, or exit into a HandledError."""
+    command = shlex.join(cmd)
+    if isinstance(error, subprocess.TimeoutExpired):
+        return HandledError(f"Command timed out after {error.timeout}s: {command}", instruction)
+    if isinstance(error, subprocess.CalledProcessError):
+        stderr = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        message = f"Command failed with exit code {error.returncode}: {command}"
+        return HandledError(f"{message}\n{stderr}" if stderr else message, instruction)
+    return HandledError(f"Cannot run {cmd[0]}: {error}", instruction)
 
 
 def configure_docker_auth(config: DeploymentConfig) -> None:
