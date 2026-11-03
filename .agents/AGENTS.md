@@ -38,7 +38,7 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | PR Sizing & Vertical Splitting | [XMC PR Split Verification Skill](skills/xmc_pr_split_verification/SKILL.md) & [GitHub Authoring Standards](rules/github_authoring_and_prs.md) |
 | Branch Sync, Restack & Worktrees (update a branch with main, restack after a parent merge, create or switch branches in a linked worktree) | [GitHub Authoring Standards §Branch Sync & Restacking](rules/github_authoring_and_prs.md#7-branch-sync--restacking) & the `gh-stack` skill |
 | Addressing PR Comments | [Address PR Comment Skill](skills/xmc_address_pr_comment/SKILL.md) & [PR Review Guidelines](rules/pr_review_guidelines.md) |
-| Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
+| Feature Development & Refactoring | [XMC Feature Development Skill](skills/xmc_feature_development/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) (parsers/linters: test long/nested code fences, and empty, malformed, or multibyte inputs; pollers: test every state transition and the exact deadline boundary) |
 | Release Orchestration | [XMC Release Skill](skills/xmc_release/SKILL.md) & [Core Engineering Standards](rules/core_engineering.md) |
 | Release Notes Generation | [XMC Generate Release Notes Skill](skills/xmc_generate_release_notes/SKILL.md) & [Release Notes Taxonomy](skills/xmc_generate_release_notes/references/release_notes_taxonomy.md) |
 | Deploy / Upgrade / Cleanup Environment | [Deploy XMC Skill](skills/xmc_deploy/SKILL.md), [Upgrade XMC Skill](skills/xmc_upgrade/SKILL.md), [Cleanup Environment Skill](skills/xmc_cleanup_environment/SKILL.md) |
