@@ -70,7 +70,10 @@ describe('ResizeDividerComponent', () => {
     const host = bootstrap(TestHostComponent);
     await flush();
 
-    spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
+    const rectSpy = spyOn(
+      host.containerRef().nativeElement,
+      'getBoundingClientRect',
+    ).and.returnValue({
       left: 100,
       width: 1000,
     } as DOMRect);
@@ -95,6 +98,7 @@ describe('ResizeDividerComponent', () => {
     expect(host.splitRatio()).toBe(80);
     expect(host.isDragging()).toBeFalse();
     expect(await divider.isDragging()).toBeFalse();
+    expect(rectSpy).toHaveBeenCalledTimes(1);
 
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 500, bubbles: true }));
     await flush();
@@ -127,6 +131,25 @@ describe('ResizeDividerComponent', () => {
     host.splitRatio.set(30);
     await flush();
     await divider.pressKey(' ');
+    await flush();
+    expect(host.splitRatio()).toBe(50);
+  });
+
+  it('should not start dragging when the container has zero width', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    spyOn(host.containerRef().nativeElement, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      width: 0,
+    } as DOMRect);
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag(500);
+    await flush();
+    expect(host.isDragging()).toBeFalse();
+    expect(await divider.isDragging()).toBeFalse();
+
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
     await flush();
     expect(host.splitRatio()).toBe(50);
   });
