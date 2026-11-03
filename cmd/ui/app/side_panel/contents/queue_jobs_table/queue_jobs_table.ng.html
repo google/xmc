@@ -25,7 +25,6 @@
           mat-stroked-button
           class="full-width-toggle-btn"
           [class.active]="isFullWidth()"
-          [attr.aria-pressed]="isFullWidth()"
           (click)="toggleFullWidth()"
         >
           <mat-icon aria-hidden="true">{{ fullWidthToggleIcon() }}</mat-icon>

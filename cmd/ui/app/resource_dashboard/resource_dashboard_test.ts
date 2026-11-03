@@ -293,6 +293,23 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getRightPaneStyle()).toContain('80%');
   });
 
+  it('should exit full width when matching queues are searched so results are visible', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const toggleBtn = (await (await dashboard.getQueueJobsTable())!.getFullWidthToggleBtn())!;
+    await toggleBtn.click();
+    expect(await dashboard.getQueueList()).toBeNull();
+
+    await (await dashboard.getSmartResourceFinder())!.setAmountValue('100');
+    await flush();
+
+    expect(await dashboard.isRightPaneFullWidth()).toBeFalse();
+    const queueList = (await dashboard.getQueueList())!;
+    expect(await queueList.getQueueCardCount()).toBe(1);
+  });
+
   it('should bind the resize divider split ratio to both pane widths', async () => {
     bootstrap(TestHostComponent);
     await flush();
