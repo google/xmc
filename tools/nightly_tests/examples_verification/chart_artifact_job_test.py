@@ -21,7 +21,7 @@ and UrlArtifact payloads (asserting metric names accuracy, learning_rate, loss),
 and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.chart_artifact_job_verify --xid=21
+    python3 -m tools.nightly_tests.examples_verification.chart_artifact_job_test --xid=21
 """
 
 from __future__ import annotations

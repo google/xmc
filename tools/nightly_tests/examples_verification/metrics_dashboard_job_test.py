@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with metrics
 JobSet specifications, executed to completion, and optionally verifies the created Dashboard.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.metrics_dashboard_job_verify --xid=23
+    python3 -m tools.nightly_tests.examples_verification.metrics_dashboard_job_test --xid=23
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from tools.nightly_tests.examples_verification import metrics_dashboard_ui_verify
+from tools.nightly_tests.examples_verification import metrics_dashboard_ui_test
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
 EXPECTED_TITLE_PATTERN: str = "Metrics Dashboard End-to-End Experiment"
@@ -58,8 +58,8 @@ def _verify_metrics_and_dashboard(_stub: Any, xid: str) -> None:
         min_hydrated_points=1,
     )
     if verifier_cli.get_flag(verifier_cli.FLAGS, "verify_ui", False):
-        with metrics_dashboard_ui_verify.Session.from_flags() as session:
-            metrics_dashboard_ui_verify.verify_metrics_dashboard_ui(session, xid)
+        with metrics_dashboard_ui_test.Session.from_flags() as session:
+            metrics_dashboard_ui_test.verify_metrics_dashboard_ui(session, xid)
 
 
 def main(argv: Sequence[str]) -> None:

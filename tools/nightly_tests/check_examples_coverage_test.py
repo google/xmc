@@ -41,13 +41,13 @@ def _wire_example(root: pathlib.Path, name: str) -> None:
     """Writes all 3 verification wiring entries (script, BUILD.bazel, workflow) for `name`."""
     examples_dir, tests_dir, workflows_dir = _seed_repo(root)
     (examples_dir / name).mkdir(parents=True, exist_ok=True)
-    (tests_dir / f"{name}_verify.py").write_text("# verifier\n", encoding="utf-8")
+    (tests_dir / f"{name}_test.py").write_text("# verifier\n", encoding="utf-8")
     (tests_dir / "BUILD.bazel").write_text(
-        f'py_binary(name = "{name}_verify", srcs = ["{name}_verify.py"])\n',
+        f'py_binary(name = "{name}_test", srcs = ["{name}_test.py"])\n',
         encoding="utf-8",
     )
     (workflows_dir / "nightly-examples-e2e.yml").write_text(
-        f"example_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.examples_verification.{name}_verify'\n",
+        f"example_path: 'examples/{name}'\nverify_module: 'tools.nightly_tests.examples_verification.{name}_test'\n",
         encoding="utf-8",
     )
 
@@ -88,7 +88,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             root = pathlib.Path(tmp)
             examples_dir, tests_dir, _ = _seed_repo(root)
             (examples_dir / "partial_job").mkdir()
-            (tests_dir / "partial_job_verify.py").write_text("# verifier\n", encoding="utf-8")
+            (tests_dir / "partial_job_test.py").write_text("# verifier\n", encoding="utf-8")
             report = check_examples_coverage.audit_examples_coverage(
                 root, exempt_examples=("partial_job",)
             )
@@ -148,7 +148,7 @@ class CheckExamplesCoverageTest(unittest.TestCase):
             _wire_example(root, "single_quote_job")
             build_path = root / "tools" / "nightly_tests" / "examples_verification" / "BUILD.bazel"
             build_path.write_text(
-                "py_binary(name = 'single_quote_job_verify', srcs = ['single_quote_job_verify.py'])\n",
+                "py_binary(name = 'single_quote_job_test', srcs = ['single_quote_job_test.py'])\n",
                 encoding="utf-8",
             )
             report = check_examples_coverage.audit_examples_coverage(root, exempt_examples=())

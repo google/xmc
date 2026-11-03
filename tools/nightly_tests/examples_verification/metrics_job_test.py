@@ -20,7 +20,7 @@ correctly created, scheduled to the expected queue, configured with the 4 distin
 metrics logging jobs (Manual SDK, Keras, Keras Callback, Lightning), and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.metrics_job_verify --xid=24
+    python3 -m tools.nightly_tests.examples_verification.metrics_job_test --xid=24
 """
 
 from __future__ import annotations

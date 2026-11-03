@@ -19,7 +19,7 @@ Asserts that the xdash comparative metrics dashboard and its constituent charts
 were correctly created and are resolvable via the Dashboard Service REST/gRPC API.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.xdash_dashboard_verify --dashboard_id=example_vcc_comparison
+    python3 -m tools.nightly_tests.examples_verification.xdash_dashboard_test --dashboard_id=example_vcc_comparison
 """
 
 from __future__ import annotations
