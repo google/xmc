@@ -51,6 +51,7 @@ from tools.common.tool_utils import (  # noqa: E402
     HandledError,
     log_info,
     positive_int_arg,
+    run_command,
     run_tool,
 )
 
@@ -217,6 +218,22 @@ def latest_runs(rollup: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(latest.values())
 
 
+def _run_gh(cmd: list[str], *, check: bool) -> subprocess.CompletedProcess:
+    """Runs one quiet, bounded gh call, capturing output and replacing bad bytes.
+
+    Errors propagate raw (no handled_instruction) so callers can retry them.
+    """
+    return run_command(
+        cmd,
+        check=check,
+        capture_output=True,
+        log_on_error=False,
+        log_cmd=False,
+        timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        errors="replace",
+    )
+
+
 def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     """Fetches and normalizes the PR's status check rollup via gh.
 
@@ -230,14 +247,7 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     cmd = ["gh", "pr", "view", pr, "--json", "statusCheckRollup"]
     if repo:
         cmd += ["--repo", repo]
-    res = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        errors="replace",
-        check=True,
-        timeout=GH_COMMAND_TIMEOUT_SECONDS,
-    )
+    res = _run_gh(cmd, check=True)
     return [classify_check(entry) for entry in latest_runs(parse_rollup(res.stdout))]
 
 
@@ -250,14 +260,7 @@ def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
     """
     cmd = ["gh", "api", f"repos/{run_repo}/actions/jobs/{job_id}/logs"]
     try:
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=False,
-            timeout=GH_COMMAND_TIMEOUT_SECONDS,
-        )
+        res = _run_gh(cmd, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"<gh api job logs failed: {e}>"
     if res.returncode != 0:

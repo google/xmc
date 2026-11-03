@@ -62,6 +62,18 @@ def _rollup(*entries):
     return _completed(json.dumps({"statusCheckRollup": list(entries)}))
 
 
+def _gh_call_kwargs(check: bool) -> dict[str, Any]:
+    """Returns the run_command kwargs every gh call is expected to use."""
+    return {
+        "check": check,
+        "capture_output": True,
+        "log_on_error": False,
+        "log_cmd": False,
+        "timeout": wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
+        "errors": "replace",
+    }
+
+
 def _details(ctx) -> dict[str, Any]:
     """Returns the non-null details mapping of a captured HandledError."""
     details = ctx.exception.details
@@ -272,7 +284,7 @@ class TestLatestRuns(unittest.TestCase):
 
 
 @patch("tools.pr_review.wait_for_ci.log_info", MagicMock())
-@patch("tools.pr_review.wait_for_ci.subprocess.run")
+@patch("tools.pr_review.wait_for_ci.run_command")
 class TestWaitForCI(unittest.TestCase):
     """Tests for the wait_for_ci polling loop."""
 
@@ -298,11 +310,7 @@ class TestWaitForCI(unittest.TestCase):
         self.assertEqual(self.clock.sleeps, [10, 20])
         mock_run.assert_called_with(
             ["gh", "pr", "view", "148", "--json", "statusCheckRollup", "--repo", "google/xmc"],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=True,
-            timeout=wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
+            **_gh_call_kwargs(check=True),
         )
 
     def test_superseded_cancelled_run_is_not_a_failure(self, mock_run):
@@ -395,11 +403,7 @@ class TestWaitForCI(unittest.TestCase):
         self.assertIn("HTTP 410", details["failed_checks"][1]["log_tail"])
         mock_run.assert_any_call(
             ["gh", "api", "repos/google/xmc/actions/jobs/999/logs"],
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=False,
-            timeout=wait_for_ci.GH_COMMAND_TIMEOUT_SECONDS,
+            **_gh_call_kwargs(check=False),
         )
         self.assertEqual(mock_run.call_count, 4)
 
