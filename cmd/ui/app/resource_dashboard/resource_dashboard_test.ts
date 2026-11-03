@@ -269,14 +269,15 @@ describe('ResourceDashboard Container', () => {
     await stubSplitContainerWidth(dashboard, 1000);
 
     // Resize to 35% / 65% first so we can verify custom ratio restoration after exiting full width
-    await dashboard.startResizeDrag(500);
+    const initialDivider = (await dashboard.getResizeDivider())!;
+    await initialDivider.startDrag(500);
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 350, bubbles: true }));
     window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     await flush();
 
     expect(await dashboard.getLeftPaneStyle()).toContain('35%');
     expect(await dashboard.getRightPaneStyle()).toContain('65%');
-    expect(await dashboard.hasResizeDivider()).toBeTrue();
+    expect(await dashboard.getResizeDivider()).not.toBeNull();
 
     const initialJobsHarness = (await dashboard.getQueueJobsTable())!;
     const enterBtn = (await initialJobsHarness.getFullWidthToggleBtn())!;
@@ -287,7 +288,7 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await dashboard.getQueueList()).toBeNull();
-    expect(await dashboard.hasResizeDivider()).toBeFalse();
+    expect(await dashboard.getResizeDivider()).toBeNull();
     expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
     expect(await dashboard.getRightPaneStyle()).toContain('100%');
 
@@ -300,20 +301,20 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await dashboard.getQueueList()).not.toBeNull();
-    expect(await dashboard.hasResizeDivider()).toBeTrue();
+    expect(await dashboard.getResizeDivider()).not.toBeNull();
     expect(await dashboard.isRightPaneFullWidth()).toBeFalse();
     expect(await dashboard.getLeftPaneStyle()).toContain('35%');
     expect(await dashboard.getRightPaneStyle()).toContain('65%');
   });
 
-  it('should render vertical splitter with aria/title attributes, clamp drag bounds, and reset on dblclick or keyboard', async () => {
+  it('should integrate with ResizeDividerComponent for pointer drag, bounds clamping, dblclick, and keyboard resize', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
-    expect(await dashboard.hasResizeDivider()).toBeTrue();
+    const divider = (await dashboard.getResizeDivider())!;
 
-    const attrs = (await dashboard.getResizeDividerAttributes())!;
+    const attrs = await divider.getAttributes();
     expect(attrs.role).toBe('separator');
     expect(attrs.ariaLabel).toBe('Drag to resize sections (double-click to reset)');
     expect(attrs.title).toBe('Drag to resize sections (double-click to reset)');
@@ -325,47 +326,31 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
 
     // Drag to 30% / 70%
-    await dashboard.startResizeDrag(500);
+    await divider.startDrag(500);
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
     await flush();
     expect(await dashboard.getLeftPaneStyle()).toContain('30%');
     expect(await dashboard.getRightPaneStyle()).toContain('70%');
 
-    // Clamp minimum at 20%
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, bubbles: true }));
-    await flush();
-    expect(await dashboard.getLeftPaneStyle()).toContain('20%');
-    expect(await dashboard.getRightPaneStyle()).toContain('80%');
-
-    // Clamp maximum at 80%
+    // Clamp maximum at 80% and release
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 950, bubbles: true }));
     window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     await flush();
     expect(await dashboard.getLeftPaneStyle()).toContain('80%');
     expect(await dashboard.getRightPaneStyle()).toContain('20%');
 
-    // Mousemove after mouseup must be ignored
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, bubbles: true }));
-    await flush();
-    expect(await dashboard.getLeftPaneStyle()).toContain('80%');
-
     // Double-click resets back to 50% / 50%
-    await dashboard.doubleClickResizeDivider();
+    await divider.doubleClick();
     await flush();
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
 
-    // Keyboard ArrowLeft / ArrowRight / Enter support
-    await dashboard.pressResizeDividerKey('ArrowLeft');
+    // Keyboard ArrowLeft / Enter integration
+    await divider.pressKey('ArrowLeft');
     await flush();
     expect(await dashboard.getLeftPaneStyle()).toContain('45%');
 
-    await dashboard.pressResizeDividerKey('ArrowRight');
-    await dashboard.pressResizeDividerKey('ArrowRight');
-    await flush();
-    expect(await dashboard.getLeftPaneStyle()).toContain('55%');
-
-    await dashboard.pressResizeDividerKey('Enter');
+    await divider.pressKey('Enter');
     await flush();
     expect(await dashboard.getLeftPaneStyle()).toContain('50%');
   });

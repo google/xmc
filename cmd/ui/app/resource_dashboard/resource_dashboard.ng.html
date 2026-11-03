@@ -35,21 +35,11 @@
             (selectQueue)="onQueueSelect($event)"
           />
         </div>
-        <div
-          class="rod-resize-divider"
-          role="separator"
-          tabindex="0"
-          aria-orientation="vertical"
-          aria-valuemin="20"
-          aria-valuemax="80"
-          aria-label="Drag to resize sections (double-click to reset)"
-          title="Drag to resize sections (double-click to reset)"
-          [attr.aria-valuenow]="splitRatio()"
-          [class.is-dragging]="isDragging()"
-          (mousedown)="startResize($event)"
-          (dblclick)="resetResize()"
-          (keydown)="onDividerKeyDown($event)"
-        ></div>
+        <xmc-rod-resize-divider
+          [containerElement]="splitContainer"
+          [(splitRatio)]="splitRatio"
+          [(isDragging)]="isDragging"
+        />
       }
       <div
         class="jobs-side-pane"

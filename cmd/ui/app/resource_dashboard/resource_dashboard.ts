@@ -17,12 +17,10 @@ import {
   Component,
   computed,
   effect,
-  ElementRef,
   inject,
   OnDestroy,
   OnInit,
   signal,
-  viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
@@ -39,6 +37,10 @@ import {
 import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
+  DEFAULT_SPLIT_RATIO_PERCENT,
+  ResizeDividerComponent,
+} from './components/resize_divider/resize_divider';
+import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
   SmartResourceFinderComponent,
@@ -51,20 +53,6 @@ import {
 } from './components/subnav_tabs/subnav_tabs';
 import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
-
-const DEFAULT_SPLIT_RATIO_PERCENT = 50;
-const MIN_SPLIT_RATIO_PERCENT = 20;
-const MAX_SPLIT_RATIO_PERCENT = 80;
-const KEYBOARD_RESIZE_STEP_PERCENT = 5;
-
-const KEYBOARD_STEP_BY_KEY: Readonly<Record<string, number>> = {
-  ArrowLeft: -KEYBOARD_RESIZE_STEP_PERCENT,
-  ArrowRight: KEYBOARD_RESIZE_STEP_PERCENT,
-};
-
-function clampSplitRatio(ratio: number): number {
-  return Math.max(MIN_SPLIT_RATIO_PERCENT, Math.min(MAX_SPLIT_RATIO_PERCENT, ratio));
-}
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
@@ -80,6 +68,7 @@ function clampSplitRatio(ratio: number): number {
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,
+    ResizeDividerComponent,
     QueueJobsTable,
     WipBannerComponent,
   ],
@@ -104,62 +93,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly isJobsFullWidth = signal<boolean>(false);
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
   protected readonly isDragging = signal<boolean>(false);
-  private readonly splitContainer = viewChild<ElementRef<HTMLDivElement>>('splitContainer');
-  private cleanupDragListeners: (() => void) | null = null;
 
   protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
   protected readonly rightPaneFlex = computed(() =>
     this.isJobsFullWidth() ? '1 1 100%' : `1 1 ${100 - this.splitRatio()}%`,
   );
-
-  protected startResize(event: MouseEvent): void {
-    const container = this.splitContainer()?.nativeElement;
-    if (!container) {
-      return;
-    }
-    event.preventDefault();
-    this.stopResize();
-    this.isDragging.set(true);
-
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const { left, width } = container.getBoundingClientRect();
-      if (width <= 0) {
-        return;
-      }
-      this.splitRatio.set(clampSplitRatio(((moveEvent.clientX - left) / width) * 100));
-    };
-    const onMouseUp = () => this.stopResize();
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    this.cleanupDragListeners = () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }
-
-  private stopResize(): void {
-    this.cleanupDragListeners?.();
-    this.cleanupDragListeners = null;
-    this.isDragging.set(false);
-  }
-
-  protected resetResize(): void {
-    this.splitRatio.set(DEFAULT_SPLIT_RATIO_PERCENT);
-  }
-
-  protected onDividerKeyDown(event: KeyboardEvent): void {
-    const step = KEYBOARD_STEP_BY_KEY[event.key];
-    if (step !== undefined) {
-      event.preventDefault();
-      this.splitRatio.update((ratio) => clampSplitRatio(ratio + step));
-      return;
-    }
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      this.resetResize();
-    }
-  }
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
@@ -281,7 +219,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    this.stopResize();
     this.subscriptions.unsubscribe();
     this.reloader.stop();
   }

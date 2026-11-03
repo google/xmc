@@ -64,36 +64,6 @@ xmc-smart-resource-finder {
   padding-left: 0;
 }
 
-.rod-resize-divider {
-  width: 12px;
-  margin: 0 -6px;
-  cursor: col-resize;
-  background-color: transparent;
-  align-self: stretch;
-  display: flex;
-  justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-
-.rod-resize-divider::after {
-  content: '';
-  width: 1px;
-  background-color: #dadce0;
-  height: 100%;
-  transition:
-    background-color 0.15s ease,
-    width 0.15s ease;
-}
-
-.rod-resize-divider:hover::after,
-.rod-resize-divider:focus-visible::after,
-.rod-resize-divider.is-dragging::after {
-  width: 2px;
-  background-color: #1a73e8;
-}
-
 .resource-availability-container {
   display: block;
   width: 100%;
