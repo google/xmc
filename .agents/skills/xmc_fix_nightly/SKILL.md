@@ -28,25 +28,26 @@ This skill guides an agent end-to-end through discovering broken Nightly Example
    ```
 
 2. **Extract Failed Jobs, Steps & Diagnostic Artifacts**:
-   Inspect the target failing run on `main` to extract failed job IDs and step names:
+   View the target failing run on `main`. The output lists every job with its `ID`, expands the steps of failed jobs (marked `X`), and ends with an `ARTIFACTS` section naming the artifacts that can still be downloaded:
    ```bash
    RUN_ID="<run_id>"
-   gh run view "${RUN_ID}" --repo google/xmc --json status,conclusion,headSha,createdAt,url,jobs \
-     --jq '{status, conclusion, headSha, createdAt, url, failed_jobs: [.jobs[] | select(.conclusion == "failure") | {id: .databaseId, name, url, failed_steps: [.steps[] | select(.conclusion == "failure") | .name]}]}'
+   gh run view "${RUN_ID}" --repo google/xmc
    ```
-   Download the failed job log into `${ARTIFACT_DIR:-/tmp}` and list the artifacts the run actually uploaded (delegate large log analysis to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines)):
+   Download the failed job log into `${ARTIFACT_DIR:-/tmp}` (delegate large log analysis to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines)):
    ```bash
    RUN_ID="<run_id>"
-   JOB_ID="<job_id>"
+   JOB_ID="<failed_job_id>"
    SCRATCH_DIR="${ARTIFACT_DIR:-/tmp}/nightly_triage_${RUN_ID}"
 
    mkdir -p "${SCRATCH_DIR}"
    gh api "repos/google/xmc/actions/jobs/${JOB_ID}/logs" > "${SCRATCH_DIR}/job_${JOB_ID}.log"
-   gh api "repos/google/xmc/actions/runs/${RUN_ID}/artifacts" --jq '.artifacts[].name'
    ```
-   Download only artifacts that appear in that list, because `gh run download -n` exits non-zero for a missing name. `ui-screenshots-<example_id>` is uploaded only on failure for matrix entries with `verify_ui: true`, and failed `nightly-build.yml` runs upload `deploy-gke-diagnostics`:
+   Download only names listed under `ARTIFACTS`, skipping any marked `(expired)`. `gh run download -n` exits non-zero for a missing or expired name, `result-<example_id>` is kept for only 1 day, and `ui-screenshots-<example_id>` is uploaded only on failure for matrix entries with `verify_ui: true`. `deploy-gke-diagnostics` belongs to the failing `nightly-build.yml` run, so use that run's ID for it:
    ```bash
+   RUN_ID="<run_id_that_uploaded_the_artifact>"
    ARTIFACT_NAME="<listed_artifact_name>"
+   SCRATCH_DIR="${ARTIFACT_DIR:-/tmp}/nightly_triage_${RUN_ID}"
+
    gh run download "${RUN_ID}" --repo google/xmc -n "${ARTIFACT_NAME}" -D "${SCRATCH_DIR}/${ARTIFACT_NAME}"
    ```
    *(Note: Use `gh api .../logs` rather than `gh run view --job --log`, which prints empty output on some `gh` CLI versions.)*
@@ -110,38 +111,44 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the PR Branch**:
-   Pin verification to the pushed remote commit that GitHub Actions executes, never local `HEAD`, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants):
+   Verify the pushed remote commit that GitHub Actions executes, never local `HEAD`, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants). Fetch the branch first so `origin/${BRANCH_NAME}` is current:
    ```bash
    SLUG="${SLUG:-<kebab-case-slug>}"
    BRANCH_NAME="fix/nightly-${SLUG}"
 
    git fetch origin "${BRANCH_NAME}"
-   git rev-parse "origin/${BRANCH_NAME}"
    ```
-   - **Targeted example(s)**: Dispatch with the filter, then select the run whose `headSha` equals the pinned SHA and whose `createdAt` is at or after the recorded dispatch time. Treat a `cancelled` conclusion as superseded by a newer run in the concurrency group, not as a pass:
+   - **Targeted example(s)**: Dispatch with the filter:
      ```bash
-     BRANCH_NAME="fix/nightly-<kebab-case-slug>"
-     TARGET_SHA="<origin_branch_sha>"
+     SLUG="${SLUG:-<kebab-case-slug>}"
+     BRANCH_NAME="fix/nightly-${SLUG}"
      EXAMPLES_FILTER="<matrix_example_id>"
 
-     date -u +%Y-%m-%dT%H:%M:%SZ
      gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
-     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
-       --event workflow_dispatch --commit "${TARGET_SHA}" --json databaseId,status,conclusion,headSha,createdAt,url
      ```
+     Find the dispatched run by commit and event. If the list is empty, the run has not registered yet, so re-run this single command after a few seconds. If several runs match, because the same commit was dispatched more than once, use the newest `createdAt`:
+     ```bash
+     SLUG="${SLUG:-<kebab-case-slug>}"
+     BRANCH_NAME="fix/nightly-${SLUG}"
+
+     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
+       --event workflow_dispatch --commit "$(git rev-parse "origin/${BRANCH_NAME}")" \
+       --json databaseId,status,conclusion,headSha,createdAt,url
+     ```
+     Watch it to completion. Only a `success` conclusion is proof. If it ends `cancelled` or `timed_out`, inspect why before dispatching again:
      ```bash
      VERIFY_RUN_ID="<verify_run_id>"
      gh run watch "${VERIFY_RUN_ID}" --repo google/xmc --exit-status --interval 15
      ```
    - **Full suite (unfiltered)**:
      ```bash
-     BRANCH_NAME="fix/nightly-<kebab-case-slug>"
-     TARGET_SHA="<origin_branch_sha>"
+     SLUG="${SLUG:-<kebab-case-slug>}"
+     BRANCH_NAME="fix/nightly-${SLUG}"
 
      PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
        --workflow nightly-examples-e2e.yml \
        --ref "${BRANCH_NAME}" \
-       --target-sha "${TARGET_SHA}" \
+       --target-sha "$(git rev-parse "origin/${BRANCH_NAME}")" \
        --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
      ```
 
