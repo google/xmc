@@ -326,3 +326,19 @@ WorkUnits consume components at runtime through the Actuator daemon without quer
 3. **Placement Gating**: Actuator blocks placement and requeues the task if required components are missing (hydration lag), disabled, or unhealthy (`Ready=False`/`Unknown`).
 4. **Drift Warning**: If a component's generation drifts past the snapshot lock, Actuator allows placement but logs a warning and annotates the JobSet with `xmc.dev/component-drift-warning`.
 5. **Configuration Injection**: Actuator injects plain environment variables (`status.access.envVars`) into all primary and init containers across all replicated jobs.
+
+---
+
+## 7. Component Stability Contract
+
+Every `Component` declares a required stability level via `spec.stability` (`STABLE`, `PREVIEW`, or `EXPERIMENTAL`) and optional acknowledgement via `spec.acknowledgeExperimental` (default `false`):
+
+| Tier | Protobuf Enum | Launch Stage & Upgrade Contract | Admin Enablement (`acknowledgeExperimental`) |
+| :--- | :--- | :--- | :--- |
+| **`STABLE`** | `COMPONENT_STABILITY_STABLE` | Production-supported GA component; upgrades preserve backward compatibility within the profile's support window. | Enabled with `spec.enabled: true` alone. |
+| **`PREVIEW`** | `COMPONENT_STABILITY_PREVIEW` | Feature-complete pre-GA component available for early evaluation before full GA support guarantees apply. | Enabled with `spec.enabled: true` alone (does not require `acknowledgeExperimental: true`). |
+| **`EXPERIMENTAL`** | `COMPONENT_STABILITY_EXPERIMENTAL` | Early-stage component that may introduce breaking changes or data loss across upgrades. | Requires explicit `spec.acknowledgeExperimental: true` when `spec.enabled` is `true`. |
+
+### Multi-Layer Enforcement
+
+1. **Kubernetes CEL Admission (`components.xmc.dev` CRD)**: Requires `spec.stability` on every `Component` CR and rejects `kubectl apply` / `helm upgrade` of an enabled `EXPERIMENTAL` `Component` unless `spec.acknowledgeExperimental == true`. Disabled (`spec.enabled: false`) `EXPERIMENTAL` components are admitted so profiles can ship disabled-by-default experimental components.

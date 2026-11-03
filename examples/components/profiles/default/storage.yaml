@@ -18,6 +18,7 @@ metadata:
   name: storage
 spec:
   enabled: true
+  stability: STABLE
   componentType: CUSTOM_1P_COMPONENT
   version: "1.2.0"
   description: Default cloud storage component providing persistent checkpointing and artifact storage.

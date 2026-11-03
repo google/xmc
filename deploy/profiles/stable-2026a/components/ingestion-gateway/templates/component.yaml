@@ -23,6 +23,10 @@ spec:
   componentClass: "metrics-ingestion"
   version: {{ .Chart.Version | default "0.1.0" | quote }}
   chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
+  stability: {{ .Values.stability | default "STABLE" | quote }}
+  {{- if hasKey .Values "acknowledgeExperimental" }}
+  acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
+  {{- end }}
   {{- if $imgTag }}
   imageTag: {{ $imgTag | toString | quote }}
   {{- end }}

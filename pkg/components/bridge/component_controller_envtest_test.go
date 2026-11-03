@@ -629,8 +629,15 @@ func (env *controllerEnv) create(t *testing.T, name string, deps ...string) {
 // createSpec creates Component name with spec and finalizers.
 func (env *controllerEnv) createSpec(t *testing.T, name string, spec map[string]any, finalizers ...string) {
 	t.Helper()
+	clonedSpec := make(map[string]any, len(spec)+1)
+	for k, v := range spec {
+		clonedSpec[k] = v
+	}
+	if _, ok := clonedSpec["stability"]; !ok {
+		clonedSpec["stability"] = "STABLE"
+	}
 	u := newTestComponent(name, env.namespace, finalizers...)
-	u.Object["spec"] = spec
+	u.Object["spec"] = clonedSpec
 	if _, err := env.client.Create(context.Background(), u, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create Component %s: %v", name, err)
 	}
