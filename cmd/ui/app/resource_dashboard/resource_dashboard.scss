@@ -44,7 +44,9 @@ xmc-smart-resource-finder {
 .rod-main-content {
   min-width: 0;
   box-sizing: border-box;
-  overflow-x: auto;
+  // Clip content squeezed past the minimum split without clipping card shadows.
+  overflow-x: clip;
+  overflow-clip-margin: 8px;
   display: flex;
   flex-direction: column;
   padding-right: 12px;
@@ -53,7 +55,9 @@ xmc-smart-resource-finder {
 .jobs-side-pane {
   min-width: 0;
   box-sizing: border-box;
-  overflow-x: auto;
+  // Clip content squeezed past the minimum split without clipping card shadows.
+  overflow-x: clip;
+  overflow-clip-margin: 8px;
   position: sticky;
   top: 16px;
   padding-left: 12px;

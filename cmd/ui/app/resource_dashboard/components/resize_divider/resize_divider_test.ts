@@ -73,7 +73,7 @@ describe('ResizeDividerComponent', () => {
     const rectSpy = stubContainerRect(host, 100, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(600);
+    await divider.startDrag();
     expect(await divider.isDragging()).toBeTrue();
     expect(await divider.isFocused()).toBeTrue();
 
@@ -103,7 +103,7 @@ describe('ResizeDividerComponent', () => {
     stubContainerRect(host, 0, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(500, 2);
+    await divider.startDrag(2);
     expect(await divider.isDragging()).toBeFalse();
 
     await divider.moveDragTo(300);
@@ -116,13 +116,43 @@ describe('ResizeDividerComponent', () => {
     stubContainerRect(host, 0, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(500);
+    await divider.startDrag();
     await divider.moveDragTo(300, 0);
     expect(await divider.isDragging()).toBeFalse();
     expect(host.splitRatio()).toBe(50);
 
     await divider.moveDragTo(400);
     expect(host.splitRatio()).toBe(50);
+  });
+
+  it('should end the drag on pointercancel', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    stubContainerRect(host, 0, 1000);
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag();
+    await divider.cancelDrag();
+    expect(await divider.isDragging()).toBeFalse();
+
+    await divider.moveDragTo(300);
+    expect(host.splitRatio()).toBe(50);
+  });
+
+  it('should ignore pointers other than the one that started the drag', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    stubContainerRect(host, 0, 1000);
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag();
+    await divider.moveDragTo(300, 1, 7);
+    await divider.endDrag(7);
+    expect(host.splitRatio()).toBe(50);
+    expect(await divider.isDragging()).toBeTrue();
+
+    await divider.moveDragTo(300);
+    expect(host.splitRatio()).toBe(30);
   });
 
   it('should reset on double-click and support ArrowLeft, ArrowRight, Enter, and Space keys', async () => {
@@ -175,7 +205,7 @@ describe('ResizeDividerComponent', () => {
     stubContainerRect(host, 0, 0);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(500);
+    await divider.startDrag();
     expect(await divider.isDragging()).toBeFalse();
 
     await divider.moveDragTo(300);
@@ -188,7 +218,7 @@ describe('ResizeDividerComponent', () => {
     stubContainerRect(host, 0, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag(500);
+    await divider.startDrag();
     expect(await divider.isDragging()).toBeTrue();
 
     const removeListenerSpy = spyOn(window, 'removeEventListener').and.callThrough();

@@ -14,6 +14,8 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 
+const DEFAULT_POINTER_ID = 1;
+
 /** Harness for interacting with <xmc-rod-resize-divider> in tests. */
 export class ResizeDividerHarness extends ComponentHarness {
   static hostSelector = 'xmc-rod-resize-divider';
@@ -51,23 +53,26 @@ export class ResizeDividerHarness extends ComponentHarness {
   }
 
   /** Starts a pointer resize drag gesture on the divider. */
-  async startDrag(clientX = 500, button = 0): Promise<void> {
-    await (await this.separator()).dispatchEvent('pointerdown', { clientX, button });
+  async startDrag(button = 0, pointerId = DEFAULT_POINTER_ID): Promise<void> {
+    await (await this.separator()).dispatchEvent('pointerdown', { button, pointerId });
   }
 
   /**
-   * Moves the pointer during an active drag. The component listens on `window`, so the event is
-   * dispatched there. `buttons` defaults to the primary button being held.
+   * Moves a pointer during an active drag. The component listens on `window`, so the event is
+   * dispatched there (TestBed environments only). `buttons` defaults to the primary button held.
    */
-  async moveDragTo(clientX: number, buttons = 1): Promise<void> {
-    window.dispatchEvent(new PointerEvent('pointermove', { clientX, buttons, bubbles: true }));
-    await this.forceStabilize();
+  async moveDragTo(clientX: number, buttons = 1, pointerId = DEFAULT_POINTER_ID): Promise<void> {
+    await this.dispatchWindowPointerEvent('pointermove', { clientX, buttons, pointerId });
   }
 
   /** Releases the pointer to end an active drag. */
-  async endDrag(): Promise<void> {
-    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-    await this.forceStabilize();
+  async endDrag(pointerId = DEFAULT_POINTER_ID): Promise<void> {
+    await this.dispatchWindowPointerEvent('pointerup', { pointerId });
+  }
+
+  /** Cancels the pointer (e.g. a browser gesture takeover) during an active drag. */
+  async cancelDrag(pointerId = DEFAULT_POINTER_ID): Promise<void> {
+    await this.dispatchWindowPointerEvent('pointercancel', { pointerId });
   }
 
   /** Double-clicks the divider to reset split widths to default. */
@@ -78,5 +83,10 @@ export class ResizeDividerHarness extends ComponentHarness {
   /** Dispatches a keyboard event on the divider. */
   async pressKey(key: string): Promise<void> {
     await (await this.separator()).dispatchEvent('keydown', { key });
+  }
+
+  private async dispatchWindowPointerEvent(type: string, init: PointerEventInit): Promise<void> {
+    window.dispatchEvent(new PointerEvent(type, { ...init, bubbles: true }));
+    await this.forceStabilize();
   }
 }
