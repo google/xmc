@@ -14,35 +14,34 @@
 
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
-load("@rules_python//python:py_test.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "admin_panel_ui_verify.py",
-    "chart_artifact_job_verify.py",
-    "clickhouse_metrics_job_verify.py",
-    "init_container_job_verify.py",
-    "managed_xprof_artifact_job_verify.py",
-    "metrics_dashboard_job_verify.py",
-    "metrics_dashboard_ui_verify.py",
-    "metrics_job_verify.py",
-    "multikueue_job_verify.py",
-    "multipod_job_verify.py",
-    "pathways_job_verify.py",
-    "per_job_node_selector_verify.py",
-    "resource_observability_dashboard_ui_verify.py",
-    "resource_observability_dashboard_ui_verify_test.py",
-    "sidecar_verify.py",
-    "simple_job_ui_verify.py",
-    "simple_job_verify.py",
-    "workunit_artifact_job_verify.py",
-    "xdash_dashboard_verify.py",
+    "README.md",
+    "admin_panel_ui_test.py",
+    "chart_artifact_job_test.py",
+    "clickhouse_metrics_job_test.py",
+    "init_container_job_test.py",
+    "managed_xprof_artifact_job_test.py",
+    "metrics_dashboard_job_test.py",
+    "metrics_dashboard_ui_test.py",
+    "metrics_job_test.py",
+    "multikueue_job_test.py",
+    "multipod_job_test.py",
+    "pathways_job_test.py",
+    "per_job_node_selector_test.py",
+    "resource_observability_dashboard_ui_test.py",
+    "sidecar_test.py",
+    "simple_job_test.py",
+    "simple_job_ui_test.py",
+    "workunit_artifact_job_test.py",
+    "xdash_dashboard_test.py",
 ])
 
 py_library(
-    name = "simple_job_verify_lib",
-    srcs = ["simple_job_verify.py"],
+    name = "simple_job_test_lib",
+    srcs = ["simple_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -52,15 +51,15 @@ py_library(
 )
 
 py_binary(
-    name = "simple_job_verify",
-    srcs = ["simple_job_verify.py"],
+    name = "simple_job_test",
+    srcs = ["simple_job_test.py"],
     imports = ["../../.."],
-    deps = [":simple_job_verify_lib"],
+    deps = [":simple_job_test_lib"],
 )
 
 py_binary(
-    name = "clickhouse_metrics_job_verify",
-    srcs = ["clickhouse_metrics_job_verify.py"],
+    name = "clickhouse_metrics_job_test",
+    srcs = ["clickhouse_metrics_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -69,8 +68,8 @@ py_binary(
 )
 
 py_binary(
-    name = "simple_job_ui_verify",
-    srcs = ["simple_job_ui_verify.py"],
+    name = "simple_job_ui_test",
+    srcs = ["simple_job_ui_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:endpoint_resolution",
@@ -82,8 +81,8 @@ py_binary(
 )
 
 py_binary(
-    name = "admin_panel_ui_verify",
-    srcs = ["admin_panel_ui_verify.py"],
+    name = "admin_panel_ui_test",
+    srcs = ["admin_panel_ui_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:ess_session",
@@ -94,11 +93,12 @@ py_binary(
 )
 
 py_binary(
-    name = "resource_observability_dashboard_ui_verify",
-    srcs = ["resource_observability_dashboard_ui_verify.py"],
+    name = "resource_observability_dashboard_ui_test",
+    srcs = ["resource_observability_dashboard_ui_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:resource_observability_parsing",
         "//tools/nightly_tests/verification:ui_entities_validator_lib",
         "//tools/nightly_tests/verification:verification_report",
         "//tools/nightly_tests/verification:verifier_cli",
@@ -107,8 +107,8 @@ py_binary(
 )
 
 py_binary(
-    name = "init_container_job_verify",
-    srcs = ["init_container_job_verify.py"],
+    name = "init_container_job_test",
+    srcs = ["init_container_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -117,8 +117,8 @@ py_binary(
 )
 
 py_binary(
-    name = "sidecar_verify",
-    srcs = ["sidecar_verify.py"],
+    name = "sidecar_test",
+    srcs = ["sidecar_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -127,8 +127,8 @@ py_binary(
 )
 
 py_binary(
-    name = "multipod_job_verify",
-    srcs = ["multipod_job_verify.py"],
+    name = "multipod_job_test",
+    srcs = ["multipod_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -137,8 +137,8 @@ py_binary(
 )
 
 py_binary(
-    name = "chart_artifact_job_verify",
-    srcs = ["chart_artifact_job_verify.py"],
+    name = "chart_artifact_job_test",
+    srcs = ["chart_artifact_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -147,8 +147,8 @@ py_binary(
 )
 
 py_binary(
-    name = "metrics_job_verify",
-    srcs = ["metrics_job_verify.py"],
+    name = "metrics_job_test",
+    srcs = ["metrics_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -157,8 +157,8 @@ py_binary(
 )
 
 py_binary(
-    name = "metrics_dashboard_ui_verify",
-    srcs = ["metrics_dashboard_ui_verify.py"],
+    name = "metrics_dashboard_ui_test",
+    srcs = ["metrics_dashboard_ui_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:ess_session",
@@ -169,19 +169,19 @@ py_binary(
 )
 
 py_binary(
-    name = "metrics_dashboard_job_verify",
-    srcs = ["metrics_dashboard_job_verify.py"],
+    name = "metrics_dashboard_job_test",
+    srcs = ["metrics_dashboard_job_test.py"],
     imports = ["../../.."],
     deps = [
-        ":metrics_dashboard_ui_verify",
+        ":metrics_dashboard_ui_test",
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
     ],
 )
 
 py_binary(
-    name = "per_job_node_selector_verify",
-    srcs = ["per_job_node_selector_verify.py"],
+    name = "per_job_node_selector_test",
+    srcs = ["per_job_node_selector_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -191,8 +191,8 @@ py_binary(
 )
 
 py_binary(
-    name = "pathways_job_verify",
-    srcs = ["pathways_job_verify.py"],
+    name = "pathways_job_test",
+    srcs = ["pathways_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -201,8 +201,8 @@ py_binary(
 )
 
 py_binary(
-    name = "managed_xprof_artifact_job_verify",
-    srcs = ["managed_xprof_artifact_job_verify.py"],
+    name = "managed_xprof_artifact_job_test",
+    srcs = ["managed_xprof_artifact_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -211,8 +211,8 @@ py_binary(
 )
 
 py_binary(
-    name = "workunit_artifact_job_verify",
-    srcs = ["workunit_artifact_job_verify.py"],
+    name = "workunit_artifact_job_test",
+    srcs = ["workunit_artifact_job_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -221,8 +221,8 @@ py_binary(
 )
 
 py_binary(
-    name = "xdash_dashboard_verify",
-    srcs = ["xdash_dashboard_verify.py"],
+    name = "xdash_dashboard_test",
+    srcs = ["xdash_dashboard_test.py"],
     imports = ["../../.."],
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
@@ -231,24 +231,13 @@ py_binary(
 )
 
 py_binary(
-    name = "multikueue_job_verify",
-    srcs = ["multikueue_job_verify.py"],
+    name = "multikueue_job_test",
+    srcs = ["multikueue_job_test.py"],
     imports = ["../../.."],
     deps = [
-        ":simple_job_verify_lib",
+        ":simple_job_test_lib",
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
         "//tools/nightly_tests/verification:xmc_entities_validator_lib",
-    ],
-)
-
-py_test(
-    name = "resource_observability_dashboard_ui_verify_test",
-    size = "small",
-    srcs = ["resource_observability_dashboard_ui_verify_test.py"],
-    imports = ["../../.."],
-    deps = [
-        ":resource_observability_dashboard_ui_verify",
-        "//tools/nightly_tests/verification:ui_entities_validator_lib",
     ],
 )

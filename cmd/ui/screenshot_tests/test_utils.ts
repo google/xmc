@@ -92,6 +92,19 @@ export const MOCK_HEALTH_STATUS: HealthStatusResponse = {
       name: 'Internal Git Provider',
       type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
       healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'STABLE',
+    },
+    {
+      name: 'Metrics Collector',
+      type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
+      healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'PREVIEW',
+    },
+    {
+      name: 'Custom GPU Profiler',
+      type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
+      healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'EXPERIMENTAL',
     },
   ],
   healthCheckTime: { seconds: 1717804800, nanos: 0 },
@@ -610,6 +623,11 @@ export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
     createTime: '2026-06-01T10:01:00Z',
     metadata: {
       managementCluster: {
+        project: 'xmanager-prod',
+        location: 'us-central1',
+        clusterName: 'xmc-gke-prod-01',
+      },
+      executingCluster: {
         project: 'xmanager-prod',
         location: 'us-central1',
         clusterName: 'xmc-gke-prod-01',

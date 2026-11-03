@@ -16,7 +16,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 - **Feedback Quality & Review Presentation**:
   - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
   - **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.
-  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff.
+  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff. Findings on lines the PR does not change, or on code moved verbatim, are non-blocking: label them as follow-ups rather than requesting changes, unless the move itself breaks them (e.g. imports or visibility) or they contain critical correctness or security defects.
 - **Interactive Multi-Agent Review Workflow (Optional)**: For structured PR code reviews featuring dynamic expert subagent panels, open user direction windows, inline comment deduplication, explicit confirmation gates, and re-review verification, agents may optionally utilize the procedure defined in the [XMC Review PR Skill](../skills/xmc_review_pr/SKILL.md) backed by `./tools/pr_review/review_pr_generate_audit.py`, `./tools/pr_review/review_pr_post_inline_comment.py`, and `./tools/pr_review/review_pr_verify_posted.py`, or use their own established review workflows.
 
 ---
@@ -37,6 +37,6 @@ Key tools for PR comment processing:
 
 ## 3. Commit Management During PR Review Rounds
 - **Incremental Follow-Up Commits**: When addressing review comments, authors must ALWAYS append new, distinct commits to the PR branch.
-- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations. Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
+- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations (except restacking your own unmerged stack branches, per [GitHub Authoring Standards §4](github_authoring_and_prs.md#4-post-pr-creation-workflow--addressing-review-feedback-policy)). Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
 - **Merge-Time Squashing**: Commit cleanup and squashing is handled at merge time via GitHub's "Squash and merge" feature or when landing the PR, never during intermediate review feedback cycles.
 

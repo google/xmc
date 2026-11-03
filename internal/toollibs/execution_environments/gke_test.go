@@ -1259,7 +1259,27 @@ func TestGKEInjectOnWorkUnitCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InjectOnWorkUnitCreation(%v) returned an unexpected error: %v", wu, err)
 	}
-	if diff := cmp.Diff(workUnitURLs, gotWu.GetUrls(), protocmp.Transform()); diff != "" {
+	wantURLs := []*epb.Url{
+		{
+			Url:         "https://console.cloud.google.com/kubernetes/aiml/jobset/${PROJECT}/GKE_CLUSTER/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}/overview?project=${PROJECT}",
+			Icon:        "cloud",
+			DisplayName: "GKE Dashboard",
+			Priority:    dashboardPriority,
+		},
+		{
+			Url:         "https://console.cloud.google.com/logs/query;query=resource.type%3D%22k8s_container%22%0A%20%20%20%20resource.labels.location%3D%22${LOCATION}%22%0A%20%20%20%20resource.labels.namespace_name%3D%22${NAMESPACE}%22%0A%20%20%20%20resource.labels.cluster_name%3D%22${CLUSTER}%22%0A%20%20%20%20labels.k8s-pod%2Fjobset_sigs_k8s_io%2Fjobset-name%3D%22${RESOURCE_NAME}%22%20severity%3E%3DDEFAULT;storageScope=project;cursorTimestamp=;duration=PT30M?project=${PROJECT}",
+			Icon:        "bug_report",
+			DisplayName: "Cloud Logs",
+			Priority:    dashboardPriority,
+		},
+		{
+			Url:         "https://console.cloud.google.com/logs/query;query=resource.type%3D%22k8s_container%22%0Aresource.labels.namespace_name%3D%22xmc%22%0Alabels.xid%3D%22${XID}%22%0Alabels.wid%3D%22${WID}%22;summaryFields=labels%252Fxid,labels%252Fwid,labels%252Feid,labels%252Fjobset:false:32:beginning;startTime=${CREATED}?project=${MGMT_PROJECT}",
+			Icon:        "plumbing",
+			DisplayName: "Debug Work Unit",
+			Priority:    debugPriority,
+		},
+	}
+	if diff := cmp.Diff(wantURLs, gotWu.GetUrls(), protocmp.Transform()); diff != "" {
 		t.Errorf("InjectOnWorkUnitCreation(%v) returned an unexpected diff (-want +got): %v", wu, diff)
 	}
 }

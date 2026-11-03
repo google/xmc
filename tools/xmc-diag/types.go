@@ -70,12 +70,13 @@ type RedpandaReport struct {
 }
 
 type ComponentStatus struct {
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
-	State   string `json:"state"`
-	Ready   bool   `json:"ready"`
-	Healthy bool   `json:"healthy"`
-	Message string `json:"message,omitempty"`
+	Name      string `json:"name"`
+	Enabled   bool   `json:"enabled"`
+	State     string `json:"state"`
+	Stability string `json:"stability,omitempty"`
+	Ready     bool   `json:"ready"`
+	Healthy   bool   `json:"healthy"`
+	Message   string `json:"message,omitempty"`
 }
 
 type ComponentsReport struct {

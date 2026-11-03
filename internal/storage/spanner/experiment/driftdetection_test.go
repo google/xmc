@@ -20,6 +20,9 @@ import (
 
 	cloudspanner "cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
@@ -379,5 +382,54 @@ func TestConsistencyView_MultipleComponentsAggregation(t *testing.T) {
 	}
 	if got.isConsistent {
 		t.Errorf("IsExperimentConsistent = true, want false when 1 of 3 components has drifted")
+	}
+}
+
+func TestFetchExperimentSnapshotComponents(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	st := newTestStorage(t, essClient)
+
+	const xid = int64(1301)
+	spanner.CreateBlankExperiment(ctx, t, st, xid)
+
+	expSpec := &componentspb.ComponentSpec{
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}
+	cfgBytes, err := proto.Marshal(&componentspb.Component{
+		Name: "components/exp-comp",
+		Spec: expSpec,
+	})
+	if err != nil {
+		t.Fatalf("proto.Marshal failed: %v", err)
+	}
+	componentMutation := cloudspanner.InsertOrUpdate("Components",
+		[]string{"ComponentId", "Name", "ComponentClass", "ConfigProto", "State", "Generation", "ObservedGeneration", "CreateTime", "UpdateTime"},
+		[]any{int64(501), "exp-comp", "storage", cfgBytes, int64(1), int64(1), int64(1), cloudspanner.CommitTimestamp, cloudspanner.CommitTimestamp},
+	)
+	snapshotMutation := cloudspanner.InsertOrUpdate("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto"},
+		[]any{spannerutils.ReverseBits(xid), int64(501), int64(1), cfgBytes},
+	)
+	if _, err := essClient.Apply(ctx, []*cloudspanner.Mutation{componentMutation, snapshotMutation}); err != nil {
+		t.Fatalf("Apply mutations failed: %v", err)
+	}
+
+	got, err := st.FetchExperimentSnapshotComponents(ctx, xid)
+	if err != nil {
+		t.Fatalf("FetchExperimentSnapshotComponents failed: %v", err)
+	}
+	compName := "exp-comp"
+	want := []storage.ExperimentSnapshotComponent{
+		{
+			ComponentID:      501,
+			Name:             &compName,
+			LockedGeneration: 1,
+			Spec:             expSpec,
+		},
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchExperimentSnapshotComponents mismatch (-want +got):\n%s", diff)
 	}
 }

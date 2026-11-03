@@ -40,6 +40,16 @@
             [class.dot-unknown]="item.healthState === HealthState.UNSPECIFIED"
           ></span>
           <span class="item-name">{{ item.name }}</span>
+          @if (item.stability) {
+            <span
+              class="item-stability-badge"
+              [class.stability-experimental]="item.stability === 'EXPERIMENTAL'"
+              [class.stability-preview]="item.stability === 'PREVIEW'"
+              [class.stability-stable]="item.stability === 'STABLE'"
+            >
+              {{ item.stability }}
+            </span>
+          }
         </div>
         <div class="item-status">
           <span

@@ -87,10 +87,25 @@ spec:
               type: object
               required:
                 - enabled
+                - stability
+              x-kubernetes-validations:
+                - rule: "!self.enabled || self.stability != 'EXPERIMENTAL' || (has(self.acknowledgeExperimental) && self.acknowledgeExperimental)"
+                  message: "spec.acknowledgeExperimental must be set to true when enabling an EXPERIMENTAL component (spec.stability == 'EXPERIMENTAL')."
               properties:
                 enabled:
                   type: boolean
                   description: "Indicates whether the component is enabled and should be active."
+                stability:
+                  type: string
+                  enum:
+                    - EXPERIMENTAL
+                    - PREVIEW
+                    - STABLE
+                  description: "Catalog-owned maturity stage of the component (EXPERIMENTAL, PREVIEW, or STABLE)."
+                acknowledgeExperimental:
+                  type: boolean
+                  default: false
+                  description: "Explicit administrator acknowledgement required to enable a component with spec.stability == 'EXPERIMENTAL'."
                 componentType:
                   type: string
                   default: COMPONENT_TYPE_CUSTOM_1P_COMPONENT

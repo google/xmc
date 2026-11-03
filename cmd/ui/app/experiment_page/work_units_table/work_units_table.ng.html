@@ -123,9 +123,14 @@ limitations under the License.
               </a>
             }
           } @else {
-            <button type="button" mat-icon-button disabled matTooltip="Waiting for data...">
-              <mat-icon>pending</mat-icon>
-            </button>
+            <span
+              class="disabled-url-wrapper"
+              [matTooltip]="url.disableReason || 'Unavailable: required metadata is missing'"
+            >
+              <button type="button" mat-icon-button disabled>
+                <mat-icon>pending</mat-icon>
+              </button>
+            </span>
           }
         }
       </td>
