@@ -29,7 +29,7 @@ spec:
   componentClass: "optimization-engine"
   version: {{ .Chart.Version | default "0.1.0" | quote }}
   chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
-  stability: {{ .Values.stability | default "STABLE" | quote }}
+  stability: {{ .Values.stability | default "EXPERIMENTAL" | quote }}
   {{- if hasKey .Values "acknowledgeExperimental" }}
   acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
   {{- end }}
