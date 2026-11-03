@@ -37,6 +37,10 @@ import {
 import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
+  DEFAULT_SPLIT_RATIO_PERCENT,
+  ResizeDividerComponent,
+} from './components/resize_divider/resize_divider';
+import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
   SmartResourceFinderComponent,
@@ -64,6 +68,7 @@ import { mapPeriodToRangePreset } from './resource_velocity';
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,
+    ResizeDividerComponent,
     QueueJobsTable,
     WipBannerComponent,
   ],
@@ -84,6 +89,11 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
+
+  protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
+
+  protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
+  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;

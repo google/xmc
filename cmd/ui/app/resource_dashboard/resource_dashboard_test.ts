@@ -260,4 +260,26 @@ describe('ResourceDashboard Container', () => {
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('a100-gpu-queue');
   });
+
+  it('should bind the resize divider split ratio to both pane widths', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+
+    const { left } = (await dashboard.getSplitContainerDimensions())!;
+    const divider = (await dashboard.getResizeDivider())!;
+    await divider.startDrag();
+    // Dragging to the container edges clamps the split, which keeps the assertion layout-independent.
+    await divider.moveDragTo(left);
+    await divider.endDrag();
+    expect(await dashboard.getLeftPaneStyle()).toContain('20%');
+    expect(await dashboard.getRightPaneStyle()).toContain('80%');
+
+    await divider.doubleClick();
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+  });
 });
