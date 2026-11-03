@@ -107,7 +107,7 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 ## Stage 5 — Trigger Nightly Examples E2E on the PR Branch to Prove the Fix
 
 1. **Select Verification Workflow Scope**:
-   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `-f examples_filter="<id>"` using the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (e.g., `resource_dashboard_ui` rather than the module name `resource_observability_dashboard_ui_test`, as an unmatched ID silently skips all jobs), or run the full matrix when shared SDK/installer/workflow files changed.
+   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `-f examples_filter="<id>"` using the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (e.g., `resource_dashboard_ui` rather than the module name `resource_observability_dashboard_ui_test`, as an unmatched ID runs no examples and proves nothing), or run the full matrix when shared SDK/installer/workflow files changed.
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the PR Branch**:
@@ -118,22 +118,24 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 
    git fetch origin "${BRANCH_NAME}"
    ```
-   - **Targeted example(s)**: Dispatch with the filter:
+   - **Targeted example(s)**: Print the dispatch time immediately before dispatching, and record it for the lookup:
      ```bash
      SLUG="${SLUG:-<kebab-case-slug>}"
      BRANCH_NAME="fix/nightly-${SLUG}"
      EXAMPLES_FILTER="<matrix_example_id>"
 
+     date -u +%Y-%m-%dT%H:%M:%SZ
      gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
      ```
-     Find the dispatched run by commit and event. If the list is empty, the run has not registered yet, so re-run this single command after a few seconds. If several runs match, because the same commit was dispatched more than once, use the newest `createdAt`:
+     Find the dispatched run. `--created` excludes older runs on the same commit, such as an earlier dispatch with a different `examples_filter`, so an older run is never mistaken for proof. If the list is empty, the new run has not registered yet, so re-run this single command after a few seconds:
      ```bash
      SLUG="${SLUG:-<kebab-case-slug>}"
      BRANCH_NAME="fix/nightly-${SLUG}"
+     DISPATCHED_AT="<printed_dispatch_time>"
 
      gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
-       --event workflow_dispatch --commit "$(git rev-parse "origin/${BRANCH_NAME}")" \
-       --json databaseId,status,conclusion,headSha,createdAt,url
+       --event workflow_dispatch --commit "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
+       --created ">=${DISPATCHED_AT}" --json databaseId,status,conclusion,headSha,createdAt,url
      ```
      Watch it to completion. Only a `success` conclusion is proof. If it ends `cancelled` or `timed_out`, inspect why before dispatching again:
      ```bash
@@ -148,9 +150,9 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
      PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
        --workflow nightly-examples-e2e.yml \
        --ref "${BRANCH_NAME}" \
-       --target-sha "$(git rev-parse "origin/${BRANCH_NAME}")" \
+       --target-sha "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
        --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
      ```
 
 3. **Synchronize Draft PR Description & Report Proof**:
-   Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on the pinned commit, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.
+   Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `origin/${BRANCH_NAME}`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.
