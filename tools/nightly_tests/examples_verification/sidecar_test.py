@@ -19,7 +19,7 @@ Asserts that the Sidecar Container Job experiment and its associated WorkUnit
 were correctly created, configured with sidecar containers, and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.sidecar_verify --xid=16
+    python3 -m tools.nightly_tests.examples_verification.sidecar_test --xid=16
 """
 
 from __future__ import annotations
