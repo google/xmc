@@ -49,7 +49,7 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    - Centralize shared helpers in global/shared packages.
    - Define baseline test fixtures and express test cases as concise deltas (e.g., using `prototest.Modify`).
 3. **Test Inputs for Parsers & Pollers**:
-   - **Parsers and linters**: Test against the most complex real-world constructs in the target corpus (e.g. for Markdown: nested or long code fences, redirects, URLs, labels; for any parser: empty, malformed, and multibyte input), rather than only minimal synthetic inputs.
+   - **Parsers and linters**: Test against the most complex real-world constructs in the target corpus (e.g., for Markdown: nested or long code fences, redirects, URLs, labels; for any parser: empty, malformed, and multibyte inputs), rather than only minimal synthetic inputs.
    - **Polling and wait tools**: Test every state transition, including the exact deadline boundary.
 4. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
