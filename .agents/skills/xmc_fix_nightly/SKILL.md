@@ -57,7 +57,7 @@ This skill guides an agent end-to-end through discovering broken Nightly Example
    gh run download "${RUN_ID}" --repo google/xmc -n "result-${EXAMPLE_ID}" -D "${SCRATCH_DIR}/results"
    gh run download "${RUN_ID}" --repo google/xmc -n "ui-screenshots-${EXAMPLE_ID}" -D "${SCRATCH_DIR}/screenshots"
    ```
-   *(Note: `ui-screenshots-<example_id>` exists only for matrix entries with `verify_ui: true`; for failed `nightly-build.yml` runs, download `deploy-gke-diagnostics` instead.)*
+   *(Note: Use `gh api .../logs` rather than `gh run view --job --log`, which prints empty output on some `gh` CLI versions. `ui-screenshots-<example_id>` exists only for matrix entries with `verify_ui: true`; for failed `nightly-build.yml` runs, download `deploy-gke-diagnostics` instead.)*
 
 ---
 
@@ -118,7 +118,8 @@ Follow [XMC Create PR — Section 3](../xmc_create_pr/SKILL.md#3-pull-request-cr
 1. **Commit & Push the Branch**:
    Commit with a Conventional Commit message (`fix(<scope>): <summary>`), technical root-cause rationale, `TAG=agy`, and `CONV=<conversation_id>`, then push to `origin`:
    ```bash
-   BRANCH_NAME="fix/nightly-<slug>"
+   SLUG="${SLUG:-<kebab-case-slug>}"
+   BRANCH_NAME="fix/nightly-${SLUG}"
    git push -u origin "${BRANCH_NAME}"
    ```
    *(Ensure zero internal Buganizer IDs or private environment details appear in commits or PR descriptions per [Environment & URL Sanitization Policy](../../rules/github_authoring_and_prs.md#3-pull-request-creation--pr-sizing-standards). If an open GitHub nightly-failure issue exists, reference `Fixes #<issue_number>`.)*
@@ -139,7 +140,8 @@ Follow [XMC Create PR — Section 3](../xmc_create_pr/SKILL.md#3-pull-request-cr
 2. **Dispatch & Monitor `nightly-examples-e2e.yml` on the PR Branch**:
    For targeted example verification:
    ```bash
-   BRANCH_NAME="fix/nightly-<slug>"
+   SLUG="${SLUG:-<kebab-case-slug>}"
+   BRANCH_NAME="fix/nightly-${SLUG}"
    EXAMPLES_FILTER="<matrix_example_id>"
 
    gh workflow run nightly-examples-e2e.yml \
@@ -149,7 +151,8 @@ Follow [XMC Create PR — Section 3](../xmc_create_pr/SKILL.md#3-pull-request-cr
    ```
    Retrieve the newly created run ID (matching your pushed branch `headSha`) and watch it to completion:
    ```bash
-   BRANCH_NAME="fix/nightly-<slug>"
+   SLUG="${SLUG:-<kebab-case-slug>}"
+   BRANCH_NAME="fix/nightly-${SLUG}"
    gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" --limit 5 \
      --json databaseId,status,conclusion,headSha,createdAt,url
    ```
