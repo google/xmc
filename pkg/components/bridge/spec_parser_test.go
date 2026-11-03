@@ -520,6 +520,18 @@ func TestParseSpecFromUnstructured_Stability(t *testing.T) {
 			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
 			wantAck:       false,
 		},
+		{
+			name:          "lowercase and whitespace-padded experimental string is normalized",
+			spec:          map[string]any{"stability": "  experimental  "},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantAck:       false,
+		},
+		{
+			name:          "unrecognized stability string defaults to UNSPECIFIED",
+			spec:          map[string]any{"stability": "INVALID_TIER"},
+			wantStability: componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED,
+			wantAck:       false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

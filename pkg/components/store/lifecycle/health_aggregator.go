@@ -179,32 +179,14 @@ func matchesPredicate(rec *store.ComponentRecord, p filterPredicate) bool {
 }
 
 func matchesStatePredicate(state componentspb.ComponentState, expected string) bool {
-	clean := strings.ToUpper(strings.TrimSpace(expected))
-	clean = strings.TrimPrefix(clean, "COMPONENT_STATE_")
-	stateStr := strings.TrimPrefix(state.String(), "COMPONENT_STATE_")
-	if strings.EqualFold(stateStr, clean) {
-		return true
-	}
-	if num, err := strconv.Atoi(clean); err == nil && int32(state) == int32(num) {
-		return true
-	}
-	return false
+	return matchesProtoEnum(state.String(), int32(state), "COMPONENT_STATE_", expected)
 }
 
 func matchesTypePredicate(rec *store.ComponentRecord, expected string) bool {
 	if rec.Spec == nil {
 		return false
 	}
-	clean := strings.ToUpper(strings.TrimSpace(expected))
-	clean = strings.TrimPrefix(clean, "COMPONENT_TYPE_")
-	typeStr := strings.TrimPrefix(rec.Spec.GetType().String(), "COMPONENT_TYPE_")
-	if strings.EqualFold(typeStr, clean) {
-		return true
-	}
-	if num, err := strconv.Atoi(clean); err == nil && int32(rec.Spec.GetType()) == int32(num) {
-		return true
-	}
-	return false
+	return matchesProtoEnum(rec.Spec.GetType().String(), int32(rec.Spec.GetType()), "COMPONENT_TYPE_", expected)
 }
 
 func matchesReadyPredicate(rec *store.ComponentRecord, expected string) bool {
@@ -223,13 +205,17 @@ func matchesNamePredicate(actualName, expected string) bool {
 
 func matchesStabilityPredicate(rec *store.ComponentRecord, expected string) bool {
 	stability := effectiveStability(rec)
+	return matchesProtoEnum(stability.String(), int32(stability), "COMPONENT_STABILITY_", expected)
+}
+
+func matchesProtoEnum(enumStr string, enumNum int32, prefix, expected string) bool {
 	clean := strings.ToUpper(strings.TrimSpace(expected))
-	clean = strings.TrimPrefix(clean, "COMPONENT_STABILITY_")
-	stabilityStr := strings.TrimPrefix(stability.String(), "COMPONENT_STABILITY_")
-	if strings.EqualFold(stabilityStr, clean) {
+	clean = strings.TrimPrefix(clean, prefix)
+	shortName := strings.TrimPrefix(enumStr, prefix)
+	if strings.EqualFold(shortName, clean) {
 		return true
 	}
-	if num, err := strconv.Atoi(clean); err == nil && int32(stability) == int32(num) {
+	if num, err := strconv.Atoi(clean); err == nil && enumNum == int32(num) {
 		return true
 	}
 	return false

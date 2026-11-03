@@ -623,10 +623,11 @@ func TestReconcileComponent_BlockAfterTeardownSyncsCMS(t *testing.T) {
 
 func TestWasComponentPreviouslyActive(t *testing.T) {
 	tests := []struct {
-		name   string
-		status string
-		reason string
-		want   bool
+		name    string
+		status  string
+		reason  string
+		message string
+		want    bool
 	}{
 		{name: "healthy", status: ConditionStatusTrue, reason: ReasonComponentHealthy, want: true},
 		{name: "unhealthy after actuation", status: ConditionStatusFalse, reason: ReasonHealthProbeFailed, want: true},
@@ -636,13 +637,17 @@ func TestWasComponentPreviouslyActive(t *testing.T) {
 		{name: "initial sync pending never actuated", status: ConditionStatusUnknown, reason: ReasonInitialSyncPending, want: false},
 		{name: "gated on dependencies", status: ConditionStatusFalse, reason: ReasonDependenciesNotReady, want: false},
 		{name: "gated on a cycle", status: ConditionStatusFalse, reason: ReasonDependencyCycle, want: false},
+		{name: "gated on unacknowledged experimental never actuated", status: ConditionStatusFalse, reason: ReasonExperimentalNotAcknowledged, want: false},
+		{name: "gated on unacknowledged experimental with held workload", status: ConditionStatusFalse, reason: ReasonExperimentalNotAcknowledged, message: "requires ack" + runningWorkloadHeldSuffix, want: true},
+		{name: "gated on stability inversion never actuated", status: ConditionStatusFalse, reason: ReasonStabilityInversion, want: false},
+		{name: "gated on stability inversion with held workload", status: ConditionStatusFalse, reason: ReasonStabilityInversion, message: "inversion" + runningWorkloadHeldSuffix, want: true},
 		{name: "source conflict may follow actuation", status: ConditionStatusFalse, reason: ReasonSourceConflict, want: true},
 		{name: "disabled", status: ConditionStatusFalse, reason: reasonComponentDisabled, want: false},
 		{name: "no reason", status: ConditionStatusFalse, reason: "", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			existing := []Condition{{Type: ConditionTypeReady, Status: tt.status, Reason: tt.reason}}
+			existing := []Condition{{Type: ConditionTypeReady, Status: tt.status, Reason: tt.reason, Message: tt.message}}
 			if got := wasComponentPreviouslyActive(existing); got != tt.want {
 				t.Errorf("wasComponentPreviouslyActive(%s/%s) = %v, want %v", tt.status, tt.reason, got, tt.want)
 			}

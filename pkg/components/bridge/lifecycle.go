@@ -386,7 +386,9 @@ func (r *Reconciler) deleteDisabledHelmComponent(ctx context.Context, in Reconci
 
 // wasComponentPreviouslyActive infers from the last Ready condition whether a workload may exist;
 // gated (DependenciesNotReady, DependencyCycle), InitialSyncPending, or disabled components never had
-// one actuated, and DeactivationIncomplete means an earlier pass already removed it. SourceConflict is
+// one actuated, DeactivationIncomplete means an earlier pass already removed it, and
+// StabilityInversion / ExperimentalNotAcknowledged only have a workload when the previous Ready
+// message carries runningWorkloadHeldSuffix (in-place downgrade). SourceConflict is
 // not in this list: the fence or an ownership conflict can engage after actuation, so a workload may exist.
 func wasComponentPreviouslyActive(existing []Condition) bool {
 	ready := findCondition(existing, ConditionTypeReady)
