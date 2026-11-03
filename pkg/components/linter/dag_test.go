@@ -40,6 +40,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - comp-b
     - comp-c
@@ -50,6 +51,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   dependencies:
     - comp-d
 `,
@@ -59,6 +61,7 @@ kind: Component
 metadata:
   name: comp-c
 spec:
+  stability: STABLE
   dependencies:
     - comp-d
 `,
@@ -67,6 +70,8 @@ apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-d
+spec:
+  stability: STABLE
 `,
 			},
 			wantValid: true,
@@ -80,6 +85,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - comp-nonexistent
 `,
@@ -96,6 +102,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: false
   dependencies:
     - comp-nonexistent
@@ -112,6 +119,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - name: comp-optional
       optional: true
@@ -128,6 +136,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: true
   dependencies:
     - name: comp-b
@@ -139,6 +148,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},
@@ -153,6 +163,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: true
   dependencies:
     - comp-b
@@ -163,6 +174,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},
@@ -178,6 +190,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: false
   dependencies:
     - comp-b
@@ -188,6 +201,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},

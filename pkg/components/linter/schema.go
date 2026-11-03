@@ -178,7 +178,11 @@ func isLegacyDeletionPolicy(dp string) bool {
 }
 
 func validateComponentStability(c *ComponentManifest, line int, checks StaticChecksConfig, res *ValidationResult) {
-	if c.Spec.Stability != "" && !isValidStability(c.Spec.Stability) {
+	if strings.TrimSpace(c.Spec.Stability) == "" {
+		res.AddError(c.FilePath, line, "REQUIRED_FIELD", "spec.stability is required and cannot be empty")
+		return
+	}
+	if !isValidStability(c.Spec.Stability) {
 		res.AddError(c.FilePath, line, "INVALID_STABILITY", fmt.Sprintf("invalid spec.stability %q; must be EXPERIMENTAL, PREVIEW, or STABLE", c.Spec.Stability))
 		return
 	}
@@ -196,8 +200,8 @@ func validateComponentStability(c *ComponentManifest, line int, checks StaticChe
 
 func isValidStability(st string) bool {
 	switch strings.TrimSpace(st) {
-	case "", "EXPERIMENTAL", "PREVIEW", "STABLE", "UNSPECIFIED",
-		"COMPONENT_STABILITY_EXPERIMENTAL", "COMPONENT_STABILITY_PREVIEW", "COMPONENT_STABILITY_STABLE", "COMPONENT_STABILITY_UNSPECIFIED":
+	case "EXPERIMENTAL", "PREVIEW", "STABLE",
+		"COMPONENT_STABILITY_EXPERIMENTAL", "COMPONENT_STABILITY_PREVIEW", "COMPONENT_STABILITY_STABLE":
 		return true
 	default:
 		return false

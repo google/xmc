@@ -473,6 +473,7 @@ metadata:
   name: {{ .Release.Name | quote }}
   namespace: "xmc"
 spec:
+  stability: "STABLE"
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   chartVersion: {{ .Values.emptyList | default "1.0.0" | quote }}
   parameters:

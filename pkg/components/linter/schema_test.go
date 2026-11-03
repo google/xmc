@@ -40,6 +40,7 @@ kind: Component
 metadata:
   name: test-component
 spec:
+  stability: STABLE
   componentType: CUSTOM_1P_COMPONENT
   version: "1.0.0"
   deletionPolicy: DELETE
@@ -151,6 +152,7 @@ kind: Component
 metadata:
   name: legacy-policy
 spec:
+  stability: STABLE
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   deletionPolicy: DELETE
 `,
@@ -205,6 +207,7 @@ kind: Component
 metadata:
   name: wrapper-comp
 spec:
+  stability: STABLE
   componentType: CUSTOM_3P_WRAPPER
   wrapperRef:
     crdGroup: jobset.x-k8s.io
@@ -225,6 +228,7 @@ kind: Component
 metadata:
   name: clickhouse
 spec:
+  stability: STABLE
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   parameters:
     host: "clickhouse.xmc-metrics.svc.cluster.local"
@@ -298,6 +302,7 @@ kind: Component
 metadata:
   name: int-duration
 spec:
+  stability: STABLE
   lifecycleControl:
     drainTimeoutSeconds: "300"
     gracePeriodSeconds: "60"
@@ -319,6 +324,7 @@ kind: Component
 metadata:
   name: unprotected
 spec:
+  stability: STABLE
   deletionProtection: false
 `,
 			},
@@ -339,6 +345,7 @@ kind: Component
 metadata:
   name: protected
 spec:
+  stability: STABLE
   deletionProtection: true
 `,
 			},
@@ -436,6 +443,7 @@ kind: Component
 metadata:
   name: proto-type
 spec:
+  stability: STABLE
   componentType: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"
 `,
 			},
@@ -451,6 +459,7 @@ kind: Component
 metadata:
   name: proto-policy
 spec:
+  stability: STABLE
   deletionPolicy: "DELETION_POLICY_DELETE"
 `,
 				"comp2.yaml": `
@@ -459,6 +468,7 @@ kind: Component
 metadata:
   name: crd-policy
 spec:
+  stability: STABLE
   deletionPolicy: "Delete"
 `,
 			},
@@ -515,11 +525,45 @@ kind: Component
 metadata:
   name: unspecified-comp
 spec:
+  stability: STABLE
   componentType: "UNSPECIFIED"
   deletionPolicy: "UNSPECIFIED"
 `,
 			},
 			wantValid: true,
+		},
+		{
+			name:  "missing spec.stability fails REQUIRED_FIELD",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: missing-stability
+spec:
+  enabled: true
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"REQUIRED_FIELD"},
+		},
+		{
+			name:  "UNSPECIFIED spec.stability fails INVALID_STABILITY",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: unspecified-stability
+spec:
+  enabled: true
+  stability: UNSPECIFIED
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_STABILITY"},
 		},
 		{
 			name:  "enabled EXPERIMENTAL component without acknowledgeExperimental fails EXPERIMENTAL_NOT_ACKNOWLEDGED",
@@ -675,6 +719,7 @@ kind: Component
 metadata:
   name: safe-component
 spec:
+  stability: STABLE
   version: "1.0.0"
 `)
 
