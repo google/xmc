@@ -47,7 +47,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, log_info, run_tool  # noqa: E402
+from tools.common.tool_utils import (  # noqa: E402
+    HandledError,
+    log_info,
+    positive_int_arg,
+    run_tool,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 1800
 DEFAULT_INTERVAL_SECONDS = 30
@@ -432,17 +437,6 @@ def wait_for_ci(
         interval = min(interval * 2, max(MAX_INTERVAL_SECONDS, args.interval))
 
 
-def positive_int(value: str) -> int:
-    """argparse type that accepts only integers >= 1."""
-    try:
-        parsed = int(value)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid integer: {value!r}") from e
-    if parsed < 1:
-        raise argparse.ArgumentTypeError(f"must be >= 1, got {parsed}")
-    return parsed
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Builds the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -451,17 +445,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pr", help="PR number, branch, or full GitHub PR URL.")
     parser.add_argument("--repo", help="Repository in owner/name form (default: current repo).")
     parser.add_argument(
-        "--timeout", type=positive_int, default=DEFAULT_TIMEOUT_SECONDS, help="Max seconds to wait."
+        "--timeout",
+        type=positive_int_arg,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Max seconds to wait.",
     )
     parser.add_argument(
         "--interval",
-        type=positive_int,
+        type=positive_int_arg,
         default=DEFAULT_INTERVAL_SECONDS,
         help=f"Initial poll interval in seconds; doubles up to {MAX_INTERVAL_SECONDS}s.",
     )
     parser.add_argument(
         "--log-lines",
-        type=positive_int,
+        type=positive_int_arg,
         default=DEFAULT_LOG_LINES,
         help="Max log lines printed per failed job.",
     )

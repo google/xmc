@@ -231,6 +231,33 @@ def parse_bool_flag(val: Any) -> bool:
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
 
 
+def parse_positive_int(value: Any) -> int | None:
+    """Returns `value` as an int >= 1, or None when it is not a positive integer.
+
+    Accepts ints and strings of ASCII digits with optional surrounding whitespace,
+    e.g. " 15". Rejects bools (even though they are ints), floats, signs, digit
+    separators, and non-ASCII digits.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        digits = value.strip()
+        if not (digits.isascii() and digits.isdigit()):
+            return None
+        value = int(digits)
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def positive_int_arg(value: str) -> int:
+    """argparse `type` that accepts only integers >= 1, per parse_positive_int."""
+    parsed = parse_positive_int(value)
+    if parsed is None:
+        raise argparse.ArgumentTypeError(f"must be an integer >= 1, got {value!r}")
+    return parsed
+
+
 def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
     """Parses key-value scalar entries under 'vars:' section in YAML content."""
     vars_dict: dict[str, Any] = {}
