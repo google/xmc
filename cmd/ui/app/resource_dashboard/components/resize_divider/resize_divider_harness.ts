@@ -45,9 +45,29 @@ export class ResizeDividerHarness extends ComponentHarness {
     return (await this.separator()).hasClass('is-dragging');
   }
 
+  /** Returns true when the divider has keyboard focus. */
+  async isFocused(): Promise<boolean> {
+    return (await this.separator()).isFocused();
+  }
+
   /** Starts a pointer resize drag gesture on the divider. */
-  async startDrag(clientX = 500): Promise<void> {
-    await (await this.separator()).dispatchEvent('mousedown', { clientX });
+  async startDrag(clientX = 500, button = 0): Promise<void> {
+    await (await this.separator()).dispatchEvent('mousedown', { clientX, button });
+  }
+
+  /**
+   * Moves the pointer during an active drag. The component listens on `window`, so the event is
+   * dispatched there. `buttons` defaults to the primary button being held.
+   */
+  async moveDragTo(clientX: number, buttons = 1): Promise<void> {
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX, buttons, bubbles: true }));
+    await this.forceStabilize();
+  }
+
+  /** Releases the pointer to end an active drag. */
+  async endDrag(): Promise<void> {
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    await this.forceStabilize();
   }
 
   /** Double-clicks the divider to reset split widths to default. */

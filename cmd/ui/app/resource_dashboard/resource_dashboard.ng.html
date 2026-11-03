@@ -20,7 +20,7 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-    <div #splitContainer class="rod-split-container" [class.is-dragging]="isDragging()">
+    <div #splitContainer class="rod-split-container">
       @if (!isJobsFullWidth()) {
         <div class="rod-main-content" [style.flex]="leftPaneFlex()">
           <xmc-rod-queue-list
@@ -35,11 +35,7 @@
             (selectQueue)="onQueueSelect($event)"
           />
         </div>
-        <xmc-rod-resize-divider
-          [containerElement]="splitContainer"
-          [(splitRatio)]="splitRatio"
-          [(isDragging)]="isDragging"
-        />
+        <xmc-rod-resize-divider [containerElement]="splitContainer" [(splitRatio)]="splitRatio" />
       }
       <div
         class="jobs-side-pane"

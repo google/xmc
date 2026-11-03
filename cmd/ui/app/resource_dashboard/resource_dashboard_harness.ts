@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ComponentHarness } from '@angular/cdk/testing';
-import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
+import { ComponentHarness, ElementDimensions } from '@angular/cdk/testing';
 
 import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
@@ -78,9 +77,9 @@ export class ResourceDashboardHarness extends ComponentHarness {
     return pane ? pane.hasClass('full-width') : false;
   }
 
-  /** Gets the native split container element for geometry stubbing in unit tests. */
-  async getSplitContainerNativeElement(): Promise<Element | null> {
+  /** Gets the on-screen position and size of the split container if present. */
+  async getSplitContainerDimensions(): Promise<ElementDimensions | null> {
     const container = await this.splitContainer();
-    return container ? TestbedHarnessEnvironment.getNativeElement(container) : null;
+    return container ? container.getDimensions() : null;
   }
 }
