@@ -173,7 +173,7 @@ When updating an existing Pull Request description:
    ```bash
    ./tools/pr_review/wait_for_ci.py <pr_number> [--repo owner/name] [--timeout 1800] [--interval 30]
    ```
-   The tool polls with backoff until every check completes, exits `0` when all pass, `1` on failure or timeout, and `2` on an unexpected internal error. On failure its error JSON lists `failed_checks`, each with its workflow `run_id`, `job_id`, and a bounded `log_tail` (up to 80 lines of the job log ending at its last `##[error]` line; tune with `--log-lines`).
+   The tool polls with backoff until every check completes, exits `0` when all pass, `1` on failure or timeout, and `2` on an unexpected internal error. It judges only the newest run of each check, so runs cancelled because a later push superseded them are not failures. On failure its error JSON lists `failed_checks`, each with its workflow `run_id`, `job_id`, and a bounded `log_tail` (up to 80 lines of the job log ending at its last `##[error]` line; tune with `--log-lines`).
    > [!IMPORTANT]
    > Do NOT poll with bare `gh pr checks` (it exits `8` while checks are pending, breaking `&&` chains), do NOT pass check/job IDs to `gh run list --workflow` or use `gh pr checks --json` (unsupported by older `gh` releases), and do NOT rely on `gh run view --log-failed` (prints nothing on some `gh` releases). Use `wait_for_ci.py` output instead of dumping full CI logs.
 

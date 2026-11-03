@@ -18,7 +18,9 @@
 Polls `gh pr view <pr> --json statusCheckRollup` (supported by every gh release,
 unlike `gh pr checks --json`) with exponential backoff. Unlike bare
 `gh pr checks`, which exits 8 while checks are pending, pending checks are
-treated as in-progress rather than failure.
+treated as in-progress rather than failure. Only the newest run of each check
+is judged, so runs cancelled because a later push superseded them do not count
+as failures.
 
 Exit codes (via `run_tool`):
   0: All checks completed successfully (or were skipped/neutral).
@@ -154,6 +156,62 @@ def parse_rollup(stdout: str) -> list[dict[str, Any]]:
     return rollup
 
 
+def _check_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
+    """Returns the key shared by repeated runs of the same check."""
+    if entry.get("__typename") == "StatusContext":
+        return ("StatusContext", "", entry.get("context") or "")
+    return ("CheckRun", entry.get("workflowName") or "", entry.get("name") or "")
+
+
+def _recency_key(entry: dict[str, Any]) -> tuple[int, int, bool, str, str]:
+    """Orders runs of one check from oldest to newest by creation order.
+
+    GitHub Actions run and job IDs increase monotonically and exist as soon as a
+    job is queued. Run IDs order first, so the newest push decides: a hung older
+    run cannot shadow a newer one, and a run-only URL (job ID 0) still ranks by
+    its run. Within a run, a re-run job gets a newer job ID and wins. Trade-off:
+    manually re-running an older run's job does not override a newer run.
+    Checks without an Actions URL fall back to ranking unfinished runs newest,
+    then ISO-8601 UTC timestamps, which compare lexically.
+    """
+    ref = parse_run_reference(entry.get("detailsUrl") or entry.get("targetUrl") or "")
+    run_id, job_id = (int(ref[1]), int(ref[2] or 0)) if ref else (0, 0)
+    return (
+        run_id,
+        job_id,
+        classify_check(entry).state == PENDING,
+        entry.get("startedAt") or "",
+        entry.get("completedAt") or "",
+    )
+
+
+def latest_runs(rollup: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keeps only the newest run of each check, in first-seen order.
+
+    A force-push or restack starts new workflow runs whose concurrency group
+    cancels the runs for the previous push. Those CANCELLED runs stay in the
+    rollup for the same head commit, so judging every entry would report them as
+    failures. A cancelled run that is the newest run of its check still counts.
+
+    The rollup does not expose a run's trigger event, so runs of the same job
+    started by different events (e.g. `pull_request` and `workflow_dispatch`)
+    on one commit collapse into a single check judged by its newest run.
+
+    Args:
+      rollup: Raw `statusCheckRollup` entries.
+
+    Returns:
+      One entry per check, keyed by workflow and check name (or status context).
+    """
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for entry in rollup:
+        key = _check_identity(entry)
+        current = latest.get(key)
+        if current is None or _recency_key(entry) >= _recency_key(current):
+            latest[key] = entry
+    return list(latest.values())
+
+
 def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     """Fetches and normalizes the PR's status check rollup via gh.
 
@@ -175,7 +233,7 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
         check=True,
         timeout=GH_COMMAND_TIMEOUT_SECONDS,
     )
-    return [classify_check(entry) for entry in parse_rollup(res.stdout)]
+    return [classify_check(entry) for entry in latest_runs(parse_rollup(res.stdout))]
 
 
 def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
