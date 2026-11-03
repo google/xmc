@@ -175,6 +175,7 @@ func applyLifecycleComponent(ctx context.Context, t *testing.T, h *kindClusterHa
 		"enabled":            spec.enabled,
 		"deletionProtection": spec.deletionProtection,
 		"version":            "1.0.0",
+		"stability":          "STABLE",
 	}
 	if len(spec.dependencies) > 0 {
 		specMap["dependencies"] = spec.dependencies
