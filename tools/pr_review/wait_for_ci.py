@@ -166,17 +166,19 @@ def _check_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
 def _recency_key(entry: dict[str, Any]) -> tuple[int, int, bool, str, str]:
     """Orders runs of one check from oldest to newest by creation order.
 
-    GitHub Actions job and run IDs increase monotonically and exist as soon as a
-    job is queued, so they order runs by when they were created: a re-run job
-    gets a newer job ID within its run, and a hung older run cannot shadow a
-    newer completed one. Checks without an Actions URL fall back to ranking
-    unfinished runs newest, then ISO-8601 UTC timestamps, which compare lexically.
+    GitHub Actions run and job IDs increase monotonically and exist as soon as a
+    job is queued. Run IDs order first, so the newest push decides: a hung older
+    run cannot shadow a newer one, and a run-only URL (job ID 0) still ranks by
+    its run. Within a run, a re-run job gets a newer job ID and wins. Trade-off:
+    manually re-running an older run's job does not override a newer run.
+    Checks without an Actions URL fall back to ranking unfinished runs newest,
+    then ISO-8601 UTC timestamps, which compare lexically.
     """
     ref = parse_run_reference(entry.get("detailsUrl") or entry.get("targetUrl") or "")
     run_id, job_id = (int(ref[1]), int(ref[2] or 0)) if ref else (0, 0)
     return (
-        job_id,
         run_id,
+        job_id,
         classify_check(entry).state == PENDING,
         entry.get("startedAt") or "",
         entry.get("completedAt") or "",

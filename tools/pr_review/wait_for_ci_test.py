@@ -229,13 +229,20 @@ class TestLatestRuns(unittest.TestCase):
         rerun = _run_at("lint", "2026-01-01T00:00:01Z", job_id=70)
         self.assertEqual(latest_runs([rerun, failed]), [rerun])
 
-    def test_rerun_of_older_run_supersedes_newer_run(self):
-        """Job IDs order before run IDs, so re-running an older run's job wins."""
+    def test_newer_run_supersedes_rerun_of_older_run(self):
+        """Run IDs order first: the newest push decides, even over a later re-run."""
         newer_run = _run_at(
             "lint", "2026-01-01T00:00:05Z", conclusion="FAILURE", run_id=6, job_id=60
         )
         rerun = _run_at("lint", "2026-01-01T00:00:09Z", run_id=5, job_id=90)
-        self.assertEqual(latest_runs([rerun, newer_run]), [rerun])
+        self.assertEqual(latest_runs([newer_run, rerun]), [newer_run])
+
+    def test_newer_run_only_url_supersedes_older_job_url(self):
+        """A newer run whose URL has no job segment still beats an older run's job."""
+        older = _run_at("lint", "2026-01-01T00:00:01Z", conclusion="FAILURE", run_id=5)
+        newer = _run_at("lint", "2026-01-01T00:00:09Z", run_id=6)
+        newer["detailsUrl"] = "https://github.com/google/xmc/actions/runs/6"
+        self.assertEqual(latest_runs([newer, older]), [newer])
 
     def test_non_actions_checks_fall_back_to_pending_then_timestamps(self):
         """Without Actions IDs, unfinished runs rank newest, then later starts."""
