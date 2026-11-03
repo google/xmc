@@ -137,9 +137,10 @@ func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *ess
 	}
 
 	e.driftCache.set(xid, diffs, experimentalNames, now)
+	prevText := expStatus.GetStructuredStatusMessage().GetUserFacingText()
 	attachComponentWarnings(expStatus, diffs, experimentalNames)
-	if len(diffs) > 0 || len(experimentalNames) > 0 {
-		logging.Warn(ctx, "Attached component warning notice", "xid", xid, "warning", expStatus.GetStructuredStatusMessage().GetUserFacingText())
+	if updatedText := expStatus.GetStructuredStatusMessage().GetUserFacingText(); updatedText != prevText {
+		logging.Warn(ctx, "Attached component warning notice", "xid", xid, "warning", updatedText)
 	}
 
 	return nil

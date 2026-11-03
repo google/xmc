@@ -449,6 +449,77 @@ func TestDriftEvaluator_Evaluate_ExperimentalComponentWarningAndCaches(t *testin
 	}
 }
 
+func TestDriftEvaluator_Evaluate_ExperimentalComponentScenarios(t *testing.T) {
+	expNameA := "exp-a"
+	driftedName := "drifted-comp"
+	observedGen := int64(2)
+	tests := []struct {
+		name      string
+		diffs     []storage.ComponentDiff
+		snapshots []storage.ExperimentSnapshotComponent
+		wantText  string
+	}{
+		{
+			name: "multiple experimental components with nil spec and missing catalog name fallback",
+			snapshots: []storage.ExperimentSnapshotComponent{
+				{
+					ComponentID: 1,
+					Name:        &expNameA,
+					Spec: &componentspb.ComponentSpec{
+						Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+					},
+				},
+				{
+					ComponentID: 2,
+					Spec:        nil,
+				},
+				{
+					ComponentID: 3,
+					Name:        nil,
+					Spec: &componentspb.ComponentSpec{
+						Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+					},
+				},
+			},
+			wantText: "uses experimental components: exp-a, component_id=3",
+		},
+		{
+			name: "simultaneous experimental component and drift warnings",
+			diffs: []storage.ComponentDiff{
+				{
+					ComponentID:        10,
+					Name:               &driftedName,
+					LockedGeneration:   1,
+					ObservedGeneration: &observedGen,
+				},
+			},
+			snapshots: []storage.ExperimentSnapshotComponent{
+				{
+					ComponentID: 1,
+					Name:        &expNameA,
+					Spec: &componentspb.ComponentSpec{
+						Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+					},
+				},
+			},
+			wantText: "uses experimental component exp-a; Component drift detected: live component generations diverge from snapshots: drifted-comp (snapshot generation 1 != live observed generation 2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := NewDriftEvaluator(&fakeDriftStore{diffs: tt.diffs, snapshots: tt.snapshots}, true)
+			expStatus := activeStatus()
+			if err := e.Evaluate(context.Background(), testXID, expStatus); err != nil {
+				t.Fatalf("Evaluate() error = %v, want nil", err)
+			}
+			if got := expStatus.GetStructuredStatusMessage().GetUserFacingText(); got != tt.wantText {
+				t.Errorf("UserFacingText = %q, want %q", got, tt.wantText)
+			}
+		})
+	}
+}
+
 func TestDriftEvaluator_Evaluate_SnapshotLookupError(t *testing.T) {
 	errSnap := errors.New("snapshot lookup failed")
 	e := NewDriftEvaluator(&fakeDriftStore{fetchSnapshotErr: errSnap}, true)
