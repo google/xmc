@@ -89,3 +89,13 @@
   color: #5f6368;
   margin-top: 12px;
 }
+
+.title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.full-width-toggle-btn {
+  border-radius: 9999px !important;
+}

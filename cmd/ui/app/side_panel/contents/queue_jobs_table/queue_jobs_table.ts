@@ -19,6 +19,7 @@ import {
   effect,
   inject,
   input,
+  output,
   signal,
   untracked,
 } from '@angular/core';
@@ -71,6 +72,10 @@ export class QueueJobsTableData implements BaseSidePanelData {
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
   public readonly data = input<QueueJobsTableData>();
   public readonly queueName = input<string>('gpu-cluster-queue');
+
+  public readonly showFullWidthToggle = input<boolean>(false);
+  public readonly isFullWidth = input<boolean>(false);
+  public readonly fullWidthChange = output<boolean>();
 
   protected readonly activeQueueName = computed(
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',

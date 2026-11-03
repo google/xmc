@@ -15,6 +15,8 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  HostListener,
   computed,
   effect,
   inject,
@@ -84,6 +86,46 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
+
+  protected readonly isJobsFullWidth = signal<boolean>(false);
+  protected readonly splitRatio = signal<number>(50);
+  protected readonly isDragging = signal<boolean>(false);
+  private readonly elementRef = inject(ElementRef);
+
+  protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
+  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
+
+  protected onFullWidthChange(isFullWidth: boolean) {
+    this.isJobsFullWidth.set(isFullWidth);
+  }
+
+  protected startResize(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging.set(true);
+  }
+
+  protected resetResize() {
+    this.splitRatio.set(50);
+  }
+
+  @HostListener('window:mousemove', ['$event'])
+  protected onMouseMove(event: MouseEvent) {
+    if (!this.isDragging()) return;
+    const container = this.elementRef.nativeElement.querySelector('.rod-split-container');
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const x = Math.max(0, event.clientX - rect.left);
+    let newRatio = (x / rect.width) * 100;
+    newRatio = Math.max(20, Math.min(80, newRatio));
+    this.splitRatio.set(newRatio);
+  }
+
+  @HostListener('window:mouseup')
+  protected onMouseUp() {
+    if (this.isDragging()) {
+      this.isDragging.set(false);
+    }
+  }
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;

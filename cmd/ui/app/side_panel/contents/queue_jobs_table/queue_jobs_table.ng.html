@@ -19,6 +19,19 @@
       <h3 id="queue-jobs-title" class="jobs-card-title">
         Jobs in the queue ({{ tableControls.totalCount() }})
       </h3>
+      @if (showFullWidthToggle()) {
+        @if (isFullWidth()) {
+          <button mat-flat-button color="primary" class="full-width-toggle-btn active" (click)="fullWidthChange.emit(false)">
+            <mat-icon>fullscreen_exit</mat-icon>
+            Exit full width
+          </button>
+        } @else {
+          <button mat-stroked-button color="primary" class="full-width-toggle-btn" (click)="fullWidthChange.emit(true)">
+            <mat-icon>fullscreen</mat-icon>
+            View in full width
+          </button>
+        }
+      }
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
     <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>

@@ -37,23 +37,57 @@ xmc-smart-resource-finder {
 
 .rod-split-container {
   display: flex;
-  gap: 24px;
+  gap: 0;
   align-items: flex-start;
   width: 100%;
 }
 
+.rod-split-container.is-dragging {
+  user-select: none;
+}
+
 .rod-main-content {
-  flex: 1 1 50%;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  padding-right: 12px;
 }
 
 .jobs-side-pane {
-  flex: 1 1 50%;
   min-width: 0;
   position: sticky;
   top: 16px;
+  padding-left: 12px;
+}
+
+.jobs-side-pane.full-width {
+  padding-left: 0;
+}
+
+.rod-resize-divider {
+  width: 12px;
+  margin: 0 -6px;
+  cursor: col-resize;
+  background-color: transparent;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.rod-resize-divider::after {
+  content: '';
+  width: 2px;
+  background-color: transparent;
+  height: 100%;
+  transition: background-color 0.2s;
+}
+
+.rod-resize-divider:hover::after,
+.rod-resize-divider.is-dragging::after {
+  background-color: #1a73e8;
 }
 
 .resource-availability-container {

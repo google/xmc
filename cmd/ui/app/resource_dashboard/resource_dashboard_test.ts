@@ -260,4 +260,74 @@ describe('ResourceDashboard Container', () => {
     expect(await queueListHarness.getQueueCardCount()).toBe(1);
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('a100-gpu-queue');
   });
+
+  it('should toggle full width and hide left pane when jobs pane goes full width', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    
+    // Initial state: split
+    expect(await dashboard.getQueueList()).not.toBeNull();
+    let jobsHarness = await dashboard.getQueueJobsTable();
+    expect(jobsHarness).not.toBeNull();
+    
+    // Enter full width
+    let btn = (await jobsHarness!.getFullWidthToggleBtn())!;
+    await btn.click();
+    await flush();
+    
+    // Left pane is hidden
+    expect(await dashboard.getQueueList()).toBeNull();
+    // Divider is hidden
+    expect(document.querySelector('.rod-resize-divider')).toBeNull();
+    
+    // Re-query as DOM changed
+    jobsHarness = await dashboard.getQueueJobsTable();
+    btn = (await jobsHarness!.getFullWidthToggleBtn())!;
+    
+    // Exit full width
+    await btn.click();
+    await flush();
+    
+    // Back to split
+    expect(await dashboard.getQueueList()).not.toBeNull();
+    expect(document.querySelector('.rod-resize-divider')).not.toBeNull();
+  });
+
+  it('should support drag resizing of columns and dblclick reset', async () => {
+    const hostComponent = bootstrap(TestHostComponent);
+    await flush();
+
+    const divider = document.querySelector('.rod-resize-divider') as HTMLElement;
+    expect(divider).not.toBeNull();
+
+    // The container element
+    const container = document.querySelector('.rod-split-container') as HTMLElement;
+    spyOn(container, 'getBoundingClientRect').and.returnValue({ left: 0, width: 1000 } as DOMRect);
+
+    // Initial state
+    let mainContent = document.querySelector('.rod-main-content') as HTMLElement;
+    expect(mainContent.style.flex).toContain('50%');
+
+    // Simulate drag start
+    divider.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    
+    // Simulate drag move to 30%
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
+    
+    // Simulate drag end
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    
+    await flush();
+    mainContent = document.querySelector('.rod-main-content') as HTMLElement;
+    expect(mainContent.style.flex).toContain('30%');
+
+    // Double click to reset
+    divider.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await flush();
+    
+    mainContent = document.querySelector('.rod-main-content') as HTMLElement;
+    expect(mainContent.style.flex).toContain('50%');
+  });
 });
