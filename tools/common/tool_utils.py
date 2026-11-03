@@ -150,6 +150,7 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
       0: Success
       1: Handled error
       2: Unhandled error
+      130: Interrupted by Ctrl-C (SIGINT), reported as error_type "interrupted"
     """
     ensure_venv()
     try:
@@ -159,6 +160,16 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         output = {"status": "success", "result": result}
         print(json.dumps(output, indent=2))
         sys.exit(0)
+
+    except KeyboardInterrupt:
+        output = {
+            "status": "error",
+            "error_type": "interrupted",
+            "message": "Interrupted by Ctrl-C before the tool finished.",
+            "instruction": "Rerun the tool; check for partially applied changes first.",
+        }
+        print(json.dumps(output, indent=2), file=sys.stderr)
+        sys.exit(130)
 
     except HandledError as e:
         output = {

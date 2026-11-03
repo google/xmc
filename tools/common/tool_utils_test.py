@@ -307,6 +307,25 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["message"], "unexpected value")
         self.assertIn("traceback", output)
 
+    def test_run_tool_keyboard_interrupt(self):
+        """Ctrl-C prints the interrupted error JSON, not a traceback, and exits 130."""
+        main_fn = MagicMock(side_effect=KeyboardInterrupt)
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        output = json.loads(captured_stderr.getvalue())
+        self.assertEqual(output["status"], "error")
+        self.assertEqual(output["error_type"], "interrupted")
+        self.assertIn("Interrupted", output["message"])
+        self.assertIn("instruction", output)
+        self.assertNotIn("traceback", output)
+
 
 class TestLogStreams(unittest.TestCase):
     """Tests for the stream parameter of the logging and command helpers."""
