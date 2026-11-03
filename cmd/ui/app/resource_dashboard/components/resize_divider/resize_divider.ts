@@ -33,23 +33,19 @@ const KEYBOARD_STEP_BY_KEY: Readonly<Record<string, number>> = {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ResizeDividerComponent implements OnDestroy {
-  readonly containerElement = input<HTMLElement | null>(null);
-  readonly minRatio = input<number>(MIN_SPLIT_RATIO_PERCENT);
-  readonly maxRatio = input<number>(MAX_SPLIT_RATIO_PERCENT);
-  readonly ariaLabel = input<string>('Drag to resize sections (double-click to reset)');
+  readonly containerElement = input.required<HTMLElement>();
 
   readonly splitRatio = model<number>(DEFAULT_SPLIT_RATIO_PERCENT);
   readonly isDragging = model<boolean>(false);
 
+  protected readonly minRatio = MIN_SPLIT_RATIO_PERCENT;
+  protected readonly maxRatio = MAX_SPLIT_RATIO_PERCENT;
+
   private cleanupDragListeners: (() => void) | null = null;
 
   protected startResize(event: MouseEvent): void {
-    const container = this.containerElement();
-    if (!container) {
-      return;
-    }
     // Container geometry is captured once per drag: dragging only changes child flex-basis.
-    const { left, width } = container.getBoundingClientRect();
+    const { left, width } = this.containerElement().getBoundingClientRect();
     if (width <= 0) {
       return;
     }
@@ -70,7 +66,7 @@ export class ResizeDividerComponent implements OnDestroy {
   }
 
   protected resetResize(): void {
-    this.splitRatio.set(this.clampRatio(DEFAULT_SPLIT_RATIO_PERCENT));
+    this.splitRatio.set(DEFAULT_SPLIT_RATIO_PERCENT);
   }
 
   protected onKeyDown(event: KeyboardEvent): void {
@@ -91,7 +87,7 @@ export class ResizeDividerComponent implements OnDestroy {
   }
 
   private clampRatio(ratio: number): number {
-    return Math.max(this.minRatio(), Math.min(this.maxRatio(), ratio));
+    return Math.max(MIN_SPLIT_RATIO_PERCENT, Math.min(MAX_SPLIT_RATIO_PERCENT, ratio));
   }
 
   private stopResize(): void {
