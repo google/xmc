@@ -14,6 +14,8 @@
 
 package linter
 
+import "strings"
+
 // ObjectMetadata represents standard Kubernetes metadata on manifests.
 type ObjectMetadata struct {
 	Name        string            `yaml:"name" json:"name"`
@@ -50,20 +52,21 @@ func (c *ComponentManifest) IsEnabled() bool {
 }
 
 // EffectiveStability returns the normalized stability tier ("EXPERIMENTAL", "PREVIEW", or "STABLE"),
-// treating an unset or UNSPECIFIED stability as "STABLE".
+// or the trimmed spec.stability value when unset or unrecognized ("" if c is nil).
 func (c *ComponentManifest) EffectiveStability() string {
 	if c == nil {
-		return "STABLE"
+		return ""
 	}
-	switch c.Spec.Stability {
+	trimmed := strings.TrimSpace(c.Spec.Stability)
+	switch trimmed {
 	case "EXPERIMENTAL", "COMPONENT_STABILITY_EXPERIMENTAL":
 		return "EXPERIMENTAL"
 	case "PREVIEW", "COMPONENT_STABILITY_PREVIEW":
 		return "PREVIEW"
-	case "", "STABLE", "COMPONENT_STABILITY_STABLE", "UNSPECIFIED", "COMPONENT_STABILITY_UNSPECIFIED":
+	case "STABLE", "COMPONENT_STABILITY_STABLE":
 		return "STABLE"
 	default:
-		return c.Spec.Stability
+		return trimmed
 	}
 }
 

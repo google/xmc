@@ -383,6 +383,30 @@ spec:
 			},
 			wantValid: true,
 		},
+		{
+			name: "STABLE component depending on PREVIEW component passes",
+			manifests: map[string]string{
+				"stable-parent.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-parent
+spec:
+  stability: STABLE
+  dependencies:
+    - preview-child
+`,
+				"preview-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-child
+spec:
+  stability: PREVIEW
+`,
+			},
+			wantValid: true,
+		},
 	}
 
 	for _, tc := range tests {

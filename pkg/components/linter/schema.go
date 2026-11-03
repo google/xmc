@@ -182,11 +182,12 @@ func validateComponentStability(c *ComponentManifest, line int, checks StaticChe
 		res.AddError(c.FilePath, line, "REQUIRED_FIELD", "spec.stability is required and cannot be empty")
 		return
 	}
-	if !isValidStability(c.Spec.Stability) {
+	eff := c.EffectiveStability()
+	if eff != "EXPERIMENTAL" && eff != "PREVIEW" && eff != "STABLE" {
 		res.AddError(c.FilePath, line, "INVALID_STABILITY", fmt.Sprintf("invalid spec.stability %q; must be EXPERIMENTAL, PREVIEW, or STABLE", c.Spec.Stability))
 		return
 	}
-	if c.EffectiveStability() != "EXPERIMENTAL" {
+	if eff != "EXPERIMENTAL" {
 		return
 	}
 	if !checks.IsExperimentalAllowed() {
@@ -195,15 +196,5 @@ func validateComponentStability(c *ComponentManifest, line int, checks StaticChe
 	}
 	if c.IsEnabled() && !c.Spec.AcknowledgeExperimental {
 		res.AddError(c.FilePath, line, "EXPERIMENTAL_NOT_ACKNOWLEDGED", fmt.Sprintf("enabled experimental component %q must set spec.acknowledgeExperimental: true", c.Metadata.Name))
-	}
-}
-
-func isValidStability(st string) bool {
-	switch strings.TrimSpace(st) {
-	case "EXPERIMENTAL", "PREVIEW", "STABLE",
-		"COMPONENT_STABILITY_EXPERIMENTAL", "COMPONENT_STABILITY_PREVIEW", "COMPONENT_STABILITY_STABLE":
-		return true
-	default:
-		return false
 	}
 }

@@ -638,6 +638,62 @@ spec:
 			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
 		},
 		{
+			name: "disabled EXPERIMENTAL component also fails when staticChecks.allowExperimental is false",
+			rules: &linter.RulesConfig{
+				StaticChecks: linter.StaticChecksConfig{
+					AllowExperimental: boolPtr(false),
+				},
+			},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-disabled-forbidden
+spec:
+  enabled: false
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:  "proto-prefixed COMPONENT_STABILITY_* values are accepted",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"stable.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-stable
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_STABLE
+`,
+				"preview.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-preview
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_PREVIEW
+`,
+				"exp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-exp
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: true,
+		},
+		{
 			name:  "invalid spec.stability value fails INVALID_STABILITY",
 			rules: &linter.RulesConfig{},
 			manifests: map[string]string{
