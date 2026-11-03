@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ComponentHarness } from '@angular/cdk/testing';
+import { ComponentHarness, ElementDimensions } from '@angular/cdk/testing';
 
 import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
@@ -23,6 +23,32 @@ import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harne
 /** Harness for interacting with <xmc-resource-dashboard> in tests. */
 export class ResourceDashboardHarness extends ComponentHarness {
   static hostSelector = 'xmc-resource-dashboard';
+
+  private readonly splitContainer = this.locatorForOptional('.rod-split-container');
+  private readonly mainContentPane = this.locatorForOptional('.rod-main-content');
+  private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
+
+  /** Checks whether the split container is in full-width stacked mode. */
+  async isSplitContainerFullWidth(): Promise<boolean> {
+    const container = await this.splitContainer();
+    return container ? container.hasClass('full-width') : false;
+  }
+
+  /** Gets the bounding box dimensions of the split container and its child panes. */
+  async getSplitLayoutDimensions(): Promise<{
+    container: ElementDimensions | null;
+    mainContent: ElementDimensions | null;
+    jobsPane: ElementDimensions | null;
+  }> {
+    const container = await this.splitContainer();
+    const mainContent = await this.mainContentPane();
+    const jobsPane = await this.jobsSidePane();
+    return {
+      container: container ? await container.getDimensions() : null,
+      mainContent: mainContent ? await mainContent.getDimensions() : null,
+      jobsPane: jobsPane ? await jobsPane.getDimensions() : null,
+    };
+  }
 
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {

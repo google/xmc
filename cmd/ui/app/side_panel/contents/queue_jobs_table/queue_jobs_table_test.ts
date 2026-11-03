@@ -72,10 +72,16 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
 @Component({
   standalone: true,
   imports: [QueueJobsTable],
-  template: `<xmc-queue-jobs-table [queueName]="queueName()" />`,
+  template: `<xmc-queue-jobs-table
+    [queueName]="queueName()"
+    [showFullWidthToggle]="showFullWidthToggle()"
+    [(isFullWidth)]="isFullWidth"
+  />`,
 })
 class TestHostComponent {
   readonly queueName = signal<string>('gpu-cluster-queue');
+  readonly showFullWidthToggle = signal<boolean>(false);
+  readonly isFullWidth = signal<boolean>(false);
 }
 
 describe('QueueJobsTable Component', () => {
@@ -297,5 +303,57 @@ describe('QueueJobsTable Component', () => {
     expect(console.error).toHaveBeenCalledWith(
       'Job "Experiment #53310" is missing an assigned user.',
     );
+  });
+
+  it('should hide full-width toggle button by default', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getFullWidthToggleBtn()).toBeNull();
+  });
+
+  it('should toggle isFullWidth and update icon, label, and active state on button click', async () => {
+    const hostComponent = bootstrap(TestHostComponent);
+    hostComponent.showFullWidthToggle.set(true);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const toggleBtn = await harness.getFullWidthToggleBtn();
+    expect(toggleBtn).not.toBeNull();
+    expect(await toggleBtn!.getText()).toContain('View in full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen');
+    expect(await harness.isFullWidthToggleActive()).toBeFalse();
+    expect(hostComponent.isFullWidth()).toBeFalse();
+
+    await toggleBtn!.click();
+    await flush();
+
+    expect(hostComponent.isFullWidth()).toBeTrue();
+    expect(await toggleBtn!.getText()).toContain('Exit full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await harness.isFullWidthToggleActive()).toBeTrue();
+
+    await toggleBtn!.click();
+    await flush();
+
+    expect(hostComponent.isFullWidth()).toBeFalse();
+    expect(await toggleBtn!.getText()).toContain('View in full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen');
+    expect(await harness.isFullWidthToggleActive()).toBeFalse();
+  });
+
+  it('should reflect parent-driven isFullWidth updates in toggle button state', async () => {
+    const hostComponent = bootstrap(TestHostComponent);
+    hostComponent.showFullWidthToggle.set(true);
+    hostComponent.isFullWidth.set(true);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const toggleBtn = await harness.getFullWidthToggleBtn();
+    expect(toggleBtn).not.toBeNull();
+    expect(await toggleBtn!.getText()).toContain('Exit full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await harness.isFullWidthToggleActive()).toBeTrue();
   });
 });

@@ -20,7 +20,7 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-    <div class="rod-split-container">
+    <div class="rod-split-container" [class.full-width]="isJobsFullWidth()">
       <div class="rod-main-content">
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
@@ -35,7 +35,11 @@
         />
       </div>
       <div class="jobs-side-pane">
-        <xmc-queue-jobs-table [queueName]="selectedQueue()" />
+        <xmc-queue-jobs-table
+          [queueName]="selectedQueue()"
+          [showFullWidthToggle]="true"
+          [(isFullWidth)]="isJobsFullWidth"
+        />
       </div>
     </div>
   } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {
