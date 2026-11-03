@@ -16,7 +16,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 - **Feedback Quality & Review Presentation**:
   - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
   - **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.
-  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff.
+  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff. Findings on lines the PR does not change, or on code moved verbatim, are non-blocking: label them as follow-ups rather than requesting changes, unless the move itself breaks them (e.g. imports or visibility).
 - **Interactive Multi-Agent Review Workflow (Optional)**: For structured PR code reviews featuring dynamic expert subagent panels, open user direction windows, inline comment deduplication, explicit confirmation gates, and re-review verification, agents may optionally utilize the procedure defined in the [XMC Review PR Skill](../skills/xmc_review_pr/SKILL.md) backed by `./tools/pr_review/review_pr_generate_audit.py`, `./tools/pr_review/review_pr_post_inline_comment.py`, and `./tools/pr_review/review_pr_verify_posted.py`, or use their own established review workflows.
 
 ---
