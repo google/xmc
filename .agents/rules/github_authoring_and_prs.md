@@ -142,7 +142,7 @@ Whenever creating, modifying, or reviewing GitHub Actions workflow files under `
 Applies when updating a branch with `main`, restacking after a parent PR merges, or creating or switching branches in a linked worktree.
 
 - **Fetch First**: Run `git fetch origin` before branching from, comparing against, or merging `origin/main`.
-- **Worktree Branching**: In a linked worktree, create new branches from `origin/main` (`git checkout -b <prefix>/<name> origin/main`). Before switching to an existing branch, run `git worktree list` to confirm it is not already checked out in another worktree.
+- **Worktree Branching**: In a linked worktree, create new branches from `origin/main` (`git checkout -b <prefix>/<name> origin/main`). Before switching to an existing branch, run `git worktree list` to confirm it is not already checked out in another worktree; if it is, work in that worktree instead of switching here.
 - **Clean Tree Before Rebasing**: Commit or stash before any rebase.
 - **Restack via `gh-stack`**: Restack with `gh stack sync` or `gh stack rebase`, never raw `git rebase --onto` (it can silently drop commits). After a parent PR is squash-merged, restack with `gh stack rebase`, confirm `git log --oneline origin/main..<branch>` lists only this PR's own commits, then push with `gh stack push` (allowed per the force-push exception in [Section 4](#4-post-pr-creation-workflow--addressing-review-feedback-policy)).
 - **Conventional Sync Merges**: For non-stacked PRs synced by merge, give the merge commit a Conventional subject (`git merge origin/main -m "chore: merge origin/main"`).
