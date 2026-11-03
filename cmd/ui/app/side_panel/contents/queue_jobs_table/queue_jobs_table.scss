@@ -33,7 +33,7 @@
   font-size: 18px;
   font-weight: 500;
   color: #202124;
-  margin: 0 0 4px 0;
+  margin: 0;
 }
 
 .target-queue-name {
@@ -94,8 +94,22 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
 }
 
 .full-width-toggle-btn {
   border-radius: 9999px !important;
+  border-color: #dadce0 !important;
+  background-color: #ffffff !important;
+  color: #1a73e8 !important;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  &.active {
+    background-color: #1a73e8 !important;
+    border-color: #1a73e8 !important;
+    color: #ffffff !important;
+  }
 }

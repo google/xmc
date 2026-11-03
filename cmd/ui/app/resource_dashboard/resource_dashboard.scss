@@ -79,14 +79,18 @@ xmc-smart-resource-finder {
 
 .rod-resize-divider::after {
   content: '';
-  width: 2px;
-  background-color: transparent;
+  width: 1px;
+  background-color: #dadce0;
   height: 100%;
-  transition: background-color 0.2s;
+  transition:
+    background-color 0.15s ease,
+    width 0.15s ease;
 }
 
 .rod-resize-divider:hover::after,
+.rod-resize-divider:focus-visible::after,
 .rod-resize-divider.is-dragging::after {
+  width: 2px;
   background-color: #1a73e8;
 }
 

@@ -35,19 +35,27 @@
             (selectQueue)="onQueueSelect($event)"
           />
         </div>
-        <div class="rod-resize-divider"
-             role="separator"
-             tabindex="0"
-             [class.is-dragging]="isDragging()"
-             aria-label="Drag to resize sections (double-click to reset)"
-             title="Drag to resize sections (double-click to reset)"
-             (mousedown)="startResize($event)"
-             (dblclick)="resetResize()">
-        </div>
+        <div
+          class="rod-resize-divider"
+          role="separator"
+          tabindex="0"
+          aria-orientation="vertical"
+          aria-valuemin="20"
+          aria-valuemax="80"
+          aria-label="Drag to resize sections (double-click to reset)"
+          title="Drag to resize sections (double-click to reset)"
+          [attr.aria-valuenow]="splitRatio()"
+          [class.is-dragging]="isDragging()"
+          (mousedown)="startResize($event)"
+          (dblclick)="resetResize()"
+          (keydown)="onDividerKeyDown($event)"
+        ></div>
       }
-      <div class="jobs-side-pane"
-           [class.full-width]="isJobsFullWidth()"
-           [style.flex]="isJobsFullWidth() ? '1 1 100%' : rightPaneFlex()">
+      <div
+        class="jobs-side-pane"
+        [class.full-width]="isJobsFullWidth()"
+        [style.flex]="rightPaneFlex()"
+      >
         <xmc-queue-jobs-table
           [queueName]="selectedQueue()"
           [showFullWidthToggle]="true"

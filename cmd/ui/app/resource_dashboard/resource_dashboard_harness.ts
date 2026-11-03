@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 
 import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
@@ -23,6 +24,11 @@ import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harne
 /** Harness for interacting with <xmc-resource-dashboard> in tests. */
 export class ResourceDashboardHarness extends ComponentHarness {
   static hostSelector = 'xmc-resource-dashboard';
+
+  private readonly splitContainer = this.locatorForOptional('.rod-split-container');
+  private readonly mainContent = this.locatorForOptional('.rod-main-content');
+  private readonly resizeDivider = this.locatorForOptional('.rod-resize-divider');
+  private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
 
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {
@@ -47,5 +53,80 @@ export class ResourceDashboardHarness extends ComponentHarness {
   /** Gets the WIP banner harness if present. */
   async getWipBanner(): Promise<WipBannerHarness | null> {
     return this.locatorForOptional(WipBannerHarness)();
+  }
+
+  /** Returns true when the vertical resize divider is rendered. */
+  async hasResizeDivider(): Promise<boolean> {
+    return (await this.resizeDivider()) !== null;
+  }
+
+  /** Gets accessibility and tooltip attributes of the vertical resize divider. */
+  async getResizeDividerAttributes(): Promise<{
+    role: string | null;
+    ariaLabel: string | null;
+    title: string | null;
+    ariaValueNow: string | null;
+  } | null> {
+    const divider = await this.resizeDivider();
+    if (!divider) {
+      return null;
+    }
+    return {
+      role: await divider.getAttribute('role'),
+      ariaLabel: await divider.getAttribute('aria-label'),
+      title: await divider.getAttribute('title'),
+      ariaValueNow: await divider.getAttribute('aria-valuenow'),
+    };
+  }
+
+  /** Gets the inline style string of the left queue-list pane if present. */
+  async getLeftPaneStyle(): Promise<string | null> {
+    const pane = await this.mainContent();
+    return pane ? pane.getAttribute('style') : null;
+  }
+
+  /** Gets the inline style string of the right jobs side pane if present. */
+  async getRightPaneStyle(): Promise<string | null> {
+    const pane = await this.jobsSidePane();
+    return pane ? pane.getAttribute('style') : null;
+  }
+
+  /** Returns true when the right jobs pane has full-width mode active. */
+  async isRightPaneFullWidth(): Promise<boolean> {
+    const pane = await this.jobsSidePane();
+    return pane ? pane.hasClass('full-width') : false;
+  }
+
+  /** Gets the native split container element for geometry stubbing in unit tests. */
+  async getSplitContainerNativeElement(): Promise<Element | null> {
+    const container = await this.splitContainer();
+    return container ? TestbedHarnessEnvironment.getNativeElement(container) : null;
+  }
+
+  /** Starts a resize drag gesture on the vertical divider. */
+  async startResizeDrag(clientX = 500): Promise<void> {
+    const divider = await this.resizeDivider();
+    if (!divider) {
+      throw new Error('Resize divider is not rendered.');
+    }
+    await divider.dispatchEvent('mousedown', { clientX });
+  }
+
+  /** Double-clicks the vertical resize divider to reset column widths. */
+  async doubleClickResizeDivider(): Promise<void> {
+    const divider = await this.resizeDivider();
+    if (!divider) {
+      throw new Error('Resize divider is not rendered.');
+    }
+    await divider.dispatchEvent('dblclick');
+  }
+
+  /** Dispatches a keyboard event on the vertical resize divider. */
+  async pressResizeDividerKey(key: string): Promise<void> {
+    const divider = await this.resizeDivider();
+    if (!divider) {
+      throw new Error('Resize divider is not rendered.');
+    }
+    await divider.dispatchEvent('keydown', { key });
   }
 }

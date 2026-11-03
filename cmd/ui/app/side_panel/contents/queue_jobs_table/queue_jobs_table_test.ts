@@ -72,17 +72,18 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
 @Component({
   standalone: true,
   imports: [QueueJobsTable],
-  template: `<xmc-queue-jobs-table 
-               [queueName]="queueName()" 
-               [showFullWidthToggle]="showFullWidthToggle()"
-               [isFullWidth]="isFullWidth()"
-               (fullWidthChange)="onFullWidthChange($event)" />`,
+  template: `<xmc-queue-jobs-table
+    [queueName]="queueName()"
+    [showFullWidthToggle]="showFullWidthToggle()"
+    [isFullWidth]="isFullWidth()"
+    (fullWidthChange)="onFullWidthChange($event)"
+  />`,
 })
 class TestHostComponent {
   readonly queueName = signal<string>('gpu-cluster-queue');
   readonly showFullWidthToggle = signal<boolean>(false);
   readonly isFullWidth = signal<boolean>(false);
-  
+
   fullWidthChangeEmitted: boolean | null = null;
   onFullWidthChange(val: boolean) {
     this.fullWidthChangeEmitted = val;
@@ -309,39 +310,43 @@ describe('QueueJobsTable Component', () => {
       'Job "Experiment #53310" is missing an assigned user.',
     );
   });
-});
 
-  it('should emit fullWidthChange event when full width toggle is clicked', async () => {
-    let emitted = false;
-    hostComponent.showFullWidthToggle.set(true);
-    hostComponent.isFullWidth.set(false);
-    
-    // We need to listen to the output. Wait, in angular 17 outputs can be listened to via `hostComponent.table.fullWidthChange.subscribe(...)` if we have a ViewChild, but the test component doesn't have it exposed.
-  
-  it('should toggle full width and emit events when full width button is clicked', async () => {
+  it('should hide full-width toggle button by default when showFullWidthToggle is false', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getFullWidthToggleBtn()).toBeNull();
+  });
+
+  it('should render full-width toggle button, transition icon and label, and emit fullWidthChange', async () => {
     const hostComponent = bootstrap(TestHostComponent);
     hostComponent.showFullWidthToggle.set(true);
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);
-    const btn = (await harness.getFullWidthToggleBtn())!;
-    expect(btn).toBeTruthy();
-    expect(await btn.getText()).toContain('View in full width');
-    
-    await btn.click();
+    const enterBtn = (await harness.getFullWidthToggleBtn())!;
+    expect(enterBtn).not.toBeNull();
+    expect(await enterBtn.getText()).toContain('View in full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen');
+    expect(await harness.isFullWidthToggleActive()).toBeFalse();
+
+    await enterBtn.click();
     await flush();
-    
+
     expect(hostComponent.fullWidthChangeEmitted).toBeTrue();
-    
-    // Simulate parent changing the state
+
     hostComponent.isFullWidth.set(true);
     await flush();
-    
-    expect(await btn.getText()).toContain('Exit full width');
-    
-    await btn.click();
+
+    const exitBtn = (await harness.getFullWidthToggleBtn())!;
+    expect(await exitBtn.getText()).toContain('Exit full width');
+    expect(await harness.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await harness.isFullWidthToggleActive()).toBeTrue();
+
+    await exitBtn.click();
     await flush();
-    
+
     expect(hostComponent.fullWidthChangeEmitted).toBeFalse();
   });
 });

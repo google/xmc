@@ -15,10 +15,9 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
-  HostListener,
   computed,
   effect,
+  ElementRef,
   inject,
   OnDestroy,
   OnInit,
@@ -51,6 +50,15 @@ import {
 } from './components/subnav_tabs/subnav_tabs';
 import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
+
+const DEFAULT_SPLIT_RATIO_PERCENT = 50;
+const MIN_SPLIT_RATIO_PERCENT = 20;
+const MAX_SPLIT_RATIO_PERCENT = 80;
+const KEYBOARD_RESIZE_STEP_PERCENT = 5;
+
+function clampSplitRatio(ratio: number): number {
+  return Math.max(MIN_SPLIT_RATIO_PERCENT, Math.min(MAX_SPLIT_RATIO_PERCENT, ratio));
+}
 
 /**
  * Resource Observability Dashboard (ROD) primary layout container component.
@@ -88,42 +96,76 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly isSecondaryLoading = signal<boolean>(true);
 
   protected readonly isJobsFullWidth = signal<boolean>(false);
-  protected readonly splitRatio = signal<number>(50);
+  protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
   protected readonly isDragging = signal<boolean>(false);
-  private readonly elementRef = inject(ElementRef);
+  private readonly elementRef = inject<ElementRef<HTMLElement>>(ElementRef);
+  private cleanupDragListeners: (() => void) | null = null;
 
   protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
-  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
+  protected readonly rightPaneFlex = computed(() =>
+    this.isJobsFullWidth() ? '1 1 100%' : `1 1 ${100 - this.splitRatio()}%`,
+  );
 
-  protected onFullWidthChange(isFullWidth: boolean) {
+  protected onFullWidthChange(isFullWidth: boolean): void {
     this.isJobsFullWidth.set(isFullWidth);
   }
 
-  protected startResize(event: MouseEvent) {
+  protected startResize(event: MouseEvent): void {
     event.preventDefault();
+    this.stopResize();
+    const container =
+      this.elementRef.nativeElement.querySelector<HTMLElement>('.rod-split-container');
+    if (!container) {
+      return;
+    }
+
     this.isDragging.set(true);
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width <= 0) {
+        return;
+      }
+      const offsetX = Math.max(0, moveEvent.clientX - rect.left);
+      this.splitRatio.set(clampSplitRatio((offsetX / rect.width) * 100));
+    };
+    const onMouseUp = () => {
+      this.stopResize();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    this.cleanupDragListeners = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
   }
 
-  protected resetResize() {
-    this.splitRatio.set(50);
-  }
-
-  @HostListener('window:mousemove', ['$event'])
-  protected onMouseMove(event: MouseEvent) {
-    if (!this.isDragging()) return;
-    const container = this.elementRef.nativeElement.querySelector('.rod-split-container');
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const x = Math.max(0, event.clientX - rect.left);
-    let newRatio = (x / rect.width) * 100;
-    newRatio = Math.max(20, Math.min(80, newRatio));
-    this.splitRatio.set(newRatio);
-  }
-
-  @HostListener('window:mouseup')
-  protected onMouseUp() {
+  private stopResize(): void {
+    this.cleanupDragListeners?.();
+    this.cleanupDragListeners = null;
     if (this.isDragging()) {
       this.isDragging.set(false);
+    }
+  }
+
+  protected resetResize(): void {
+    this.splitRatio.set(DEFAULT_SPLIT_RATIO_PERCENT);
+  }
+
+  protected onDividerKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      this.splitRatio.update((ratio) => clampSplitRatio(ratio - KEYBOARD_RESIZE_STEP_PERCENT));
+      return;
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      this.splitRatio.update((ratio) => clampSplitRatio(ratio + KEYBOARD_RESIZE_STEP_PERCENT));
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.resetResize();
     }
   }
 
@@ -247,6 +289,7 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.stopResize();
     this.subscriptions.unsubscribe();
     this.reloader.stop();
   }

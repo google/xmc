@@ -261,73 +261,120 @@ describe('ResourceDashboard Container', () => {
     expect(await (await queueListHarness.getQueueCard(0)).getQueueName()).toBe('a100-gpu-queue');
   });
 
-  it('should toggle full width and hide left pane when jobs pane goes full width', async () => {
+  it('should toggle full width, hide queue list and resizer, and preserve custom split ratio on exit', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
-    
-    // Initial state: split
-    expect(await dashboard.getQueueList()).not.toBeNull();
-    let jobsHarness = await dashboard.getQueueJobsTable();
-    expect(jobsHarness).not.toBeNull();
-    
-    // Enter full width
-    let btn = (await jobsHarness!.getFullWidthToggleBtn())!;
-    await btn.click();
+    const containerEl = (await dashboard.getSplitContainerNativeElement())!;
+    spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      width: 1000,
+    } as DOMRect);
+
+    // Resize to 35% / 65% first so we can verify custom ratio restoration after exiting full width
+    await dashboard.startResizeDrag(500);
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 350, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
     await flush();
-    
-    // Left pane is hidden
+
+    expect(await dashboard.getLeftPaneStyle()).toContain('35%');
+    expect(await dashboard.getRightPaneStyle()).toContain('65%');
+    expect(await dashboard.hasResizeDivider()).toBeTrue();
+
+    const initialJobsHarness = (await dashboard.getQueueJobsTable())!;
+    const enterBtn = (await initialJobsHarness.getFullWidthToggleBtn())!;
+    expect(await enterBtn.getText()).toContain('View in full width');
+    expect(await initialJobsHarness.getFullWidthToggleIconName()).toBe('fullscreen');
+
+    await enterBtn.click();
+    await flush();
+
     expect(await dashboard.getQueueList()).toBeNull();
-    // Divider is hidden
-    expect(document.querySelector('.rod-resize-divider')).toBeNull();
-    
-    // Re-query as DOM changed
-    jobsHarness = await dashboard.getQueueJobsTable();
-    btn = (await jobsHarness!.getFullWidthToggleBtn())!;
-    
-    // Exit full width
-    await btn.click();
+    expect(await dashboard.hasResizeDivider()).toBeFalse();
+    expect(await dashboard.isRightPaneFullWidth()).toBeTrue();
+    expect(await dashboard.getRightPaneStyle()).toContain('100%');
+
+    const fullWidthJobsHarness = (await dashboard.getQueueJobsTable())!;
+    const exitBtn = (await fullWidthJobsHarness.getFullWidthToggleBtn())!;
+    expect(await exitBtn.getText()).toContain('Exit full width');
+    expect(await fullWidthJobsHarness.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+
+    await exitBtn.click();
     await flush();
-    
-    // Back to split
+
     expect(await dashboard.getQueueList()).not.toBeNull();
-    expect(document.querySelector('.rod-resize-divider')).not.toBeNull();
+    expect(await dashboard.hasResizeDivider()).toBeTrue();
+    expect(await dashboard.isRightPaneFullWidth()).toBeFalse();
+    expect(await dashboard.getLeftPaneStyle()).toContain('35%');
+    expect(await dashboard.getRightPaneStyle()).toContain('65%');
   });
 
-  it('should support drag resizing of columns and dblclick reset', async () => {
-    const hostComponent = bootstrap(TestHostComponent);
+  it('should render vertical splitter with aria/title attributes, clamp drag bounds, and reset on dblclick or keyboard', async () => {
+    bootstrap(TestHostComponent);
     await flush();
 
-    const divider = document.querySelector('.rod-resize-divider') as HTMLElement;
-    expect(divider).not.toBeNull();
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    expect(await dashboard.hasResizeDivider()).toBeTrue();
 
-    // The container element
-    const container = document.querySelector('.rod-split-container') as HTMLElement;
-    spyOn(container, 'getBoundingClientRect').and.returnValue({ left: 0, width: 1000 } as DOMRect);
+    const attrs = (await dashboard.getResizeDividerAttributes())!;
+    expect(attrs.role).toBe('separator');
+    expect(attrs.ariaLabel).toBe('Drag to resize sections (double-click to reset)');
+    expect(attrs.title).toBe('Drag to resize sections (double-click to reset)');
+    expect(attrs.ariaValueNow).toBe('50');
 
-    // Initial state
-    let mainContent = document.querySelector('.rod-main-content') as HTMLElement;
-    expect(mainContent.style.flex).toContain('50%');
+    const containerEl = (await dashboard.getSplitContainerNativeElement())!;
+    spyOn(containerEl, 'getBoundingClientRect').and.returnValue({
+      left: 0,
+      width: 1000,
+    } as DOMRect);
 
-    // Simulate drag start
-    divider.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    
-    // Simulate drag move to 30%
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+
+    // Drag to 30% / 70%
+    await dashboard.startResizeDrag(500);
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 300, bubbles: true }));
-    
-    // Simulate drag end
-    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    
     await flush();
-    mainContent = document.querySelector('.rod-main-content') as HTMLElement;
-    expect(mainContent.style.flex).toContain('30%');
+    expect(await dashboard.getLeftPaneStyle()).toContain('30%');
+    expect(await dashboard.getRightPaneStyle()).toContain('70%');
 
-    // Double click to reset
-    divider.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    // Clamp minimum at 20%
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, bubbles: true }));
     await flush();
-    
-    mainContent = document.querySelector('.rod-main-content') as HTMLElement;
-    expect(mainContent.style.flex).toContain('50%');
+    expect(await dashboard.getLeftPaneStyle()).toContain('20%');
+    expect(await dashboard.getRightPaneStyle()).toContain('80%');
+
+    // Clamp maximum at 80%
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 950, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('80%');
+    expect(await dashboard.getRightPaneStyle()).toContain('20%');
+
+    // Mousemove after mouseup must be ignored
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400, bubbles: true }));
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('80%');
+
+    // Double-click resets back to 50% / 50%
+    await dashboard.doubleClickResizeDivider();
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
+    expect(await dashboard.getRightPaneStyle()).toContain('50%');
+
+    // Keyboard ArrowLeft / ArrowRight / Enter support
+    await dashboard.pressResizeDividerKey('ArrowLeft');
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('45%');
+
+    await dashboard.pressResizeDividerKey('ArrowRight');
+    await dashboard.pressResizeDividerKey('ArrowRight');
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('55%');
+
+    await dashboard.pressResizeDividerKey('Enter');
+    await flush();
+    expect(await dashboard.getLeftPaneStyle()).toContain('50%');
   });
 });

@@ -80,10 +80,26 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly headerCells = this.locatorForAll('th.mat-mdc-header-cell');
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
   private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
-  private readonly fullWidthToggleBtn = this.locatorForOptional(MatButtonHarness.with({ selector: '.full-width-toggle-btn' }));
+  private readonly fullWidthToggleBtn = this.locatorForOptional(
+    MatButtonHarness.with({ selector: '.full-width-toggle-btn' }),
+  );
+  private readonly fullWidthToggleIcon = this.locatorForOptional('.full-width-toggle-btn mat-icon');
 
   async getFullWidthToggleBtn(): Promise<MatButtonHarness | null> {
     return this.fullWidthToggleBtn();
+  }
+
+  async getFullWidthToggleIconName(): Promise<string | null> {
+    const icon = await this.fullWidthToggleIcon();
+    return icon ? (await icon.text()).trim() : null;
+  }
+
+  async isFullWidthToggleActive(): Promise<boolean> {
+    const btn = await this.fullWidthToggleBtn();
+    if (!btn) {
+      return false;
+    }
+    return (await btn.host()).hasClass('active');
   }
 
   /** Gets the MatPaginatorHarness for the table if present. */
