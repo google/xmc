@@ -76,10 +76,13 @@ def _select_queue_card_by_name(session: Session, queue_name: str, timeout_ms: in
 
 
 def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, str]:
-    """Returns workUnitId -> position text for Experiment #<xid> across paginator pages."""
+    """Returns workUnitId -> position text for XID <xid> across paginator pages."""
     positions: dict[str, str] = {}
+    link_sel = sel.JOB_EXPERIMENT_LINK_SEL_TMPL.format(xid=xid)
     for _ in range(5):
-        rows = session.page.locator(sel.JOBS_TABLE_ROW_SEL).filter(has_text=f"Experiment #{xid}")
+        rows = session.page.locator(sel.JOBS_TABLE_ROW_SEL).filter(
+            has=session.page.locator(link_sel)
+        )
         for i in range(rows.count()):
             row = rows.nth(i)
             wid = (row.locator(sel.JOB_WORKUNIT_CELL_SEL).first.text_content() or "").strip()
