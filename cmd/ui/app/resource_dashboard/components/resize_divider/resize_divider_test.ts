@@ -218,22 +218,42 @@ describe('ResizeDividerComponent', () => {
     expect(host.splitRatio()).toBe(50);
   });
 
-  it('should detach drag listeners when destroyed mid-drag', async () => {
+  it('should detach exactly the drag listeners it attached when destroyed mid-drag', async () => {
+    const host = bootstrap(TestHostComponent);
+    await flush();
+    stubContainerRect(host, 0, 1000);
+    const addListenerSpy = spyOn(window, 'addEventListener').and.callThrough();
+    const removeListenerSpy = spyOn(window, 'removeEventListener').and.callThrough();
+
+    const divider = await getHarness(ResizeDividerHarness);
+    await divider.startDrag();
+    expect(await divider.isDragging()).toBeTrue();
+    const dragListeners = addListenerSpy.calls
+      .allArgs()
+      .filter(([type]) => String(type).startsWith('pointer'));
+    expect(dragListeners.length).toBe(3);
+
+    host.showDivider.set(false);
+    await flush();
+
+    for (const [type, listener] of dragListeners) {
+      expect(removeListenerSpy).toHaveBeenCalledWith(type, listener);
+    }
+  });
+
+  it('should replace the active drag when a new pointer presses the divider', async () => {
     const host = bootstrap(TestHostComponent);
     await flush();
     stubContainerRect(host, 0, 1000);
 
     const divider = await getHarness(ResizeDividerHarness);
-    await divider.startDrag();
-    expect(await divider.isDragging()).toBeTrue();
+    await divider.startDrag(0, 1);
+    await divider.startDrag(0, 2);
 
-    const removeListenerSpy = spyOn(window, 'removeEventListener').and.callThrough();
-    host.showDivider.set(false);
-    await flush();
+    await divider.moveDragTo(300, 1, 1);
+    expect(host.splitRatio()).toBe(50);
 
-    const removedEvents = removeListenerSpy.calls.allArgs().map(([type]) => type);
-    expect(removedEvents).toEqual(
-      jasmine.arrayContaining(['pointermove', 'pointerup', 'pointercancel']),
-    );
+    await divider.moveDragTo(400, 1, 2);
+    expect(host.splitRatio()).toBe(40);
   });
 });
