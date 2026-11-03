@@ -7,6 +7,8 @@ description: Investigates broken Nightly Examples E2E runs on main, performs roo
 
 This skill guides an agent end-to-end through discovering broken Nightly Examples E2E runs on `main`, performing root-cause triage, implementing a minimal fix in an isolated git worktree, opening a Draft PR, and proving the fix by running [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) against the PR branch.
 
+**Scope**: `nightly-examples-e2e.yml` is the workflow this skill fixes and verifies. [`nightly-build.yml`](../../../.github/workflows/nightly-build.yml) runs and their `deploy-gke-diagnostics` artifacts are read-only triage inputs (Layer B), and dispatching `nightly-build.yml` requires explicit user confirmation (Stage 5). [`nightly-visual-snapshot.yml`](../../../.github/workflows/nightly-visual-snapshot.yml) is out of scope because it publishes the public GitHub Pages gallery.
+
 > [!IMPORTANT]
 > All execution steps MUST adhere to [Core Engineering Standards](../../rules/core_engineering.md), [Architectural Contracts & Invariants](../../rules/architectural_contracts.md), [Skills & Automation Guidelines](../../rules/skills_and_automation.md), and [GitHub Authoring & PR Creation Standards](../../rules/github_authoring_and_prs.md).
 
@@ -32,19 +34,22 @@ This skill guides an agent end-to-end through discovering broken Nightly Example
    gh run view "${RUN_ID}" --repo google/xmc --json status,conclusion,headSha,createdAt,url,jobs \
      --jq '{status, conclusion, headSha, createdAt, url, failed_jobs: [.jobs[] | select(.conclusion == "failure") | {id: .databaseId, name, url, failed_steps: [.steps[] | select(.conclusion == "failure") | .name]}]}'
    ```
-   Download failed job logs and artifacts into `${ARTIFACT_DIR:-/tmp}` (delegate large log analysis to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines)):
+   Download the failed job log into `${ARTIFACT_DIR:-/tmp}` and list the artifacts the run actually uploaded (delegate large log analysis to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines)):
    ```bash
    RUN_ID="<run_id>"
    JOB_ID="<job_id>"
-   EXAMPLE_ID="<example_id>"
    SCRATCH_DIR="${ARTIFACT_DIR:-/tmp}/nightly_triage_${RUN_ID}"
 
    mkdir -p "${SCRATCH_DIR}"
    gh api "repos/google/xmc/actions/jobs/${JOB_ID}/logs" > "${SCRATCH_DIR}/job_${JOB_ID}.log"
-   gh run download "${RUN_ID}" --repo google/xmc -n "result-${EXAMPLE_ID}" -D "${SCRATCH_DIR}/results"
-   gh run download "${RUN_ID}" --repo google/xmc -n "ui-screenshots-${EXAMPLE_ID}" -D "${SCRATCH_DIR}/screenshots"
+   gh api "repos/google/xmc/actions/runs/${RUN_ID}/artifacts" --jq '.artifacts[].name'
    ```
-   *(Note: Use `gh api .../logs` rather than `gh run view --job --log`, which prints empty output on some `gh` CLI versions. `ui-screenshots-<example_id>` exists only when `verify_ui: true`; for failed `nightly-build.yml` runs, download `deploy-gke-diagnostics`.)*
+   Download only artifacts that appear in that list, because `gh run download -n` exits non-zero for a missing name. `ui-screenshots-<example_id>` is uploaded only on failure for matrix entries with `verify_ui: true`, and failed `nightly-build.yml` runs upload `deploy-gke-diagnostics`:
+   ```bash
+   ARTIFACT_NAME="<listed_artifact_name>"
+   gh run download "${RUN_ID}" --repo google/xmc -n "${ARTIFACT_NAME}" -D "${SCRATCH_DIR}/${ARTIFACT_NAME}"
+   ```
+   *(Note: Use `gh api .../logs` rather than `gh run view --job --log`, which prints empty output on some `gh` CLI versions.)*
 
 ---
 
@@ -84,17 +89,17 @@ Check recent `origin/main` commits (`git log origin/main --oneline -n 20`) and m
    Follow [XMC Feature Development](../xmc_feature_development/SKILL.md) and language rules under [`.agents/rules/languages/`](../../rules/languages/):
    - Fix the root cause without bundling unrelated refactors or cleanups.
    - Add or update unit tests per [Strict Testing Coverage](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity). Never delete or weaken existing tests or assertions to make a nightly run pass.
-   - **Verifier fixes**: Keep `examples_verification/<name>_test.py` entrypoints thin. These are live-cluster `py_binary` E2E entrypoints, not hermetic unit tests. Move any pure parsing, normalization, or decision logic touched by the fix into a [`tools/nightly_tests/verification/`](../../../tools/nightly_tests/verification/) module with a paired unit test, per [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#1-architecture--execution-lifecycle). The nightly run cannot catch a bug that makes a verifier silently pass.
-   - Stage explicit modified paths (never blind `git add -A`) and run `./.githooks/pre-commit` and affected Bazel tests until 100% green per [XMC Create PR — Section 2](../xmc_create_pr/SKILL.md#2-pre-commit-hooks--commit-creation) and [XMC Feature Development — Section 3](../xmc_feature_development/SKILL.md#3-test-execution-via-affected-tests-tool).
+   - **Verifier fixes**: Keep `examples_verification/<name>_test.py` entrypoints thin and place any cluster- or browser-independent parsing, normalization, or decision logic in [`tools/nightly_tests/verification/`](../../../tools/nightly_tests/verification/) with a paired `*_test.py` unit test per [Nightly E2E Verifier Entrypoints](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity) and [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#1-architecture--execution-lifecycle).
+   - Stage explicit modified paths (never blind `git add -A`) and run `./.githooks/pre-commit` and affected Bazel tests until 100% green per [XMC Create PR — Pre-Commit Hooks & Commit Creation](../xmc_create_pr/SKILL.md#2-pre-commit-hooks--commit-creation) and [XMC Feature Development — Test Execution via Affected Tests Tool](../xmc_feature_development/SKILL.md#3-test-execution-via-affected-tests-tool).
 
 ---
 
 ## Stage 4 — Open a Draft PR
 
-Delegate commit creation, diff sizing check, confirmation gate, and Draft PR creation to [XMC Create PR — Section 3](../xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population), adding these nightly-specific details to `pr_body.md`:
+Delegate commit creation, diff sizing check, confirmation gate, and Draft PR creation to [XMC Create PR — Pull Request Creation & PR Body Population](../xmc_create_pr/SKILL.md#3-pull-request-creation--pr-body-population), adding these nightly-specific details to `pr_body.md`:
 - Link the failing `main` workflow run/job URL and state the root-cause classification from Stage 2.
 - Include `Fixes #<issue_number>` when an open `nightly-failure` GitHub Issue exists.
-- Push `fix/nightly-${SLUG}` to `origin` and keep the PR strictly in **Draft** state ([Section 6](../xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate)).
+- Push `fix/nightly-${SLUG}` to `origin` and keep the PR strictly in **Draft** state ([XMC Create PR — Draft PR to Open Conversion Policy](../xmc_create_pr/SKILL.md#6-draft-pr-to-open-conversion-policy-strict-confirmation-gate)).
 
 ---
 
@@ -105,15 +110,24 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the PR Branch**:
-   - **Targeted example(s)**:
+   Pin verification to the pushed remote commit that GitHub Actions executes, never local `HEAD`, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants):
+   ```bash
+   SLUG="${SLUG:-<kebab-case-slug>}"
+   BRANCH_NAME="fix/nightly-${SLUG}"
+
+   git fetch origin "${BRANCH_NAME}"
+   git rev-parse "origin/${BRANCH_NAME}"
+   ```
+   - **Targeted example(s)**: Dispatch with the filter, then select the run whose `headSha` equals the pinned SHA and whose `createdAt` is at or after the recorded dispatch time. Treat a `cancelled` conclusion as superseded by a newer run in the concurrency group, not as a pass:
      ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
+     BRANCH_NAME="fix/nightly-<kebab-case-slug>"
+     TARGET_SHA="<origin_branch_sha>"
      EXAMPLES_FILTER="<matrix_example_id>"
 
+     date -u +%Y-%m-%dT%H:%M:%SZ
      gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
-     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" --limit 5 \
-       --json databaseId,status,conclusion,headSha,createdAt,url
+     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
+       --event workflow_dispatch --commit "${TARGET_SHA}" --json databaseId,status,conclusion,headSha,createdAt,url
      ```
      ```bash
      VERIFY_RUN_ID="<verify_run_id>"
@@ -121,9 +135,8 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
      ```
    - **Full suite (unfiltered)**:
      ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-     TARGET_SHA=$(git rev-parse HEAD)
+     BRANCH_NAME="fix/nightly-<kebab-case-slug>"
+     TARGET_SHA="<origin_branch_sha>"
 
      PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
        --workflow nightly-examples-e2e.yml \
@@ -133,4 +146,4 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
      ```
 
 3. **Synchronize Draft PR Description & Report Proof**:
-   Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — Section 5](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `HEAD`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([Section 4](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.
+   Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on the pinned commit, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.
