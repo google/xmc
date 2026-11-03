@@ -84,6 +84,13 @@ class TestHostComponent {
   readonly isFullWidth = signal<boolean>(false);
 }
 
+@Component({
+  standalone: true,
+  imports: [QueueJobsTable],
+  template: `<xmc-queue-jobs-table queueName="gpu-cluster-queue" />`,
+})
+class DefaultInputsHostComponent {}
+
 describe('QueueJobsTable Component', () => {
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
@@ -92,7 +99,7 @@ describe('QueueJobsTable Component', () => {
     resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
 
     setupModule({
-      imports: [TestHostComponent, NoopAnimationsModule],
+      imports: [TestHostComponent, DefaultInputsHostComponent, NoopAnimationsModule],
       providers: [provideRouter([]), { provide: ResourceService, useValue: resourceService }],
     });
 
@@ -305,7 +312,15 @@ describe('QueueJobsTable Component', () => {
     );
   });
 
-  it('should hide full-width toggle button by default when showFullWidthToggle is false', async () => {
+  it('should hide full-width toggle button by default when showFullWidthToggle is not bound', async () => {
+    bootstrap(DefaultInputsHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getFullWidthToggleBtn()).toBeNull();
+  });
+
+  it('should hide full-width toggle button when showFullWidthToggle is bound to false', async () => {
     bootstrap(TestHostComponent);
     await flush();
 

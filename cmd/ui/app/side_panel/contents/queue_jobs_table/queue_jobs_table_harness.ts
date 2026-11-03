@@ -88,15 +88,18 @@ export class QueueJobsTableHarness extends ComponentHarness {
     MatIconHarness.with({ ancestor: '.full-width-toggle-btn' }),
   );
 
+  /** Gets the full-width toggle button harness if present. */
   async getFullWidthToggleBtn(): Promise<MatButtonHarness | null> {
     return this.fullWidthToggleBtn();
   }
 
+  /** Gets the Material icon name shown in the full-width toggle button if present. */
   async getFullWidthToggleIconName(): Promise<string | null> {
     const icon = await this.fullWidthToggleIcon();
     return icon ? icon.getName() : null;
   }
 
+  /** Returns true when the full-width toggle button has the active (full-width) styling. */
   async isFullWidthToggleActive(): Promise<boolean> {
     const btn = await this.fullWidthToggleBtn();
     return btn ? (await btn.host()).hasClass('active') : false;
