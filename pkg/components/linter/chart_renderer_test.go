@@ -335,6 +335,75 @@ parameters:
 				},
 			},
 		},
+		{
+			name:      "VizierDefaultBlueprint",
+			component: "vizier",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "vizier",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"app.kubernetes.io/name":       "vizier",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+					Annotations: profileCRAnnotations(),
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+					ComponentClass:     "optimization-engine",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					Stability:          "EXPERIMENTAL",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"endpoint": "vizier-service.xmc.svc.cluster.local:7077",
+					},
+				},
+			},
+		},
+		{
+			name:      "HPODefaultBlueprint",
+			component: "hpo",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "hpo",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"xmc.dev/component-type":       "custom-1p-component",
+						"app.kubernetes.io/name":       "hpo",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+					Annotations: profileCRAnnotations(),
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
+					ComponentClass:     "hyperparameter-optimization",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					ImageTag:           "latest",
+					Stability:          "EXPERIMENTAL",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Dependencies: []linter.ComponentDependencyRef{
+						{Name: "vizier"},
+						{Name: "clickhouse"},
+					},
+					Parameters: map[string]string{
+						"maxTrialBudget":    "1000",
+						"maxParallelTrials": "100",
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -770,23 +839,82 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		redpanda   bool
-		clickhouse bool
-		wantValid  bool
+		name      string
+		overrides map[string]any
+		wantValid bool
+		wantRules []string
 	}{
-		{name: "both dependencies enabled", redpanda: true, clickhouse: true, wantValid: true},
-		{name: "redpanda disabled", redpanda: false, clickhouse: true},
-		{name: "clickhouse disabled", redpanda: true, clickhouse: false},
+		{
+			name: "both dependencies enabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": true},
+				"clickhouse":        map[string]any{"enabled": true},
+			},
+			wantValid: true,
+		},
+		{
+			name: "redpanda disabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": false},
+				"clickhouse":        map[string]any{"enabled": true},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name: "clickhouse disabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": true},
+				"clickhouse":        map[string]any{"enabled": false},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name:      "default profile renders valid with disabled experimental components",
+			overrides: map[string]any{},
+			wantValid: true,
+		},
+		{
+			name: "vizier enabled without acknowledgeExperimental fails",
+			overrides: map[string]any{
+				"vizier": map[string]any{"enabled": true},
+			},
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name: "hpo enabled without acknowledgeExperimental fails",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true},
+			},
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name: "hpo enabled with disabled vizier fails DAG and compatibility matrix",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": false},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name: "vizier clickhouse and hpo enabled with acknowledgeExperimental passes without stability inversion",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
+			},
+			wantValid: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeTestManifest(t, dir, "rendered.yaml", renderStable2026aProfile(t, profileDir, map[string]any{
-				"ingestion-gateway": map[string]any{"enabled": true},
-				"redpanda":          map[string]any{"enabled": tt.redpanda},
-				"clickhouse":        map[string]any{"enabled": tt.clickhouse},
-			}))
+			writeTestManifest(t, dir, "rendered.yaml", renderStable2026aProfile(t, profileDir, tt.overrides))
 			got, err := linter.NewLinter(rules).ValidateDirectory(dir)
 			if err != nil {
 				t.Fatalf("ValidateDirectory() error: %v", err)
@@ -795,7 +923,7 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 				t.Fatalf("ValidateDirectory() valid = %v, want %v (errors: %+v)", got.Valid, tt.wantValid, got.Errors)
 			}
 			if !tt.wantValid {
-				assertDiagnosticRules(t, got, []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"})
+				assertDiagnosticRules(t, got, tt.wantRules)
 			}
 		})
 	}
@@ -1023,8 +1151,8 @@ func TestStable2026aCustomReleaseNamespace(t *testing.T) {
 					t.Errorf("%s metadata.namespace = %q, want %q", cm.Metadata.Name, cm.Metadata.Namespace, tc.wantNS)
 				}
 			}
-			if count != 3 {
-				t.Errorf("decoded %d Component CRs, want 3", count)
+			if count != 5 {
+				t.Errorf("decoded %d Component CRs, want 5", count)
 			}
 		})
 	}

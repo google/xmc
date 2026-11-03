@@ -86,6 +86,8 @@ go_test(
         "@org_golang_google_protobuf//types/known/durationpb",
         "@sh_helm_helm_v3//pkg/action",
         "@sh_helm_helm_v3//pkg/chart",
+        "@sh_helm_helm_v3//pkg/chartutil",
+        "@sh_helm_helm_v3//pkg/engine",
         "@sh_helm_helm_v3//pkg/release",
         "@sh_helm_helm_v3//pkg/storage/driver",
     ],
