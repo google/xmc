@@ -58,6 +58,11 @@ button.full-width-toggle-btn.mat-mdc-outlined-button {
     color: inherit;
   }
 
+  &:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 2px;
+  }
+
   &.active {
     background-color: #1a73e8;
     border-color: #1a73e8;
