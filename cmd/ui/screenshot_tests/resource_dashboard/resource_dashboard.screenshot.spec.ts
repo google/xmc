@@ -18,20 +18,8 @@ import { setupMockRoutes, setupScreenshotEnvironment } from '../test_utils';
 
 test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1200 
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
-
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
-  });
-});    await setupMockRoutes(page);
+    await page.setViewportSize({ width: 2400, height: 1200 });
+    await setupMockRoutes(page);
 
     const jobsPromise = page.waitForResponse(
       (resp) => resp.url().includes('/jobs') && resp.status() === 200,
@@ -48,73 +36,25 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await page
       .locator('xmc-rod-queue-card .predictability-section')
       .first()
-      .waitFor({ state: 'visible' 
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
-
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
+      .waitFor({ state: 'visible' });
+    await setupScreenshotEnvironment(page);
   });
-});    await setupScreenshotEnvironment(page);
-  
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
 
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
-  });
-});
   test('should match baseline screenshot for initial layout and cluster queues', async ({
     page,
   }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
     await expect(dashboard).toBeVisible();
     await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
-  
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
-
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
   });
-});
+
   test('should match baseline screenshot after selecting a cluster queue', async ({ page }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
 
     const queueItem = dashboard.locator('xmc-rod-queue-card', {
       hasText: 'cpu-cluster-queue',
-    
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
+    });
 
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
-  });
-});
     const jobsResponsePromise = page.waitForResponse(
       (resp) => resp.url().includes('/jobs') && resp.status() === 200,
     );
@@ -122,30 +62,13 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
     await jobsResponsePromise;
 
     await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
-  
-  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
-
-    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
   });
-});
+
   test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
-    
-    // Toggle full-width
-    const toggleBtn = dashboard.locator('.full-width-toggle-btn');
-    await toggleBtn.click();
-    
-    // Give it a moment to expand layout and render
-    await page.waitForTimeout(500);
-
+    await dashboard.locator('.full-width-toggle-btn').click();
+    await expect(dashboard.locator('.rod-split-container.full-width')).toBeVisible();
+    await expect(dashboard.locator('xmc-rod-resize-divider')).toHaveCount(0);
     await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
   });
 });

@@ -301,6 +301,14 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
     expect(readJobsFullWidthCookie(document)).toBeFalse();
 
+    const { left } = (await dashboard.getSplitContainerDimensions())!;
+    const divider = (await dashboard.getResizeDivider())!;
+    await divider.startDrag();
+    await divider.moveDragTo(left);
+    await divider.endDrag();
+    expect(await dashboard.getLeftPaneStyle()).toContain('20%');
+    expect(await dashboard.getRightPaneStyle()).toContain('80%');
+
     const jobsTable = (await dashboard.getQueueJobsTable())!;
     const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
     expect(toggleBtn).not.toBeNull();
@@ -315,8 +323,8 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
 
     expect(await dashboard.getResizeDivider()).toBeNull();
-    expect(await dashboard.getLeftPaneStyle()).not.toContain("%");
-    expect(await dashboard.getRightPaneStyle()).not.toContain("%");
+    expect(await dashboard.getLeftPaneStyle()).not.toContain('%');
+    expect(await dashboard.getRightPaneStyle()).not.toContain('%');
 
     const fullWidthDims = await dashboard.getSplitLayoutDimensions();
     expect(fullWidthDims.container).not.toBeNull();
@@ -333,6 +341,9 @@ describe('ResourceDashboard Container', () => {
 
     expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
     expect(readJobsFullWidthCookie(document)).toBeFalse();
+    expect(await dashboard.getResizeDivider()).not.toBeNull();
+    expect(await dashboard.getLeftPaneStyle()).toContain('20%');
+    expect(await dashboard.getRightPaneStyle()).toContain('80%');
   });
 
   it('should initialize in full-width mode when xmc_jobs_full_width=true cookie is already set', async () => {
