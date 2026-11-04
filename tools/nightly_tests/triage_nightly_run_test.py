@@ -59,6 +59,12 @@ class TriageNightlyRunTest(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             scratch = Path(tmpdir) / "triage_out"
+            scratch.mkdir(parents=True, exist_ok=True)
+            (scratch / "ui-screenshots-symlink").symlink_to(tmpdir)
+            stale_dir = scratch / "result-resource_dashboard_ui"
+            stale_dir.mkdir()
+            (stale_dir / "old.json").write_text("{}", encoding="utf-8")
+
             e2e_runs = [
                 _run_fixture(
                     9002, None, "sha_in_prog", "2026-11-04T05:00:00Z", status="in_progress"
@@ -93,7 +99,8 @@ class TriageNightlyRunTest(unittest.TestCase):
                     {"name": "result-resource_dashboard_ui", "expired": False},
                     {"name": "ui-screenshots-resource_dashboard_ui", "expired": False},
                     {"name": "ui-screenshots-expired", "expired": True},
-                    {"name": "../traversal", "expired": False},
+                    {"name": "ui-screenshots-../traversal", "expired": False},
+                    {"name": "ui-screenshots-symlink", "expired": False},
                 ]
             }
             build_runs = [
@@ -107,6 +114,14 @@ class TriageNightlyRunTest(unittest.TestCase):
                     {"name": "other-build-artifact", "expired": False},
                 ]
             }
+            diff_out = "\n".join(
+                [
+                    "cmd/rod_data_provider/main.go",
+                    "deploy/addons/metrics/setup_metrics_addons.sh",
+                    "deploy/cli/install_xmanager.py",
+                    "README.md",
+                ]
+            )
             mock_run.side_effect = [
                 _proc(),
                 _proc(json.dumps(e2e_runs)),
@@ -120,7 +135,7 @@ class TriageNightlyRunTest(unittest.TestCase):
                 _proc(json.dumps(build_artifacts)),
                 _proc(),
                 _proc("abc1234 feat(rod): add column\ndef5678 docs: readme\n"),
-                _proc("cmd/rod_data_provider/main.go\nREADME.md\n"),
+                _proc(diff_out),
             ]
 
             res = triage_nightly_run(create_parser().parse_args([f"--scratch-dir={scratch}"]))
@@ -129,7 +144,7 @@ class TriageNightlyRunTest(unittest.TestCase):
             )
             self.assertEqual(res["target_run"]["databaseId"], 9001)
             self.assertIsNone(res["superseded_by_green_run"])
-            self.assertEqual(len(res["open_issues"]), 1)
+            self.assertFalse((stale_dir / "old.json").exists())
             job = res["failed_jobs"][0]
             self.assertEqual((job["job_id"], job["example_id"]), (22, "resource_dashboard_ui"))
             self.assertEqual(job["failed_steps"], ["Verify Example Workload"])
@@ -151,37 +166,41 @@ class TriageNightlyRunTest(unittest.TestCase):
                 (8002, 8001),
             )
             self.assertEqual(len(skew["undeployed_commits"]), 2)
-            self.assertEqual(skew["cluster_deployed_files"], ["cmd/rod_data_provider/main.go"])
+            self.assertEqual(
+                skew["cluster_deployed_files"],
+                ["cmd/rod_data_provider/main.go", "deploy/addons/metrics/setup_metrics_addons.sh"],
+            )
             self.assertEqual(res["warnings"], [])
 
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
-    def test_healthy_main_returns_clean_summary_without_artifact_downloads(
+    def test_auto_discovery_skips_superseded_historical_failures_and_handles_empty_runs(
         self, mock_run, mock_which
     ) -> None:
-        e2e_runs = [_run_fixture(9100, "success", "green_sha", "2026-11-04T04:00:00Z")]
+        e2e_runs = [
+            _run_fixture(9200, "success", "green_sha", "2026-11-04T04:00:00Z"),
+            _run_fixture(9150, "failure", "old_fail_sha", "2026-11-03T04:00:00Z"),
+        ]
         mock_run.side_effect = [_proc(), _proc(json.dumps(e2e_runs)), _proc("[]")]
         res = triage_nightly_run(create_parser().parse_args([]))
         self.assertEqual((res["status_summary"], res["is_latest_e2e_failing"]), ("healthy", False))
         self.assertIsNone(res["target_run"])
         self.assertEqual(mock_run.call_count, 3)
 
+        in_prog = [_run_fixture(9300, None, "sha", "2026-11-04T05:00:00Z", status="in_progress")]
+        mock_run.side_effect = [_proc(), _proc(json.dumps(in_prog)), _proc("[]")]
+        empty_res = triage_nightly_run(create_parser().parse_args([]))
+        self.assertEqual(empty_res["status_summary"], "no_completed_runs")
+        self.assertEqual(len(empty_res["warnings"]), 1)
+
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
-    def test_explicit_run_id_detects_superseding_green_run_and_records_warnings(
+    def test_explicit_run_id_reports_superseded_status_and_post_target_build_warnings(
         self, mock_run, mock_which
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             e2e_runs = [_run_fixture(9200, "success", "fixed_sha", "2026-11-04T04:00:00Z")]
-            explicit_raw = {
-                "id": 9150,
-                "status": "completed",
-                "conclusion": "cancelled",
-                "head_sha": "old_sha",
-                "event": "schedule",
-                "created_at": "2026-11-03T04:00:00Z",
-                "html_url": "u_old",
-            }
+            explicit_run = _run_fixture(9150, "cancelled", "old_sha", "2026-11-01T04:00:00Z")
             jobs_payload = {
                 "jobs": [
                     {
@@ -192,25 +211,49 @@ class TriageNightlyRunTest(unittest.TestCase):
                     }
                 ]
             }
+            newer_builds = [
+                _run_fixture(8500, "failure", "post_target_sha", "2026-11-04T01:00:00Z")
+            ]
             mock_run.side_effect = [
                 _proc(returncode=1, stderr="offline"),
                 _proc(json.dumps(e2e_runs)),
                 _proc("[]"),
-                _proc(json.dumps(explicit_raw)),
+                _proc(json.dumps(explicit_run)),
                 _proc(json.dumps(jobs_payload)),
                 _proc(returncode=1, stderr="HTTP 410 Gone"),
                 _proc('{"artifacts": []}'),
-                _proc("[]"),
+                _proc(json.dumps(newer_builds)),
             ]
             res = triage_nightly_run(
                 create_parser().parse_args(["--run-id=9150", f"--scratch-dir={tmpdir}"])
             )
             self.assertEqual(
-                (res["target_run"]["databaseId"], res["is_latest_e2e_failing"]), (9150, False)
+                (res["status_summary"], res["is_latest_e2e_failing"]), ("superseded", False)
             )
             self.assertEqual(res["superseded_by_green_run"]["databaseId"], 9200)
-            self.assertIsNone(res["failed_jobs"][0]["log_path"])
-            self.assertEqual(len(res["warnings"]), 2)
+            self.assertIsNone(res["rollout_skew"]["active_build_run"])
+            self.assertEqual(res["downloaded_artifacts"], [])
+            self.assertEqual(len(res["warnings"]), 4)
+
+    @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
+    @patch("tools.nightly_tests.triage_nightly_run.run_command")
+    def test_rollout_skew_records_warning_when_git_log_fails(self, mock_run, mock_which) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            e2e_runs = [_run_fixture(9001, "failure", "e2e_sha", "2026-11-04T04:00:00Z")]
+            builds = [_run_fixture(8001, "success", "green_sha", "2026-11-04T01:00:00Z")]
+            mock_run.side_effect = [
+                _proc(),
+                _proc(json.dumps(e2e_runs)),
+                _proc("[]"),
+                _proc('{"jobs": []}'),
+                _proc('{"artifacts": []}'),
+                _proc(json.dumps(builds)),
+                _proc(returncode=128, stderr="fatal: bad revision"),
+                _proc(""),
+            ]
+            res = triage_nightly_run(create_parser().parse_args([f"--scratch-dir={tmpdir}"]))
+            self.assertEqual(res["rollout_skew"]["undeployed_commits"], [])
+            self.assertTrue(any("git inspect" in w for w in res["warnings"]))
 
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
@@ -222,8 +265,12 @@ class TriageNightlyRunTest(unittest.TestCase):
         mock_which.return_value = "/bin/tool"
         for bad_argv in (
             ["--repo=bad_repo"],
+            ["--repo=../evil"],
+            ["--repo=-flag/xmc"],
             ["--branch=origin/main"],
             ["--branch=-bad"],
+            ["--branch=main..HEAD"],
+            ["--branch=main:other"],
             ["--run-id=0"],
             ["--limit=0"],
         ):

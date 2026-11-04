@@ -52,7 +52,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
 
 # Matrix entry keys the tool reads.
-_MATRIX_KEYS = ("id", "name", "example_path", "entrypoint", "args", "verify_module", "verify_ui")
+_MATRIX_KEYS = ("id", "name", "example_path", "entrypoint", "args", "verify_module")
 # Matches a tracked matrix key, optionally opening a YAML list item.
 _KEY_RE = re.compile(rf"^\s*(?:-\s+)?(?P<key>{'|'.join(_MATRIX_KEYS)}):(?P<value>.*)$")
 # Matches the first line of a YAML list item (`- key: ...`).
@@ -246,8 +246,7 @@ def resolve_workflow_path(raw_dir: str | None) -> pathlib.Path:
 
 def parse_matrix_ids(workflow_text: str) -> list[str]:
     """Return unique non-empty matrix `id`s in first-seen order."""
-    ids = (item.get("id", "") for item in parse_matrix_items(workflow_text))
-    return list(dict.fromkeys(mid for mid in ids if mid))
+    return list(dict.fromkeys(i["id"] for i in parse_matrix_items(workflow_text) if i.get("id")))
 
 
 def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
@@ -258,14 +257,10 @@ def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
     if not valid_ids:
         raise ValueError("no matrix.example.id entries found in workflow")
     ok = {mid.lower() for mid in valid_ids}
-    bad = [
-        t for t in raw_filter.split(",") if not t or any(map(str.isspace, t)) or t.lower() not in ok
-    ]
+    bad = [t for t in raw_filter.split(",") if any(map(str.isspace, t)) or t.lower() not in ok]
     if bad:
-        raise ValueError(
-            f"unknown or malformed examples_filter entry {bad!r}; "
-            f"valid matrix.example.id values: {', '.join(sorted(valid_ids))}"
-        )
+        ids = ", ".join(sorted(valid_ids))
+        raise ValueError(f"unknown or malformed examples_filter entry {bad!r}; valid ids: {ids}")
 
 
 def expand_args(raw_args: str) -> list[str]:

@@ -22,7 +22,7 @@ Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/t
 PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py
 ```
 
-Pass `--run-id <run_id>` to triage a specific historical run. Delegate inspection of large downloaded `job_<id>.log` files or diagnostic bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
+Pass `--run-id <run_id>` to triage a specific historical run. **Stop Gate**: Stop and report to the user (along with any stale `open_issues`) if `status_summary` is not `"failing"` (`"healthy"`, `"superseded"`, `"in_progress"`, or `"no_completed_runs"`) or if `superseded_by_green_run` is non-null, unless the user explicitly requested triaging that `--run-id`. Always review `warnings` before trusting `rollout_skew` in Stage 2, and delegate inspection of large downloaded `job_<id>.log` files or diagnostic bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
 
 ---
 
@@ -33,7 +33,7 @@ Combine the JSON summary from Stage 1 (`failed_jobs`, `downloaded_artifacts`, `r
 ### Layer A — Code, SDK, Example, Verifier, or Backend/UI Regression on `main`
 - **Client / SDK / CLI Setup**: Packaging, proto-overlay, or import regressions in [`sdks/python/xmc/`](../../../sdks/python/xmc/), [`sdks/python/xdash/`](../../../sdks/python/xdash/), [`api/protos/`](../../../api/protos/), or [`deploy/cli/install_xmanager.py`](../../../deploy/cli/install_xmanager.py).
 - **E2E Verifiers & Shared Dirty-Environment Scoping**: Stale selectors, DOM text assumptions, or truncated first-page assumptions in [`tools/nightly_tests/verification/`](../../../tools/nightly_tests/verification/) or [`tools/nightly_tests/examples_verification/`](../../../tools/nightly_tests/examples_verification/) violating [Shared Dirty-Environment E2E & Pagination Testing](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity) and [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#step-1-implement-the-verifier-in-examples_verification).
-- **Backend / UI / Manifest Defect**: Regressions in [`cmd/`](../../../cmd/), [`internal/`](../../../internal/), [`pkg/`](../../../pkg/), [`deploy/helm/`](../../../deploy/helm/), or [`deploy/ctk_v2/`](../../../deploy/ctk_v2/).
+- **Backend / UI / Manifest Defect**: Regressions in [`cmd/`](../../../cmd/), [`internal/`](../../../internal/), [`pkg/`](../../../pkg/), [`deploy/helm/`](../../../deploy/helm/), [`deploy/ctk_v2/`](../../../deploy/ctk_v2/), or [`deploy/addons/`](../../../deploy/addons/).
 
 ### Layer B — Nightly Cluster (`xmc-nightly`) Rollout Skew or State Drift
 - **Client/Server Rollout Skew**: `nightly-build.yml` deploys `xmc-nightly` at 01:00 UTC while `nightly-examples-e2e.yml` runs at 04:00 UTC (or on demand); inspect `rollout_skew.undeployed_commits` and `rollout_skew.cluster_deployed_files` from Stage 1 to see whether the failing example depends on undeployed server changes merged after `rollout_skew.last_green_build_run`.
@@ -83,15 +83,19 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the Pushed PR Branch**:
-   Ensure the branch is pushed to `origin` first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) validates `examples_filter` against `matrix.example.id`, fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
+   Ensure `origin/${BRANCH_NAME}` is pushed first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) validates `examples_filter` against `matrix.example.id`, fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
    ```bash
+   SLUG="${SLUG:-<kebab-case-slug>}"
+   BRANCH_NAME="fix/nightly-${SLUG}"
+   EXAMPLES_FILTER="<matrix_example_id_or_empty>"
+
    PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
      --workflow nightly-examples-e2e.yml \
-     --ref "fix/nightly-<kebab-case-slug>" \
-     --input "examples_filter=<matrix_example_id>" \
+     --ref "${BRANCH_NAME}" \
+     --input "examples_filter=${EXAMPLES_FILTER}" \
      --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
    ```
-   Omit `--input` (or pass `--input "examples_filter="`) when verifying the full matrix.
+   Set `EXAMPLES_FILTER=""` (or omit `--input`) when verifying the full matrix.
 
 3. **Synchronize Draft PR Description & Report Proof**:
    Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `origin/${BRANCH_NAME}`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.

@@ -208,7 +208,7 @@ python3 tools/release/dispatch_and_watch.py \
 # Dispatch a branch run with workflow_dispatch inputs (fetches origin/<ref> automatically)
 python3 tools/release/dispatch_and_watch.py \
   --workflow nightly-examples-e2e.yml \
-  --ref "fix/nightly-<slug>" \
+  --ref "fix/nightly-rod-selector" \
   --input "examples_filter=resource_dashboard_ui" \
   --state-file /tmp/nightly_verify_state.json
 ```
