@@ -4,9 +4,24 @@ This document outlines the XMC continuous integration infrastructure, the in-clu
 
 ---
 
-## 1. Current Architecture: Self-Hosted ARC Runners & In-Cluster Remote Cache
+## 1. Current Architecture: GitHub-Hosted Runners (`ubuntu-latest`) & Actions Cache
 
-XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE.
+XMC CI workflows execute on standard GitHub-hosted runners (`ubuntu-latest`) with Bazel disk and repository caching managed through `actions/cache` (`~/.cache/bazel-disk` and `~/.cache/bazel-repo`).
+
+### Bazel Configuration (`.bazelrc`)
+
+- CI builds use the `--config=ci` profile in [`.bazelrc`](../.bazelrc):
+  ```ini
+  build:ci --disk_cache=~/.cache/bazel-disk
+  test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
+  ```
+- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk` before running Bazel and save updated caches on `refs/heads/main` and `merge_group` runs.
+
+---
+
+## 2. Optional Self-Hosted Architecture: GKE ARC Runners & In-Cluster Remote Cache
+
+When self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE are enabled, workflows can target `arc-runner-set` and connect to the in-cluster Bazel Remote Cache.
 
 ### Infrastructure Overview
 
@@ -44,8 +59,8 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
    - Provides internal Gigabit/10Gbps cluster networking speeds, eliminating the 2.5–10 minute overhead of downloading/uploading compressed cache tarballs across public GitHub cache APIs.
    - Automatically manages LRU cache eviction at 90 GiB.
 
-4. **Bazel Configuration (`.bazelrc`)**:
-   - CI builds use the `--config=ci` profile:
+4. **ARC Bazel Configuration (`.bazelrc`)**:
+   - When targeting `arc-runner-set`, `--config=ci` can be configured to use the in-cluster gRPC remote cache:
      ```ini
      build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
      build:ci --remote_upload_local_results=false
@@ -57,9 +72,9 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
 
 ---
 
-## 2. Reversion & Migration Playbook: Moving Back to GitHub-Hosted Runners (`ubuntu-latest`)
+## 3. Migration Reference: Switching Between ARC Runners and GitHub-Hosted Runners (`ubuntu-latest`)
 
-If the team ever decides to migrate from self-hosted ARC runners back to GitHub-hosted cloud runners (`ubuntu-latest`), follow this step-by-step checklist.
+To switch between self-hosted ARC runners and GitHub-hosted cloud runners (`ubuntu-latest`), follow this step-by-step checklist.
 
 ### Checklist Summary
 
@@ -175,7 +190,7 @@ To eliminate cloud resource costs when reverting to GitHub-hosted runners:
 
 ---
 
-## 3. Maintenance & Troubleshooting
+## 4. Maintenance & Troubleshooting (In-Cluster Remote Cache)
 
 ### Inspecting Bazel Remote Cache Status
 ```bash
@@ -201,7 +216,7 @@ kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 
 ---
 
-## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
+## 5. Headless KinD & Playwright End-to-End (E2E) Pipeline
 
 The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry (`merge_group`), on manual dispatch (`workflow_dispatch`), and via reusable workflow calls (`workflow_call`). On `pull_request` events targeting `main`, the heavy `execute-e2e` job is skipped via `if: github.event_name != 'pull_request'` while the lightweight `run-e2e` (`KinD & Playwright Headless E2E`) gate job completes with `conclusion: SUCCESS` so pull requests satisfy the required status check to enter the merge queue, where the full E2E suite executes on `merge_group`.
 

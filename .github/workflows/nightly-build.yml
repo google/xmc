@@ -36,7 +36,7 @@ concurrency:
 jobs:
   prepare-environment:
     name: 'Generate Nightly Context'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     permissions:
       contents: write
     outputs:

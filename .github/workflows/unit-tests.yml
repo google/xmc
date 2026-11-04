@@ -31,7 +31,7 @@ permissions:
 jobs:
   run-backend-tests:
     name: 'Run Go & Backend Unit Tests'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     timeout-minutes: 30
 
     permissions:
@@ -58,7 +58,7 @@ jobs:
 
   run-ui-tests:
     name: 'Run Angular UI Unit Tests'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     timeout-minutes: 15
 
     permissions:
@@ -76,7 +76,7 @@ jobs:
 
   run-chart-tests:
     name: 'Run Helm Chart Configuration Tests'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     timeout-minutes: 10
 
     permissions:

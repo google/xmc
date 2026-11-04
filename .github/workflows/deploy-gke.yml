@@ -181,7 +181,7 @@ permissions:
 jobs:
   deploy-to-gke:
     name: 'Deploy XMC to GKE'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: xmc-nightly
     permissions:
       contents: read
@@ -242,11 +242,9 @@ jobs:
 
       - name: 'Configure Bazel Cache Settings'
         run: |
-          mkdir -p "${HOME}/.cache/bazel-repo"
+          mkdir -p "${HOME}/.cache/bazel-repo" "${HOME}/.cache/bazel-disk"
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
-          common --remote_upload_local_results=true
-          common --remote_download_outputs=all
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
