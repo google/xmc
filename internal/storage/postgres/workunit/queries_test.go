@@ -351,9 +351,9 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 	repo := NewRepository(pool)
 	for _, xid := range []int64{100, 200} {
 		postgrestest.SeedExperiment(ctx, t, pool, xid)
-		author := "z@example.com"
+		author := "alice@example.com"
 		if xid == 200 {
-			author = "a@example.com"
+			author = "Bob@example.com"
 		}
 		if _, err := pool.Exec(ctx, "UPDATE Experiments SET Creator=$1 WHERE Xid=$2", author, xid); err != nil {
 			t.Fatal(err)
@@ -367,7 +367,7 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 	}
 
 	t.Run("combined filter and count", func(t *testing.T) {
-		result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Author: "a@example.com", HasAuthor: true, Status: "RUNNING"}})
+		result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Author: "Bob@example.com", HasAuthor: true, Status: "RUNNING"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -381,7 +381,7 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 	t.Run("filtered pagination", func(t *testing.T) {
 		token := ""
 		for page := 0; page < 3; page++ {
-			result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, token, storage.ActiveWorkUnitQuery{OrderBy: "priority desc", Filter: storage.ActiveWorkUnitFilter{Author: "a@example.com", HasAuthor: true}})
+			result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, token, storage.ActiveWorkUnitQuery{OrderBy: "priority desc", Filter: storage.ActiveWorkUnitFilter{Author: "Bob@example.com", HasAuthor: true}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -401,6 +401,33 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 		}
 		if result.TotalQueueSize != 0 || len(result.WorkUnits) != 0 {
 			t.Fatalf("unmatched result = %+v", result)
+		}
+	})
+
+	t.Run("status-only count and pagination", func(t *testing.T) {
+		result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Status: "RUNNING"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TotalQueueSize != 2 || len(result.WorkUnits) != 1 || result.NextPageToken == "" {
+			t.Fatalf("status page = %+v", result)
+		}
+		next, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, result.NextPageToken, storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{Status: "RUNNING"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.TotalQueueSize != 2 || len(next.WorkUnits) != 1 || next.NextPageToken != "" {
+			t.Fatalf("status final page = %+v", next)
+		}
+		gotNames := []string{result.WorkUnits[0].WorkUnit.GetName(), next.WorkUnits[0].WorkUnit.GetName()}
+		wantNames := []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2"}
+		if diff := cmp.Diff(wantNames, gotNames); diff != "" {
+			t.Errorf("status pages (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("invalid ordering", func(t *testing.T) {
+		if _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{OrderBy: "invalid"}); err == nil {
+			t.Fatal("accepted invalid ordering")
 		}
 	})
 

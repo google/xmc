@@ -41,6 +41,7 @@ import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
 import {
+  JOB_STATUS_STRINGS,
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
   QueueJobStatusPipe,
@@ -88,7 +89,12 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly author = signal('');
   protected readonly status = signal('');
-  protected readonly statuses = ['RUNNING', 'STARTING', 'INITIALIZING', 'SCHEDULING'];
+  protected readonly statuses = [
+    JOB_STATUS_STRINGS.RUNNING,
+    JOB_STATUS_STRINGS.STARTING,
+    JOB_STATUS_STRINGS.INITIALIZING,
+    JOB_STATUS_STRINGS.SCHEDULING,
+  ];
   protected readonly filter = computed(() =>
     [
       this.author() ? `author = ${JSON.stringify(this.author())}` : '',

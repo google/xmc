@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "workunit",
     srcs = [
+        "active_workunit_query.go",
         "createworkunit.go",
         "fetch_active_work_units.go",
         "fetchcurrentworkunitexecution.go",
@@ -60,6 +61,7 @@ go_library(
 go_test(
     name = "workunit_unit_test",
     srcs = [
+        "active_workunit_query_test.go",
         "createworkunit_unit_test.go",
         "fetch_active_work_units_test.go",
     ],

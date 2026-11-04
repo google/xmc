@@ -131,9 +131,10 @@ describe('QueueJobsTable Component', () => {
       ['Priority', 'priority'],
     ]) {
       for (const direction of ['asc', 'desc', '']) {
+        state.resourceService.getQueueJobs.calls.reset();
         await harness.sortBy(label);
         await flush();
-        expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+        expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
           'gpu-cluster-queue',
           10,
           '',
@@ -158,16 +159,18 @@ describe('QueueJobsTable Component', () => {
     const paginator = await harness.getPaginator();
     await paginator!.goToNextPage();
     await flush();
+    expect(await paginator!.getRangeLabel()).toMatch(/^11\s/);
+    state.resourceService.getQueueJobs.calls.reset();
     await harness.sortBy('Author');
     await flush();
-    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
       'gpu-cluster-queue',
       10,
       '',
       'author asc',
       '',
     );
-    expect(await paginator!.getRangeLabel()).toContain('1');
+    expect(await paginator!.getRangeLabel()).toMatch(/^1\s/);
   });
 
   it('combines author and status filters and clears both', async () => {
@@ -184,9 +187,10 @@ describe('QueueJobsTable Component', () => {
       '',
       'author = "alice@example.com" AND status = RUNNING',
     );
+    state.resourceService.getQueueJobs.calls.reset();
     await harness.clearFilters();
     await flush();
-    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
       'gpu-cluster-queue',
       10,
       '',
@@ -336,9 +340,10 @@ describe('QueueJobsTable Component', () => {
     expect(paginator).not.toBeNull();
     if (paginator) {
       // Forward
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.goToNextPage();
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
         'gpu-cluster-queue',
         10,
         'token-2',
@@ -347,9 +352,10 @@ describe('QueueJobsTable Component', () => {
       );
 
       // Backward
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.goToPreviousPage();
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
         'gpu-cluster-queue',
         10,
         '',
@@ -358,9 +364,10 @@ describe('QueueJobsTable Component', () => {
       );
 
       // Page size change
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.setPageSize(20);
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
         'gpu-cluster-queue',
         20,
         '',

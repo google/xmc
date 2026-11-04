@@ -24,7 +24,6 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	ls "xmanager_cloud/internal/query_generator/liststatement"
-	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/offsetpagetoken"
 	postgresdata "xmanager_cloud/internal/storage/postgres/data"
@@ -39,27 +38,6 @@ type activeWorkUnitRow struct {
 	Creator         string `db:"creator"`
 	ExperimentTitle string `db:"experiment_title"`
 }
-
-var (
-	countActiveWorkUnitsSQL = safesql.New(`SELECT COUNT(*) FROM WorkUnits wu JOIN Experiments e ON wu.Xid = e.Xid WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL AND (NOT $2 OR COALESCE(e.Creator, '') = $3) AND ($4 = 0 OR wu.ExecutionState = $4)`)
-
-	fetchActiveWorkUnitsSQL = safesql.New(`SELECT wu.Xid, wu.WorkUnitId, wu.WorkUnitType, wu.Priority, wu.Urls, wu.Tags, wu.Notes, wu.Executable, wu.ExecutionCreateTime, wu.ExecutionUpdateTime, wu.ExecutionCompleteTime, wu.ExecutionId, wu.ExecutionMetadata, wu.WorkUnitStatus, wu.CreateTime, wu.UpdateTime, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS experiment_title
-FROM WorkUnits wu
-JOIN Experiments e ON wu.Xid = e.Xid
-WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL AND (NOT $5 OR COALESCE(e.Creator, '') = $6) AND ($7 = 0 OR wu.ExecutionState = $7)
-ORDER BY
- CASE WHEN $4 = 'author asc' THEN COALESCE(e.Creator, '') END ASC,
- CASE WHEN $4 = 'author desc' THEN COALESCE(e.Creator, '') END DESC,
- CASE WHEN $4 = 'priority asc' THEN wu.Priority END ASC,
- CASE WHEN $4 = 'priority desc' THEN wu.Priority END DESC,
- CASE WHEN $4 = 'status asc' THEN CASE wu.ExecutionState WHEN 4 THEN 0 WHEN 3 THEN 1 WHEN 1 THEN 2 ELSE 3 END END ASC,
- CASE WHEN $4 = 'status desc' THEN CASE wu.ExecutionState WHEN 4 THEN 0 WHEN 3 THEN 1 WHEN 1 THEN 2 ELSE 3 END END DESC,
- CASE WHEN $4 = '' THEN wu.SortPhase END DESC,
- CASE WHEN $4 = '' THEN wu.PositionInQueue END ASC,
- CASE WHEN $4 = '' THEN wu.CreateTime END ASC,
- wu.WorkUnitId ASC, wu.Xid ASC
-LIMIT $2 OFFSET $3`)
-)
 
 // ListWorkUnits retrieves a list of work units matching the given filter.
 func (r *Repository) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
@@ -138,18 +116,22 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
-	return r.queryActiveWorkUnitsInReadOnlyTx(ctx, queueNames, pageSizeVal, offset, query.OrderBy, query.Filter)
+	return r.queryActiveWorkUnitsInReadOnlyTx(ctx, queueNames, pageSizeVal, offset, query)
 }
 
-func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queueNames []string, pageSize int32, offset int64, orderBy string, filter storage.ActiveWorkUnitFilter) (*storage.ActiveWorkUnitsResult, error) {
+func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queueNames []string, pageSize int32, offset int64, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
+	count, fetch, err := activeWorkUnitStatements(queueNames, int64(pageSize)+1, offset, query)
+	if err != nil {
+		return nil, err
+	}
 	var totalQueueSize int64
 	var rawRows []activeWorkUnitRow
-	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, countActiveWorkUnitsSQL.String(), queueNames, filter.HasAuthor, filter.Author, essmsgpb.WorkUnitStatus_WorkUnitState_value[filter.Status]).Scan(&totalQueueSize); err != nil {
+	err = pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, count.sql.String(), count.args...).Scan(&totalQueueSize); err != nil {
 			return pgdb.TranslateError(err, entityName)
 		}
 		var err error
-		rawRows, err = pgdb.QueryRows[activeWorkUnitRow](ctx, tx, fetchActiveWorkUnitsSQL.String(), entityName, queueNames, int64(pageSize)+1, offset, orderBy, filter.HasAuthor, filter.Author, essmsgpb.WorkUnitStatus_WorkUnitState_value[filter.Status])
+		rawRows, err = pgdb.QueryRows[activeWorkUnitRow](ctx, tx, fetch.sql.String(), entityName, fetch.args...)
 		return err
 	})
 	if err != nil {

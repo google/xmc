@@ -24,6 +24,10 @@ func TestParseActiveWorkUnitFilter(t *testing.T) {
 	}{
 		{"", ActiveWorkUnitFilter{}, false},
 		{`author = "alice@example.com"`, ActiveWorkUnitFilter{Author: "alice@example.com", HasAuthor: true}, false},
+		{`author = "alice\"bob@example.com"`, ActiveWorkUnitFilter{Author: `alice"bob@example.com`, HasAuthor: true}, false},
+		{`author = "corp\\chris"`, ActiveWorkUnitFilter{Author: `corp\chris`, HasAuthor: true}, false},
+		{`author = "corp\\nbob"`, ActiveWorkUnitFilter{Author: `corp\nbob`, HasAuthor: true}, false},
+		{`author = "alice\nbob\r\t"`, ActiveWorkUnitFilter{Author: "alice\nbob\r\t", HasAuthor: true}, false},
 		{`author = ""`, ActiveWorkUnitFilter{HasAuthor: true}, false},
 		{`status = RUNNING AND author = "alice@example.com"`, ActiveWorkUnitFilter{Author: "alice@example.com", HasAuthor: true, Status: "RUNNING"}, false},
 		{`status = STARTING`, ActiveWorkUnitFilter{Status: "STARTING"}, false},

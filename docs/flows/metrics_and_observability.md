@@ -269,9 +269,7 @@ Sorting the jobs table by author, status, or priority applies to the full queue 
 
 Author and status filters combine before pagination, and the table count reflects all matching jobs. The `filter` field accepts exact author equality, e.g. `author = "alice@example.com"`, and active-state equality, e.g. `status = RUNNING`, optionally joined with `AND`. Clearing filters or changing their values resets pagination. Ascending status order is running, starting, initializing, then scheduling.
 
-Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
-`LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
-cache; they never hit the Kubernetes API.
+The ROD Data Provider's design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`, `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the cache. They never hit the Kubernetes API.
 
 The reason is the same as everywhere else in XMC. A dashboard that polls every few seconds must not
 translate into API server load proportional to the number of viewers. Watch once, serve many.

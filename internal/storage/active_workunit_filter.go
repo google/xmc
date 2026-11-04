@@ -69,7 +69,7 @@ func collectActiveWorkUnitFilter(expr *fpb.Expression, result *ActiveWorkUnitFil
 	switch rhs.WhichExpression() {
 	case fpb.Expression_Value_case:
 	case fpb.Expression_Phrase_case:
-		value = "\"" + strings.Join(rhs.GetPhrase().GetValues(), " ") + "\""
+		value = strconv.Quote(strings.Join(rhs.GetPhrase().GetValues(), " "))
 	default:
 		return fmt.Errorf("filter values must be literals")
 	}

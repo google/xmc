@@ -29,7 +29,7 @@ func TestActiveWorkUnitOrderBy(t *testing.T) {
 		{"author asc, priority desc", "", true},
 	}
 	for _, tt := range tests {
-		t.Run(tt.want, func(t *testing.T) {
+		t.Run(tt.input, func(t *testing.T) {
 			got, err := ActiveWorkUnitOrderBy(tt.input)
 			if (err != nil) != tt.invalid || got != tt.want {
 				t.Errorf("ActiveWorkUnitOrderBy(%q) = (%q, %v), want (%q, invalid=%v)", tt.input, got, err, tt.want, tt.invalid)
