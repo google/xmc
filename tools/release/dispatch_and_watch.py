@@ -22,32 +22,23 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
 from tools.nightly_tests import examples_import_smoke as smoke
 
-_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+_REF_RE = re.compile(r"^[A-Za-z0-9](?!.*\.\.)[A-Za-z0-9._-]*(?:/[A-Za-z0-9._-]+)*$")
 _INPUT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 _EXAMPLES_WORKFLOWS = frozenset({"nightly-examples-e2e.yml", "examples-smoke.yml"})
 
 
 def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Runs GitHub CLI command with handled error for missing binary."""
-    if not shutil.which("gh"):
-        raise HandledError(
-            "GitHub CLI ('gh') is not installed or not found in PATH.",
-            "Install gh CLI and authenticate with 'gh auth login'.",
-        )
-    return run_command(
-        ["gh", *args],
-        capture_output=True,
-        check=False,
-        log_cmd=False,
-        log_on_error=False,
-        cwd=repo_dir,
-    )
+    gh = partial(run_command, capture_output=True, check=False, log_cmd=False, log_on_error=False)
+    hint = "Ensure 'gh' is on PATH and authenticate with 'gh auth login'."
+    return gh(["gh", *args], cwd=repo_dir, handled_instruction=hint)
 
 
 def _extract_page_url(view_data: dict[str, Any]) -> str:
@@ -176,14 +167,12 @@ def _find_existing_run(
 def _validate_ref(ref: str) -> str:
     """Validates a target Git ref and rejects 'origin/' prefixes or refspec syntax."""
     cleaned = ref.strip()
-    if cleaned.startswith("origin/"):
-        raise HandledError(f"Invalid --ref '{ref}': omit 'origin/' prefix.", "Use branch name.")
-    if not _REF_RE.match(cleaned) or ".." in cleaned or "//" in cleaned or cleaned.endswith("/"):
-        raise HandledError(f"Invalid --ref '{ref}'.", "Pass a valid Git branch or tag name.")
+    if cleaned.startswith("origin/") or not _REF_RE.match(cleaned):
+        raise HandledError(f"Invalid --ref '{ref}'.", "Pass a branch or tag name on origin.")
     return cleaned
 
 
-def _validate_inputs(workflow: str, raw_inputs: list[str], raw_dir: str | None) -> None:
+def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None) -> None:
     """Validates repeatable KEY=VALUE workflow_dispatch inputs and examples_filter IDs."""
     parsed: dict[str, str] = {}
     for item in raw_inputs:
@@ -196,7 +185,7 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], raw_dir: str | None) 
     if Path(workflow).name not in _EXAMPLES_WORKFLOWS or "examples_filter" not in parsed:
         return
     try:
-        wf_text = smoke.resolve_workflow_path(raw_dir).read_text(encoding="utf-8")
+        wf_text = smoke.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
         smoke.validate_examples_filter(parsed["examples_filter"], wf_text)
     except (OSError, ValueError) as exc:
         hint = "Pass comma-separated matrix.example.id values without spaces."
@@ -205,19 +194,11 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], raw_dir: str | None) 
 
 def _resolve_remote_sha(ref: str, cwd: Path | None) -> str:
     """Fetches origin/<ref> and returns the resolved remote commit SHA via FETCH_HEAD."""
-    if not shutil.which("git"):
-        raise HandledError("Git CLI ('git') was not found in PATH.", "Install git on PATH.")
-    kw: dict[str, Any] = {"cwd": cwd, "capture_output": True, "check": False, "log_cmd": False}
-    fetch_res = run_command(["git", "fetch", "--", "origin", ref], **kw)
-    if fetch_res.returncode != 0:
-        hint = f"Push '{ref}' to origin first (git push -u origin {ref}) or pass --target-sha."
-        raise HandledError(f"Failed to fetch '{ref}' from origin: {fetch_res.stderr.strip()}", hint)
-    rev_res = run_command(["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"], **kw)
-    resolved = rev_res.stdout.strip()
-    if rev_res.returncode != 0 or not resolved:
-        msg = f"Failed to resolve remote commit SHA for '{ref}': {rev_res.stderr.strip()}"
-        raise HandledError(msg, "Verify that the remote ref points to a valid commit.")
-    return resolved
+    git = partial(run_command, cwd=cwd, capture_output=True, log_cmd=False, log_on_error=False)
+    hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
+    git(["git", "fetch", "--", "origin", ref], handled_instruction=hint)
+    rev_cmd = ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"]
+    return git(rev_cmd, handled_instruction="Verify remote ref commit.").stdout.strip()
 
 
 def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
@@ -332,16 +313,15 @@ def _watch_run_outcome(
 
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
-    workflow, ref = args.workflow, _validate_ref(getattr(args, "ref", "main") or "main")
+    workflow, ref = args.workflow, _validate_ref(args.ref)
     target_sha = (getattr(args, "target_sha", "") or "").strip()
     state_file = getattr(args, "state_file", None)
     repo_dir = Path(args.repo_dir) if getattr(args, "repo_dir", None) else None
-    raw_inputs = list(getattr(args, "input", None) or [])
-    if getattr(args, "find_existing", False) and raw_inputs:
+    if args.find_existing and args.input:
         raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
-    _validate_inputs(workflow, raw_inputs, getattr(args, "repo_dir", None))
+    _validate_inputs(workflow, args.input, repo_dir)
     if not shutil.which("gh"):
-        raise HandledError("GitHub CLI ('gh') is not installed.", "Run 'gh auth login'.")
+        raise HandledError("GitHub CLI ('gh') is not in PATH.", "Run 'gh auth login'.")
 
     # 1. Check for existing successful run if --find-existing
     if getattr(args, "find_existing", False):
@@ -352,7 +332,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     # 2. Dispatch workflow run
     if not target_sha:
         target_sha = _resolve_remote_sha(ref, repo_dir)
-    dispatched_at = _dispatch_workflow(workflow, ref, raw_inputs, repo_dir)
+    dispatched_at = _dispatch_workflow(workflow, ref, args.input, repo_dir)
 
     # 3. Poll for registered workflow run matching target_sha & timestamp
     run_data = _poll_for_run(

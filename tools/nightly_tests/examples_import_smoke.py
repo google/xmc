@@ -49,7 +49,8 @@ from collections.abc import Iterator, Sequence
 from typing import Literal
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
+_WORKFLOW_REL = pathlib.Path(".github/workflows/nightly-examples-e2e.yml")
+DEFAULT_WORKFLOW = REPO_ROOT / _WORKFLOW_REL
 
 # Matrix entry keys the tool reads.
 _MATRIX_KEYS = ("id", "name", "example_path", "entrypoint", "args", "verify_module")
@@ -236,28 +237,22 @@ def parse_verify_modules(
     return list(dict.fromkeys(module for module in modules if module))
 
 
-def resolve_workflow_path(raw_dir: str | None) -> pathlib.Path:
-    """Resolve the nightly workflow YAML path from `--repo-dir` or default runfiles."""
-    rel = pathlib.Path(".github/workflows/nightly-examples-e2e.yml")
-    if raw_dir and raw_dir != ".":
-        return pathlib.Path(raw_dir) / rel
-    return rel if rel.is_file() else DEFAULT_WORKFLOW
-
-
-def parse_matrix_ids(workflow_text: str) -> list[str]:
-    """Return unique non-empty matrix `id`s in first-seen order."""
-    return list(dict.fromkeys(i["id"] for i in parse_matrix_items(workflow_text) if i.get("id")))
+def resolve_workflow_path(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
+    """Resolve the nightly workflow YAML path from `repo_dir` or default runfiles."""
+    if repo_dir and repo_dir != pathlib.Path("."):
+        return repo_dir / _WORKFLOW_REL
+    return _WORKFLOW_REL if _WORKFLOW_REL.is_file() else DEFAULT_WORKFLOW
 
 
 def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
     """Validate a nightly `examples_filter` input against `matrix.example.id` entries."""
     if not raw_filter:
         return
-    valid_ids = parse_matrix_ids(workflow_text)
+    valid_ids = {item["id"] for item in parse_matrix_items(workflow_text) if item.get("id")}
     if not valid_ids:
         raise ValueError("no matrix.example.id entries found in workflow")
     ok = {mid.lower() for mid in valid_ids}
-    bad = [t for t in raw_filter.split(",") if any(map(str.isspace, t)) or t.lower() not in ok]
+    bad = [token for token in raw_filter.split(",") if token.lower() not in ok]
     if bad:
         ids = ", ".join(sorted(valid_ids))
         raise ValueError(f"unknown or malformed examples_filter entry {bad!r}; valid ids: {ids}")

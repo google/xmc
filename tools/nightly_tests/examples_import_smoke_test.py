@@ -257,12 +257,8 @@ class ParseEntrypointsTest(unittest.TestCase):
             ],
         )
 
-    def test_parse_matrix_ids_and_validate_examples_filter(self) -> None:
+    def test_validate_examples_filter(self) -> None:
         """validate_examples_filter mirrors bash filter semantics and rejects unknown ids."""
-        self.assertEqual(
-            smoke.parse_matrix_ids(_WORKFLOW),
-            ["ok_job", "ok_job_again", "broken_job", "ui_only"],
-        )
         smoke.validate_examples_filter("", _WORKFLOW)
         smoke.validate_examples_filter("OK_JOB,ui_only", _WORKFLOW)
         for invalid in (

@@ -5,24 +5,19 @@ description: Investigates broken Nightly Examples E2E runs on main, performs roo
 
 # XMC Fix Nightly Playbook
 
-This skill guides an agent end-to-end through discovering broken Nightly Examples E2E runs on `main`, performing root-cause triage, implementing a minimal fix in an isolated git worktree, opening a Draft PR, and proving the fix by running [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) against the PR branch.
-
-**Scope**: `nightly-examples-e2e.yml` is the workflow this skill fixes and verifies. [`nightly-build.yml`](../../../.github/workflows/nightly-build.yml) runs and their `deploy-gke-diagnostics` artifacts are read-only triage inputs (Layer B), and dispatching `nightly-build.yml` requires explicit user confirmation (Stage 5). [`nightly-visual-snapshot.yml`](../../../.github/workflows/nightly-visual-snapshot.yml) is out of scope because it publishes the public GitHub Pages gallery.
-
-> [!IMPORTANT]
-> All execution steps MUST adhere to [Core Engineering Standards](../../rules/core_engineering.md), [Architectural Contracts & Invariants](../../rules/architectural_contracts.md), [Skills & Automation Guidelines](../../rules/skills_and_automation.md), and [GitHub Authoring & PR Creation Standards](../../rules/github_authoring_and_prs.md).
+**Scope**: [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) is the workflow this skill fixes and verifies on a PR branch. [`nightly-build.yml`](../../../.github/workflows/nightly-build.yml) runs and their `deploy-gke-diagnostics` artifacts are read-only triage inputs (Layer B), and dispatching `nightly-build.yml` requires explicit user confirmation (Stage 5). [`nightly-visual-snapshot.yml`](../../../.github/workflows/nightly-visual-snapshot.yml) is out of scope because it publishes the public GitHub Pages gallery.
 
 ---
 
 ## Stage 1 — Discover & Triage Broken Nightly Examples E2E Run on `main`
 
-Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/triage_nightly_run.py) to fetch `origin/main`, query recent `nightly-examples-e2e.yml` and `nightly-build.yml` runs plus open `nightly-failure` issues, download failed job logs (`job_<id>.log`) and non-expired failure artifacts (`result-<example_id>`, `ui-screenshots-*`, and `deploy-gke-diagnostics` when the active `nightly-build.yml` run failed) into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`, and compute the `<last_green_build_sha>..<failed_e2e_sha>` rollout-skew commit delta in one turn:
+Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/triage_nightly_run.py) (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#5-nightly-failure-triage-cli-triage_nightly_runpy)) to fetch `origin/main`, inspect recent nightly runs and open `nightly-failure` issues, download failed job logs and non-expired failure artifacts into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`, and compute rollout skew in one turn:
 
 ```bash
 PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py
 ```
 
-Pass `--run-id <run_id>` to triage a specific historical run. **Stop Gate**: Stop and report to the user (along with any stale `open_issues`) if `status_summary` is not `"failing"` (`"healthy"`, `"superseded"`, `"in_progress"`, or `"no_completed_runs"`) or if `superseded_by_green_run` is non-null, unless the user explicitly requested triaging that `--run-id`. Always review `warnings` (such as non-superseding `workflow_dispatch` green runs or missing build history) before trusting `rollout_skew` in Stage 2, and delegate inspection of large downloaded `job_<id>.log` files or diagnostic bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
+Pass `--run-id <run_id>` to triage a specific historical run. **Stop Gate**: Stop and report to the user (along with any stale `open_issues`) if `status_summary` is not `"failing"` (`"healthy"`, `"superseded"`, `"in_progress"`, or `"no_completed_runs"`), unless the user explicitly requested triaging a `"superseded"` `--run-id`. Always review `warnings` (such as non-superseding `workflow_dispatch` green runs or missing build history) before trusting `rollout_skew` in Stage 2, and delegate inspection of large downloaded `job_<id>.log` files or diagnostic bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
 
 ---
 
@@ -83,7 +78,7 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the Pushed PR Branch**:
-   Ensure `origin/${BRANCH_NAME}` is pushed first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) validates `examples_filter` against `matrix.example.id`, fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
+   Ensure `origin/${BRANCH_NAME}` is pushed first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
    ```bash
    SLUG="${SLUG:-<kebab-case-slug>}"
    BRANCH_NAME="fix/nightly-${SLUG}"
