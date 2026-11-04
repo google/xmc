@@ -18,7 +18,7 @@ AUTOSTAGE_STATE=""
 # core.quotePath=false keeps non-ASCII paths unquoted so anchored patterns match.
 staged_paths_match() {
   local diff_filter="$1" pattern="$2" paths
-  paths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter="${diff_filter}")
+  paths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter="${diff_filter}") || { echo "❌ git diff --cached failed; cannot select pre-commit checks." >&2; exit 1; }
   if [ -z "${paths}" ]; then
     return 1
   fi
