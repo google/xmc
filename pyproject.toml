@@ -88,8 +88,11 @@ combine-as-imports = true
 [tool.mypy]
 # Single source of truth for mypy's scope: CI and .githooks/pre-commit run bare
 # `mypy` with no file arguments. Every Python file is checked by default, so new
-# directories are covered automatically; `exclude` is the only deny-list.
+# directories are covered automatically. Two lists deny files: .gitignore
+# (exclude_gitignore, mypy >= 1.16) skips local-only directories such as venvs,
+# Bazel output and the cluster-toolkit clone, and `exclude` skips tracked files.
 files = ["."]
+exclude_gitignore = true
 disallow_subclassing_any = true
 ignore_missing_imports = true
 explicit_package_bases = true
@@ -98,10 +101,7 @@ check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 exclude = [
-    '(^|/)venv/',
     '(^|/)node_modules/',
-    '(^|/)bazel-',
-    '(^|/)ctk-out/',
     '(^|/)test/regression/',
     '(^|/)dev_env\.py$',
 ]

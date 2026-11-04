@@ -321,8 +321,9 @@ check_python() {
 check_mypy() {
   # mypy is cross-module: an edit, delete or rename can break unchanged
   # importers, so fix mode runs it whenever a Python file is staged, deleted or
-  # renamed. [tool.mypy] in pyproject.toml defines the checked files, as in CI.
-  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '\.py$'; then
+  # renamed. [tool.mypy] in pyproject.toml defines the checked files, as in CI,
+  # and .gitignore files exclude local-only ones, so changes to either also run it.
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '\.pyi?$|^pyproject\.toml$|(^|/)\.gitignore$'; then
     return
   fi
 
@@ -400,10 +401,11 @@ check_terraform() {
 
 check_tflint() {
   # TFLint lints whole modules, so fix mode also runs it when a staged delete or
-  # rename removes a .tf file that the remaining module files depend on.
+  # rename removes a .tf file that the remaining module files depend on, or when
+  # its .tflint.hcl configuration changes.
   if [ "${MODE}" = "check" ]; then
     if [ -z "$(find deploy -type f -name "*.tf" || true)" ]; then return; fi
-  elif ! staged_paths_match AMD '\.tf$'; then
+  elif ! staged_paths_match AMD '\.tf$|(^|/)\.tflint\.hcl$'; then
     return
   fi
 
