@@ -24,6 +24,7 @@ the last review by the authenticated user.
 
 import json
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +91,8 @@ def fetch_pr_head(remote: str, pr_number: int, base_sha: str, head_sha: str) -> 
 def checkout_pr_head(head_sha: str) -> dict[str, Any]:
     """Checks out the PR head detached unless tracked files have local changes.
 
-    Local changes are never discarded: with a dirty worktree the checkout is
+    Local changes are never discarded: with a dirty worktree, or when git refuses
+    the checkout (e.g. an untracked file at a path the PR adds), the checkout is
     skipped and the exact command is returned for the caller to run later.
 
     Args:
@@ -100,13 +102,13 @@ def checkout_pr_head(head_sha: str) -> dict[str, Any]:
         `checked_out` and, when skipped, `checkout_command` and `reason`.
     """
     command = ["git", "checkout", "--detach", head_sha]
+    skipped = {"checked_out": False, "checkout_command": " ".join(command)}
     if _git(["status", "--porcelain", "--untracked-files=no"]).strip():
-        return {
-            "checked_out": False,
-            "checkout_command": " ".join(command),
-            "reason": "Worktree has uncommitted changes to tracked files.",
-        }
-    _git(command[1:])
+        return skipped | {"reason": "Worktree has uncommitted changes to tracked files."}
+    try:
+        _git(command[1:])
+    except HandledError as e:
+        return skipped | {"reason": f"git refused the checkout: {e.message}"}
     return {"checked_out": True}
 
 
@@ -129,16 +131,34 @@ def build_pr_meta(owner: str, repo: str, pr_number: int, data: dict[str, Any]) -
     }
 
 
-def find_last_reviewed_sha(owner: str, repo: str, pr_number: int) -> str | None:
-    """Returns the commit of the authenticated user's latest submitted (non-pending) review."""
+def _reply_only_review_ids(comments: Iterable[dict[str, Any]]) -> set[int]:
+    """Returns ids of reviews GitHub created only to wrap standalone thread replies.
+
+    Each such wrapper is pinned to the PR head at reply time, not to reviewed code.
+    """
+    reply = {c.get("pull_request_review_id") for c in comments if c.get("in_reply_to_id")}
+    root = {c.get("pull_request_review_id") for c in comments if not c.get("in_reply_to_id")}
+    return {i for i in reply - root if i is not None}
+
+
+def find_last_reviewed_sha(
+    owner: str, repo: str, pr_number: int, comments: Iterable[dict[str, Any]] = ()
+) -> str | None:
+    """Returns the commit of the authenticated user's latest real review.
+
+    Pending drafts and reply-only wrapper reviews (empty `COMMENTED` reviews whose
+    only comments are replies, per `comments`) are skipped.
+    """
     login = get_authenticated_login(_USER_AGENT)
     reviews = list_all_pages(f"/repos/{owner}/{repo}/pulls/{pr_number}/reviews", _USER_AGENT)
+    reply_only = _reply_only_review_ids(comments)
     shas = [
         r["commit_id"]
         for r in reviews
         if (r.get("user") or {}).get("login") == login
         and r.get("commit_id")
         and r.get("state") != "PENDING"
+        and not (r.get("id") in reply_only and r.get("state") == "COMMENTED" and not r.get("body"))
     ]
     return shas[-1] if shas else None
 
@@ -187,6 +207,7 @@ def measure_rereview_delta(
     head_sha: str,
     since_sha: str | None = None,
     threshold: int = DEFAULT_FULL_REVIEW_THRESHOLD,
+    comments: Iterable[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Counts lines changed since `since_sha`, defaulting to the user's last review.
 
@@ -202,6 +223,7 @@ def measure_rereview_delta(
         head_sha: Current PR head commit.
         since_sha: Explicit last reviewed commit; looked up when None.
         threshold: Changed-line count above which a full review is recommended.
+        comments: PR review comments, used to skip reply-only wrapper reviews.
 
     Returns:
         `since_sha`, `changed_lines` (None when unknown), `changed_files`,
@@ -209,7 +231,7 @@ def measure_rereview_delta(
     """
     if not since_sha:
         try:
-            since_sha = find_last_reviewed_sha(owner, repo, pr_number)
+            since_sha = find_last_reviewed_sha(owner, repo, pr_number, comments)
         except (GithubAuthError, GithubAPIError) as e:
             return _unknown_delta(None, f"Cannot look up the last review: {e}")
     if not since_sha:
@@ -259,6 +281,8 @@ def prepare_review_workspace(
     diff_path.write_text(diff, encoding="utf-8")
     if rereview_delta is not None:
         meta["rereview_delta"] = rereview_delta
+    if "threads_error" in data:
+        meta["threads_error"] = data["threads_error"]
     meta_path = out_dir / "pr_meta.json"
     _write_json(meta_path, meta)
     threads_path = out_dir / "review_threads.json"

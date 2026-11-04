@@ -54,7 +54,9 @@ def _data(**pr_overrides: Any) -> dict[str, Any]:
 class FakeGit:
     """Records git invocations and serves canned stdout per git subcommand.
 
-    `git cat-file -e <sha>^{commit}` fails for SHAs in `missing`.
+    `git cat-file -e <sha>^{commit}` fails for SHAs in `missing`. Subcommands in
+    `fail` exit non-zero, raised like `run_command` does: as `HandledError` when a
+    `handled_instruction` is given, else as `CalledProcessError`.
     """
 
     def __init__(
@@ -62,16 +64,22 @@ class FakeGit:
         status: str = "",
         diff: str = "diff --git a/a.py b/a.py\n",
         missing: frozenset[str] = frozenset(),
+        fail: frozenset[str] = frozenset(),
     ):
         self.calls: list[list[str]] = []
         self._stdout = {"status": status, "diff": diff}
         self._missing = missing
+        self._fail = fail
 
     def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
         self.calls.append(cmd)
         if cmd[1] == "cat-file":
             code = 1 if cmd[3].removesuffix("^{commit}") in self._missing else 0
             return subprocess.CompletedProcess(cmd, code, stdout="")
+        if cmd[1] in self._fail:
+            if kwargs.get("handled_instruction") is not None:
+                raise HandledError(f"Command failed with exit code 1: {' '.join(cmd)}", "fix")
+            raise subprocess.CalledProcessError(1, cmd)
         return subprocess.CompletedProcess(cmd, 0, stdout=self._stdout.get(cmd[1], ""))
 
     def subcommands(self) -> list[str]:
@@ -95,6 +103,14 @@ class TestCheckoutPrHead(unittest.TestCase):
         self.assertFalse(result["checked_out"])
         self.assertEqual(result["checkout_command"], "git checkout --detach head1")
         self.assertNotIn("checkout", git.subcommands())
+
+    def test_refused_checkout_returns_command_instead_of_raising(self):
+        git = FakeGit(fail=frozenset({"checkout"}))
+        with patch(f"{_MODULE}.run_command", git):
+            result = checkout_pr_head("head1")
+        self.assertFalse(result["checked_out"])
+        self.assertEqual(result["checkout_command"], "git checkout --detach head1")
+        self.assertIn("git refused the checkout", result["reason"])
 
 
 class TestPrepareReviewWorkspace(unittest.TestCase):
@@ -149,6 +165,14 @@ class TestPrepareReviewWorkspace(unittest.TestCase):
         self.assertFalse(result["checked_out"])
         self.assertNotIn("checkout", git.subcommands())
         self.assertNotIn("rereview_delta", meta)
+        self.assertNotIn("threads_error", meta)
+
+    def test_threads_error_is_recorded_in_meta(self):
+        data = _data() | {"threads": [], "threads_error": "GraphQL down"}
+        with tempfile.TemporaryDirectory() as tmpdir, patch(f"{_MODULE}.run_command", FakeGit()):
+            prepare_review_workspace("google", "xmc", 7, data, Path(tmpdir))
+            meta = json.loads((Path(tmpdir) / "pr_meta.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["threads_error"], "GraphQL down")
 
     def test_missing_shas_raise_before_git(self):
         git = FakeGit()
@@ -187,6 +211,24 @@ class TestReReviewDelta(unittest.TestCase):
         ]
         self.assertEqual(find_last_reviewed_sha("google", "xmc", 7), "c3")
         self.assertEqual(mock_pages.call_args.args[0], "/repos/google/xmc/pulls/7/reviews")
+
+    @patch(f"{_MODULE}.list_all_pages")
+    @patch(f"{_MODULE}.get_authenticated_login", return_value="me")
+    def test_last_reviewed_sha_skips_reply_only_wrappers(self, _login, mock_pages):
+        """A reply-only wrapper on a newer head is skipped; an empty review with roots is kept."""
+        me = {"login": "me"}
+        mock_pages.return_value = [
+            {"id": 1, "user": me, "commit_id": "reviewed", "state": "COMMENTED", "body": "R"},
+            {"id": 2, "user": me, "commit_id": "inline", "state": "COMMENTED", "body": ""},
+            {"id": 3, "user": me, "commit_id": "newer", "state": "COMMENTED", "body": ""},
+        ]
+        comments = [
+            {"id": 10, "pull_request_review_id": 1},
+            {"id": 11, "pull_request_review_id": 2},
+            {"id": 12, "pull_request_review_id": 3, "in_reply_to_id": 10},
+        ]
+        self.assertEqual(find_last_reviewed_sha("google", "xmc", 7, comments), "inline")
+        self.assertEqual(find_last_reviewed_sha("google", "xmc", 7), "newer")
 
     @patch(f"{_MODULE}.list_all_pages", return_value=[])
     @patch(f"{_MODULE}.get_authenticated_login", return_value="me")

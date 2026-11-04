@@ -434,6 +434,7 @@ def _prepare_workspace(args: argparse.Namespace, data: dict[str, Any]) -> dict[s
             head_sha,
             since_sha=args.since_sha,
             threshold=args.full_review_threshold,
+            comments=data["comments"],
         )
     if not args.out_dir:
         return {}

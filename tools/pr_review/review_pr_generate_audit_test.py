@@ -244,7 +244,13 @@ class TestReviewPRGenerateAudit(unittest.TestCase):
             self.assertEqual(report, Path(tmpdir).resolve() / "pr_rereview_audit_report.md")
             self.assertIn("FULL REVIEW RECOMMENDED", report.read_text(encoding="utf-8"))
         mock_delta.assert_called_once_with(
-            "google", "xmc", 10, "head1", since_sha="old1", threshold=200
+            "google",
+            "xmc",
+            10,
+            "head1",
+            since_sha="old1",
+            threshold=200,
+            comments=[_comment(101)],
         )
         self.assertEqual(mock_ws.call_args.kwargs["checkout"], True)
         self.assertEqual(mock_ws.call_args.kwargs["rereview_delta"], delta)
