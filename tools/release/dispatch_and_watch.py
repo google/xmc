@@ -171,10 +171,10 @@ def _validate_inputs(raw_inputs: list[str]) -> list[str]:
     """Validates repeated KEY=VALUE workflow_dispatch inputs and returns them unchanged."""
     for item in raw_inputs:
         key, sep, _ = item.partition("=")
-        if not sep or not key.strip():
+        if not sep or not key or any(ch.isspace() for ch in key):
             raise HandledError(
                 f"Invalid workflow input '{item}'.",
-                "Pass each workflow_dispatch input as --input KEY=VALUE (VALUE may be empty).",
+                "Pass each workflow_dispatch input as --input KEY=VALUE with no whitespace in KEY (VALUE may be empty).",
             )
     return raw_inputs
 

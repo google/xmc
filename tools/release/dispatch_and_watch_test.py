@@ -162,7 +162,15 @@ class DispatchAndWatchTest(unittest.TestCase):
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
     def test_invalid_input_rejected_before_dispatch(self, mock_run, mock_which):
-        for bad in ("examples_filter", "=value", " =value"):
+        bad_inputs = (
+            "examples_filter",
+            "=value",
+            " =value",
+            " examples_filter=value",
+            "examples_filter =value",
+            "examples filter=value",
+        )
+        for bad in bad_inputs:
             with self.subTest(bad=bad):
                 p = create_parser().parse_args(["--workflow", "build.yml", "--input", bad])
                 with self.assertRaises(HandledError):
