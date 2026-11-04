@@ -198,6 +198,27 @@ bazel test //test/e2e:clickhouse_3p_test //test/e2e:redpanda_3p_test \
 
 ---
 
+## BYO Vizier KinD E2E Suite (`vizier_kind_test.go`)
+
+[vizier_kind_test.go](vizier_kind_test.go) installs the [BYO Vizier reference chart](../../deploy/addons/hpo/vizier/README.md) with its KinD overlay (`values-kind.yaml`: `NodePort` Service, SQLite on the KinD default StorageClass) into a fresh test namespace, waits for the `vizier` Deployment to become Available, applies the `stable-2026a` [`vizier` Component blueprint](../../deploy/profiles/stable-2026a/components/vizier/README.md) with `parameters.endpoint` set to `vizier-service.<namespace>.svc.cluster.local:7077`, and asserts that the in-process `xmc-bridge` TCP probe (over the KinD `NodePort`) reports the component Ready with the expected `ENDPOINT`, `HOST` and `PORT` access envVars.
+
+No public Vizier image exists, so the suite expects the image in the local Docker daemon. It uses `xmc-vizier:<chart appVersion>` (`xmc-vizier:0.1.24`) and skips with a build hint when that image is missing; `XMC_VIZIER_IMAGE` names another image, and the suite fails rather than skips when that image is missing. The shared harness helpers it uses (`applyRenderedManifests`, `waitForDeploymentAvailable`, `splitImageRef`) live in [kind_3p_harness_test.go](kind_3p_harness_test.go).
+
+```bash
+# Build the Vizier server image into the local Docker daemon:
+docker build -t xmc-vizier:0.1.24 deploy/addons/hpo/vizier/image
+
+# Run the suite (provisions and tears down an ephemeral KinD cluster):
+bazel test //test/e2e:vizier_kind_test --test_output=streamed
+
+# Optionally reuse an existing KinD cluster or test another image:
+bazel test //test/e2e:vizier_kind_test \
+  --test_env=KIND_CLUSTER_NAME=xmc-dev \
+  --test_env=XMC_VIZIER_IMAGE=xmc-vizier:0.1.24 --test_output=streamed
+```
+
+---
+
 ## Component Lifecycle KinD E2E Suite (`components_lifecycle_e2e_test.go`)
 
 `TestComponentsLifecycle` reuses the KinD harness to verify `Component` lifecycle control-plane behavior. Components are 1P without a Helm manager, so no workloads run; each subtest asserts CMS state, CR status conditions, and finalizers. CRD schema, CEL, and deletion `ValidatingAdmissionPolicy` admission are covered by the hermetic `envtest` suite in [pkg/components/bridge](../../pkg/components/bridge/README.md) (`components_admission_test.go`), so this suite does not install the policy:

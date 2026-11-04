@@ -91,7 +91,7 @@ func TestProfileMigrationE2E(t *testing.T) {
 	preUpgrade := startGatewayProbe(ctx, t, h, ns, baselineImage)
 	lockedGens := lockComponentSnapshots(ctx, t, h, baseline)
 	preUpgradeStream := startClickHouseStream(ctx, t, h, ns, requireComponent(t, baseline, clickhouseComponent))
-	applyComponents(ctx, t, h, renderCandidateProfile(ctx, t, ns, overlay))
+	applyUnstructuredObjects(ctx, t, h, renderCandidateProfile(ctx, t, ns, overlay))
 	waitForGatewayRollout(ctx, t, h, ns, candidateImage)
 	newPods := waitForOldGatewayPodsGone(ctx, t, h, ns, candidateImage)
 	postRollout := tallyWorkloadLogs(fetchPodLogs(h, ns, gatewayProbePod))
@@ -174,7 +174,7 @@ func loadProfileOverlay(t *testing.T) profileOverlay {
 // Components by name.
 func deployBaselineProfile(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, baselineImage string) map[string]*unstructured.Unstructured {
 	t.Helper()
-	applyComponents(ctx, t, h, renderProfileComponents(ctx, t, ns, baselineGatewayImageTag))
+	applyUnstructuredObjects(ctx, t, h, renderProfileComponents(ctx, t, ns, baselineGatewayImageTag))
 	ready := make(map[string]*unstructured.Unstructured, len(enabledProfileComponents))
 	for _, name := range enabledProfileComponents {
 		ready[name] = waitForComponent(ctx, t, h, ns, name, "Ready", isExistingComponentReady)
@@ -244,13 +244,6 @@ func writeRunValues(t *testing.T, ns, imageTag string) string {
 		t.Fatalf("failed to write run values: %v", err)
 	}
 	return path
-}
-
-func applyComponents(ctx context.Context, t *testing.T, h *kindClusterHarness, objs []map[string]any) {
-	t.Helper()
-	for _, obj := range objs {
-		applyUnstructuredObject(ctx, t, h, obj)
-	}
 }
 
 // lockComponentSnapshots resolves the CMS snapshot of each Component at its current generation and

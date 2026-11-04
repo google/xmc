@@ -249,3 +249,6 @@ grpcurl -plaintext -d '{"parent": "owners/xmc"}' localhost:7077 vizier.VizierSer
 reflection off, `list` fails with "server does not support the reflection API"; pass the protos
 from the google-vizier package instead (`-import-path` and `-proto`), or enable reflection
 temporarily with `--set grpcReflection.enabled=true`.
+
+The manual KinD suite `//test/e2e:vizier_kind_test` installs the KinD variant and asserts that the
+`vizier` component becomes Ready; see [`test/e2e/README.md`](../../../../test/e2e/README.md).

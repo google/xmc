@@ -36,6 +36,7 @@ import (
 	"github.com/go-logr/logr/testr"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -413,6 +414,62 @@ func resolveObjectGVR(gvk schema.GroupVersionKind) schema.GroupVersionResource {
 	default:
 		return gvk.GroupVersion().WithResource(strings.ToLower(gvk.Kind) + "s")
 	}
+}
+
+// applyUnstructuredObjects server-side applies every object of objs, in order.
+func applyUnstructuredObjects(ctx context.Context, t *testing.T, h *kindClusterHarness, objs []map[string]any) {
+	t.Helper()
+	for _, obj := range objs {
+		applyUnstructuredObject(ctx, t, h, obj)
+	}
+}
+
+// applyRenderedManifests server-side applies every document of a `helm template` output, failing
+// when it holds none.
+func applyRenderedManifests(ctx context.Context, t *testing.T, h *kindClusterHarness, rendered string) {
+	t.Helper()
+	objs, err := decodeYAMLDocuments(rendered)
+	if err != nil || len(objs) == 0 {
+		t.Fatalf("failed to decode rendered manifests (got %d objects): %v", len(objs), err)
+	}
+	applyUnstructuredObjects(ctx, t, h, objs)
+}
+
+// waitForDeploymentAvailable waits until the named Deployment reports its Available condition.
+func waitForDeploymentAvailable(ctx context.Context, t *testing.T, h *kindClusterHarness, ns, name string) {
+	t.Helper()
+	var last *appsv1.Deployment
+	var lastErr error
+	ok := waitUntil(ctx, 3*time.Minute, time.Second, func(pollCtx context.Context) bool {
+		last, lastErr = h.clientset.AppsV1().Deployments(ns).Get(pollCtx, name, metav1.GetOptions{})
+		if lastErr != nil {
+			return false
+		}
+		for _, cond := range last.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+		return false
+	})
+	if !ok {
+		t.Fatalf("timed out waiting for Deployment %s/%s to become Available (last err: %v); last object: %+v", ns, name, lastErr, last)
+	}
+}
+
+// splitImageRef splits an image reference into the repository and tag that Helm charts take as
+// separate values, defaulting the tag to "latest". A colon before the last slash belongs to a
+// registry port, not to the tag. Digest references are rejected because the charts take no
+// digest value.
+func splitImageRef(image string) (repository, tag string, err error) {
+	if strings.Contains(image, "@") {
+		return "", "", fmt.Errorf("image %q is a digest reference; use a tag", image)
+	}
+	i := strings.LastIndex(image, ":")
+	if i < 0 || i < strings.LastIndex(image, "/") {
+		return image, "latest", nil
+	}
+	return image[:i], image[i+1:], nil
 }
 
 // waitUntil polls cond every interval until it returns true or timeout elapses. cond receives the
@@ -859,6 +916,32 @@ func TestKind3PHarnessUnit(t *testing.T) {
 		t.Error("expected isComponentReady and locateHelmComponentCRDPath to succeed")
 	}
 	verifyHarnessCMSAuth(t)
+	verifySplitImageRef(t)
+}
+
+func verifySplitImageRef(t *testing.T) {
+	t.Helper()
+	tests := []struct {
+		image, wantRepository, wantTag string
+		wantErr                        bool
+	}{
+		{image: "xmc-vizier", wantRepository: "xmc-vizier", wantTag: "latest"},
+		{image: "xmc-vizier:0.1.24", wantRepository: "xmc-vizier", wantTag: "0.1.24"},
+		{image: "registry.local:5000/xmc-vizier", wantRepository: "registry.local:5000/xmc-vizier", wantTag: "latest"},
+		{image: "registry.local:5000/team/xmc-vizier:v1", wantRepository: "registry.local:5000/team/xmc-vizier", wantTag: "v1"},
+		{image: "xmc-vizier@sha256:0123abcd", wantErr: true},
+		{image: "xmc-vizier:0.1.24@sha256:0123abcd", wantErr: true},
+	}
+	for _, tt := range tests {
+		repository, tag, err := splitImageRef(tt.image)
+		if gotErr := err != nil; gotErr != tt.wantErr {
+			t.Errorf("splitImageRef(%q) error = %v, want error %v", tt.image, err, tt.wantErr)
+			continue
+		}
+		if repository != tt.wantRepository || tag != tt.wantTag {
+			t.Errorf("splitImageRef(%q) = (%q, %q), want (%q, %q)", tt.image, repository, tag, tt.wantRepository, tt.wantTag)
+		}
+	}
 }
 
 func verifyHarnessCMSAuth(t *testing.T) {

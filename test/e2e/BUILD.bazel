@@ -60,6 +60,7 @@ _KIND_3P_DEPS = [
     "//pkg/components/cms",
     "//pkg/components/store/memory",
     "@com_github_go_logr_logr//testr",
+    "@io_k8s_api//apps/v1:apps",
     "@io_k8s_api//core/v1:core",
     "@io_k8s_apimachinery//pkg/api/errors",
     "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -161,6 +162,32 @@ go_test(
     ],
 )
 
+# Installs the BYO Vizier reference chart (KinD overlay) and registers it as the stable-2026a
+# `vizier` component. The Vizier image must already be built into the local Docker daemon; see
+# deploy/addons/hpo/vizier/README.md.
+go_test(
+    name = "vizier_kind_test",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "kind_3p_harness_test.go",
+        "vizier_kind_test.go",
+    ],
+    data = [
+        "//deploy/addons/hpo/vizier:chart",
+        "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026a/components/vizier:chart",
+    ],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS,
+)
+
 # Test-only fixtures of profile_migration_test: admin values, the stable-2026b overlay and the
 # rolling-gateway stand-in chart.
 filegroup(
@@ -192,7 +219,6 @@ go_test(
     ],
     deps = _KIND_3P_DEPS + [
         "@com_github_google_go_cmp//cmp",
-        "@io_k8s_api//apps/v1:apps",
         "@io_k8s_apimachinery//pkg/api/resource",
     ],
 )
