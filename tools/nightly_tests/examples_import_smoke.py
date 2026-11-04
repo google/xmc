@@ -238,30 +238,14 @@ def parse_verify_modules(
 
 
 def resolve_workflow_path(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
-    """Resolve the nightly workflow YAML path from `repo_dir` or default runfiles.
-
-    Args:
-        repo_dir: Optional repository root override; None or `.` uses CWD/runfiles.
-
-    Returns:
-        Path to `.github/workflows/nightly-examples-e2e.yml`.
-    """
+    """Resolve `.github/workflows/nightly-examples-e2e.yml` from `repo_dir` or default root."""
     if repo_dir and repo_dir != pathlib.Path("."):
         return repo_dir / _WORKFLOW_REL
     return _WORKFLOW_REL if _WORKFLOW_REL.is_file() else DEFAULT_WORKFLOW
 
 
 def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
-    """Validate a nightly `examples_filter` input against `matrix.example.id` entries.
-
-    Args:
-        raw_filter: Comma-separated `examples_filter` input string (empty allows all).
-        workflow_text: Raw YAML contents of `nightly-examples-e2e.yml`.
-
-    Raises:
-        ValueError: If the workflow contains no `matrix.example.id` entries or if any
-            comma-delimited token does not match a known ID case-insensitively.
-    """
+    """Validate comma-separated `examples_filter` IDs against `matrix.example.id` entries."""
     if not raw_filter:
         return
 

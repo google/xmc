@@ -21,7 +21,6 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -332,75 +331,41 @@ def _watch_run_outcome(
     }
 
 
-@dataclass(frozen=True)
-class _DispatchOptions:
-    """Validated CLI parameters for workflow dispatch and run correlation."""
-
-    workflow: str
-    ref: str
-    target_sha: str
-    find_existing: bool
-    inputs: list[str]
-    state_file: str | None
-    repo_dir: Path | None
-    poll_attempts: int
-    poll_interval: float
-
-
-def _parse_dispatch_options(args: argparse.Namespace) -> _DispatchOptions:
-    """Normalizes and validates CLI arguments prior to GitHub Actions invocation."""
-    workflow = str(args.workflow)
-    raw_ref = args.ref if hasattr(args, "ref") else "main"
-    ref = _validate_ref(str(raw_ref))
-    target_sha = str(getattr(args, "target_sha", "") or "").strip()
-    find_existing = bool(getattr(args, "find_existing", False))
-    inputs = list(getattr(args, "input", None) or [])
-    raw_repo_dir = getattr(args, "repo_dir", None)
-    repo_dir = Path(raw_repo_dir) if raw_repo_dir else None
-
-    if find_existing and inputs:
+def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
+    """Validates CLI flags, workflow inputs, and GitHub CLI availability; returns cleaned ref."""
+    ref = _validate_ref(str(args.ref))
+    if args.find_existing and args.input:
         raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
-    _validate_inputs(workflow, inputs, repo_dir)
+    _validate_inputs(args.workflow, args.input, repo_dir)
     if not shutil.which("gh"):
         raise HandledError(
             "GitHub CLI ('gh') is not on PATH.",
             "Ensure 'gh' is on PATH and authenticate with 'gh auth login'.",
         )
-
-    return _DispatchOptions(
-        workflow=workflow,
-        ref=ref,
-        target_sha=target_sha,
-        find_existing=find_existing,
-        inputs=inputs,
-        state_file=getattr(args, "state_file", None),
-        repo_dir=repo_dir,
-        poll_attempts=int(getattr(args, "poll_attempts", 12)),
-        poll_interval=float(getattr(args, "poll_interval", 5.0)),
-    )
+    return ref
 
 
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
-    opts = _parse_dispatch_options(args)
+    repo_dir = Path(args.repo_dir) if args.repo_dir else None
+    ref = _validate_args(args, repo_dir)
+    target_sha = args.target_sha.strip()
 
-    if opts.find_existing:
-        existing = _find_existing_run(
-            opts.workflow, opts.ref, opts.target_sha, opts.state_file, opts.repo_dir
-        )
+    if args.find_existing:
+        existing = _find_existing_run(args.workflow, ref, target_sha, args.state_file, repo_dir)
         if existing:
             return existing
 
-    target_sha = opts.target_sha or _resolve_remote_sha(opts.ref, opts.repo_dir)
-    dispatched_at = _dispatch_workflow(opts.workflow, opts.ref, opts.inputs, opts.repo_dir)
+    target_sha = target_sha or _resolve_remote_sha(ref, repo_dir)
+    dispatched_at = _dispatch_workflow(args.workflow, ref, args.input, repo_dir)
     run_data = _poll_for_run(
-        opts.workflow,
-        opts.ref,
+        args.workflow,
+        ref,
         target_sha,
         dispatched_at,
-        opts.poll_attempts,
-        opts.poll_interval,
-        opts.repo_dir,
+        args.poll_attempts,
+        args.poll_interval,
+        repo_dir,
     )
 
     run_id = int(run_data["databaseId"])
@@ -409,7 +374,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
 
     if target_sha and not run_sha.startswith(target_sha):
         _update_state_file(
-            opts.state_file,
+            args.state_file,
             target_sha=target_sha,
             run_sha=run_sha,
             run_id=run_id,
@@ -424,7 +389,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             "page_url": "",
         }
 
-    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, opts.state_file, opts.repo_dir)
+    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, args.state_file, repo_dir)
 
 
 def create_parser() -> argparse.ArgumentParser:

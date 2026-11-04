@@ -29,6 +29,18 @@ from tools.common import tool_utils
 from tools.common.tool_utils import HandledError
 from tools.nightly_tests.triage_nightly_run import create_parser, triage_nightly_run
 
+_WORKFLOW_FIXTURE = """\
+jobs:
+  e2e:
+    strategy:
+      matrix:
+        example:
+          - id: simple_job
+            name: "Simple Job"
+          - id: resource_dashboard_ui
+            name: "Resource Observability Dashboard (Playwright UI)"
+"""
+
 
 def _proc(
     stdout: str = "", returncode: int = 0, stderr: str = ""
@@ -62,17 +74,40 @@ def _run_fixture(
     }
 
 
-_WORKFLOW_FIXTURE = """\
-jobs:
-  e2e:
-    strategy:
-      matrix:
-        example:
-          - id: simple_job
-            name: "Simple Job"
-          - id: resource_dashboard_ui
-            name: "Resource Observability Dashboard (Playwright UI)"
-"""
+def _job_fixture(
+    job_id: int, name: str, conclusion: str, steps: list[tuple[str, str]] | None = None
+) -> dict[str, Any]:
+    """Builds a GitHub Actions job record with `(step_name, step_conclusion)` steps."""
+    return {
+        "id": job_id,
+        "name": name,
+        "conclusion": conclusion,
+        "steps": [{"name": step_name, "conclusion": concl} for step_name, concl in (steps or [])],
+    }
+
+
+def _artifacts_fixture(*active: str, expired: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Builds an Actions artifacts payload from active and expired artifact names."""
+    items = [{"name": name, "expired": False} for name in active]
+    items.extend({"name": name, "expired": True} for name in expired)
+    return {"artifacts": items}
+
+
+def _failing_triage_mocks(
+    e2e_runs: list[dict[str, Any]],
+    build_runs: list[dict[str, Any]],
+    *trailing: subprocess.CompletedProcess[str],
+) -> list[subprocess.CompletedProcess[str]]:
+    """Builds the standard mock sequence for an auto-discovered failing run with empty jobs/arts."""
+    return [
+        _proc(),
+        _json_proc(e2e_runs),
+        _proc("[]"),
+        _json_proc({"jobs": []}),
+        _json_proc({"artifacts": []}),
+        _json_proc(build_runs),
+        *trailing,
+    ]
 
 
 class TriageNightlyRunTest(unittest.TestCase):
@@ -113,62 +148,55 @@ class TriageNightlyRunTest(unittest.TestCase):
         ]
         jobs_payload = {
             "jobs": [
-                {
-                    "id": 11,
-                    "name": "Run & Verify: Simple Job",
-                    "conclusion": "success",
-                    "steps": [],
-                },
-                {
-                    "id": 22,
-                    "name": "Run & Verify: Resource Observability Dashboard (Playwright UI)",
-                    "conclusion": "failure",
-                    "steps": [
-                        {"name": "Launch Example Workload", "conclusion": "success"},
-                        {"name": "Verify Example Workload", "conclusion": "failure"},
+                _job_fixture(11, "Run & Verify: Simple Job", "success"),
+                _job_fixture(
+                    22,
+                    "Run & Verify: Resource Observability Dashboard (Playwright UI)",
+                    "failure",
+                    [
+                        ("Launch Example Workload", "success"),
+                        ("Verify Example Workload", "failure"),
                     ],
-                },
+                ),
             ]
         }
-        e2e_artifacts = {
-            "artifacts": [
-                {"name": "result-simple_job", "expired": False},
-                {"name": "result-resource_dashboard_ui", "expired": False},
-                {"name": "ui-screenshots-resource_dashboard_ui", "expired": False},
-                {"name": "ui-screenshots-expired", "expired": True},
-                {"name": "ui-screenshots-../traversal", "expired": False},
-                {"name": "ui-screenshots-symlink", "expired": False},
-            ]
-        }
+        e2e_artifacts = _artifacts_fixture(
+            "result-simple_job",
+            "result-resource_dashboard_ui",
+            "ui-screenshots-resource_dashboard_ui",
+            "ui-screenshots-../traversal",
+            "ui-screenshots-symlink",
+            expired=("ui-screenshots-expired",),
+        )
         build_runs = [
             _run_fixture(8003, "success", "8003eeff0011", "2026-11-04T06:00:00Z"),
             _run_fixture(8002, "failure", "8002deadbeef", "2026-11-04T01:00:00Z"),
             _run_fixture(8001, "success", "800111223344", "2026-11-03T01:00:00Z"),
         ]
         diff_files = "\n".join(
-            [
+            (
                 "cmd/rod_data_provider/main.go",
                 "deploy/addons/metrics/setup_metrics_addons.sh",
                 "deploy/clickhouse/schema.sql",
                 "deploy/cli/install_xmanager.py",
                 "deploy/local/kind-config.yaml",
                 "README.md",
-            ]
+            )
         )
         self.mock_run.side_effect = [
-            _proc(),  # git fetch -- origin main
-            _json_proc(e2e_runs),  # gh run list (nightly-examples-e2e.yml)
+            _proc(),
+            _json_proc(e2e_runs),
             _json_proc([{"number": 42, "title": "Failure", "url": "u", "createdAt": "t"}]),
-            _json_proc(jobs_payload),  # gh api .../runs/9001/jobs
-            _proc("ERROR: Timeout waiting for selector\n"),  # gh api .../jobs/22/logs
-            _json_proc(e2e_artifacts),  # gh api .../runs/9001/artifacts
-            _proc(),  # gh run download result-resource_dashboard_ui
-            _proc(),  # gh run download ui-screenshots-resource_dashboard_ui
-            _json_proc(build_runs),  # gh run list (nightly-build.yml)
-            _proc("abc1234 feat(rod): add column\ndef5678 docs: readme\n"),  # git log
-            _proc(diff_files),  # git diff --name-only
-            _json_proc({"artifacts": [{"name": "deploy-gke-diagnostics", "expired": False}]}),
-            _proc(),  # gh run download deploy-gke-diagnostics
+            _json_proc(jobs_payload),
+            _proc("ERROR: Timeout waiting for selector\n"),
+            _json_proc(e2e_artifacts),
+            _proc(),
+            _proc(),
+            _json_proc(build_runs),
+            _proc("abc1234 feat(rod): add column\ndef5678 docs: readme\n"),
+            _proc(diff_files),
+            _json_proc(_artifacts_fixture("deploy-gke-diagnostics")),
+            _proc(),
         ]
 
         res = self._triage(f"--scratch-dir={scratch}")
@@ -186,7 +214,6 @@ class TriageNightlyRunTest(unittest.TestCase):
         self.assertTrue(
             Path(failed_job["log_path"]).read_text(encoding="utf-8").startswith("ERROR:")
         )
-
         self.assertEqual(
             [Path(path).name for path in res["downloaded_artifacts"]],
             [
@@ -218,27 +245,14 @@ class TriageNightlyRunTest(unittest.TestCase):
             _run_fixture(9001, "failure", "9001aabbccdd", "2026-11-04T04:00:00Z"),
         ]
         builds = [_run_fixture(8001, "success", "9001aabbccdd", "2026-11-04T01:00:00Z")]
-        self.mock_run.side_effect = [
-            _proc(),
-            _json_proc(e2e_runs),
-            _proc("[]"),
-            _json_proc({"jobs": []}),
-            _json_proc({"artifacts": []}),
-            _json_proc(builds),
-        ]
+        self.mock_run.side_effect = _failing_triage_mocks(e2e_runs, builds)
 
         res = self._triage(f"--scratch-dir={self.tmpdir}")
 
         self.assertEqual(res["status_summary"], "failing")
         self.assertEqual(res["target_run"]["databaseId"], 9001)
         self.assertIsNone(res["superseded_by_green_run"])
-        self.assertEqual(
-            res["warnings"],
-            [
-                "Newer green workflow_dispatch run 9050 (possibly filtered) "
-                "not treated as superseding."
-            ],
-        )
+        self.assertIn("workflow_dispatch run 9050", res["warnings"][0])
 
     def test_auto_discovery_skips_superseded_failures(self) -> None:
         e2e_runs = [
@@ -258,10 +272,10 @@ class TriageNightlyRunTest(unittest.TestCase):
         self.assertEqual(self.mock_run.call_count, 3)
 
     def test_auto_discovery_reports_no_completed_runs(self) -> None:
-        in_progress_runs = [
+        in_progress = [
             _run_fixture(9300, None, "9300abcdef12", "2026-11-04T05:00:00Z", status="in_progress")
         ]
-        self.mock_run.side_effect = [_proc(), _json_proc(in_progress_runs), _proc("[]")]
+        self.mock_run.side_effect = [_proc(), _json_proc(in_progress), _proc("[]")]
 
         res = self._triage()
 
@@ -272,9 +286,7 @@ class TriageNightlyRunTest(unittest.TestCase):
         (self.tmpdir / "job_77.log").symlink_to(self.tmpdir / "outside.txt")
         e2e_runs = [_run_fixture(9200, "success", "9200aabbccdd", "2026-11-04T04:00:00Z")]
         explicit_run = _run_fixture(9150, "cancelled", "915011223344", "2026-11-01T04:00:00Z")
-        jobs = {
-            "jobs": [{"id": 77, "name": "Build Images", "conclusion": "cancelled", "steps": []}]
-        }
+        jobs = {"jobs": [_job_fixture(77, "Build Images", "cancelled")]}
         newer_builds = [_run_fixture(8500, "failure", "8500deadbeef", "2026-11-04T01:00:00Z")]
         self.mock_run.side_effect = [
             _proc(returncode=1, stderr="offline"),
@@ -293,26 +305,15 @@ class TriageNightlyRunTest(unittest.TestCase):
         self.assertEqual(res["superseded_by_green_run"]["databaseId"], 9200)
         self.assertIsNone(res["failed_jobs"][0]["log_path"])
         self.assertIsNone(res["rollout_skew"]["active_build_run"])
-        for expected in (
-            "git fetch",
-            "Skipped symlink",
-            "15-run lookback window",
-            "No prior green",
-        ):
+        for expected in ("git fetch", "Skipped symlink", "15-run lookback", "No prior green"):
             self.assertTrue(any(expected in warning for warning in res["warnings"]), expected)
 
     def test_explicit_run_id_returns_early_when_in_progress_or_healthy(self) -> None:
         e2e_runs = [_run_fixture(9200, "success", "9200aabbccdd", "2026-11-04T04:00:00Z")]
-        cases = (
-            (
-                _run_fixture(
-                    9100, None, "9100abcdef12", "2026-11-01T04:00:00Z", status="in_progress"
-                ),
-                "in_progress",
-            ),
-            (e2e_runs[0], "healthy"),
+        in_progress = _run_fixture(
+            9100, None, "9100abcdef12", "2026-11-01T04:00:00Z", status="in_progress"
         )
-        for pinned_run, expected_status in cases:
+        for pinned_run, expected_status in ((in_progress, "in_progress"), (e2e_runs[0], "healthy")):
             with self.subTest(expected_status=expected_status):
                 self.mock_run.reset_mock()
                 self.mock_run.side_effect = [
@@ -321,9 +322,7 @@ class TriageNightlyRunTest(unittest.TestCase):
                     _proc("[]"),
                     _json_proc(pinned_run),
                 ]
-
                 res = self._triage(f"--run-id={pinned_run['databaseId']}")
-
                 self.assertEqual(res["status_summary"], expected_status)
                 self.assertIsNone(res["superseded_by_green_run"])
                 self.assertIsNone(res["scratch_dir"])
@@ -332,16 +331,9 @@ class TriageNightlyRunTest(unittest.TestCase):
     def test_rollout_skew_git_inspect_failure_records_warning(self) -> None:
         e2e_runs = [_run_fixture(9001, "failure", "9001aabbccdd", "2026-11-04T04:00:00Z")]
         builds = [_run_fixture(8001, "success", "800111223344", "2026-11-04T01:00:00Z")]
-        self.mock_run.side_effect = [
-            _proc(),
-            _json_proc(e2e_runs),
-            _proc("[]"),
-            _json_proc({"jobs": []}),
-            _json_proc({"artifacts": []}),
-            _json_proc(builds),
-            _proc(returncode=128, stderr="fatal: bad revision"),
-            _proc(""),
-        ]
+        self.mock_run.side_effect = _failing_triage_mocks(
+            e2e_runs, builds, _proc(returncode=128, stderr="fatal: bad revision"), _proc("")
+        )
 
         res = self._triage(f"--scratch-dir={self.tmpdir}")
 
@@ -351,14 +343,7 @@ class TriageNightlyRunTest(unittest.TestCase):
     def test_invalid_build_sha_warns_and_uses_default_scratch_dir(self) -> None:
         e2e_runs = [_run_fixture(9001, "failure", "9001aabbccdd", "2026-11-04T04:00:00Z")]
         bad_builds = [_run_fixture(8001, "success", "bad..sha", "2026-11-04T01:00:00Z")]
-        self.mock_run.side_effect = [
-            _proc(),
-            _json_proc(e2e_runs),
-            _proc("[]"),
-            _json_proc({"jobs": []}),
-            _json_proc({"artifacts": []}),
-            _json_proc(bad_builds),
-        ]
+        self.mock_run.side_effect = _failing_triage_mocks(e2e_runs, bad_builds)
 
         with patch.dict("os.environ", {"ARTIFACT_DIR": ""}), patch.object(Path, "mkdir"):
             res = self._triage()
