@@ -167,10 +167,23 @@ def _find_existing_run(
     return None
 
 
-def _dispatch_workflow(workflow: str, ref: str, repo_dir: Path | None) -> str:
-    """Dispatches workflow run and returns ISO timestamp of dispatch."""
+def _validate_inputs(raw_inputs: list[str]) -> list[str]:
+    """Validates repeated KEY=VALUE workflow_dispatch inputs and returns them unchanged."""
+    for item in raw_inputs:
+        key, sep, _ = item.partition("=")
+        if not sep or not key.strip():
+            raise HandledError(
+                f"Invalid workflow input '{item}'.",
+                "Pass each workflow_dispatch input as --input KEY=VALUE (VALUE may be empty).",
+            )
+    return raw_inputs
+
+
+def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
+    """Dispatches workflow run with optional inputs and returns ISO timestamp of dispatch."""
     dispatched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    res = _run_gh(["workflow", "run", workflow, "--ref", ref], repo_dir)
+    input_args = [arg for item in inputs for arg in ("-f", item)]
+    res = _run_gh(["workflow", "run", workflow, "--ref", ref, *input_args], repo_dir)
     if res.returncode != 0:
         raise HandledError(
             f"Failed to dispatch workflow '{workflow}': {res.stderr.strip()}",
@@ -282,15 +295,21 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     target_sha = (getattr(args, "target_sha", "") or "").strip()
     state_file = getattr(args, "state_file", None)
     repo_dir = Path(args.repo_dir) if getattr(args, "repo_dir", None) else None
+    inputs = _validate_inputs(getattr(args, "input", None) or [])
 
     # 1. Check for existing successful run if --find-existing
     if getattr(args, "find_existing", False):
+        if inputs:
+            raise HandledError(
+                "--find-existing cannot be combined with --input.",
+                "Existing runs cannot be matched by workflow inputs; dispatch a fresh run instead.",
+            )
         existing = _find_existing_run(workflow, ref, target_sha, state_file, repo_dir)
         if existing:
             return existing
 
     # 2. Dispatch workflow run
-    dispatched_at = _dispatch_workflow(workflow, ref, repo_dir)
+    dispatched_at = _dispatch_workflow(workflow, ref, inputs, repo_dir)
 
     # 3. Poll for registered workflow run matching target_sha & timestamp
     run_data = _poll_for_run(
@@ -343,6 +362,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Reuse existing successful run.",
     )
     p.add_argument("--state-file", help="Path to JSON state file.")
+    p.add_argument(
+        "--input",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="workflow_dispatch input passed to 'gh workflow run -f' (repeatable).",
+    )
     p.add_argument("--poll-interval", type=float, default=5.0, help="Poll interval.")
     p.add_argument("--poll-attempts", type=int, default=12, help="Max poll attempts.")
     p.add_argument("--repo-dir", default=".", help="Repository root.")

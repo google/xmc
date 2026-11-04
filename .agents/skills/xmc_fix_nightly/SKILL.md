@@ -107,52 +107,28 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 ## Stage 5 — Trigger Nightly Examples E2E on the PR Branch to Prove the Fix
 
 1. **Select Verification Workflow Scope**:
-   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `-f examples_filter="<id>"` using the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (e.g., `resource_dashboard_ui` rather than the module name `resource_observability_dashboard_ui_test`, as an unmatched ID runs no examples and proves nothing), or run the full matrix when shared SDK/installer/workflow files changed.
+   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Set `examples_filter` to the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (e.g., `resource_dashboard_ui` rather than the module name `resource_observability_dashboard_ui_test`, as an unmatched ID runs no examples and proves nothing), or leave it empty to run the full matrix when shared SDK/installer/workflow files changed.
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the PR Branch**:
-   Verify the pushed remote commit that GitHub Actions executes, never local `HEAD`, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants). Fetch the branch first so `origin/${BRANCH_NAME}` is current:
+   Dispatch with `tools/release/dispatch_and_watch.py`, which records the dispatch time, polls for the new run, verifies its commit against the pushed remote branch (never local `HEAD`), watches it to completion, and persists the outcome, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants):
    ```bash
    SLUG="${SLUG:-<kebab-case-slug>}"
    BRANCH_NAME="fix/nightly-${SLUG}"
+   EXAMPLES_FILTER="<matrix_example_id_or_empty_for_full_suite>"
 
    git fetch origin "${BRANCH_NAME}"
+   TARGET_SHA="$(git rev-parse --verify "origin/${BRANCH_NAME}")"
+   : "${TARGET_SHA:?origin/${BRANCH_NAME} not found}"
+
+   PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+     --workflow nightly-examples-e2e.yml \
+     --ref "${BRANCH_NAME}" \
+     --target-sha "${TARGET_SHA}" \
+     --input "examples_filter=${EXAMPLES_FILTER}" \
+     --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
    ```
-   - **Targeted example(s)**: Print the dispatch time immediately before dispatching, and record it for the lookup:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-     EXAMPLES_FILTER="<matrix_example_id>"
-
-     date -u +%Y-%m-%dT%H:%M:%SZ
-     gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
-     ```
-     Find the dispatched run. `--created` excludes older runs on the same commit, such as an earlier dispatch with a different `examples_filter`, so they cannot be mistaken for proof. If the list is empty, the new run has not registered yet, so re-run this single command after a few seconds. If it is still empty after about a minute, check the Actions UI for the run and for local clock skew. If more than one run is listed, stop and inspect them instead of picking one:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-     DISPATCHED_AT="<printed_dispatch_time>"
-
-     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
-       --event workflow_dispatch --commit "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
-       --created ">=${DISPATCHED_AT}" --json databaseId,status,conclusion,headSha,createdAt,url
-     ```
-     Watch it to completion. Only a `success` conclusion is proof. If it ends `cancelled` or `timed_out`, inspect why before dispatching again:
-     ```bash
-     VERIFY_RUN_ID="<verify_run_id>"
-     gh run watch "${VERIFY_RUN_ID}" --repo google/xmc --exit-status --interval 15
-     ```
-   - **Full suite (unfiltered)**:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-
-     PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
-       --workflow nightly-examples-e2e.yml \
-       --ref "${BRANCH_NAME}" \
-       --target-sha "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
-       --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
-     ```
+   Only `"conclusion": "success"` in the JSON result is proof. Investigate `failure`, `cancelled`, `timed_out`, or `sha_mismatch` (and the listed `failed_jobs`) before dispatching again.
 
 3. **Synchronize Draft PR Description & Report Proof**:
    Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `origin/${BRANCH_NAME}`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.

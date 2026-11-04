@@ -97,6 +97,93 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["run_id"], 202)
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
+        dispatch_cmd = mock_run.call_args_list[0].args[0]
+        self.assertEqual(dispatch_cmd, ["gh", "workflow", "run", "build.yml", "--ref", "main"])
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_dispatch_forwards_inputs(self, mock_run, mock_which):
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps(
+                    [
+                        {
+                            "databaseId": 210,
+                            "headSha": "target_sha",
+                            "url": "run_url",
+                            "createdAt": "2099-01-01T00:00:00Z",
+                        }
+                    ]
+                ),
+            ),  # list
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
+            subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=json.dumps({"conclusion": "success", "jobs": []}),
+            ),  # view
+        ]
+        p = create_parser().parse_args(
+            [
+                "--workflow",
+                "nightly-examples-e2e.yml",
+                "--ref",
+                "fix/nightly-example",
+                "--target-sha",
+                "target_sha",
+                "--input",
+                "examples_filter=resource_dashboard_ui",
+                "--input",
+                "xmanager_version=",
+            ]
+        )
+        res = dispatch_and_watch(p)
+        self.assertEqual(res["conclusion"], "success")
+        dispatch_cmd = mock_run.call_args_list[0].args[0]
+        self.assertEqual(
+            dispatch_cmd,
+            [
+                "gh",
+                "workflow",
+                "run",
+                "nightly-examples-e2e.yml",
+                "--ref",
+                "fix/nightly-example",
+                "-f",
+                "examples_filter=resource_dashboard_ui",
+                "-f",
+                "xmanager_version=",
+            ],
+        )
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_invalid_input_rejected_before_dispatch(self, mock_run, mock_which):
+        for bad in ("examples_filter", "=value", " =value"):
+            with self.subTest(bad=bad):
+                p = create_parser().parse_args(["--workflow", "build.yml", "--input", bad])
+                with self.assertRaises(HandledError):
+                    dispatch_and_watch(p)
+        mock_run.assert_not_called()
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_find_existing_with_input_rejected(self, mock_run, mock_which):
+        p = create_parser().parse_args(
+            [
+                "--workflow",
+                "build.yml",
+                "--find-existing",
+                "--input",
+                "examples_filter=simple_job",
+            ]
+        )
+        with self.assertRaises(HandledError):
+            dispatch_and_watch(p)
+        mock_run.assert_not_called()
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")

@@ -187,7 +187,7 @@ python3 tools/release/publish_release.py --tag 0.6.0 --notes-file /tmp/release_n
 
 ## 6. Workflow Dispatch & Monitoring (`dispatch_and_watch.py`)
 
-`dispatch_and_watch.py` is a streamlined CLI helper tool that triggers GitHub Actions workflows, polls for run registration with commit SHA verification, watches execution to completion, extracts GitHub Pages URLs, and updates release state files.
+`dispatch_and_watch.py` is a streamlined CLI helper tool that triggers GitHub Actions workflows (optionally with `workflow_dispatch` inputs), polls for run registration with commit SHA verification, watches execution to completion, extracts GitHub Pages URLs, and updates release state files.
 
 ### CLI Usage
 
@@ -204,6 +204,13 @@ python3 tools/release/dispatch_and_watch.py \
   --target-sha "$(git rev-parse origin/main)" \
   --find-existing \
   --state-file /tmp/release_state.json
+
+# Dispatch a branch run with workflow_dispatch inputs (repeat --input per key)
+python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-examples-e2e.yml \
+  --ref "fix/nightly-<slug>" \
+  --target-sha "$(git rev-parse --verify origin/fix/nightly-<slug>)" \
+  --input "examples_filter=resource_dashboard_ui"
 ```
 
 ### CLI Arguments Reference
@@ -213,7 +220,8 @@ python3 tools/release/dispatch_and_watch.py \
 | `--workflow` | `-w` | *(required)* | Workflow filename (e.g. `nightly-build.yml`) |
 | `--target-sha` | `-s`, `--sha` | `""` | Expected git commit SHA to correlate with the workflow run |
 | `--ref` | `-r` | `main` | Target git branch or reference |
-| `--find-existing` | | `false` | Check for and reuse an existing successful run matching `target_sha` |
+| `--find-existing` | | `false` | Check for and reuse an existing successful run matching `target_sha` (rejected with `--input`, since existing runs cannot be matched by inputs) |
+| `--input` | | `[]` | Repeatable `KEY=VALUE` `workflow_dispatch` input forwarded as `gh workflow run -f KEY=VALUE` (`VALUE` may be empty) |
 | `--state-file` | | `None` | Path to JSON state file to persist run metadata and outcomes |
 | `--poll-interval` | | `5.0` | Seconds to wait between polling attempts for run registration |
 | `--poll-attempts` | | `12` | Maximum number of polling attempts before timing out |
