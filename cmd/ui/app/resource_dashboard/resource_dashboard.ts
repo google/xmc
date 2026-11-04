@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { DOCUMENT } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -24,6 +23,8 @@ import {
   signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
@@ -52,7 +53,10 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
-import { readJobsFullWidthCookie, writeJobsFullWidthCookie } from './jobs_layout_preference';
+import {
+  readJobsFullWidthPreference,
+  writeJobsFullWidthPreference,
+} from './jobs_layout_preference';
 import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
 
@@ -67,6 +71,8 @@ import { mapPeriodToRangePreset } from './resource_velocity';
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    MatButtonModule,
+    MatIconModule,
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,
@@ -77,7 +83,6 @@ import { mapPeriodToRangePreset } from './resource_velocity';
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
   private readonly autoReloadService = inject(AutoReloadService);
-  private readonly document = inject(DOCUMENT);
   private readonly route = inject(ActivatedRoute);
   private readonly resourceService = inject(ResourceService);
 
@@ -92,7 +97,13 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
-  protected readonly isJobsFullWidth = signal<boolean>(readJobsFullWidthCookie(this.document));
+  protected readonly isJobsFullWidth = signal<boolean>(readJobsFullWidthPreference());
+  protected readonly fullWidthToggleIcon = computed(() =>
+    this.isJobsFullWidth() ? 'fullscreen_exit' : 'fullscreen',
+  );
+  protected readonly fullWidthToggleLabel = computed(() =>
+    this.isJobsFullWidth() ? 'Exit full width' : 'View in full width',
+  );
 
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
 
@@ -239,9 +250,10 @@ export class ResourceDashboard implements OnInit, OnDestroy {
     this.activeQuery.set(query);
   }
 
-  protected onJobsFullWidthChange(isFullWidth: boolean): void {
-    this.isJobsFullWidth.set(isFullWidth);
-    writeJobsFullWidthCookie(this.document, isFullWidth);
+  protected toggleJobsFullWidth(): void {
+    const nextValue = !this.isJobsFullWidth();
+    this.isJobsFullWidth.set(nextValue);
+    writeJobsFullWidthPreference(nextValue);
   }
 }
 

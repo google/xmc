@@ -30,9 +30,9 @@ import {
 } from 'app/testing/test';
 
 import {
-  JOBS_FULL_WIDTH_COOKIE_NAME,
-  readJobsFullWidthCookie,
-  writeJobsFullWidthCookie,
+  JOBS_FULL_WIDTH_STORAGE_KEY,
+  readJobsFullWidthPreference,
+  writeJobsFullWidthPreference,
 } from './jobs_layout_preference';
 import { ResourceDashboard } from './resource_dashboard';
 import { ResourceDashboardHarness } from './resource_dashboard_harness';
@@ -70,7 +70,7 @@ describe('ResourceDashboard Container', () => {
   };
 
   const state = cleanState(() => {
-    document.cookie = `${JOBS_FULL_WIDTH_COOKIE_NAME}=false; Path=/; Max-Age=0`;
+    window.localStorage.removeItem(JOBS_FULL_WIDTH_STORAGE_KEY);
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
@@ -101,7 +101,7 @@ describe('ResourceDashboard Container', () => {
   }, beforeEach);
 
   afterEach(() => {
-    document.cookie = `${JOBS_FULL_WIDTH_COOKIE_NAME}=false; Path=/; Max-Age=0`;
+    window.localStorage.removeItem(JOBS_FULL_WIDTH_STORAGE_KEY);
   });
 
   it('should render subnav tabs, smart resource finder, resolved cluster queues, and queue jobs table', async () => {
@@ -293,13 +293,13 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getRightPaneStyle()).toContain('50%');
   });
 
-  it('should toggle full-width mode, stack panes vertically at 100% width, and persist preference to cookie', async () => {
+  it('should toggle full-width mode via projected header action, stack panes vertically at 100% width, and persist preference to localStorage', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
     expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
-    expect(readJobsFullWidthCookie(document)).toBeFalse();
+    expect(readJobsFullWidthPreference()).toBeFalse();
 
     const { left } = (await dashboard.getSplitContainerDimensions())!;
     const divider = (await dashboard.getResizeDivider())!;
@@ -310,15 +310,22 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getRightPaneStyle()).toContain('80%');
 
     const jobsTable = (await dashboard.getQueueJobsTable())!;
-    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+    expect(await jobsTable.getHeaderActionTexts()).toEqual(['fullscreen View in full width']);
+
+    const toggleBtn = (await dashboard.getFullWidthToggleBtn())!;
     expect(toggleBtn).not.toBeNull();
     expect(await toggleBtn.getText()).toContain('View in full width');
+    expect(await dashboard.getFullWidthToggleIconName()).toBe('fullscreen');
+    expect(await dashboard.isFullWidthToggleActive()).toBeFalse();
 
     await toggleBtn.click();
     await flush();
 
     expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
-    expect(readJobsFullWidthCookie(document)).toBeTrue();
+    expect(readJobsFullWidthPreference()).toBeTrue();
+    expect(await toggleBtn.getText()).toContain('Exit full width');
+    expect(await dashboard.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await dashboard.isFullWidthToggleActive()).toBeTrue();
     expect(await dashboard.getQueueList()).not.toBeNull();
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
 
@@ -340,14 +347,17 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await dashboard.isSplitContainerFullWidth()).toBeFalse();
-    expect(readJobsFullWidthCookie(document)).toBeFalse();
+    expect(readJobsFullWidthPreference()).toBeFalse();
+    expect(await toggleBtn.getText()).toContain('View in full width');
+    expect(await dashboard.getFullWidthToggleIconName()).toBe('fullscreen');
+    expect(await dashboard.isFullWidthToggleActive()).toBeFalse();
     expect(await dashboard.getResizeDivider()).not.toBeNull();
     expect(await dashboard.getLeftPaneStyle()).toContain('20%');
     expect(await dashboard.getRightPaneStyle()).toContain('80%');
   });
 
-  it('should initialize in full-width mode when xmc_jobs_full_width=true cookie is already set', async () => {
-    writeJobsFullWidthCookie(document, true);
+  it('should initialize in full-width mode when xmc-jobs-full-width=true is persisted in localStorage', async () => {
+    writeJobsFullWidthPreference(true);
 
     bootstrap(TestHostComponent);
     await flush();
@@ -355,10 +365,10 @@ describe('ResourceDashboard Container', () => {
     const dashboard = await getHarness(ResourceDashboardHarness);
     expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
 
-    const jobsTable = (await dashboard.getQueueJobsTable())!;
-    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+    const toggleBtn = (await dashboard.getFullWidthToggleBtn())!;
     expect(await toggleBtn.getText()).toContain('Exit full width');
-    expect(await jobsTable.isFullWidthToggleActive()).toBeTrue();
+    expect(await dashboard.getFullWidthToggleIconName()).toBe('fullscreen_exit');
+    expect(await dashboard.isFullWidthToggleActive()).toBeTrue();
   });
 
   it('should preserve full-width mode across Smart Resource Finder searches and tab switches', async () => {
@@ -366,8 +376,7 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
-    const jobsTable = (await dashboard.getQueueJobsTable())!;
-    const toggleBtn = (await jobsTable.getFullWidthToggleBtn())!;
+    const toggleBtn = (await dashboard.getFullWidthToggleBtn())!;
 
     await toggleBtn.click();
     await flush();
@@ -377,7 +386,7 @@ describe('ResourceDashboard Container', () => {
     await finderHarness.setAmountValue('100');
     await flush();
     expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
-    expect(readJobsFullWidthCookie(document)).toBeTrue();
+    expect(readJobsFullWidthPreference()).toBeTrue();
 
     const tabsHarness = await dashboard.getSubnavTabs();
     await tabsHarness.clickTab(1);
@@ -386,6 +395,6 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     expect(await dashboard.isSplitContainerFullWidth()).toBeTrue();
-    expect(readJobsFullWidthCookie(document)).toBeTrue();
+    expect(readJobsFullWidthPreference()).toBeTrue();
   });
 });

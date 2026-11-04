@@ -42,12 +42,19 @@
         />
       }
       <div class="jobs-side-pane" [style.flex]="rightPaneFlex()">
-        <xmc-queue-jobs-table
-          [queueName]="selectedQueue()"
-          [showFullWidthToggle]="true"
-          [isFullWidth]="isJobsFullWidth()"
-          (isFullWidthChange)="onJobsFullWidthChange($event)"
-        />
+        <xmc-queue-jobs-table [queueName]="selectedQueue()">
+          <button
+            headerActions
+            type="button"
+            mat-stroked-button
+            class="full-width-toggle-btn"
+            [class.active]="isJobsFullWidth()"
+            (click)="toggleJobsFullWidth()"
+          >
+            <mat-icon aria-hidden="true">{{ fullWidthToggleIcon() }}</mat-icon>
+            {{ fullWidthToggleLabel() }}
+          </button>
+        </xmc-queue-jobs-table>
       </div>
     </div>
   } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {

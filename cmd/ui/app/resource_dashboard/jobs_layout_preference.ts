@@ -12,28 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/** Cookie name storing the Resource Dashboard jobs full-width layout preference. */
-export const JOBS_FULL_WIDTH_COOKIE_NAME = 'xmc_jobs_full_width';
+/** LocalStorage key storing the Resource Dashboard jobs full-width layout preference. */
+export const JOBS_FULL_WIDTH_STORAGE_KEY = 'xmc-jobs-full-width';
 
-/** Max-Age in seconds (1 year) for the jobs full-width cookie. */
-export const JOBS_FULL_WIDTH_COOKIE_MAX_AGE_SECONDS = 31536000;
-
-/** Reads whether the jobs table full-width layout preference is enabled in document cookies. */
-export function readJobsFullWidthCookie(doc: Document): boolean {
-  const cookieHeader = doc.cookie || '';
-  if (!cookieHeader) {
+/** Reads whether the jobs table full-width layout preference is enabled in localStorage. */
+export function readJobsFullWidthPreference(
+  storage: Pick<Storage, 'getItem'> | null | undefined = getBrowserLocalStorage(),
+): boolean {
+  try {
+    return storage?.getItem(JOBS_FULL_WIDTH_STORAGE_KEY) === 'true';
+  } catch {
     return false;
   }
-  for (const rawEntry of cookieHeader.split(';')) {
-    const [rawKey, ...rawValueParts] = rawEntry.trim().split('=');
-    if (rawKey === JOBS_FULL_WIDTH_COOKIE_NAME) {
-      return rawValueParts.join('=') === 'true';
-    }
-  }
-  return false;
 }
 
-/** Persists the jobs table full-width layout preference to document cookies. */
-export function writeJobsFullWidthCookie(doc: Document, isFullWidth: boolean): void {
-  doc.cookie = `${JOBS_FULL_WIDTH_COOKIE_NAME}=${isFullWidth}; Path=/; Max-Age=${JOBS_FULL_WIDTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
+/** Persists the jobs table full-width layout preference to localStorage. */
+export function writeJobsFullWidthPreference(
+  isFullWidth: boolean,
+  storage: Pick<Storage, 'setItem'> | null | undefined = getBrowserLocalStorage(),
+): void {
+  try {
+    storage?.setItem(JOBS_FULL_WIDTH_STORAGE_KEY, String(isFullWidth));
+  } catch {
+    // Ignore storage quota or security errors in restricted browser contexts.
+  }
+}
+
+function getBrowserLocalStorage(): Storage | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage : null;
+  } catch {
+    return null;
+  }
 }

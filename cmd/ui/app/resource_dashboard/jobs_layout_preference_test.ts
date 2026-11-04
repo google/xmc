@@ -13,61 +13,97 @@
 // limitations under the License.
 
 import {
-  JOBS_FULL_WIDTH_COOKIE_MAX_AGE_SECONDS,
-  JOBS_FULL_WIDTH_COOKIE_NAME,
-  readJobsFullWidthCookie,
-  writeJobsFullWidthCookie,
+  JOBS_FULL_WIDTH_STORAGE_KEY,
+  readJobsFullWidthPreference,
+  writeJobsFullWidthPreference,
 } from './jobs_layout_preference';
 
-function createFakeDocument(initialCookie = ''): Document {
-  return { cookie: initialCookie } as unknown as Document;
+function createFakeStorage(
+  initialEntries: Record<string, string> = {},
+): Pick<Storage, 'getItem' | 'setItem'> & { readonly entries: Map<string, string> } {
+  const entries = new Map<string, string>(Object.entries(initialEntries));
+  return {
+    entries,
+    getItem(key: string): string | null {
+      return entries.get(key) ?? null;
+    },
+    setItem(key: string, value: string): void {
+      entries.set(key, value);
+    },
+  };
 }
 
 describe('jobs_layout_preference', () => {
-  describe('readJobsFullWidthCookie', () => {
-    it('returns false when cookie header is empty', () => {
-      const doc = createFakeDocument('');
-      expect(readJobsFullWidthCookie(doc)).toBeFalse();
+  beforeEach(() => {
+    window.localStorage.removeItem(JOBS_FULL_WIDTH_STORAGE_KEY);
+  });
+
+  afterEach(() => {
+    window.localStorage.removeItem(JOBS_FULL_WIDTH_STORAGE_KEY);
+  });
+
+  describe('readJobsFullWidthPreference', () => {
+    it('returns false when storage is empty', () => {
+      const storage = createFakeStorage();
+      expect(readJobsFullWidthPreference(storage)).toBeFalse();
     });
 
-    it('returns false when xmc_jobs_full_width cookie is absent', () => {
-      const doc = createFakeDocument('theme=dark; other_pref=true');
-      expect(readJobsFullWidthCookie(doc)).toBeFalse();
+    it('returns false when xmc-jobs-full-width key is absent', () => {
+      const storage = createFakeStorage({ 'xmc-other-pref': 'true' });
+      expect(readJobsFullWidthPreference(storage)).toBeFalse();
     });
 
-    it('returns true when xmc_jobs_full_width is set to true', () => {
-      const doc = createFakeDocument(`${JOBS_FULL_WIDTH_COOKIE_NAME}=true`);
-      expect(readJobsFullWidthCookie(doc)).toBeTrue();
+    it('returns true when xmc-jobs-full-width is set to true', () => {
+      const storage = createFakeStorage({ [JOBS_FULL_WIDTH_STORAGE_KEY]: 'true' });
+      expect(readJobsFullWidthPreference(storage)).toBeTrue();
     });
 
-    it('returns false when xmc_jobs_full_width is set to false', () => {
-      const doc = createFakeDocument(`${JOBS_FULL_WIDTH_COOKIE_NAME}=false`);
-      expect(readJobsFullWidthCookie(doc)).toBeFalse();
+    it('returns false when xmc-jobs-full-width is set to false', () => {
+      const storage = createFakeStorage({ [JOBS_FULL_WIDTH_STORAGE_KEY]: 'false' });
+      expect(readJobsFullWidthPreference(storage)).toBeFalse();
     });
 
-    it('returns true when xmc_jobs_full_width=true is surrounded by other cookies', () => {
-      const doc = createFakeDocument(
-        `session_id=abc123; ${JOBS_FULL_WIDTH_COOKIE_NAME}=true; lang=en`,
-      );
-      expect(readJobsFullWidthCookie(doc)).toBeTrue();
+    it('returns false when storage is null or throws SecurityError', () => {
+      expect(readJobsFullWidthPreference(null)).toBeFalse();
+      const throwingStorage: Pick<Storage, 'getItem'> = {
+        getItem(): string | null {
+          throw new DOMException('Blocked', 'SecurityError');
+        },
+      };
+      expect(readJobsFullWidthPreference(throwingStorage)).toBeFalse();
     });
   });
 
-  describe('writeJobsFullWidthCookie', () => {
-    it('writes true preference with Path, Max-Age, and SameSite attributes', () => {
-      const doc = createFakeDocument();
-      writeJobsFullWidthCookie(doc, true);
-      expect(doc.cookie).toBe(
-        `${JOBS_FULL_WIDTH_COOKIE_NAME}=true; Path=/; Max-Age=${JOBS_FULL_WIDTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`,
-      );
+  describe('writeJobsFullWidthPreference', () => {
+    it('writes true preference to storage', () => {
+      const storage = createFakeStorage();
+      writeJobsFullWidthPreference(true, storage);
+      expect(storage.entries.get(JOBS_FULL_WIDTH_STORAGE_KEY)).toBe('true');
     });
 
-    it('writes false preference with Path, Max-Age, and SameSite attributes', () => {
-      const doc = createFakeDocument();
-      writeJobsFullWidthCookie(doc, false);
-      expect(doc.cookie).toBe(
-        `${JOBS_FULL_WIDTH_COOKIE_NAME}=false; Path=/; Max-Age=${JOBS_FULL_WIDTH_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`,
-      );
+    it('writes false preference to storage', () => {
+      const storage = createFakeStorage({ [JOBS_FULL_WIDTH_STORAGE_KEY]: 'true' });
+      writeJobsFullWidthPreference(false, storage);
+      expect(storage.entries.get(JOBS_FULL_WIDTH_STORAGE_KEY)).toBe('false');
+    });
+
+    it('gracefully ignores null storage or QuotaExceededError', () => {
+      expect(() => writeJobsFullWidthPreference(true, null)).not.toThrow();
+      const throwingStorage: Pick<Storage, 'setItem'> = {
+        setItem(): void {
+          throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        },
+      };
+      expect(() => writeJobsFullWidthPreference(true, throwingStorage)).not.toThrow();
+    });
+
+    it('round-trips via default window.localStorage when storage argument is omitted', () => {
+      expect(readJobsFullWidthPreference()).toBeFalse();
+      writeJobsFullWidthPreference(true);
+      expect(window.localStorage.getItem(JOBS_FULL_WIDTH_STORAGE_KEY)).toBe('true');
+      expect(readJobsFullWidthPreference()).toBeTrue();
+      writeJobsFullWidthPreference(false);
+      expect(readJobsFullWidthPreference()).toBeFalse();
     });
   });
 });
