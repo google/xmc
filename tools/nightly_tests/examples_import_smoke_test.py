@@ -257,6 +257,28 @@ class ParseEntrypointsTest(unittest.TestCase):
             ],
         )
 
+    def test_parse_matrix_ids_and_validate_examples_filter(self) -> None:
+        """validate_examples_filter mirrors bash filter semantics and rejects unknown ids."""
+        self.assertEqual(
+            smoke.parse_matrix_ids(_WORKFLOW),
+            ["ok_job", "ok_job_again", "broken_job", "ui_only"],
+        )
+        smoke.validate_examples_filter("", _WORKFLOW)
+        smoke.validate_examples_filter("OK_JOB,ui_only", _WORKFLOW)
+        for invalid in (
+            "nonexistent_module_test",
+            "ok_job, broken_job",
+            "ok_job,",
+            ",ok_job",
+            "ok_job,,ui_only",
+            ",",
+            " ",
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "ok_job"):
+                smoke.validate_examples_filter(invalid, _WORKFLOW)
+        with self.assertRaisesRegex(ValueError, "no matrix.example.id"):
+            smoke.validate_examples_filter("ok_job", "jobs: {}\n")
+
 
 class SmokeExecutionTest(unittest.TestCase):
     """Tests for smoke_entrypoint and main using real subprocesses."""

@@ -163,3 +163,23 @@ python3 deploy/cli/install_xmanager.py --venv .venv \
   $(for p in $(python3 tools/nightly_tests/examples_import_smoke.py --list-example-paths); do printf -- '--requirements %s/requirements.txt ' "$p"; done)
 .venv/bin/python3 tools/nightly_tests/examples_import_smoke.py --venv-python .venv/bin/python3
 ```
+
+---
+
+## 5. Nightly Failure Triage CLI (`triage_nightly_run.py`)
+
+[`triage_nightly_run.py`](triage_nightly_run.py) (tested by [`triage_nightly_run_test.py`](triage_nightly_run_test.py)) consolidates Nightly Examples E2E discovery, log/artifact collection, and rollout-skew inspection into a single structured JSON summary:
+
+- Fetches `origin/main` (or `--branch`), queries recent [`nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) and [`nightly-build.yml`](../../.github/workflows/nightly-build.yml) runs, and lists open `nightly-failure` GitHub Issues.
+- Selects the latest failing completed E2E run (or `--run-id <id>`), maps failed `'Run & Verify: <name>'` jobs to `matrix.example.id`, and downloads failed job logs (`job_<id>.log`) plus non-expired failure artifacts (`result-<failed_id>`, `ui-screenshots-*`, and `deploy-gke-diagnostics` when the active `nightly-build.yml` run failed) into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`.
+- Computes the temporal rollout-skew commit delta (`<last_green_build_sha>..<failed_e2e_sha>`) and lists cluster-deployed paths (`cmd/`, `internal/`, `pkg/`, `api/`, `deploy/`) touched since the last green `nightly-build.yml` run.
+
+```bash
+# Auto-discover and triage the latest failing Nightly Examples E2E run on main
+PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py
+
+# Triage a specific workflow run ID into a custom scratch directory
+PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py \
+  --run-id 123456789 \
+  --scratch-dir /tmp/nightly_triage_123456789
+```

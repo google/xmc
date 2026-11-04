@@ -14,49 +14,21 @@ This skill guides an agent end-to-end through discovering broken Nightly Example
 
 ---
 
-## Stage 1 — Discover Broken Nightly Examples E2E Run on `main`
+## Stage 1 — Discover & Triage Broken Nightly Examples E2E Run on `main`
 
-1. **Fetch `origin/main` & Query Recent Nightly Runs**:
-   Active local checkouts may sit on older feature branches. Fetch `origin/main` first, then query recent runs and open failure issues:
-   ```bash
-   git fetch origin main
-   gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch main --limit 10 \
-     --json databaseId,status,conclusion,headSha,event,createdAt,url
-   gh run list --repo google/xmc --workflow=nightly-build.yml --branch main --limit 5 \
-     --json databaseId,status,conclusion,headSha,createdAt,url
-   gh issue list --repo google/xmc --search "Nightly Examples E2E" --state open
-   ```
+Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/triage_nightly_run.py) to fetch `origin/main`, query recent `nightly-examples-e2e.yml` and `nightly-build.yml` runs plus open `nightly-failure` issues, download failed job logs (`job_<id>.log`) and non-expired failure artifacts (`result-<example_id>`, `ui-screenshots-*`, and `deploy-gke-diagnostics` when the active `nightly-build.yml` run failed) into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`, and compute the `<last_green_build_sha>..<failed_e2e_sha>` rollout-skew commit delta in one turn:
 
-2. **Extract Failed Jobs, Steps & Diagnostic Artifacts**:
-   View the target failing run on `main`. The output lists every job with its `ID`, expands the steps of failed jobs (marked `X`), and ends with an `ARTIFACTS` section naming the artifacts that can still be downloaded:
-   ```bash
-   RUN_ID="<run_id>"
-   gh run view "${RUN_ID}" --repo google/xmc
-   ```
-   Download the failed job log into `${ARTIFACT_DIR:-/tmp}` (delegate large log analysis to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines)):
-   ```bash
-   RUN_ID="<run_id>"
-   JOB_ID="<failed_job_id>"
-   SCRATCH_DIR="${ARTIFACT_DIR:-/tmp}/nightly_triage_${RUN_ID}"
+```bash
+PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py
+```
 
-   mkdir -p "${SCRATCH_DIR}"
-   gh api "repos/google/xmc/actions/jobs/${JOB_ID}/logs" > "${SCRATCH_DIR}/job_${JOB_ID}.log"
-   ```
-   Download only names listed under `ARTIFACTS`, skipping any marked `(expired)`. `gh run download -n` exits non-zero for a missing or expired name, `result-<example_id>` is kept for only 1 day, and `ui-screenshots-<example_id>` is uploaded only on failure for matrix entries with `verify_ui: true`. `deploy-gke-diagnostics` belongs to the failing `nightly-build.yml` run, so use that run's ID for it:
-   ```bash
-   RUN_ID="<run_id_that_uploaded_the_artifact>"
-   ARTIFACT_NAME="<listed_artifact_name>"
-   SCRATCH_DIR="${ARTIFACT_DIR:-/tmp}/nightly_triage_${RUN_ID}"
-
-   gh run download "${RUN_ID}" --repo google/xmc -n "${ARTIFACT_NAME}" -D "${SCRATCH_DIR}/${ARTIFACT_NAME}"
-   ```
-   *(Note: Use `gh api .../logs` rather than `gh run view --job --log`, which prints empty output on some `gh` CLI versions.)*
+Pass `--run-id <run_id>` to triage a specific historical run. Delegate inspection of large downloaded `job_<id>.log` files or diagnostic bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
 
 ---
 
 ## Stage 2 — Root-Cause Triage & Investigation
 
-Check recent `origin/main` commits (`git log origin/main --oneline -n 20`) and merged PRs (`gh pr list --repo google/xmc --state merged --limit 20`) for established repository idioms before designing a fix, then classify the failure layer:
+Combine the JSON summary from Stage 1 (`failed_jobs`, `downloaded_artifacts`, `rollout_skew`) with recent `origin/main` commits (`git log origin/main --oneline -n 20`) and merged PRs (`gh pr list --repo google/xmc --state merged --limit 20`) to classify the failure layer:
 
 ### Layer A — Code, SDK, Example, Verifier, or Backend/UI Regression on `main`
 - **Client / SDK / CLI Setup**: Packaging, proto-overlay, or import regressions in [`sdks/python/xmc/`](../../../sdks/python/xmc/), [`sdks/python/xdash/`](../../../sdks/python/xdash/), [`api/protos/`](../../../api/protos/), or [`deploy/cli/install_xmanager.py`](../../../deploy/cli/install_xmanager.py).
@@ -64,8 +36,8 @@ Check recent `origin/main` commits (`git log origin/main --oneline -n 20`) and m
 - **Backend / UI / Manifest Defect**: Regressions in [`cmd/`](../../../cmd/), [`internal/`](../../../internal/), [`pkg/`](../../../pkg/), [`deploy/helm/`](../../../deploy/helm/), or [`deploy/ctk_v2/`](../../../deploy/ctk_v2/).
 
 ### Layer B — Nightly Cluster (`xmc-nightly`) Rollout Skew or State Drift
-- **Client/Server Rollout Skew**: `nightly-build.yml` deploys `xmc-nightly` at 01:00 UTC while `nightly-examples-e2e.yml` runs at 04:00 UTC (or on demand); commits merged after the last green `nightly-build.yml` run may depend on undeployed server changes.
-- **Addon / Deployment Drift**: Missing pods, failed Helm hooks, or unapplied Gateway/ClickHouse/MultiKueue state from an earlier failed `nightly-build.yml` run.
+- **Client/Server Rollout Skew**: `nightly-build.yml` deploys `xmc-nightly` at 01:00 UTC while `nightly-examples-e2e.yml` runs at 04:00 UTC (or on demand); inspect `rollout_skew.undeployed_commits` and `rollout_skew.cluster_deployed_files` from Stage 1 to see whether the failing example depends on undeployed server changes merged after `rollout_skew.last_green_build_run`.
+- **Addon / Deployment Drift**: Missing pods, failed Helm hooks, or unapplied Gateway/ClickHouse/MultiKueue state surfaced by `rollout_skew.active_build_run` and `deploy-gke-diagnostics`.
 
 > [!CAUTION]
 > **STRICT SHARED CLUSTER SAFETY INVARIANTS (`xmc-nightly`)**:
@@ -107,52 +79,19 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 ## Stage 5 — Trigger Nightly Examples E2E on the PR Branch to Prove the Fix
 
 1. **Select Verification Workflow Scope**:
-   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `-f examples_filter="<id>"` using the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (e.g., `resource_dashboard_ui` rather than the module name `resource_observability_dashboard_ui_test`, as an unmatched ID runs no examples and proves nothing), or run the full matrix when shared SDK/installer/workflow files changed.
+   - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `--input "examples_filter=<id>"` using the exact `matrix.example.id` in [`.github/workflows/nightly-examples-e2e.yml`](../../../.github/workflows/nightly-examples-e2e.yml) (validated pre-flight by [`dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py)), or omit `--input` to run the full matrix when shared SDK/installer/workflow files changed.
    - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation before dispatching `nightly-build.yml` on a PR branch**.
 
-2. **Dispatch & Watch `nightly-examples-e2e.yml` on the PR Branch**:
-   Verify the pushed remote commit that GitHub Actions executes, never local `HEAD`, per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants). Fetch the branch first so `origin/${BRANCH_NAME}` is current:
+2. **Dispatch & Watch `nightly-examples-e2e.yml` on the Pushed PR Branch**:
+   Ensure the branch is pushed to `origin` first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) validates `examples_filter` against `matrix.example.id`, fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
    ```bash
-   SLUG="${SLUG:-<kebab-case-slug>}"
-   BRANCH_NAME="fix/nightly-${SLUG}"
-
-   git fetch origin "${BRANCH_NAME}"
+   PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
+     --workflow nightly-examples-e2e.yml \
+     --ref "fix/nightly-<kebab-case-slug>" \
+     --input "examples_filter=<matrix_example_id>" \
+     --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
    ```
-   - **Targeted example(s)**: Print the dispatch time immediately before dispatching, and record it for the lookup:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-     EXAMPLES_FILTER="<matrix_example_id>"
-
-     date -u +%Y-%m-%dT%H:%M:%SZ
-     gh workflow run nightly-examples-e2e.yml --repo google/xmc --ref "${BRANCH_NAME}" -f examples_filter="${EXAMPLES_FILTER}"
-     ```
-     Find the dispatched run. `--created` excludes older runs on the same commit, such as an earlier dispatch with a different `examples_filter`, so they cannot be mistaken for proof. If the list is empty, the new run has not registered yet, so re-run this single command after a few seconds. If it is still empty after about a minute, check the Actions UI for the run and for local clock skew. If more than one run is listed, stop and inspect them instead of picking one:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-     DISPATCHED_AT="<printed_dispatch_time>"
-
-     gh run list --repo google/xmc --workflow=nightly-examples-e2e.yml --branch "${BRANCH_NAME}" \
-       --event workflow_dispatch --commit "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
-       --created ">=${DISPATCHED_AT}" --json databaseId,status,conclusion,headSha,createdAt,url
-     ```
-     Watch it to completion. Only a `success` conclusion is proof. If it ends `cancelled` or `timed_out`, inspect why before dispatching again:
-     ```bash
-     VERIFY_RUN_ID="<verify_run_id>"
-     gh run watch "${VERIFY_RUN_ID}" --repo google/xmc --exit-status --interval 15
-     ```
-   - **Full suite (unfiltered)**:
-     ```bash
-     SLUG="${SLUG:-<kebab-case-slug>}"
-     BRANCH_NAME="fix/nightly-${SLUG}"
-
-     PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
-       --workflow nightly-examples-e2e.yml \
-       --ref "${BRANCH_NAME}" \
-       --target-sha "$(git rev-parse --verify "origin/${BRANCH_NAME}")" \
-       --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
-     ```
+   Omit `--input` (or pass `--input "examples_filter="`) when verifying the full matrix.
 
 3. **Synchronize Draft PR Description & Report Proof**:
    Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `origin/${BRANCH_NAME}`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.

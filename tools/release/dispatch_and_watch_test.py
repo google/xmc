@@ -97,6 +97,137 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["run_id"], 202)
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
+        dispatch_cmd = mock_run.call_args_list[0].args[0]
+        self.assertEqual(dispatch_cmd, ["gh", "workflow", "run", "build.yml", "--ref", "main"])
+
+    def _ok_proc(self, stdout: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
+
+    def _watched_run_mocks(
+        self, run_id: int, head_sha: str
+    ) -> list[subprocess.CompletedProcess[str]]:
+        run_item = {
+            "databaseId": run_id,
+            "headSha": head_sha,
+            "url": "run_url",
+            "createdAt": "2099-01-01T00:00:00Z",
+        }
+        return [
+            self._ok_proc(),
+            self._ok_proc(json.dumps([run_item])),
+            self._ok_proc(),
+            self._ok_proc(json.dumps({"conclusion": "success", "jobs": []})),
+        ]
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_dispatch_forwards_inputs_and_validates_examples_filter(self, mock_run, mock_which):
+        mock_run.side_effect = self._watched_run_mocks(210, "target_sha")
+        argv = [
+            "--workflow=nightly-examples-e2e.yml",
+            "--ref=fix/nightly-example",
+            "--target-sha=target_sha",
+            "--input=examples_filter=SIMPLE_JOB,resource_dashboard_ui",
+            "--input=xmanager_version=",
+        ]
+        res = dispatch_and_watch(create_parser().parse_args(argv))
+        self.assertEqual(res["conclusion"], "success")
+        expected = [
+            "gh",
+            "workflow",
+            "run",
+            "nightly-examples-e2e.yml",
+            "--ref",
+            "fix/nightly-example",
+            "-f",
+            "examples_filter=SIMPLE_JOB,resource_dashboard_ui",
+            "-f",
+            "xmanager_version=",
+        ]
+        self.assertEqual(mock_run.call_args_list[0].args[0], expected)
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_auto_resolves_remote_sha_when_target_sha_omitted(self, mock_run, mock_which):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "verify_state.json"
+            mock_run.side_effect = [
+                self._ok_proc(),
+                self._ok_proc("deadbeef1234\n"),
+                *self._watched_run_mocks(220, "deadbeef12345678"),
+            ]
+            argv = [
+                "--workflow=nightly-examples-e2e.yml",
+                "--ref=fix/nightly-slug",
+                "--input=examples_filter=",
+                f"--state-file={state_path}",
+            ]
+            res = dispatch_and_watch(create_parser().parse_args(argv))
+            self.assertEqual((res["run_id"], res["conclusion"]), (220, "success"))
+            self.assertEqual(
+                mock_run.call_args_list[0].args[0],
+                ["git", "fetch", "--", "origin", "fix/nightly-slug"],
+            )
+            self.assertEqual(
+                mock_run.call_args_list[1].args[0],
+                ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+            )
+            self.assertEqual(
+                json.loads(state_path.read_text(encoding="utf-8"))["target_sha"], "deadbeef1234"
+            )
+
+    @patch("tools.release.dispatch_and_watch.shutil.which")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_remote_sha_resolution_errors(self, mock_run, mock_which):
+        mock_which.side_effect = lambda name: "/bin/gh" if name == "gh" else None
+        p = create_parser().parse_args(["--workflow=build.yml", "--ref=fix/unpushed"])
+        with self.assertRaisesRegex(HandledError, "Git CLI"):
+            dispatch_and_watch(p)
+
+        mock_which.side_effect = None
+        mock_which.return_value = "/bin/tool"
+        err_proc = subprocess.CompletedProcess(
+            args=[], returncode=128, stdout="", stderr="missing ref"
+        )
+        mock_run.side_effect = [err_proc]
+        with self.assertRaisesRegex(HandledError, "Failed to fetch 'fix/unpushed'"):
+            dispatch_and_watch(p)
+
+        mock_run.side_effect = [self._ok_proc(), err_proc]
+        with self.assertRaisesRegex(HandledError, "Failed to resolve remote commit SHA"):
+            dispatch_and_watch(p)
+
+    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
+    @patch("tools.release.dispatch_and_watch.run_command")
+    def test_preflight_rejects_bad_ref_inputs_and_examples_filter(self, mock_run, mock_which):
+        bad_cases = (
+            ["--workflow=build.yml", "--ref=origin/main"],
+            ["--workflow=build.yml", "--ref=-upload-pack"],
+            ["--workflow=build.yml", "--ref=bad ref"],
+            ["--workflow=build.yml", "--input=examples_filter"],
+            ["--workflow=build.yml", "--input==value"],
+            ["--workflow=build.yml", "--input= examples_filter=value"],
+            ["--workflow=build.yml", "--input=examples_filter =value"],
+            ["--workflow=build.yml", "--input=1bad=value"],
+            ["--workflow=build.yml", "--input=k=1", "--input=k=2"],
+            ["--workflow=build.yml", "--find-existing", "--input=k=1"],
+            [
+                "--workflow=nightly-examples-e2e.yml",
+                "--input=examples_filter=resource_observability_dashboard_ui_test",
+            ],
+            ["--workflow=nightly-examples-e2e.yml", "--input=examples_filter=simple_job, sidecar"],
+            ["--workflow=examples-smoke.yml", "--input=examples_filter=simple_job,"],
+            [
+                "--workflow=nightly-examples-e2e.yml",
+                "--repo-dir=/nonexistent/repo/dir",
+                "--input=examples_filter=simple_job",
+            ],
+        )
+        for argv in bad_cases:
+            with self.subTest(argv=argv):
+                with self.assertRaises(HandledError):
+                    dispatch_and_watch(create_parser().parse_args(argv))
+        mock_run.assert_not_called()
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")

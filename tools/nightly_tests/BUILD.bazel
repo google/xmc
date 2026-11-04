@@ -27,6 +27,8 @@ exports_files([
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
+    "triage_nightly_run.py",
+    "triage_nightly_run_test.py",
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
 ])
@@ -92,6 +94,7 @@ py_test(
 py_library(
     name = "examples_import_smoke_lib",
     srcs = ["examples_import_smoke.py"],
+    data = ["//.github/workflows:nightly-examples-e2e.yml"],
     imports = ["../.."],
 )
 
@@ -110,5 +113,26 @@ py_test(
         ":examples_import_smoke_lib",
         # Child processes import absl to exercise matrix-args parsing.
         "@absl_py//absl/flags",
+    ],
+)
+
+py_library(
+    name = "triage_nightly_run_lib",
+    srcs = ["triage_nightly_run.py"],
+    imports = ["../.."],
+    deps = [
+        ":examples_import_smoke_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "triage_nightly_run_test",
+    size = "small",
+    srcs = ["triage_nightly_run_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":triage_nightly_run_lib",
+        "//tools/common:tool_utils",
     ],
 )

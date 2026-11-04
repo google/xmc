@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,10 @@ from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
+from tools.nightly_tests import examples_import_smoke as smoke
+
+_INPUT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_EXAMPLES_WORKFLOWS = frozenset({"nightly-examples-e2e.yml", "examples-smoke.yml"})
 
 
 def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -167,10 +172,67 @@ def _find_existing_run(
     return None
 
 
-def _dispatch_workflow(workflow: str, ref: str, repo_dir: Path | None) -> str:
-    """Dispatches workflow run and returns ISO timestamp of dispatch."""
+def _validate_ref(ref: str) -> str:
+    """Validates a target Git ref and rejects 'origin/' prefixes or CLI option flags."""
+    cleaned = ref.strip()
+    if cleaned.startswith("origin/"):
+        branch = cleaned.removeprefix("origin/")
+        raise HandledError(f"Invalid --ref '{ref}': omit 'origin/' (use '{branch}').", "Use ref.")
+    if not cleaned or cleaned.startswith(("-", "+")) or any(ch.isspace() for ch in cleaned):
+        raise HandledError(f"Invalid --ref '{ref}'.", "Pass a valid Git branch or tag name.")
+    return cleaned
+
+
+def _validate_inputs(raw_inputs: list[str]) -> dict[str, str]:
+    """Validates repeatable KEY=VALUE workflow_dispatch inputs and returns a key-value map."""
+    parsed: dict[str, str] = {}
+    for item in raw_inputs:
+        key, sep, value = item.partition("=")
+        if not sep or not _INPUT_KEY_RE.match(key):
+            raise HandledError(f"Invalid workflow input '{item}'.", "Use --input KEY=VALUE.")
+        if key in parsed:
+            raise HandledError(f"Duplicate workflow input key '{key}'.", "Specify each key once.")
+        parsed[key] = value
+    return parsed
+
+
+def _validate_workflow_inputs(workflow: str, inputs: dict[str, str], raw_dir: str | None) -> None:
+    """Validates workflow-specific inputs (such as examples_filter) prior to dispatch."""
+    if Path(workflow).name not in _EXAMPLES_WORKFLOWS or "examples_filter" not in inputs:
+        return
+    try:
+        wf_text = smoke.resolve_workflow_path(raw_dir).read_text(encoding="utf-8")
+        smoke.validate_examples_filter(inputs["examples_filter"], wf_text)
+    except (OSError, ValueError) as exc:
+        hint = "Pass comma-separated matrix.example.id values without spaces."
+        raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
+
+
+def _resolve_remote_sha(ref: str, repo_dir: Path | None) -> str:
+    """Fetches origin/<ref> and returns the resolved remote commit SHA via FETCH_HEAD."""
+    if not shutil.which("git"):
+        raise HandledError("Git CLI ('git') was not found in PATH.", "Install git on PATH.")
+    kw: dict[str, Any] = {"capture_output": True, "check": False, "log_cmd": False}
+    kw["log_on_error"] = False
+    fetch_res = run_command(["git", "fetch", "--", "origin", ref], cwd=repo_dir, **kw)
+    if fetch_res.returncode != 0:
+        hint = f"Push '{ref}' to origin first (git push -u origin {ref}) or pass --target-sha."
+        raise HandledError(f"Failed to fetch '{ref}' from origin: {fetch_res.stderr.strip()}", hint)
+    rev_res = run_command(
+        ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"], cwd=repo_dir, **kw
+    )
+    resolved = rev_res.stdout.strip()
+    if rev_res.returncode != 0 or not resolved:
+        msg = f"Failed to resolve remote commit SHA for '{ref}': {rev_res.stderr.strip()}"
+        raise HandledError(msg, "Verify that the remote ref points to a valid commit.")
+    return resolved
+
+
+def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
+    """Dispatches workflow run with optional inputs and returns ISO timestamp of dispatch."""
     dispatched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    res = _run_gh(["workflow", "run", workflow, "--ref", ref], repo_dir)
+    input_args = [arg for item in inputs for arg in ("-f", item)]
+    res = _run_gh(["workflow", "run", workflow, "--ref", ref, *input_args], repo_dir)
     if res.returncode != 0:
         raise HandledError(
             f"Failed to dispatch workflow '{workflow}': {res.stderr.strip()}",
@@ -278,10 +340,17 @@ def _watch_run_outcome(
 
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
-    workflow, ref = args.workflow, getattr(args, "ref", "main") or "main"
+    workflow, ref = args.workflow, _validate_ref(getattr(args, "ref", "main") or "main")
     target_sha = (getattr(args, "target_sha", "") or "").strip()
     state_file = getattr(args, "state_file", None)
     repo_dir = Path(args.repo_dir) if getattr(args, "repo_dir", None) else None
+    raw_inputs = list(getattr(args, "input", None) or [])
+    input_map = _validate_inputs(raw_inputs)
+    if getattr(args, "find_existing", False) and raw_inputs:
+        raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
+    _validate_workflow_inputs(workflow, input_map, getattr(args, "repo_dir", None))
+    if not shutil.which("gh"):
+        raise HandledError("GitHub CLI ('gh') is not installed.", "Run 'gh auth login'.")
 
     # 1. Check for existing successful run if --find-existing
     if getattr(args, "find_existing", False):
@@ -290,7 +359,9 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             return existing
 
     # 2. Dispatch workflow run
-    dispatched_at = _dispatch_workflow(workflow, ref, repo_dir)
+    if not target_sha:
+        target_sha = _resolve_remote_sha(ref, repo_dir)
+    dispatched_at = _dispatch_workflow(workflow, ref, raw_inputs, repo_dir)
 
     # 3. Poll for registered workflow run matching target_sha & timestamp
     run_data = _poll_for_run(
@@ -343,6 +414,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Reuse existing successful run.",
     )
     p.add_argument("--state-file", help="Path to JSON state file.")
+    p.add_argument("--input", action="append", default=[], metavar="KEY=VALUE", help="Input.")
     p.add_argument("--poll-interval", type=float, default=5.0, help="Poll interval.")
     p.add_argument("--poll-attempts", type=int, default=12, help="Max poll attempts.")
     p.add_argument("--repo-dir", default=".", help="Repository root.")
