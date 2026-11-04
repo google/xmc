@@ -135,7 +135,9 @@ def load_golden_files() -> dict[str, Any]:
     return goldens
 
 
-class SPAHandler(server.SPAHandler):  # type: ignore[misc]  # sys.path-loaded server is Any to mypy
+# server.SPAHandler is Any because server is loaded through sys.path; unused-ignore keeps
+# environments where it resolves passing.
+class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
     """Custom request handler supporting SPA routing, config.js, and mock APIs."""
 
     goldens: dict[str, Any] = {}

@@ -32,6 +32,7 @@ import sys
 from collections.abc import Generator
 from pathlib import Path
 
+from test.e2e.lib.command import captured_text
 from test.e2e.lib.dev_token import (
     fetch_dex_oidc_token,
 )
@@ -145,13 +146,6 @@ def parse_launch_output(output_str: str) -> ExampleLaunchResult:
     )
 
 
-def _output_text(output: str | bytes | None) -> str:
-    """Returns captured subprocess output as text; typeshed types it as bytes even in text mode."""
-    if isinstance(output, bytes):
-        return output.decode(errors="replace")
-    return output or ""
-
-
 def execute_example_launch(
     launch_script: str | Path,
     args: list[str] | None = None,
@@ -210,7 +204,7 @@ def execute_example_launch(
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            captured_out = _output_text(e.stdout) + _output_text(e.stderr)
+            captured_out = captured_text(e.stdout) + captured_text(e.stderr)
             logger.error(
                 "Example launch timed out after %s seconds. Captured output:\n%s",
                 timeout_sec,

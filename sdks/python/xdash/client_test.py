@@ -537,8 +537,8 @@ class DashboardClientTest(unittest.TestCase):
                 pass
 
         lock = PopulateOnEnterLock(self.client)
-        self.client._token_lock = lock
         with (
+            patch.object(self.client, "_token_lock", lock),
             patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
             patch("xdash.client.time.monotonic", side_effect=[100.0, 100.0]),
         ):

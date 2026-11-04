@@ -34,6 +34,17 @@ _HALT_POLL_SECONDS = 0.5
 logger = logging.getLogger("xmc_e2e_runner")
 
 
+def captured_text(stream: str | bytes | None) -> str:
+    """Returns captured subprocess output as text.
+
+    ``subprocess.TimeoutExpired`` carries bytes even for text-mode commands, and output
+    that was not captured is None.
+    """
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", errors="replace")
+    return stream or ""
+
+
 def run_cmd(
     cmd: list[str],
     cwd: str | None = None,

@@ -370,8 +370,7 @@ class TestSpannerManager(unittest.TestCase):
     @patch("os.path.isfile", return_value=True)
     def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
         binary = self.mgr._resolve_migration_binary()
-        if binary is None:
-            self.fail("expected a migration binary")
+        assert binary is not None
         self.assertTrue(binary.endswith(("migrations", "migrations.exe")))
 
     @patch("os.path.isdir", return_value=False)

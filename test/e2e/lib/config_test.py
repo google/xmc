@@ -17,6 +17,7 @@
 import os
 import tempfile
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 from test.e2e.lib.config import (
@@ -56,6 +57,21 @@ class TestE2EConfig(unittest.TestCase):
         )
         self.assertEqual(workload_cfg.tier, E2ETier.WORKLOAD)
         self.assertEqual(workload_cfg.venv_dependencies, E2E_WORKLOAD_VENV_DEPENDENCIES)
+
+    def test_post_init_coerces_string_tier_to_enum(self) -> None:
+        kwargs: dict[str, Any] = {
+            "project_id": "test-proj",
+            "spanner_instance": "test-inst",
+            "cluster_name": "test-cluster",
+            "kind_bin": "kind",
+            "workspace_root": "/workspace",
+            "screenshots_dir": "/screenshots",
+            "tier": "workload",
+        }
+
+        cfg = E2EConfig(**kwargs)
+
+        self.assertIs(cfg.tier, E2ETier.WORKLOAD)
 
     def test_post_init_generates_unique_db_names_and_temp_dir(self):
         cfg = E2EConfig(
