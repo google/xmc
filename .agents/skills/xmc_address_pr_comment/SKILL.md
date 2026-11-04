@@ -212,6 +212,9 @@ git push origin HEAD
 > NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
+### Reconcile Live PR Description & Tradeoffs (`Adopt` Items Only)
+After pushing follow-up commits, compare `gh pr view <pr_number> --json title,body` against `git diff origin/main...HEAD`. Whenever review fixes change behavior, touched packages, or surface a load-bearing architectural tradeoff (for example, keeping filtering client-side or deferring a schema migration), update the `Motivation & Context`, `Key Changes`, and `Assumptions` sections via [`./tools/pr_review/update_pr_description.py`](../../../tools/pr_review/update_pr_description.py) after presenting the updated preview for confirmation per [XMC Create PR §4](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool).
+
 ### Verify CI on the Pushed Commit (`Adopt` Items Only)
 After the [CI wait buffer](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period), block on CI for the new head commit with the helper tool instead of polling bare `gh pr checks` (which exits `8` while checks are pending):
 ```bash

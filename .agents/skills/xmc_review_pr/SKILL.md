@@ -58,6 +58,7 @@ Before launching deep code analysis or subagent review panels, the agent must in
    python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial --conv-id <conversation_id>
    ```
    *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` plus its machine-readable sidecar `pr_review_audit_checklist.json` inside `<appDataDir>/brain/<conv_id>/`.*
+   - **Read-Only Fetch-First Inspection**: Throughout Phase 1 and Phase 2 subagent reviews, follow [Non-Mutating Fetch-First PR Inspection](../../rules/pr_review_guidelines.md#1-code-review--inspection-guidelines)—run `git fetch origin pull/<pr_number>/head` and inspect file contents via `git show FETCH_HEAD:<path>` or a detached worktree (`git worktree add --detach`) rather than running `gh pr checkout` in a dirty workspace or reading unchecked-out local working-tree paths.
 
 2. **Present Scoping Summary & Open Direction Window**:
    Display PR metadata, touched package matrix, task references, and ask the user for guidance **before launching subagent reviews**:
