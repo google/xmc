@@ -20,8 +20,8 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-    <div class="rod-split-container">
-      <div class="rod-main-content">
+    <div #splitContainer class="rod-split-container">
+      <div id="rod-queue-list-pane" class="rod-main-content" [style.flex]="leftPaneFlex()">
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
@@ -34,7 +34,12 @@
           (selectQueue)="onQueueSelect($event)"
         />
       </div>
-      <div class="jobs-side-pane">
+      <xmc-rod-resize-divider
+        controls="rod-queue-list-pane"
+        [containerElement]="splitContainer"
+        [(splitRatio)]="splitRatio"
+      />
+      <div class="jobs-side-pane" [style.flex]="rightPaneFlex()">
         <xmc-queue-jobs-table [queueName]="selectedQueue()" />
       </div>
     </div>

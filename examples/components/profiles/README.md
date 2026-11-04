@@ -1,6 +1,6 @@
 # Canonical Component Profiles (`examples/components/profiles/`)
 
-This directory provides canonical reference profiles and Kubernetes Component CRD manifests used for integration testing, demonstration, and continuous verification with [`component-linter`](../../../cmd/component-linter/README.md).
+This directory provides canonical reference profiles and Kubernetes Component CRD manifests used for integration testing, demonstration, and continuous verification with [`component-linter`](../../../cmd/component-linter/README.md). For the production release profile shipping `redpanda`, `clickhouse`, `ingestion-gateway`, `vizier`, and `hpo`, see [`deploy/profiles/stable-2026a/`](../../../deploy/profiles/stable-2026a/README.md).
 
 ---
 

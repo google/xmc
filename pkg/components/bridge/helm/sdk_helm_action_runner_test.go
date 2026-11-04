@@ -34,6 +34,8 @@ import (
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chartutil"
+	"helm.sh/helm/v3/pkg/engine"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/storage/driver"
 )
@@ -368,6 +370,30 @@ func TestSDKHelmActionRunner_ResolveChart_DefaultFallback(t *testing.T) {
 	}
 	if resolved.Metadata == nil || resolved.Metadata.APIVersion != "v2" {
 		t.Errorf("expected v2 metadata, got %v", resolved.Metadata)
+	}
+}
+
+func TestSDKHelmActionRunner_ResolveChart_EmbeddedHPOChart(t *testing.T) {
+	runner := NewSDKHelmActionRunner(nil)
+	ch, err := runner.resolveChart("xmc-cmp-hpo", nil)
+	if err != nil {
+		t.Fatalf("unexpected error resolving embedded hpo chart: %v", err)
+	}
+	if ch == nil || ch.Name() != "hpo" {
+		t.Fatalf("resolveChart(xmc-cmp-hpo) = %v, want embedded chart named %q", ch, "hpo")
+	}
+
+	releaseOpts := chartutil.ReleaseOptions{Name: "xmc-cmp-hpo", Namespace: "xmc", Revision: 1, IsInstall: true}
+	vals, err := chartutil.ToRenderValues(ch, map[string]any{"hpoDeployment": map[string]any{"enabled": true}}, releaseOpts, nil)
+	if err != nil {
+		t.Fatalf("ToRenderValues(xmc-cmp-hpo) failed: %v", err)
+	}
+	rendered, err := engine.Render(ch, vals)
+	if err != nil {
+		t.Fatalf("engine.Render(xmc-cmp-hpo) failed: %v", err)
+	}
+	if got := strings.TrimSpace(rendered["hpo/templates/component.yaml"]); got != "" {
+		t.Errorf("xmc-cmp-hpo rendered component.yaml = %q, want empty (guarded by not hasPrefix xmc-cmp-)", got)
 	}
 }
 

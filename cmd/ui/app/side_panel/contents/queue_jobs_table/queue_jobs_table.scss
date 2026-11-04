@@ -89,3 +89,8 @@
   color: #5f6368;
   margin-top: 12px;
 }
+
+// Lets wide job rows scroll horizontally when the containing pane is narrow.
+.jobs-table-container {
+  overflow-x: auto;
+}

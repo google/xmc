@@ -17,7 +17,6 @@
 
 import argparse
 import json
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.common.tool_utils import HandledError, run_command, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
@@ -86,7 +85,7 @@ def reply_comment(args):
 
     # Fetch latest commit ID of the SKILL.md file
     try:
-        skill_commit_id = subprocess.check_output(
+        skill_commit_id = run_command(
             [
                 "git",
                 "log",
@@ -95,9 +94,10 @@ def reply_comment(args):
                 "--",
                 ":/.agents/skills/xmc_address_pr_comment/SKILL.md",
             ],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
+            capture_output=True,
+            log_on_error=False,
+            log_cmd=False,
+        ).stdout.strip()
         if not skill_commit_id:
             skill_commit_id = "unknown"
     except Exception:

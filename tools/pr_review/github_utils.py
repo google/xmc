@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from tools.common.tool_utils import run_command
+
 
 class GithubAuthError(Exception):
     """Raised when GitHub authentication fails."""
@@ -97,7 +99,9 @@ def _call_api_with_gh(endpoint, method, payload, _user_agent):
         cmd += ["--input", "-"]
         input_data = json.dumps(payload)
 
-    res = subprocess.run(cmd, input=input_data, capture_output=True, text=True, check=True)
+    res = run_command(
+        cmd, capture_output=True, log_cmd=False, log_on_error=False, input_text=input_data
+    )
     return json.loads(res.stdout)
 
 

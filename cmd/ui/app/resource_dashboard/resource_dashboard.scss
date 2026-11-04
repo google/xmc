@@ -37,23 +37,24 @@ xmc-smart-resource-finder {
 
 .rod-split-container {
   display: flex;
-  gap: 24px;
   align-items: flex-start;
   width: 100%;
 }
 
 .rod-main-content {
-  flex: 1 1 50%;
   min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  padding-right: 12px;
 }
 
 .jobs-side-pane {
-  flex: 1 1 50%;
   min-width: 0;
+  box-sizing: border-box;
   position: sticky;
   top: 16px;
+  padding-left: 12px;
 }
 
 .resource-availability-container {

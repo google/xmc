@@ -14,6 +14,7 @@
 
 """Unit tests for tool_utils module."""
 
+import argparse
 import io
 import json
 import os
@@ -38,12 +39,41 @@ from tools.common.tool_utils import (
     load_and_validate_config,
     log_info,
     parse_bool_flag,
+    parse_positive_int,
     parse_semver_prefix,
     parse_yaml_vars,
+    positive_int_arg,
     run_command,
     run_tool,
     verify_helm_min_version,
 )
+
+
+class TestPositiveIntParsing(unittest.TestCase):
+    """Tests for parse_positive_int and its argparse adapter."""
+
+    _VALID = ((1, 1), (15, 15), ("15", 15), (" 7\n", 7), ("007", 7))
+    _INVALID = (0, -3, True, False, 1.0, None, "", " ", "0", "-3", "+5", "1_000", "1.5", "abc", "²")
+
+    def test_parse_positive_int_accepts_positive_integers(self):
+        """Ints >= 1 and ASCII digit strings (whitespace-trimmed) are accepted."""
+        for value, want in self._VALID:
+            with self.subTest(value=value):
+                self.assertEqual(parse_positive_int(value), want)
+
+    def test_parse_positive_int_rejects_everything_else(self):
+        """Bools, floats, non-positive, signed, and non-ASCII values return None."""
+        for value in self._INVALID:
+            with self.subTest(value=value):
+                self.assertIsNone(parse_positive_int(value))
+
+    def test_positive_int_arg_matches_parse_positive_int(self):
+        """The argparse adapter accepts and rejects the same strings."""
+        self.assertEqual(positive_int_arg(" 7\n"), 7)
+        for value in (v for v in self._INVALID if isinstance(v, str)):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(argparse.ArgumentTypeError, "integer >= 1"):
+                    positive_int_arg(value)
 
 
 class TestToolUtils(unittest.TestCase):

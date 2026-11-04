@@ -57,7 +57,7 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist.
 - [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
-- [`wait_for_ci.py`](pr_review/wait_for_ci.py): Polls a PR's CI checks with backoff until they complete; on failure, reports failed checks, workflow run/job IDs, and bounded, error-anchored job log tails.
+- [`wait_for_ci.py`](pr_review/wait_for_ci.py): Polls a PR's CI checks with backoff until they complete, judging only the newest run of each check; on failure, reports failed checks, workflow run/job IDs, and bounded, error-anchored job log tails.
 
 ### 4. [`tools/benchmark/`](benchmark/README.md) (Skills & Rules Benchmark Suite)
 Harness for testing and evaluating skill/rule modifications (see [`tools/benchmark/README.md`](benchmark/README.md)):

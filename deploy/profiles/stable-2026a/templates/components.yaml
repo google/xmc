@@ -22,7 +22,7 @@ them as separate xmc-cmp-<name> releases.
 {{- if hasPrefix "xmc-cmp-" .Release.Name -}}
 {{- fail (printf "release %q: the stable-2026a profile must not be installed as an xmc-cmp-* component release" .Release.Name) -}}
 {{- end -}}
-{{- range $name := list "redpanda" "clickhouse" "ingestion-gateway" }}
+{{- range $name := list "redpanda" "clickhouse" "ingestion-gateway" "vizier" "hpo" }}
 ---
 # Rendered from: components/{{ $name }}/templates/component.yaml
 {{ include "xmc-profile.component" (list $ $name) | trim }}
