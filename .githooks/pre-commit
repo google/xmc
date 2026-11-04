@@ -429,16 +429,17 @@ check_tflint() {
 
 check_helm() {
   # helm lint covers the whole chart, so fix mode runs it for any staged add,
-  # modify, delete or rename under deploy/helm/.
+  # modify, delete or rename under deploy/helm/ or deploy/addons/hpo/vizier/.
   if [ "${MODE}" = "check" ]; then
-    if [ -z "$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
-  elif ! staged_paths_match AMD '^deploy/helm/'; then
+    if [ -z "$(find deploy/helm deploy/addons/hpo/vizier -type f \( -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^deploy/(helm|addons/hpo/vizier)/'; then
     return
   fi
 
   if command -v helm >/dev/null 2>&1; then
     echo "--> Running Helm Chart Linter (helm lint)..."
-    if ! helm lint deploy/helm; then
+    if ! helm lint deploy/helm deploy/addons/hpo/vizier \
+      || ! helm lint deploy/addons/hpo/vizier -f deploy/addons/hpo/vizier/values-kind.yaml; then
       echo "❌ Helm lint failed."
       FAILED=1
     fi

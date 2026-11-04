@@ -52,6 +52,7 @@ jobs:
               - '.github/workflows/lint.yml'
             helm:
               - 'deploy/helm/**'
+              - 'deploy/addons/hpo/vizier/**'
               - '.github/workflows/lint.yml'
             security:
               - 'deploy/**/*.tf'
@@ -59,6 +60,7 @@ jobs:
               - 'deploy/**/*.yaml'
               - 'deploy/**/*.yml'
               - 'deploy/helm/**'
+              - 'deploy/addons/hpo/vizier/**'
               - '.github/workflows/lint.yml'
             github_scripts:
               - '.github/scripts/**'
@@ -265,7 +267,10 @@ jobs:
 
       - name: 'Run Helm Lint'
         if: steps.changes.outputs.helm == 'true'
-        run: helm lint deploy/helm
+        run: |
+          helm lint deploy/helm
+          helm lint deploy/addons/hpo/vizier
+          helm lint deploy/addons/hpo/vizier -f deploy/addons/hpo/vizier/values-kind.yaml
 
       # 7. Infrastructure & Workload Security Scanning (Trivy)
       # zizmor: ignore[impostor-commit]

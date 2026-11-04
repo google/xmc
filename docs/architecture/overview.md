@@ -398,7 +398,9 @@ The **Log Monitor** runs as an in-cluster `Deployment` by default (`logMonitorDe
 Terraform module [`deploy/ctk_v2/modules/log_monitor`](../../deploy/ctk_v2/modules/log_monitor)
 provisions its Cloud Logging sink, Pub/Sub topic, dead-letter topic, and subscription (plus the
 fallback Cloud Run service when `log_monitor_deployment_enabled` is `false`). **Redpanda** and
-**ClickHouse** are bring-your-own addons under [`deploy/addons/metrics`](../../deploy/addons/metrics).
+**ClickHouse** are bring-your-own addons under [`deploy/addons/metrics`](../../deploy/addons/metrics),
+and **Open Source Vizier** (the `vizier` component) is one under
+[`deploy/addons/hpo/vizier`](../../deploy/addons/hpo/vizier).
 
 Two topologies exist — a legacy split across GKE and Cloud Run behind IAP, and the current unified
 GKE deployment behind the Gateway API with application-level OAuth2. The differences are described
