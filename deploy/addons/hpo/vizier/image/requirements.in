@@ -1,0 +1,24 @@
+# Direct runtime dependencies of the Vizier server image (Python 3.11). requirements.txt is the
+# hash-locked closure compiled from this file; regenerate it after any change with:
+#   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+#     -e CUSTOM_COMPILE_COMMAND="the command in requirements.in" \
+#     -v "${PWD}/deploy/addons/hpo/vizier/image:/src" -w /src python:3.11.18-slim \
+#     sh -c 'pip install --user pip-tools==7.4.1 && python -m piptools compile \
+#     --generate-hashes --allow-unsafe --strip-extras --output-file=requirements.txt requirements.in'
+
+# Must match _SUPPORTED_VIZIER_VERSION in vizier_server.py, which wires private internals of
+# this release and refuses to start with any other.
+google-vizier==0.1.24
+# The stubs generated for google-vizier 0.1.24 need grpcio >= 1.70.0 and protobuf 5.x.
+grpcio==1.70.0
+grpcio-reflection==1.70.0
+protobuf==5.29.3
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+# google-vizier imports jax, flax, chex and equinox unconditionally (even for RANDOM_SEARCH). They
+# are pinned here rather than through its [jax] extra, which also pulls an unpinned tfp-nightly.
+jax==0.4.38
+jaxlib==0.4.38
+flax==0.10.2
+chex==0.1.88
+equinox==0.11.7
