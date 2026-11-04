@@ -514,8 +514,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--checkout",
         action="store_true",
-        help="Check out the PR head detached (requires --out-dir); with local changes to "
-        "tracked files, skips and returns checkout_command instead.",
+        help="Check out the PR head detached (requires --out-dir). With local changes to "
+        "tracked files, or if git refuses the checkout, skips it and returns "
+        "checkout_command instead.",
     )
     parser.add_argument("--remote", default="origin", help="Git remote hosting the PR.")
     parser.add_argument(

@@ -45,6 +45,7 @@ When invoking helper CLI scripts under `tools/pr_review/` (`review_pr_generate_a
 4. **Store Artifacts strictly inside a Session Scratch Directory (`--out-dir`)**: All generated markdown audit checklists, reports, and review inputs (`pr.diff`, `pr_meta.json`, `review_threads.json`) go to a session scratch directory outside the repository (`<session_scratch_dir>`) rather than the workspace root to prevent accidental git repository commits.
 5. **Virtual Environment & Execution Safety**: Invoke tools with plain `python3`. All `review_pr_*.py` tools rely **strictly on standard library modules (`argparse`, `pathlib`, `json`, `re`, `subprocess`, `urllib`) + `gh` CLI**, so they execute deterministically in any Python environment and need no virtual environment (see [Python Guidelines](../../rules/languages/python.md#4-virtual-environments--execution-safety) for tools that do).
 6. **Arbitrary Long Comment File Safety (`-f` / `--message-file`)**: Always write proposed inline review comments containing markdown diff blocks or detailed explanations to a file and pass `-f message_file.md` to prevent bash escaping errors or length truncation.
+7. **Run helpers from a trusted checkout**: Every `tools/pr_review/...` command in this skill (Mode A and Mode B) means `<trusted_repo>/tools/pr_review/...`, run with cwd at `<review_dir>`. `<trusted_repo>` is a checkout you trust (e.g. your up-to-date `main`), never the review worktree. After `--checkout` a review worktree sits at a PR head (on a re-review, the previous round's head), so relative paths would run PR-authored helpers with your GitHub credentials.
 
 ---
 
@@ -56,14 +57,14 @@ Before launching deep code analysis or subagent review panels, the agent must in
 
 1. **Run Initial Audit Script at the PR Head**:
    ```bash
-   python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial \
+   python3 <trusted_repo>/tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode initial \
        --out-dir <session_scratch_dir> --checkout
    ```
    *This fetches PR details, diff file touchpoints, extracts task or issue references (#123, issue links) from the description, indexes existing inline comments for deduplication, initializes the **Core 8-Pillar Baseline Audit Matrix (with explicit N/A resolution)**, and creates `pr_review_audit_checklist.md` plus its machine-readable sidecar `pr_review_audit_checklist.json` inside `<session_scratch_dir>` (a directory outside the repository).*
 
    *With `--out-dir` it also fetches `pull/<pr_number>/head` and writes the review inputs there: `pr.diff` (base...head), `pr_meta.json` (base/head refs and SHAs, file list with +/- counts), and `review_threads.json`. `--checkout` checks the PR head out detached so every file you read is the PR's version. When tracked files have local changes, or git refuses the checkout (e.g. an untracked file sits at a path the PR adds), it skips the checkout and returns `checked_out: false` plus the exact `checkout_command`; it never discards local work. Commit or stash, then run that command, or review from `pr.diff` only.*
 
-   *`--checkout` moves HEAD of the worktree you run it in, so relative `tools/` paths then point at the PR's version of the helpers. Prefer a dedicated review worktree (`git worktree add --detach <review_dir>`) and run with cwd at `<review_dir>`. When reviewing in your own worktree, note the current branch first and return with `git switch -` after the review. Run every helper by absolute path from your trusted checkout (e.g. `python3 <trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py ...`) with cwd at `<review_dir>`, so PR-modified helpers never run with your GitHub credentials.*
+   *`--checkout` moves HEAD of the worktree you run it in, so relative `tools/` paths then point at the PR's version of the helpers. Prefer a dedicated review worktree (`git worktree add --detach <review_dir>`) and run with cwd at `<review_dir>`. When reviewing in your own worktree, note the current branch first and return with `git switch -` after the review. Run every helper by absolute path from your trusted checkout, never by relative path (guideline 7).*
 
    > [!IMPORTANT]
    > Never review PR files from a worktree that is not at `pr_meta.json`'s `head_sha`. Take base/head SHAs and the diff from `pr_meta.json` and `pr.diff`; do not guess `gh pr view --json` field names (`baseRefOid` does not exist on older `gh` releases) or chain `gh`/`git rev-parse` calls.
@@ -193,7 +194,7 @@ For each user-approved item:
 1. Write the proposed inline markdown comment to a temporary file (`comment_body.md`).
 2. Run the posting script:
    ```bash
-   python3 tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> \
+   python3 <trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> \
        --commit-id <head_commit_sha> \
        --path <file_path> \
        --line <line_number> \
@@ -201,7 +202,7 @@ For each user-approved item:
    ```
 3. Record the item as posted (updates the sidecar and the markdown table; no hand edits):
    ```bash
-   python3 tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
+   python3 <trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
        -c <session_scratch_dir>/pr_review_audit_checklist.md --mark-posted '#1'
    ```
 
@@ -212,7 +213,7 @@ For each user-approved item:
 Before completing the review session:
 1. Execute programmatic verification against the checklist artifact:
    ```bash
-   python3 tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
+   python3 <trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
        -c <session_scratch_dir>/pr_review_audit_checklist.md
    ```
 2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff. A non-zero exit with `No approved items found` means the sidecar was never populated; fix the sidecar instead of editing the markdown.
@@ -225,11 +226,14 @@ Before completing the review session:
 Triggered when reviewing a Pull Request where the author has replied to earlier comments or pushed follow-up commits.
 
 ### Phase 1: Pull Author Replies & Diff Deltas
-Run the audit generator script in `re-review` mode at the PR head:
+Run the audit generator script in `re-review` mode at the PR head, with cwd at `<review_dir>`:
 ```bash
-python3 tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-review \
+python3 <trusted_repo>/tools/pr_review/review_pr_generate_audit.py <owner> <repo> <pr_number> --mode re-review \
     --out-dir <session_scratch_dir> --checkout
 ```
+
+> [!WARNING]
+> On a re-review, `<review_dir>` is still checked out at the **previous** round's PR head, so its `tools/` are PR-authored. Always use the `<trusted_repo>/` path above, never `tools/...` relative to `<review_dir>` (guideline 7).
 *This generates `pr_rereview_audit_report.md` inside `<session_scratch_dir>` indexing every open review thread, original reviewer text, and author response, plus the sidecar `pr_rereview_audit_report.json` listing each root thread with `"action": null`. When recommending an action, rewrite the sidecar with `"action": "RESOLVE"` or `"action": "RESPOND"` for that thread; threads left `null` are skipped by verification. It also writes the same review inputs as Mode A (`pr.diff`, `pr_meta.json`, `review_threads.json`) and checks out the PR head under the same dirty-worktree rule.*
 
 *The output's `rereview_delta` (also in `pr_meta.json` and the report header) counts lines changed since the commit of your latest real review (override with `--since-sha`). Pending drafts are ignored, and so are the empty reviews GitHub creates to wrap standalone thread replies, because those are pinned to the head at reply time rather than to reviewed code. Without an earlier review, or when that commit cannot be compared, the size is unknown; after a rebase or force-push it is usually over-counted. Both cases set `full_review_recommended` to `true`.*
@@ -288,7 +292,7 @@ Because the re-review analysis is saved as a markdown document in `<session_scra
 * The agent asks for explicit confirmation:
   > *"Please inspect `pr_rereview_audit_report.md`. Shall I proceed with posting recommended counter-replies and resolving verified threads on PR #<pr_number>? (Y/n)"*
 * For every confirmed thread:
-  * If `[RESPOND]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
-  * If `[RESOLVE]`: Invoke `tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL. To inspect current thread state (thread IDs, `path:line`, resolution, whether you replied), run `tools/pr_review/review_threads.py list <owner> <repo> <pr_number>`; never hand-write `gh api graphql` calls.
-* After resolving a thread, record it with `tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md --mark-posted <thread_id>`.
-* Run programmatic verification check (`tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md`).
+  * If `[RESPOND]`: Invoke `<trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
+  * If `[RESOLVE]`: Invoke `<trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL. To inspect current thread state (thread IDs, `path:line`, resolution, whether you replied), run `<trusted_repo>/tools/pr_review/review_threads.py list <owner> <repo> <pr_number>`; never hand-write `gh api graphql` calls.
+* After resolving a thread, record it with `<trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md --mark-posted <thread_id>`.
+* Run programmatic verification check (`<trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md`).
