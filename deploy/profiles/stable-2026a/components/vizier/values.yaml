@@ -1,0 +1,38 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Whether the Vizier 3P Wrapper Component is enabled in the cluster catalog.
+# Disabled by default to preserve existing non-component deployments (enable_components: false).
+enabled: false
+
+# Release maturity tier declared by the catalog ("EXPERIMENTAL", "PREVIEW", or "STABLE").
+stability: EXPERIMENTAL
+
+# Target Kubernetes namespace where the Component CR and Vizier service reside.
+# Defaults to .Release.Namespace when non-default, or "xmc".
+namespace: ""
+
+# Admission guard preventing accidental deletion of the active Component CR when enabled.
+deletionProtection: true
+
+# Action taken on underlying resources when the Component CR is deleted ("Delete" or "Orphan").
+deletionPolicy: Delete
+
+# Connection parameters projected into the Component CR for downstream XMC services (e.g. hpo).
+parameters:
+  # Internal Kubernetes DNS endpoint (host:port) for the Open Source Vizier gRPC server.
+  endpoint: "vizier-service.xmc.svc.cluster.local:7077"
+
+# Optional list of upstream XMC Component names that must be Ready before Vizier is reconciled.
+dependencies: []
