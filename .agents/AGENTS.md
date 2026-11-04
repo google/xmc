@@ -45,6 +45,13 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) & [Rule Authoring Standards](rules/rule_authoring_standards.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |
 
+### Repository Discovery, Bazel & Scratch Execution Routing
+Apply these cross-cutting routing conventions across every session regardless of touched file extensions:
+
+- **File & Text Discovery Before Reading**: List unfamiliar source, migration, workflow, or helper paths via `git ls-files <dir>` and search repository text via `git grep` before invoking file-read or file-edit tools. Canonical automation scripts live under [`tools/`](../tools/README.md) (`tools/pr_review/`, `tools/dev_env/`, `tools/benchmark/`, [`tools/run_affected_tests.py`](../tools/run_affected_tests.py), [`tools/analyze_diff_size.py`](../tools/analyze_diff_size.py)).
+- **Bazel Target Wildcard Routing**: Run affected test suites via [`./tools/run_affected_tests.py`](../tools/run_affected_tests.py) or `bazel test //<dir>/...` (slash `/...` for recursive subpackages, `:all` for a single package—never invalid `//<dir>:...`), and discover target names via `bazel query 'tests(//<dir>/...)'`.
+- **Standalone Scratch Scripts Over `python3 -c` (All Tasks)**: Even when working on Go, TypeScript, or review tasks where Python/Shell rules are not loaded, write multi-line ad-hoc Python snippets or Markdown/JSON payloads to standalone `.py` files under `${ARTIFACT_DIR:-/tmp}/scratch/` instead of `python3 -c "..."` per [Python Guidelines §4](rules/languages/python.md#4-virtual-environments--execution-safety) and [Shell Guidelines §3](rules/languages/shell.md#3-command-substitution--payload-truncation-safety).
+
 
 ---
 
