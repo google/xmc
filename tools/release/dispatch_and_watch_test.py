@@ -168,7 +168,8 @@ class DispatchAndWatchTest(unittest.TestCase):
                 f"--state-file={state_path}",
             ]
             res = dispatch_and_watch(create_parser().parse_args(argv))
-            self.assertEqual((res["run_id"], res["conclusion"]), (220, "success"))
+            self.assertEqual(res["run_id"], 220)
+            self.assertEqual(res["conclusion"], "success")
             self.assertEqual(
                 mock_run.call_args_list[0].args[0],
                 ["git", "fetch", "--", "origin", "fix/nightly-slug"],

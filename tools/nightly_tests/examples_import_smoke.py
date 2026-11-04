@@ -238,24 +238,46 @@ def parse_verify_modules(
 
 
 def resolve_workflow_path(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
-    """Resolve the nightly workflow YAML path from `repo_dir` or default runfiles."""
+    """Resolve the nightly workflow YAML path from `repo_dir` or default runfiles.
+
+    Args:
+        repo_dir: Optional repository root override; None or `.` uses CWD/runfiles.
+
+    Returns:
+        Path to `.github/workflows/nightly-examples-e2e.yml`.
+    """
     if repo_dir and repo_dir != pathlib.Path("."):
         return repo_dir / _WORKFLOW_REL
     return _WORKFLOW_REL if _WORKFLOW_REL.is_file() else DEFAULT_WORKFLOW
 
 
 def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
-    """Validate a nightly `examples_filter` input against `matrix.example.id` entries."""
+    """Validate a nightly `examples_filter` input against `matrix.example.id` entries.
+
+    Args:
+        raw_filter: Comma-separated `examples_filter` input string (empty allows all).
+        workflow_text: Raw YAML contents of `nightly-examples-e2e.yml`.
+
+    Raises:
+        ValueError: If the workflow contains no `matrix.example.id` entries or if any
+            comma-delimited token does not match a known ID case-insensitively.
+    """
     if not raw_filter:
         return
+
     valid_ids = {item["id"] for item in parse_matrix_items(workflow_text) if item.get("id")}
     if not valid_ids:
         raise ValueError("no matrix.example.id entries found in workflow")
-    ok = {mid.lower() for mid in valid_ids}
-    bad = [token for token in raw_filter.split(",") if token.lower() not in ok]
-    if bad:
-        ids = ", ".join(sorted(valid_ids))
-        raise ValueError(f"unknown or malformed examples_filter entry {bad!r}; valid ids: {ids}")
+
+    valid_ids_lower = {example_id.lower() for example_id in valid_ids}
+    invalid_tokens = [
+        token for token in raw_filter.split(",") if token.lower() not in valid_ids_lower
+    ]
+    if invalid_tokens:
+        sorted_ids = ", ".join(sorted(valid_ids))
+        raise ValueError(
+            f"unknown or malformed examples_filter entry {invalid_tokens!r}; valid ids: {sorted_ids}"
+        )
 
 
 def expand_args(raw_args: str) -> list[str]:

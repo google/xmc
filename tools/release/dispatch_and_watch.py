@@ -21,8 +21,8 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +36,15 @@ _EXAMPLES_WORKFLOWS = frozenset({"nightly-examples-e2e.yml", "examples-smoke.yml
 
 def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Runs GitHub CLI command with handled error for missing binary."""
-    gh = partial(run_command, capture_output=True, check=False, log_cmd=False, log_on_error=False)
-    hint = "Ensure 'gh' is on PATH and authenticate with 'gh auth login'."
-    return gh(["gh", *args], cwd=repo_dir, handled_instruction=hint)
+    return run_command(
+        ["gh", *args],
+        capture_output=True,
+        check=False,
+        log_cmd=False,
+        log_on_error=False,
+        cwd=repo_dir,
+        handled_instruction="Ensure 'gh' is on PATH and authenticate with 'gh auth login'.",
+    )
 
 
 def _extract_page_url(view_data: dict[str, Any]) -> str:
@@ -182,11 +188,13 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
         if key in parsed:
             raise HandledError(f"Duplicate workflow input key '{key}'.", "Specify each key once.")
         parsed[key] = value
+
     if Path(workflow).name not in _EXAMPLES_WORKFLOWS or "examples_filter" not in parsed:
         return
+
     try:
-        wf_text = smoke.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
-        smoke.validate_examples_filter(parsed["examples_filter"], wf_text)
+        workflow_text = smoke.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
+        smoke.validate_examples_filter(parsed["examples_filter"], workflow_text)
     except (OSError, ValueError) as exc:
         hint = "Pass comma-separated matrix.example.id values without spaces."
         raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
@@ -194,11 +202,24 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
 
 def _resolve_remote_sha(ref: str, cwd: Path | None) -> str:
     """Fetches origin/<ref> and returns the resolved remote commit SHA via FETCH_HEAD."""
-    git = partial(run_command, cwd=cwd, capture_output=True, log_cmd=False, log_on_error=False)
-    hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
-    git(["git", "fetch", "--", "origin", ref], handled_instruction=hint)
-    rev_cmd = ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"]
-    return git(rev_cmd, handled_instruction="Verify remote ref commit.").stdout.strip()
+    fetch_hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
+    run_command(
+        ["git", "fetch", "--", "origin", ref],
+        cwd=cwd,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        handled_instruction=fetch_hint,
+    )
+    rev_res = run_command(
+        ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+        cwd=cwd,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        handled_instruction="Verify that the remote ref points to a valid commit.",
+    )
+    return rev_res.stdout.strip()
 
 
 def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
@@ -311,48 +332,84 @@ def _watch_run_outcome(
     }
 
 
+@dataclass(frozen=True)
+class _DispatchOptions:
+    """Validated CLI parameters for workflow dispatch and run correlation."""
+
+    workflow: str
+    ref: str
+    target_sha: str
+    find_existing: bool
+    inputs: list[str]
+    state_file: str | None
+    repo_dir: Path | None
+    poll_attempts: int
+    poll_interval: float
+
+
+def _parse_dispatch_options(args: argparse.Namespace) -> _DispatchOptions:
+    """Normalizes and validates CLI arguments prior to GitHub Actions invocation."""
+    workflow = str(args.workflow)
+    raw_ref = args.ref if hasattr(args, "ref") else "main"
+    ref = _validate_ref(str(raw_ref))
+    target_sha = str(getattr(args, "target_sha", "") or "").strip()
+    find_existing = bool(getattr(args, "find_existing", False))
+    inputs = list(getattr(args, "input", None) or [])
+    raw_repo_dir = getattr(args, "repo_dir", None)
+    repo_dir = Path(raw_repo_dir) if raw_repo_dir else None
+
+    if find_existing and inputs:
+        raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
+    _validate_inputs(workflow, inputs, repo_dir)
+    if not shutil.which("gh"):
+        raise HandledError(
+            "GitHub CLI ('gh') is not on PATH.",
+            "Ensure 'gh' is on PATH and authenticate with 'gh auth login'.",
+        )
+
+    return _DispatchOptions(
+        workflow=workflow,
+        ref=ref,
+        target_sha=target_sha,
+        find_existing=find_existing,
+        inputs=inputs,
+        state_file=getattr(args, "state_file", None),
+        repo_dir=repo_dir,
+        poll_attempts=int(getattr(args, "poll_attempts", 12)),
+        poll_interval=float(getattr(args, "poll_interval", 5.0)),
+    )
+
+
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
-    workflow, ref = args.workflow, _validate_ref(args.ref)
-    target_sha = (getattr(args, "target_sha", "") or "").strip()
-    state_file = getattr(args, "state_file", None)
-    repo_dir = Path(args.repo_dir) if getattr(args, "repo_dir", None) else None
-    if args.find_existing and args.input:
-        raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
-    _validate_inputs(workflow, args.input, repo_dir)
-    if not shutil.which("gh"):
-        raise HandledError("GitHub CLI ('gh') is not in PATH.", "Run 'gh auth login'.")
+    opts = _parse_dispatch_options(args)
 
-    # 1. Check for existing successful run if --find-existing
-    if getattr(args, "find_existing", False):
-        existing = _find_existing_run(workflow, ref, target_sha, state_file, repo_dir)
+    if opts.find_existing:
+        existing = _find_existing_run(
+            opts.workflow, opts.ref, opts.target_sha, opts.state_file, opts.repo_dir
+        )
         if existing:
             return existing
 
-    # 2. Dispatch workflow run
-    if not target_sha:
-        target_sha = _resolve_remote_sha(ref, repo_dir)
-    dispatched_at = _dispatch_workflow(workflow, ref, args.input, repo_dir)
-
-    # 3. Poll for registered workflow run matching target_sha & timestamp
+    target_sha = opts.target_sha or _resolve_remote_sha(opts.ref, opts.repo_dir)
+    dispatched_at = _dispatch_workflow(opts.workflow, opts.ref, opts.inputs, opts.repo_dir)
     run_data = _poll_for_run(
-        workflow,
-        ref,
+        opts.workflow,
+        opts.ref,
         target_sha,
         dispatched_at,
-        args.poll_attempts,
-        args.poll_interval,
-        repo_dir,
+        opts.poll_attempts,
+        opts.poll_interval,
+        opts.repo_dir,
     )
 
     run_id = int(run_data["databaseId"])
     run_sha = run_data.get("headSha", "")
     run_url = run_data.get("url", f"https://github.com/google/xmc/actions/runs/{run_id}")
 
-    # 4. Strict commit SHA verification
     if target_sha and not run_sha.startswith(target_sha):
         _update_state_file(
-            state_file,
+            opts.state_file,
             target_sha=target_sha,
             run_sha=run_sha,
             run_id=run_id,
@@ -367,8 +424,7 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             "page_url": "",
         }
 
-    # 5. Watch to completion via `gh run watch`
-    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, state_file, repo_dir)
+    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, opts.state_file, opts.repo_dir)
 
 
 def create_parser() -> argparse.ArgumentParser:
