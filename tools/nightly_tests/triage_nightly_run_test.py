@@ -36,14 +36,19 @@ def _proc(
 
 
 def _run_fixture(
-    run_id: int, conclusion: str | None, sha: str, created_at: str, status: str = "completed"
+    run_id: int,
+    conclusion: str | None,
+    sha: str,
+    created_at: str,
+    status: str = "completed",
+    event: str = "schedule",
 ) -> dict[str, Any]:
     return {
         "databaseId": run_id,
         "status": status,
         "conclusion": conclusion,
         "headSha": sha,
-        "event": "schedule",
+        "event": event,
         "createdAt": created_at,
         "url": f"https://github.com/google/xmc/actions/runs/{run_id}",
     }
@@ -118,7 +123,9 @@ class TriageNightlyRunTest(unittest.TestCase):
                 [
                     "cmd/rod_data_provider/main.go",
                     "deploy/addons/metrics/setup_metrics_addons.sh",
+                    "deploy/clickhouse/schema.sql",
                     "deploy/cli/install_xmanager.py",
+                    "deploy/local/kind-config.yaml",
                     "README.md",
                 ]
             )
@@ -168,9 +175,54 @@ class TriageNightlyRunTest(unittest.TestCase):
             self.assertEqual(len(skew["undeployed_commits"]), 2)
             self.assertEqual(
                 skew["cluster_deployed_files"],
-                ["cmd/rod_data_provider/main.go", "deploy/addons/metrics/setup_metrics_addons.sh"],
+                [
+                    "cmd/rod_data_provider/main.go",
+                    "deploy/addons/metrics/setup_metrics_addons.sh",
+                    "deploy/clickhouse/schema.sql",
+                ],
             )
             self.assertEqual(res["warnings"], [])
+
+    @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
+    @patch("tools.nightly_tests.triage_nightly_run.run_command")
+    def test_workflow_dispatch_green_run_does_not_supersede_scheduled_failure(
+        self, mock_run, mock_which
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            e2e_runs = [
+                _run_fixture(
+                    9050,
+                    "success",
+                    "dispatch_sha",
+                    "2026-11-04T06:00:00Z",
+                    event="workflow_dispatch",
+                ),
+                _run_fixture(9001, "failure", "sched_fail_sha", "2026-11-04T04:00:00Z"),
+                _run_fixture(8990, "success", "prev_sched_sha", "2026-11-03T04:00:00Z"),
+            ]
+            builds = [_run_fixture(8001, "success", "sched_fail_sha", "2026-11-04T01:00:00Z")]
+            mock_run.side_effect = [
+                _proc(),
+                _proc(json.dumps(e2e_runs)),
+                _proc("[]"),
+                _proc('{"jobs": []}'),
+                _proc('{"artifacts": []}'),
+                _proc(json.dumps(builds)),
+            ]
+            res = triage_nightly_run(create_parser().parse_args([f"--scratch-dir={tmpdir}"]))
+            self.assertEqual(
+                (res["status_summary"], res["is_latest_e2e_failing"]), ("failing", True)
+            )
+            self.assertEqual(res["target_run"]["databaseId"], 9001)
+            self.assertEqual(res["latest_completed_e2e_run"]["databaseId"], 9050)
+            self.assertIsNone(res["superseded_by_green_run"])
+            self.assertEqual(
+                res["warnings"],
+                [
+                    "Newer green workflow_dispatch run 9050 (possibly filtered) "
+                    "not treated as superseding."
+                ],
+            )
 
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
@@ -179,12 +231,16 @@ class TriageNightlyRunTest(unittest.TestCase):
     ) -> None:
         e2e_runs = [
             _run_fixture(9200, "success", "green_sha", "2026-11-04T04:00:00Z"),
+            _run_fixture(
+                9175, "success", "wd_sha", "2026-11-03T12:00:00Z", event="workflow_dispatch"
+            ),
             _run_fixture(9150, "failure", "old_fail_sha", "2026-11-03T04:00:00Z"),
         ]
         mock_run.side_effect = [_proc(), _proc(json.dumps(e2e_runs)), _proc("[]")]
         res = triage_nightly_run(create_parser().parse_args([]))
         self.assertEqual((res["status_summary"], res["is_latest_e2e_failing"]), ("healthy", False))
         self.assertIsNone(res["target_run"])
+        self.assertEqual(res["warnings"], [])
         self.assertEqual(mock_run.call_count, 3)
 
         in_prog = [_run_fixture(9300, None, "sha", "2026-11-04T05:00:00Z", status="in_progress")]
@@ -199,7 +255,12 @@ class TriageNightlyRunTest(unittest.TestCase):
         self, mock_run, mock_which
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            e2e_runs = [_run_fixture(9200, "success", "fixed_sha", "2026-11-04T04:00:00Z")]
+            e2e_runs = [
+                _run_fixture(9200, "success", "fixed_sha", "2026-11-04T04:00:00Z"),
+                _run_fixture(
+                    9175, "success", "wd_sha", "2026-11-02T06:00:00Z", event="workflow_dispatch"
+                ),
+            ]
             explicit_run = _run_fixture(9150, "cancelled", "old_sha", "2026-11-01T04:00:00Z")
             jobs_payload = {
                 "jobs": [
@@ -234,6 +295,36 @@ class TriageNightlyRunTest(unittest.TestCase):
             self.assertIsNone(res["rollout_skew"]["active_build_run"])
             self.assertEqual(res["downloaded_artifacts"], [])
             self.assertEqual(len(res["warnings"]), 4)
+            self.assertTrue(any("15-run lookback window" in w for w in res["warnings"]))
+
+            # Explicit in_progress and healthy runs return early without downloading or setting sup
+            in_prog_run = _run_fixture(
+                9100, None, "sha", "2026-11-01T04:00:00Z", status="in_progress"
+            )
+            mock_run.reset_mock()
+            mock_run.side_effect = [
+                _proc(),
+                _proc(json.dumps(e2e_runs)),
+                _proc("[]"),
+                _proc(json.dumps(in_prog_run)),
+            ]
+            ip_res = triage_nightly_run(create_parser().parse_args(["--run-id=9100"]))
+            self.assertEqual(ip_res["status_summary"], "in_progress")
+            self.assertIsNone(ip_res["superseded_by_green_run"])
+            self.assertIsNone(ip_res["scratch_dir"])
+            self.assertEqual(mock_run.call_count, 4)
+
+            mock_run.reset_mock()
+            mock_run.side_effect = [
+                _proc(),
+                _proc(json.dumps(e2e_runs)),
+                _proc("[]"),
+                _proc(json.dumps(e2e_runs[0])),
+            ]
+            ok_res = triage_nightly_run(create_parser().parse_args(["--run-id=9200"]))
+            self.assertEqual(ok_res["status_summary"], "healthy")
+            self.assertIsNone(ok_res["rollout_skew"])
+            self.assertEqual(mock_run.call_count, 4)
 
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which", return_value="/bin/tool")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
@@ -255,6 +346,20 @@ class TriageNightlyRunTest(unittest.TestCase):
             self.assertEqual(res["rollout_skew"]["undeployed_commits"], [])
             self.assertTrue(any("git inspect" in w for w in res["warnings"]))
 
+            bad_builds = [_run_fixture(8001, "success", "bad..sha", "2026-11-04T01:00:00Z")]
+            mock_run.side_effect = [
+                _proc(),
+                _proc(json.dumps(e2e_runs)),
+                _proc("[]"),
+                _proc('{"jobs": []}'),
+                _proc('{"artifacts": []}'),
+                _proc(json.dumps(bad_builds)),
+            ]
+            with patch.dict("os.environ", {"ARTIFACT_DIR": ""}), patch.object(Path, "mkdir"):
+                bad_res = triage_nightly_run(create_parser().parse_args([]))
+            self.assertEqual(bad_res["scratch_dir"], "/tmp/nightly_triage_9001")
+            self.assertTrue(any("Invalid commit SHA" in w for w in bad_res["warnings"]))
+
     @patch("tools.nightly_tests.triage_nightly_run.shutil.which")
     @patch("tools.nightly_tests.triage_nightly_run.run_command")
     def test_validation_and_required_gh_errors(self, mock_run, mock_which) -> None:
@@ -271,6 +376,8 @@ class TriageNightlyRunTest(unittest.TestCase):
             ["--branch=-bad"],
             ["--branch=main..HEAD"],
             ["--branch=main:other"],
+            ["--branch=feat/trailing/"],
+            ["--branch=feat//double"],
             ["--run-id=0"],
             ["--limit=0"],
         ):

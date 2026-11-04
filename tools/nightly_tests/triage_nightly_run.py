@@ -24,7 +24,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, TypeGuard
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
 from tools.nightly_tests.examples_import_smoke import parse_matrix_items, resolve_workflow_path
@@ -34,7 +34,7 @@ _REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 _ART_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _FAIL_SET = frozenset({"failure", "timed_out", "startup_failure", "action_required"})
 _OK_SET = frozenset({"success", "skipped", "neutral"})
-_DEPLOY_DIRS = ("deploy/helm/", "deploy/ctk_v2/", "deploy/addons/", "deploy/profiles/")
+_DEPLOY_DIRS = tuple(f"deploy/{d}/" for d in ["helm", "ctk_v2", "addons", "clickhouse", "profiles"])
 _CLUSTER_DIRS = ("cmd/", "internal/", "pkg/", "api/", *_DEPLOY_DIRS)
 _E2E_JSON = "databaseId,status,conclusion,headSha,event,createdAt,url"
 _BUILD_JSON = "databaseId,status,conclusion,headSha,createdAt,url"
@@ -75,13 +75,12 @@ def _validate_inputs(args: argparse.Namespace) -> tuple[str, str, Path | None]:
     repo, branch = args.repo.strip(), args.branch.strip()
     if not _REPO_RE.match(repo):
         raise HandledError(f"Invalid --repo '{args.repo}'.", "Use OWNER/REPO format.")
-    bad_ref = branch.startswith("origin/") or not _REF_RE.match(branch)
+    bad_ref = branch.startswith("origin/") or branch.endswith("/") or not _REF_RE.match(branch)
     if bad_ref or ".." in branch or "//" in branch:
         raise HandledError(f"Invalid --branch '{args.branch}'.", "Omit 'origin/' prefix.")
     if (args.run_id is not None and args.run_id <= 0) or args.limit < 1:
         raise HandledError("--run-id and --limit must be >= 1.", "Pass positive integers.")
-    raw_dir = getattr(args, "repo_dir", None)
-    return repo, branch, (Path(raw_dir) if raw_dir else None)
+    return repo, branch, (Path(args.repo_dir) if getattr(args, "repo_dir", None) else None)
 
 
 def _load_matrix_name_map(raw_dir: str | None) -> dict[str, str]:
@@ -90,16 +89,29 @@ def _load_matrix_name_map(raw_dir: str | None) -> dict[str, str]:
     return {f"Run & Verify: {i['name']}": i["id"] for i in items if i.get("name") and i.get("id")}
 
 
-def _select_target_run(repo: str, run_id: int | None, runs: list[Any], cwd: Path | None) -> Any:
+def _is_newer(a: Any, b: Any) -> bool:
+    return bool(b and (o := b.get("createdAt")) and ((a or {}).get("createdAt") or "") >= str(o))
+
+
+def _is_failed_run(run: Any) -> TypeGuard[dict[str, Any]]:
+    return bool(run and run.get("status") == "completed" and run.get("conclusion") not in _OK_SET)
+
+
+def _select_target_run(runs: list[Any], pinned: Any, auto: bool, warns: list[str]) -> Any:
     done = [r for r in runs if r.get("status") == "completed"]
-    latest = done[0] if done else None
-    green = next((r for r in done if r.get("conclusion") == "success"), None)
-    if run_id is not None:
-        cmd = ["run", "view", str(run_id), f"--repo={repo}", f"--json={_E2E_JSON}"]
-        return latest, green, _gh_json(cmd, cwd)
-    fail = next((r for r in done if r.get("conclusion") not in _OK_SET), None)
-    g_ts, f_ts = (green or {}).get("createdAt") or "", (fail or {}).get("createdAt") or ""
-    return latest, green, (None if fail and green and g_ts >= f_ts else fail)
+    greens = [r for r in done if r.get("conclusion") == "success"]
+    sched_green = next((r for r in greens if r.get("event") == "schedule"), None)
+    latest_fail = next((r for r in done if r.get("conclusion") not in _OK_SET), None)
+    active_fail = None if _is_newer(sched_green, latest_fail) else latest_fail
+    target = active_fail if auto else pinned
+    sup = sched_green if (_is_failed_run(target) and _is_newer(sched_green, target)) else None
+    manual = next((r for r in greens if r.get("event") != "schedule"), None)
+    if target is None and auto and not done:
+        warns.append("No completed nightly-examples-e2e.yml runs found.")
+    elif _is_failed_run(target) and sup is None and manual and _is_newer(manual, target):
+        ev, mid = manual.get("event") or "manual", manual.get("databaseId")
+        warns.append(f"Newer green {ev} run {mid} (possibly filtered) not treated as superseding.")
+    return (done[0] if done else None), sup, target, (active_fail is not None)
 
 
 def _collect_failed_jobs(ctx: _TriageCtx, run_id: int, concl: str, nmap: dict[str, str]) -> Any:
@@ -107,26 +119,21 @@ def _collect_failed_jobs(ctx: _TriageCtx, run_id: int, concl: str, nmap: dict[st
     payload = _gh_json(["api", ep], ctx.repo_dir) or {}
     bad = _FAIL_SET | ({"cancelled"} if concl == "cancelled" else set())
     failed_jobs: list[dict[str, Any]] = []
-    failed_ids: set[str] = set()
     for job in payload.get("jobs", []):
         if job.get("conclusion") not in bad:
             continue
         jid, name = int(job["id"]), str(job.get("name") or "")
         ex_id = nmap.get(name, "")
-        if ex_id:
-            failed_ids.add(ex_id)
         res = _quiet(["gh", "api", f"repos/{ctx.repo}/actions/jobs/{jid}/logs"], ctx.repo_dir)
-        log_path: str | None = None
+        log_path = str(dest := ctx.scratch_dir / f"job_{jid}.log") if res.returncode == 0 else None
         if res.returncode == 0:
-            dest = ctx.scratch_dir / f"job_{jid}.log"
             dest.write_text(res.stdout, encoding="utf-8")
-            log_path = str(dest)
         else:
             ctx.warnings.append(f"Failed to download log for job {jid}: {res.stderr.strip()}")
         steps = [s.get("name", "") for s in job.get("steps", []) if s.get("conclusion") in bad]
         head = {"job_id": jid, "name": name, "example_id": ex_id, "failed_steps": steps}
         failed_jobs.append(head | {"conclusion": job.get("conclusion") or "", "log_path": log_path})
-    return failed_jobs, failed_ids
+    return failed_jobs
 
 
 def _download_artifacts(ctx: _TriageCtx, run_id: int, names: set[str], pfx: str = "") -> list[str]:
@@ -158,17 +165,17 @@ def _compute_rollout_skew(ctx: _TriageCtx, target: dict[str, Any], builds: list[
     cutoff = str(target.get("createdAt") or "")
     prior = [b for b in done if not cutoff or str(b.get("createdAt") or "") <= cutoff]
     if done and not prior:
-        ctx.warnings.append("No nightly-build.yml run found at/before target; increase lookback.")
-    active = prior[0] if prior else None
+        ctx.warnings.append("No prior nightly-build.yml run found in 15-run lookback window.")
+    active = next(iter(prior), None)
     green = next((b for b in prior if b.get("conclusion") == "success"), None)
-    diag: list[str] = []
-    if active and active.get("conclusion") in _FAIL_SET:
-        diag = _download_artifacts(ctx, int(active["databaseId"]), {"deploy-gke-diagnostics"})
-    base_sha = str((green or {}).get("headSha") or "")
-    e2e_sha = str(target.get("headSha") or "")
+    aid = int(active["databaseId"]) if active and active.get("conclusion") in _FAIL_SET else 0
+    diag = _download_artifacts(ctx, aid, {"deploy-gke-diagnostics"}) if aid else []
+    base_sha, e2e_sha = str((green or {}).get("headSha") or ""), str(target.get("headSha") or "")
     commits, cluster_files = [], []
-    if not green or not (_REF_RE.match(base_sha) and _REF_RE.match(e2e_sha)):
+    if not green:
         ctx.warnings.append("No prior green nightly-build.yml run found; rollout skew unknown.")
+    elif not (_REF_RE.match(base_sha) and _REF_RE.match(e2e_sha)) or ".." in base_sha + e2e_sha:
+        ctx.warnings.append("Invalid commit SHA on build or E2E run; rollout skew unknown.")
     elif base_sha != e2e_sha:
         rng = f"{base_sha}..{e2e_sha}"
         log_r = _quiet(["git", "log", "--oneline", rng], ctx.repo_dir)
@@ -183,24 +190,18 @@ def _compute_rollout_skew(ctx: _TriageCtx, target: dict[str, Any], builds: list[
     return skew | {"undeployed_commits": commits, "cluster_deployed_files": cluster_files}, diag
 
 
-def _report(lat: Any, grn: Any, tgt: Any, iss: Any, warns: list[str], **kw: Any) -> dict[str, Any]:
-    concl = str((tgt or {}).get("conclusion") or "")
-    g_ts, t_ts = str((grn or {}).get("createdAt") or ""), str((tgt or {}).get("createdAt") or "")
-    sup = grn if (tgt and concl not in _OK_SET and grn and t_ts and g_ts > t_ts) else None
-    is_fail = bool(tgt and lat and lat.get("conclusion") not in _OK_SET)
+def _report(e2e: Any, iss: list[Any], warns: list[str], **kw: Any) -> dict[str, Any]:
+    lat, sup, tgt, is_fail = e2e
     if tgt is None:
         status = "no_completed_runs" if lat is None else "healthy"
-    elif tgt.get("status") != "completed":
-        status = "in_progress"
-    elif concl in _OK_SET:
-        status = "healthy"
+    elif not _is_failed_run(tgt):
+        status = "in_progress" if tgt.get("status") != "completed" else "healthy"
     else:
         status = "superseded" if (sup and not is_fail) else "failing"
-    head = {"status_summary": status, "is_latest_e2e_failing": is_fail, "target_run": tgt}
-    refs = {"latest_completed_e2e_run": lat, "superseded_by_green_run": sup}
-    body = {"open_issues": iss, "failed_jobs": [], "downloaded_artifacts": []}
-    tail = {"rollout_skew": None, "scratch_dir": None, "warnings": warns}
-    return head | refs | body | tail | kw
+    base = {"status_summary": status, "is_latest_e2e_failing": is_fail, "target_run": tgt}
+    refs = {"latest_completed_e2e_run": lat, "superseded_by_green_run": sup, "open_issues": iss}
+    empty: dict[str, Any] = {"failed_jobs": [], "downloaded_artifacts": [], "rollout_skew": None}
+    return base | refs | empty | {"scratch_dir": None, "warnings": warns} | kw
 
 
 def triage_nightly_run(args: argparse.Namespace) -> dict[str, Any]:
@@ -214,25 +215,25 @@ def triage_nightly_run(args: argparse.Namespace) -> dict[str, Any]:
     e2e_runs = _gh_json(e2e_q.split(), repo_dir) or []
     iss_q = f"issue list --repo={repo} --label=nightly-failure --state=open --json={_ISS_JSON}"
     issues = _gh_json(iss_q.split(), repo_dir, warnings) or []
-    latest, green, target = _select_target_run(repo, args.run_id, e2e_runs, repo_dir)
-    if target is None:
-        if latest is None:
-            warnings.append("No completed nightly-examples-e2e.yml runs found.")
-        return _report(latest, green, None, issues, warnings)
+    view_q = f"run view {args.run_id} --repo={repo} --json={_E2E_JSON}"
+    pinned = _gh_json(view_q.split(), repo_dir) if args.run_id is not None else None
+    e2e = _select_target_run(e2e_runs, pinned, args.run_id is None, warnings)
+    if not _is_failed_run(target := e2e[2]):
+        return _report(e2e, issues, warnings)
     run_id = int(target["databaseId"])
-    default_dir = Path(os.environ.get("ARTIFACT_DIR", "/tmp")) / f"nightly_triage_{run_id}"
+    default_dir = Path(os.environ.get("ARTIFACT_DIR") or "/tmp") / f"nightly_triage_{run_id}"
     scratch = Path(args.scratch_dir) if args.scratch_dir else default_dir
     scratch.mkdir(parents=True, exist_ok=True)
     ctx = _TriageCtx(repo, repo_dir, scratch, warnings)
     concl = str(target.get("conclusion") or "")
-    jobs, ids = _collect_failed_jobs(ctx, run_id, concl, _load_matrix_name_map(args.repo_dir))
-    arts = _download_artifacts(ctx, run_id, {f"result-{i}" for i in ids}, "ui-screenshots-")
+    jobs = _collect_failed_jobs(ctx, run_id, concl, _load_matrix_name_map(args.repo_dir))
+    res_names = {f"result-{j['example_id']}" for j in jobs if j["example_id"]}
+    arts = _download_artifacts(ctx, run_id, res_names, "ui-screenshots-")
     bld_q = f"{base_q} --workflow=nightly-build.yml --limit=15 --json={_BUILD_JSON}"
-    skew, diag = _compute_rollout_skew(
-        ctx, target, _gh_json(bld_q.split(), repo_dir, warnings) or []
-    )
+    builds = _gh_json(bld_q.split(), repo_dir, warnings) or []
+    skew, diag = _compute_rollout_skew(ctx, target, builds)
     bundle = {"failed_jobs": jobs, "downloaded_artifacts": [*arts, *diag], "rollout_skew": skew}
-    return _report(latest, green, target, issues, warnings, **bundle, scratch_dir=str(scratch))
+    return _report(e2e, issues, warnings, **bundle, scratch_dir=str(scratch))
 
 
 def create_parser() -> argparse.ArgumentParser:
