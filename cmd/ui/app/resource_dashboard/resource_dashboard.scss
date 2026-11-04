@@ -60,14 +60,16 @@ xmc-smart-resource-finder {
 .rod-split-container.full-width {
   flex-direction: column-reverse;
   align-items: stretch;
+  gap: 24px;
 
-  .rod-main-content,
-  .jobs-side-pane {
-    flex: 1 1 100%;
+  .rod-main-content {
     width: 100%;
+    padding-right: 0;
   }
 
   .jobs-side-pane {
+    width: 100%;
+    padding-left: 0;
     position: static;
   }
 }

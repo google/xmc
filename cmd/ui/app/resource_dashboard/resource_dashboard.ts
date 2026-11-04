@@ -96,8 +96,8 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
 
-  protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
-  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
+  protected readonly leftPaneFlex = computed(() => this.isJobsFullWidth() ? null : `1 1 ${this.splitRatio()}%`);
+  protected readonly rightPaneFlex = computed(() => this.isJobsFullWidth() ? null : `1 1 ${100 - this.splitRatio()}%`);
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
@@ -107,9 +107,6 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   constructor() {
     this.setupSecondaryDataSubscription();
 
-    effect(() => {
-      writeJobsFullWidthCookie(this.document, this.isJobsFullWidth());
-    });
 
     effect(() => {
       const queues = this.queues();
@@ -237,6 +234,10 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected onFindMatchingQueues(query: ResourceRequirementQuery) {
     this.activeQuery.set(query);
+  }
+  protected onJobsFullWidthChange(isFullWidth: boolean): void {
+    this.isJobsFullWidth.set(isFullWidth);
+    writeJobsFullWidthCookie(this.document, isFullWidth);
   }
 }
 

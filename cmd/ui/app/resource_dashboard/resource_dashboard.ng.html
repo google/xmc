@@ -34,16 +34,19 @@
           (selectQueue)="onQueueSelect($event)"
         />
       </div>
-      <xmc-rod-resize-divider
-        controls="rod-queue-list-pane"
-        [containerElement]="splitContainer"
-        [(splitRatio)]="splitRatio"
-      />
+      @if (!isJobsFullWidth()) {
+        <xmc-rod-resize-divider
+          controls="rod-queue-list-pane"
+          [containerElement]="splitContainer"
+          [(splitRatio)]="splitRatio"
+        />
+      }
       <div class="jobs-side-pane" [style.flex]="rightPaneFlex()">
         <xmc-queue-jobs-table
           [queueName]="selectedQueue()"
           [showFullWidthToggle]="true"
-          [(isFullWidth)]="isJobsFullWidth"
+          [isFullWidth]="isJobsFullWidth()"
+          (isFullWidthChange)="onJobsFullWidthChange($event)"
         />
       </div>
     </div>

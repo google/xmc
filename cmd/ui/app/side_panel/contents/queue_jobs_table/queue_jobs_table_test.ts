@@ -84,6 +84,13 @@ class TestHostComponent {
   readonly isFullWidth = signal<boolean>(false);
 }
 
+@Component({
+  standalone: true,
+  imports: [QueueJobsTable],
+  template: `<xmc-queue-jobs-table [queueName]="'gpu-cluster-queue'" />`,
+})
+class DefaultInputsHostComponent {}
+
 describe('QueueJobsTable Component', () => {
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
@@ -305,8 +312,16 @@ describe('QueueJobsTable Component', () => {
     );
   });
 
-  it('should hide full-width toggle button by default', async () => {
+  it('should hide full-width toggle button when showFullWidthToggle is false', async () => {
     bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getFullWidthToggleBtn()).toBeNull();
+  });
+
+  it('should hide full-width toggle button by default', async () => {
+    bootstrap(DefaultInputsHostComponent);
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);

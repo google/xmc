@@ -314,6 +314,10 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getQueueList()).not.toBeNull();
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
 
+    expect(await dashboard.getResizeDivider()).toBeNull();
+    expect(await dashboard.getLeftPaneStyle()).not.toContain("%");
+    expect(await dashboard.getRightPaneStyle()).not.toContain("%");
+
     const fullWidthDims = await dashboard.getSplitLayoutDimensions();
     expect(fullWidthDims.container).not.toBeNull();
     expect(fullWidthDims.mainContent).not.toBeNull();
