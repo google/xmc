@@ -87,8 +87,9 @@ combine-as-imports = true
 
 [tool.mypy]
 # Single source of truth for mypy's scope: CI and .githooks/pre-commit run bare
-# `mypy` with no file arguments.
-files = ["sdks/python/xmc", "tools", "deploy", "cmd/ui"]
+# `mypy` with no file arguments. Every Python file is checked by default, so new
+# directories are covered automatically; `exclude` is the only deny-list.
+files = ["."]
 disallow_subclassing_any = true
 ignore_missing_imports = true
 explicit_package_bases = true
