@@ -62,18 +62,38 @@ def _run_fixture(
     }
 
 
+_WORKFLOW_FIXTURE = """\
+jobs:
+  e2e:
+    strategy:
+      matrix:
+        example:
+          - id: simple_job
+            name: "Simple Job"
+          - id: resource_dashboard_ui
+            name: "Resource Observability Dashboard (Playwright UI)"
+"""
+
+
 class TriageNightlyRunTest(unittest.TestCase):
     """Hermetic unit tests for triage_nightly_run."""
 
     def setUp(self) -> None:
         super().setUp()
         self.tmpdir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.repo_dir = self.tmpdir / "repo"
+        workflow_file = self.repo_dir / ".github" / "workflows" / "nightly-examples-e2e.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(_WORKFLOW_FIXTURE, encoding="utf-8")
         self.mock_run = self.enterContext(
             patch("tools.nightly_tests.triage_nightly_run.run_command")
         )
 
     def _triage(self, *argv: str) -> dict[str, Any]:
-        return triage_nightly_run(create_parser().parse_args(list(argv)))
+        cli_args = list(argv)
+        if not any(arg.startswith("--repo-dir") for arg in cli_args):
+            cli_args.append(f"--repo-dir={self.repo_dir}")
+        return triage_nightly_run(create_parser().parse_args(cli_args))
 
     def test_auto_discovers_failure_downloads_selective_artifacts_and_computes_skew(self) -> None:
         scratch = self.tmpdir / "triage_out"

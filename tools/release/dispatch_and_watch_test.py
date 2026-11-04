@@ -124,14 +124,27 @@ class DispatchAndWatchTest(unittest.TestCase):
         dispatch_cmd = mock_run.call_args_list[0].args[0]
         self.assertEqual(dispatch_cmd, ["gh", "workflow", "run", "build.yml", "--ref", "main"])
 
+    def _write_workflow_fixture(self) -> Path:
+        repo_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        workflow_file = repo_dir / ".github" / "workflows" / "nightly-examples-e2e.yml"
+        workflow_file.parent.mkdir(parents=True)
+        workflow_file.write_text(
+            "jobs:\n  e2e:\n    strategy:\n      matrix:\n        example:\n"
+            "          - id: simple_job\n          - id: resource_dashboard_ui\n",
+            encoding="utf-8",
+        )
+        return repo_dir
+
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
     def test_dispatch_forwards_inputs_and_validates_examples_filter(self, mock_run, mock_which):
+        repo_dir = self._write_workflow_fixture()
         mock_run.side_effect = self._watched_run_mocks(210, "target_sha")
         argv = [
             "--workflow=nightly-examples-e2e.yml",
             "--ref=fix/nightly-example",
             "--target-sha=target_sha",
+            f"--repo-dir={repo_dir}",
             "--input=examples_filter=SIMPLE_JOB,resource_dashboard_ui",
             "--input=xmanager_version=",
         ]
@@ -154,33 +167,34 @@ class DispatchAndWatchTest(unittest.TestCase):
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
     def test_auto_resolves_remote_sha_when_target_sha_omitted(self, mock_run, mock_which):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            state_path = Path(tmpdir) / "verify_state.json"
-            mock_run.side_effect = [
-                self._proc(),
-                self._proc("deadbeef1234\n"),
-                *self._watched_run_mocks(220, "deadbeef12345678"),
-            ]
-            argv = [
-                "--workflow=nightly-examples-e2e.yml",
-                "--ref=fix/nightly-slug",
-                "--input=examples_filter=",
-                f"--state-file={state_path}",
-            ]
-            res = dispatch_and_watch(create_parser().parse_args(argv))
-            self.assertEqual(res["run_id"], 220)
-            self.assertEqual(res["conclusion"], "success")
-            self.assertEqual(
-                mock_run.call_args_list[0].args[0],
-                ["git", "fetch", "--", "origin", "fix/nightly-slug"],
-            )
-            self.assertEqual(
-                mock_run.call_args_list[1].args[0],
-                ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
-            )
-            self.assertEqual(
-                json.loads(state_path.read_text(encoding="utf-8"))["target_sha"], "deadbeef1234"
-            )
+        repo_dir = self._write_workflow_fixture()
+        state_path = repo_dir / "verify_state.json"
+        mock_run.side_effect = [
+            self._proc(),
+            self._proc("deadbeef1234\n"),
+            *self._watched_run_mocks(220, "deadbeef12345678"),
+        ]
+        argv = [
+            "--workflow=nightly-examples-e2e.yml",
+            "--ref=fix/nightly-slug",
+            f"--repo-dir={repo_dir}",
+            "--input=examples_filter=",
+            f"--state-file={state_path}",
+        ]
+        res = dispatch_and_watch(create_parser().parse_args(argv))
+        self.assertEqual(res["run_id"], 220)
+        self.assertEqual(res["conclusion"], "success")
+        self.assertEqual(
+            mock_run.call_args_list[0].args[0],
+            ["git", "fetch", "--", "origin", "fix/nightly-slug"],
+        )
+        self.assertEqual(
+            mock_run.call_args_list[1].args[0],
+            ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+        )
+        self.assertEqual(
+            json.loads(state_path.read_text(encoding="utf-8"))["target_sha"], "deadbeef1234"
+        )
 
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.common.tool_utils.subprocess.run")
@@ -202,6 +216,7 @@ class DispatchAndWatchTest(unittest.TestCase):
     @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
     @patch("tools.release.dispatch_and_watch.run_command")
     def test_preflight_rejects_bad_ref_inputs_and_examples_filter(self, mock_run, mock_which):
+        repo_dir = self._write_workflow_fixture()
         bad_cases = (
             ["--workflow=build.yml", "--ref="],
             ["--workflow=build.yml", "--ref=origin/main"],
@@ -216,9 +231,14 @@ class DispatchAndWatchTest(unittest.TestCase):
             ["--workflow=build.yml", "--find-existing", "--input=k=1"],
             [
                 "--workflow=nightly-examples-e2e.yml",
+                f"--repo-dir={repo_dir}",
                 "--input=examples_filter=resource_observability_dashboard_ui_test",
             ],
-            ["--workflow=examples-smoke.yml", "--input=examples_filter=simple_job,"],
+            [
+                "--workflow=examples-smoke.yml",
+                f"--repo-dir={repo_dir}",
+                "--input=examples_filter=simple_job,",
+            ],
             [
                 "--workflow=nightly-examples-e2e.yml",
                 "--repo-dir=/nonexistent/repo/dir",

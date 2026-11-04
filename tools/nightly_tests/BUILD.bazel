@@ -94,7 +94,6 @@ py_test(
 py_library(
     name = "examples_import_smoke_lib",
     srcs = ["examples_import_smoke.py"],
-    data = ["//.github/workflows:nightly-examples-e2e.yml"],
     imports = ["../.."],
 )
 
