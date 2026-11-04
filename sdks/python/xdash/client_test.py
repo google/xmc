@@ -253,7 +253,7 @@ class DashboardClientTest(unittest.TestCase):
         # A None must fail the same way create_chart's own guard does, rather than as
         # an AttributeError from reading .xid off it.
         with self.assertRaises(ValueError):
-            self.client.create_charts([None])  # type: ignore[list-item]
+            self.client.create_charts([None])
 
     def test_get_chart(self) -> None:
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
@@ -281,9 +281,9 @@ class DashboardClientTest(unittest.TestCase):
 
     def test_validation_errors(self) -> None:
         with self.assertRaises(ValueError):
-            self.client.create_dashboard(None)  # type: ignore[arg-type]
+            self.client.create_dashboard(None)
         with self.assertRaises(ValueError):
-            self.client.create_chart(parent="experiments/1/workUnits/1", chart=None)  # type: ignore[arg-type]
+            self.client.create_chart(parent="experiments/1/workUnits/1", chart=None)
         for blank in ("", "   ", "\t\n"):
             with self.assertRaises(ValueError):
                 self.client.get_dashboard(blank)
@@ -537,7 +537,7 @@ class DashboardClientTest(unittest.TestCase):
                 pass
 
         lock = PopulateOnEnterLock(self.client)
-        self.client._token_lock = lock  # type: ignore[assignment]
+        self.client._token_lock = lock
         with (
             patch("xdash.client._fetch_iam_id_token") as mock_fetch_iam,
             patch("xdash.client.time.monotonic", side_effect=[100.0, 100.0]),

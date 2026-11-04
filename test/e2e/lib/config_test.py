@@ -52,7 +52,7 @@ class TestE2EConfig(unittest.TestCase):
             kind_bin="kind",
             workspace_root="/workspace",
             screenshots_dir="/screenshots",
-            tier="workload",
+            tier=E2ETier.WORKLOAD,
         )
         self.assertEqual(workload_cfg.tier, E2ETier.WORKLOAD)
         self.assertEqual(workload_cfg.venv_dependencies, E2E_WORKLOAD_VENV_DEPENDENCIES)

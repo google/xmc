@@ -38,7 +38,7 @@ from xmc import MetricsFlusher
 from xmc.network import HTTPClient
 
 
-class LoadBalancingRecyclingClient(HTTPClient):
+class LoadBalancingRecyclingClient(HTTPClient):  # type: ignore[misc]  # xmc is Any from the repo root
     """HTTPClient subclass that rotates gateway endpoints upon connection recycling for load testing.
 
     Note on Load Balancing Architecture:

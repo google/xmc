@@ -23,7 +23,7 @@ import xmc
 from torch.utils.data import DataLoader, TensorDataset
 
 
-class HelloLightningModel(pl.LightningModule):
+class HelloLightningModel(pl.LightningModule):  # type: ignore[misc]  # pytorch_lightning is untyped
     """Simple PyTorch Lightning model for autologging demonstration."""
 
     def __init__(self) -> None:

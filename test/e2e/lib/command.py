@@ -112,7 +112,7 @@ def _communicate(
         except subprocess.TimeoutExpired as exc:
             if stoppable:
                 cancellation.CONTROLLER.raise_if_halted()
-            if deadline is not None and time.monotonic() >= deadline:
+            if timeout is not None and deadline is not None and time.monotonic() >= deadline:
                 raise subprocess.TimeoutExpired(
                     process.args, timeout, exc.output, exc.stderr
                 ) from None

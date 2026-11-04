@@ -145,6 +145,13 @@ def parse_launch_output(output_str: str) -> ExampleLaunchResult:
     )
 
 
+def _output_text(output: str | bytes | None) -> str:
+    """Returns captured subprocess output as text; typeshed types it as bytes even in text mode."""
+    if isinstance(output, bytes):
+        return output.decode(errors="replace")
+    return output or ""
+
+
 def execute_example_launch(
     launch_script: str | Path,
     args: list[str] | None = None,
@@ -176,7 +183,7 @@ def execute_example_launch(
     logger.info("=== Executing Example Launch Script: %s ===", script_path)
 
     with resolve_grpc_endpoint() as active_grpc_endpoint:
-        effective_user_email = user_email or os.getenv("XMC_USER_EMAIL", "admin@xmc.local")
+        effective_user_email = user_email or os.environ.get("XMC_USER_EMAIL", "admin@xmc.local")
         auth_token = os.getenv("XMC_AUTH_TOKEN")
         if not auth_token:
             auth_token = fetch_dex_oidc_token(email=effective_user_email)
@@ -203,7 +210,7 @@ def execute_example_launch(
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            captured_out = (e.stdout or "") + (e.stderr or "")
+            captured_out = _output_text(e.stdout) + _output_text(e.stderr)
             logger.error(
                 "Example launch timed out after %s seconds. Captured output:\n%s",
                 timeout_sec,

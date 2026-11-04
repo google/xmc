@@ -55,7 +55,7 @@ def rendered_clickhouse_env_vars(manifest: str) -> set[str]:
     return set(ENV_VAR_NAME_PATTERN.findall(manifest))
 
 
-def expected_clickhouse_env_vars(csi_enabled: bool = False) -> set[str]:
+def expected_clickhouse_env_vars(csi_enabled: bool = False) -> frozenset[str]:
     """Returns the full variable set the dashboard service needs under the given secret backend."""
     return REQUIRED_CLICKHOUSE_ENV_VARS | {PASSWORD_ENV_VAR_BY_BACKEND[csi_enabled]}
 
