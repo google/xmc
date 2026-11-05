@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
@@ -389,7 +390,15 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
+	// Under MultiKueue the JobSet executes on a remote worker cluster, so the MLRun
+	// (its workloadDetails cluster and ID) must reference the worker, not the
+	// manager. Resolve it from the JobSet's Workload -> MultiKueueCluster labels;
+	// this falls back to the manager values when the JobSet is not dispatched via
+	// MultiKueue. The update keeps the manager values: they populate
+	// metadata.managementCluster, and links use metadata.executingCluster.
+	project, location, clusterName := r.resolveExecutionCluster(ctx, jobSet)
+
+	mlRunURL := r.syncMLRun(ctx, jobSet, project, location, clusterName, xid, wid, eid)
 
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	setMLRunURL(update, mlRunURL)
@@ -401,6 +410,49 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 
 	return result, nil
+}
+
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string) {
+	project, location, clusterName = r.Project, r.Location, r.ClusterName
+
+	var wlList v1beta1.WorkloadList
+	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace)); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; using manager cluster", "error", err)
+		return project, location, clusterName
+	}
+	var wl *v1beta1.Workload
+	for i := range wlList.Items {
+		for _, or := range wlList.Items[i].OwnerReferences {
+			if or.Kind == "JobSet" && or.Name == jobSet.Name {
+				wl = &wlList.Items[i]
+				break
+			}
+		}
+		if wl != nil {
+			break
+		}
+	}
+	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
+		return project, location, clusterName // not MultiKueue-dispatched
+	}
+
+	var mc v1beta1.MultiKueueCluster
+	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; using manager cluster", "cluster", *wl.Status.ClusterName, "error", err)
+		return project, location, clusterName
+	}
+	if mc.Labels != nil {
+		if v := mc.Labels["xmc.google.com/project"]; v != "" {
+			project = v
+		}
+		if v := mc.Labels["xmc.google.com/location"]; v != "" {
+			location = v
+		}
+		if v := mc.Labels["xmc.google.com/cluster-name"]; v != "" {
+			clusterName = v
+		}
+	}
+	return project, location, clusterName
 }
 
 // SetupWithManager sets up the controller with the Manager.

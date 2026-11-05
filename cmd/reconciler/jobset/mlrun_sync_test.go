@@ -170,7 +170,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				ClusterName: "cluster-a",
 				MLRunClient: tc.client,
 			}
-			gotURL, gotConfirmed := r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			gotURL, gotConfirmed := r.ensureMLRunCreated(context.Background(), tc.jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 			if tc.wantEmptyURL && gotURL != "" {
 				t.Errorf("ensureMLRunCreated() url = %q, want empty", gotURL)
 			}

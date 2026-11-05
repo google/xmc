@@ -36,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/grpcerr"
@@ -115,6 +116,9 @@ func newScheme() (*runtime.Scheme, error) {
 		return nil, err
 	}
 	if err := v1alpha2.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	if err := v1beta1.AddToScheme(scheme); err != nil {
 		return nil, err
 	}
 	return scheme, nil
@@ -960,5 +964,59 @@ func TestMetricsRegisteredOnManagerRegistry(t *testing.T) {
 		if !registered[name] {
 			t.Errorf("metric family %q not registered on ctrlmetrics.Registry", name)
 		}
+	}
+}
+
+func TestResolveExecutionCluster(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("newScheme() error: %v", err)
+	}
+	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "default"}}
+	workload := func(clusterName *string) *v1beta1.Workload {
+		return &v1beta1.Workload{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "jobset-js-abc",
+				Namespace:       "default",
+				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "uid"}},
+			},
+			Status: v1beta1.WorkloadStatus{ClusterName: clusterName},
+		}
+	}
+	worker := "worker-1"
+	empty := ""
+	workerCluster := &v1beta1.MultiKueueCluster{ObjectMeta: metav1.ObjectMeta{
+		Name: worker,
+		Labels: map[string]string{
+			"xmc.google.com/project":      "worker-proj",
+			"xmc.google.com/location":     "us-east4",
+			"xmc.google.com/cluster-name": "worker-gke",
+		},
+	}}
+
+	tests := []struct {
+		name string
+		objs []client.Object
+		want []string
+	}{
+		{name: "no workload", want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
+		{name: "workload not dispatched", objs: []client.Object{workload(nil)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
+		{name: "workload with empty cluster name", objs: []client.Object{workload(&empty)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
+		{name: "MultiKueueCluster not found", objs: []client.Object{workload(&worker)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
+		{name: "dispatched to worker", objs: []client.Object{workload(&worker), workerCluster}, want: []string{"worker-proj", "us-east4", "worker-gke"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reconciler{
+				Client:      fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objs...).Build(),
+				Project:     "mgr-proj",
+				Location:    "us-central1",
+				ClusterName: "mgr-gke",
+			}
+			project, location, clusterName := r.resolveExecutionCluster(t.Context(), jobSet)
+			if diff := cmp.Diff(tc.want, []string{project, location, clusterName}); diff != "" {
+				t.Errorf("resolveExecutionCluster() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
