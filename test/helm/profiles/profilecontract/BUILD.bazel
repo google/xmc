@@ -25,7 +25,7 @@ go_library(
     ],
     importpath = "xmanager_cloud/test/helm/profiles/profilecontract",
     visibility = [
-        # Lookup is also used by the addon chart tests.
+        # ChartDir, DecodeDocs and Lookup are also used by the addon chart tests.
         "//test/helm/addons:__subpackages__",
         "//test/helm/profiles:__subpackages__",
     ],
