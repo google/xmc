@@ -15,8 +15,6 @@
 
 """Unit tests for tools.nightly_tests.workflow_matrix."""
 
-from __future__ import annotations
-
 import os
 import pathlib
 import tempfile

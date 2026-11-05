@@ -15,8 +15,6 @@
 
 """One-shot CLI tool to discover and triage broken Nightly Examples E2E runs on main."""
 
-from __future__ import annotations
-
 import argparse
 import errno
 import json
@@ -137,7 +135,7 @@ def _is_newer_or_equal(run: dict[str, Any] | None, reference: dict[str, Any] | N
     if not run or not reference:
         return False
     run_created, ref_created = run.get("createdAt"), reference.get("createdAt")
-    return bool(run_created and ref_created and str(run_created) >= str(ref_created))
+    return bool(run_created and ref_created and run_created >= ref_created)
 
 
 def _is_failed_run(run: dict[str, Any] | None) -> bool:
@@ -242,8 +240,6 @@ def _extract_error_excerpt(log_text: str) -> list[str]:
             if len(cleaned) > _MAX_EXCERPT_CHARS:
                 cleaned = f"{cleaned[:_MAX_EXCERPT_CHARS]}..."
             lines.append(cleaned)
-    if not lines:
-        return []
     error_indices = [idx for idx, line in enumerate(lines) if line.startswith("##[error]")]
     if not error_indices:
         return lines[-_MAX_EXCERPT_LINES:]
@@ -398,7 +394,7 @@ def _attach_job_results(
     for job in failed_jobs:
         example_id = job["example_id"]
         artifact_dir = ctx.scratch_dir / f"result-{example_id}"
-        if example_id and str(artifact_dir) in downloaded_dirs and not artifact_dir.is_symlink():
+        if str(artifact_dir) in downloaded_dirs:
             job["result"] = _load_json_object(ctx, artifact_dir / f"{example_id}.json")
 
 
@@ -551,7 +547,7 @@ def triage_nightly_run(args: argparse.Namespace) -> dict[str, Any]:
     ctx = _TriageContext(repo_dir=Path(args.repo_dir) if args.repo_dir else None)
     report = _discover_nightly_status(ctx, args.run_id)
     target_run = report["target_run"]
-    if not _is_failed_run(target_run) or target_run is None:
+    if not _is_failed_run(target_run):
         return report
     run_id = int(target_run["databaseId"])
     default_scratch = Path(os.environ.get("ARTIFACT_DIR") or "/tmp") / f"nightly_triage_{run_id}"

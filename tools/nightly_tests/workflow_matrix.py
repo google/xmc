@@ -15,8 +15,6 @@
 
 """Pure parser and filter validator for the Nightly Examples E2E workflow matrix."""
 
-from __future__ import annotations
-
 import pathlib
 import re
 from collections.abc import Iterator

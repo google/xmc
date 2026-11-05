@@ -15,8 +15,6 @@
 
 """Unit tests for tools.nightly_tests.triage_nightly_run."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 import tempfile
@@ -119,10 +117,9 @@ class TriageNightlyRunTest(unittest.TestCase):
         )
 
     def _triage(self, *argv: str) -> dict[str, Any]:
-        cli_args = list(argv)
-        if not any(arg.startswith("--repo-dir") for arg in cli_args):
-            cli_args.append(f"--repo-dir={self.repo_dir}")
-        return triage_nightly_run(create_parser().parse_args(cli_args))
+        return triage_nightly_run(
+            create_parser().parse_args([*argv, f"--repo-dir={self.repo_dir}"])
+        )
 
     def _mock_triage(
         self,

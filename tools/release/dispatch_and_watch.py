@@ -319,7 +319,7 @@ def _watch_run_outcome(
 
 def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
     """Validates CLI flags and workflow inputs; returns cleaned ref."""
-    ref = str(args.ref).strip()
+    ref = args.ref.strip()
     if ref.startswith("origin/") or not _REF_RE.fullmatch(ref):
         raise HandledError(f"Invalid --ref '{args.ref}'.", "Pass a branch or tag name on origin.")
     if args.find_existing and args.input:
