@@ -19,5 +19,5 @@ import "embed"
 
 // EmbeddedCharts embeds the 1P native component Helm sub-charts under components/.
 //
-//go:embed components/ingestion-gateway/Chart.yaml components/ingestion-gateway/values.yaml components/ingestion-gateway/templates/*
+//go:embed components/ingestion-gateway/Chart.yaml components/ingestion-gateway/values.yaml components/ingestion-gateway/templates/* components/hpo/Chart.yaml components/hpo/values.yaml components/hpo/templates/*
 var EmbeddedCharts embed.FS

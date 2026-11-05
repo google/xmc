@@ -26,9 +26,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
@@ -102,6 +104,12 @@ func TestRepository_ValidationAndNilHandle(t *testing.T) {
 	}
 	if _, err := nilRepo.FetchDriftedComponents(ctx, 1, 0); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilRepo.FetchDriftedComponents(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if _, err := nilRepo.FetchExperimentSnapshotComponents(ctx, 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("FetchExperimentSnapshotComponents(0) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if _, err := nilRepo.FetchExperimentSnapshotComponents(ctx, 1); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("nilRepo.FetchExperimentSnapshotComponents(1) error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 	if _, _, err := nilRepo.ListExperiments(ctx, 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("nilRepo.ListExperiments() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
@@ -811,5 +819,57 @@ func TestFetchDriftedComponents(t *testing.T) {
 	missingDiff := toComponentDiff(driftedComponentRow{ComponentID: 204, LockedGeneration: 3})
 	if missingDiff.Name != nil || missingDiff.ObservedGeneration != nil || missingDiff.State != nil {
 		t.Errorf("toComponentDiff(missing) = %+v, want nil pointers", missingDiff)
+	}
+}
+
+func TestFetchExperimentSnapshotComponents(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) { e.Name = "experiments/1301" }))
+
+	expSpec := &componentspb.ComponentSpec{
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}
+	cfgBytes, err := proto.Marshal(&componentspb.Component{
+		Name: "components/exp-comp",
+		Spec: expSpec,
+	})
+	if err != nil {
+		t.Fatalf("proto.Marshal failed: %v", err)
+	}
+	_, err = essPool.Exec(ctx,
+		"INSERT INTO Components (ComponentId, Name, ComponentClass, ConfigProto, State, Generation, ObservedGeneration, CreateTime, UpdateTime) "+
+			"VALUES ($1, $2, 'storage', $3, 1, 1, 1, NOW(), NOW())",
+		int64(501), "exp-comp", cfgBytes,
+	)
+	if err != nil {
+		t.Fatalf("insert Components failed: %v", err)
+	}
+	_, err = essPool.Exec(ctx,
+		"INSERT INTO ExperimentComponentSnapshots (Xid, ComponentId, LockedGeneration, ConfigProto) VALUES ($1, $2, $3, $4)",
+		int64(1301), int64(501), int64(1), cfgBytes,
+	)
+	if err != nil {
+		t.Fatalf("insert ExperimentComponentSnapshots failed: %v", err)
+	}
+
+	got, err := repo.FetchExperimentSnapshotComponents(ctx, 1301)
+	if err != nil {
+		t.Fatalf("FetchExperimentSnapshotComponents failed: %v", err)
+	}
+	compName := "exp-comp"
+	want := []storage.ExperimentSnapshotComponent{
+		{
+			ComponentID:      501,
+			Name:             &compName,
+			LockedGeneration: 1,
+			Spec:             expSpec,
+		},
+	}
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchExperimentSnapshotComponents mismatch (-want +got):\n%s", diff)
 	}
 }

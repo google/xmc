@@ -57,6 +57,8 @@ def probe_settings(manifest: str, probe_name: str) -> dict[str, str]:
 class DashboardServiceProbesTest(unittest.TestCase):
     """Asserts the kubelet probes agree with the handlers behind them."""
 
+    manifest: str
+
     @classmethod
     def setUpClass(cls) -> None:
         require_helm()

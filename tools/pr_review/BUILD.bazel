@@ -36,6 +36,7 @@ py_library(
     name = "github_utils",
     srcs = ["github_utils.py"],
     imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
 )
 
 py_test(

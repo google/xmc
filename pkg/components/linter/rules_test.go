@@ -67,11 +67,13 @@ func TestParseRules(t *testing.T) {
 staticChecks:
   enforceDeletionProtection: true
   maxDrainTimeoutSeconds: 300
+  allowExperimental: false
 `,
 			wantErr: false,
 			wantChecks: linter.StaticChecksConfig{
 				EnforceDeletionProtection: true,
 				MaxDrainTimeoutSeconds:    300,
+				AllowExperimental:         boolPtr(false),
 			},
 		},
 		{
@@ -105,6 +107,10 @@ staticChecks:
 			}
 			if cfg.StaticChecks.MaxDrainTimeoutSeconds != tc.wantChecks.MaxDrainTimeoutSeconds {
 				t.Errorf("MaxDrainTimeoutSeconds = %v, want %v", cfg.StaticChecks.MaxDrainTimeoutSeconds, tc.wantChecks.MaxDrainTimeoutSeconds)
+			}
+			wantAllowed := tc.wantChecks.IsExperimentalAllowed()
+			if got := cfg.StaticChecks.IsExperimentalAllowed(); got != wantAllowed {
+				t.Errorf("IsExperimentalAllowed() = %v, want %v", got, wantAllowed)
 			}
 		})
 	}

@@ -14,6 +14,7 @@
 
 """Unit tests for tool_utils module."""
 
+import argparse
 import io
 import json
 import os
@@ -38,12 +39,41 @@ from tools.common.tool_utils import (
     load_and_validate_config,
     log_info,
     parse_bool_flag,
+    parse_positive_int,
     parse_semver_prefix,
     parse_yaml_vars,
+    positive_int_arg,
     run_command,
     run_tool,
     verify_helm_min_version,
 )
+
+
+class TestPositiveIntParsing(unittest.TestCase):
+    """Tests for parse_positive_int and its argparse adapter."""
+
+    _VALID = ((1, 1), (15, 15), ("15", 15), (" 7\n", 7), ("007", 7))
+    _INVALID = (0, -3, True, False, 1.0, None, "", " ", "0", "-3", "+5", "1_000", "1.5", "abc", "²")
+
+    def test_parse_positive_int_accepts_positive_integers(self):
+        """Ints >= 1 and ASCII digit strings (whitespace-trimmed) are accepted."""
+        for value, want in self._VALID:
+            with self.subTest(value=value):
+                self.assertEqual(parse_positive_int(value), want)
+
+    def test_parse_positive_int_rejects_everything_else(self):
+        """Bools, floats, non-positive, signed, and non-ASCII values return None."""
+        for value in self._INVALID:
+            with self.subTest(value=value):
+                self.assertIsNone(parse_positive_int(value))
+
+    def test_positive_int_arg_matches_parse_positive_int(self):
+        """The argparse adapter accepts and rejects the same strings."""
+        self.assertEqual(positive_int_arg(" 7\n"), 7)
+        for value in (v for v in self._INVALID if isinstance(v, str)):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(argparse.ArgumentTypeError, "integer >= 1"):
+                    positive_int_arg(value)
 
 
 class TestToolUtils(unittest.TestCase):
@@ -276,6 +306,41 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["error_type"], "unhandled")
         self.assertEqual(output["message"], "unexpected value")
         self.assertIn("traceback", output)
+
+    def test_run_tool_keyboard_interrupt(self):
+        """Ctrl-C prints the interrupted error JSON, not a traceback, and exits 130."""
+        main_fn = MagicMock(side_effect=KeyboardInterrupt)
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        output = json.loads(captured_stderr.getvalue())
+        self.assertEqual(output["status"], "error")
+        self.assertEqual(output["error_type"], "interrupted")
+        self.assertIn("Interrupted", output["message"])
+        self.assertIn("instruction", output)
+        self.assertNotIn("traceback", output)
+
+    def test_run_tool_keyboard_interrupt_during_venv_bootstrap(self):
+        """Ctrl-C while the tooling venv bootstraps is also reported as JSON."""
+        main_fn = MagicMock()
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("tools.common.tool_utils.ensure_venv", side_effect=KeyboardInterrupt),
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        self.assertEqual(json.loads(captured_stderr.getvalue())["error_type"], "interrupted")
+        main_fn.assert_not_called()
 
 
 class TestLogStreams(unittest.TestCase):

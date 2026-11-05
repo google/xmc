@@ -68,6 +68,14 @@ var (
 			"ORDER BY c.Name ASC NULLS FIRST, s.ComponentId ASC " +
 			"LIMIT (CASE WHEN $3 > 0 THEN $3 END)",
 	)
+	fetchExperimentSnapshotComponentsSQL = safesql.New(
+		"SELECT c.Name, s.LockedGeneration, s.ComponentId, s.ConfigProto " +
+			"FROM ExperimentComponentSnapshots s " +
+			"JOIN Experiments e ON s.Xid = e.Xid " +
+			"LEFT JOIN Components c ON s.ComponentId = c.ComponentId " +
+			"WHERE s.Xid = $1 AND e.ActiveState = 1 " +
+			"ORDER BY c.Name ASC NULLS FIRST, s.ComponentId ASC",
+	)
 )
 
 // Repository manages persistence for experiment entities in PostgreSQL.
@@ -235,6 +243,51 @@ func (r *Repository) FetchDriftedComponents(ctx context.Context, xid int64, limi
 		diffs[i] = toComponentDiff(row)
 	}
 	return diffs, nil
+}
+
+type snapshotComponentRow struct {
+	Name             pgtype.Text `db:"name"`
+	LockedGeneration int64       `db:"lockedgeneration"`
+	ComponentID      int64       `db:"componentid"`
+	ConfigProto      []byte      `db:"configproto"`
+}
+
+// FetchExperimentSnapshotComponents retrieves the component snapshots locked by an active experiment.
+func (r *Repository) FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]storage.ExperimentSnapshotComponent, error) {
+	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
+	if xid <= 0 {
+		return nil, fmt.Errorf("experiment ID must be positive: %w", grpcerr.ErrInvalidArgument)
+	}
+	rows, err := pgdb.QueryRows[snapshotComponentRow](ctx, r.db, fetchExperimentSnapshotComponentsSQL.String(), entityName, xid)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := make([]storage.ExperimentSnapshotComponent, len(rows))
+	for i, row := range rows {
+		snap, err := toSnapshotComponent(row)
+		if err != nil {
+			return nil, pgdb.WrapStatusError("failed to unmarshal experiment snapshot component", grpcerr.ErrInternal, err)
+		}
+		snapshots[i] = snap
+	}
+	return snapshots, nil
+}
+
+func toSnapshotComponent(r snapshotComponentRow) (storage.ExperimentSnapshotComponent, error) {
+	spec, err := data.DecodeComponentSpec(r.ConfigProto)
+	if err != nil {
+		return storage.ExperimentSnapshotComponent{}, err
+	}
+	snap := storage.ExperimentSnapshotComponent{
+		ComponentID:      r.ComponentID,
+		LockedGeneration: r.LockedGeneration,
+		Spec:             spec,
+	}
+	if r.Name.Valid {
+		name := r.Name.String
+		snap.Name = &name
+	}
+	return snap, nil
 }
 
 // FetchExperiment retrieves and locks an experiment by its unique ID within the transaction.

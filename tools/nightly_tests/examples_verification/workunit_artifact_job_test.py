@@ -13,15 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for Pathways multi-component JobSet workload in XMC.
+"""Validation script for WorkUnit artifact lifecycle workload in XMC.
 
-Asserts that the Pathways validation experiment and its WorkUnit were correctly
-created, scheduled to the expected queue (e.g. tpu-queue or cpu-queue), configured
-with pathways-head (init containers with container port mappings) and worker daemon roles,
-and executed to completion.
+Asserts that the WorkUnit Artifact Lifecycle experiment and its WorkUnit were
+correctly created, scheduled to the expected queue, configured with INPUT
+(`code_source`), EXECUTION (`text`), and OUTPUT (`url`) artifact payloads, and
+executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.pathways_job_verify --xid=26 --expected_queue=tpu-queue
+    python3 -m tools.nightly_tests.examples_verification.workunit_artifact_job_test --xid=26
 """
 
 from __future__ import annotations
@@ -31,33 +31,27 @@ from typing import Any
 
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
-EXPECTED_TITLE_PATTERN: str = "Pathways Multi-Component JobSet Validation"
-EXPECTED_WORKER_NAMES: tuple[str, ...] = ("pathways-head",)
+EXPECTED_TITLE_PATTERN: str = "WorkUnit Artifact Lifecycle Example"
+EXPECTED_WORKER_NAMES: tuple[str, ...] = ("artifact-demo-worker",)
+EXPECTED_ARTIFACT_TYPES: tuple[str, ...] = ("code_source", "text", "url")
 EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
     {
-        "name": "pathways-head",
+        "name": "artifact-demo-worker",
         "replicas": 1,
-        "init_containers": ["pathways-rm", "pathways-proxy"],
-        "primary_container": "jax-tpu",
-    },
-    {
-        "name": "worker",
-        "replicas": 2,
-        "primary_container": "pathways-worker",
-    },
+    }
 ]
 
 
 def main(argv: Sequence[str]) -> None:
-    """Main verification routine for pathways_job workload."""
+    """Main verification routine for workunit_artifact_job workload."""
     workload_verification.verify_standard_workload(
         argv,
-        banner_title="XMC Pathways Multi-Component Job Verification",
-        summary_title="ALL PATHWAYS JOB ASSERTIONS PASSED SUCCESSFULLY!",
+        banner_title="XMC WorkUnit Artifact Lifecycle Job Verification & Assertions",
+        summary_title="ALL WORKUNIT ARTIFACT LIFECYCLE ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
         expected_worker_names=EXPECTED_WORKER_NAMES,
-        wait_for_completion=False,
+        expected_artifact_types=EXPECTED_ARTIFACT_TYPES,
     )
 
 

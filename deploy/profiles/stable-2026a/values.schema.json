@@ -66,16 +66,39 @@
           },
           "propertyNames": {
             "description": "commonKeys plus imageTag.",
-            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "parameters", "dependencies", "imageTag"]
+            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
           }
+        },
+        "vizier": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "endpoint": { "$ref": "#/definitions/parameterValue" }
+              }
+            }
+          },
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
+        },
+        "hpo": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false
+            }
+          },
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
         }
       }
     }
   },
   "definitions": {
     "commonKeys": {
-      "description": "Per-component keys an admin may override. componentClass, chartVersion and workload keys are intentionally absent.",
-      "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "parameters", "dependencies"]
+      "description": "Per-component keys an admin may override. componentClass, chartVersion, stability and workload keys are intentionally absent.",
+      "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies"]
     },
     "componentOverrides": {
       "type": "object",
@@ -90,6 +113,7 @@
         },
         "deletionProtection": { "type": "boolean" },
         "deletionPolicy": { "enum": ["Delete", "Orphan"] },
+        "acknowledgeExperimental": { "type": "boolean" },
         "dependencies": {
           "type": "array",
           "uniqueItems": true,

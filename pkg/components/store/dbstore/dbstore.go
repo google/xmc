@@ -195,6 +195,9 @@ func (s *Store) applyIntentTx(
 	if err != nil {
 		return nil, ownership.IntentPlan{}, err
 	}
+	if err := dependency.ValidateIntentStability(catalog, canonicalName, spec.GetStability(), deps); err != nil {
+		return nil, ownership.IntentPlan{}, err
+	}
 
 	var rec *store.ComponentRecord
 	switch {
@@ -744,7 +747,11 @@ func (s *Store) ValidateComponentRequirement(ctx context.Context, name string, r
 
 // GetPlatformHealth retrieves overall system component health metrics and status.
 func (s *Store) GetPlatformHealth(ctx context.Context, filter string, pageSize int32, pageToken string) (*componentspb.GetPlatformHealthResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetPlatformHealth not implemented in Store")
+	catalog, err := s.storage.Components().ListActiveComponents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return lifecycle.AggregatePlatformHealth(catalog, filter, pageSize, pageToken)
 }
 
 func generateRandomID() (int64, error) {

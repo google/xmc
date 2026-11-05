@@ -264,6 +264,7 @@ func componentKeyRejections(c string) []invalidInstall {
 	return []invalidInstall{
 		reject("componentClass override", "componentClass", "x"),
 		reject("chartVersion override", "chartVersion", "9.9.9"),
+		reject("stability override", "stability", "EXPERIMENTAL"),
 		reject("invalid deletionPolicy", "deletionPolicy", "Keep"),
 		reject("invalid namespace", "namespace", "Bad_NS"),
 		reject("empty namespace", "namespace", ""),

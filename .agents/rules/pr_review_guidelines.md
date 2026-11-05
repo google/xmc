@@ -5,6 +5,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 ---
 
 ## 1. Code Review & Inspection Guidelines
+- **Non-Mutating Fetch-First PR Inspection**: Never run `gh pr checkout` or `git checkout` inside a dirty workspace (or onto a branch checked out in another worktree; verify via `git worktree list`), and never read PR-added or PR-modified files directly from an unchecked-out local working tree. Fetch the remote PR ref first (`git fetch origin pull/<pr_number>/head`) and inspect files via `git show FETCH_HEAD:<path>`, `git diff <base_sha>...FETCH_HEAD -- <path>`, or an isolated detached worktree outside the repo root (`git worktree add --detach <tmp_dir> FETCH_HEAD`; clean up via `git worktree remove <tmp_dir>`).
 - **Comprehensive Rule Enforcement**: When performing Pull Request (PR) reviews, AI agents must enforce all project codebase guidelines, architectural principles (SRP, DRY, KISS, linear control flow), security policies, and language-specific style guides—not merely verify basic syntax or formatting.
 - **Contract & API Integrity**: Verify that breaking changes to public APIs, protobuf schemas, CLI flags, or system configurations are explicitly documented and confirmed by the author.
 - **Assumptions Disclosure Audit**: For agent-authored PRs, verify the PR body contains a populated `## Assumptions` section per [Mandatory Assumptions Disclosure](github_authoring_and_prs.md#3-pull-request-creation--pr-sizing-standards). Flag a missing section, and challenge disclosures that are vague (`assumed the existing behavior is correct`), omit the impact-if-wrong clause, or list something the author could have verified from the codebase. Where an assumption is load-bearing for correctness or a system contract, request verification or explicit user sign-off before approval. Conversely, treat an implementation choice the reviewer must reverse-engineer from the diff as an undisclosed assumption.
@@ -16,7 +17,7 @@ This document defines standards for AI agents acting as **Code Reviewers / Inspe
 - **Feedback Quality & Review Presentation**:
   - **Actionable & Constructive Feedback**: Provide concrete code suggestions or diff blocks when highlighting non-compliant code during reviews.
   - **Objective Rules Alignment**: Base review findings explicitly on defined codebase rules rather than personal stylistic preferences.
-  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff.
+  - **Context Awareness**: Respect structured agent execution notes (such as Implementation Plans in PR comments) while focusing code reviews strictly on the correctness, security, and maintainability of the submitted code diff. Findings on lines the PR does not change, or on code moved verbatim, are non-blocking: label them as follow-ups rather than requesting changes, unless the move itself breaks them (e.g. imports or visibility) or they contain critical correctness or security defects.
 - **Interactive Multi-Agent Review Workflow (Optional)**: For structured PR code reviews featuring dynamic expert subagent panels, open user direction windows, inline comment deduplication, explicit confirmation gates, and re-review verification, agents may optionally utilize the procedure defined in the [XMC Review PR Skill](../skills/xmc_review_pr/SKILL.md) backed by `./tools/pr_review/review_pr_generate_audit.py`, `./tools/pr_review/review_pr_post_inline_comment.py`, and `./tools/pr_review/review_pr_verify_posted.py`, or use their own established review workflows.
 
 ---
@@ -32,11 +33,12 @@ Key tools for PR comment processing:
 - **Post Thread Reply**: `./tools/pr_review/reply_pr_comment.py "<comment_url>" "<reply_message>" [--resolve]` (`--resolve` also resolves the comment's review thread after replying)
 - **List / Resolve Review Threads**: `./tools/pr_review/review_threads.py list <owner> <repo> <pull_number> [--unresolved-only]` and `./tools/pr_review/review_threads.py resolve-replied <owner> <repo> <pull_number> [--dry-run]` (resolves only unresolved threads you have replied to). Never hand-write `gh api graphql` `resolveReviewThread` calls.
 - **Verify Thread Resolution**: `./tools/pr_review/verify_pr_comment_resolution.py <owner> <repo> <pull_number> <path_to_checklist_file>`
+- **GitHub CLI (`gh`) Subcommand Guardrails**: When inspecting PR metadata, issues, diffs, or workflow runs during reviews, follow the `gh` CLI flag and classic `projectCards` workarounds in [GitHub Authoring Standards §4](github_authoring_and_prs.md#4-post-pr-creation-workflow--addressing-review-feedback-policy).
 
 ---
 
 ## 3. Commit Management During PR Review Rounds
 - **Incremental Follow-Up Commits**: When addressing review comments, authors must ALWAYS append new, distinct commits to the PR branch.
-- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations. Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
+- **Strict Prohibition of `--amend` and `--force`**: Never amend existing commits or force-push to active PR branches during code review iterations (except restacking your own unmerged stack branches, per [GitHub Authoring Standards §4](github_authoring_and_prs.md#4-post-pr-creation-workflow--addressing-review-feedback-policy)). Preserving commit progression is mandatory so human reviewers can inspect exact diffs between review passes using GitHub's "Changes since last review" view.
 - **Merge-Time Squashing**: Commit cleanup and squashing is handled at merge time via GitHub's "Squash and merge" feature or when landing the PR, never during intermediate review feedback cycles.
 

@@ -171,38 +171,22 @@ func matchesPredicate(rec *store.ComponentRecord, p filterPredicate) bool {
 		return matchesReadyPredicate(rec, p.value)
 	case "name":
 		return matchesNamePredicate(rec.Name, p.value)
+	case "stability":
+		return matchesStabilityPredicate(rec, p.value)
 	default:
 		return false
 	}
 }
 
 func matchesStatePredicate(state componentspb.ComponentState, expected string) bool {
-	clean := strings.ToUpper(strings.TrimSpace(expected))
-	clean = strings.TrimPrefix(clean, "COMPONENT_STATE_")
-	stateStr := strings.TrimPrefix(state.String(), "COMPONENT_STATE_")
-	if strings.EqualFold(stateStr, clean) {
-		return true
-	}
-	if num, err := strconv.Atoi(clean); err == nil && int32(state) == int32(num) {
-		return true
-	}
-	return false
+	return matchesProtoEnum(state.String(), int32(state), "COMPONENT_STATE_", expected)
 }
 
 func matchesTypePredicate(rec *store.ComponentRecord, expected string) bool {
 	if rec.Spec == nil {
 		return false
 	}
-	clean := strings.ToUpper(strings.TrimSpace(expected))
-	clean = strings.TrimPrefix(clean, "COMPONENT_TYPE_")
-	typeStr := strings.TrimPrefix(rec.Spec.GetType().String(), "COMPONENT_TYPE_")
-	if strings.EqualFold(typeStr, clean) {
-		return true
-	}
-	if num, err := strconv.Atoi(clean); err == nil && int32(rec.Spec.GetType()) == int32(num) {
-		return true
-	}
-	return false
+	return matchesProtoEnum(rec.Spec.GetType().String(), int32(rec.Spec.GetType()), "COMPONENT_TYPE_", expected)
 }
 
 func matchesReadyPredicate(rec *store.ComponentRecord, expected string) bool {
@@ -217,6 +201,31 @@ func matchesReadyPredicate(rec *store.ComponentRecord, expected string) bool {
 func matchesNamePredicate(actualName, expected string) bool {
 	canonicalExpected := naming.CanonicalComponentName(expected)
 	return naming.CanonicalComponentName(actualName) == canonicalExpected
+}
+
+func matchesStabilityPredicate(rec *store.ComponentRecord, expected string) bool {
+	stability := effectiveStability(rec)
+	return matchesProtoEnum(stability.String(), int32(stability), "COMPONENT_STABILITY_", expected)
+}
+
+func matchesProtoEnum(enumStr string, enumNum int32, prefix, expected string) bool {
+	clean := strings.ToUpper(strings.TrimSpace(expected))
+	clean = strings.TrimPrefix(clean, prefix)
+	shortName := strings.TrimPrefix(enumStr, prefix)
+	if strings.EqualFold(shortName, clean) {
+		return true
+	}
+	if num, err := strconv.Atoi(clean); err == nil && enumNum == int32(num) {
+		return true
+	}
+	return false
+}
+
+func effectiveStability(rec *store.ComponentRecord) componentspb.ComponentStability {
+	if rec == nil || rec.Spec == nil || rec.Spec.GetStability() == componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED {
+		return componentspb.ComponentStability_COMPONENT_STABILITY_STABLE
+	}
+	return rec.Spec.GetStability()
 }
 
 func parsePlatformHealthFilter(filter string) ([]filterPredicate, error) {
@@ -267,5 +276,5 @@ func parseSinglePredicate(clause string) (filterPredicate, error) {
 }
 
 func isValidFilterKey(k string) bool {
-	return k == "state" || k == "type" || k == "ready" || k == "name"
+	return k == "state" || k == "type" || k == "ready" || k == "name" || k == "stability"
 }

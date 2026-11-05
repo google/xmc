@@ -29,11 +29,20 @@
   margin-bottom: 20px;
 }
 
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
 .jobs-card-title {
   font-size: 18px;
   font-weight: 500;
   color: #202124;
-  margin: 0 0 4px 0;
+  margin: 0;
 }
 
 .target-queue-name {
@@ -88,4 +97,9 @@
   font-size: 14px;
   color: #5f6368;
   margin-top: 12px;
+}
+
+// Lets wide job rows scroll horizontally when the containing pane is narrow.
+.jobs-table-container {
+  overflow-x: auto;
 }

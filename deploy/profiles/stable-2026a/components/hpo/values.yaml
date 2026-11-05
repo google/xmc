@@ -1,0 +1,9 @@
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+enabled: false
+stability: EXPERIMENTAL
+namespace: ""
+deletionProtection: true
+deletionPolicy: "Delete"
+dependencies: ["vizier", "clickhouse"]
+

@@ -43,7 +43,7 @@ graph TD
 When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/pr_review/review_threads.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
-3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON; check the exit code per [Helper Tool Exit Codes](../../AGENTS.md#universal-architectural-principles).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
    - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
 
@@ -211,6 +211,9 @@ git push origin HEAD
 > **Strict Prohibition of Force-Pushing on Active PRs**:
 > NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
+
+### Reconcile Live PR Description & Tradeoffs (`Adopt` Items Only)
+After pushing follow-up commits, compare `gh pr view <pr_number> --json title,body,baseRefName` against `git diff origin/<baseRefName>...HEAD` (fetching `origin <baseRefName>` first if needed, e.g., on stacked `gh-stack` PRs). Whenever review fixes change behavior, touched packages, or surface a load-bearing architectural tradeoff (for example, keeping filtering client-side or deferring a schema migration), update the `Motivation & Context`, `Key Changes`, and `Assumptions` sections via [`./tools/pr_review/update_pr_description.py`](../../../tools/pr_review/update_pr_description.py) after presenting the updated preview for confirmation per [XMC Create PR §4](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool).
 
 ### Verify CI on the Pushed Commit (`Adopt` Items Only)
 After the [CI wait buffer](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period), block on CI for the new head commit with the helper tool instead of polling bare `gh pr checks` (which exits `8` while checks are pending):
