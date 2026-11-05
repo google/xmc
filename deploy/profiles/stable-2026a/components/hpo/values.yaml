@@ -3,6 +3,7 @@
 enabled: false
 stability: EXPERIMENTAL
 namespace: ""
+imageTag: ""
 deletionProtection: true
 deletionPolicy: "Delete"
 dependencies: ["vizier", "clickhouse"]

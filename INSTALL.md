@@ -320,6 +320,7 @@ For direct control over your infrastructure:
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
+   If you enable the `hpo` component (`componentsDeployment.enabled: true`), also set `hpo_custom_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/study-controller-<ENVIRONMENT>:<IMAGE_TAG>"` so that `xmc-bridge` deploys your `xmc-study-controller` image.
 
 ---
 

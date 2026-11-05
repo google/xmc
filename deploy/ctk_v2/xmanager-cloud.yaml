@@ -48,6 +48,7 @@ vars:
   dashboard_service_image: "$(vars.image_registry)/dashboard-service-$(vars.environment):$(vars.image_tag)"
   rod_image: "$(vars.image_registry)/rod-data-provider-$(vars.environment):$(vars.image_tag)"
   ingestion_gateway_image: "$(vars.image_registry)/ingestion-gateway-$(vars.environment):$(vars.image_tag)"
+  study_controller_image: "$(vars.image_registry)/study-controller-$(vars.environment):$(vars.image_tag)"
   log_monitor_image: "$(vars.image_registry)/log-monitor-$(vars.environment):$(vars.image_tag)"
   xmc_bridge_image: "$(vars.image_registry)/xmc-bridge-$(vars.environment):$(vars.image_tag)"
   
@@ -498,6 +499,8 @@ deployment_groups:
         value: $(vars.rod_image)
       - name: ingestion_gateway_custom_image
         value: $(vars.ingestion_gateway_image)
+      - name: hpo_custom_image
+        value: $(vars.study_controller_image)
       - name: taskSignatureTtlSeconds
         value: $(vars.task_signature_ttl_seconds)
         type: auto
