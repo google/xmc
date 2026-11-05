@@ -75,7 +75,13 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 
 1. **Select Verification Workflow Scope**:
    - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `--input "examples_filter=<ids>"` using the non-empty comma-separated `failed_jobs[].example_id` values from Stage 1 (validated pre-flight by [`dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py)), or omit `--input` to run the full matrix when `example_id` is empty (non-matrix jobs such as `examples-import-check` or `build-example-images`) or when shared SDK/installer/workflow files changed.
-   - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation first**, then run `BRANCH_NAME="${BRANCH_NAME:-fix/nightly-${SLUG:-<kebab-case-slug>}}" PYTHONPATH=. python3 tools/release/dispatch_and_watch.py --workflow nightly-build.yml --ref "${BRANCH_NAME}"` before Stage 5.2.
+   - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation first**, then run (and verify `conclusion == "success"`) before Stage 5.2:
+     ```bash
+     SLUG="${SLUG:-<kebab-case-slug>}"
+     BRANCH_NAME="${BRANCH_NAME:-fix/nightly-${SLUG}}"
+
+     PYTHONPATH=. python3 tools/release/dispatch_and_watch.py --workflow nightly-build.yml --ref "${BRANCH_NAME}"
+     ```
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the Pushed PR Branch**:
    Ensure `origin/${BRANCH_NAME}` is pushed first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
