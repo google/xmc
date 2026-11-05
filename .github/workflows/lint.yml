@@ -114,16 +114,20 @@ jobs:
             exit 1
           fi
 
+      - name: 'Cache golangci-lint binary'
+        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/go/bin/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-bin-v1.64.6-go1.26
+
       - name: 'Install & Run golangci-lint'
         run: |
-          if ! command -v golangci-lint &>/dev/null; then
-            GOPATH_BIN="$(go env GOPATH)/bin"
-            mkdir -p "$GOPATH_BIN"
-            echo "--> Downloading pre-built golangci-lint (v1.64.6)..."
-            curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v1.64.6/golangci-lint-1.64.6-linux-amd64.tar.gz" | tar -xz -C "$GOPATH_BIN" --strip-components=1 "golangci-lint-1.64.6-linux-amd64/golangci-lint"
-            chmod +x "$GOPATH_BIN/golangci-lint"
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          if [ ! -f "$GOPATH_BIN/golangci-lint" ]; then
+            echo "--> Installing golangci-lint (v1.64.6)..."
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
           fi
-          golangci-lint run --timeout=5m
+          "$GOPATH_BIN/golangci-lint" run --timeout=5m
 
       - name: 'Check Go Test Determinism'
         run: |
