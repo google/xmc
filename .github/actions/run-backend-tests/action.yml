@@ -38,6 +38,15 @@ runs:
       # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
       run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
+    - name: 'Reclaim Unused Runner Disk Space'
+      if: steps.classify.outputs.run_backend == 'true'
+      shell: bash
+      # Standard ubuntu-latest runners have ~18 GB free on / because Android SDK,
+      # .NET, GHC, and Boost consume ~28 GB. Reclaim them before building all Go targets.
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+        df -h /
+
     - name: 'Set up Bazel'
       if: steps.classify.outputs.run_backend == 'true'
       uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0

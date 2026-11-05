@@ -53,6 +53,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 'Reclaim Unused Runner Disk Space'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
+
       - name: 'Validate CI Secrets Configuration'
         env:
           GCP_E2E_PROJECT_ID: ${{ secrets.GCP_E2E_PROJECT_ID }}
