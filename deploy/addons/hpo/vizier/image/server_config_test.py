@@ -198,6 +198,27 @@ class EngineOptionsTest(unittest.TestCase):
             ):
                 server_config.engine_options(url)
 
+    def test_rejects_unparsable_url_without_echoing_it(self):
+        for url in ("postgresql://u:secret@[::1/db", "postgresql://u:secret@[fd00::5/vizier"):
+            with self.subTest(url=url):
+                with self.assertRaises(ValueError) as raised:
+                    server_config.engine_options(url)
+                self.assertEqual(str(raised.exception), "invalid VIZIER_DATABASE_URL")
+                self.assertIsNone(raised.exception.__cause__)
+                self.assertTrue(raised.exception.__suppress_context__)
+
+
+class DatabaseBackendTest(unittest.TestCase):
+    def test_strips_driver_and_case(self):
+        self.assertEqual(server_config.database_backend("POSTGRESQL+psycopg2://h/d"), "postgresql")
+
+    def test_rejects_unparsable_url_without_echoing_it(self):
+        with self.assertRaises(ValueError) as raised:
+            server_config.database_backend("postgresql://u:secret@[::1/db")
+
+        self.assertEqual(str(raised.exception), server_config.INVALID_DATABASE_URL_MESSAGE)
+        self.assertTrue(raised.exception.__suppress_context__)
+
 
 class DescribeDatabaseTest(unittest.TestCase):
     def test_omits_credentials_and_query(self):
@@ -219,10 +240,25 @@ class DescribeDatabaseTest(unittest.TestCase):
             "postgresql://[fd00::5]/vizier",
         )
 
-    def test_tolerates_invalid_port(self):
-        description = server_config.describe_database("postgresql://u:secret@h:notaport/d")
-
-        self.assertEqual(description, "postgresql://h:<invalid port>/d")
+    def test_redacts_urls_that_may_leak_password_fragments(self):
+        for url, want in (
+            # An unencoded "/" in the password moves the rest of it into the path.
+            ("postgresql://u:p/ss@host/db", "postgresql://<redacted>"),
+            # An unclosed IPv6 bracket makes urlsplit fail.
+            ("postgresql://u:pw@[::1/db", "postgresql://<redacted>"),
+            # A malformed port makes parts.port fail.
+            ("postgresql://u:secret@h:notaport/d", "postgresql://<redacted>"),
+            # An unencoded "?" or "#" in the password moves the rest into the query or fragment.
+            ("postgresql://u:p?ss@host/db", "postgresql://<redacted>"),
+            ("postgresql://u:p#ss@host/db", "postgresql://<redacted>"),
+            # Without a well-formed scheme even the scheme is withheld.
+            ("://u:p/ss@host/db", "<redacted>"),
+            ("not a scheme://u:p/ss@[::1/db", "<redacted>"),
+        ):
+            with self.subTest(url=url):
+                description = server_config.describe_database(url)
+                self.assertEqual(description, want)
+                self.assertNotIn("ss", description.replace("postgresql", ""))
 
 
 class SerializedColumnsTest(unittest.TestCase):

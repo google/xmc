@@ -182,7 +182,7 @@ def create_engine(database_url: str) -> sqla.engine.Engine:
     try:
         return sqla.create_engine(database_url, **kwargs)
     except (sqla.exc.ArgumentError, ValueError):
-        raise ValueError("invalid VIZIER_DATABASE_URL") from None
+        raise ValueError(server_config.INVALID_DATABASE_URL_MESSAGE) from None
 
 
 def create_datastore(engine: sqla.engine.Engine) -> sql_datastore.SQLDataStore:

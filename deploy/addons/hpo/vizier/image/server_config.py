@@ -20,6 +20,7 @@ a SQLAlchemy engine and a gRPC server.
 """
 
 import dataclasses
+import re
 from collections.abc import Mapping
 from typing import Any
 from urllib import parse
@@ -28,6 +29,13 @@ DEFAULT_PORT = 7077
 DEFAULT_DATABASE_URL = "sqlite:////data/vizier.db"
 DEFAULT_POSTGRES_PORT = 5432
 DEFAULT_POSTGRES_SSLMODE = "verify-full"
+
+# Message of every error raised for a malformed database URL; it never includes the URL.
+INVALID_DATABASE_URL_MESSAGE = "invalid VIZIER_DATABASE_URL"
+
+_REDACTED = "<redacted>"
+# RFC 3986 URL scheme.
+_SCHEME_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*")
 
 # Prefix of the upstream SQLDataStore columns that hold serialized protos.
 SERIALIZED_COLUMN_PREFIX = "serialized_"
@@ -173,7 +181,8 @@ def engine_options(database_url: str) -> EngineOptions:
         The options for sqlalchemy.create_engine.
 
     Raises:
-        ValueError: The URL names a backend other than SQLite or PostgreSQL.
+        ValueError: The URL cannot be parsed (with INVALID_DATABASE_URL_MESSAGE) or names a
+            backend other than SQLite or PostgreSQL.
     """
     backend = database_backend(database_url)
     if backend == "sqlite":
@@ -190,19 +199,44 @@ def engine_options(database_url: str) -> EngineOptions:
 
 
 def database_backend(database_url: str) -> str:
-    """Returns the backend of a SQLAlchemy URL without its driver, e.g. "postgresql"."""
-    return parse.urlsplit(database_url).scheme.split("+", 1)[0].lower()
+    """Returns the backend of a SQLAlchemy URL without its driver, e.g. "postgresql".
+
+    Raises:
+        ValueError: The URL cannot be parsed. The message never includes the URL, which may hold
+            a password.
+    """
+    try:
+        scheme = parse.urlsplit(database_url).scheme
+    except ValueError:
+        raise ValueError(INVALID_DATABASE_URL_MESSAGE) from None
+    return scheme.split("+", 1)[0].lower()
 
 
 def describe_database(database_url: str) -> str:
-    """Returns a log-safe description of database_url that omits credentials and query."""
-    parts = parse.urlsplit(database_url)
-    host = _bracket_ipv6(parts.hostname) if parts.hostname else ""
+    """Returns a log-safe description of database_url that omits credentials and query.
+
+    URLs that cannot be split reliably into credentials and location, such as a malformed host or
+    port, or an unencoded "@" left after the credentials, are reduced to their scheme so that no
+    password fragment is logged.
+    """
     try:
-        port = f":{parts.port}" if parts.port else ""
+        parts = parse.urlsplit(database_url)
+        hostname, port = parts.hostname, parts.port
     except ValueError:
-        port = ":<invalid port>"
-    return f"{parts.scheme}://{host}{port}{parts.path}"
+        return _redacted(database_url)
+    if "@" in parts.path + parts.query + parts.fragment:
+        return _redacted(database_url)
+    host = _bracket_ipv6(hostname) if hostname else ""
+    port_suffix = f":{port}" if port else ""
+    return f"{parts.scheme}://{host}{port_suffix}{parts.path}"
+
+
+def _redacted(database_url: str) -> str:
+    """Returns "<scheme>://<redacted>", or "<redacted>" when the URL has no well-formed scheme."""
+    scheme, separator, _ = database_url.partition("://")
+    if separator and _SCHEME_PATTERN.fullmatch(scheme):
+        return f"{scheme}://{_REDACTED}"
+    return _REDACTED
 
 
 def is_serialized_column(column_name: str) -> bool:
