@@ -59,23 +59,9 @@ func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(c
 	if r == nil || r.pool == nil {
 		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
-	if fn == nil {
-		return pgdb.WrapStatusError("snapshot callback must not be nil", grpcerr.ErrInvalidArgument, nil)
-	}
 	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
 		return fn(txCtx, &snapshotRepository{tx: tx})
 	})
-}
-
-// AggregateActiveResourcesByAuthor aggregates active work unit resources by author across queueNames.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	var res []storage.AuthorResourceAllocation
-	err := r.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
-		var innerErr error
-		res, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, queueNames)
-		return innerErr
-	})
-	return res, err
 }
 
 func aggregateActiveResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.AuthorResourceAllocation, error) {

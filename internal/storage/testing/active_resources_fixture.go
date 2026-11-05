@@ -16,10 +16,9 @@ package storagetest
 
 import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/storage"
 )
-
-const bytesPerGiB = 1024 * 1024 * 1024
 
 // ActiveResourceQueue is the queue that holds the active work units seeded by ActiveResourceSpecs.
 const ActiveResourceQueue = "gpu-queue"
@@ -43,7 +42,7 @@ func (s ActiveResourceSpec) Executable() *essmsgpb.Executable {
 	jobs := []*essmsgpb.KubernetesJob{resourceJob(&essmsgpb.ResourceSet{
 		Resources: &essmsgpb.ResourceSet_CpuResources{CpuResources: &essmsgpb.CpuResources{
 			CpuMillicores: int64(s.CPUCores * 1000),
-			MemoryBytes:   int64(s.MemoryGiB * bytesPerGiB),
+			MemoryBytes:   int64(s.MemoryGiB * resourceaccumulator.BytesPerGiB),
 		}},
 	})}
 	if s.GPUCount > 0 {

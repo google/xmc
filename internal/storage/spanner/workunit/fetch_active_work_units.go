@@ -178,11 +178,13 @@ func fetchActiveWorkUnitsInTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
+	// Query 1: Count total active work units across matching queues
 	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
 	if err != nil {
 		logging.Error(ctx, "failed to count active work units", "error", err)
 		return nil, err
 	}
+	// Fetch pageSize + 1 items to determine if nextPageToken is needed
 	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, int64(pageSizeVal)+1, offset)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)

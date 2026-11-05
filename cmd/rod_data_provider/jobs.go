@@ -74,7 +74,6 @@ func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQ
 	var result *storage.ActiveWorkUnitsResult
 	var allocations []storage.AuthorResourceAllocation
 	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
-		result, allocations = nil, nil
 		var innerErr error
 		result, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken)
 		if innerErr != nil {

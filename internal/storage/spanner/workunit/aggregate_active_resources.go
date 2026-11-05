@@ -53,23 +53,9 @@ func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(c
 	if r == nil || r.client == nil {
 		return fmt.Errorf("spanner storage client is uninitialized: %w", grpcerr.ErrFailedPrecondition)
 	}
-	if fn == nil {
-		return fmt.Errorf("snapshot callback must not be nil: %w", grpcerr.ErrInvalidArgument)
-	}
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 	return fn(ctx, &snapshotRepository{txn: txn})
-}
-
-// AggregateActiveResourcesByAuthor aggregates active work unit resources by author across queueNames.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	var res []storage.AuthorResourceAllocation
-	err := r.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
-		var innerErr error
-		res, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, queueNames)
-		return innerErr
-	})
-	return res, err
 }
 
 func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
@@ -88,7 +74,7 @@ func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTra
 
 	var samples []data.ActiveWorkUnitResourceSample
 	if err := iter.Do(func(row *spanner.Row) error {
-		sample, err := scanActiveResourceSample(ctx, row)
+		sample, err := scanActiveResourceSample(row)
 		if err != nil {
 			return err
 		}
@@ -100,10 +86,7 @@ func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTra
 	return data.AggregateAuthorResourceSamples(samples), nil
 }
 
-func scanActiveResourceSample(ctx context.Context, row *spanner.Row) (data.ActiveWorkUnitResourceSample, error) {
-	if err := ctx.Err(); err != nil {
-		return data.ActiveWorkUnitResourceSample{}, err
-	}
+func scanActiveResourceSample(row *spanner.Row) (data.ActiveWorkUnitResourceSample, error) {
 	var sample data.ActiveWorkUnitResourceSample
 	if err := row.ColumnByName("Creator", &sample.Creator); err != nil {
 		return sample, fmt.Errorf("failed to read column Creator: %w", err)

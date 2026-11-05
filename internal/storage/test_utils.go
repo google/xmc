@@ -617,13 +617,10 @@ func (s *MockStorage) AggregateActiveResourcesByAuthor(ctx context.Context, queu
 	return s.AuthorResourceAllocations, s.AggregateActiveResourcesErr
 }
 
-// WithReadOnlyWorkUnitSnapshot mocks executing active work unit reads in a read-only snapshot.
+// WithReadOnlyWorkUnitSnapshot mocks a read-only snapshot by passing the mock itself as the repository.
 func (s *MockStorage) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo WorkUnitSnapshotRepository) error) error {
 	if s.ReadOnlyWorkUnitSnapshotErr != nil {
 		return s.ReadOnlyWorkUnitSnapshotErr
-	}
-	if fn == nil {
-		return grpcerr.ErrInvalidArgument
 	}
 	return fn(ctx, s)
 }

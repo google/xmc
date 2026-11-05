@@ -47,30 +47,36 @@ func insertActiveResourceWorkUnits(t *testing.T, pool *pgxpool.Pool, repo *Repos
 	}
 }
 
+func aggregateInSnapshot(ctx context.Context, repo *Repository, queues []string) ([]storage.AuthorResourceAllocation, error) {
+	var got []storage.AuthorResourceAllocation
+	err := repo.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, snap storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		got, innerErr = snap.AggregateActiveResourcesByAuthor(txCtx, queues)
+		return innerErr
+	})
+	return got, err
+}
+
 func TestRepository_AggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
 	ctx := t.Context()
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
 	nilPoolRepo := NewRepository(nil)
-	if _, err := nilPoolRepo.AggregateActiveResourcesByAuthor(canceledCtx, []string{"q"}); !errors.Is(err, context.Canceled) {
-		t.Errorf("AggregateActiveResourcesByAuthor(canceled) = %v, want context.Canceled", err)
+	if _, err := aggregateInSnapshot(canceledCtx, nilPoolRepo, []string{"q"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("aggregate(canceled) = %v, want context.Canceled", err)
 	}
-	if _, err := ((*Repository)(nil)).AggregateActiveResourcesByAuthor(ctx, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("nil Repository.AggregateActiveResourcesByAuthor() code = %v, want FailedPrecondition", status.Code(err))
+	if _, err := aggregateInSnapshot(ctx, nil, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("aggregate(nil Repository) code = %v, want FailedPrecondition", status.Code(err))
 	}
-	if err := nilPoolRepo.WithReadOnlyWorkUnitSnapshot(ctx, nil); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("nil pool WithReadOnlyWorkUnitSnapshot() code = %v, want FailedPrecondition", status.Code(err))
+	if _, err := aggregateInSnapshot(ctx, nilPoolRepo, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("aggregate(nil pool) code = %v, want FailedPrecondition", status.Code(err))
 	}
 
 	_, essPool := postgrestest.Setup(ctx, t)
-	repo := NewRepository(essPool)
-	if err := repo.WithReadOnlyWorkUnitSnapshot(ctx, nil); status.Code(err) != codes.InvalidArgument {
-		t.Errorf("WithReadOnlyWorkUnitSnapshot(nil) code = %v, want InvalidArgument", status.Code(err))
-	}
-	got, err := repo.AggregateActiveResourcesByAuthor(ctx, nil)
+	got, err := aggregateInSnapshot(ctx, NewRepository(essPool), nil)
 	if err != nil || len(got) != 0 {
-		t.Errorf("AggregateActiveResourcesByAuthor(nil) = (%v, %v), want (empty, nil)", got, err)
+		t.Errorf("aggregate(nil queues) = (%v, %v), want (empty, nil)", got, err)
 	}
 }
 
@@ -83,17 +89,9 @@ func TestRepository_AggregateActiveResourcesByAuthor_MultiPageSnapshot(t *testin
 	insertActiveResourceWorkUnits(t, essPool, repo, storagetest.ActiveResourceSpecs(701, 702))
 
 	queues := []string{storagetest.ActiveResourceQueue}
-	gotAllocations, err := repo.AggregateActiveResourcesByAuthor(ctx, queues)
-	if err != nil {
-		t.Fatalf("AggregateActiveResourcesByAuthor() failed: %v", err)
-	}
-	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations); diff != "" {
-		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
-	}
-
 	var pageOne *storage.ActiveWorkUnitsResult
 	var snapshotAllocations []storage.AuthorResourceAllocation
-	err = repo.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, snap storage.WorkUnitSnapshotRepository) error {
+	err := repo.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, snap storage.WorkUnitSnapshotRepository) error {
 		var innerErr error
 		if pageOne, innerErr = snap.FetchActiveWorkUnitsByQueues(txCtx, queues, 2, ""); innerErr != nil {
 			return innerErr

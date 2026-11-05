@@ -57,9 +57,6 @@ func AggregateAuthorResourceSamples(samples []ActiveWorkUnitResourceSample) []st
 			continue
 		}
 		for resType, units := range resourceaccumulator.ExtractNormalizedExecutableResources(sample.Executable) {
-			if units <= 0 {
-				continue
-			}
 			totals[authorResourceKey{author: sample.Creator, resourceType: resType, state: state}] += units
 		}
 	}

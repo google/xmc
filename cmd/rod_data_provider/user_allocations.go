@@ -76,15 +76,14 @@ func collectQueueAcceleratorCandidates(cq *kueuev1beta1.ClusterQueue, rfMap map[
 	return candidates
 }
 
+// mapAuthorResourceAllocations groups storage rows (already canonical and positive) by user and
+// resource type, resolving generic accelerators to the queue's only flavor model when unique.
 func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
 	grouped := make(map[userResourceKey]*userResourceTotals)
 	for _, row := range rows {
-		if row.Units <= 0 {
-			continue
-		}
-		resType := resolveAllocationResourceType(row.ResourceType, uniqueAccelerators)
-		if resType == "" {
-			continue
+		resType := row.ResourceType
+		if resolved, ok := uniqueAccelerators[resType]; ok {
+			resType = resolved
 		}
 		key := userResourceKey{user: row.Author, resourceType: resType}
 		entry := grouped[key]
@@ -95,14 +94,6 @@ func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqu
 		accumulateStateUnits(entry, row.State, row.Units)
 	}
 	return sortedUserResourceAllocations(grouped)
-}
-
-func resolveAllocationResourceType(rawType string, uniqueAccelerators map[string]string) string {
-	canonical := resourceaccumulator.CanonicalizeResourceType(rawType)
-	if resolved, ok := uniqueAccelerators[canonical]; ok && resolved != "" {
-		return resolved
-	}
-	return canonical
 }
 
 func accumulateStateUnits(entry *userResourceTotals, state storage.ActiveResourceState, units float64) {
@@ -117,9 +108,6 @@ func accumulateStateUnits(entry *userResourceTotals, state storage.ActiveResourc
 func sortedUserResourceAllocations(grouped map[userResourceKey]*userResourceTotals) []*spb.UserResourceAllocation {
 	allocations := make([]*spb.UserResourceAllocation, 0, len(grouped))
 	for key, totals := range grouped {
-		if totals.running+totals.pending <= 0 {
-			continue
-		}
 		allocations = append(allocations, &spb.UserResourceAllocation{
 			User:         key.user,
 			ResourceType: key.resourceType,

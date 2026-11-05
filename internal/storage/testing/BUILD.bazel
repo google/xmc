@@ -28,6 +28,7 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
+        "//internal/common/resourceaccumulator",
         "//internal/grpcerr",
         "//internal/storage",
         "@org_golang_google_protobuf//proto",

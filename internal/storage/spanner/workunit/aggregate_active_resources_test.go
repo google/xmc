@@ -67,25 +67,32 @@ func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spann
 	}
 }
 
+func aggregateInSnapshot(ctx context.Context, store *spanner.Storage, queues []string) ([]storage.AuthorResourceAllocation, error) {
+	var got []storage.AuthorResourceAllocation
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		got, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, queues)
+		return innerErr
+	})
+	return got, err
+}
+
 func TestAggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(canceledCtx, []string{"q"}); !errors.Is(err, context.Canceled) {
-		t.Errorf("AggregateActiveResourcesByAuthor(canceled) = %v, want context.Canceled", err)
+	if _, err := aggregateInSnapshot(canceledCtx, &spanner.Storage{}, []string{"q"}); !errors.Is(err, context.Canceled) {
+		t.Errorf("aggregate(canceled) = %v, want context.Canceled", err)
 	}
-	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(t.Context(), []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("AggregateActiveResourcesByAuthor(nil client) = %v, want ErrFailedPrecondition", err)
+	if _, err := aggregateInSnapshot(t.Context(), &spanner.Storage{}, []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("aggregate(nil client) = %v, want ErrFailedPrecondition", err)
 	}
 
 	ctx := t.Context()
 	store := newEmulatorStorage(ctx, t)
-	if err := store.WithReadOnlyWorkUnitSnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-		t.Errorf("WithReadOnlyWorkUnitSnapshot(nil) = %v, want ErrInvalidArgument", err)
-	}
-	got, err := store.AggregateActiveResourcesByAuthor(ctx, nil)
+	got, err := aggregateInSnapshot(ctx, store, nil)
 	if err != nil || len(got) != 0 {
-		t.Errorf("AggregateActiveResourcesByAuthor(nil) = (%v, %v), want (empty, nil)", got, err)
+		t.Errorf("aggregate(nil queues) = (%v, %v), want (empty, nil)", got, err)
 	}
 }
 

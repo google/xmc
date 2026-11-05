@@ -28,11 +28,6 @@ var acceleratorLabelKeys = []string{
 	"gpu.nvidia.com/class",
 }
 
-// formatCompoundAccelerator combines the base resource name with the specific accelerator model.
-func formatCompoundAccelerator(resourceName, model string) string {
-	return resourceaccumulator.FormatCompoundAccelerator(resourceName, model)
-}
-
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to compound accelerator names
 // (e.g. "nvidia.com/gpu: nvidia-tesla-h100") using the ResourceFlavor's nodeLabels if present.
 // Non-accelerator resources (like "cpu" or "memory") remain unchanged.
@@ -43,12 +38,12 @@ func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueu
 	if rf := rfMap[flavorName]; rf != nil {
 		for _, labelKey := range acceleratorLabelKeys {
 			if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
-				return formatCompoundAccelerator(resourceName, acc)
+				return resourceaccumulator.FormatCompoundAccelerator(resourceName, acc)
 			}
 		}
 	}
 	if resourceaccumulator.IsSpecificAcceleratorName(flavorName) {
-		return formatCompoundAccelerator(resourceName, flavorName)
+		return resourceaccumulator.FormatCompoundAccelerator(resourceName, flavorName)
 	}
 	return resourceName
 }

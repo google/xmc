@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
@@ -107,13 +106,6 @@ func TestMockStorage_WithReadOnlyWorkUnitSnapshot(t *testing.T) {
 		})
 		if !errors.Is(err, wantErr) {
 			t.Errorf("WithReadOnlyWorkUnitSnapshot() error = %v, want %v", err, wantErr)
-		}
-	})
-
-	t.Run("rejects nil callback", func(t *testing.T) {
-		m := &MockStorage{}
-		if err := m.WithReadOnlyWorkUnitSnapshot(ctx, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-			t.Errorf("WithReadOnlyWorkUnitSnapshot(nil) error = %v, want ErrInvalidArgument", err)
 		}
 	})
 }

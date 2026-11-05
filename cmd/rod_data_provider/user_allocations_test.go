@@ -61,11 +61,10 @@ func TestMapAuthorResourceAllocations(t *testing.T) {
 	rows := []storage.AuthorResourceAllocation{
 		{Author: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStateRunning, Units: 2},
 		{Author: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStatePending, Units: 4},
-		{Author: "alice@example.com", ResourceType: "nvidia-tesla-h100", State: storage.ActiveResourceStateRunning, Units: 8},
+		{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStateRunning, Units: 8},
 		{Author: "alice@example.com", ResourceType: "cpu", State: storage.ActiveResourceStateRunning, Units: 16},
 		{Author: "alice@example.com", ResourceType: "memory", State: storage.ActiveResourceStatePending, Units: 32.5},
 		{Author: "carol@example.com", ResourceType: "nvidia.com/gpu", State: storage.ActiveResourceStateRunning, Units: 4},
-		{Author: "ignored@example.com", ResourceType: "cpu", State: storage.ActiveResourceStateRunning, Units: 0},
 	}
 
 	singleFlavorCache := buildFlavorCache(map[string]string{"h100-flavor": "nvidia-tesla-h100"}, []string{"h100-flavor"})
