@@ -33,6 +33,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
@@ -41,6 +42,7 @@ import {
   QueueJobResourcesPipe,
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
+import { QueueUserAllocationBar } from './queue_user_allocation_bar/queue_user_allocation_bar';
 
 /** Payload data required to open the queue jobs inspection panel. */
 export class QueueJobsTableData implements BaseSidePanelData {
@@ -66,11 +68,14 @@ export class QueueJobsTableData implements BaseSidePanelData {
     QueueJobPositionPipe,
     QueueJobStatusPipe,
     QueueJobResourcesPipe,
+    QueueUserAllocationBar,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {
   public readonly data = input<QueueJobsTableData>();
   public readonly queueName = input<string>('gpu-cluster-queue');
+  /** First resource type picked in the Smart Resource Finder, or null when the picker is empty. */
+  public readonly dominantResource = input<string | null>(null);
 
   protected readonly activeQueueName = computed(
     () => this.data()?.queueName || this.queueName() || 'gpu-cluster-queue',
@@ -130,6 +135,10 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   );
 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
+  protected readonly userAllocations = computed(() => {
+    const resp: GetRunningAndPendingJobsResponse | undefined = this.jobsResponse();
+    return resp?.userAllocations ?? [];
+  });
 
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
 

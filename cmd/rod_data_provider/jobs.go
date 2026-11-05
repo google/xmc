@@ -44,7 +44,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 	pageSize = min(pageSize, 100)
 
-	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
+	result, authorAllocations, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		if errors.Is(err, storage.ErrInvalidPageToken) {
@@ -61,11 +61,29 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		totalQueueSize = result.TotalQueueSize
 	}
 
+	uniqueAccelerators := buildUniqueQueueAcceleratorMap(s.cache, clusterQueueName)
 	return &spb.GetRunningAndPendingJobsResponse{
-		Jobs:           jobs,
-		NextPageToken:  nextPageToken,
-		TotalQueueSize: totalQueueSize,
+		Jobs:            jobs,
+		NextPageToken:   nextPageToken,
+		TotalQueueSize:  totalQueueSize,
+		UserAllocations: mapAuthorResourceAllocations(authorAllocations, uniqueAccelerators),
 	}, nil
+}
+
+func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
+	var result *storage.ActiveWorkUnitsResult
+	var allocations []storage.AuthorResourceAllocation
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		result, allocations = nil, nil
+		var innerErr error
+		result, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken)
+		if innerErr != nil {
+			return innerErr
+		}
+		allocations, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, targetQueues)
+		return innerErr
+	})
+	return result, allocations, err
 }
 
 func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {

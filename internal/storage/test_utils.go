@@ -205,6 +205,9 @@ type MockStorage struct {
 
 	ActiveWorkUnitsResult            *ActiveWorkUnitsResult
 	FetchActiveWorkUnitsByQueuesErr  error
+	AuthorResourceAllocations        []AuthorResourceAllocation
+	AggregateActiveResourcesErr      error
+	ReadOnlyWorkUnitSnapshotErr      error
 	BatchQueueVelocityResp           []QueueMetricRow
 	FetchBatchQueueVelocityErr       error
 	BatchPendingQueueMetricsResp     []QueueMetricRow
@@ -607,6 +610,22 @@ func (s *MockStorage) ListStatusMessages(ctx context.Context, parent string, pag
 // FetchActiveWorkUnitsByQueues mocks fetching active work units by queue names.
 func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
 	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
+}
+
+// AggregateActiveResourcesByAuthor mocks aggregating active work unit resources by author.
+func (s *MockStorage) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error) {
+	return s.AuthorResourceAllocations, s.AggregateActiveResourcesErr
+}
+
+// WithReadOnlyWorkUnitSnapshot mocks executing active work unit reads in a read-only snapshot.
+func (s *MockStorage) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo WorkUnitSnapshotRepository) error) error {
+	if s.ReadOnlyWorkUnitSnapshotErr != nil {
+		return s.ReadOnlyWorkUnitSnapshotErr
+	}
+	if fn == nil {
+		return grpcerr.ErrInvalidArgument
+	}
+	return fn(ctx, s)
 }
 
 // FetchBatchQueueVelocity mocks fetching batch queue velocity metrics.

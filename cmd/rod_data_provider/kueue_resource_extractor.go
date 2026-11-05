@@ -15,14 +15,10 @@
 package main
 
 import (
-	"strings"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 )
-
-const bytesPerGiB = 1024 * 1024 * 1024
 
 var acceleratorLabelKeys = []string{
 	"cloud.google.com/gke-accelerator",
@@ -34,13 +30,7 @@ var acceleratorLabelKeys = []string{
 
 // formatCompoundAccelerator combines the base resource name with the specific accelerator model.
 func formatCompoundAccelerator(resourceName, model string) string {
-	if model == "" || model == resourceName {
-		return resourceName
-	}
-	if strings.HasPrefix(model, resourceName+": ") || strings.HasPrefix(model, resourceName+"/") {
-		return model
-	}
-	return resourceName + ": " + model
+	return resourceaccumulator.FormatCompoundAccelerator(resourceName, model)
 }
 
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to compound accelerator names
@@ -92,7 +82,7 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
 	val := q.AsApproximateFloat64()
 	if resourceaccumulator.IsMemoryOrStorageResource(resourceType) {
-		return val / bytesPerGiB
+		return val / resourceaccumulator.BytesPerGiB
 	}
 	return val
 }

@@ -19,6 +19,7 @@ go_library(
     name = "testing",
     testonly = True,
     srcs = [
+        "active_resources_fixture.go",
         "pausedtask_fake.go",
         "pausestate_fake.go",
     ],
@@ -36,6 +37,7 @@ go_library(
 go_test(
     name = "testing_test",
     srcs = [
+        "active_resources_fixture_test.go",
         "pausedtask_fake_test.go",
         "pausestate_fake_test.go",
     ],

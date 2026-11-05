@@ -103,9 +103,12 @@ func newTestWorkUnits(now time.Time) []storage.ActiveWorkUnit {
 
 type mockWorkUnitFetcher struct {
 	workUnits      []storage.ActiveWorkUnit
+	allocations    []storage.AuthorResourceAllocation
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
+	aggregateErr   error
+	snapshotCalls  int
 	lastQueueNames []string
 	lastPageSize   int32
 	lastPageToken  string
@@ -128,6 +131,21 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 		NextPageToken:  m.nextPageToken,
 		TotalQueueSize: m.totalQueueSize,
 	}, nil
+}
+
+func (m *mockWorkUnitFetcher) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	if m.aggregateErr != nil {
+		return nil, m.aggregateErr
+	}
+	if len(queueNames) == 0 {
+		return []storage.AuthorResourceAllocation{}, nil
+	}
+	return m.allocations, nil
+}
+
+func (m *mockWorkUnitFetcher) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	m.snapshotCalls++
+	return fn(ctx, m)
 }
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
@@ -264,6 +282,15 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			fetcher:   &mockWorkUnitFetcher{err: fmt.Errorf("spanner connection failure")},
 			wantCode:  codes.Internal,
 			wantCount: 0,
+		},
+		{
+			name:       "Aggregate Resources Error",
+			ctx:        context.Background(),
+			req:        baseReq,
+			setupCache: newTestKueueCache,
+			fetcher:    &mockWorkUnitFetcher{aggregateErr: fmt.Errorf("aggregation failure")},
+			wantCode:   codes.Internal,
+			wantCount:  0,
 		},
 	}
 
@@ -494,5 +521,35 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestGetRunningAndPendingJobs_PopulatesUserAllocationsInSingleSnapshot(t *testing.T) {
+	now := time.Now()
+	fetcher := &mockWorkUnitFetcher{
+		workUnits:      newTestWorkUnits(now),
+		totalQueueSize: 5,
+		allocations: []storage.AuthorResourceAllocation{
+			{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStateRunning, Units: 4},
+			{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStatePending, Units: 2},
+			{Author: "bob@example.com", ResourceType: "cpu", State: storage.ActiveResourceStateRunning, Units: 8},
+		},
+	}
+	srv := newServer(&Config{}, newTestKueueCache(), fetcher, nil)
+
+	resp, err := srv.GetRunningAndPendingJobs(context.Background(), baseReq)
+	if err != nil {
+		t.Fatalf("GetRunningAndPendingJobs() unexpected error: %v", err)
+	}
+	if fetcher.snapshotCalls != 1 {
+		t.Errorf("snapshotCalls = %d, want 1", fetcher.snapshotCalls)
+	}
+
+	wantAllocations := []*spb.UserResourceAllocation{
+		{User: "bob@example.com", ResourceType: "cpu", RunningUnits: 8, PendingUnits: 0},
+		{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4, PendingUnits: 2},
+	}
+	if diff := cmp.Diff(wantAllocations, resp.GetUserAllocations(), protocmp.Transform()); diff != "" {
+		t.Errorf("UserAllocations mismatch (-want +got):\n%s", diff)
 	}
 }

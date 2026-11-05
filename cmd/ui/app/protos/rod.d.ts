@@ -95,10 +95,18 @@ export interface GetRunningAndPendingJobsRequest {
   orderBy?: string;
 }
 
+export interface UserResourceAllocation {
+  user?: string;
+  resourceType?: string;
+  runningUnits?: number;
+  pendingUnits?: number;
+}
+
 export interface GetRunningAndPendingJobsResponse {
   jobs?: DashboardJob[];
   nextPageToken?: string;
   totalQueueSize?: number;
+  userAllocations?: UserResourceAllocation[];
 }
 
 export interface GetSubmitQueueRequest {

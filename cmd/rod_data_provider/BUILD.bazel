@@ -29,6 +29,7 @@ go_library(
         "secondary_data.go",
         "server.go",
         "submit_queue.go",
+        "user_allocations.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
@@ -88,6 +89,7 @@ go_test(
         "secondary_data_test.go",
         "server_test.go",
         "submit_queue_test.go",
+        "user_allocations_test.go",
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
