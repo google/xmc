@@ -46,6 +46,12 @@ Identify the primary task type to load the mandatory workflow rules and skills:
 | Reflection & Meta-Learning | [Iterative Reflection Skill](skills/xmc_iterative_reflection/SKILL.md) & [Rule Authoring Standards](rules/rule_authoring_standards.md) |
 | Skill & Rule A/B Benchmark | [XMC Trajectory Comparison Skill](skills/xmc_trajectory_comparison/SKILL.md) |
 
+### Repository Discovery, Bazel & Scratch Execution Routing
+Apply these cross-cutting routing conventions across every session regardless of touched file extensions:
+
+- **File & Text Discovery Before Reading**: List unfamiliar source, migration, workflow, or helper paths via `git ls-files <dir>` and search repository text via `git grep` before invoking file-read or file-edit tools. Find automation scripts via the [`tools/` index](../tools/README.md) and inspect them with `--help`, never by reading their source.
+- **Bazel Test & Target Routing**: Per [Go Guidelines §6](rules/languages/golang.md#6-go-dependencies--bazel) and [Python Guidelines §3](rules/languages/python.md#3-unit-testing--bazel-execution-protocol), run affected suites via `./tools/run_affected_tests.py`, target packages with `//<dir>/...` (recursive) or `//<dir>:all` (single package), and list targets via `bazel query 'tests(//<dir>/...)'`.
+- **Inline Code & Payload Safety (All Tasks)**: [Shell Guidelines §3](rules/languages/shell.md#3-command-substitution--payload-truncation-safety) and [Python Guidelines §4](rules/languages/python.md#4-virtual-environments--execution-safety) apply even when no `*.py`/`*.sh` file is touched: never run `python3 -c "..."` or pass Markdown/JSON inside double quotes; write the script or payload to a file under `${ARTIFACT_DIR:-/tmp}/` and execute or pass it by path.
 
 ---
 
