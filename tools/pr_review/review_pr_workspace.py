@@ -46,10 +46,18 @@ _GIT_INSTRUCTION = (
 )
 
 
+# Disables git hooks for every git call. With a relative core.hooksPath (e.g. the
+# documented `.githooks`), git resolves hooks against the working tree, which after a
+# checkout is the PR's tree, so PR-authored hooks would run with the reviewer's
+# credentials (post-checkout, reference-transaction on fetch, ...). An argv `-c` works on
+# every git version and, unlike GIT_CONFIG_COUNT, leaves the user's GIT_CONFIG_* alone.
+_NO_HOOKS = ["-c", "core.hooksPath=/dev/null"]
+
+
 def _git(args: list[str]) -> str:
-    """Runs a git command, keeping stdout free for the tool's JSON output."""
+    """Runs a git command with hooks disabled, keeping stdout free for the JSON output."""
     proc = run_command(
-        ["git", *args],
+        ["git", *_NO_HOOKS, *args],
         capture_output=True,
         stream=sys.stderr,
         handled_instruction=_GIT_INSTRUCTION,
@@ -101,12 +109,13 @@ def checkout_pr_head(head_sha: str) -> dict[str, Any]:
     Returns:
         `checked_out` and, when skipped, `checkout_command` and `reason`.
     """
-    command = ["git", "checkout", "--detach", head_sha]
-    skipped = {"checked_out": False, "checkout_command": " ".join(command)}
+    args = ["checkout", "--detach", head_sha]
+    command = " ".join(["git", *_NO_HOOKS, *args])
+    skipped = {"checked_out": False, "checkout_command": command}
     if _git(["status", "--porcelain", "--untracked-files=no"]).strip():
         return skipped | {"reason": "Worktree has uncommitted changes to tracked files."}
     try:
-        _git(command[1:])
+        _git(args)
     except HandledError as e:
         return skipped | {"reason": f"git refused the checkout: {e.message}"}
     return {"checked_out": True}

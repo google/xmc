@@ -15,6 +15,7 @@
 """Unit tests for review_pr_workspace."""
 
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -54,9 +55,11 @@ def _data(**pr_overrides: Any) -> dict[str, Any]:
 class FakeGit:
     """Records git invocations and serves canned stdout per git subcommand.
 
-    `git cat-file -e <sha>^{commit}` fails for SHAs in `missing`. Subcommands in
-    `fail` exit non-zero, raised like `run_command` does: as `HandledError` when a
-    `handled_instruction` is given, else as `CalledProcessError`.
+    Leading `-c key=value` pairs are stripped before dispatch: `calls` holds the
+    stripped argv and `raw_calls` the argv as passed. `git cat-file -e <sha>^{commit}`
+    fails for SHAs in `missing`. Subcommands in `fail` exit non-zero, raised like
+    `run_command` does: as `HandledError` when a `handled_instruction` is given, else
+    as `CalledProcessError`.
     """
 
     def __init__(
@@ -67,11 +70,18 @@ class FakeGit:
         fail: frozenset[str] = frozenset(),
     ):
         self.calls: list[list[str]] = []
+        self.raw_calls: list[list[str]] = []
         self._stdout = {"status": status, "diff": diff}
         self._missing = missing
         self._fail = fail
 
-    def __call__(self, cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+    def __call__(self, raw: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
+        self.raw_calls.append(raw)
+        cmd = raw[:1]
+        rest = raw[1:]
+        while rest[:1] == ["-c"]:
+            rest = rest[2:]
+        cmd += rest
         self.calls.append(cmd)
         if cmd[1] == "cat-file":
             code = 1 if cmd[3].removesuffix("^{commit}") in self._missing else 0
@@ -101,7 +111,9 @@ class TestCheckoutPrHead(unittest.TestCase):
         with patch(f"{_MODULE}.run_command", git):
             result = checkout_pr_head("head1")
         self.assertFalse(result["checked_out"])
-        self.assertEqual(result["checkout_command"], "git checkout --detach head1")
+        self.assertEqual(
+            result["checkout_command"], "git -c core.hooksPath=/dev/null checkout --detach head1"
+        )
         self.assertNotIn("checkout", git.subcommands())
 
     def test_refused_checkout_returns_command_instead_of_raising(self):
@@ -109,8 +121,80 @@ class TestCheckoutPrHead(unittest.TestCase):
         with patch(f"{_MODULE}.run_command", git):
             result = checkout_pr_head("head1")
         self.assertFalse(result["checked_out"])
-        self.assertEqual(result["checkout_command"], "git checkout --detach head1")
+        self.assertEqual(
+            result["checkout_command"], "git -c core.hooksPath=/dev/null checkout --detach head1"
+        )
         self.assertIn("git refused the checkout", result["reason"])
+
+    def test_every_git_call_disables_hooks(self):
+        git = FakeGit()
+        with patch(f"{_MODULE}.run_command", git):
+            checkout_pr_head("head1")
+        self.assertEqual(len(git.raw_calls), 2)
+        for raw in git.raw_calls:
+            self.assertEqual(raw[:3], ["git", "-c", "core.hooksPath=/dev/null"])
+
+
+_HOOK_SCRIPT = """#!/bin/sh
+echo ran > "{marker}"
+exit 1
+"""
+
+
+class TestCheckoutPrHeadRealGit(unittest.TestCase):
+    """Regression: PR-authored hooks under a relative core.hooksPath never run."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.marker = self.root / "HOOK_RAN"
+        env = patch.dict(
+            "os.environ",
+            {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"},
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        self.base_sha, self.pr_sha = self._make_repo()
+        cwd = Path.cwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.repo)
+
+    def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+        cmd = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args]
+        return subprocess.run(cmd, cwd=self.repo, check=check, capture_output=True, text=True)
+
+    def _make_repo(self) -> tuple[str, str]:
+        """Creates a base commit and a PR commit adding a failing post-checkout hook."""
+        self.repo.mkdir()
+        self._run("init", "-q")
+        (self.repo / "a.txt").write_text("base\n", encoding="utf-8")
+        self._run("add", "a.txt")
+        self._run("commit", "-q", "-m", "base")
+        base = self._run("rev-parse", "HEAD").stdout.strip()
+        hook = self.repo / ".githooks" / "post-checkout"
+        hook.parent.mkdir()
+        hook.write_text(_HOOK_SCRIPT.format(marker=self.marker), encoding="utf-8")
+        hook.chmod(0o755)
+        self._run("add", ".githooks")
+        self._run("commit", "-q", "-m", "pr adds hook")
+        pr = self._run("rev-parse", "HEAD").stdout.strip()
+        self._run("-c", "core.hooksPath=/dev/null", "checkout", "-q", "--detach", base)
+        self._run("config", "core.hooksPath", ".githooks")
+        return base, pr
+
+    def test_fixture_hook_runs_under_plain_checkout(self):
+        """Control: a plain checkout runs the PR's hook and reports failure."""
+        proc = self._run("checkout", "-q", "--detach", self.pr_sha, check=False)
+        self.assertTrue(self.marker.exists())
+        self.assertNotEqual(proc.returncode, 0)
+
+    def test_checkout_pr_head_does_not_run_pr_hooks(self):
+        result = checkout_pr_head(self.pr_sha)
+        self.assertEqual(result, {"checked_out": True})
+        self.assertFalse(self.marker.exists())
+        self.assertEqual(self._run("rev-parse", "HEAD").stdout.strip(), self.pr_sha)
 
 
 class TestPrepareReviewWorkspace(unittest.TestCase):
