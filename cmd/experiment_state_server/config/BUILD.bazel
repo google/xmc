@@ -1,5 +1,5 @@
 # Copyright 2025 Google LLC
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -14,4 +14,10 @@ go_library(
         "//internal/logging",
         "//internal/task_queue",
     ],
+)
+
+go_test(
+    name = "config_test",
+    srcs = ["config_test.go"],
+    embed = [":config"],
 )

@@ -85,6 +85,9 @@ def bound_service_accounts(blueprint: str) -> set[str]:
 class WorkloadIdentityBindingTest(unittest.TestCase):
     """Covers the chart-to-blueprint agreement that gives annotated pods a usable identity."""
 
+    bound: set[str]
+    annotated: set[str]
+
     @classmethod
     def setUpClass(cls) -> None:
         require_helm()

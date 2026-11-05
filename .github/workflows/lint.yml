@@ -89,9 +89,8 @@ jobs:
           fi
 
       - name: 'Run Mypy Static Type Check'
-        run: |
-          PY_FILES=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py")
-          mypy $PY_FILES
+        # Scope (files and exclude) comes from [tool.mypy] in pyproject.toml.
+        run: mypy
 
       # 2. Go Linting & Formatting (gofmt, golangci-lint, buildifier, addlicense)
       - name: 'Set up Go'
@@ -142,6 +141,12 @@ jobs:
           XMC_BYPASS_VENV: '1'
         run: |
           python3 tools/lint/check_agent_doc_paths.py
+
+      - name: 'Check UI & Workflow File Naming'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_file_naming.py
 
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |

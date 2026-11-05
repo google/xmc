@@ -78,6 +78,18 @@ class TestHostComponent {
   readonly queueName = signal<string>('gpu-cluster-queue');
 }
 
+@Component({
+  standalone: true,
+  imports: [QueueJobsTable],
+  template: `
+    <xmc-queue-jobs-table [queueName]="'gpu-cluster-queue'">
+      <button headerActions type="button">Custom header action</button>
+      <span>Unmatched content</span>
+    </xmc-queue-jobs-table>
+  `,
+})
+class ProjectedHeaderActionsHostComponent {}
+
 describe('QueueJobsTable Component', () => {
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
@@ -86,7 +98,7 @@ describe('QueueJobsTable Component', () => {
     resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
 
     setupModule({
-      imports: [TestHostComponent, NoopAnimationsModule],
+      imports: [TestHostComponent, ProjectedHeaderActionsHostComponent, NoopAnimationsModule],
       providers: [provideRouter([]), { provide: ResourceService, useValue: resourceService }],
     });
 
@@ -297,5 +309,22 @@ describe('QueueJobsTable Component', () => {
     expect(console.error).toHaveBeenCalledWith(
       'Job "Experiment #53310" is missing an assigned user.',
     );
+  });
+
+  it('should render no header actions when [headerActions] content is not projected', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getHeaderActionTexts()).toEqual([]);
+  });
+
+  it('should project only [headerActions] elements into the title row', async () => {
+    bootstrap(ProjectedHeaderActionsHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getHeaderActionTexts()).toEqual(['Custom header action']);
+    expect(document.body.textContent).not.toContain('Unmatched content');
   });
 });

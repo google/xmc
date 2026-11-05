@@ -118,7 +118,7 @@ Destinations by language, all reachable through `.githooks/pre-commit` and its `
 | :--- | :--- |
 | Python | [`pyproject.toml`](../../pyproject.toml) ruff `select` and banned-api config, mypy |
 | Go | [`.golangci.yml`](../../.golangci.yml), `nogo_config.json`, custom checks in `tools/lint/` |
-| TypeScript / UI | `cmd/ui/eslint.config.js`, prettier |
+| TypeScript / UI | `cmd/ui/eslint.config.js`, prettier, `tools/lint/check_file_naming.py` (UI template/test and `.github/scripts/` test naming) |
 | Bazel | buildifier |
 | Terraform | [`.tflint.hcl`](../../.tflint.hcl) |
 | Agent docs (`.agents/**/*.md`, `AGENTS.md`) | `tools/lint/check_agent_doc_paths.py` (path references must exist) |

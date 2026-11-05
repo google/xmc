@@ -83,7 +83,7 @@ All settings come from the environment; a `.env` file in this directory or the r
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `PROJECT_ID` | GCP project hosting Artifact Registry and the cluster. | `xmc-test-project-6` |
+| `PROJECT_ID` | GCP project hosting Artifact Registry and the cluster. | `my-project` |
 | `IMAGE_PATH` | Worker image to run. | `us-docker.pkg.dev/${PROJECT_ID}/xmc/metrics-dashboard-job:latest` |
 | `QUEUE_NAME` | Kueue queue for the WorkUnit. | `cpu-queue` |
 | `XMC_GATEWAY_URL` | Ingestion Gateway metrics endpoint, passed to the worker. | `http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics` |

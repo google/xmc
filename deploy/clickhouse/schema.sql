@@ -13,7 +13,7 @@
 -- limitations under the License.
 
 -- 1. Physical MergeTree Table for storing XMC metrics.
--- Matches Spanner Int64 ID types and 7-column sorting key order per b/535543801 DoD.
+-- Matches Spanner Int64 ID types and 7-column sorting key order.
 -- Primary Key index (xid, metric_name, timestamp) enables fast time-range pruning in memory.
 -- Partitioned by month (toYYYYMM(timestamp)) for efficient data retention and query pruning.
 -- metric_name uses LowCardinality(String) dictionary encoding for storage/RAM optimization.
