@@ -1,0 +1,12 @@
+# Direct dependencies of the dev/test Vizier fixture image (Python 3.11), pinned exactly.
+google-vizier==0.1.24
+# The stubs generated for google-vizier 0.1.24 need grpcio >= 1.70.0 and protobuf 5.x.
+grpcio==1.70.0
+protobuf==5.29.3
+SQLAlchemy==2.0.36
+# google-vizier imports these unconditionally, even for RANDOM_SEARCH.
+jax==0.4.38
+jaxlib==0.4.38
+flax==0.10.2
+chex==0.1.88
+equinox==0.11.7

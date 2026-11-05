@@ -161,6 +161,32 @@ go_test(
     ],
 )
 
+# Applies the dev/test Vizier fixture and registers it as the stable-2026a `vizier` component. The
+# fixture image must already be built into the local Docker daemon; see
+# test/e2e/testdata/vizier/README.md.
+go_test(
+    name = "vizier_kind_test",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "kind_3p_harness_test.go",
+        "vizier_kind_test.go",
+    ],
+    data = [
+        "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026a/components/vizier:chart",
+        "//test/e2e/testdata/vizier:manifests",
+    ],
+    tags = [
+        "e2e",
+        "exclusive",
+        "external",
+        "local",
+        "manual",
+    ],
+    deps = _KIND_3P_DEPS + ["@io_k8s_api//apps/v1:apps"],
+)
+
 # Test-only fixtures of profile_migration_test: admin values, the stable-2026b overlay and the
 # rolling-gateway stand-in chart.
 filegroup(
