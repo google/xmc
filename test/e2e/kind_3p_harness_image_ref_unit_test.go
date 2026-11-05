@@ -58,6 +58,11 @@ func TestSplitImageRef(t *testing.T) {
 			image:   "xmc-vizier:0.1.24@sha256:0123abcd",
 			wantErr: true,
 		},
+		{
+			name:    "empty tag",
+			image:   "xmc-vizier:",
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

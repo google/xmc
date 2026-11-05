@@ -103,7 +103,7 @@ func installVizierKind(ctx context.Context, t *testing.T, h *kindClusterHarness,
 	t.Helper()
 	repository, tag, err := splitImageRef(image)
 	if err != nil {
-		t.Fatalf("invalid %s: %v", vizierImageEnv, err)
+		t.Fatalf("invalid Vizier image %q: %v", image, err)
 	}
 	chartDir := locateRepoPath(t, vizierChartRelPath)
 	rendered := renderHelmTemplate(ctx, t, "vizier", chartDir,

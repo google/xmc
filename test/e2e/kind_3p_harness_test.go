@@ -475,6 +475,9 @@ func splitImageRef(image string) (repository, tag string, err error) {
 	if i < 0 || i < strings.LastIndex(image, "/") {
 		return image, "latest", nil
 	}
+	if i == len(image)-1 {
+		return "", "", fmt.Errorf("image %q has an empty tag", image)
+	}
 	return image[:i], image[i+1:], nil
 }
 
