@@ -23,7 +23,9 @@ import xmc
 from torch.utils.data import DataLoader, TensorDataset
 
 
-class HelloLightningModel(pl.LightningModule):
+# LightningModule is Any when pytorch_lightning is not installed; unused-ignore keeps
+# environments that do install it passing.
+class HelloLightningModel(pl.LightningModule):  # type: ignore[misc, unused-ignore]
     """Simple PyTorch Lightning model for autologging demonstration."""
 
     def __init__(self) -> None:

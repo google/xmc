@@ -122,9 +122,9 @@ class SPAHandlerLocalTest(unittest.TestCase):
         handler.wfile = self.mock_wfile
         handler.rfile = io.BytesIO(body)
         handler.headers = {"Content-Length": str(len(body))}
-        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)  # type: ignore[method-assign]
-        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)  # type: ignore[method-assign]
-        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)  # type: ignore[method-assign]
+        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)
+        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)
+        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)
         return handler
 
     def enter_context(self, context_manager):

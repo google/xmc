@@ -135,7 +135,9 @@ def load_golden_files() -> dict[str, Any]:
     return goldens
 
 
-class SPAHandler(server.SPAHandler):
+# server.SPAHandler is Any because server is loaded through sys.path; unused-ignore keeps
+# environments where it resolves passing.
+class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
     """Custom request handler supporting SPA routing, config.js, and mock APIs."""
 
     goldens: dict[str, Any] = {}
@@ -374,22 +376,22 @@ class SPAHandler(server.SPAHandler):
             if not isinstance(golden_data, dict):
                 continue
             xid = golden_data.get("xid")
-            xid_int = None
+            golden_xid: int | None = None
             if xid is not None:
                 try:
-                    xid_int = int(xid)
+                    golden_xid = int(xid)
                 except (ValueError, TypeError):
                     pass
-            if xid_int is None:
+            if golden_xid is None:
                 match = re.search(r"experiments/(\d+)", golden_name)
                 if match:
-                    xid_int = int(match.group(1))
+                    golden_xid = int(match.group(1))
 
-            if xid_int is not None and xid_int not in experiments:
-                experiments[xid_int] = {
-                    "name": f"experiments/{xid_int}",
-                    "xid": xid_int,
-                    "title": f"Experiment {xid_int}",
+            if golden_xid is not None and golden_xid not in experiments:
+                experiments[golden_xid] = {
+                    "name": f"experiments/{golden_xid}",
+                    "xid": golden_xid,
+                    "title": f"Experiment {golden_xid}",
                     "state": "COMPLETED",
                 }
 
