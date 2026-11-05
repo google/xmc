@@ -30,7 +30,7 @@ permissions:
 jobs:
   lint:
     name: 'Code Quality & Linting'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     steps:
       - name: 'Checkout code'
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
@@ -70,6 +70,11 @@ jobs:
               - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
+      - name: 'Set up Python 3.13'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '3.13'
+
       - name: 'Install Ruff'
         run: |
           if ! command -v ruff &>/dev/null; then
@@ -108,16 +113,20 @@ jobs:
             exit 1
           fi
 
+      - name: 'Cache golangci-lint binary'
+        uses: 'actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/go/bin/golangci-lint
+          key: ${{ runner.os }}-golangci-lint-bin-v1.64.6-go1.26
+
       - name: 'Install & Run golangci-lint'
         run: |
-          if ! command -v golangci-lint &>/dev/null; then
-            GOPATH_BIN="$(go env GOPATH)/bin"
-            mkdir -p "$GOPATH_BIN"
-            echo "--> Downloading pre-built golangci-lint (v1.64.6)..."
-            curl -sSfL "https://github.com/golangci/golangci-lint/releases/download/v1.64.6/golangci-lint-1.64.6-linux-amd64.tar.gz" | tar -xz -C "$GOPATH_BIN" --strip-components=1 "golangci-lint-1.64.6-linux-amd64/golangci-lint"
-            chmod +x "$GOPATH_BIN/golangci-lint"
+          GOPATH_BIN="$(go env GOPATH)/bin"
+          if [ ! -f "$GOPATH_BIN/golangci-lint" ]; then
+            echo "--> Installing golangci-lint (v1.64.6)..."
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.6
           fi
-          golangci-lint run --timeout=5m
+          "$GOPATH_BIN/golangci-lint" run --timeout=5m
 
       - name: 'Check Go Test Determinism'
         run: |
