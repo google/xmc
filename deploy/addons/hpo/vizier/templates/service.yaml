@@ -22,7 +22,7 @@ metadata:
   labels:
     {{- include "vizier.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  type: {{ .Values.service.type | quote }}
   selector:
     {{- include "vizier.selectorLabels" . | nindent 4 }}
   ports:

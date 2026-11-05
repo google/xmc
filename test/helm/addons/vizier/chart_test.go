@@ -395,6 +395,10 @@ func TestVizierChart_SQLiteStoresOnClaim(t *testing.T) {
 	if !slices.ContainsFunc(volumes, func(v any) bool { return cmp.Equal(v, dataVolume) }) {
 		t.Errorf("Deployment volumes = %v, want an entry %v", volumes, dataVolume)
 	}
+	tmpVolume := map[string]any{"name": "tmp", "emptyDir": map[string]any{"sizeLimit": "256Mi"}}
+	if !slices.ContainsFunc(volumes, func(v any) bool { return cmp.Equal(v, tmpVolume) }) {
+		t.Errorf("Deployment volumes = %v, want a bounded entry %v", volumes, tmpVolume)
+	}
 }
 
 func TestVizierChart_PostgresReadsPasswordFromSecret(t *testing.T) {

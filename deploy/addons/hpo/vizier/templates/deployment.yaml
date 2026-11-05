@@ -48,7 +48,7 @@ spec:
       containers:
         - name: vizier
           image: {{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | quote }}
           ports:
             - name: grpc
               containerPort: 7077
@@ -104,7 +104,9 @@ spec:
             {{- end }}
       volumes:
         - name: tmp
-          emptyDir: {}
+          # Bounded so a runaway writer cannot fill the node's disk; /tmp only holds HOME caches.
+          emptyDir:
+            sizeLimit: 256Mi
         {{- if eq $dbType "sqlite" }}
         - name: data
           persistentVolumeClaim:
