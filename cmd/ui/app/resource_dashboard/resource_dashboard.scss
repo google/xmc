@@ -57,6 +57,48 @@ xmc-smart-resource-finder {
   padding-left: 12px;
 }
 
+button.full-width-toggle-btn.mat-mdc-outlined-button {
+  border-radius: 9999px;
+  border-color: #dadce0;
+  background-color: #ffffff;
+  color: #1a73e8;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+
+  .mat-icon {
+    color: inherit;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 2px;
+  }
+
+  &.active {
+    background-color: #1a73e8;
+    border-color: #1a73e8;
+    color: #ffffff;
+  }
+}
+
+.rod-split-container.full-width {
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 24px;
+
+  .rod-main-content {
+    width: 100%;
+    padding-right: 0;
+  }
+
+  .jobs-side-pane {
+    width: 100%;
+    padding-left: 0;
+    position: static;
+  }
+}
+
 .resource-availability-container {
   display: block;
   width: 100%;

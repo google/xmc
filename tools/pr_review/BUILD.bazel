@@ -177,11 +177,33 @@ py_test(
 )
 
 py_library(
+    name = "review_pr_workspace",
+    srcs = ["review_pr_workspace.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "review_pr_workspace_test",
+    srcs = ["review_pr_workspace_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":github_utils",
+        ":review_pr_workspace",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "review_pr_generate_audit_lib",
     srcs = ["review_pr_generate_audit.py"],
     imports = ["../.."],
     deps = [
         ":github_utils",
+        ":review_pr_workspace",
         "//tools/common:tool_utils",
     ],
 )
@@ -193,6 +215,7 @@ py_binary(
     deps = [
         ":github_utils",
         ":review_pr_generate_audit_lib",
+        ":review_pr_workspace",
         "//tools/common:tool_utils",
     ],
 )

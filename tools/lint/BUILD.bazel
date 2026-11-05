@@ -38,6 +38,23 @@ py_test(
 )
 
 py_library(
+    name = "check_file_naming_lib",
+    srcs = ["check_file_naming.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_file_naming_test",
+    srcs = ["check_file_naming_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_file_naming_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_legacy_imports_lib",
     srcs = ["check_legacy_imports.py"],
     data = ["legacy_imports_baseline.json"],
