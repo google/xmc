@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Multi-language distributed Hermetic telemetry flow test (b/535543832).
+"""Multi-language distributed Hermetic telemetry flow test.
 
 Verifies:
 1. End-to-end telemetry ingestion pipeline (Python SDK -> Go Ingestion Gateway -> Redpanda -> ClickHouse).

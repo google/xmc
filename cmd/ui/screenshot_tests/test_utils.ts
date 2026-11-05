@@ -334,7 +334,7 @@ export const MOCK_EXPERIMENT_DETAILS: Experiment = {
   },
   urls: [
     {
-      url: 'https://tensorboard.googleplex.com/experiment/10293841',
+      url: 'https://tensorboard.example.com/experiment/10293841',
       displayName: 'Tensorboard Dashboard',
       icon: 'insights',
       priority: 1,
@@ -504,7 +504,7 @@ export const MOCK_EXPERIMENT_ARTIFACTS: ListArtifactsResponse = {
       notes: 'Live scalar training metrics and telemetry stream.',
       payload: {
         url: {
-          url: 'https://tensorboard.googleplex.com/experiment/10293841/scalars',
+          url: 'https://tensorboard.example.com/experiment/10293841/scalars',
           displayName: 'Live Training Scalars',
           icon: 'trending_up',
         },
@@ -607,7 +607,7 @@ export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
       priority: 1,
     },
     {
-      url: 'https://tensorboard.googleplex.com/experiment/10293841',
+      url: 'https://tensorboard.example.com/experiment/10293841',
       displayName: 'Tensorboard',
       icon: 'insights',
       priority: 2,
@@ -700,7 +700,7 @@ export const MOCK_WORK_UNIT_ARTIFACTS: ListArtifactsResponse = {
       notes: 'TensorFlow / JAX trace profile.',
       payload: {
         url: {
-          url: 'https://xprof.corp.google.com/trace/10293841-wu1',
+          url: 'https://xprof.example.com/trace/10293841-wu1',
           displayName: 'JAX Profile Trace',
           icon: 'troubleshoot',
         },

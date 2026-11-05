@@ -48,7 +48,7 @@ import { WorkUnitPageStore } from '../work_unit_page_store';
   templateUrl: './header.ng.html',
   styleUrl: './header.scss',
   imports: [
-    // go/keep-sorted start
+    // keep-sorted start
     CommonModule,
     MatButton,
     MatCardModule,
@@ -58,7 +58,7 @@ import { WorkUnitPageStore } from '../work_unit_page_store';
     PriorityChip,
     RouterModule,
     StatusChip,
-    // go/keep-sorted end
+    // keep-sorted end
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

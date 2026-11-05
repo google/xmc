@@ -32,7 +32,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
                 {
                     "name": "test-cluster",
                     "cluster": {
-                        "server": "https://34.46.19.182",
+                        "server": "https://203.0.113.10",
                         "certificate-authority-data": "dGVzdC1jYS1kYXRh",
                     },
                 }
@@ -44,7 +44,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
         )
 
         server, ca_data = remote_k8s_manager.extract_remote_cluster_endpoint_and_ca("gke-test-ctx")
-        self.assertEqual(server, "https://34.46.19.182")
+        self.assertEqual(server, "https://203.0.113.10")
         self.assertEqual(ca_data, "dGVzdC1jYS1kYXRh")
 
     @patch("tools.dev_env.remote_k8s_manager.run_command")
@@ -81,7 +81,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
             "clusters": [
                 {
                     "name": "test-cluster",
-                    "cluster": {"server": "https://34.46.19.182"},
+                    "cluster": {"server": "https://203.0.113.10"},
                 }
             ]
         }
@@ -169,7 +169,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
         mock_extract: MagicMock,
         mock_mint: MagicMock,
     ) -> None:
-        mock_extract.return_value = ("https://34.46.19.182", "dGVzdC1jYQ==")
+        mock_extract.return_value = ("https://203.0.113.10", "dGVzdC1jYQ==")
         mock_mint.return_value = "my-secret-token"
 
         remote_k8s_manager.setup_remote_k8s_secret(
@@ -214,7 +214,7 @@ class RemoteK8sManagerTest(unittest.TestCase):
         mock_extract: MagicMock,
         mock_mint: MagicMock,
     ) -> None:
-        mock_extract.return_value = ("https://34.46.19.182", "dGVzdC1jYQ==")
+        mock_extract.return_value = ("https://203.0.113.10", "dGVzdC1jYQ==")
         mock_mint.return_value = "my-secret-token"
 
         def _side_effect(cmd: list[str], **kwargs: object) -> MagicMock:

@@ -404,12 +404,12 @@ class LocalDevConfigDataClassTest(unittest.TestCase):
         """Verifies gcp_service_account defaults to workload SA in remote k8s or custom env."""
         cfg_remote = config.LocalDevConfig(
             project_id="test-p",
-            environment="vluk-test",
+            environment="custom-test",
             remote_k8s_context="gke_test-p_us-central1_test-cluster",
         )
         self.assertEqual(
             cfg_remote.gcp_service_account,
-            "xmc-v2-vluk-test-xmc-wl-sa@test-p.iam.gserviceaccount.com",
+            "xmc-v2-custom-test-xmc-wl-sa@test-p.iam.gserviceaccount.com",
         )
 
     def test_gcp_service_account_explicit_override(self) -> None:

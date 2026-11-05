@@ -33,7 +33,7 @@ import (
 )
 
 // UpdateWorkUnit updates a work unit with the given update mask.
-// TODO(b/517479143): Move work unit update merging logic outside the repository layer into a domain service layer.
+// TODO: Move work unit update merging logic outside the repository layer into a domain service layer.
 // UpdateWorkUnit updates a work unit with the given update mask. It returns both the original and
 // updated work units in that order, so that the caller can choose whether to perform additional
 // actions based on the original work unit state.
