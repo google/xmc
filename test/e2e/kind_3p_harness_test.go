@@ -922,32 +922,6 @@ func TestKind3PHarnessUnit(t *testing.T) {
 		t.Error("expected isComponentReady and locateHelmComponentCRDPath to succeed")
 	}
 	verifyHarnessCMSAuth(t)
-	verifySplitImageRef(t)
-}
-
-func verifySplitImageRef(t *testing.T) {
-	t.Helper()
-	tests := []struct {
-		image, wantRepository, wantTag string
-		wantErr                        bool
-	}{
-		{image: "xmc-vizier", wantRepository: "xmc-vizier", wantTag: "latest"},
-		{image: "xmc-vizier:0.1.24", wantRepository: "xmc-vizier", wantTag: "0.1.24"},
-		{image: "registry.local:5000/xmc-vizier", wantRepository: "registry.local:5000/xmc-vizier", wantTag: "latest"},
-		{image: "registry.local:5000/team/xmc-vizier:v1", wantRepository: "registry.local:5000/team/xmc-vizier", wantTag: "v1"},
-		{image: "xmc-vizier@sha256:0123abcd", wantErr: true},
-		{image: "xmc-vizier:0.1.24@sha256:0123abcd", wantErr: true},
-	}
-	for _, tt := range tests {
-		repository, tag, err := splitImageRef(tt.image)
-		if gotErr := err != nil; gotErr != tt.wantErr {
-			t.Errorf("splitImageRef(%q) error = %v, want error %v", tt.image, err, tt.wantErr)
-			continue
-		}
-		if repository != tt.wantRepository || tag != tt.wantTag {
-			t.Errorf("splitImageRef(%q) = (%q, %q), want (%q, %q)", tt.image, repository, tag, tt.wantRepository, tt.wantTag)
-		}
-	}
 }
 
 func verifyHarnessCMSAuth(t *testing.T) {

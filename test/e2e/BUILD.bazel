@@ -89,6 +89,7 @@ go_test(
     name = "kind_3p_harness_unit_test",
     size = "small",
     srcs = [
+        "kind_3p_harness_image_ref_unit_test.go",
         "kind_3p_harness_test.go",
         "kind_3p_harness_yaml_unit_test.go",
         "profile_migration_fixture_test.go",
