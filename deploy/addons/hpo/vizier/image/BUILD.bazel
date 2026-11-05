@@ -18,7 +18,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 # The dependency-free logic of the Vizier server image. vizier_server.py is not a Bazel target: it
 # needs google-vizier and SQLAlchemy, which are installed only in the image (see Dockerfile) and
 # are not repository Python dependencies. It is exercised by building and running the image
-# (see the Dockerfile header).
+# (see README.md).
 py_library(
     name = "server_config",
     srcs = ["server_config.py"],
