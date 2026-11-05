@@ -265,5 +265,7 @@ def _quote(value: str) -> str:
 
 
 def _bracket_ipv6(host: str) -> str:
-    """Wraps an IPv6 literal in brackets so it can be followed by a port."""
-    return f"[{host}]" if ":" in host else host
+    """Wraps an IPv6 literal in brackets so it can be followed by a port; keeps bracketed hosts."""
+    if ":" not in host or (host.startswith("[") and host.endswith("]")):
+        return host
+    return f"[{host}]"

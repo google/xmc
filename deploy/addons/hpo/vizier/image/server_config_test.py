@@ -144,6 +144,11 @@ class BuildPostgresUrlTest(unittest.TestCase):
 
         self.assertIn("@[fd00::5]:5432/", url)
 
+    def test_keeps_already_bracketed_ipv6_host(self):
+        url = server_config.build_postgres_url(_postgres_env(VIZIER_POSTGRES_HOST="[fd00::5]"))
+
+        self.assertIn("@[fd00::5]:5432/", url)
+
     def test_requires_user(self):
         with self.assertRaisesRegex(ValueError, "VIZIER_POSTGRES_USER is required"):
             server_config.build_postgres_url(_postgres_env(VIZIER_POSTGRES_USER=" "))
