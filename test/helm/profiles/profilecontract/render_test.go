@@ -50,9 +50,9 @@ func TestChartDir(t *testing.T) {
 			if tt.wd != "" {
 				t.Chdir(tt.wd)
 			}
-			got, err := chartDir(Spec{ChartRelPath: tt.rel})
+			got, err := ChartDir(tt.rel)
 			if err != nil || got != tt.want {
-				t.Errorf("chartDir(%q) = %q, %v, want %q", tt.rel, got, err, tt.want)
+				t.Errorf("ChartDir(%q) = %q, %v, want %q", tt.rel, got, err, tt.want)
 			}
 		})
 	}
@@ -111,13 +111,13 @@ func TestRenderDocs_DecodesEveryTemplate(t *testing.T) {
 
 func TestDecodeDocs(t *testing.T) {
 	t.Parallel()
-	got, err := decodeDocs("a: 1\n---\n---\nb: 2\n")
+	got, err := DecodeDocs("a: 1\n---\n---\nb: 2\n")
 	fatalOnError(t, err)
 	if diff := cmp.Diff([]map[string]any{{"a": 1}, {"b": 2}}, got); diff != "" {
-		t.Errorf("decodeDocs() mismatch (-want +got):\n%s", diff)
+		t.Errorf("DecodeDocs() mismatch (-want +got):\n%s", diff)
 	}
-	if _, err := decodeDocs("a: [b"); err == nil {
-		t.Error("decodeDocs() error = nil, want a decode error")
+	if _, err := DecodeDocs("a: [b"); err == nil {
+		t.Error("DecodeDocs() error = nil, want a decode error")
 	}
 }
 

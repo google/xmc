@@ -54,6 +54,12 @@ type Spec struct {
 	Components []string
 }
 
+// ChartDir locates any chart directory with the same resolution as the profile checks: rel itself
+// when absolute, otherwise in Bazel runfiles or the closest ancestor of the working directory.
+func ChartDir(rel string) (string, error) {
+	return chartDir(Spec{ChartRelPath: rel})
+}
+
 // chartDir locates the profile chart: s.ChartRelPath itself when absolute, otherwise in Bazel
 // runfiles (TEST_SRCDIR) or, under plain go test, in the closest ancestor of the working
 // directory that contains it.
@@ -180,6 +186,11 @@ func renderDocs(ch *chart.Chart, overrides map[string]any) ([]map[string]any, er
 		docs = append(docs, d...)
 	}
 	return docs, nil
+}
+
+// DecodeDocs decodes every non-empty YAML document in manifest, such as one rendered template.
+func DecodeDocs(manifest string) ([]map[string]any, error) {
+	return decodeDocs(manifest)
 }
 
 // decodeDocs decodes every non-empty YAML document in manifest.

@@ -19,11 +19,8 @@
 package vizier_test
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -57,34 +54,14 @@ func postgresOverrides() map[string]any {
 	}
 }
 
-// chartDir locates the chart in Bazel runfiles or, under plain go test, in the closest ancestor of
-// the working directory that contains it.
-func chartDir(t *testing.T) string {
-	t.Helper()
-	var candidates []string
-	if srcDir := os.Getenv("TEST_SRCDIR"); srcDir != "" {
-		candidates = append(candidates,
-			filepath.Join(srcDir, os.Getenv("TEST_WORKSPACE"), chartRelPath),
-			filepath.Join(srcDir, "_main", chartRelPath))
-	}
-	if wd, err := os.Getwd(); err == nil {
-		for dir := wd; filepath.Dir(dir) != dir; dir = filepath.Dir(dir) {
-			candidates = append(candidates, filepath.Join(dir, chartRelPath))
-		}
-	}
-	for _, dir := range candidates {
-		if _, err := os.Stat(filepath.Join(dir, "Chart.yaml")); err == nil {
-			return dir
-		}
-	}
-	t.Fatalf("chart %s not found in %v", chartRelPath, candidates)
-	return ""
-}
-
-// loadChart loads the chart through the Helm SDK.
+// loadChart locates the chart with the profile checks' runfiles resolution and loads it through
+// the Helm SDK.
 func loadChart(t *testing.T) (*chart.Chart, string) {
 	t.Helper()
-	dir := chartDir(t)
+	dir, err := profilecontract.ChartDir(chartRelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ch, err := loader.Load(dir)
 	if err != nil {
 		t.Fatalf("loader.Load(%s) failed: %v", dir, err)
@@ -147,20 +124,11 @@ func decodeAll(t *testing.T, rendered map[string]string) []map[string]any {
 	t.Helper()
 	var docs []map[string]any
 	for _, path := range slices.Sorted(maps.Keys(rendered)) {
-		dec := yaml.NewDecoder(strings.NewReader(rendered[path]))
-		for {
-			var doc map[string]any
-			err := dec.Decode(&doc)
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			if err != nil {
-				t.Fatalf("failed to decode %s: %v\n%s", path, err, rendered[path])
-			}
-			if doc != nil {
-				docs = append(docs, doc)
-			}
+		d, err := profilecontract.DecodeDocs(rendered[path])
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
 		}
+		docs = append(docs, d...)
 	}
 	return docs
 }
