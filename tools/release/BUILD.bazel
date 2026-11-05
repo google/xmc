@@ -214,7 +214,7 @@ py_library(
     imports = ["../.."],
     deps = [
         "//tools/common:tool_utils",
-        "//tools/nightly_tests:examples_import_smoke_lib",
+        "//tools/nightly_tests:workflow_matrix_lib",
     ],
 )
 

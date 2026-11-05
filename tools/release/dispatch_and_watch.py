@@ -17,7 +17,6 @@
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -26,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
-from tools.nightly_tests import examples_import_smoke as smoke
+from tools.nightly_tests import workflow_matrix
 
 _REF_RE = re.compile(r"^[A-Za-z0-9](?!.*\.\.)[A-Za-z0-9._-]*(?:/[A-Za-z0-9._-]+)*$")
 _INPUT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
@@ -192,8 +191,8 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
         return
 
     try:
-        workflow_text = smoke.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
-        smoke.validate_examples_filter(parsed["examples_filter"], workflow_text)
+        workflow_text = workflow_matrix.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
+        workflow_matrix.validate_examples_filter(parsed["examples_filter"], workflow_text)
     except (OSError, ValueError) as exc:
         hint = "Pass comma-separated matrix.example.id values without spaces."
         raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
@@ -332,16 +331,11 @@ def _watch_run_outcome(
 
 
 def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
-    """Validates CLI flags, workflow inputs, and GitHub CLI availability; returns cleaned ref."""
+    """Validates CLI flags and workflow inputs; returns cleaned ref."""
     ref = _validate_ref(str(args.ref))
     if args.find_existing and args.input:
         raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
     _validate_inputs(args.workflow, args.input, repo_dir)
-    if not shutil.which("gh"):
-        raise HandledError(
-            "GitHub CLI ('gh') is not on PATH.",
-            "Ensure 'gh' is on PATH and authenticate with 'gh auth login'.",
-        )
     return ref
 
 

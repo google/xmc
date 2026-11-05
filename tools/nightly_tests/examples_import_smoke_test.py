@@ -18,7 +18,9 @@
 import dataclasses
 import io
 import json
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -224,56 +226,6 @@ class ParseEntrypointsTest(unittest.TestCase):
         broken = _WORKFLOW.replace("example_path: 'examples/broken_job'", "example_path: ''")
         with self.assertRaisesRegex(ValueError, "create.py"):
             smoke.parse_entrypoints(broken)
-
-    def test_keys_outside_list_items_are_not_attributed(self) -> None:
-        """Keys after a list ends, or before a later block's first item, stay unattached."""
-        workflow = textwrap.dedent(
-            """\
-            jobs:
-              a:
-                strategy:
-                  matrix:
-                    example:
-                      - id: 'first'
-                        example_path: 'examples/a'
-                        entrypoint: 'launch.py'
-                    id: 'not_an_item_key'
-              b:
-                strategy:
-                  matrix:
-                    id: 'stray'
-                    entrypoint: 'stray.py'
-                    example:
-                      - id: 'second'
-                        example_path: 'examples/b'
-                        entrypoint: 'launch.py'
-            """
-        )
-        self.assertEqual(
-            smoke.parse_matrix_items(workflow),
-            [
-                {"id": "first", "example_path": "examples/a", "entrypoint": "launch.py"},
-                {"id": "second", "example_path": "examples/b", "entrypoint": "launch.py"},
-            ],
-        )
-
-    def test_validate_examples_filter(self) -> None:
-        """validate_examples_filter mirrors bash filter semantics and rejects unknown ids."""
-        smoke.validate_examples_filter("", _WORKFLOW)
-        smoke.validate_examples_filter("OK_JOB,ui_only", _WORKFLOW)
-        for invalid in (
-            "nonexistent_module_test",
-            "ok_job, broken_job",
-            "ok_job,",
-            ",ok_job",
-            "ok_job,,ui_only",
-            ",",
-            " ",
-        ):
-            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "ok_job"):
-                smoke.validate_examples_filter(invalid, _WORKFLOW)
-        with self.assertRaisesRegex(ValueError, "no matrix.example.id"):
-            smoke.validate_examples_filter("ok_job", "jobs: {}\n")
 
 
 class SmokeExecutionTest(unittest.TestCase):
@@ -489,7 +441,7 @@ class SmokeExecutionTest(unittest.TestCase):
         self.assertEqual(stdout.getvalue().split(), ["examples/ok_job", "examples/broken_job"])
 
     def test_examples_filter_selects_matrix_ids_case_insensitively(self) -> None:
-        """--examples-filter matches ids case-insensitively, whitespace-sensitively, like nightly."""
+        """--examples-filter matches valid matrix.example.id values case-insensitively."""
         stdout = io.StringIO()
         with redirect_stdout(stdout):
             code = smoke.main(
@@ -501,12 +453,41 @@ class SmokeExecutionTest(unittest.TestCase):
                     "--workflow",
                     str(self.workflow),
                     "--examples-filter",
-                    "OK_JOB,unknown, broken_job",
+                    "OK_JOB",
                 ]
             )
         self.assertEqual(code, 0)
         report = json.loads(stdout.getvalue())
         self.assertEqual([r["example_path"] for r in report["results"]], ["examples/ok_job"])
+
+    def test_examples_filter_rejects_unknown_ids_and_runs_without_pythonpath(self) -> None:
+        """main returns exit 2 on invalid --examples-filter and runs standalone without PYTHONPATH."""
+        for bad_filter in ("typo_id", "OK_JOB,unknown", "ok_job, broken_job", ","):
+            with self.subTest(bad_filter=bad_filter):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    code = smoke.main(
+                        ["--workflow", str(self.workflow), "--examples-filter", bad_filter]
+                    )
+                self.assertEqual(code, 2)
+                self.assertIn("ok_job", json.loads(stdout.getvalue())["error"])
+
+        clean_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        proc = subprocess.run(
+            [
+                str(self.python),
+                str(pathlib.Path(smoke.__file__)),
+                "--list-example-paths",
+                "--workflow",
+                str(self.workflow),
+            ],
+            env=clean_env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout.split(), ["examples/ok_job", "examples/broken_job"])
 
     def test_examples_filter_with_only_ui_entries_succeeds_empty(self) -> None:
         """A filter selecting only UI-only entries checks and lists nothing, and succeeds."""

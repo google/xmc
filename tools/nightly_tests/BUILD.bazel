@@ -31,6 +31,8 @@ exports_files([
     "triage_nightly_run_test.py",
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
+    "workflow_matrix.py",
+    "workflow_matrix_test.py",
 ])
 
 filegroup(
@@ -92,15 +94,31 @@ py_test(
 )
 
 py_library(
+    name = "workflow_matrix_lib",
+    srcs = ["workflow_matrix.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "workflow_matrix_test",
+    size = "small",
+    srcs = ["workflow_matrix_test.py"],
+    imports = ["../.."],
+    deps = [":workflow_matrix_lib"],
+)
+
+py_library(
     name = "examples_import_smoke_lib",
     srcs = ["examples_import_smoke.py"],
     imports = ["../.."],
+    deps = [":workflow_matrix_lib"],
 )
 
 py_binary(
     name = "examples_import_smoke",
     srcs = ["examples_import_smoke.py"],
     imports = ["../.."],
+    deps = [":examples_import_smoke_lib"],
 )
 
 py_test(
@@ -120,9 +138,16 @@ py_library(
     srcs = ["triage_nightly_run.py"],
     imports = ["../.."],
     deps = [
-        ":examples_import_smoke_lib",
+        ":workflow_matrix_lib",
         "//tools/common:tool_utils",
     ],
+)
+
+py_binary(
+    name = "triage_nightly_run",
+    srcs = ["triage_nightly_run.py"],
+    imports = ["../.."],
+    deps = [":triage_nightly_run_lib"],
 )
 
 py_test(
