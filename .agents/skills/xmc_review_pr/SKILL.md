@@ -234,6 +234,7 @@ python3 <trusted_repo>/tools/pr_review/review_pr_generate_audit.py <owner> <repo
 
 > [!WARNING]
 > On a re-review, `<review_dir>` is still checked out at the **previous** round's PR head, so its `tools/` are PR-authored. Always use the `<trusted_repo>/` path above, never `tools/...` relative to `<review_dir>` (guideline 7).
+
 *This generates `pr_rereview_audit_report.md` inside `<session_scratch_dir>` indexing every open review thread, original reviewer text, and author response, plus the sidecar `pr_rereview_audit_report.json` listing each root thread with `"action": null`. When recommending an action, rewrite the sidecar with `"action": "RESOLVE"` or `"action": "RESPOND"` for that thread; threads left `null` are skipped by verification. It also writes the same review inputs as Mode A (`pr.diff`, `pr_meta.json`, `review_threads.json`) and checks out the PR head under the same dirty-worktree rule.*
 
 *The output's `rereview_delta` (also in `pr_meta.json` and the report header) counts lines changed since the commit of your latest real review (override with `--since-sha`). Pending drafts are ignored, and so are the empty reviews GitHub creates to wrap standalone thread replies, because those are pinned to the head at reply time rather than to reviewed code. Without an earlier review, or when that commit cannot be compared, the size is unknown; after a rebase or force-push it is usually over-counted. Both cases set `full_review_recommended` to `true`.*
