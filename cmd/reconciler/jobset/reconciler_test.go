@@ -972,13 +972,14 @@ func TestResolveExecutionCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newScheme() error: %v", err)
 	}
-	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "default"}}
+	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "default", UID: "js-uid"}}
 	workload := func(clusterName *string) *v1beta1.Workload {
 		return &v1beta1.Workload{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "jobset-js-abc",
 				Namespace:       "default",
-				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "uid"}},
+				Labels:          map[string]string{kueueJobUIDLabel: "js-uid"},
+				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
 			},
 			Status: v1beta1.WorkloadStatus{ClusterName: clusterName},
 		}

@@ -412,11 +412,16 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	return result, nil
 }
 
+// kueueJobUIDLabel is the label Kueue sets on a Workload to the UID of the job that owns it.
+const kueueJobUIDLabel = "kueue.x-k8s.io/job-uid"
+
 func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string) {
 	project, location, clusterName = r.Project, r.Location, r.ClusterName
 
+	// Kueue labels each Workload with its owning job's UID, so this lists only the
+	// JobSet's Workload rather than every Workload in the namespace.
 	var wlList v1beta1.WorkloadList
-	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace)); err != nil {
+	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace), client.MatchingLabels{kueueJobUIDLabel: string(jobSet.UID)}); err != nil {
 		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; using manager cluster", "error", err)
 		return project, location, clusterName
 	}
