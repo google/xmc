@@ -29,7 +29,9 @@ import { HtmlSanitizerBuilder, setElementInnerHtml } from './html_sanitizer';
 import { ArtifactService } from './service/artifact_service';
 import {
   AUTO_REFRESH_INTERVAL_MS,
+  DEFAULT_DOCS_URL,
   DEFAULT_REFRESH_INTERVAL_MS,
+  DOCS_URL,
   USE_MOCK_DATA,
 } from './service/constants';
 import { ExperimentService } from './service/experiment_service';
@@ -46,6 +48,7 @@ declare global {
   interface Window {
     XMC_API_URL?: string;
     XMC_REFRESH_INTERVAL_MS?: number;
+    XMC_DOCS_URL?: string;
   }
 }
 
@@ -94,6 +97,10 @@ export const appConfig: ApplicationConfig = {
     {
       provide: AUTO_REFRESH_INTERVAL_MS,
       useValue: window.XMC_REFRESH_INTERVAL_MS ?? DEFAULT_REFRESH_INTERVAL_MS,
+    },
+    {
+      provide: DOCS_URL,
+      useFactory: () => window.XMC_DOCS_URL || DEFAULT_DOCS_URL,
     },
     {
       provide: ExperimentService,

@@ -17,6 +17,8 @@ import http.server
 import json
 import os
 
+DEFAULT_DOCS_URL = "https://github.com/google/xmc"
+
 
 def get_bool_env(name: str, default: bool = False) -> bool:
     """Reads a boolean environment variable, returning default if unset or empty."""
@@ -32,6 +34,7 @@ def generate_runtime_config(
 ) -> str:
     """Generates dynamic runtime config.js matching deployment settings."""
     resolved_api_url = os.environ.get("XMC_API_URL", api_url or default_api_url)
+    docs_url = os.environ.get("XMC_DOCS_URL") or DEFAULT_DOCS_URL
     refresh_interval_str = os.environ.get("XMC_REFRESH_INTERVAL_MS", "30000")
     try:
         refresh_interval = int(refresh_interval_str)
@@ -50,6 +53,7 @@ def generate_runtime_config(
     return (
         f'window.XMC_API_URL="{resolved_api_url}";\n'
         f"window.XMC_REFRESH_INTERVAL_MS={refresh_interval};\n"
+        f'window.XMC_DOCS_URL="{docs_url}";\n'
         f"window.XMC_FEATURE_FLAGS={json.dumps(feature_flags)};\n"
     )
 
