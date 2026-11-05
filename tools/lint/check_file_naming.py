@@ -36,7 +36,6 @@ ALLOWLIST: dict[str, str] = {
 _TS_EXT_RE = re.compile(r"\.[cm]?tsx?$")
 _SCREENSHOT_BAD_SPEC_RE = re.compile(r"(?:_test|_spec|\.test|\.spec)\.[cm]?tsx?$")
 _NON_SCREENSHOT_BAD_TS_RE = re.compile(r"(?:\.spec|_spec|\.test)\.[cm]?tsx?$")
-_PY_STYLE_TS_TEST_RE = re.compile(r"(?:^|/)test_[^/]*\.[cm]?tsx?$")
 _KARMA_TS_TEST_RE = re.compile(r"_test\.[cm]?tsx?$")
 _BAD_WORKFLOW_TEST_RE = re.compile(
     r"(?:_test|_spec|\.spec)\.[cm]?[jt]sx?$"
@@ -79,12 +78,12 @@ def _check_ts_test_outside_screenshots(path: str) -> str | None:
         )
     if not path.startswith("cmd/ui/"):
         return None
-    if _PY_STYLE_TS_TEST_RE.search(path):
-        return "Angular Karma unit test specs must use *_test.ts (never test_*.ts)."
-    if not path.startswith("cmd/ui/app/") and _KARMA_TS_TEST_RE.search(path):
+    if _KARMA_TS_TEST_RE.search(path) and not (
+        path.startswith("cmd/ui/app/") and path.endswith("_test.ts")
+    ):
         return (
-            "Angular Karma unit test specs (*_test.ts) must live under cmd/ui/app/ "
-            "(cmd/ui/angular.json runs only app/**/*_test.ts)."
+            "Angular Karma unit test specs must live under cmd/ui/app/ and use "
+            "*_test.ts (cmd/ui/angular.json runs only app/**/*_test.ts)."
         )
     return None
 
@@ -120,8 +119,8 @@ def classify_path_violation(path: str) -> str | None:
     for checker in (
         _check_ui_html,
         _check_screenshot_ts,
-        _check_ts_test_outside_screenshots,
         _check_github_scripts,
+        _check_ts_test_outside_screenshots,
     ):
         reason = checker(path)
         if reason is not None:
@@ -164,15 +163,10 @@ def check_file_naming(args: argparse.Namespace) -> dict[str, Any]:
     tracked_paths = _list_tracked_paths(repo_root)
     tracked_set = set(tracked_paths)
 
-    stale_allowlist = [
-        path
-        for path in sorted(ALLOWLIST)
-        if path not in tracked_set or not (repo_root / path).is_file()
-    ]
+    stale_allowlist = [path for path in sorted(ALLOWLIST) if path not in tracked_set]
     violations = [
         {"path": path, "reason": reason}
         for path in tracked_paths
-        if (repo_root / path).exists()
         if (reason := classify_path_violation(path)) is not None
     ]
     if stale_allowlist or violations:

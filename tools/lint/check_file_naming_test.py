@@ -39,7 +39,9 @@ class ClassifyPathViolationTest(unittest.TestCase):
             "cmd/ui/app/quota_banner/quota_banner_test.ts",
             "cmd/ui/app/admin_panel.guard_test.ts",
             "cmd/ui/app/service/testing/mock_auth_service_test.ts",
+            "cmd/ui/app/service/testing/test_fixtures.ts",
             "cmd/ui/app/testing/test.ts",
+            "cmd/ui/app/testing/test_fixtures.ts",
             "cmd/ui/app/testing/testing.d.ts",
             "cmd/ui/main.ts",
             "cmd/ui/playwright.config.ts",
@@ -69,7 +71,8 @@ class ClassifyPathViolationTest(unittest.TestCase):
             "cmd/ui/app/quota_banner/quota_banner.spec.ts",
             "cmd/ui/app/quota_banner/quota_banner_spec.ts",
             "cmd/ui/app/quota_banner/quota_banner.test.ts",
-            "cmd/ui/app/quota_banner/test_quota_banner.ts",
+            "cmd/ui/app/quota_banner/quota_banner_test.tsx",
+            "cmd/ui/app/quota_banner/quota_banner_test.mts",
             "cmd/ui/main_test.ts",
             "tools/stray.spec.ts",
             "cmd/ui/screenshot_tests/rod/rod.spec.ts",
@@ -87,6 +90,13 @@ class ClassifyPathViolationTest(unittest.TestCase):
         for path in invalid_paths:
             with self.subTest(path=path):
                 self.assertIsNotNone(cli.classify_path_violation(path))
+
+    def test_reports_github_scripts_message_for_misnamed_ts_workflow_test(self) -> None:
+        reason = cli.classify_path_violation(".github/scripts/foo.test.ts")
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn(".github/scripts/", reason)
+        self.assertIn("*.test.js", reason)
 
 
 class CheckFileNamingEndToEndTest(unittest.TestCase):
@@ -131,15 +141,27 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
             [".github/scripts/check_test.js", "cmd/ui/app/banner/banner.spec.ts"],
         )
 
-    def test_ignores_unstaged_worktree_deletion_of_non_allowlisted_violation(self) -> None:
+    def test_catches_staged_violation_deleted_from_worktree_until_git_rm(self) -> None:
         bad_file = self._write_and_stage("cmd/ui/app/banner/banner.spec.ts")
         bad_file.unlink()
 
+        with self.assertRaises(HandledError):
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+
+        subprocess.run(
+            ["git", "rm", "-f", "-q", "--", "cmd/ui/app/banner/banner.spec.ts"],
+            cwd=self.root,
+            check=True,
+        )
         result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
         self.assertEqual(result["violations"], 0)
 
     def test_fails_when_allowlisted_file_is_removed(self) -> None:
-        (self.root / "cmd/ui/index.html").unlink()
+        subprocess.run(
+            ["git", "rm", "-f", "-q", "--", "cmd/ui/index.html"],
+            cwd=self.root,
+            check=True,
+        )
 
         with self.assertRaises(HandledError) as ctx:
             cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
@@ -156,15 +178,32 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
                     cli.check_file_naming(argparse.Namespace(repo_root=str(candidate)))
 
     def test_handles_replacement_char_paths_from_git_ls_files(self) -> None:
-        fake_proc = subprocess.CompletedProcess(
+        clean_proc = subprocess.CompletedProcess(
             args=["git", "ls-files", "-z"],
             returncode=0,
-            stdout="cmd/ui/index.html\0docs/notes_\ufffd.md\0",
+            stdout="cmd/ui/index.html\0docs/notes_\ufffd.md\0cmd/ui/app/banner_\ufffd_test.ts\0",
             stderr="",
         )
-        with mock.patch.object(cli, "run_command", return_value=fake_proc):
+        with mock.patch.object(cli, "run_command", return_value=clean_proc):
             result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
-        self.assertEqual(result["violations"], 0)
+        self.assertEqual(result, {"files_scanned": 3, "violations": 0})
+
+        bad_proc = subprocess.CompletedProcess(
+            args=["git", "ls-files", "-z"],
+            returncode=0,
+            stdout="cmd/ui/index.html\0cmd/ui/app/banner_\ufffd.spec.ts\0",
+            stderr="",
+        )
+        with (
+            mock.patch.object(cli, "run_command", return_value=bad_proc),
+            self.assertRaises(HandledError) as ctx,
+        ):
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        assert ctx.exception.details is not None
+        self.assertEqual(
+            [v["path"] for v in ctx.exception.details["violations"]],
+            ["cmd/ui/app/banner_\ufffd.spec.ts"],
+        )
 
     def test_main_emits_error_json_to_stderr_and_exits_one(self) -> None:
         self._write_and_stage("cmd/ui/app/banner/banner.html", "<p>bad</p>\n")
@@ -179,9 +218,17 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
 
         self.assertEqual(exit_ctx.exception.code, 1)
         payload = json.loads(stderr_buf.getvalue())
+        self.assertEqual(
+            set(payload.keys()),
+            {"status", "error_type", "message", "instruction", "details"},
+        )
         self.assertEqual(payload["status"], "error")
-        violations = payload.get("violations") or payload.get("details", {}).get("violations")
-        self.assertEqual(len(violations), 1)
+        self.assertEqual(payload["error_type"], "handled")
+        self.assertEqual(payload["details"]["stale_allowlist"], [])
+        self.assertEqual(
+            [v["path"] for v in payload["details"]["violations"]],
+            ["cmd/ui/app/banner/banner.html"],
+        )
 
 
 if __name__ == "__main__":
