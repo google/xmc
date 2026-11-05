@@ -272,6 +272,11 @@ Agent skills and rules (`.agents/**/*.md`, `AGENTS.md`) are checked by [`tools/l
 * Placeholders (`<name>`, `*`, `...`) only require their directory prefix to exist; runtime-created or illustrative paths are listed in the script's `ALLOWLIST` with a reason, and entries no doc references fail the check.
 * The pre-commit hook runs it when agent docs are staged or files are deleted/renamed (always in `--check` mode); CI always runs it.
 
+### 7. UI & Workflow File Naming (`check_file_naming.py`)
+Tracked UI templates, UI test specs, and GitHub Actions script tests are checked by [`tools/lint/check_file_naming.py`](../tools/lint/check_file_naming.py):
+* Enforces `*.ng.html` templates under `cmd/ui/app/` (allowing root `cmd/ui/index.html`), `*_test.ts` Karma unit test specs under `cmd/ui/app/`, `*.screenshot.spec.ts` Playwright specs under `cmd/ui/screenshot_tests/`, and top-level `*.test.js` Node workflow script tests under `.github/scripts/`.
+* Prevents misnamed test specs (such as `foo.spec.ts` or `.github/scripts/foo_test.js`) from silently compiling without executing in Karma or CI; runs in both the pre-commit hook and CI.
+
 ---
 
 ### Local Pre-Commit Hook Usage

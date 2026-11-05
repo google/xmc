@@ -163,6 +163,14 @@ check_agent_doc_paths() {
   fi
 }
 
+check_file_naming() {
+  echo "--> Checking UI & Workflow File Naming Conventions..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_file_naming.py >/dev/null; then
+    echo "❌ UI or workflow file naming check failed (see JSON error above)."
+    FAILED=1
+  fi
+}
+
 
 check_ui() {
   local ui_files
@@ -533,6 +541,7 @@ main() {
   check_legacy_imports
   check_examples_coverage
   check_agent_doc_paths
+  check_file_naming
   check_ui
   check_license
   check_python
