@@ -141,13 +141,35 @@ def _entrypoint_from_item(item: dict[str, str]) -> Entrypoint | None:
 
 
 def _selected_items(
-    workflow_text: str, examples_filter: frozenset[str]
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
 ) -> Iterator[dict[str, str]]:
     """Yield matrix items, keeping only filtered `id`s when a filter is given."""
-    for item in parse_matrix_items(workflow_text):
+    for item in matrix_items:
         if examples_filter and item.get("id", "").lower() not in examples_filter:
             continue
         yield item
+
+
+def _entrypoints_from_items(
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
+) -> list[Entrypoint]:
+    """Return unique, non-empty entrypoints from pre-parsed matrix items."""
+    entries: dict[Entrypoint, None] = {}
+    for item in _selected_items(matrix_items, examples_filter):
+        entry = _entrypoint_from_item(item)
+        if entry is not None:
+            entries[entry] = None
+    return list(entries)
+
+
+def _verify_modules_from_items(
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
+) -> list[str]:
+    """Return unique `verify_module`s from pre-parsed matrix items, in order."""
+    modules = (
+        item.get("verify_module", "") for item in _selected_items(matrix_items, examples_filter)
+    )
+    return list(dict.fromkeys(module for module in modules if module))
 
 
 def parse_entrypoints(
@@ -168,22 +190,14 @@ def parse_entrypoints(
         ValueError: If a matrix entry sets only one of `example_path` and
             `entrypoint`, so matrix drift cannot silently drop examples.
     """
-    entries: dict[Entrypoint, None] = {}
-    for item in _selected_items(workflow_text, examples_filter):
-        entry = _entrypoint_from_item(item)
-        if entry is not None:
-            entries[entry] = None
-    return list(entries)
+    return _entrypoints_from_items(parse_matrix_items(workflow_text), examples_filter)
 
 
 def parse_verify_modules(
     workflow_text: str, examples_filter: frozenset[str] = frozenset()
 ) -> list[str]:
     """Return unique matrix `verify_module`s (including UI-only entries), in order."""
-    modules = (
-        item.get("verify_module", "") for item in _selected_items(workflow_text, examples_filter)
-    )
-    return list(dict.fromkeys(module for module in modules if module))
+    return _verify_modules_from_items(parse_matrix_items(workflow_text), examples_filter)
 
 
 def expand_args(raw_args: str) -> list[str]:
@@ -360,14 +374,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code (0 success, 1 import failure, 2 unexpected error).
     """
     args = _parse_args(argv)
-    # Matches the nightly filter case-insensitively while rejecting unknown or malformed tokens.
-    examples_filter = frozenset(part.lower() for part in args.examples_filter.split(",") if part)
     err_stream = sys.stderr if args.list_example_paths else sys.stdout
     try:
-        workflow_text = args.workflow.read_text(encoding="utf-8")
-        validate_examples_filter(args.examples_filter, workflow_text)
-        entries = parse_entrypoints(workflow_text, examples_filter)
-        verify_modules = parse_verify_modules(workflow_text, examples_filter)
+        matrix_items = parse_matrix_items(args.workflow.read_text(encoding="utf-8"))
+        # Matches the nightly filter case-insensitively while rejecting unknown or malformed tokens.
+        examples_filter = validate_examples_filter(args.examples_filter, matrix_items)
+        entries = _entrypoints_from_items(matrix_items, examples_filter)
+        verify_modules = _verify_modules_from_items(matrix_items, examples_filter)
         if not entries and not examples_filter:
             raise ValueError("no example entrypoints found")
     except (ValueError, OSError) as err:

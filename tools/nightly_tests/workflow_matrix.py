@@ -78,16 +78,22 @@ def resolve_workflow_path(repo_dir: pathlib.Path | None = None) -> pathlib.Path:
     return WORKFLOW_REL if WORKFLOW_REL.is_file() else DEFAULT_WORKFLOW
 
 
-def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
-    """Validate comma-separated `examples_filter` IDs against `matrix.example.id` entries."""
+def validate_examples_filter(raw_filter: str, matrix_items: list[dict[str, str]]) -> frozenset[str]:
+    """Validate comma-separated `examples_filter` IDs against `matrix.example.id` entries.
+
+    Returns:
+        The lower-cased filter IDs, or an empty set when `raw_filter` is empty.
+    """
     if not raw_filter:
-        return
-    valid_ids = {item["id"] for item in parse_matrix_items(workflow_text) if item.get("id")}
+        return frozenset()
+    valid_ids = {item["id"] for item in matrix_items if item.get("id")}
     if not valid_ids:
         raise ValueError("no matrix.example.id entries found in workflow")
     lower_ids = {eid.lower() for eid in valid_ids}
-    bad = [token for token in raw_filter.split(",") if token.lower() not in lower_ids]
+    tokens = [token.lower() for token in raw_filter.split(",")]
+    bad = [token for token in tokens if token not in lower_ids]
     if bad:
         raise ValueError(
             f"unknown or malformed examples_filter entry {bad!r}; valid ids: {', '.join(sorted(valid_ids))}"
         )
+    return frozenset(tokens)

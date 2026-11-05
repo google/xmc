@@ -79,8 +79,11 @@ class WorkflowMatrixTest(unittest.TestCase):
             self.assertEqual(wm.resolve_workflow_path(), wm.WORKFLOW_REL)
 
     def test_validate_examples_filter_accepts_valid_ids_and_rejects_malformed(self) -> None:
-        wm.validate_examples_filter("", _WORKFLOW_SAMPLE)
-        wm.validate_examples_filter("OK_JOB,ui_only", _WORKFLOW_SAMPLE)
+        items = wm.parse_matrix_items(_WORKFLOW_SAMPLE)
+        self.assertEqual(wm.validate_examples_filter("", items), frozenset())
+        self.assertEqual(
+            wm.validate_examples_filter("OK_JOB,ui_only", items), frozenset({"ok_job", "ui_only"})
+        )
         for invalid in (
             "bad",
             "ok_job, ui_only",
@@ -91,9 +94,9 @@ class WorkflowMatrixTest(unittest.TestCase):
             " ",
         ):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "ok_job"):
-                wm.validate_examples_filter(invalid, _WORKFLOW_SAMPLE)
+                wm.validate_examples_filter(invalid, items)
         with self.assertRaisesRegex(ValueError, "no matrix.example.id"):
-            wm.validate_examples_filter("ok_job", "jobs: {}\n")
+            wm.validate_examples_filter("ok_job", [])
 
 
 if __name__ == "__main__":

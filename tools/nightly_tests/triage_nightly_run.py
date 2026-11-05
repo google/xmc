@@ -414,6 +414,17 @@ def _find_prior_green_e2e_sha(target_run: dict[str, Any], e2e_runs: list[dict[st
     return ""
 
 
+def _git_log_oneline(
+    ctx: _TriageContext, rev_spec: str, limit: int | None = None
+) -> tuple[list[str] | None, str]:
+    """Runs `git log --oneline` on `rev_spec`; returns `(lines, "")` or `(None, stderr)`."""
+    limit_args = [f"-n{limit}"] if limit is not None else []
+    res = _run_quiet(["git", "log", "--oneline", *limit_args, rev_spec, "--"], ctx.repo_dir)
+    if res.returncode != 0:
+        return None, res.stderr.strip()
+    return [line for line in res.stdout.splitlines() if line.strip()], ""
+
+
 def _collect_commit_range(
     ctx: _TriageContext, prior_sha: str, target_sha: str
 ) -> tuple[list[str] | None, str]:
@@ -421,10 +432,8 @@ def _collect_commit_range(
     if not prior_sha:
         return None, "no prior scheduled green E2E run in lookback window"
     commit_range = f"{prior_sha}..{target_sha}"
-    cmd = ["git", "log", "--oneline", f"-n{_RANGE_COMMIT_LIMIT + 1}", commit_range, "--"]
-    res = _run_quiet(cmd, ctx.repo_dir)
-    lines = [line for line in res.stdout.splitlines() if line.strip()]
-    if res.returncode != 0:
+    lines, _ = _git_log_oneline(ctx, commit_range, _RANGE_COMMIT_LIMIT + 1)
+    if lines is None:
         return None, f"git log {commit_range} failed"
     if not lines:
         return None, f"empty range {commit_range}"
@@ -451,17 +460,15 @@ def _collect_recent_commits(ctx: _TriageContext, target_run: dict[str, Any]) -> 
     range_commits, reason = _collect_commit_range(ctx, prior_sha, target_sha)
     if range_commits is not None:
         return range_commits
-    fallback_res = _run_quiet(
-        ["git", "log", "--oneline", f"-n{_RECENT_COMMIT_LIMIT}", target_sha, "--"], ctx.repo_dir
-    )
-    if fallback_res.returncode != 0:
-        err = fallback_res.stderr.strip() or "git log failed"
+    fallback_commits, err = _git_log_oneline(ctx, target_sha, _RECENT_COMMIT_LIMIT)
+    if fallback_commits is None:
+        err = err or "git log failed"
         ctx.warnings.append(f"Recent commits git log ({target_sha}) failed ({reason}): {err}")
         return []
     ctx.warnings.append(
         f"Falling back to last {_RECENT_COMMIT_LIMIT} commits at {target_sha} ({reason})."
     )
-    return [line for line in fallback_res.stdout.splitlines() if line.strip()]
+    return fallback_commits
 
 
 def _inspect_git_skew(
@@ -479,13 +486,12 @@ def _inspect_git_skew(
     if base_sha.lower() == e2e_sha.lower():
         return [], []
     commit_range = f"{base_sha}..{e2e_sha}"
-    log_res = _run_quiet(["git", "log", "--oneline", commit_range, "--"], ctx.repo_dir)
+    undeployed_commits, log_err = _git_log_oneline(ctx, commit_range)
     diff_res = _run_quiet(["git", "diff", "--name-only", commit_range, "--"], ctx.repo_dir)
-    if log_res.returncode != 0 or diff_res.returncode != 0:
-        err = (log_res.stderr or diff_res.stderr).strip() or "git command failed"
+    if undeployed_commits is None or diff_res.returncode != 0:
+        err = log_err or diff_res.stderr.strip() or "git command failed"
         ctx.warnings.append(f"Rollout skew git inspect ({commit_range}) failed: {err}")
         return [], []
-    undeployed_commits = [line for line in log_res.stdout.splitlines() if line.strip()]
     cluster_files = [
         p for p in diff_res.stdout.splitlines() if p.startswith(_CLUSTER_DEPLOYED_PREFIXES)
     ]

@@ -45,6 +45,18 @@ def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.Complet
     )
 
 
+def _gh_json(args: list[str], repo_dir: Path | None, expected_type: type) -> Any:
+    """Runs a `gh` command and returns its JSON output if it is `expected_type`, else None."""
+    res = _run_gh(args, repo_dir)
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    try:
+        parsed = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, expected_type) else None
+
+
 def _extract_page_url(view_data: dict[str, Any]) -> str:
     """Extracts GitHub Pages URL from run view data or jobs step outputs if available."""
     if not isinstance(view_data, dict):
@@ -136,17 +148,7 @@ def _find_existing_run(
         "--limit=5",
         "--json=databaseId,headSha,url,conclusion",
     ]
-    res = _run_gh(cmd, repo_dir)
-    if res.returncode != 0 or not res.stdout.strip():
-        return None
-    try:
-        existing_runs = json.loads(res.stdout)
-        if not isinstance(existing_runs, list):
-            return None
-    except json.JSONDecodeError:
-        return None
-
-    for run in existing_runs:
+    for run in _gh_json(cmd, repo_dir, list) or []:
         if not target_sha or run.get("headSha", "").startswith(target_sha):
             run_id = int(run["databaseId"])
             run_sha = run.get("headSha", "")
@@ -182,7 +184,8 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
         return
     try:
         workflow_text = workflow_matrix.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
-        workflow_matrix.validate_examples_filter(parsed["examples_filter"], workflow_text)
+        matrix_items = workflow_matrix.parse_matrix_items(workflow_text)
+        workflow_matrix.validate_examples_filter(parsed["examples_filter"], matrix_items)
     except (OSError, ValueError) as exc:
         hint = "Pass comma-separated matrix.example.id values without spaces."
         raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
@@ -243,24 +246,16 @@ def _poll_for_run(
     for attempt in range(poll_attempts):
         if attempt > 0:
             time.sleep(poll_interval)
-        res = _run_gh(list_cmd, repo_dir)
-        if res.returncode == 0 and res.stdout.strip():
-            try:
-                runs = json.loads(res.stdout)
-                if not isinstance(runs, list):
-                    runs = []
-            except json.JSONDecodeError:
-                runs = []
-            for r in runs:
-                r_sha = r.get("headSha", "")
-                r_created = r.get("createdAt", "")
-                if r_created >= dispatched_at:
-                    if target_sha and r_sha.startswith(target_sha):
-                        return r
-                    if not matched_run:
-                        matched_run = r
-            if matched_run and not target_sha:
-                return matched_run
+        for r in _gh_json(list_cmd, repo_dir, list) or []:
+            r_sha = r.get("headSha", "")
+            r_created = r.get("createdAt", "")
+            if r_created >= dispatched_at:
+                if target_sha and r_sha.startswith(target_sha):
+                    return r
+                if not matched_run:
+                    matched_run = r
+        if matched_run and not target_sha:
+            return matched_run
 
     if matched_run:
         return matched_run
@@ -281,15 +276,8 @@ def _watch_run_outcome(
 ) -> dict[str, Any]:
     """Watches run to completion, parses conclusion and page_url, and updates state."""
     res = _run_gh(["run", "watch", str(run_id), "--exit-status"], repo_dir)
-    view_res = _run_gh(["run", "view", str(run_id), "--json=conclusion,jobs"], repo_dir)
-    view_data: dict[str, Any] = {}
-    if view_res.returncode == 0 and view_res.stdout.strip():
-        try:
-            loaded_view = json.loads(view_res.stdout)
-            if isinstance(loaded_view, dict):
-                view_data = loaded_view
-        except json.JSONDecodeError:
-            view_data = {}
+    view_cmd = ["run", "view", str(run_id), "--json=conclusion,jobs"]
+    view_data: dict[str, Any] = _gh_json(view_cmd, repo_dir, dict) or {}
 
     conclusion = view_data.get("conclusion") or ("success" if res.returncode == 0 else "failure")
     page_url = _extract_page_url(view_data)
