@@ -25,11 +25,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW_REL = pathlib.Path(".github/workflows/nightly-examples-e2e.yml")
 DEFAULT_WORKFLOW = REPO_ROOT / WORKFLOW_REL
 
-# Matrix entry keys tracked across nightly tooling.
 _MATRIX_KEYS = ("id", "name", "example_path", "entrypoint", "args", "verify_module")
-# Matches a tracked matrix key, optionally opening a YAML list item.
 _KEY_RE = re.compile(rf"^\s*(?:-\s+)?(?P<key>{'|'.join(_MATRIX_KEYS)}):(?P<value>.*)$")
-# Matches the first line of a YAML list item (`- key: ...`).
 _ITEM_START_RE = re.compile(r"^\s*-\s")
 
 
@@ -59,17 +56,9 @@ def _matrix_lines(workflow_text: str) -> Iterator[str]:
 
 
 def parse_matrix_items(workflow_text: str) -> list[dict[str, str]]:
-    """Return the tracked keys of every YAML list item under `matrix:` blocks.
-
-    Only lines under `matrix:` blocks are considered, so same-named keys in step
-    inputs or other jobs are ignored. Keys are grouped per YAML list item, so
-    their order, quoting style (single, double, or none), trailing comments, and
-    interleaved keys do not matter.
-    """
+    """Return tracked scalar keys for each YAML list item scoped under `matrix:` blocks."""
     items: list[dict[str, str]] = []
-    # Indentation of the `-` opening the active list item; None when outside an item,
-    # so keys after a list ends (or before the first item of a later matrix block)
-    # are never attributed to the previous item.
+    # Indentation of the '-' opening the active list item, or None outside an item.
     item_indent: int | None = None
     for line in _matrix_lines(workflow_text):
         indent = len(line) - len(line.lstrip())
@@ -95,17 +84,12 @@ def validate_examples_filter(raw_filter: str, workflow_text: str) -> None:
     """Validate comma-separated `examples_filter` IDs against `matrix.example.id` entries."""
     if not raw_filter:
         return
-
     valid_ids = {item["id"] for item in parse_matrix_items(workflow_text) if item.get("id")}
     if not valid_ids:
         raise ValueError("no matrix.example.id entries found in workflow")
-
-    valid_ids_lower = {example_id.lower() for example_id in valid_ids}
-    invalid_tokens = [
-        token for token in raw_filter.split(",") if token.lower() not in valid_ids_lower
-    ]
-    if invalid_tokens:
-        sorted_ids = ", ".join(sorted(valid_ids))
+    lower_ids = {eid.lower() for eid in valid_ids}
+    bad = [token for token in raw_filter.split(",") if token.lower() not in lower_ids]
+    if bad:
         raise ValueError(
-            f"unknown or malformed examples_filter entry {invalid_tokens!r}; valid ids: {sorted_ids}"
+            f"unknown or malformed examples_filter entry {bad!r}; valid ids: {', '.join(sorted(valid_ids))}"
         )

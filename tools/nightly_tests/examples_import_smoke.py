@@ -368,14 +368,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         validate_examples_filter(args.examples_filter, workflow_text)
         entries = parse_entrypoints(workflow_text, examples_filter)
         verify_modules = parse_verify_modules(workflow_text, examples_filter)
+        if not entries and not examples_filter:
+            raise ValueError("no example entrypoints found")
     except (ValueError, OSError) as err:
         print(json.dumps({"error": f"{args.workflow}: {err}"}), file=err_stream)
-        return 2
-    if not entries and not examples_filter:
-        print(
-            json.dumps({"error": f"no example entrypoints found in {args.workflow}"}),
-            file=err_stream,
-        )
         return 2
     if args.list_example_paths:
         # May be empty when the filter selects only UI-only entries (no entrypoint).

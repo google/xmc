@@ -34,7 +34,6 @@ from tools.nightly_tests.workflow_matrix import parse_matrix_items, resolve_work
 
 _REPO = "google/xmc"
 _BRANCH = "main"
-_E2E_RUN_LIMIT = 10
 _BUILD_RUN_LIMIT = 15
 _RECENT_COMMIT_LIMIT = 20
 _RANGE_COMMIT_LIMIT = 30
@@ -42,9 +41,10 @@ _ERROR_CONTEXT_LINES = 5
 _MAX_EXCERPT_LINES = 15
 _MAX_EXCERPT_CHARS = 300
 _MAX_RESULT_BYTES = 65536
+_RUN_FIELDS = "databaseId,status,conclusion,headSha,event,createdAt,url"
 
-_SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
-_ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_SHA_RE = re.compile(r"[0-9a-fA-F]{7,40}")
+_ARTIFACT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 _LOG_PREFIX_RE = re.compile(r"^\ufeff?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+)?")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -62,11 +62,6 @@ _CLUSTER_DEPLOYED_PREFIXES = (
     "deploy/profiles/",
 )
 
-_E2E_RUN_FIELDS = "databaseId,status,conclusion,headSha,event,createdAt,url"
-_BUILD_RUN_FIELDS = "databaseId,status,conclusion,headSha,createdAt,url"
-_ISSUE_FIELDS = "number,title,url,createdAt"
-_CLI_HINT = "Ensure 'gh' and 'git' CLIs are on PATH and run 'gh auth login'."
-
 
 @dataclass
 class _TriageContext:
@@ -78,16 +73,9 @@ class _TriageContext:
     e2e_runs: list[dict[str, Any]] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class _RunSelection:
-    """Resolved target run and optional superseding scheduled green run."""
-
-    target_run: dict[str, Any] | None
-    superseded_by: dict[str, Any] | None
-
-
 def _run_quiet(cmd: list[str], cwd: Path | None) -> subprocess.CompletedProcess[str]:
     """Runs a subprocess quietly, converting missing CLI binaries into HandledError."""
+    hint = "Ensure 'gh' and 'git' CLIs are on PATH and run 'gh auth login'."
     return run_command(
         cmd,
         cwd=cwd,
@@ -95,7 +83,7 @@ def _run_quiet(cmd: list[str], cwd: Path | None) -> subprocess.CompletedProcess[
         check=False,
         log_cmd=False,
         errors="replace",
-        handled_instruction=_CLI_HINT,
+        handled_instruction=hint,
     )
 
 
@@ -103,15 +91,13 @@ def _gh_json(ctx: _TriageContext, gh_args: list[str], *, fatal: bool = True) -> 
     """Executes a `gh` subcommand and parses JSON output, raising or warning on failure."""
     res = _run_quiet(["gh", *gh_args], ctx.repo_dir)
     label = f"gh {' '.join(gh_args[:3])}"
-    error = ""
     if res.returncode != 0:
         error = f"'{label}' failed: {res.stderr.strip() or f'exit {res.returncode}'}"
-    if not error:
+    else:
         try:
             return json.loads(res.stdout)
         except json.JSONDecodeError as exc:
             error = f"Invalid JSON from '{label}': {exc}"
-
     if fatal:
         raise HandledError(
             error, "Verify GitHub CLI authentication ('gh auth status') and network."
@@ -121,12 +107,16 @@ def _gh_json(ctx: _TriageContext, gh_args: list[str], *, fatal: bool = True) -> 
 
 
 def _list_workflow_runs(
-    ctx: _TriageContext, workflow: str, limit: int, fields: str, *, fatal: bool = True
+    ctx: _TriageContext, workflow: str, limit: int, *, fatal: bool = True
 ) -> list[dict[str, Any]]:
     """Lists recent GitHub Actions runs for `workflow` on `main`."""
-    scope_flags = [f"--repo={_REPO}", f"--branch={_BRANCH}", f"--workflow={workflow}"]
-    gh_args = ["run", "list", *scope_flags, f"--limit={limit}", f"--json={fields}"]
-    return _gh_json(ctx, gh_args, fatal=fatal) or []
+    scope = [f"--repo={_REPO}", f"--branch={_BRANCH}", f"--workflow={workflow}"]
+    return (
+        _gh_json(
+            ctx, ["run", "list", *scope, f"--limit={limit}", f"--json={_RUN_FIELDS}"], fatal=fatal
+        )
+        or []
+    )
 
 
 def _load_matrix_name_map(repo_dir: Path | None) -> dict[str, str]:
@@ -152,8 +142,8 @@ def _is_newer_or_equal(run: dict[str, Any] | None, reference: dict[str, Any] | N
 
 def _is_failed_run(run: dict[str, Any] | None) -> bool:
     """Returns True when `run` has completed with a non-healthy conclusion."""
-    return bool(
-        run
+    return (
+        run is not None
         and run.get("status") == "completed"
         and run.get("conclusion") not in _HEALTHY_CONCLUSIONS
     )
@@ -172,62 +162,28 @@ def _classify_status(
     return "superseded" if superseded_by is not None else "failing"
 
 
-def _warn_if_manual_green_newer(
-    ctx: _TriageContext,
-    target_run: dict[str, Any] | None,
-    superseded_by: dict[str, Any] | None,
-    manual_green: dict[str, Any] | None,
-) -> None:
-    """Appends a warning when a newer non-scheduled green run does not supersede a failure."""
-    if (
-        manual_green is not None
-        and _is_failed_run(target_run)
-        and superseded_by is None
-        and _is_newer_or_equal(manual_green, target_run)
-    ):
+def _select_target_run(
+    ctx: _TriageContext, completed: list[dict[str, Any]], pinned: dict[str, Any] | None
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Selects `(target_run, superseded_by)` and warns on non-superseding manual green runs."""
+    greens = [r for r in completed if r.get("conclusion") == "success"]
+    sched_green = next((r for r in greens if r.get("event") == "schedule"), None)
+    latest_fail = next((r for r in completed if _is_failed_run(r)), None)
+    target = pinned
+    if pinned is None and not _is_newer_or_equal(sched_green, latest_fail):
+        target = latest_fail
+    if not _is_failed_run(target):
+        return target, None
+    if _is_newer_or_equal(sched_green, target):
+        return target, sched_green
+    manual_green = next((r for r in greens if r.get("event") != "schedule"), None)
+    if manual_green is not None and _is_newer_or_equal(manual_green, target):
         event_name = manual_green.get("event") or "manual"
         ctx.warnings.append(
             f"Newer green {event_name} run {manual_green.get('databaseId')} "
             "(possibly filtered) not treated as superseding."
         )
-
-
-def _resolve_target_run(
-    pinned_run: dict[str, Any] | None,
-    scheduled_green: dict[str, Any] | None,
-    latest_failure: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    """Resolves the target run to triage after applying scheduled-only supersession."""
-    if pinned_run is not None:
-        return pinned_run
-    if _is_newer_or_equal(scheduled_green, latest_failure):
-        return None
-    return latest_failure
-
-
-def _select_target_run(
-    ctx: _TriageContext,
-    completed: list[dict[str, Any]],
-    pinned_run: dict[str, Any] | None,
-) -> _RunSelection:
-    """Selects the target E2E run and records non-superseding manual green warnings."""
-    scheduled_green = next(
-        (r for r in completed if r.get("conclusion") == "success" and r.get("event") == "schedule"),
-        None,
-    )
-    manual_green = next(
-        (r for r in completed if r.get("conclusion") == "success" and r.get("event") != "schedule"),
-        None,
-    )
-    latest_failure = next(
-        (r for r in completed if r.get("conclusion") not in _HEALTHY_CONCLUSIONS), None
-    )
-
-    target_run = _resolve_target_run(pinned_run, scheduled_green, latest_failure)
-    is_superseded = _is_failed_run(target_run) and _is_newer_or_equal(scheduled_green, target_run)
-    superseded_by = scheduled_green if is_superseded else None
-    _warn_if_manual_green_newer(ctx, target_run, superseded_by, manual_green)
-    return _RunSelection(target_run=target_run, superseded_by=superseded_by)
+    return target, None
 
 
 def _evaluate_runs(
@@ -239,15 +195,11 @@ def _evaluate_runs(
     completed = [run for run in ctx.e2e_runs if run.get("status") == "completed"]
     if pinned_run is None and not completed:
         ctx.warnings.append("No completed nightly-examples-e2e.yml runs found.")
-
-    selection = _select_target_run(ctx, completed, pinned_run)
-    status_summary = _classify_status(
-        selection.target_run, bool(completed), selection.superseded_by
-    )
+    target_run, superseded_by = _select_target_run(ctx, completed, pinned_run)
     return {
-        "status_summary": status_summary,
-        "target_run": selection.target_run,
-        "superseded_by_green_run": selection.superseded_by,
+        "status_summary": _classify_status(target_run, bool(completed), superseded_by),
+        "target_run": target_run,
+        "superseded_by_green_run": superseded_by,
         "open_issues": open_issues,
         "failed_jobs": [],
         "downloaded_artifacts": [],
@@ -263,44 +215,42 @@ def _discover_nightly_status(ctx: _TriageContext, run_id: int | None) -> dict[st
     fetch_res = _run_quiet(["git", "fetch", "--", "origin", _BRANCH], ctx.repo_dir)
     if fetch_res.returncode != 0:
         ctx.warnings.append(f"git fetch origin {_BRANCH} failed: {fetch_res.stderr.strip()}")
-
-    ctx.e2e_runs = _list_workflow_runs(
-        ctx, "nightly-examples-e2e.yml", _E2E_RUN_LIMIT, _E2E_RUN_FIELDS
-    )
-    issue_flags = [f"--repo={_REPO}", "--label=nightly-failure", "--state=open"]
-    open_issues = (
-        _gh_json(ctx, ["issue", "list", *issue_flags, f"--json={_ISSUE_FIELDS}"], fatal=False) or []
-    )
-
+    ctx.e2e_runs = _list_workflow_runs(ctx, "nightly-examples-e2e.yml", limit=10)
+    issue_args = [
+        "issue",
+        "list",
+        f"--repo={_REPO}",
+        "--label=nightly-failure",
+        "--state=open",
+        "--json=number,title,url,createdAt",
+    ]
+    open_issues = _gh_json(ctx, issue_args, fatal=False) or []
     pinned_run = None
     if run_id is not None:
-        view_args = ["run", "view", str(run_id), f"--repo={_REPO}", f"--json={_E2E_RUN_FIELDS}"]
-        pinned_run = _gh_json(ctx, view_args)
-
+        pinned_run = _gh_json(
+            ctx, ["run", "view", str(run_id), f"--repo={_REPO}", f"--json={_RUN_FIELDS}"]
+        )
     return _evaluate_runs(ctx, pinned_run, open_issues)
-
-
-def _clean_log_line(raw_line: str) -> str:
-    """Strips Actions timestamps and ANSI sequences and bounds per-line character length."""
-    without_ts = _LOG_PREFIX_RE.sub("", raw_line)
-    cleaned = _ANSI_RE.sub("", without_ts).strip()
-    if len(cleaned) <= _MAX_EXCERPT_CHARS:
-        return cleaned
-    return f"{cleaned[:_MAX_EXCERPT_CHARS]}..."
 
 
 def _extract_error_excerpt(log_text: str) -> list[str]:
     """Extracts bounded `##[error]` context lines (or trailing lines) from a job log."""
-    non_empty = [cleaned for raw in log_text.splitlines() if (cleaned := _clean_log_line(raw))]
-    if not non_empty:
+    lines: list[str] = []
+    for raw_line in log_text.splitlines():
+        cleaned = _ANSI_RE.sub("", _LOG_PREFIX_RE.sub("", raw_line)).strip()
+        if cleaned:
+            if len(cleaned) > _MAX_EXCERPT_CHARS:
+                cleaned = f"{cleaned[:_MAX_EXCERPT_CHARS]}..."
+            lines.append(cleaned)
+    if not lines:
         return []
-    error_indices = [idx for idx, line in enumerate(non_empty) if line.startswith("##[error]")]
+    error_indices = [idx for idx, line in enumerate(lines) if line.startswith("##[error]")]
     if not error_indices:
-        return non_empty[-_MAX_EXCERPT_LINES:]
+        return lines[-_MAX_EXCERPT_LINES:]
     selected = sorted(
         {i for idx in error_indices for i in range(max(0, idx - _ERROR_CONTEXT_LINES), idx + 1)}
     )[-_MAX_EXCERPT_LINES:]
-    return [non_empty[i] for i in selected]
+    return [lines[i] for i in selected]
 
 
 def _save_job_log(ctx: _TriageContext, job_id: int) -> tuple[str | None, list[str]]:
@@ -309,13 +259,11 @@ def _save_job_log(ctx: _TriageContext, job_id: int) -> tuple[str | None, list[st
     if res.returncode != 0:
         ctx.warnings.append(f"Failed to download log for job {job_id}: {res.stderr.strip()}")
         return None, []
-
     excerpt = _extract_error_excerpt(res.stdout)
     dest = ctx.scratch_dir / f"job_{job_id}.log"
     if dest.is_symlink():
         ctx.warnings.append(f"Skipped symlink log path '{dest}'.")
         return None, excerpt
-
     dest.write_text(res.stdout, encoding="utf-8")
     return str(dest), excerpt
 
@@ -323,7 +271,7 @@ def _save_job_log(ctx: _TriageContext, job_id: int) -> tuple[str | None, list[st
 def _build_failed_job_entry(
     ctx: _TriageContext,
     job: dict[str, Any],
-    bad_conclusions: set[str],
+    bad_conclusions: frozenset[str],
     name_map: dict[str, str],
 ) -> dict[str, Any]:
     """Formats a single failed job record with its saved log path and bounded error excerpt."""
@@ -353,13 +301,11 @@ def _collect_failed_jobs(
     """Lists jobs on `run_id`, downloads logs for failed jobs, and maps matrix example IDs."""
     payload = _gh_json(ctx, ["api", f"repos/{_REPO}/actions/runs/{run_id}/jobs?per_page=100"]) or {}
     name_map = _load_matrix_name_map(ctx.repo_dir)
-    bad_conclusions = set(_FAILURE_CONCLUSIONS) | (
-        {"cancelled"} if run_conclusion == "cancelled" else set()
-    )
+    bad = _FAILURE_CONCLUSIONS | ({"cancelled"} if run_conclusion == "cancelled" else frozenset())
     return [
-        _build_failed_job_entry(ctx, job, bad_conclusions, name_map)
+        _build_failed_job_entry(ctx, job, bad, name_map)
         for job in payload.get("jobs", [])
-        if job.get("conclusion") in bad_conclusions
+        if job.get("conclusion") in bad
     ]
 
 
@@ -372,7 +318,6 @@ def _download_single_artifact(ctx: _TriageContext, run_id: int, name: str) -> st
         shutil.rmtree(dest)
     elif dest.exists():
         dest.unlink()
-
     cmd = ["gh", "run", "download", str(run_id), f"--repo={_REPO}", "-n", name, "-D", str(dest)]
     res = _run_quiet(cmd, ctx.repo_dir)
     if res.returncode != 0:
@@ -385,9 +330,12 @@ def _download_artifacts(
     ctx: _TriageContext, run_id: int, exact_names: set[str], name_prefix: str = ""
 ) -> list[str]:
     """Downloads non-expired artifacts matching `exact_names` or `name_prefix`."""
-    endpoint = f"repos/{_REPO}/actions/runs/{run_id}/artifacts?per_page=100"
-    payload = _gh_json(ctx, ["api", endpoint], fatal=False) or {}
-
+    payload = (
+        _gh_json(
+            ctx, ["api", f"repos/{_REPO}/actions/runs/{run_id}/artifacts?per_page=100"], fatal=False
+        )
+        or {}
+    )
     downloaded: list[str] = []
     for artifact in payload.get("artifacts", []):
         name = str(artifact.get("name") or "")
@@ -395,7 +343,6 @@ def _download_artifacts(
             continue
         if name not in exact_names and not (name_prefix and name.startswith(name_prefix)):
             continue
-
         saved_path = _download_single_artifact(ctx, run_id, name)
         if saved_path is not None:
             downloaded.append(saved_path)
@@ -404,27 +351,24 @@ def _download_artifacts(
 
 def _read_regular_bytes(ctx: _TriageContext, result_file: Path) -> bytes | None:
     """Opens `result_file` without following symlinks and reads bounded regular-file bytes."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        fd = os.open(result_file, flags)
+        fd = os.open(result_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
-        if exc.errno in (errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)):
+        if exc.errno in (errno.ELOOP, errno.EMLINK):
             ctx.warnings.append(f"Skipped symlink result artifact '{result_file}'.")
         elif exc.errno != errno.ENOENT:
-            ctx.warnings.append(f"Failed to parse result JSON '{result_file}': {exc}")
+            ctx.warnings.append(f"Failed to read result JSON '{result_file}': {exc}")
         return None
     try:
-        file_stat = os.fstat(fd)
-        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size > _MAX_RESULT_BYTES:
-            ctx.warnings.append(f"Invalid or oversized result JSON '{result_file}'.")
-            return None
-        raw = os.fdopen(fd, "rb", closefd=False).read(_MAX_RESULT_BYTES + 1)
+        st = os.fstat(fd)
+        is_valid = stat.S_ISREG(st.st_mode) and st.st_size <= _MAX_RESULT_BYTES
+        raw = os.fdopen(fd, "rb", closefd=False).read(_MAX_RESULT_BYTES + 1) if is_valid else None
     except OSError as exc:
-        ctx.warnings.append(f"Failed to parse result JSON '{result_file}': {exc}")
+        ctx.warnings.append(f"Failed to read result JSON '{result_file}': {exc}")
         return None
     finally:
         os.close(fd)
-    if len(raw) > _MAX_RESULT_BYTES:
+    if raw is None or len(raw) > _MAX_RESULT_BYTES:
         ctx.warnings.append(f"Invalid or oversized result JSON '{result_file}'.")
         return None
     return raw
@@ -446,39 +390,28 @@ def _load_json_object(ctx: _TriageContext, result_file: Path) -> dict[str, Any] 
     return parsed
 
 
-def _read_result_artifact(
-    ctx: _TriageContext, example_id: str, downloaded_dirs: set[str]
-) -> dict[str, Any] | None:
-    """Parses `<scratch_dir>/result-<id>/<id>.json` when freshly downloaded."""
-    if not example_id or not _ARTIFACT_NAME_RE.fullmatch(example_id):
-        return None
-    artifact_dir = ctx.scratch_dir / f"result-{example_id}"
-    if str(artifact_dir) not in downloaded_dirs or artifact_dir.is_symlink():
-        return None
-    return _load_json_object(ctx, artifact_dir / f"{example_id}.json")
-
-
 def _attach_job_results(
     ctx: _TriageContext, failed_jobs: list[dict[str, Any]], e2e_artifacts: list[str]
 ) -> None:
     """Populates `job['result']` on failed matrix jobs from downloaded `result-*` artifacts."""
     downloaded_dirs = set(e2e_artifacts)
     for job in failed_jobs:
-        job["result"] = _read_result_artifact(ctx, job["example_id"], downloaded_dirs)
+        example_id = job["example_id"]
+        artifact_dir = ctx.scratch_dir / f"result-{example_id}"
+        if example_id and str(artifact_dir) in downloaded_dirs and not artifact_dir.is_symlink():
+            job["result"] = _load_json_object(ctx, artifact_dir / f"{example_id}.json")
 
 
 def _find_prior_green_e2e_sha(target_run: dict[str, Any], e2e_runs: list[dict[str, Any]]) -> str:
     """Finds the `headSha` of the most recent scheduled green E2E run before `target_run`."""
     cutoff = str(target_run.get("createdAt") or "")
-    if not cutoff:
-        return ""
     for run in e2e_runs:
         created_at = str(run.get("createdAt") or "")
         if (
             run.get("status") == "completed"
             and run.get("conclusion") == "success"
             and run.get("event") == "schedule"
-            and bool(created_at and created_at < cutoff)
+            and "" < created_at < cutoff
         ):
             sha = str(run.get("headSha") or "")
             return sha if _SHA_RE.fullmatch(sha) else ""
@@ -558,25 +491,21 @@ def _inspect_git_skew(
         return [], []
     undeployed_commits = [line for line in log_res.stdout.splitlines() if line.strip()]
     cluster_files = [
-        path for path in diff_res.stdout.splitlines() if path.startswith(_CLUSTER_DEPLOYED_PREFIXES)
+        p for p in diff_res.stdout.splitlines() if p.startswith(_CLUSTER_DEPLOYED_PREFIXES)
     ]
     return undeployed_commits, cluster_files
 
 
-def _compute_rollout_skew(
-    ctx: _TriageContext, target_run: dict[str, Any], build_runs: list[dict[str, Any]]
-) -> dict[str, Any]:
+def _compute_rollout_skew(ctx: _TriageContext, target_run: dict[str, Any]) -> dict[str, Any]:
     """Finds the active and last green builds prior to `target_run` and inspects git skew."""
+    build_runs = _list_workflow_runs(ctx, "nightly-build.yml", _BUILD_RUN_LIMIT, fatal=False)
     completed = [run for run in build_runs if run.get("status") == "completed"]
     cutoff = str(target_run.get("createdAt") or "")
-    prior_builds = [
-        run for run in completed if not cutoff or str(run.get("createdAt") or "") <= cutoff
-    ]
+    prior_builds = [r for r in completed if not cutoff or str(r.get("createdAt") or "") <= cutoff]
     if completed and not prior_builds:
         ctx.warnings.append(
             f"No prior nightly-build.yml run found in {_BUILD_RUN_LIMIT}-run lookback window."
         )
-
     active_build = next(iter(prior_builds), None)
     last_green = next((run for run in prior_builds if run.get("conclusion") == "success"), None)
     undeployed_commits, cluster_files = _inspect_git_skew(ctx, last_green, target_run)
@@ -586,15 +515,6 @@ def _compute_rollout_skew(
         "undeployed_commits": undeployed_commits,
         "cluster_deployed_files": cluster_files,
     }
-
-
-def _download_failed_build_diagnostics(
-    ctx: _TriageContext, active_build: dict[str, Any] | None
-) -> list[str]:
-    """Downloads `deploy-gke-diagnostics` when the active prior nightly build failed."""
-    if not active_build or active_build.get("conclusion") not in _FAILURE_CONCLUSIONS:
-        return []
-    return _download_artifacts(ctx, int(active_build["databaseId"]), {"deploy-gke-diagnostics"})
 
 
 def _enrich_with_failure_diagnostics(
@@ -607,13 +527,13 @@ def _enrich_with_failure_diagnostics(
     e2e_artifacts = _download_artifacts(ctx, run_id, result_names, "ui-screenshots-")
     _attach_job_results(ctx, failed_jobs, e2e_artifacts)
     recent_commits = _collect_recent_commits(ctx, target_run)
-
-    build_runs = _list_workflow_runs(
-        ctx, "nightly-build.yml", _BUILD_RUN_LIMIT, _BUILD_RUN_FIELDS, fatal=False
+    rollout_skew = _compute_rollout_skew(ctx, target_run)
+    active_build = rollout_skew["active_build_run"]
+    build_diagnostics = (
+        _download_artifacts(ctx, int(active_build["databaseId"]), {"deploy-gke-diagnostics"})
+        if active_build and active_build.get("conclusion") in _FAILURE_CONCLUSIONS
+        else []
     )
-    rollout_skew = _compute_rollout_skew(ctx, target_run, build_runs)
-    build_diagnostics = _download_failed_build_diagnostics(ctx, rollout_skew["active_build_run"])
-
     report.update(
         failed_jobs=failed_jobs,
         downloaded_artifacts=[*e2e_artifacts, *build_diagnostics],
@@ -628,13 +548,11 @@ def triage_nightly_run(args: argparse.Namespace) -> dict[str, Any]:
     """Discovers and triages the target Nightly Examples E2E run on main."""
     if args.run_id is not None and args.run_id <= 0:
         raise HandledError("--run-id must be >= 1.", "Pass a positive GitHub Actions run ID.")
-
     ctx = _TriageContext(repo_dir=Path(args.repo_dir) if args.repo_dir else None)
     report = _discover_nightly_status(ctx, args.run_id)
     target_run = report["target_run"]
-    if target_run is None or not _is_failed_run(target_run):
+    if not _is_failed_run(target_run) or target_run is None:
         return report
-
     run_id = int(target_run["databaseId"])
     default_scratch = Path(os.environ.get("ARTIFACT_DIR") or "/tmp") / f"nightly_triage_{run_id}"
     ctx.scratch_dir = Path(args.scratch_dir) if args.scratch_dir else default_scratch
@@ -650,12 +568,8 @@ def triage_nightly_run(args: argparse.Namespace) -> dict[str, Any]:
 def create_parser() -> argparse.ArgumentParser:
     """Constructs the CLI argument parser for nightly run triage."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--run-id", type=int, default=None, help="Specific Actions run ID to triage."
-    )
-    parser.add_argument(
-        "--scratch-dir", default="", help="Output directory for logs and artifacts."
-    )
+    parser.add_argument("--run-id", type=int, help="Specific Actions run ID to triage.")
+    parser.add_argument("--scratch-dir", default="", help="Output directory for artifacts.")
     parser.add_argument("--repo-dir", default=".", help="Local git repository root.")
     return parser
 

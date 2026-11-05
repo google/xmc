@@ -96,7 +96,6 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
      --input "examples_filter=${EXAMPLES_FILTER}" \
      --state-file "${ARTIFACT_DIR:-/tmp}/nightly_verify_state.json"
    ```
-   Set `EXAMPLES_FILTER=""` (or omit `--input`) when verifying the full matrix.
 
 3. **Synchronize Draft PR Description & Report Proof**:
    Once PR CI (`./tools/pr_review/wait_for_ci.py <pr_number>` per [XMC Create PR — CI Wait Buffer Period](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period)) and the branch `nightly-examples-e2e.yml` run pass on `origin/${BRANCH_NAME}`, update the Draft PR description via `./tools/pr_review/update_pr_description.py` ([XMC Create PR — PR Description Updates via Helper Tool](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool)) with the passing verification run URL, create `.url.json` bookmark artifacts (`UserFacing: true`) for the Draft PR and verification run, and report back while keeping the PR in **Draft** state.

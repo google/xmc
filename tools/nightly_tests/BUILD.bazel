@@ -27,12 +27,8 @@ exports_files([
     "format_visual_audit_summary.js",
     "format_visual_audit_summary_test.js",
     "gallery_template/index.html",
-    "triage_nightly_run.py",
-    "triage_nightly_run_test.py",
     "weekly_visual_snapshot.py",
     "weekly_visual_snapshot_test.py",
-    "workflow_matrix.py",
-    "workflow_matrix_test.py",
 ])
 
 filegroup(

@@ -27,8 +27,8 @@ from typing import Any
 from tools.common.tool_utils import HandledError, run_command, run_tool
 from tools.nightly_tests import workflow_matrix
 
-_REF_RE = re.compile(r"^[A-Za-z0-9](?!.*\.\.)[A-Za-z0-9._-]*(?:/[A-Za-z0-9._-]+)*$")
-_INPUT_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
+_REF_RE = re.compile(r"[A-Za-z0-9](?!.*\.\.)[A-Za-z0-9._-]*(?:/[A-Za-z0-9._-]+)*")
+_INPUT_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 _EXAMPLES_WORKFLOWS = frozenset({"nightly-examples-e2e.yml", "examples-smoke.yml"})
 
 
@@ -168,14 +168,6 @@ def _find_existing_run(
     return None
 
 
-def _validate_ref(ref: str) -> str:
-    """Validates a target Git ref and rejects 'origin/' prefixes or refspec syntax."""
-    cleaned = ref.strip()
-    if cleaned.startswith("origin/") or not _REF_RE.fullmatch(cleaned):
-        raise HandledError(f"Invalid --ref '{ref}'.", "Pass a branch or tag name on origin.")
-    return cleaned
-
-
 def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None) -> None:
     """Validates repeatable KEY=VALUE workflow_dispatch inputs and examples_filter IDs."""
     parsed: dict[str, str] = {}
@@ -186,10 +178,8 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
         if key in parsed:
             raise HandledError(f"Duplicate workflow input key '{key}'.", "Specify each key once.")
         parsed[key] = value
-
     if Path(workflow).name not in _EXAMPLES_WORKFLOWS or "examples_filter" not in parsed:
         return
-
     try:
         workflow_text = workflow_matrix.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
         workflow_matrix.validate_examples_filter(parsed["examples_filter"], workflow_text)
@@ -198,30 +188,27 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
         raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
 
 
+def _run_git(args: list[str], cwd: Path | None, hint: str) -> str:
+    res = run_command(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        handled_instruction=hint,
+    )
+    return res.stdout.strip()
+
+
 def _resolve_remote_sha(ref: str, cwd: Path | None) -> str:
     """Fetches origin/<ref> and returns the resolved remote commit SHA via FETCH_HEAD."""
-    fetch_hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
-    run_command(
-        ["git", "fetch", "--", "origin", ref],
-        cwd=cwd,
-        capture_output=True,
-        log_cmd=False,
-        log_on_error=False,
-        handled_instruction=fetch_hint,
-    )
-    rev_res = run_command(
-        ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
-        cwd=cwd,
-        capture_output=True,
-        log_cmd=False,
-        log_on_error=False,
-        handled_instruction="Verify that the remote ref points to a valid commit.",
-    )
-    return rev_res.stdout.strip()
+    hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
+    _run_git(["fetch", "--", "origin", ref], cwd, hint)
+    return _run_git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], cwd, "Invalid remote commit.")
 
 
 def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
-    """Dispatches workflow run with optional inputs and returns ISO timestamp of dispatch."""
+    """Dispatches workflow run and returns ISO timestamp of dispatch."""
     dispatched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     input_args = [arg for item in inputs for arg in ("-f", item)]
     res = _run_gh(["workflow", "run", workflow, "--ref", ref, *input_args], repo_dir)
@@ -332,7 +319,9 @@ def _watch_run_outcome(
 
 def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
     """Validates CLI flags and workflow inputs; returns cleaned ref."""
-    ref = _validate_ref(str(args.ref))
+    ref = str(args.ref).strip()
+    if ref.startswith("origin/") or not _REF_RE.fullmatch(ref):
+        raise HandledError(f"Invalid --ref '{args.ref}'.", "Pass a branch or tag name on origin.")
     if args.find_existing and args.input:
         raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
     _validate_inputs(args.workflow, args.input, repo_dir)
@@ -341,19 +330,24 @@ def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
 
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
+    workflow, state_file = args.workflow, args.state_file
     repo_dir = Path(args.repo_dir) if args.repo_dir else None
     ref = _validate_args(args, repo_dir)
     target_sha = args.target_sha.strip()
 
+    # 1. Check for existing successful run if --find-existing
     if args.find_existing:
-        existing = _find_existing_run(args.workflow, ref, target_sha, args.state_file, repo_dir)
+        existing = _find_existing_run(workflow, ref, target_sha, state_file, repo_dir)
         if existing:
             return existing
 
+    # 2. Dispatch workflow run
     target_sha = target_sha or _resolve_remote_sha(ref, repo_dir)
-    dispatched_at = _dispatch_workflow(args.workflow, ref, args.input, repo_dir)
+    dispatched_at = _dispatch_workflow(workflow, ref, args.input, repo_dir)
+
+    # 3. Poll for registered workflow run matching target_sha & timestamp
     run_data = _poll_for_run(
-        args.workflow,
+        workflow,
         ref,
         target_sha,
         dispatched_at,
@@ -366,9 +360,10 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     run_sha = run_data.get("headSha", "")
     run_url = run_data.get("url", f"https://github.com/google/xmc/actions/runs/{run_id}")
 
+    # 4. Strict commit SHA verification
     if target_sha and not run_sha.startswith(target_sha):
         _update_state_file(
-            args.state_file,
+            state_file,
             target_sha=target_sha,
             run_sha=run_sha,
             run_id=run_id,
@@ -383,7 +378,8 @@ def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
             "page_url": "",
         }
 
-    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, args.state_file, repo_dir)
+    # 5. Watch to completion via `gh run watch`
+    return _watch_run_outcome(run_id, run_sha, run_url, target_sha, state_file, repo_dir)
 
 
 def create_parser() -> argparse.ArgumentParser:

@@ -36,35 +36,23 @@ class DispatchAndWatchTest(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
         self.repo_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        workflow_file = self.repo_dir / ".github" / "workflows" / "nightly-examples-e2e.yml"
-        workflow_file.parent.mkdir(parents=True)
-        workflow_file.write_text(
-            "jobs:\n  e2e:\n    strategy:\n      matrix:\n        example:\n"
-            "          - id: simple_job\n          - id: resource_dashboard_ui\n",
+        wf = self.repo_dir / ".github" / "workflows" / "nightly-examples-e2e.yml"
+        wf.parent.mkdir(parents=True)
+        wf.write_text(
+            "matrix:\n  example:\n    - id: simple_job\n    - id: resource_dashboard_ui\n",
             encoding="utf-8",
         )
         self.mock_run = self.enterContext(patch("tools.release.dispatch_and_watch.run_command"))
 
     @staticmethod
-    def _proc(
-        stdout: str = "", returncode: int = 0, stderr: str = ""
-    ) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            args=[], returncode=returncode, stdout=stdout, stderr=stderr
-        )
+    def _proc(stdout: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
 
-    def _watched_run_mocks(
-        self, run_id: int, head_sha: str
-    ) -> list[subprocess.CompletedProcess[str]]:
-        run_item = {
-            "databaseId": run_id,
-            "headSha": head_sha,
-            "url": "run_url",
-            "createdAt": "2099-01-01T00:00:00Z",
-        }
+    def _watched_run_mocks(self, run_id: int, sha: str) -> list[subprocess.CompletedProcess[str]]:
+        run = {"databaseId": run_id, "headSha": sha, "createdAt": "2099-01-01T00:00:00Z"}
         return [
             self._proc(),
-            self._proc(json.dumps([run_item])),
+            self._proc(json.dumps([run])),
             self._proc(),
             self._proc(json.dumps({"conclusion": "success", "jobs": []})),
         ]
@@ -147,17 +135,14 @@ class DispatchAndWatchTest(unittest.TestCase):
         ]
         res = dispatch_and_watch(create_parser().parse_args(argv))
         self.assertEqual(res["conclusion"], "success")
-        expected_base = ["gh", "workflow", "run", "nightly-examples-e2e.yml", "--ref"]
-        expected_inputs = [
-            "fix/nightly-example",
+        expected = [
+            *["gh", "workflow", "run", "nightly-examples-e2e.yml", "--ref", "fix/nightly-example"],
             "-f",
             "examples_filter=SIMPLE_JOB,resource_dashboard_ui",
             "-f",
             "xmanager_version=",
         ]
-        self.assertEqual(
-            self.mock_run.call_args_list[0].args[0], [*expected_base, *expected_inputs]
-        )
+        self.assertEqual(self.mock_run.call_args_list[0].args[0], expected)
 
     def test_auto_resolves_remote_sha_when_target_sha_omitted(self) -> None:
         state_path = self.repo_dir / "verify_state.json"
@@ -174,19 +159,16 @@ class DispatchAndWatchTest(unittest.TestCase):
             f"--state-file={state_path}",
         ]
         res = dispatch_and_watch(create_parser().parse_args(argv))
-        self.assertEqual(res["run_id"], 220)
-        self.assertEqual(res["conclusion"], "success")
+        self.assertEqual((res["run_id"], res["conclusion"]), (220, "success"))
+        cmds = [c.args[0] for c in self.mock_run.call_args_list[:2]]
         self.assertEqual(
-            self.mock_run.call_args_list[0].args[0],
-            ["git", "fetch", "--", "origin", "fix/nightly-slug"],
+            cmds,
+            [
+                ["git", "fetch", "--", "origin", "fix/nightly-slug"],
+                ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+            ],
         )
-        self.assertEqual(
-            self.mock_run.call_args_list[1].args[0],
-            ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
-        )
-        self.assertEqual(
-            json.loads(state_path.read_text(encoding="utf-8"))["target_sha"], "deadbeef1234"
-        )
+        self.assertEqual(json.loads(state_path.read_text())["target_sha"], "deadbeef1234")
 
     @patch("tools.common.tool_utils.subprocess.run")
     def test_remote_sha_resolution_errors(self, mock_subproc: Any) -> None:
@@ -206,28 +188,22 @@ class DispatchAndWatchTest(unittest.TestCase):
             dispatch_and_watch(p)
 
     def test_preflight_rejects_bad_ref_inputs_and_examples_filter(self) -> None:
-        repo_flag = f"--repo-dir={self.repo_dir}"
-        bad_cases = (
-            ["--workflow=build.yml", "--ref="],
-            ["--workflow=build.yml", "--ref=origin/main"],
-            ["--workflow=build.yml", "--ref=-upload-pack"],
-            ["--workflow=build.yml", "--ref=main:refs/heads/main"],
-            ["--workflow=build.yml", "--ref=main..HEAD"],
-            ["--workflow=build.yml", "--ref=feat//double"],
-            ["--workflow=build.yml", "--ref=feat/trailing/"],
-            ["--workflow=build.yml", "--input=examples_filter"],
-            ["--workflow=build.yml", "--input=1bad=value"],
-            ["--workflow=build.yml", "--input=valid_key\n=value"],
+        repo = f"--repo-dir={self.repo_dir}"
+        bad_refs = ("", "origin/main", "-upload-pack", "a:b", "a..b", "a//b", "a/")
+        bad_inputs = ("examples_filter", "1bad=v", "valid_key\n=v")
+        bad_cases = [
+            *(["--workflow=build.yml", f"--ref={r}"] for r in bad_refs),
+            *(["--workflow=build.yml", f"--input={i}"] for i in bad_inputs),
             ["--workflow=build.yml", "--input=k=1", "--input=k=2"],
             ["--workflow=build.yml", "--find-existing", "--input=k=1"],
-            ["--workflow=nightly-examples-e2e.yml", repo_flag, "--input=examples_filter=bad_id"],
-            ["--workflow=examples-smoke.yml", repo_flag, "--input=examples_filter=simple_job,"],
+            ["--workflow=nightly-examples-e2e.yml", repo, "--input=examples_filter=bad_id"],
+            ["--workflow=examples-smoke.yml", repo, "--input=examples_filter=simple_job,"],
             [
                 "--workflow=nightly-examples-e2e.yml",
                 "--repo-dir=/missing",
                 "--input=examples_filter=simple_job",
             ],
-        )
+        ]
         for argv in bad_cases:
             with self.subTest(argv=argv), self.assertRaises(HandledError):
                 dispatch_and_watch(create_parser().parse_args(argv))
