@@ -20,6 +20,7 @@ a SQLAlchemy engine and a gRPC server.
 """
 
 import dataclasses
+import ipaddress
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -43,6 +44,10 @@ SERIALIZED_COLUMN_PREFIX = "serialized_"
 # libpq sslmodes that verify the server certificate. They trust the image's system CA bundle,
 # matching how the XMC services verify the same PostgreSQL server.
 _VERIFYING_SSLMODES = frozenset({"verify-ca", "verify-full"})
+
+# Characters that cannot appear in a hostname or IPv4 address and would change how the URL netloc
+# parses (path, userinfo, query, fragment, port and IPv6 delimiters) or are whitespace.
+_INVALID_HOST_CHARACTERS = re.compile(r"[/@?#:\[\]\s]")
 
 # libpq TCP keepalives. The upstream SQL datastore holds one connection for the life of the
 # process; keepalives make a silently dropped connection fail fast instead of hanging. Nothing
@@ -148,7 +153,8 @@ def build_postgres_url(env: Mapping[str, str]) -> str:
         A postgresql+psycopg2 SQLAlchemy URL.
 
     Raises:
-        ValueError: The host or user is missing, or the port is malformed.
+        ValueError: The host or user is missing, the host is not a hostname or IP address, or
+            the port is malformed.
     """
     host = _required(env, "VIZIER_POSTGRES_HOST")
     user = _required(env, "VIZIER_POSTGRES_USER")
@@ -161,7 +167,7 @@ def build_postgres_url(env: Mapping[str, str]) -> str:
     if sslmode in _VERIFYING_SSLMODES:
         query["sslrootcert"] = "system"
     credentials = f"{_quote(user)}:{_quote(env.get('VIZIER_POSTGRES_PASSWORD', ''))}"
-    netloc = f"{credentials}@{_bracket_ipv6(host)}:{port}"
+    netloc = f"{credentials}@{_postgres_netloc_host(host)}:{port}"
     return f"postgresql+psycopg2://{netloc}/{_quote(database)}?{parse.urlencode(query)}"
 
 
@@ -299,7 +305,31 @@ def _quote(value: str) -> str:
 
 
 def _bracket_ipv6(host: str) -> str:
-    """Wraps an IPv6 literal in brackets so it can be followed by a port; keeps bracketed hosts."""
-    if ":" not in host or (host.startswith("[") and host.endswith("]")):
-        return host
-    return f"[{host}]"
+    """Wraps an IPv6 literal in brackets so it can be followed by a port; keeps other hosts."""
+    return f"[{host}]" if _is_ipv6_literal(host) else host
+
+
+def _is_ipv6_literal(host: str) -> bool:
+    """Reports whether host is an unbracketed IPv6 address, optionally with a %zone suffix."""
+    try:
+        return isinstance(ipaddress.ip_address(host.split("%", 1)[0]), ipaddress.IPv6Address)
+    except ValueError:
+        return False
+
+
+def _postgres_netloc_host(host: str) -> str:
+    """Returns host ready for the URL netloc: IPv6 literals bracketed, other hosts validated.
+
+    Raises:
+        ValueError: host is neither a hostname nor an IP address, e.g. a Unix-socket path, or it
+            holds characters that would change how the URL parses.
+    """
+    unbracketed = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    if _is_ipv6_literal(unbracketed):
+        return f"[{unbracketed}]"
+    if _INVALID_HOST_CHARACTERS.search(host):
+        raise ValueError(
+            "VIZIER_POSTGRES_HOST must be a hostname or IP address; for Unix-socket paths or "
+            "other connection forms set VIZIER_DATABASE_URL instead"
+        )
+    return host

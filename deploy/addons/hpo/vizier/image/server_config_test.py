@@ -149,6 +149,23 @@ class BuildPostgresUrlTest(unittest.TestCase):
 
         self.assertIn("@[fd00::5]:5432/", url)
 
+    def test_brackets_ipv6_host_with_zone(self):
+        url = server_config.build_postgres_url(_postgres_env(VIZIER_POSTGRES_HOST="fe80::1%eth0"))
+
+        self.assertIn("@[fe80::1%eth0]:5432/", url)
+
+    def test_rejects_unix_socket_path_host(self):
+        env = _postgres_env(VIZIER_POSTGRES_HOST="/cloudsql/proj:region:inst")
+
+        with self.assertRaisesRegex(ValueError, "VIZIER_POSTGRES_HOST must be a hostname"):
+            server_config.build_postgres_url(env)
+
+    def test_rejects_host_that_changes_url_parsing(self):
+        for host in ("db@evil", "db/x", "db?x", "db#x", "db:5433", "db name"):
+            with self.subTest(host=host):
+                with self.assertRaisesRegex(ValueError, "VIZIER_POSTGRES_HOST must be a hostname"):
+                    server_config.build_postgres_url(_postgres_env(VIZIER_POSTGRES_HOST=host))
+
     def test_requires_user(self):
         with self.assertRaisesRegex(ValueError, "VIZIER_POSTGRES_USER is required"):
             server_config.build_postgres_url(_postgres_env(VIZIER_POSTGRES_USER=" "))
