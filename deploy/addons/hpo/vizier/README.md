@@ -194,12 +194,13 @@ Clusters that do not enforce NetworkPolicies, which includes many development cl
 policy but do not apply it. On GKE, check enforcement with:
 
 ```bash
-gcloud container clusters describe "<cluster>" --location "<location>" \
-  --format='value(networkConfig.datapathProvider,addonsConfig.networkPolicyConfig.disabled)'
+CLUSTER="<cluster>"
+LOCATION="<location>"
+gcloud container clusters describe "${CLUSTER}" --location "${LOCATION}" \
+  --format='value(networkConfig.datapathProvider,networkPolicy.enabled)'
 ```
 
-Enforcement is active when the datapath is `ADVANCED_DATAPATH`, or when the NetworkPolicy add-on is
-not disabled.
+Enforced when the datapath is `ADVANCED_DATAPATH`, or when `networkPolicy.enabled` is `True`.
 
 ---
 
