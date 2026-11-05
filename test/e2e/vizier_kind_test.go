@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,7 +66,7 @@ func requireLocalVizierImage(t *testing.T) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err := exec.CommandContext(ctx, resolveBinaryPath("docker"), "image", "inspect", image).Run()
+	err := inspectLocalDockerImage(ctx, image)
 	if err == nil {
 		return image
 	}
