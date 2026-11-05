@@ -85,7 +85,7 @@ def _resolve_ui_base_url() -> str:
         os.environ.get("XMC_DOMAIN", "").strip()
         or os.environ.get("DOMAIN_NAME", "").strip()
         or os.environ.get("GCP_DOMAIN_NAME", "").strip()
-        or "dev.xmanageriso.dev"
+        or "xmc.example.com"
     ).rstrip("/")
     if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"

@@ -79,6 +79,14 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly headerCells = this.locatorForAll('th.mat-mdc-header-cell');
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
   private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
+  private readonly headerActions = this.locatorForAll('.title-row > [headerActions]');
+
+  /** Gets the trimmed text contents of any elements projected into the [headerActions] slot. */
+  async getHeaderActionTexts(): Promise<string[]> {
+    const actions = await this.headerActions();
+    const texts = await Promise.all(actions.map((el) => el.text()));
+    return texts.map((text) => text.trim());
+  }
 
   /** Gets the MatPaginatorHarness for the table if present. */
   async getPaginator(): Promise<MatPaginatorHarness | null> {

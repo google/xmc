@@ -77,11 +77,12 @@ class WorkUnitStateTest(unittest.TestCase):
 
     def test_defaults_to_unspecified(self) -> None:
         """work_unit_state tolerates missing or null execution fields."""
-        for work_unit in (
+        work_units: tuple[dict[str, Any], ...] = (
             {},
             {"currentWorkUnitExecution": None},
             {"currentWorkUnitExecution": {"status": {}}},
-        ):
+        )
+        for work_unit in work_units:
             with self.subTest(work_unit=work_unit):
                 self.assertEqual(work_unit_state(work_unit), UNSPECIFIED_STATE)
 

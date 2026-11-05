@@ -24,7 +24,7 @@ from typing import Any
 try:
     import grpc
 except ImportError:
-    grpc = None  # type: ignore[assignment]
+    grpc = None
 
 from xdash._protos import dashboard_service_pb2, messages_pb2
 from xdash.auth import (

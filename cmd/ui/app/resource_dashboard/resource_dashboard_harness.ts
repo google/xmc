@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ComponentHarness, ElementDimensions } from '@angular/cdk/testing';
+import { MatButtonHarness } from '@angular/material/button/testing';
 
 import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
@@ -28,6 +29,53 @@ export class ResourceDashboardHarness extends ComponentHarness {
   private readonly splitContainer = this.locatorForOptional('.rod-split-container');
   private readonly mainContent = this.locatorForOptional('.rod-main-content');
   private readonly jobsSidePane = this.locatorForOptional('.jobs-side-pane');
+  private readonly fullWidthToggleBtn = this.locatorForOptional(
+    MatButtonHarness.with({ selector: '.full-width-toggle-btn' }),
+  );
+  private readonly fullWidthToggleIcon = this.locatorForOptional('.full-width-toggle-btn mat-icon');
+
+  /** Gets the full-width toggle button harness if present. */
+  async getFullWidthToggleBtn(): Promise<MatButtonHarness | null> {
+    return this.fullWidthToggleBtn();
+  }
+
+  /** Gets the icon name displayed inside the full-width toggle button if present. */
+  async getFullWidthToggleIconName(): Promise<string | null> {
+    const icon = await this.fullWidthToggleIcon();
+    return icon ? (await icon.text()).trim() : null;
+  }
+
+  /** Checks whether the full-width toggle button has the active class. */
+  async isFullWidthToggleActive(): Promise<boolean> {
+    const btn = await this.fullWidthToggleBtn();
+    if (!btn) {
+      return false;
+    }
+    const host = await btn.host();
+    return host.hasClass('active');
+  }
+
+  /** Checks whether the split container is in full-width stacked mode. */
+  async isSplitContainerFullWidth(): Promise<boolean> {
+    const container = await this.splitContainer();
+    return container ? container.hasClass('full-width') : false;
+  }
+
+  /** Gets the bounding box dimensions of the split container and its child panes. */
+  async getSplitLayoutDimensions(): Promise<{
+    container: ElementDimensions | null;
+    mainContent: ElementDimensions | null;
+    jobsPane: ElementDimensions | null;
+  }> {
+    const container = await this.splitContainer();
+    const mainContent = await this.mainContent();
+    const jobsPane = await this.jobsSidePane();
+    return {
+      container: container ? await container.getDimensions() : null,
+      mainContent: mainContent ? await mainContent.getDimensions() : null,
+      jobsPane: jobsPane ? await jobsPane.getDimensions() : null,
+    };
+  }
 
   /** Gets the subnav tabs harness. */
   async getSubnavTabs(): Promise<RodSubnavTabsHarness> {

@@ -23,6 +23,8 @@ import {
   signal,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { ActivatedRoute } from '@angular/router';
 import { catchError, EMPTY, Subject, Subscription, switchMap } from 'rxjs';
 
@@ -51,6 +53,10 @@ import {
   TAB_RESOURCE_AVAILABILITY,
   TAB_SMART_FINDER,
 } from './components/subnav_tabs/subnav_tabs';
+import {
+  readJobsFullWidthPreference,
+  writeJobsFullWidthPreference,
+} from './jobs_layout_preference';
 import { expandResourceTypesWithParents, matchesResourceFilter } from './resource_filter';
 import { mapPeriodToRangePreset } from './resource_velocity';
 
@@ -65,6 +71,8 @@ import { mapPeriodToRangePreset } from './resource_velocity';
   styleUrl: './resource_dashboard.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    MatButtonModule,
+    MatIconModule,
     SubnavTabsComponent,
     SmartResourceFinderComponent,
     QueueListComponent,
@@ -89,11 +97,22 @@ export class ResourceDashboard implements OnInit, OnDestroy {
   protected readonly activeQuery = signal<ResourceRequirementQuery | null>(null);
   protected readonly secondaryDataMap = signal<Record<string, ClusterQueueSecondaryMetrics>>({});
   protected readonly isSecondaryLoading = signal<boolean>(true);
+  protected readonly isJobsFullWidth = signal<boolean>(readJobsFullWidthPreference());
+  protected readonly fullWidthToggleIcon = computed(() =>
+    this.isJobsFullWidth() ? 'fullscreen_exit' : 'fullscreen',
+  );
+  protected readonly fullWidthToggleLabel = computed(() =>
+    this.isJobsFullWidth() ? 'Exit full width' : 'View in full width',
+  );
 
   protected readonly splitRatio = signal<number>(DEFAULT_SPLIT_RATIO_PERCENT);
 
-  protected readonly leftPaneFlex = computed(() => `1 1 ${this.splitRatio()}%`);
-  protected readonly rightPaneFlex = computed(() => `1 1 ${100 - this.splitRatio()}%`);
+  protected readonly leftPaneFlex = computed(() =>
+    this.isJobsFullWidth() ? null : `1 1 ${this.splitRatio()}%`,
+  );
+  protected readonly rightPaneFlex = computed(() =>
+    this.isJobsFullWidth() ? null : `1 1 ${100 - this.splitRatio()}%`,
+  );
 
   protected readonly TAB_SMART_FINDER = TAB_SMART_FINDER;
   protected readonly TAB_RESOURCE_AVAILABILITY = TAB_RESOURCE_AVAILABILITY;
@@ -229,6 +248,12 @@ export class ResourceDashboard implements OnInit, OnDestroy {
 
   protected onFindMatchingQueues(query: ResourceRequirementQuery) {
     this.activeQuery.set(query);
+  }
+
+  protected toggleJobsFullWidth(): void {
+    const nextValue = !this.isJobsFullWidth();
+    this.isJobsFullWidth.set(nextValue);
+    writeJobsFullWidthPreference(nextValue);
   }
 }
 

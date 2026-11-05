@@ -10,6 +10,21 @@ echo "=== Running XMC Pre-Commit Linter Hooks (Mode: ${MODE}) ==="
 FAILED=0
 AUTOSTAGE_STATE=""
 
+# Succeeds when a staged path whose status is in <diff-filter> matches <ERE>.
+# --no-renames reports a rename as a delete of the old path plus an add of the
+# new one, so filter D also matches paths renamed away. Cross-file gates (whose
+# result depends on files other than the edited ones) include D so they also run
+# when a staged delete or rename removes a file that other files depend on.
+# core.quotePath=false keeps non-ASCII paths unquoted so anchored patterns match.
+staged_paths_match() {
+  local diff_filter="$1" pattern="$2" paths
+  paths=$(git -c core.quotePath=false diff --cached --name-only --no-renames --diff-filter="${diff_filter}") || { echo "❌ git diff --cached failed; cannot select pre-commit checks." >&2; exit 1; }
+  if [ -z "${paths}" ]; then
+    return 1
+  fi
+  grep -qE -- "${pattern}" <<<"${paths}"
+}
+
 check_bazel() {
   local buildifier_bin=""
   if command -v buildifier >/dev/null 2>&1; then
@@ -150,15 +165,20 @@ check_examples_coverage() {
 check_agent_doc_paths() {
   # In fix mode, only run when agent docs are staged, or when staged deletes or
   # renames could orphan a path an agent doc references, to keep the hook fast.
-  if [ "$MODE" = "fix" ]; then
-    local agent_docs removed_paths
-    agent_docs=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^\.agents/.*\.md$|(^|/)AGENTS\.md$' || true)
-    removed_paths=$(git diff --cached --name-only --diff-filter=DR || true)
-    if [ -z "$agent_docs" ] && [ -z "$removed_paths" ]; then return; fi
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AM '^\.agents/.*\.md$|(^|/)AGENTS\.md$' && ! staged_paths_match D '.'; then
+    return
   fi
   echo "--> Checking Agent Doc Path References..."
   if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_agent_doc_paths.py >/dev/null; then
     echo "❌ Agent docs reference non-existent repository paths (see JSON error above)."
+    FAILED=1
+  fi
+}
+
+check_file_naming() {
+  echo "--> Checking UI & Workflow File Naming Conventions..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_file_naming.py >/dev/null; then
+    echo "❌ UI or workflow file naming check failed (see JSON error above)."
     FAILED=1
   fi
 }
@@ -307,43 +327,40 @@ check_python() {
 }
 
 check_mypy() {
-  local py_files
-  if [ "$MODE" = "check" ]; then
-    py_files=$(find sdks/python/xmc tools deploy cmd/ui -type f -name "*.py" -not -path "*/venv/*" -not -path "*/node_modules/*" -not -path "*/bazel-*" -not -path "*/ctk-out/*" -not -name "dev_env.py" || true)
-  else
-    py_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(sdks/python/xmc|tools|deploy|cmd/ui)/.*\.py$' | grep -v 'tools/dev_env.py' || true)
-  fi
-
-  if [ -z "$py_files" ]; then
+  # mypy is cross-module: an edit, delete or rename can break unchanged
+  # importers, so fix mode runs it whenever a Python file is staged, deleted or
+  # renamed. [tool.mypy] in pyproject.toml defines the checked files, as in CI,
+  # and .gitignore files exclude local-only ones, so changes to either also run it.
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AMD '\.pyi?$|^pyproject\.toml$|(^|/)\.gitignore$'; then
     return
   fi
 
-  local mypy_bin=""
+  local mypy_cmd=()
   if [ -f "./tools/common/venv/bin/mypy" ]; then
-    mypy_bin="./tools/common/venv/bin/mypy"
+    mypy_cmd=("./tools/common/venv/bin/mypy")
   elif [ -f "./tools/venv/bin/mypy" ]; then
-    mypy_bin="./tools/venv/bin/mypy"
+    mypy_cmd=("./tools/venv/bin/mypy")
   elif command -v mypy >/dev/null 2>&1; then
-    mypy_bin="mypy"
+    mypy_cmd=("mypy")
   elif [ -f "${HOME}/.local/bin/mypy" ]; then
-    mypy_bin="${HOME}/.local/bin/mypy"
+    mypy_cmd=("${HOME}/.local/bin/mypy")
   elif python3 -m mypy --version >/dev/null 2>&1; then
-    mypy_bin="python3 -m mypy"
+    mypy_cmd=("python3" "-m" "mypy")
   fi
 
-  if [ -z "${mypy_bin}" ]; then
+  if [ "${#mypy_cmd[@]}" -eq 0 ]; then
     echo "--> mypy not found; attempting automatic installation into ./tools/common/venv..."
     if [ ! -x "./tools/common/venv/bin/pip" ]; then
       python3 -m venv ./tools/common/venv >/dev/null 2>&1 || true
     fi
     if [ -x "./tools/common/venv/bin/pip" ] && ./tools/common/venv/bin/pip install --quiet mypy >/dev/null 2>&1; then
-      mypy_bin="./tools/common/venv/bin/mypy"
+      mypy_cmd=("./tools/common/venv/bin/mypy")
     fi
   fi
 
-  if [ -n "${mypy_bin}" ]; then
+  if [ "${#mypy_cmd[@]}" -gt 0 ]; then
     echo "--> Running Mypy Static Type Checker..."
-    if ! $mypy_bin $py_files; then
+    if ! "${mypy_cmd[@]}"; then
       echo "❌ Mypy type check failed."
       FAILED=1
     fi
@@ -388,6 +405,17 @@ check_terraform() {
     echo "--> WARNING: terraform or docker not found. Terraform formatting check skipped."
     if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
+}
+
+check_tflint() {
+  # TFLint lints whole modules, so fix mode also runs it when a staged delete or
+  # rename removes a .tf file that the remaining module files depend on, or when
+  # its .tflint.hcl configuration changes.
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(find deploy -type f -name "*.tf" || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '\.tf$|(^|/)\.tflint\.hcl$'; then
+    return
+  fi
 
   echo "--> Running Terraform Linter (TFLint)..."
   if command -v tflint >/dev/null 2>&1; then
@@ -408,14 +436,11 @@ check_terraform() {
 }
 
 check_helm() {
-  local helm_files
-  if [ "$MODE" = "check" ]; then
-    helm_files=$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)
-  else
-    helm_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/helm/' || true)
-  fi
-
-  if [ -z "$helm_files" ]; then
+  # helm lint covers the whole chart, so fix mode runs it for any staged add,
+  # modify, delete or rename under deploy/helm/.
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^deploy/helm/'; then
     return
   fi
 
@@ -432,14 +457,11 @@ check_helm() {
 }
 
 check_security() {
-  local sec_files
-  if [ "$MODE" = "check" ]; then
-    sec_files=$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) || true)
-  else
-    sec_files=$(git diff --cached --name-only --diff-filter=ACMD | grep -E '^deploy/' || true)
-  fi
-
-  if [ -z "$sec_files" ]; then
+  # Trivy scans all of deploy/, so fix mode runs it for any staged add, modify,
+  # delete or rename under deploy/.
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(find deploy -type f \( -name "*.tf" -o -name "*.tfvars" -o -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^deploy/'; then
     return
   fi
 
@@ -533,11 +555,13 @@ main() {
   check_legacy_imports
   check_examples_coverage
   check_agent_doc_paths
+  check_file_naming
   check_ui
   check_license
   check_python
   check_mypy
   check_terraform
+  check_tflint
   check_helm
   check_security
 

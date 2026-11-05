@@ -30,7 +30,7 @@ from xmanager import xm, xm_cloud
 logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
-DEFAULT_XMANAGER_UI_URL = "https://dev.xmanageriso.dev"
+DEFAULT_XMANAGER_UI_URL = "https://xmc.example.com"
 
 
 def ensure_xmanager_ui_url() -> None:

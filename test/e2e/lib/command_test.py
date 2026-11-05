@@ -154,5 +154,20 @@ class TestRunCmd(unittest.TestCase):
         self.assertEqual(res.stdout, "done\n")
 
 
+class TestCapturedText(unittest.TestCase):
+    """Tests for captured_text."""
+
+    def test_decodes_bytes_and_passes_text_through(self) -> None:
+        cases: list[tuple[str | bytes | None, str]] = [
+            (b"bytes out\n", "bytes out\n"),
+            (b"bad \xff byte", "bad \ufffd byte"),
+            ("text out\n", "text out\n"),
+            (None, ""),
+        ]
+        for stream, want in cases:
+            with self.subTest(stream=stream):
+                self.assertEqual(command.captured_text(stream), want)
+
+
 if __name__ == "__main__":
     unittest.main()

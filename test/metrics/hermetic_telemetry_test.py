@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Multi-language distributed Hermetic telemetry flow test (b/535543832).
+"""Multi-language distributed Hermetic telemetry flow test.
 
 Verifies:
 1. End-to-end telemetry ingestion pipeline (Python SDK -> Go Ingestion Gateway -> Redpanda -> ClickHouse).
@@ -38,7 +38,9 @@ from xmc import MetricsFlusher
 from xmc.network import HTTPClient
 
 
-class LoadBalancingRecyclingClient(HTTPClient):
+# HTTPClient is Any because the xmc SDK does not resolve from the repo root; unused-ignore
+# keeps environments with an installed xmc passing.
+class LoadBalancingRecyclingClient(HTTPClient):  # type: ignore[misc, unused-ignore]
     """HTTPClient subclass that rotates gateway endpoints upon connection recycling for load testing.
 
     Note on Load Balancing Architecture:

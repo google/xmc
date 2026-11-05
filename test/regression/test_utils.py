@@ -37,7 +37,7 @@ def _create_kubernetes_job(name: str) -> work_unit_pb2.KubernetesJob:
                     memory_bytes=1024 * 1024 * 100,
                 )
             ),
-            docker_image=("us-docker.pkg.dev/xmc-test-project-1/xmc/example-container"),
+            docker_image=("us-docker.pkg.dev/xmc-project/xmc/example-container"),
             env_vars={
                 "EXIT_CODE": "0",
                 "SLEEP_SECONDS": "60",
