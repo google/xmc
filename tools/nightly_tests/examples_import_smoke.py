@@ -362,16 +362,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     # Matches the nightly filter case-insensitively while rejecting unknown or malformed tokens.
     examples_filter = frozenset(part.lower() for part in args.examples_filter.split(",") if part)
+    err_stream = sys.stderr if args.list_example_paths else sys.stdout
     try:
         workflow_text = args.workflow.read_text(encoding="utf-8")
         validate_examples_filter(args.examples_filter, workflow_text)
         entries = parse_entrypoints(workflow_text, examples_filter)
         verify_modules = parse_verify_modules(workflow_text, examples_filter)
     except (ValueError, OSError) as err:
-        print(json.dumps({"error": f"{args.workflow}: {err}"}))
+        print(json.dumps({"error": f"{args.workflow}: {err}"}), file=err_stream)
         return 2
     if not entries and not examples_filter:
-        print(json.dumps({"error": f"no example entrypoints found in {args.workflow}"}))
+        print(
+            json.dumps({"error": f"no example entrypoints found in {args.workflow}"}),
+            file=err_stream,
+        )
         return 2
     if args.list_example_paths:
         # May be empty when the filter selects only UI-only entries (no entrypoint).

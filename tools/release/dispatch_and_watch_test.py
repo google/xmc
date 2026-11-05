@@ -217,6 +217,7 @@ class DispatchAndWatchTest(unittest.TestCase):
             ["--workflow=build.yml", "--ref=feat/trailing/"],
             ["--workflow=build.yml", "--input=examples_filter"],
             ["--workflow=build.yml", "--input=1bad=value"],
+            ["--workflow=build.yml", "--input=valid_key\n=value"],
             ["--workflow=build.yml", "--input=k=1", "--input=k=2"],
             ["--workflow=build.yml", "--find-existing", "--input=k=1"],
             ["--workflow=nightly-examples-e2e.yml", repo_flag, "--input=examples_filter=bad_id"],

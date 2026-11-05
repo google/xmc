@@ -171,7 +171,7 @@ def _find_existing_run(
 def _validate_ref(ref: str) -> str:
     """Validates a target Git ref and rejects 'origin/' prefixes or refspec syntax."""
     cleaned = ref.strip()
-    if cleaned.startswith("origin/") or not _REF_RE.match(cleaned):
+    if cleaned.startswith("origin/") or not _REF_RE.fullmatch(cleaned):
         raise HandledError(f"Invalid --ref '{ref}'.", "Pass a branch or tag name on origin.")
     return cleaned
 
@@ -181,7 +181,7 @@ def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None
     parsed: dict[str, str] = {}
     for item in raw_inputs:
         key, sep, value = item.partition("=")
-        if not sep or not _INPUT_KEY_RE.match(key):
+        if not sep or not _INPUT_KEY_RE.fullmatch(key):
             raise HandledError(f"Invalid workflow input '{item}'.", "Use --input KEY=VALUE.")
         if key in parsed:
             raise HandledError(f"Duplicate workflow input key '{key}'.", "Specify each key once.")

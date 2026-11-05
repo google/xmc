@@ -27,7 +27,14 @@ from unittest.mock import patch
 
 from tools.common import tool_utils
 from tools.common.tool_utils import HandledError
-from tools.nightly_tests.triage_nightly_run import create_parser, triage_nightly_run
+from tools.nightly_tests.triage_nightly_run import (
+    _collect_recent_commits,
+    _extract_error_excerpt,
+    _load_json_object,
+    _TriageContext,
+    create_parser,
+    triage_nightly_run,
+)
 
 _WORKFLOW_FIXTURE = """\
 jobs:
@@ -194,7 +201,7 @@ class TriageNightlyRunTest(unittest.TestCase):
         self.assertEqual(res["recent_commits"], ["9001aab fix(rod): change table selector (#1548)"])
         called_cmds = [call.args[0] for call in self.mock_run.call_args_list]
         self.assertIn(
-            ["git", "log", "--oneline", "-n30", "900011223344..9001aabbccdd", "--"],
+            ["git", "log", "--oneline", "-n31", "900011223344..9001aabbccdd", "--"],
             called_cmds,
         )
         failed_job = res["failed_jobs"][0]
@@ -526,6 +533,63 @@ class TriageNightlyRunTest(unittest.TestCase):
             self.assertRaisesRegex(HandledError, "Cannot run git"),
         ):
             self._triage()
+
+    def test_extract_error_excerpt_ignores_echoed_commands_and_keeps_repeated_errors(self) -> None:
+        echoed_only = (
+            "2026-11-04T04:01:00Z ##[group]Run Launch Example Workload\n"
+            '2026-11-04T04:01:00Z \x1b[36;1m  echo "::error::Failed to parse XID."\x1b[0m\n'
+            "2026-11-04T04:01:05Z tail line after group\n"
+        )
+        self.assertEqual(_extract_error_excerpt(echoed_only)[-1], "tail line after group")
+
+        repeated_log = "\n".join(
+            [
+                "\ufeff##[error]Process completed with exit code 1.",
+                *[f"2026-11-04T04:02:{i:02d}Z step line {i}" for i in range(20)],
+                "2026-11-04T04:03:00Z ##[error]Process completed with exit code 1.",
+            ]
+        )
+        excerpt = _extract_error_excerpt(repeated_log)
+        self.assertEqual(excerpt[-1], "##[error]Process completed with exit code 1.")
+        self.assertIn("step line 19", excerpt)
+
+    def test_collect_recent_commits_warns_on_equal_sha_truncation_and_fallbacks(self) -> None:
+        prior = _run_fixture(9000, "success", "AABBCCDDEEFF", "2026-11-03T04:00:00Z")
+        same_sha_ctx = _TriageContext(repo_dir=self.repo_dir, e2e_runs=[prior])
+        target = _run_fixture(9001, "failure", "aabbccddeeff", "2026-11-04T04:00:00Z")
+        self.assertEqual(_collect_recent_commits(same_sha_ctx, target), [])
+        self.assertIn("Layer B cluster drift", same_sha_ctx.warnings[0])
+
+        trunc_ctx = _TriageContext(repo_dir=self.repo_dir, e2e_runs=[prior])
+        self.mock_run.side_effect = [_proc("\n".join(f"c{i:02d} msg" for i in range(31)))]
+        new_target = _run_fixture(9002, "failure", "112233445566", "2026-11-04T04:00:00Z")
+        self.assertEqual(len(_collect_recent_commits(trunc_ctx, new_target)), 30)
+        self.assertIn("truncated to newest 30", trunc_ctx.warnings[0])
+
+        fallback_ctx = _TriageContext(repo_dir=self.repo_dir, e2e_runs=[prior])
+        self.mock_run.side_effect = [_proc(""), _proc("1122334 fallback commit\n")]
+        self.assertEqual(
+            _collect_recent_commits(fallback_ctx, new_target), ["1122334 fallback commit"]
+        )
+        self.assertIn("empty range", fallback_ctx.warnings[0])
+
+    def test_load_json_object_handles_missing_corrupt_oversized_and_directory_paths(self) -> None:
+        ctx = _TriageContext(repo_dir=self.repo_dir)
+        self.assertIsNone(_load_json_object(ctx, self.tmpdir / "missing.json"))
+        self.assertEqual(ctx.warnings, [])
+
+        bad_json = self.tmpdir / "bad.json"
+        bad_json.write_text("{broken", encoding="utf-8")
+        self.assertIsNone(_load_json_object(ctx, bad_json))
+
+        huge_json = self.tmpdir / "huge.json"
+        huge_json.write_bytes(b"{" + b" " * 70000 + b"}")
+        self.assertIsNone(_load_json_object(ctx, huge_json))
+
+        dir_path = self.tmpdir / "dir.json"
+        dir_path.mkdir()
+        self.assertIsNone(_load_json_object(ctx, dir_path))
+        self.assertEqual(len(ctx.warnings), 3)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import re
@@ -44,7 +45,7 @@ _MAX_RESULT_BYTES = 65536
 
 _SHA_RE = re.compile(r"^[0-9a-fA-F]{7,40}$")
 _ARTIFACT_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
-_LOG_PREFIX_RE = re.compile(r"^\ufeff?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+")
+_LOG_PREFIX_RE = re.compile(r"^\ufeff?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+)?")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure", "action_required"})
@@ -179,10 +180,10 @@ def _warn_if_manual_green_newer(
 ) -> None:
     """Appends a warning when a newer non-scheduled green run does not supersede a failure."""
     if (
-        _is_failed_run(target_run)
+        manual_green is not None
+        and _is_failed_run(target_run)
         and superseded_by is None
         and _is_newer_or_equal(manual_green, target_run)
-        and manual_green is not None
     ):
         event_name = manual_green.get("event") or "manual"
         ctx.warnings.append(
@@ -231,12 +232,11 @@ def _select_target_run(
 
 def _evaluate_runs(
     ctx: _TriageContext,
-    e2e_runs: list[dict[str, Any]],
     pinned_run: dict[str, Any] | None,
     open_issues: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Evaluates E2E runs for scheduled-only supersession and builds the base triage report."""
-    completed = [run for run in e2e_runs if run.get("status") == "completed"]
+    completed = [run for run in ctx.e2e_runs if run.get("status") == "completed"]
     if pinned_run is None and not completed:
         ctx.warnings.append("No completed nightly-examples-e2e.yml runs found.")
 
@@ -277,7 +277,7 @@ def _discover_nightly_status(ctx: _TriageContext, run_id: int | None) -> dict[st
         view_args = ["run", "view", str(run_id), f"--repo={_REPO}", f"--json={_E2E_RUN_FIELDS}"]
         pinned_run = _gh_json(ctx, view_args)
 
-    return _evaluate_runs(ctx, ctx.e2e_runs, pinned_run, open_issues)
+    return _evaluate_runs(ctx, pinned_run, open_issues)
 
 
 def _clean_log_line(raw_line: str) -> str:
@@ -290,24 +290,17 @@ def _clean_log_line(raw_line: str) -> str:
 
 
 def _extract_error_excerpt(log_text: str) -> list[str]:
-    """Extracts bounded `##[error]`/`::error` context lines (or trailing lines) from a job log."""
-    cleaned_lines = [_clean_log_line(raw) for raw in log_text.splitlines()]
-    non_empty = [line for line in cleaned_lines if line]
+    """Extracts bounded `##[error]` context lines (or trailing lines) from a job log."""
+    non_empty = [cleaned for raw in log_text.splitlines() if (cleaned := _clean_log_line(raw))]
     if not non_empty:
         return []
-
-    error_indices = [
-        idx for idx, line in enumerate(non_empty) if "##[error]" in line or "::error" in line
-    ]
+    error_indices = [idx for idx, line in enumerate(non_empty) if line.startswith("##[error]")]
     if not error_indices:
         return non_empty[-_MAX_EXCERPT_LINES:]
-
-    context_lines: list[str] = []
-    for idx in error_indices:
-        start = max(0, idx - _ERROR_CONTEXT_LINES)
-        context_lines.extend(non_empty[start : idx + 1])
-    deduped = list(dict.fromkeys(context_lines))
-    return deduped[-_MAX_EXCERPT_LINES:]
+    selected = sorted(
+        {i for idx in error_indices for i in range(max(0, idx - _ERROR_CONTEXT_LINES), idx + 1)}
+    )[-_MAX_EXCERPT_LINES:]
+    return [non_empty[i] for i in selected]
 
 
 def _save_job_log(ctx: _TriageContext, job_id: int) -> tuple[str | None, list[str]]:
@@ -398,7 +391,7 @@ def _download_artifacts(
     downloaded: list[str] = []
     for artifact in payload.get("artifacts", []):
         name = str(artifact.get("name") or "")
-        if artifact.get("expired") is not False or not _ARTIFACT_NAME_RE.match(name):
+        if artifact.get("expired") is not False or not _ARTIFACT_NAME_RE.fullmatch(name):
             continue
         if name not in exact_names and not (name_prefix and name.startswith(name_prefix)):
             continue
@@ -409,38 +402,60 @@ def _download_artifacts(
     return downloaded
 
 
-def _read_result_artifact(
-    ctx: _TriageContext, example_id: str, downloaded_dirs: set[str]
-) -> dict[str, Any] | None:
-    """Safely parses `<scratch_dir>/result-<example_id>/<example_id>.json` when freshly downloaded."""
-    if not example_id or not _ARTIFACT_NAME_RE.match(example_id):
-        return None
-
-    artifact_dir = ctx.scratch_dir / f"result-{example_id}"
-    if str(artifact_dir) not in downloaded_dirs or artifact_dir.is_symlink():
-        return None
-
-    result_file = artifact_dir / f"{example_id}.json"
-    if result_file.is_symlink():
-        ctx.warnings.append(f"Skipped symlink result artifact '{result_file}'.")
-        return None
-    if not result_file.exists():
-        return None
-
+def _read_regular_bytes(ctx: _TriageContext, result_file: Path) -> bytes | None:
+    """Opens `result_file` without following symlinks and reads bounded regular-file bytes."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        file_stat = result_file.lstat()
+        fd = os.open(result_file, flags)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, getattr(errno, "EMLINK", errno.ELOOP)):
+            ctx.warnings.append(f"Skipped symlink result artifact '{result_file}'.")
+        elif exc.errno != errno.ENOENT:
+            ctx.warnings.append(f"Failed to parse result JSON '{result_file}': {exc}")
+        return None
+    try:
+        file_stat = os.fstat(fd)
         if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_size > _MAX_RESULT_BYTES:
             ctx.warnings.append(f"Invalid or oversized result JSON '{result_file}'.")
             return None
-        parsed = json.loads(result_file.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, json.JSONDecodeError) as exc:
+        raw = os.fdopen(fd, "rb", closefd=False).read(_MAX_RESULT_BYTES + 1)
+    except OSError as exc:
         ctx.warnings.append(f"Failed to parse result JSON '{result_file}': {exc}")
         return None
+    finally:
+        os.close(fd)
+    if len(raw) > _MAX_RESULT_BYTES:
+        ctx.warnings.append(f"Invalid or oversized result JSON '{result_file}'.")
+        return None
+    return raw
 
+
+def _load_json_object(ctx: _TriageContext, result_file: Path) -> dict[str, Any] | None:
+    """Parses a bounded regular JSON object file into a dictionary."""
+    raw = _read_regular_bytes(ctx, result_file)
+    if raw is None:
+        return None
+    try:
+        parsed = json.loads(raw.decode("utf-8", errors="replace"))
+    except json.JSONDecodeError as exc:
+        ctx.warnings.append(f"Failed to parse result JSON '{result_file}': {exc}")
+        return None
     if not isinstance(parsed, dict):
         ctx.warnings.append(f"Expected JSON object in '{result_file}'.")
         return None
     return parsed
+
+
+def _read_result_artifact(
+    ctx: _TriageContext, example_id: str, downloaded_dirs: set[str]
+) -> dict[str, Any] | None:
+    """Parses `<scratch_dir>/result-<id>/<id>.json` when freshly downloaded."""
+    if not example_id or not _ARTIFACT_NAME_RE.fullmatch(example_id):
+        return None
+    artifact_dir = ctx.scratch_dir / f"result-{example_id}"
+    if str(artifact_dir) not in downloaded_dirs or artifact_dir.is_symlink():
+        return None
+    return _load_json_object(ctx, artifact_dir / f"{example_id}.json")
 
 
 def _attach_job_results(
@@ -455,47 +470,68 @@ def _attach_job_results(
 def _find_prior_green_e2e_sha(target_run: dict[str, Any], e2e_runs: list[dict[str, Any]]) -> str:
     """Finds the `headSha` of the most recent scheduled green E2E run before `target_run`."""
     cutoff = str(target_run.get("createdAt") or "")
+    if not cutoff:
+        return ""
     for run in e2e_runs:
         created_at = str(run.get("createdAt") or "")
         if (
             run.get("status") == "completed"
             and run.get("conclusion") == "success"
             and run.get("event") == "schedule"
-            and (not cutoff or created_at < cutoff)
+            and bool(created_at and created_at < cutoff)
         ):
             sha = str(run.get("headSha") or "")
-            return sha if _SHA_RE.match(sha) else ""
+            return sha if _SHA_RE.fullmatch(sha) else ""
     return ""
 
 
+def _collect_commit_range(
+    ctx: _TriageContext, prior_sha: str, target_sha: str
+) -> tuple[list[str] | None, str]:
+    """Queries `<prior_sha>..<target_sha>` commits or returns `(None, fallback_reason)`."""
+    if not prior_sha:
+        return None, "no prior scheduled green E2E run in lookback window"
+    commit_range = f"{prior_sha}..{target_sha}"
+    cmd = ["git", "log", "--oneline", f"-n{_RANGE_COMMIT_LIMIT + 1}", commit_range, "--"]
+    res = _run_quiet(cmd, ctx.repo_dir)
+    lines = [line for line in res.stdout.splitlines() if line.strip()]
+    if res.returncode != 0:
+        return None, f"git log {commit_range} failed"
+    if not lines:
+        return None, f"empty range {commit_range}"
+    if len(lines) > _RANGE_COMMIT_LIMIT:
+        ctx.warnings.append(
+            f"Recent commits range {commit_range} truncated to newest {_RANGE_COMMIT_LIMIT} commits."
+        )
+    return lines[:_RANGE_COMMIT_LIMIT], ""
+
+
 def _collect_recent_commits(ctx: _TriageContext, target_run: dict[str, Any]) -> list[str]:
-    """Collects commits in `<prior_green_e2e_sha>..<target_sha>` or the last 20 at `target_sha`."""
+    """Collects commits in `<prior_green_e2e_sha>..<target_sha>` or falls back with warnings."""
     target_sha = str(target_run.get("headSha") or "")
-    if not _SHA_RE.match(target_sha):
+    if not _SHA_RE.fullmatch(target_sha):
         ctx.warnings.append("Invalid commit SHA on target E2E run; recent commits unknown.")
         return []
-
     prior_sha = _find_prior_green_e2e_sha(target_run, ctx.e2e_runs)
-    if prior_sha and prior_sha != target_sha:
-        range_cmd = [
-            "git",
-            "log",
-            "--oneline",
-            f"-n{_RANGE_COMMIT_LIMIT}",
-            f"{prior_sha}..{target_sha}",
-            "--",
-        ]
-        range_res = _run_quiet(range_cmd, ctx.repo_dir)
-        range_lines = [line for line in range_res.stdout.splitlines() if line.strip()]
-        if range_res.returncode == 0 and range_lines:
-            return range_lines
-
-    fallback_cmd = ["git", "log", "--oneline", f"-n{_RECENT_COMMIT_LIMIT}", target_sha, "--"]
-    fallback_res = _run_quiet(fallback_cmd, ctx.repo_dir)
+    if prior_sha and prior_sha.lower() == target_sha.lower():
+        ctx.warnings.append(
+            "Target E2E SHA matches prior scheduled green E2E run; "
+            "suspect Layer B cluster drift or flake."
+        )
+        return []
+    range_commits, reason = _collect_commit_range(ctx, prior_sha, target_sha)
+    if range_commits is not None:
+        return range_commits
+    fallback_res = _run_quiet(
+        ["git", "log", "--oneline", f"-n{_RECENT_COMMIT_LIMIT}", target_sha, "--"], ctx.repo_dir
+    )
     if fallback_res.returncode != 0:
         err = fallback_res.stderr.strip() or "git log failed"
-        ctx.warnings.append(f"Recent commits git log ({target_sha}) failed: {err}")
+        ctx.warnings.append(f"Recent commits git log ({target_sha}) failed ({reason}): {err}")
         return []
+    ctx.warnings.append(
+        f"Falling back to last {_RECENT_COMMIT_LIMIT} commits at {target_sha} ({reason})."
+    )
     return [line for line in fallback_res.stdout.splitlines() if line.strip()]
 
 
@@ -506,15 +542,13 @@ def _inspect_git_skew(
     if not last_green_build:
         ctx.warnings.append("No prior green nightly-build.yml run found; rollout skew unknown.")
         return [], []
-
     base_sha = str(last_green_build.get("headSha") or "")
     e2e_sha = str(target_run.get("headSha") or "")
-    if not (_SHA_RE.match(base_sha) and _SHA_RE.match(e2e_sha)):
+    if not (_SHA_RE.fullmatch(base_sha) and _SHA_RE.fullmatch(e2e_sha)):
         ctx.warnings.append("Invalid commit SHA on build or E2E run; rollout skew unknown.")
         return [], []
-    if base_sha == e2e_sha:
+    if base_sha.lower() == e2e_sha.lower():
         return [], []
-
     commit_range = f"{base_sha}..{e2e_sha}"
     log_res = _run_quiet(["git", "log", "--oneline", commit_range, "--"], ctx.repo_dir)
     diff_res = _run_quiet(["git", "diff", "--name-only", commit_range, "--"], ctx.repo_dir)
@@ -522,7 +556,6 @@ def _inspect_git_skew(
         err = (log_res.stderr or diff_res.stderr).strip() or "git command failed"
         ctx.warnings.append(f"Rollout skew git inspect ({commit_range}) failed: {err}")
         return [], []
-
     undeployed_commits = [line for line in log_res.stdout.splitlines() if line.strip()]
     cluster_files = [
         path for path in diff_res.stdout.splitlines() if path.startswith(_CLUSTER_DEPLOYED_PREFIXES)

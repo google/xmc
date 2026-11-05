@@ -25,7 +25,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from tools.nightly_tests import examples_import_smoke as smoke
@@ -462,7 +462,7 @@ class SmokeExecutionTest(unittest.TestCase):
 
     def test_examples_filter_rejects_unknown_ids_and_runs_without_pythonpath(self) -> None:
         """main returns exit 2 on invalid --examples-filter and runs standalone without PYTHONPATH."""
-        for bad_filter in ("typo_id", "OK_JOB,unknown", "ok_job, broken_job", ","):
+        for bad_filter in ("typo_id", "OK_JOB,unknown", "ok_job, broken_job", ",", "ok_job,"):
             with self.subTest(bad_filter=bad_filter):
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):
@@ -471,6 +471,21 @@ class SmokeExecutionTest(unittest.TestCase):
                     )
                 self.assertEqual(code, 2)
                 self.assertIn("ok_job", json.loads(stdout.getvalue())["error"])
+
+        list_out, list_err = io.StringIO(), io.StringIO()
+        with redirect_stdout(list_out), redirect_stderr(list_err):
+            code = smoke.main(
+                [
+                    "--workflow",
+                    str(self.workflow),
+                    "--list-example-paths",
+                    "--examples-filter",
+                    "typo_id",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertEqual(list_out.getvalue(), "")
+        self.assertIn("ok_job", json.loads(list_err.getvalue())["error"])
 
         clean_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
         proc = subprocess.run(

@@ -11,13 +11,13 @@ description: Investigates broken Nightly Examples E2E runs on main, performs roo
 
 ## Stage 1 — Discover & Triage Broken Nightly Examples E2E Run on `main`
 
-Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/triage_nightly_run.py) (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#5-nightly-failure-triage-cli-triage_nightly_runpy)) to fetch `origin/main`, inspect recent nightly runs and open `nightly-failure` issues, download failed job logs and non-expired failure artifacts into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`, parse `failed_jobs[].result` (`xid`, `status`, `launch_status`, `verify_status`) and bounded `failed_jobs[].error_excerpt` lines, collect SHA-pinned `recent_commits`, and compute rollout skew in one turn:
+Run [`tools/nightly_tests/triage_nightly_run.py`](../../../tools/nightly_tests/triage_nightly_run.py) (see [`tools/nightly_tests/README.md`](../../../tools/nightly_tests/README.md#5-nightly-failure-triage-cli-triage_nightly_runpy)) to fetch `origin/main`, inspect recent nightly runs and open `nightly-failure` issues, download failed job logs and non-expired failure artifacts into `${ARTIFACT_DIR:-/tmp}/nightly_triage_<run_id>`, parse `failed_jobs[].result` (the `result-<id>/<id>.json` object, including `id`, `status`, `launch_status`, `verify_status`, and `xid`) and bounded `failed_jobs[].error_excerpt` `##[error]` context lines, collect SHA-pinned `recent_commits`, and compute rollout skew in one turn:
 
 ```bash
 PYTHONPATH=. python3 tools/nightly_tests/triage_nightly_run.py
 ```
 
-Pass `--run-id <run_id>` to triage a specific historical run. **Stop Gate**: Stop and report to the user (along with any stale `open_issues`) if `status_summary` is not `"failing"` (`"healthy"`, `"superseded"`, `"in_progress"`, or `"no_completed_runs"`), unless the user explicitly requested triaging a `"superseded"` `--run-id`. Always review `warnings` (such as non-superseding `workflow_dispatch` green runs or missing build history) before trusting `rollout_skew` in Stage 2. When `failed_jobs[].result` and `failed_jobs[].error_excerpt` are insufficient to pinpoint the failure, delegate inspection of full `job_<id>.log` files or `deploy-gke-diagnostics` bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
+Pass `--run-id <run_id>` to triage a specific historical run. **Stop Gate**: Stop and report to the user (along with any stale `open_issues`) if `status_summary` is not `"failing"` (`"healthy"`, `"superseded"`, `"in_progress"`, or `"no_completed_runs"`), unless the user explicitly requested triaging a `"superseded"` `--run-id`. Always review `warnings` (such as non-superseding `workflow_dispatch` green runs, equal-SHA Layer B/flake hints, recent-commit fallbacks, or missing build history) before trusting `recent_commits` or `rollout_skew` in Stage 2. When `failed_jobs[].result` and `failed_jobs[].error_excerpt` are insufficient to pinpoint the failure, delegate inspection of full `job_<id>.log` files or `deploy-gke-diagnostics` bundles to a subagent per [Subagent Delegation Guidelines](../../rules/skills_and_automation.md#4-subagent-delegation-guidelines).
 
 ---
 
@@ -75,13 +75,13 @@ Delegate commit creation, diff sizing check, confirmation gate, and Draft PR cre
 
 1. **Select Verification Workflow Scope**:
    - **Client / SDK / Example / Verifier / Workflow Changes**: `nightly-examples-e2e.yml` builds example images and runs the branch's SDKs and verifiers directly against `xmc-nightly`. Pass `--input "examples_filter=<ids>"` using the non-empty comma-separated `failed_jobs[].example_id` values from Stage 1 (validated pre-flight by [`dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py)), or omit `--input` to run the full matrix when `example_id` is empty (non-matrix jobs such as `examples-import-check` or `build-example-images`) or when shared SDK/installer/workflow files changed.
-   - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation first**, then run `PYTHONPATH=. python3 tools/release/dispatch_and_watch.py --workflow nightly-build.yml --ref "${BRANCH_NAME}"` before Stage 5.2.
+   - **Cluster-Deployed Backend / UI / Helm / Addon Changes**: `nightly-examples-e2e.yml` tests against the server/UI currently deployed on `xmc-nightly`. Proving a server/UI change on `xmc-nightly` requires dispatching `nightly-build.yml` first (never `deploy-gke.yml` directly, whose `workflow_dispatch` defaults omit `xmc-nightly` addons). Because `nightly-build.yml` mutates shared `xmc-nightly` and pushes a `nightly-*` tag, **obtain explicit user confirmation first**, then run `BRANCH_NAME="${BRANCH_NAME:-fix/nightly-${SLUG:-<kebab-case-slug>}}" PYTHONPATH=. python3 tools/release/dispatch_and_watch.py --workflow nightly-build.yml --ref "${BRANCH_NAME}"` before Stage 5.2.
 
 2. **Dispatch & Watch `nightly-examples-e2e.yml` on the Pushed PR Branch**:
    Ensure `origin/${BRANCH_NAME}` is pushed first (Stage 4). [`tools/release/dispatch_and_watch.py`](../../../tools/release/dispatch_and_watch.py) fetches `origin/${BRANCH_NAME}` and resolves `FETCH_HEAD` automatically when `--target-sha` is omitted (per [Workflow Orchestration & Remote Automation Invariants](../../rules/skills_and_automation.md#9-workflow-orchestration--remote-automation-invariants)), correlates the newly created `workflow_dispatch` run, and watches it to completion (`conclusion == "success"`):
    ```bash
    SLUG="${SLUG:-<kebab-case-slug>}"
-   BRANCH_NAME="fix/nightly-${SLUG}"
+   BRANCH_NAME="${BRANCH_NAME:-fix/nightly-${SLUG}}"
    EXAMPLES_FILTER="<matrix_example_id_or_empty>"
 
    PYTHONPATH=. python3 tools/release/dispatch_and_watch.py \
