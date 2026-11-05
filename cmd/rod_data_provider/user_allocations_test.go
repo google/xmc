@@ -94,3 +94,43 @@ func TestBuildUniqueQueueAcceleratorMap_MultiFlavorKeepsGeneric(t *testing.T) {
 		t.Errorf("buildUniqueQueueAcceleratorMap(multi flavor) = %v, want empty map", uniqueMap)
 	}
 }
+
+func TestCompareUserResourceAllocations(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b *spb.UserResourceAllocation
+		want int
+	}{
+		{
+			name: "higher total first",
+			a:    &spb.UserResourceAllocation{User: "a", RunningUnits: 1, PendingUnits: 5},
+			b:    &spb.UserResourceAllocation{User: "b", RunningUnits: 4},
+			want: -1,
+		},
+		{
+			name: "equal total prefers more running",
+			a:    &spb.UserResourceAllocation{User: "a", RunningUnits: 1, PendingUnits: 3},
+			b:    &spb.UserResourceAllocation{User: "b", RunningUnits: 4},
+			want: 1,
+		},
+		{
+			name: "then user name",
+			a:    &spb.UserResourceAllocation{User: "a", RunningUnits: 4},
+			b:    &spb.UserResourceAllocation{User: "b", RunningUnits: 4},
+			want: -1,
+		},
+		{
+			name: "then resource type",
+			a:    &spb.UserResourceAllocation{User: "a", ResourceType: "memory", RunningUnits: 4},
+			b:    &spb.UserResourceAllocation{User: "a", ResourceType: "cpu", RunningUnits: 4},
+			want: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compareUserResourceAllocations(tc.a, tc.b); got != tc.want {
+				t.Errorf("compareUserResourceAllocations() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

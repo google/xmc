@@ -38,12 +38,31 @@ func TestCanonicalizeResourceType(t *testing.T) {
 		{name: "already compound gpu", raw: "nvidia.com/gpu: nvidia-l4", want: "nvidia.com/gpu: nvidia-l4"},
 		{name: "specific tpu model", raw: "tpu-v5-lite-podslice", want: "google.com/tpu: tpu-v5-lite-podslice"},
 		{name: "already compound tpu", raw: "google.com/tpu: tpu-v5p-slice", want: "google.com/tpu: tpu-v5p-slice"},
+		{name: "unknown resource passes through", raw: "Example.com/FPGA", want: "example.com/fpga"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := CanonicalizeResourceType(tc.raw); got != tc.want {
 				t.Errorf("CanonicalizeResourceType(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatCompoundAccelerator(t *testing.T) {
+	tests := []struct {
+		name, resource, model, want string
+	}{
+		{name: "empty model", resource: "nvidia.com/gpu", model: "", want: "nvidia.com/gpu"},
+		{name: "model equals resource", resource: "nvidia.com/gpu", model: "nvidia.com/gpu", want: "nvidia.com/gpu"},
+		{name: "already compound", resource: "nvidia.com/gpu", model: "nvidia.com/gpu: nvidia-l4", want: "nvidia.com/gpu: nvidia-l4"},
+		{name: "plain model", resource: "google.com/tpu", model: "tpu-v5p-slice", want: "google.com/tpu: tpu-v5p-slice"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FormatCompoundAccelerator(tc.resource, tc.model); got != tc.want {
+				t.Errorf("FormatCompoundAccelerator(%q, %q) = %q, want %q", tc.resource, tc.model, got, tc.want)
 			}
 		})
 	}
