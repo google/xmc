@@ -27,7 +27,8 @@ Every resource is created in the release namespace (`-n xmc` below).
 
 ## 1. Build the Image
 
-No upstream Vizier server image exists, so build one from [`image/`](image). It runs
+No upstream Vizier server image exists, so build one from [`image/`](image) (see
+[`image/README.md`](image/README.md) for what each file does and how to update dependencies). It runs
 [`vizier_server.py`](image/vizier_server.py) on Python 3.11 (base image pinned by digest) and
 installs the hash-locked dependencies of [`requirements.txt`](image/requirements.txt), compiled
 from [`requirements.in`](image/requirements.in) (`google-vizier==0.1.24`). The image tag defaults
