@@ -7,6 +7,10 @@ build:linux_arm64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
 # Require explicit __init__.py files in Python targets (future rules_python 3.0 default)
 build --@rules_python//python/config_settings:incompatible_default_to_explicit_init_py=true
 
+# Exclude target Starlark flags (e.g. rules_go race/linkmode transitions) from the exec
+# configuration so host tools like protoc are compiled once instead of per transition.
+build --incompatible_exclude_starlark_flags_from_exec_config=true
+
 # Configure workspace status command for version stamping
 build --workspace_status_command="python3 tools/common/workspace_status.py"
 build --stamp

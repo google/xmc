@@ -32,7 +32,7 @@ jobs:
   run-backend-tests:
     name: 'Run Go & Backend Unit Tests'
     runs-on: 'ubuntu-latest'
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     permissions:
       contents: read
