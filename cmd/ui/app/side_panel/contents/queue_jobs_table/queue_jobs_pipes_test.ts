@@ -18,6 +18,7 @@ import { StatusOption } from 'app/common/components/status_chip/status_chip';
 import { DashboardJob, Resource } from 'app/protos/rod';
 
 import {
+  classifyResourceType,
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
   QueueJobRunningTimePipe,
@@ -272,6 +273,16 @@ describe('QueueJobRunningTimePipe', () => {
       expect(pipe.transform(tc.input)).toBe(tc.expected);
     });
   }
+});
+
+describe('classifyResourceType', () => {
+  it('classifies canonical resource types and reports unknown ones', () => {
+    expect(classifyResourceType('cpu')).toBe(ResourceType.CPU);
+    expect(classifyResourceType('memory')).toBe(ResourceType.MEMORY);
+    expect(classifyResourceType('google.com/tpu: tpu-v5-lite-podslice')).toBe(ResourceType.TPU);
+    expect(classifyResourceType('nvidia.com/gpu: nvidia-l4')).toBe(ResourceType.GPU);
+    expect(classifyResourceType('example.com/fpga')).toBe(ResourceType.UNKNOWN);
+  });
 });
 
 describe('QueueJobResourcesPipe', () => {

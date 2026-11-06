@@ -290,7 +290,8 @@ Job data is the exception: `GetRunningAndPendingJobs` reads work units from the 
 one read-only snapshot it returns a page of jobs and `user_allocations` — the requested units
 (memory in GiB) of every resource type summed per experiment creator across *all* active jobs in
 the queue, split into running (`RUNNING`, `STARTING`) and pending (`SCHEDULING`, `INITIALIZING`).
-These are requested amounts, not measured utilization.
+The `/resources` page shows the allocation of the first resource picked in "I need" as a stacked
+bar above the jobs table. These are requested amounts, not measured utilization.
 
 ---
 

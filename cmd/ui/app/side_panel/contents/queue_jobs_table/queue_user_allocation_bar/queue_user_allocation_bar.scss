@@ -1,0 +1,89 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+:host {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.allocation-hint,
+.allocation-empty {
+  font-size: 13px;
+  color: #5f6368;
+  margin: 0;
+}
+
+.allocation-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.allocation-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #202124;
+  margin: 0;
+}
+
+.allocation-totals {
+  font-size: 13px;
+  color: #5f6368;
+}
+
+.allocation-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: #f1f3f4;
+}
+
+// Pending requests reuse the user's color at reduced opacity next to their running share.
+.allocation-segment.pending {
+  opacity: 0.4;
+}
+
+.allocation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+
+.allocation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #dadce0;
+  border-radius: 16px;
+  font-size: 12px;
+  color: #3c4043;
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chip-user {
+  font-weight: 500;
+}
