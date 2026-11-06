@@ -33,6 +33,11 @@ export const JOB_STATUS_STRINGS = {
 } as const;
 
 export const NOT_APPLICABLE_RUNNING_DISPLAY = 'N/A - running';
+export const NOT_RUNNING_DURATION_DISPLAY = '–';
+
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_DAY = 86400;
 
 /** Known resource type string constants. */
 export const RESOURCE_TYPE_CPU = 'cpu';
@@ -87,6 +92,49 @@ export class QueueJobPositionPipe implements PipeTransform {
       return '-';
     }
     return String(pos);
+  }
+}
+
+function formatDurationSeconds(totalSeconds: number): string {
+  if (totalSeconds < SECONDS_PER_MINUTE) {
+    return `${totalSeconds}s`;
+  }
+  if (totalSeconds < SECONDS_PER_HOUR) {
+    const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE);
+    const seconds = totalSeconds % SECONDS_PER_MINUTE;
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  if (totalSeconds < SECONDS_PER_DAY) {
+    const hours = Math.floor(totalSeconds / SECONDS_PER_HOUR);
+    const minutes = Math.floor((totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  const days = Math.floor(totalSeconds / SECONDS_PER_DAY);
+  const hours = Math.floor((totalSeconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR);
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+}
+
+/**
+ * Transforms a DashboardJob into a human-readable running duration (e.g., "14h 22m", "4d 19h")
+ * when its status is RUNNING, or "–" otherwise.
+ */
+@Pipe({
+  name: 'queueJobRunningTime',
+  standalone: true,
+})
+export class QueueJobRunningTimePipe implements PipeTransform {
+  transform(job?: DashboardJob | null): string {
+    const status = String(job?.status || '').toUpperCase();
+    if (status !== JOB_STATUS_STRINGS.RUNNING) {
+      return NOT_RUNNING_DURATION_DISPLAY;
+    }
+    // The gateway sends int64 as a JSON string and emits zero values; the field is
+    // absent only when the backend predates it.
+    const seconds = Number(job?.runningDurationSeconds);
+    if (!Number.isFinite(seconds)) {
+      return NOT_RUNNING_DURATION_DISPLAY;
+    }
+    return formatDurationSeconds(seconds);
   }
 }
 

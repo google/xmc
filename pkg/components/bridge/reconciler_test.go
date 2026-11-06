@@ -1306,6 +1306,22 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 			want:    gated,
 			wantMsg: "waiting on dependencies: redpanda (disabled), foo (not found)",
 		},
+		{
+			// Mirrors the stable-2026a hpo blueprint: no xmc-cmp release is installed while vizier is disabled.
+			name: "acknowledged EXPERIMENTAL hpo is gated while vizier is disabled",
+			spec: &componentspb.ComponentSpec{
+				Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+				Dependencies:            []string{"vizier", "clickhouse"},
+			},
+			deps: snapshot(
+				readyComponent("vizier", func(u *unstructured.Unstructured) { u.Object["spec"] = map[string]any{"enabled": false} }),
+				readyComponent("clickhouse", nil),
+			),
+			want:    gated,
+			wantMsg: "waiting on dependencies: vizier (disabled)",
+		},
 		{name: "3P wrapper is gated after registering intent", spec: spec3P, deps: snapshot(), want: gated},
 		{
 			name: "CMS NotFound while gated is tolerated",

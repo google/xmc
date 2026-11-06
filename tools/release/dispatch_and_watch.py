@@ -16,7 +16,7 @@
 
 import argparse
 import json
-import shutil
+import re
 import subprocess
 import sys
 import time
@@ -25,15 +25,15 @@ from pathlib import Path
 from typing import Any
 
 from tools.common.tool_utils import HandledError, run_command, run_tool
+from tools.nightly_tests import workflow_matrix
+
+_REF_RE = re.compile(r"[A-Za-z0-9](?!.*\.\.)[A-Za-z0-9._-]*(?:/[A-Za-z0-9._-]+)*")
+_INPUT_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+_EXAMPLES_WORKFLOWS = frozenset({"nightly-examples-e2e.yml", "examples-smoke.yml"})
 
 
 def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Runs GitHub CLI command with handled error for missing binary."""
-    if not shutil.which("gh"):
-        raise HandledError(
-            "GitHub CLI ('gh') is not installed or not found in PATH.",
-            "Install gh CLI and authenticate with 'gh auth login'.",
-        )
     return run_command(
         ["gh", *args],
         capture_output=True,
@@ -41,7 +41,20 @@ def _run_gh(args: list[str], repo_dir: Path | None = None) -> subprocess.Complet
         log_cmd=False,
         log_on_error=False,
         cwd=repo_dir,
+        handled_instruction="Ensure 'gh' is on PATH and authenticate with 'gh auth login'.",
     )
+
+
+def _gh_json(args: list[str], repo_dir: Path | None, expected_type: type) -> Any:
+    """Runs a `gh` command and returns its JSON output if it is `expected_type`, else None."""
+    res = _run_gh(args, repo_dir)
+    if res.returncode != 0 or not res.stdout.strip():
+        return None
+    try:
+        parsed = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, expected_type) else None
 
 
 def _extract_page_url(view_data: dict[str, Any]) -> str:
@@ -135,17 +148,7 @@ def _find_existing_run(
         "--limit=5",
         "--json=databaseId,headSha,url,conclusion",
     ]
-    res = _run_gh(cmd, repo_dir)
-    if res.returncode != 0 or not res.stdout.strip():
-        return None
-    try:
-        existing_runs = json.loads(res.stdout)
-        if not isinstance(existing_runs, list):
-            return None
-    except json.JSONDecodeError:
-        return None
-
-    for run in existing_runs:
+    for run in _gh_json(cmd, repo_dir, list) or []:
         if not target_sha or run.get("headSha", "").startswith(target_sha):
             run_id = int(run["databaseId"])
             run_sha = run.get("headSha", "")
@@ -167,10 +170,51 @@ def _find_existing_run(
     return None
 
 
-def _dispatch_workflow(workflow: str, ref: str, repo_dir: Path | None) -> str:
+def _validate_inputs(workflow: str, raw_inputs: list[str], repo_dir: Path | None) -> None:
+    """Validates repeatable KEY=VALUE workflow_dispatch inputs and examples_filter IDs."""
+    parsed: dict[str, str] = {}
+    for item in raw_inputs:
+        key, sep, value = item.partition("=")
+        if not sep or not _INPUT_KEY_RE.fullmatch(key):
+            raise HandledError(f"Invalid workflow input '{item}'.", "Use --input KEY=VALUE.")
+        if key in parsed:
+            raise HandledError(f"Duplicate workflow input key '{key}'.", "Specify each key once.")
+        parsed[key] = value
+    if Path(workflow).name not in _EXAMPLES_WORKFLOWS or "examples_filter" not in parsed:
+        return
+    try:
+        workflow_text = workflow_matrix.resolve_workflow_path(repo_dir).read_text(encoding="utf-8")
+        matrix_items = workflow_matrix.parse_matrix_items(workflow_text)
+        workflow_matrix.validate_examples_filter(parsed["examples_filter"], matrix_items)
+    except (OSError, ValueError) as exc:
+        hint = "Pass comma-separated matrix.example.id values without spaces."
+        raise HandledError(f"Invalid examples_filter for '{workflow}': {exc}", hint) from exc
+
+
+def _run_git(args: list[str], cwd: Path | None, hint: str) -> str:
+    res = run_command(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        handled_instruction=hint,
+    )
+    return res.stdout.strip()
+
+
+def _resolve_remote_sha(ref: str, cwd: Path | None) -> str:
+    """Fetches origin/<ref> and returns the resolved remote commit SHA via FETCH_HEAD."""
+    hint = f"Ensure 'git' is on PATH and '{ref}' is pushed (git push -u origin {ref})."
+    _run_git(["fetch", "--", "origin", ref], cwd, hint)
+    return _run_git(["rev-parse", "--verify", "FETCH_HEAD^{commit}"], cwd, "Invalid remote commit.")
+
+
+def _dispatch_workflow(workflow: str, ref: str, inputs: list[str], repo_dir: Path | None) -> str:
     """Dispatches workflow run and returns ISO timestamp of dispatch."""
     dispatched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    res = _run_gh(["workflow", "run", workflow, "--ref", ref], repo_dir)
+    input_args = [arg for item in inputs for arg in ("-f", item)]
+    res = _run_gh(["workflow", "run", workflow, "--ref", ref, *input_args], repo_dir)
     if res.returncode != 0:
         raise HandledError(
             f"Failed to dispatch workflow '{workflow}': {res.stderr.strip()}",
@@ -202,24 +246,16 @@ def _poll_for_run(
     for attempt in range(poll_attempts):
         if attempt > 0:
             time.sleep(poll_interval)
-        res = _run_gh(list_cmd, repo_dir)
-        if res.returncode == 0 and res.stdout.strip():
-            try:
-                runs = json.loads(res.stdout)
-                if not isinstance(runs, list):
-                    runs = []
-            except json.JSONDecodeError:
-                runs = []
-            for r in runs:
-                r_sha = r.get("headSha", "")
-                r_created = r.get("createdAt", "")
-                if r_created >= dispatched_at:
-                    if target_sha and r_sha.startswith(target_sha):
-                        return r
-                    if not matched_run:
-                        matched_run = r
-            if matched_run and not target_sha:
-                return matched_run
+        for r in _gh_json(list_cmd, repo_dir, list) or []:
+            r_sha = r.get("headSha", "")
+            r_created = r.get("createdAt", "")
+            if r_created >= dispatched_at:
+                if target_sha and r_sha.startswith(target_sha):
+                    return r
+                if not matched_run:
+                    matched_run = r
+        if matched_run and not target_sha:
+            return matched_run
 
     if matched_run:
         return matched_run
@@ -240,15 +276,8 @@ def _watch_run_outcome(
 ) -> dict[str, Any]:
     """Watches run to completion, parses conclusion and page_url, and updates state."""
     res = _run_gh(["run", "watch", str(run_id), "--exit-status"], repo_dir)
-    view_res = _run_gh(["run", "view", str(run_id), "--json=conclusion,jobs"], repo_dir)
-    view_data: dict[str, Any] = {}
-    if view_res.returncode == 0 and view_res.stdout.strip():
-        try:
-            loaded_view = json.loads(view_res.stdout)
-            if isinstance(loaded_view, dict):
-                view_data = loaded_view
-        except json.JSONDecodeError:
-            view_data = {}
+    view_cmd = ["run", "view", str(run_id), "--json=conclusion,jobs"]
+    view_data: dict[str, Any] = _gh_json(view_cmd, repo_dir, dict) or {}
 
     conclusion = view_data.get("conclusion") or ("success" if res.returncode == 0 else "failure")
     page_url = _extract_page_url(view_data)
@@ -276,21 +305,33 @@ def _watch_run_outcome(
     }
 
 
+def _validate_args(args: argparse.Namespace, repo_dir: Path | None) -> str:
+    """Validates CLI flags and workflow inputs; returns cleaned ref."""
+    ref = args.ref.strip()
+    if ref.startswith("origin/") or not _REF_RE.fullmatch(ref):
+        raise HandledError(f"Invalid --ref '{args.ref}'.", "Pass a branch or tag name on origin.")
+    if args.find_existing and args.input:
+        raise HandledError("--find-existing cannot be combined with --input.", "Omit flag.")
+    _validate_inputs(args.workflow, args.input, repo_dir)
+    return ref
+
+
 def dispatch_and_watch(args: argparse.Namespace) -> dict[str, Any]:
     """Dispatches a workflow, verifies target SHA, watches run, and returns structured summary."""
-    workflow, ref = args.workflow, getattr(args, "ref", "main") or "main"
-    target_sha = (getattr(args, "target_sha", "") or "").strip()
-    state_file = getattr(args, "state_file", None)
-    repo_dir = Path(args.repo_dir) if getattr(args, "repo_dir", None) else None
+    workflow, state_file = args.workflow, args.state_file
+    repo_dir = Path(args.repo_dir) if args.repo_dir else None
+    ref = _validate_args(args, repo_dir)
+    target_sha = args.target_sha.strip()
 
     # 1. Check for existing successful run if --find-existing
-    if getattr(args, "find_existing", False):
+    if args.find_existing:
         existing = _find_existing_run(workflow, ref, target_sha, state_file, repo_dir)
         if existing:
             return existing
 
     # 2. Dispatch workflow run
-    dispatched_at = _dispatch_workflow(workflow, ref, repo_dir)
+    target_sha = target_sha or _resolve_remote_sha(ref, repo_dir)
+    dispatched_at = _dispatch_workflow(workflow, ref, args.input, repo_dir)
 
     # 3. Poll for registered workflow run matching target_sha & timestamp
     run_data = _poll_for_run(
@@ -343,6 +384,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Reuse existing successful run.",
     )
     p.add_argument("--state-file", help="Path to JSON state file.")
+    p.add_argument("--input", action="append", default=[], metavar="KEY=VALUE", help="Input.")
     p.add_argument("--poll-interval", type=float, default=5.0, help="Poll interval.")
     p.add_argument("--poll-attempts", type=int, default=12, help="Max poll attempts.")
     p.add_argument("--repo-dir", default=".", help="Repository root.")

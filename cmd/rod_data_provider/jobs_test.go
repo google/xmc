@@ -412,6 +412,69 @@ func TestMapWorkUnitToDashboardJob_RequestedResources(t *testing.T) {
 	}
 }
 
+func TestMapWorkUnitToDashboardJob_RunningDuration(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	withStatus := func(state essmsgpb.WorkUnitStatus_WorkUnitState, updated *timestamppb.Timestamp) *essmsgpb.WorkUnit {
+		return prototest.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+			w.CurrentWorkUnitExecution.Status.State = state
+			w.CurrentWorkUnitExecution.Status.StateUpdateTime = updated
+		})
+	}
+
+	tests := []struct {
+		name string
+		wu   *essmsgpb.WorkUnit
+		want int64
+	}{
+		{
+			name: "RUNNING with valid state_update_time",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_RUNNING, timestamppb.New(now.Add(-45*time.Minute))),
+			want: 2700,
+		},
+		{
+			name: "SCHEDULING is not running",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_SCHEDULING, timestamppb.New(now.Add(-30*time.Minute))),
+			want: 0,
+		},
+		{
+			name: "RESTARTING is not running",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_RESTARTING, timestamppb.New(now.Add(-10*time.Second))),
+			want: 0,
+		},
+		{
+			name: "missing execution status",
+			wu: prototest.Modify(baseWorkUnit, func(w *essmsgpb.WorkUnit) {
+				w.CurrentWorkUnitExecution.Status = nil
+			}),
+			want: 0,
+		},
+		{
+			name: "RUNNING with missing state_update_time",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_RUNNING, nil),
+			want: 0,
+		},
+		{
+			name: "RUNNING with invalid state_update_time",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_RUNNING, &timestamppb.Timestamp{Seconds: 100, Nanos: -1}),
+			want: 0,
+		},
+		{
+			name: "RUNNING with future state_update_time clamped to zero",
+			wu:   withStatus(essmsgpb.WorkUnitStatus_RUNNING, timestamppb.New(now.Add(5*time.Minute))),
+			want: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mapWorkUnitToDashboardJob(context.Background(), storage.ActiveWorkUnit{WorkUnit: tt.wu}, now)
+			if got.GetRunningDurationSeconds() != tt.want {
+				t.Errorf("RunningDurationSeconds = %d, want %d", got.GetRunningDurationSeconds(), tt.want)
+			}
+		})
+	}
+}
+
 func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	tests := []struct {
 		name       string

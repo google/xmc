@@ -90,15 +90,31 @@ py_test(
 )
 
 py_library(
+    name = "workflow_matrix_lib",
+    srcs = ["workflow_matrix.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "workflow_matrix_test",
+    size = "small",
+    srcs = ["workflow_matrix_test.py"],
+    imports = ["../.."],
+    deps = [":workflow_matrix_lib"],
+)
+
+py_library(
     name = "examples_import_smoke_lib",
     srcs = ["examples_import_smoke.py"],
     imports = ["../.."],
+    deps = [":workflow_matrix_lib"],
 )
 
 py_binary(
     name = "examples_import_smoke",
     srcs = ["examples_import_smoke.py"],
     imports = ["../.."],
+    deps = [":examples_import_smoke_lib"],
 )
 
 py_test(
@@ -110,5 +126,33 @@ py_test(
         ":examples_import_smoke_lib",
         # Child processes import absl to exercise matrix-args parsing.
         "@absl_py//absl/flags",
+    ],
+)
+
+py_library(
+    name = "triage_nightly_run_lib",
+    srcs = ["triage_nightly_run.py"],
+    imports = ["../.."],
+    deps = [
+        ":workflow_matrix_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "triage_nightly_run",
+    srcs = ["triage_nightly_run.py"],
+    imports = ["../.."],
+    deps = [":triage_nightly_run_lib"],
+)
+
+py_test(
+    name = "triage_nightly_run_test",
+    size = "small",
+    srcs = ["triage_nightly_run_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":triage_nightly_run_lib",
+        "//tools/common:tool_utils",
     ],
 )

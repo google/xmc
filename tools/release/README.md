@@ -187,7 +187,7 @@ python3 tools/release/publish_release.py --tag 0.6.0 --notes-file /tmp/release_n
 
 ## 6. Workflow Dispatch & Monitoring (`dispatch_and_watch.py`)
 
-`dispatch_and_watch.py` is a streamlined CLI helper tool that triggers GitHub Actions workflows, polls for run registration with commit SHA verification, watches execution to completion, extracts GitHub Pages URLs, and updates release state files.
+`dispatch_and_watch.py` is a streamlined CLI helper tool that triggers GitHub Actions workflows (optionally forwarding repeatable `--input KEY=VALUE` parameters and validating `examples_filter` against `matrix.example.id`), auto-fetches `origin/<ref>` to resolve `FETCH_HEAD` when `--target-sha` is omitted, polls for run registration with commit SHA verification, watches execution to completion, extracts GitHub Pages URLs, and updates state files.
 
 ### CLI Usage
 
@@ -204,6 +204,13 @@ python3 tools/release/dispatch_and_watch.py \
   --target-sha "$(git rev-parse origin/main)" \
   --find-existing \
   --state-file /tmp/release_state.json
+
+# Dispatch a branch run with workflow_dispatch inputs (fetches origin/<ref> automatically)
+python3 tools/release/dispatch_and_watch.py \
+  --workflow nightly-examples-e2e.yml \
+  --ref "fix/nightly-rod-selector" \
+  --input "examples_filter=resource_dashboard_ui" \
+  --state-file /tmp/nightly_verify_state.json
 ```
 
 ### CLI Arguments Reference
@@ -211,9 +218,10 @@ python3 tools/release/dispatch_and_watch.py \
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--workflow` | `-w` | *(required)* | Workflow filename (e.g. `nightly-build.yml`) |
-| `--target-sha` | `-s`, `--sha` | `""` | Expected git commit SHA to correlate with the workflow run |
-| `--ref` | `-r` | `main` | Target git branch or reference |
-| `--find-existing` | | `false` | Check for and reuse an existing successful run matching `target_sha` |
+| `--target-sha` | `-s`, `--sha` | `""` | Expected git commit SHA (if omitted on dispatch, fetches `origin/<ref>` and resolves `FETCH_HEAD`) |
+| `--ref` | `-r` | `main` | Target git branch or tag name on `origin` (without `origin/` prefix) |
+| `--find-existing` | | `false` | Check for and reuse an existing successful run matching `target_sha` (cannot be combined with `--input`) |
+| `--input` | | `[]` | Repeatable `KEY=VALUE` `workflow_dispatch` input forwarded as `gh workflow run -f KEY=VALUE` (`examples_filter` is validated pre-flight against `matrix.example.id`) |
 | `--state-file` | | `None` | Path to JSON state file to persist run metadata and outcomes |
 | `--poll-interval` | | `5.0` | Seconds to wait between polling attempts for run registration |
 | `--poll-attempts` | | `12` | Maximum number of polling attempts before timing out |

@@ -4,6 +4,9 @@ This Helm sub-chart (`deploy/profiles/stable-2026a/components/vizier/`) renders 
 
 Because Open Source Vizier is deployed as a bring-your-own (BYO) gRPC service (`vizier-service:7077`) without a custom Kubernetes operator or CRD, this blueprint omits `spec.wrapperRef`. Instead, `xmc-bridge` verifies readiness directly via active TCP health probing against `parameters.endpoint` and publishes resolved connection coordinates (`status.access.envVars.ENDPOINT`, `HOST`, `PORT`) to downstream consumers (`hpo` / `xmc-study-controller`).
 
+> [!NOTE]
+> **Bring your own Vizier.** XMC does not run Vizier: operators provide an Open Source Vizier gRPC endpoint and set `parameters.endpoint` to it. A dev/test-only fixture for KinD and dev environments lives in [`test/e2e/testdata/vizier`](../../../../../test/e2e/testdata/vizier/README.md).
+
 ---
 
 ## 1. Fixed Blueprint Identity & Contract Fields

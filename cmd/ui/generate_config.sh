@@ -30,6 +30,7 @@ get_bool_env() {
 # Set default values if not specified
 API_URL="${XMC_API_URL:-https://api.example.com/v1}"
 REFRESH_MS="${XMC_REFRESH_INTERVAL_MS:-30000}"
+DOCS_URL="${XMC_DOCS_URL:-https://github.com/google/xmc}"
 ADMIN_PANEL=$(get_bool_env "$XMC_ADMIN_PANEL_ENABLED" true)
 RESOURCE_DASHBOARD=$(get_bool_env "$XMC_RESOURCE_DASHBOARD_ENABLED" true)
 PERFORMANCE_DASHBOARD=$(get_bool_env "$XMC_PERFORMANCE_DASHBOARD_ENABLED" false)
@@ -42,6 +43,7 @@ PAUSE_SCHEDULING=$(get_bool_env "$XMC_PAUSE_SCHEDULING_ENABLED" true)
 cat <<EOF > "${CONFIG_FILE}"
 window.XMC_API_URL = "${API_URL}";
 window.XMC_REFRESH_INTERVAL_MS = ${REFRESH_MS};
+window.XMC_DOCS_URL = "${DOCS_URL}";
 window.XMC_FEATURE_FLAGS = {
   "adminPanelEnabled": ${ADMIN_PANEL},
   "resourceDashboardEnabled": ${RESOURCE_DASHBOARD},

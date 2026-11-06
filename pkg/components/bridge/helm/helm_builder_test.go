@@ -274,12 +274,20 @@ func TestResolveImage(t *testing.T) {
 			parameters: nil,
 			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/rod-data-provider:latest",
 		},
+		{
+			name:       "hpo default repository is the study-controller image (tier 4a)",
+			component:  "hpo",
+			imageTag:   "v1",
+			parameters: nil,
+			wantImage:  "us-docker.pkg.dev/xmc-prod/xmc/study-controller:v1",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
 			t.Setenv("DEFAULT_ROD_DATA_PROVIDER_IMAGE", "")
+			t.Setenv("DEFAULT_HPO_IMAGE", "")
 			got := ResolveImage(tt.component, tt.imageTag, tt.parameters)
 			if got != tt.wantImage {
 				t.Errorf("ResolveImage(%q, %q, %+v) = %q, want %q", tt.component, tt.imageTag, tt.parameters, got, tt.wantImage)
@@ -459,6 +467,11 @@ func TestDefaultComponentRepository(t *testing.T) {
 			name:      "health service",
 			component: "health-service",
 			wantRepo:  "us-docker.pkg.dev/xmc-prod/xmc/health-service",
+		},
+		{
+			name:      "hpo uses the study-controller image",
+			component: "hpo",
+			wantRepo:  "us-docker.pkg.dev/xmc-prod/xmc/study-controller",
 		},
 	}
 

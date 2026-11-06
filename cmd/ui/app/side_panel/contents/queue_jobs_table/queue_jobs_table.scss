@@ -81,6 +81,25 @@
   vertical-align: middle;
 }
 
+.running-time-header,
+.running-time-cell {
+  white-space: nowrap;
+}
+
+.running-time-header-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.help-tip-icon {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+  color: #80868b;
+  cursor: pointer;
+}
+
 .resource-chips-container {
   display: flex;
   gap: 4px;

@@ -141,6 +141,7 @@ export const MOCK_JOBS: DashboardJob[] = [
     workUnitId: 1,
     experimentTitle: 'llama-finetune-sweep',
     status: 'RUNNING',
+    runningDurationSeconds: 51720,
     priority: 100,
     requestedResources: [{ resourceType: 'nvidia.com/gpu', count: 8 }],
     user: 'jdoe@google.com',
