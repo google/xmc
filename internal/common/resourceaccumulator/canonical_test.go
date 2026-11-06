@@ -27,18 +27,17 @@ func TestCanonicalizeResourceType(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{name: "empty", raw: "  ", want: ""},
-		{name: "cpu", raw: "CPU", want: "cpu"},
-		{name: "memory", raw: "Memory", want: "memory"},
+		{name: "cpu", raw: "cpu", want: "cpu"},
+		{name: "memory", raw: "memory", want: "memory"},
 		{name: "generic gpu", raw: "gpu", want: "nvidia.com/gpu"},
 		{name: "k8s generic gpu", raw: "nvidia.com/gpu", want: "nvidia.com/gpu"},
 		{name: "generic tpu", raw: "tpu", want: "google.com/tpu"},
-		{name: "symbolic gpu enum", raw: "H100", want: "nvidia.com/gpu: nvidia-h100-80gb"},
+		{name: "symbolic gpu enum", raw: "h100", want: "nvidia.com/gpu: nvidia-h100-80gb"},
 		{name: "gke gpu label", raw: "nvidia-tesla-h100", want: "nvidia.com/gpu: nvidia-tesla-h100"},
 		{name: "already compound gpu", raw: "nvidia.com/gpu: nvidia-l4", want: "nvidia.com/gpu: nvidia-l4"},
 		{name: "specific tpu model", raw: "tpu-v5-lite-podslice", want: "google.com/tpu: tpu-v5-lite-podslice"},
 		{name: "already compound tpu", raw: "google.com/tpu: tpu-v5p-slice", want: "google.com/tpu: tpu-v5p-slice"},
-		{name: "unknown resource passes through", raw: "Example.com/FPGA", want: "example.com/fpga"},
+		{name: "unknown resource passes through", raw: "example.com/fpga", want: "example.com/fpga"},
 	}
 
 	for _, tc := range tests {
@@ -69,8 +68,8 @@ func TestFormatCompoundAccelerator(t *testing.T) {
 }
 
 func TestExtractNormalizedExecutableResources(t *testing.T) {
-	if got := ExtractNormalizedExecutableResources(nil); got != nil {
-		t.Fatalf("ExtractNormalizedExecutableResources(nil) = %v, want nil", got)
+	if got := ExtractNormalizedExecutableResources(nil); len(got) != 0 {
+		t.Fatalf("ExtractNormalizedExecutableResources(nil) = %v, want empty", got)
 	}
 
 	exec := &essmsgpb.Executable{
@@ -127,5 +126,23 @@ func TestExtractNormalizedExecutableResources(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, ExtractNormalizedExecutableResources(exec)); diff != "" {
 		t.Errorf("ExtractNormalizedExecutableResources() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestNormalizeUnits(t *testing.T) {
+	tests := []struct {
+		resourceType string
+		value        float64
+		want         float64
+	}{
+		{resourceType: "memory", value: 2 * BytesPerGiB, want: 2},
+		{resourceType: "ephemeral-storage", value: BytesPerGiB / 2, want: 0.5},
+		{resourceType: "cpu", value: 2.5, want: 2.5},
+		{resourceType: "nvidia.com/gpu: nvidia-l4", value: 4, want: 4},
+	}
+	for _, tc := range tests {
+		if got := NormalizeUnits(tc.resourceType, tc.value); got != tc.want {
+			t.Errorf("NormalizeUnits(%q, %v) = %v, want %v", tc.resourceType, tc.value, got, tc.want)
+		}
 	}
 }

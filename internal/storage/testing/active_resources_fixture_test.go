@@ -15,9 +15,10 @@
 package storagetest
 
 import (
+	"slices"
 	"testing"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/storage/state"
 )
 
 func TestActiveResourceSpec_Executable(t *testing.T) {
@@ -49,9 +50,7 @@ func TestActiveResourceSpecs(t *testing.T) {
 		if spec.Queue != ActiveResourceQueue {
 			continue
 		}
-		switch spec.State {
-		case essmsgpb.WorkUnitStatus_RUNNING, essmsgpb.WorkUnitStatus_STARTING,
-			essmsgpb.WorkUnitStatus_SCHEDULING, essmsgpb.WorkUnitStatus_INITIALIZING:
+		if slices.Contains(state.WorkUnitRunningStates, spec.State) || slices.Contains(state.WorkUnitPendingStates, spec.State) {
 			active++
 		}
 	}

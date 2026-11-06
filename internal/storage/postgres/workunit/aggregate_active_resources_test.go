@@ -28,14 +28,6 @@ import (
 	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
-func seedExperimentCreator(ctx context.Context, t *testing.T, pool *pgxpool.Pool, xid int64, creator string) {
-	t.Helper()
-	postgrestest.SeedExperiment(ctx, t, pool, xid)
-	if _, err := pool.Exec(ctx, `UPDATE Experiments SET Creator = $1 WHERE Xid = $2`, creator, xid); err != nil {
-		t.Fatalf("update Experiments(%d) creator failed: %v", xid, err)
-	}
-}
-
 func insertActiveResourceWorkUnits(t *testing.T, pool *pgxpool.Pool, repo *Repository, specs []storagetest.ActiveResourceSpec) {
 	t.Helper()
 	for i, spec := range specs {
@@ -73,8 +65,8 @@ func TestRepository_AggregateActiveResourcesByAuthor_AllPages(t *testing.T) {
 	ctx := t.Context()
 	_, essPool := postgrestest.Setup(ctx, t)
 	repo := NewRepository(essPool)
-	seedExperimentCreator(ctx, t, essPool, 701, "alice@example.com")
-	seedExperimentCreator(ctx, t, essPool, 702, "bob@example.com")
+	postgrestest.SeedExperimentWithCreator(ctx, t, essPool, 701, "alice@example.com")
+	postgrestest.SeedExperimentWithCreator(ctx, t, essPool, 702, "bob@example.com")
 	insertActiveResourceWorkUnits(t, essPool, repo, storagetest.ActiveResourceSpecs(701, 702))
 
 	queues := []string{storagetest.ActiveResourceQueue}
@@ -89,7 +81,7 @@ func TestRepository_AggregateActiveResourcesByAuthor_AllPages(t *testing.T) {
 	if len(pageOne.WorkUnits) != 2 || pageOne.TotalQueueSize != storagetest.ActiveResourceSpecsActiveCount || pageOne.NextPageToken == "" {
 		t.Fatalf("pageOne = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(pageOne.WorkUnits), pageOne.TotalQueueSize, pageOne.NextPageToken, storagetest.ActiveResourceSpecsActiveCount)
 	}
-	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations); diff != "" {
+	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations, storagetest.AuthorAllocationOrder); diff != "" {
 		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
 	}
 }

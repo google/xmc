@@ -18,33 +18,11 @@ import (
 	"strings"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 // BytesPerGiB is the binary gibibyte divisor used across ROD memory metrics.
 const BytesPerGiB = 1024 * 1024 * 1024
-
-const (
-	// kubernetesGPUResource is the Kubernetes extended resource name for NVIDIA GPUs.
-	kubernetesGPUResource = "nvidia.com/gpu"
-	// kubernetesTPUResource is the Kubernetes extended resource name for Cloud TPUs.
-	kubernetesTPUResource = "google.com/tpu"
-)
-
-var symbolicGPUToAccelerator = map[string]string{
-	"p4":         "nvidia-tesla-p4",
-	"t4":         "nvidia-tesla-t4",
-	"l4_24th":    "nvidia-l4",
-	"p100":       "nvidia-tesla-p100",
-	"v100":       "nvidia-tesla-v100",
-	"a100":       "nvidia-a100-40gb",
-	"a100_80gib": "nvidia-a100-80gb",
-	"h100":       "nvidia-h100-80gb",
-	"h100_mega":  "nvidia-h100-mega-80gb",
-	"h200":       "nvidia-h200-141gb",
-	"b200":       "nvidia-b200",
-	"gb200":      "nvidia-gb200",
-	"b40_48th":   "nvidia-rtx-pro-6000",
-}
 
 // FormatCompoundAccelerator combines a base resource name with a specific accelerator model.
 func FormatCompoundAccelerator(resourceName, model string) string {
@@ -57,53 +35,50 @@ func FormatCompoundAccelerator(resourceName, model string) string {
 	return resourceName + ": " + model
 }
 
-// canonicalizeResourceType normalizes raw resource identifiers into canonical ROD resource types
-// (e.g. "nvidia.com/gpu: nvidia-tesla-h100", "google.com/tpu: tpu-v5-lite-podslice", "cpu", "memory").
-func canonicalizeResourceType(rawType string) string {
-	lower := strings.ToLower(strings.TrimSpace(rawType))
-	if lower == "" || lower == ResourceTypeCPU || lower == ResourceTypeMemory {
-		return lower
+// canonicalizeResourceType normalizes an Accumulator key (already lowercase) into a canonical ROD
+// resource type (e.g. "nvidia.com/gpu: nvidia-tesla-h100", "google.com/tpu: tpu-v5-lite-podslice").
+func canonicalizeResourceType(key string) string {
+	gpu, tpu := constants.NvidiaGPUResourceName, constants.TPUResourceName
+	switch {
+	case key == ResourceTypeCPU || key == ResourceTypeMemory:
+		return key
+	case strings.HasPrefix(key, gpu+": ") || strings.HasPrefix(key, tpu+": "):
+		return key
+	case IsGenericGPU(key):
+		return gpu
+	case IsGenericTPU(key):
+		return tpu
 	}
-	if strings.HasPrefix(lower, kubernetesGPUResource+": ") || strings.HasPrefix(lower, kubernetesTPUResource+": ") {
-		return lower
+	if mapped, ok := constants.GPUTypeToGKEAccelerator[strings.ToUpper(key)]; ok {
+		return FormatCompoundAccelerator(gpu, mapped)
 	}
-	if IsGenericGPU(lower) {
-		return kubernetesGPUResource
+	if IsSpecificTPUKey(key) {
+		return FormatCompoundAccelerator(tpu, key)
 	}
-	if IsGenericTPU(lower) {
-		return kubernetesTPUResource
+	if IsSpecificGPUKey(key) {
+		return FormatCompoundAccelerator(gpu, key)
 	}
-	if mapped, ok := symbolicGPUToAccelerator[lower]; ok {
-		return FormatCompoundAccelerator(kubernetesGPUResource, mapped)
+	return key
+}
+
+// NormalizeUnits converts a raw resource quantity into ROD display units: memory and storage go
+// from bytes to GiB, everything else (cores, devices, chips) is unchanged.
+func NormalizeUnits(resourceType string, value float64) float64 {
+	if IsMemoryOrStorageResource(resourceType) {
+		return value / BytesPerGiB
 	}
-	if IsSpecificTPUKey(lower) {
-		return FormatCompoundAccelerator(kubernetesTPUResource, lower)
-	}
-	if IsSpecificGPUKey(lower) {
-		return FormatCompoundAccelerator(kubernetesGPUResource, lower)
-	}
-	return lower
+	return value
 }
 
 // ExtractNormalizedExecutableResources extracts requested resources for an Executable with
 // canonical accelerator type names and memory/storage normalized from bytes to GiB.
 func ExtractNormalizedExecutableResources(exec *essmsgpb.Executable) map[string]float64 {
-	if exec == nil {
-		return nil
-	}
 	acc := New()
 	acc.AccumulateExecutable(exec)
-	rawTotals := acc.Totals()
-	normalized := make(map[string]float64, len(rawTotals))
-	for rawType, val := range rawTotals {
-		if val <= 0 {
-			continue
-		}
-		canonical := canonicalizeResourceType(rawType)
-		if IsMemoryOrStorageResource(canonical) {
-			val /= BytesPerGiB
-		}
-		normalized[canonical] += val
+	normalized := make(map[string]float64)
+	for key, val := range acc.Totals() {
+		canonical := canonicalizeResourceType(key)
+		normalized[canonical] += NormalizeUnits(canonical, val)
 	}
 	return normalized
 }

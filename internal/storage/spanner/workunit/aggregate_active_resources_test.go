@@ -21,9 +21,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	storagetest "xmanager_cloud/internal/storage/testing"
@@ -48,23 +47,14 @@ func seedExperimentWithCreator(ctx context.Context, t *testing.T, store *spanner
 
 func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spanner.Storage, specs []storagetest.ActiveResourceSpec) {
 	t.Helper()
-	ts := timestamppb.New(time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC))
-	err := store.RunInTransaction(ctx, func(txCtx context.Context, tx *storage.Transaction) error {
-		for _, spec := range specs {
-			wu := spanner.BlankWorkUnitProto(spec.XID, spec.WID)
-			wu.CreateTime, wu.UpdateTime = ts, ts
-			wu.CurrentWorkUnitExecution.CreateTime, wu.CurrentWorkUnitExecution.UpdateTime = ts, ts
-			wu.CurrentWorkUnitExecution.Status.State = spec.State
-			wu.Executable = spec.Executable()
-			if err := tx.WorkUnits.InsertWorkUnit(txCtx, wu); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("seedActiveResourceWorkUnits RunInTransaction failed: %v", err)
+	wus := make([]*essmsgpb.WorkUnit, 0, len(specs))
+	for _, spec := range specs {
+		wu := spanner.BlankWorkUnitProto(spec.XID, spec.WID)
+		wu.CurrentWorkUnitExecution.Status.State = spec.State
+		wu.Executable = spec.Executable()
+		wus = append(wus, wu)
 	}
+	insertWorkUnitsAt(ctx, t, store, time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC), wus)
 }
 
 func TestAggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
@@ -105,7 +95,7 @@ func TestAggregateActiveResourcesByAuthor_AllPagesAndNormalization(t *testing.T)
 	if len(pageOne.WorkUnits) != 2 || pageOne.TotalQueueSize != storagetest.ActiveResourceSpecsActiveCount || pageOne.NextPageToken == "" {
 		t.Fatalf("pageOne = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(pageOne.WorkUnits), pageOne.TotalQueueSize, pageOne.NextPageToken, storagetest.ActiveResourceSpecsActiveCount)
 	}
-	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations); diff != "" {
+	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations, storagetest.AuthorAllocationOrder); diff != "" {
 		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
 	}
 }

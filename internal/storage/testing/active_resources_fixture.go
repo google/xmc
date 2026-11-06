@@ -15,6 +15,7 @@
 package storagetest
 
 import (
+	"github.com/google/go-cmp/cmp/cmpopts"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/storage"
@@ -86,23 +87,25 @@ func ActiveResourceSpecs(aliceXID, bobXID int64) []ActiveResourceSpec {
 const ActiveResourceSpecsActiveCount = 6
 
 // WantActiveResourceAllocations returns the expected aggregation of ActiveResourceSpecs when the
-// experiments are created by alice@example.com and bob@example.com.
+// experiments are created by alice@example.com and bob@example.com. Compare with
+// AuthorAllocationOrder, since storage returns rows in no particular order.
 func WantActiveResourceAllocations() []storage.AuthorResourceAllocation {
 	const alice, bob = "alice@example.com", "bob@example.com"
-	running, pending := storage.ActiveResourceStateRunning, storage.ActiveResourceStatePending
 	return []storage.AuthorResourceAllocation{
-		{Author: alice, ResourceType: "cpu", State: pending, Units: 1},
-		{Author: alice, ResourceType: "cpu", State: running, Units: 6},
-		{Author: alice, ResourceType: "memory", State: pending, Units: 2},
-		{Author: alice, ResourceType: "memory", State: running, Units: 12},
-		{Author: alice, ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: pending, Units: 8},
-		{Author: alice, ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: running, Units: 6},
-		{Author: bob, ResourceType: "cpu", State: pending, Units: 4},
-		{Author: bob, ResourceType: "cpu", State: running, Units: 8},
-		{Author: bob, ResourceType: "google.com/tpu: tpu-v5-lite-podslice", State: pending, Units: 4},
-		{Author: bob, ResourceType: "memory", State: pending, Units: 2},
-		{Author: bob, ResourceType: "memory", State: running, Units: 16},
-		{Author: bob, ResourceType: "nvidia.com/gpu: nvidia-h100-80gb", State: pending, Units: 4},
-		{Author: bob, ResourceType: "nvidia.com/gpu: nvidia-h100-80gb", State: running, Units: 2},
+		{Author: alice, ResourceType: "cpu", RunningUnits: 6, PendingUnits: 1},
+		{Author: alice, ResourceType: "memory", RunningUnits: 12, PendingUnits: 2},
+		{Author: alice, ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 6, PendingUnits: 8},
+		{Author: bob, ResourceType: "cpu", RunningUnits: 8, PendingUnits: 4},
+		{Author: bob, ResourceType: "google.com/tpu: tpu-v5-lite-podslice", PendingUnits: 4},
+		{Author: bob, ResourceType: "memory", RunningUnits: 16, PendingUnits: 2},
+		{Author: bob, ResourceType: "nvidia.com/gpu: nvidia-h100-80gb", RunningUnits: 2, PendingUnits: 4},
 	}
 }
+
+// AuthorAllocationOrder makes cmp.Diff ignore the order of AuthorResourceAllocation rows.
+var AuthorAllocationOrder = cmpopts.SortSlices(func(a, b storage.AuthorResourceAllocation) bool {
+	if a.Author != b.Author {
+		return a.Author < b.Author
+	}
+	return a.ResourceType < b.ResourceType
+})
