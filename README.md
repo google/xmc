@@ -29,6 +29,9 @@ Explore the folders and guides below to set up, build, or deploy XMC:
 * ### [Developer Documentation](docs/developer.md)
   Technical guides on compiling protocol buffers, custom AIP-160 filter evaluation, testing private packages, running database health checks, pre-commit hooks, and static code analysis.
 
+* ### [CI Runner Infrastructure & Bazel Caching Guide](docs/ci_runner_infrastructure.md)
+  Architecture and operational guide for self-hosted GitHub Actions Runner Controller (ARC) runners on GKE, the in-cluster Bazel remote cache, and runner migration playbooks.
+
 * ### [Deployment Topologies](docs/design/topologies.md)
   Deep dive into the structural layout differences between Cluster Toolkit Blueprint v1 (GKE + Cloud Run + infrastructure IAP) and Blueprint v2 (Unified GKE + Gateway API + app-level OAuth2).
 
