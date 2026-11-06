@@ -1306,6 +1306,22 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 			want:    gated,
 			wantMsg: "waiting on dependencies: redpanda (disabled), foo (not found)",
 		},
+		{
+			// Mirrors the stable-2026a hpo blueprint: no xmc-cmp release is installed while vizier is disabled.
+			name: "acknowledged EXPERIMENTAL hpo is gated while vizier is disabled",
+			spec: &componentspb.ComponentSpec{
+				Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+				Dependencies:            []string{"vizier", "clickhouse"},
+			},
+			deps: snapshot(
+				readyComponent("vizier", func(u *unstructured.Unstructured) { u.Object["spec"] = map[string]any{"enabled": false} }),
+				readyComponent("clickhouse", nil),
+			),
+			want:    gated,
+			wantMsg: "waiting on dependencies: vizier (disabled)",
+		},
 		{name: "3P wrapper is gated after registering intent", spec: spec3P, deps: snapshot(), want: gated},
 		{
 			name: "CMS NotFound while gated is tolerated",
@@ -1383,6 +1399,45 @@ func TestReconcileComponent_DependencyActivationGating(t *testing.T) {
 			spec: spec1P("ingestion"),
 			deps: snapshot(readyComponent("ingestion", withDependencies("ingestion"))),
 			want: withoutDepsCondition(actuated),
+		},
+		{
+			name: "unacknowledged EXPERIMENTAL component is gated with Stalled=True and ExperimentalNotAcknowledged without actuating",
+			spec: &componentspb.ComponentSpec{
+				Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: false,
+			},
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonExperimentalNotAcknowledged, StalledStatus: ConditionStatusTrue,
+				SetCalls: 1, EnsureCalls: 0,
+			},
+			wantMsg: `EXPERIMENTAL component "ingestion" requires spec.acknowledgeExperimental: true when enabled`,
+		},
+		{
+			name: "acknowledged EXPERIMENTAL component actuates normally",
+			spec: &componentspb.ComponentSpec{
+				Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: true,
+			},
+			want: withoutDepsCondition(actuated),
+		},
+		{
+			name: "flipping live component to unacknowledged EXPERIMENTAL holds upgrade with Stalled=True without tearing down workload",
+			helm: running(1),
+			spec: &componentspb.ComponentSpec{
+				Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+				Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+				AcknowledgeExperimental: false,
+			},
+			existing: runningConds(1),
+			want: gateOutcome{
+				State:       componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+				ReadyStatus: ConditionStatusFalse, ReadyReason: ReasonExperimentalNotAcknowledged, StalledStatus: ConditionStatusTrue,
+				DependenciesReady: ConditionStatusTrue, SetCalls: 1, EnsureCalls: 0,
+			},
+			wantMsg: `EXPERIMENTAL component "ingestion" requires spec.acknowledgeExperimental: true when enabled; running workload is left in place`,
 		},
 	}
 	for _, tt := range tests {
@@ -1638,7 +1693,7 @@ func verifyEnvtestSSAMergeAndFinalizers(ctx context.Context, t *testing.T, dynCl
 	cr := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
 		"metadata": map[string]any{"name": "ssa-merge-comp", "namespace": "default"},
-		"spec":     map[string]any{"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true},
+		"spec":     map[string]any{"enabled": true, "stability": "STABLE", "componentType": "COMPONENT_TYPE_CUSTOM_1P_COMPONENT", "deletionProtection": true},
 	}}
 	created, err := compClient.Create(ctx, cr, metav1.CreateOptions{})
 	if err != nil {
@@ -1801,6 +1856,20 @@ func TestReconcileComponent_CMSSyncCondition(t *testing.T) {
 			wantReadyRsn:   ReasonDependencyCycle,
 			wantSynced:     ConditionStatusTrue,
 			wantSyncedRsn:  ReasonCMSSynced,
+			wantAccessKept: true,
+		},
+		{
+			name:           "CMS-detected stability inversion in SetComponentIntent reports StabilityInversion and Synced=True, preserving access and stamping observedGeneration",
+			cms:            &mockCMS{setErr: errorInfoStatus(t, codes.FailedPrecondition, store.ReasonStabilityInversion, store.ErrorInfoDomain, `stability inversion: STABLE component "ch" cannot depend on EXPERIMENTAL component "exp-dep"`)},
+			in:             ReconcileComponentInput{Namespace: "xmc", Name: "ch", Generation: 2, ExistingObservedGeneration: 1, Spec: spec3P, Enabled: true, ExistingConditions: prevReady, ExistingAccess: prevAccess},
+			wantErr:        true,
+			wantState:      componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION,
+			wantObsGen:     2,
+			wantReady:      ConditionStatusFalse,
+			wantReadyRsn:   ReasonStabilityInversion,
+			wantSynced:     ConditionStatusTrue,
+			wantSyncedRsn:  ReasonCMSSynced,
+			wantStalledGen: 2,
 			wantAccessKept: true,
 		},
 		{
@@ -2092,7 +2161,7 @@ func verifyEnvtestContractBreach(ctx context.Context, t *testing.T, dynClient dy
 		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
 		"metadata": map[string]any{"name": "ray-broken-wrapper", "namespace": "default"},
 		"spec": map[string]any{
-			"enabled": true, "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+			"enabled": true, "stability": "STABLE", "componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
 			"wrapperRef": map[string]any{"group": "ray.io", "version": "v1", "kind": "RayCluster", "name": "ray-malformed"},
 		},
 	}}

@@ -76,7 +76,8 @@ jobs:
           # SHA via `git fetch origin <sha>`, which fails on this private repo without
           # persisted credentials. Full history avoids that fetch. PRs use the REST API, so
           # they keep a shallow clone.
-          fetch-depth: ${{ github.event_name == 'merge_group' && 0 || 1 }}
+          # Note: '0' and '1' are quoted because numeric 0 is falsy in GitHub Actions expressions.
+          fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '1' }}
 
       - name: 'Check Changed Paths'
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'

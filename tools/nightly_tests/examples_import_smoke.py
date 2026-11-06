@@ -49,14 +49,15 @@ from collections.abc import Iterator, Sequence
 from typing import Literal
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-DEFAULT_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "nightly-examples-e2e.yml"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-# Matrix entry keys the tool reads.
-_MATRIX_KEYS = ("id", "example_path", "entrypoint", "args", "verify_module")
-# Matches a tracked matrix key, optionally opening a YAML list item.
-_KEY_RE = re.compile(rf"^\s*(?:-\s+)?(?P<key>{'|'.join(_MATRIX_KEYS)}):(?P<value>.*)$")
-# Matches the first line of a YAML list item (`- key: ...`).
-_ITEM_START_RE = re.compile(r"^\s*-\s")
+from tools.nightly_tests.workflow_matrix import (  # noqa: E402
+    DEFAULT_WORKFLOW,
+    parse_matrix_items,
+    validate_examples_filter,
+)
+
 # `${VAR}` placeholders in matrix args (expanded by the nightly step's `eval echo`).
 _PLACEHOLDER_RE = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}")
 # Placeholders the nightly launch step defines, with the value used when unset here.
@@ -122,15 +123,6 @@ class SmokeResult:
     kind: Literal["entrypoint", "verify_module"] = "entrypoint"
 
 
-def _unquote(raw: str) -> str:
-    """Return a scalar YAML value without surrounding quotes or a trailing comment."""
-    value = raw.strip()
-    if value[:1] in ("'", '"'):
-        end = value.find(value[0], 1)
-        return value[1:end] if end > 0 else value[1:]
-    return value.split(" #", 1)[0].strip()
-
-
 def _entrypoint_from_item(item: dict[str, str]) -> Entrypoint | None:
     """Build an entrypoint from a matrix item, rejecting half-specified items.
 
@@ -148,56 +140,36 @@ def _entrypoint_from_item(item: dict[str, str]) -> Entrypoint | None:
     return Entrypoint(path, entrypoint, item.get("args", ""))
 
 
-def _matrix_lines(workflow_text: str) -> Iterator[str]:
-    """Yield only lines nested under a `matrix:` key, using indentation to scope blocks."""
-    matrix_indent: int | None = None
-    for line in workflow_text.splitlines():
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(line) - len(stripped)
-        if matrix_indent is not None and indent <= matrix_indent:
-            matrix_indent = None
-        if matrix_indent is not None:
-            yield line
-        elif stripped.startswith("matrix:"):
-            matrix_indent = indent
-
-
-def parse_matrix_items(workflow_text: str) -> list[dict[str, str]]:
-    """Return the tracked keys of every YAML list item under `matrix:` blocks.
-
-    Only lines under `matrix:` blocks are considered, so same-named keys in step
-    inputs or other jobs are ignored. Keys are grouped per YAML list item, so
-    their order, quoting style (single, double, or none), trailing comments, and
-    interleaved keys do not matter.
-    """
-    items: list[dict[str, str]] = []
-    # Indentation of the `-` opening the active list item; None when outside an item,
-    # so keys after a list ends (or before the first item of a later matrix block)
-    # are never attributed to the previous item.
-    item_indent: int | None = None
-    for line in _matrix_lines(workflow_text):
-        indent = len(line) - len(line.lstrip())
-        if _ITEM_START_RE.match(line):
-            items.append({})
-            item_indent = indent
-        elif item_indent is not None and indent <= item_indent:
-            item_indent = None
-        key_match = _KEY_RE.match(line)
-        if key_match and item_indent is not None:
-            items[-1][key_match.group("key")] = _unquote(key_match.group("value"))
-    return [item for item in items if item]
-
-
 def _selected_items(
-    workflow_text: str, examples_filter: frozenset[str]
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
 ) -> Iterator[dict[str, str]]:
     """Yield matrix items, keeping only filtered `id`s when a filter is given."""
-    for item in parse_matrix_items(workflow_text):
+    for item in matrix_items:
         if examples_filter and item.get("id", "").lower() not in examples_filter:
             continue
         yield item
+
+
+def _entrypoints_from_items(
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
+) -> list[Entrypoint]:
+    """Return unique, non-empty entrypoints from pre-parsed matrix items."""
+    entries: dict[Entrypoint, None] = {}
+    for item in _selected_items(matrix_items, examples_filter):
+        entry = _entrypoint_from_item(item)
+        if entry is not None:
+            entries[entry] = None
+    return list(entries)
+
+
+def _verify_modules_from_items(
+    matrix_items: list[dict[str, str]], examples_filter: frozenset[str]
+) -> list[str]:
+    """Return unique `verify_module`s from pre-parsed matrix items, in order."""
+    modules = (
+        item.get("verify_module", "") for item in _selected_items(matrix_items, examples_filter)
+    )
+    return list(dict.fromkeys(module for module in modules if module))
 
 
 def parse_entrypoints(
@@ -218,22 +190,14 @@ def parse_entrypoints(
         ValueError: If a matrix entry sets only one of `example_path` and
             `entrypoint`, so matrix drift cannot silently drop examples.
     """
-    entries: dict[Entrypoint, None] = {}
-    for item in _selected_items(workflow_text, examples_filter):
-        entry = _entrypoint_from_item(item)
-        if entry is not None:
-            entries[entry] = None
-    return list(entries)
+    return _entrypoints_from_items(parse_matrix_items(workflow_text), examples_filter)
 
 
 def parse_verify_modules(
     workflow_text: str, examples_filter: frozenset[str] = frozenset()
 ) -> list[str]:
     """Return unique matrix `verify_module`s (including UI-only entries), in order."""
-    modules = (
-        item.get("verify_module", "") for item in _selected_items(workflow_text, examples_filter)
-    )
-    return list(dict.fromkeys(module for module in modules if module))
+    return _verify_modules_from_items(parse_matrix_items(workflow_text), examples_filter)
 
 
 def expand_args(raw_args: str) -> list[str]:
@@ -389,8 +353,8 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--examples-filter",
         default="",
-        help="Comma-separated matrix ids to check (case-insensitive, whitespace is significant, "
-        "exactly like the nightly `examples_filter` input); empty checks every entry.",
+        help="Comma-separated matrix.example.id values to check (case-insensitive, without spaces); "
+        "empty checks every entry.",
     )
     args = parser.parse_args(argv)
     # Subprocesses run with cwd=<example dir>, so relative paths must be anchored now.
@@ -410,18 +374,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         Process exit code (0 success, 1 import failure, 2 unexpected error).
     """
     args = _parse_args(argv)
-    # Matches the nightly filter exactly: `grep -qi ",<id>,"` on ",<filter>," is
-    # case-insensitive but does not strip whitespace, so neither do we.
-    examples_filter = frozenset(part.lower() for part in args.examples_filter.split(",") if part)
+    err_stream = sys.stderr if args.list_example_paths else sys.stdout
     try:
-        workflow_text = args.workflow.read_text(encoding="utf-8")
-        entries = parse_entrypoints(workflow_text, examples_filter)
-        verify_modules = parse_verify_modules(workflow_text, examples_filter)
+        matrix_items = parse_matrix_items(args.workflow.read_text(encoding="utf-8"))
+        # Matches the nightly filter case-insensitively while rejecting unknown or malformed tokens.
+        examples_filter = validate_examples_filter(args.examples_filter, matrix_items)
+        entries = _entrypoints_from_items(matrix_items, examples_filter)
+        verify_modules = _verify_modules_from_items(matrix_items, examples_filter)
+        if not entries and not examples_filter:
+            raise ValueError("no example entrypoints found")
     except (ValueError, OSError) as err:
-        print(json.dumps({"error": f"{args.workflow}: {err}"}))
-        return 2
-    if not entries and not examples_filter:
-        print(json.dumps({"error": f"no example entrypoints found in {args.workflow}"}))
+        print(json.dumps({"error": f"{args.workflow}: {err}"}), file=err_stream)
         return 2
     if args.list_example_paths:
         # May be empty when the filter selects only UI-only entries (no entrypoint).

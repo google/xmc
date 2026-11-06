@@ -124,7 +124,7 @@ func verifyBlueprintChart(t *testing.T, chartDir, crdPath string, want linter.Co
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Component manifest mismatch (-want +got):\n%s", diff)
 	}
-	validateManifestAgainstCRD(t, crdPath, &got)
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 }
 
 func stageChartFile(t *testing.T, srcPath, dstPath string) {
@@ -230,6 +230,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "event-stream",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -263,6 +264,7 @@ func TestBlueprint_LinterAndCRDSchemaValidation(t *testing.T) {
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
 					Parameters: map[string]string{
@@ -315,6 +317,7 @@ parameters:
 					ComponentClass:     "analytical-db",
 					Version:            "0.1.0",
 					ChartVersion:       "0.1.0",
+					Stability:          "STABLE",
 					DeletionProtection: false,
 					DeletionPolicy:     "Orphan",
 					Parameters: map[string]string{
@@ -328,6 +331,70 @@ parameters:
 						"secretPasswordKey":   "clickhouse-password",
 						"healthCheckEndpoint": "http://clickhouse-custom.xmc-metrics.svc.cluster.local:8443/ping",
 						"storageSize":         "100Gi",
+					},
+				},
+			},
+		},
+		{
+			name:      "VizierDefaultBlueprint",
+			component: "vizier",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "vizier",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"app.kubernetes.io/name":       "vizier",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+					Annotations: profileCRAnnotations(),
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
+					ComponentClass:     "optimization-engine",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					Stability:          "EXPERIMENTAL",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"endpoint": "vizier-service.xmc.svc.cluster.local:7077",
+					},
+				},
+			},
+		},
+		{
+			name:      "HPODefaultBlueprint",
+			component: "hpo",
+			want: linter.ComponentManifest{
+				APIVersion: "xmc.dev/v1alpha1",
+				Kind:       "Component",
+				Metadata: linter.ObjectMetadata{
+					Name:      "hpo",
+					Namespace: "xmc",
+					Labels: map[string]string{
+						"xmc.dev/profile":              "stable-2026a",
+						"xmc.dev/component-type":       "custom-1p-component",
+						"app.kubernetes.io/name":       "hpo",
+						"app.kubernetes.io/managed-by": "Helm",
+					},
+					Annotations: profileCRAnnotations(),
+				},
+				Spec: linter.ComponentManifestSpec{
+					Enabled:            boolPtr(false),
+					ComponentType:      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
+					ComponentClass:     "hyperparameter-optimization",
+					Version:            "0.1.0",
+					ChartVersion:       "0.1.0",
+					Stability:          "EXPERIMENTAL",
+					DeletionProtection: true,
+					DeletionPolicy:     "Delete",
+					Dependencies: []linter.ComponentDependencyRef{
+						{Name: "vizier"},
+						{Name: "clickhouse"},
 					},
 				},
 			},
@@ -359,6 +426,7 @@ type crdSchemaDoc struct {
 				OpenAPIV3Schema struct {
 					Properties struct {
 						Spec struct {
+							Required   []string `yaml:"required"`
 							Properties struct {
 								WrapperRef struct {
 									Properties struct {
@@ -379,7 +447,7 @@ type crdSchemaDoc struct {
 	} `yaml:"spec"`
 }
 
-func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.ComponentManifest) {
+func validateManifestAgainstCRD(t *testing.T, crdPath string, rendered []byte, comp *linter.ComponentManifest) {
 	t.Helper()
 	rawCRD, err := os.ReadFile(crdPath)
 	if err != nil {
@@ -400,6 +468,17 @@ func validateManifestAgainstCRD(t *testing.T, crdPath string, comp *linter.Compo
 	wantAPIVersion := crd.Spec.Group + "/" + version.Name
 	if comp.APIVersion != wantAPIVersion || comp.Kind != crd.Spec.Names.Kind {
 		t.Errorf("manifest GVK (%s, %s) does not match CRD (%s, %s)", comp.APIVersion, comp.Kind, wantAPIVersion, crd.Spec.Names.Kind)
+	}
+
+	var rawDoc map[string]any
+	if err := yaml.Unmarshal(rendered, &rawDoc); err != nil {
+		t.Fatalf("failed to unmarshal rendered manifest map: %v", err)
+	}
+	rawSpec, _ := rawDoc["spec"].(map[string]any)
+	for _, reqField := range version.Schema.OpenAPIV3Schema.Properties.Spec.Required {
+		if val, ok := rawSpec[reqField]; !ok || val == nil || fmt.Sprint(val) == "" {
+			t.Errorf("rendered manifest %q missing CRD required spec.%s field", comp.Metadata.Name, reqField)
+		}
 	}
 
 	if comp.Spec.WrapperRef != nil {
@@ -458,6 +537,7 @@ metadata:
   name: {{ .Release.Name | quote }}
   namespace: "xmc"
 spec:
+  stability: "STABLE"
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   chartVersion: {{ .Values.emptyList | default "1.0.0" | quote }}
   parameters:
@@ -534,6 +614,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 			ComponentClass:     "metrics-ingestion",
 			Version:            "0.1.0",
 			ChartVersion:       "0.1.0",
+			Stability:          "STABLE",
 			DeletionProtection: true,
 			DeletionPolicy:     "Delete",
 			Dependencies: []linter.ComponentDependencyRef{
@@ -553,6 +634,8 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("rendered Ingestion Gateway Component manifest mismatch (-want +got):\n%s", diff)
 	}
+	crdPath := resolveRepoPath(t, filepath.Join("deploy", "helm", "templates", "components", "crd.yaml"))
+	validateManifestAgainstCRD(t, crdPath, rendered, &got)
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)
@@ -751,23 +834,82 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		redpanda   bool
-		clickhouse bool
-		wantValid  bool
+		name      string
+		overrides map[string]any
+		wantValid bool
+		wantRules []string
 	}{
-		{name: "both dependencies enabled", redpanda: true, clickhouse: true, wantValid: true},
-		{name: "redpanda disabled", redpanda: false, clickhouse: true},
-		{name: "clickhouse disabled", redpanda: true, clickhouse: false},
+		{
+			name: "both dependencies enabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": true},
+				"clickhouse":        map[string]any{"enabled": true},
+			},
+			wantValid: true,
+		},
+		{
+			name: "redpanda disabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": false},
+				"clickhouse":        map[string]any{"enabled": true},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name: "clickhouse disabled",
+			overrides: map[string]any{
+				"ingestion-gateway": map[string]any{"enabled": true},
+				"redpanda":          map[string]any{"enabled": true},
+				"clickhouse":        map[string]any{"enabled": false},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name:      "default profile renders valid with disabled experimental components",
+			overrides: map[string]any{},
+			wantValid: true,
+		},
+		{
+			name: "vizier enabled without acknowledgeExperimental fails",
+			overrides: map[string]any{
+				"vizier": map[string]any{"enabled": true},
+			},
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name: "hpo enabled without acknowledgeExperimental fails",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true},
+			},
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name: "hpo enabled with disabled vizier fails DAG and compatibility matrix",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": false},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
+			},
+			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
+		},
+		{
+			name: "vizier clickhouse and hpo enabled with acknowledgeExperimental passes without stability inversion",
+			overrides: map[string]any{
+				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
+				"clickhouse": map[string]any{"enabled": true},
+				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
+			},
+			wantValid: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeTestManifest(t, dir, "rendered.yaml", renderStable2026aProfile(t, profileDir, map[string]any{
-				"ingestion-gateway": map[string]any{"enabled": true},
-				"redpanda":          map[string]any{"enabled": tt.redpanda},
-				"clickhouse":        map[string]any{"enabled": tt.clickhouse},
-			}))
+			writeTestManifest(t, dir, "rendered.yaml", renderStable2026aProfile(t, profileDir, tt.overrides))
 			got, err := linter.NewLinter(rules).ValidateDirectory(dir)
 			if err != nil {
 				t.Fatalf("ValidateDirectory() error: %v", err)
@@ -776,7 +918,7 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 				t.Fatalf("ValidateDirectory() valid = %v, want %v (errors: %+v)", got.Valid, tt.wantValid, got.Errors)
 			}
 			if !tt.wantValid {
-				assertDiagnosticRules(t, got, []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"})
+				assertDiagnosticRules(t, got, tt.wantRules)
 			}
 		})
 	}
@@ -1004,8 +1146,8 @@ func TestStable2026aCustomReleaseNamespace(t *testing.T) {
 					t.Errorf("%s metadata.namespace = %q, want %q", cm.Metadata.Name, cm.Metadata.Namespace, tc.wantNS)
 				}
 			}
-			if count != 3 {
-				t.Errorf("decoded %d Component CRs, want 3", count)
+			if count != 5 {
+				t.Errorf("decoded %d Component CRs, want 5", count)
 			}
 		})
 	}

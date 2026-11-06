@@ -116,6 +116,15 @@ type ComponentDiff struct {
 	State *int64
 }
 
+// ExperimentSnapshotComponent describes a single component snapshot locked by an experiment.
+type ExperimentSnapshotComponent struct {
+	ComponentID int64
+	// Name is nil when the component is missing from the catalog.
+	Name             *string
+	LockedGeneration int64
+	Spec             *componentspb.ComponentSpec
+}
+
 // ExperimentStore defines storage operations for experiments.
 type ExperimentStore interface {
 	// FetchExperiment retrieves an experiment by its unique ID.
@@ -129,6 +138,10 @@ type ExperimentStore interface {
 	// the experiment's snapshot. It returns an empty slice for consistent, inactive, or snapshot-free
 	// experiments. A limit <= 0 returns all drifted components.
 	FetchDriftedComponents(ctx context.Context, xid int64, limit int) ([]ComponentDiff, error)
+
+	// FetchExperimentSnapshotComponents retrieves the component snapshots locked by an active
+	// experiment, ordered by name. It returns an empty slice for inactive or snapshot-free experiments.
+	FetchExperimentSnapshotComponents(ctx context.Context, xid int64) ([]ExperimentSnapshotComponent, error)
 
 	// ListExperiments retrieves a list of experiments matching the given filter. Staleness should
 	// be set to 0 for strong reads, and up to 15 seconds for stale reads.

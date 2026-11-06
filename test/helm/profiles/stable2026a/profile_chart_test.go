@@ -27,13 +27,13 @@ import (
 	"xmanager_cloud/test/helm/profiles/profilecontract"
 )
 
-// stable2026a describes the stable-2026a profile: three catalog components, rendered in
+// stable2026a describes the stable-2026a profile: five catalog components, rendered in
 // dependency order.
 func stable2026a() profilecontract.Spec {
 	return profilecontract.Spec{
 		ChartRelPath: "deploy/profiles/stable-2026a",
 		ProfileName:  "stable-2026a",
-		Components:   []string{"redpanda", "clickhouse", "ingestion-gateway"},
+		Components:   []string{"redpanda", "clickhouse", "ingestion-gateway", "vizier", "hpo"},
 	}
 }
 
@@ -45,7 +45,8 @@ func TestStable2026a_ProfileContract(t *testing.T) {
 func TestStable2026a_RendersCatalogWithImageTag(t *testing.T) {
 	t.Parallel()
 	profilecontract.AssertRendersComponents(t, stable2026a(), map[string]any{"components": map[string]any{"redpanda": map[string]any{"enabled": true},
-		"clickhouse": map[string]any{"enabled": true}, "ingestion-gateway": map[string]any{"enabled": true, "imageTag": "v1.2.3"}}})
+		"clickhouse": map[string]any{"enabled": true}, "ingestion-gateway": map[string]any{"enabled": true, "imageTag": "v1.2.3"},
+		"vizier": map[string]any{"enabled": true, "acknowledgeExperimental": true}, "hpo": map[string]any{"enabled": true, "acknowledgeExperimental": true, "imageTag": "v1.2.3"}}})
 }
 
 func TestStable2026a_OverridesMatchStandalone(t *testing.T) {
@@ -57,11 +58,15 @@ func TestStable2026a_OverridesMatchStandalone(t *testing.T) {
 		overrides map[string]any
 	}{
 		{name: "redpanda overrides", component: "redpanda", overrides: map[string]any{"enabled": true, "namespace": "data",
-			"deletionProtection": false, "deletionPolicy": "Orphan", "parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"}}},
+			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "parameters": map[string]any{"kafkaPort": 19092}, "dependencies": []any{"clickhouse"}}},
 		{name: "clickhouse overrides", component: "clickhouse", overrides: map[string]any{"enabled": true,
 			"parameters": map[string]any{"host": "ch.example.internal", "httpPort": 18123}}},
 		{name: "ingestion-gateway overrides", component: "ingestion-gateway", overrides: map[string]any{"enabled": true, "imageTag": "v9",
 			"dependencies": []any{"redpanda"}, "parameters": map[string]any{"topicName": "custom", "extraKey": "extra"}}},
+		{name: "vizier overrides", component: "vizier", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
+			"parameters": map[string]any{"endpoint": "vizier-custom.xmc.svc.cluster.local:8088"}}},
+		{name: "hpo overrides", component: "hpo", overrides: map[string]any{"enabled": true, "namespace": "hpo-ns", "imageTag": "v9",
+			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "dependencies": []any{"vizier"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -76,7 +81,7 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 
 	s := stable2026a()
 	docs := profilecontract.RenderDocs(t, profilecontract.LoadProfile(t, s), map[string]any{"global": map[string]any{"imageTag": "v2"}, "components": map[string]any{
-		"redpanda": map[string]any{"deletionProtection": false}, "ingestion-gateway": map[string]any{"enabled": true, "dependencies": []any{}}}})
+		"redpanda": map[string]any{"deletionProtection": false, "acknowledgeExperimental": false}, "ingestion-gateway": map[string]any{"enabled": true, "acknowledgeExperimental": true, "dependencies": []any{}}}})
 	tests := []struct {
 		name      string
 		component string
@@ -84,9 +89,17 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 		want      any
 	}{
 		{name: "deletionProtection false wins over default true", component: "redpanda", field: "deletionProtection", want: false},
-		{name: "untouched component keeps default", component: "clickhouse", field: "deletionProtection", want: true},
+		{name: "acknowledgeExperimental false is rendered when explicitly set", component: "redpanda", field: "acknowledgeExperimental", want: false},
+		{name: "acknowledgeExperimental true is rendered when explicitly set", component: "ingestion-gateway", field: "acknowledgeExperimental", want: true},
+		{name: "untouched component keeps default deletionProtection", component: "clickhouse", field: "deletionProtection", want: true},
+		{name: "untouched component renders catalog STABLE stability", component: "clickhouse", field: "stability", want: "STABLE"},
+		{name: "untouched vizier renders catalog EXPERIMENTAL stability", component: "vizier", field: "stability", want: "EXPERIMENTAL"},
+		{name: "untouched vizier omits acknowledgeExperimental", component: "vizier", field: "acknowledgeExperimental", want: nil},
+		{name: "untouched hpo renders catalog EXPERIMENTAL stability", component: "hpo", field: "stability", want: "EXPERIMENTAL"},
+		{name: "untouched hpo omits acknowledgeExperimental", component: "hpo", field: "acknowledgeExperimental", want: nil},
 		{name: "empty dependencies list replaces defaults", component: "ingestion-gateway", field: "dependencies", want: nil},
 		{name: "global imageTag reaches component", component: "ingestion-gateway", field: "imageTag", want: "v2"},
+		{name: "global imageTag reaches hpo", component: "hpo", field: "imageTag", want: "v2"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,7 +120,12 @@ func TestStable2026a_RejectsInvalidValues(t *testing.T) {
 		wantErr   string
 	}{
 		{name: "workload key override", overrides: profilecontract.ComponentOverrides("ingestion-gateway", map[string]any{"deployWorkload": true}), wantErr: "deployWorkload"},
-		{name: "unknown 3P parameter", overrides: profilecontract.ComponentOverrides("redpanda", map[string]any{"parameters": map[string]any{"bogus": "1"}}), wantErr: "bogus"},
+		{name: "workload key override on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"hpoDeployment": map[string]any{"image": "r/sc:v1"}}), wantErr: "hpoDeployment"},
+		{name: "unknown 3P parameter on redpanda", overrides: profilecontract.ComponentOverrides("redpanda", map[string]any{"parameters": map[string]any{"bogus": "1"}}), wantErr: "bogus"},
+		{name: "unknown 3P parameter on vizier", overrides: profilecontract.ComponentOverrides("vizier", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
+		{name: "unknown parameter on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
+		{name: "stability override on vizier", overrides: profilecontract.ComponentOverrides("vizier", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
+		{name: "stability override on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -122,9 +122,9 @@ class SPAHandlerLocalTest(unittest.TestCase):
         handler.wfile = self.mock_wfile
         handler.rfile = io.BytesIO(body)
         handler.headers = {"Content-Length": str(len(body))}
-        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)  # type: ignore[method-assign]
-        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)  # type: ignore[method-assign]
-        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)  # type: ignore[method-assign]
+        handler.send_response = mock.create_autospec(handler.send_response, spec_set=True)
+        handler.send_header = mock.create_autospec(handler.send_header, spec_set=True)
+        handler.end_headers = mock.create_autospec(handler.end_headers, spec_set=True)
         return handler
 
     def enter_context(self, context_manager):
@@ -341,6 +341,26 @@ class SPAHandlerLocalTest(unittest.TestCase):
                 "testcase_name": "invalid_interval",
                 "environ": {"XMC_REFRESH_INTERVAL_MS": "invalid"},
                 "expected": "window.XMC_REFRESH_INTERVAL_MS=30000;",
+            },
+        ]
+        for case in cases:
+            with self.subTest(case["testcase_name"]):
+                self.mock_wfile.seek(0)
+                self.mock_wfile.truncate(0)
+                output = self._get_config_js_output(case["environ"])
+                self.assertIn(case["expected"], output)
+
+    def test_config_js_docs_url(self):
+        cases = [
+            {
+                "testcase_name": "defaults",
+                "environ": {},
+                "expected": 'window.XMC_DOCS_URL="https://github.com/google/xmc";',
+            },
+            {
+                "testcase_name": "custom_env",
+                "environ": {"XMC_DOCS_URL": "https://custom.docs.example.com"},
+                "expected": 'window.XMC_DOCS_URL="https://custom.docs.example.com";',
             },
         ]
         for case in cases:

@@ -40,6 +40,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - comp-b
     - comp-c
@@ -50,6 +51,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   dependencies:
     - comp-d
 `,
@@ -59,6 +61,7 @@ kind: Component
 metadata:
   name: comp-c
 spec:
+  stability: STABLE
   dependencies:
     - comp-d
 `,
@@ -67,6 +70,8 @@ apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
   name: comp-d
+spec:
+  stability: STABLE
 `,
 			},
 			wantValid: true,
@@ -80,6 +85,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - comp-nonexistent
 `,
@@ -96,6 +102,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: false
   dependencies:
     - comp-nonexistent
@@ -112,6 +119,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   dependencies:
     - name: comp-optional
       optional: true
@@ -128,6 +136,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: true
   dependencies:
     - name: comp-b
@@ -139,6 +148,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},
@@ -153,6 +163,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: true
   dependencies:
     - comp-b
@@ -163,6 +174,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},
@@ -178,6 +190,7 @@ kind: Component
 metadata:
   name: comp-a
 spec:
+  stability: STABLE
   enabled: false
   dependencies:
     - comp-b
@@ -188,6 +201,7 @@ kind: Component
 metadata:
   name: comp-b
 spec:
+  stability: STABLE
   enabled: false
 `,
 			},
@@ -281,6 +295,117 @@ spec:
 			},
 			wantValid: false,
 			wantRule:  "DUPLICATE_COMPONENT_NAME",
+		},
+		{
+			name: "STABLE component depending on EXPERIMENTAL component fails STABILITY_INVERSION",
+			manifests: map[string]string{
+				"stable-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-comp
+spec:
+  stability: STABLE
+  dependencies:
+    - exp-comp
+`,
+				"exp-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-comp
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRule:  "STABILITY_INVERSION",
+		},
+		{
+			name: "PREVIEW component depending on EXPERIMENTAL component fails STABILITY_INVERSION",
+			manifests: map[string]string{
+				"preview-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-comp
+spec:
+  stability: PREVIEW
+  dependencies:
+    - exp-comp
+`,
+				"exp-comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-comp
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRule:  "STABILITY_INVERSION",
+		},
+		{
+			name: "EXPERIMENTAL component depending on EXPERIMENTAL and STABLE components passes",
+			manifests: map[string]string{
+				"exp-parent.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-parent
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+  dependencies:
+    - exp-child
+    - stable-child
+`,
+				"exp-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-child
+spec:
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+				"stable-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-child
+spec:
+  stability: STABLE
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "STABLE component depending on PREVIEW component passes",
+			manifests: map[string]string{
+				"stable-parent.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-parent
+spec:
+  stability: STABLE
+  dependencies:
+    - preview-child
+`,
+				"preview-child.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-child
+spec:
+  stability: PREVIEW
+`,
+			},
+			wantValid: true,
 		},
 	}
 

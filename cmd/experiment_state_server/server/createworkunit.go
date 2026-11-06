@@ -90,9 +90,7 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateW
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 
-		// TODO(b/517479143): Fix nil pointer dereference: newWorkUnit is nil when storage returns error, so newWorkUnit.GetName() panics.
 		if status.Code(err) == codes.AlreadyExists {
-			// If the storage layer returns AlreadyExists, newWorkUnit contains the conflicting work unit.
 			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), grpcerr.ErrAlreadyExists)
 		}
 		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, grpcerr.ErrInternal)

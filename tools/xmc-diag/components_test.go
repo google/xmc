@@ -119,8 +119,8 @@ func TestCheckComponents_AllHealthy(t *testing.T) {
 	if len(rep.Components) != 2 {
 		t.Fatalf("len(Components) = %d, want 2", len(rep.Components))
 	}
-	if rep.Components[0].Name != "metrics" || !rep.Components[0].Enabled || rep.Components[0].State != "STATE_READY" {
-		t.Errorf("Component[0] = %+v, want metrics Enabled=true STATE_READY", rep.Components[0])
+	if rep.Components[0].Name != "metrics" || !rep.Components[0].Enabled || rep.Components[0].State != "STATE_READY" || rep.Components[0].Stability != "STABLE" {
+		t.Errorf("Component[0] = %+v, want metrics Enabled=true STATE_READY Stability=STABLE", rep.Components[0])
 	}
 	if rep.Components[1].Name != "profiling" || rep.Components[1].State != "STATE_DISABLED" {
 		t.Errorf("Component[1] = %+v, want profiling STATE_DISABLED", rep.Components[1])

@@ -162,10 +162,16 @@ func preloadImageIntoKind(t *testing.T, clusterName, image string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := exec.CommandContext(ctx, resolveBinaryPath("docker"), "image", "inspect", image).Run(); err != nil {
+	if err := inspectLocalDockerImage(ctx, image); err != nil {
 		runCommand(t, "docker", "pull", image)
 	}
 	runCommand(t, "kind", "load", "docker-image", image, "--name", clusterName)
+}
+
+// inspectLocalDockerImage returns nil when image is in the local Docker daemon, and the
+// `docker image inspect` error otherwise.
+func inspectLocalDockerImage(ctx context.Context, image string) error {
+	return exec.CommandContext(ctx, resolveBinaryPath("docker"), "image", "inspect", image).Run()
 }
 
 func runCommand(t *testing.T, name string, args ...string) string {
@@ -334,7 +340,7 @@ func applyThirdPartyComponentCR(ctx context.Context, t *testing.T, h *kindCluste
 			t.Fatalf("timed out waiting for previous Component %s/%s deletion", ns, name)
 		}
 	}
-	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "version": version}
+	spec := map[string]any{"componentType": "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", "componentClass": compClass, "deletionProtection": false, "enabled": true, "stability": "STABLE", "version": version}
 	if len(wrapperRef) > 0 {
 		spec["wrapperRef"] = wrapperRef
 	}

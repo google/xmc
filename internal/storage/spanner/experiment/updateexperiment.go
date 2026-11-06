@@ -32,7 +32,7 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-// TODO(b/517479143): Refactor UpdateExperiment to extract experiment merging and status message persistence to a higher domain service layer.
+// TODO: Refactor UpdateExperiment to extract experiment merging and status message persistence to a higher domain service layer.
 // UpdateExperiment updates an experiment with the given update mask. We return both the original
 // and updated experiments, so that the caller can choose whether to perform additional actions
 // based on the original experiment state.

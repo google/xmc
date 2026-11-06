@@ -111,7 +111,7 @@ def publish_via_gh_cli(
         ) from e
 
 
-# TODO(b/398234123): call_github_api currently only inspects os.environ["GITHUB_TOKEN"].
+# TODO: call_github_api currently only inspects os.environ["GITHUB_TOKEN"].
 # Since mutating os.environ is process-global and not thread-safe, update call_github_api
 # to check GH_TOKEN natively or accept an explicit token: str | None parameter once
 # github_utils is promoted to //tools/common.

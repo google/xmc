@@ -17,7 +17,6 @@
 
 import argparse
 import json
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,7 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.common.tool_utils import HandledError, run_command, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
@@ -86,7 +85,7 @@ def reply_comment(args):
 
     # Fetch latest commit ID of the SKILL.md file
     try:
-        skill_commit_id = subprocess.check_output(
+        skill_commit_id = run_command(
             [
                 "git",
                 "log",
@@ -95,9 +94,10 @@ def reply_comment(args):
                 "--",
                 ":/.agents/skills/xmc_address_pr_comment/SKILL.md",
             ],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
+            capture_output=True,
+            log_on_error=False,
+            log_cmd=False,
+        ).stdout.strip()
         if not skill_commit_id:
             skill_commit_id = "unknown"
     except Exception:
@@ -147,8 +147,32 @@ def reply_comment(args):
         )
 
     if getattr(args, "resolve", False) is not True:
-        return response
-    return _resolve_replied_thread(parsed, response)
+        return _summarize_reply(parsed, response, resolved=False)
+    resolution = _resolve_replied_thread(parsed, response)
+    return _summarize_reply(parsed, response, resolved=bool(resolution.get("is_resolved")))
+
+
+def _summarize_reply(parsed: dict, response: dict, resolved: bool) -> dict:
+    """Reduces the posted reply to the fields callers need.
+
+    The raw GitHub response carries the full `diff_hunk`, body, and user
+    objects (several KB per reply), which only bloats tool output.
+
+    Args:
+        parsed: Parsed comment URL components from `parse_comment_url`.
+        response: GitHub API response of the posted reply.
+        resolved: Whether this call resolved the comment's review thread.
+
+    Returns:
+        The reply `id`, `html_url`, the `in_reply_to` comment ID, and `resolved`.
+    """
+    reply = response if isinstance(response, dict) else {}
+    return {
+        "id": reply.get("id"),
+        "html_url": reply.get("html_url"),
+        "in_reply_to": reply.get("in_reply_to_id") or parsed["comment_id"],
+        "resolved": resolved,
+    }
 
 
 def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
@@ -159,14 +183,14 @@ def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
         response: GitHub API response of the posted reply.
 
     Returns:
-        The reply response with a `resolved_thread` entry added.
+        The `resolve_review_thread` result (`thread_id`, `is_resolved`).
 
     Raises:
         HandledError: If the thread cannot be resolved. The reply is already
             posted at that point, so the error details carry the reply ID.
     """
     try:
-        resolved = resolve_review_thread(
+        return resolve_review_thread(
             parsed["owner"],
             parsed["repo"],
             int(parsed["pull_number"]),
@@ -184,7 +208,6 @@ def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
             " permission to resolve review threads.",
             details={"reply_id": reply_id, "comment_id": parsed["comment_id"]},
         ) from e
-    return {**response, "resolved_thread": resolved}
 
 
 def main():

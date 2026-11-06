@@ -302,6 +302,14 @@ func workloadRBACCases(kube kubernetes.Interface) []rbacCase {
 			_, err := kube.AppsV1().Deployments("xmc").Patch(ctx, "xmc-bridge-deployment", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{})
 			return err
 		}, apierrors.IsForbidden},
+		{"GET allowlisted xmc-study-controller ServiceAccount passes RBAC (NotFound)", func(ctx context.Context) error {
+			_, err := kube.CoreV1().ServiceAccounts("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
+			return err
+		}, apierrors.IsNotFound},
+		{"PATCH non-allowlisted xmc-bridge-sa ServiceAccount is Forbidden", func(ctx context.Context) error {
+			_, err := kube.CoreV1().ServiceAccounts("xmc").Patch(ctx, "xmc-bridge-sa", types.MergePatchType, []byte(`{}`), metav1.PatchOptions{})
+			return err
+		}, apierrors.IsForbidden},
 		{"GET non-allowlisted grpc-service is Forbidden", func(ctx context.Context) error {
 			_, err := kube.CoreV1().Services("xmc").Get(ctx, "grpc-service", metav1.GetOptions{})
 			return err
@@ -345,38 +353,64 @@ func wrapperRBACCases(dyn dynamic.Interface) []rbacCase {
 }
 
 // TestComponentsRBAC_HelmLifecycleEnvtest installs, upgrades, inspects and uninstalls the embedded
-// ingestion-gateway chart as xmc-bridge-sa, so xmc-bridge-role is checked against the requests Helm
-// actually makes (release Secrets, chart objects by name, RBAC escalation checks) rather than a verb list.
+// ingestion-gateway and hpo charts as xmc-bridge-sa, so xmc-bridge-role is checked against the requests
+// Helm actually makes (release Secrets, chart objects by name, RBAC escalation checks) rather than a verb list.
 func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 	ctx := context.Background()
 	adminCfg, adminKube := startBridgeRBACEnvtest(ctx, t, "xmc")
 	runner := helm.NewSDKHelmActionRunner(impersonatedHelmGetter(t, adminCfg, "xmc"))
-	const releaseName = "xmc-cmp-ingestion-gateway"
 	// The first call installs (GET, then CREATE); the second changes the HPA, so Helm PATCHes it.
-	for _, values := range []map[string]any{
+	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-ingestion-gateway", []map[string]any{
 		{"deployWorkload": true},
 		{"deployWorkload": true, "minReplicas": 3},
-	} {
-		if _, err := runner.Upgrade(ctx, releaseName, "xmc", nil, values); err != nil {
-			t.Fatalf("Upgrade(%v) as xmc-bridge-sa: %v", values, err)
+	}, func() {
+		hpa, err := adminKube.AutoscalingV2().HorizontalPodAutoscalers("xmc").Get(ctx, "ingestion-gateway-hpa", metav1.GetOptions{})
+		if err != nil || hpa.Spec.MinReplicas == nil || *hpa.Spec.MinReplicas != 3 {
+			t.Fatalf("HPA ingestion-gateway-hpa after upgrade = %+v, %v; want minReplicas 3", hpa, err)
 		}
-	}
-	hpa, err := adminKube.AutoscalingV2().HorizontalPodAutoscalers("xmc").Get(ctx, "ingestion-gateway-hpa", metav1.GetOptions{})
-	if err != nil || hpa.Spec.MinReplicas == nil || *hpa.Spec.MinReplicas != 3 {
-		t.Fatalf("HPA ingestion-gateway-hpa after upgrade = %+v, %v; want minReplicas 3", hpa, err)
-	}
-	rel, err := runner.Status(ctx, releaseName, "xmc")
-	if err != nil {
-		t.Fatalf("Status() as xmc-bridge-sa: %v", err)
-	}
-	if missing, err := runner.MissingResources(ctx, rel); err != nil || len(missing) != 0 {
-		t.Fatalf("MissingResources() as xmc-bridge-sa = %v, %v; want none", missing, err)
-	}
-	if _, err := runner.Uninstall(ctx, releaseName, "xmc"); err != nil {
-		t.Fatalf("Uninstall() as xmc-bridge-sa: %v", err)
-	}
+	})
 	if _, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "ingestion-gateway-deployment", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("Deployment ingestion-gateway-deployment after Uninstall: err = %v, want NotFound", err)
+	}
+
+	// The second call changes the image, so Helm PATCHes the xmc-study-controller Deployment.
+	const studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
+	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-hpo", []map[string]any{
+		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1"}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage}},
+	}, func() {
+		dep, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
+		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {
+			t.Fatalf("Deployment xmc-study-controller after upgrade = %+v, %v; want image %s", dep, err, studyControllerImage)
+		}
+	})
+	if _, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("Deployment xmc-study-controller after Uninstall: err = %v, want NotFound", err)
+	}
+	if _, err := adminKube.CoreV1().ServiceAccounts("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("ServiceAccount xmc-study-controller after Uninstall: err = %v, want NotFound", err)
+	}
+}
+
+// runHelmLifecycleAsBridge applies each values revision of releaseName in order, runs afterUpgrade,
+// then checks Status and MissingResources and uninstalls the release, all as xmc-bridge-sa.
+func runHelmLifecycleAsBridge(ctx context.Context, t *testing.T, runner *helm.SDKHelmActionRunner, releaseName string, revisions []map[string]any, afterUpgrade func()) {
+	t.Helper()
+	for _, values := range revisions {
+		if _, err := runner.Upgrade(ctx, releaseName, "xmc", nil, values); err != nil {
+			t.Fatalf("Upgrade(%s, %v) as xmc-bridge-sa: %v", releaseName, values, err)
+		}
+	}
+	afterUpgrade()
+	rel, err := runner.Status(ctx, releaseName, "xmc")
+	if err != nil {
+		t.Fatalf("Status(%s) as xmc-bridge-sa: %v", releaseName, err)
+	}
+	if missing, err := runner.MissingResources(ctx, rel); err != nil || len(missing) != 0 {
+		t.Fatalf("MissingResources(%s) as xmc-bridge-sa = %v, %v; want none", releaseName, missing, err)
+	}
+	if _, err := runner.Uninstall(ctx, releaseName, "xmc"); err != nil {
+		t.Fatalf("Uninstall(%s) as xmc-bridge-sa: %v", releaseName, err)
 	}
 }
 

@@ -211,7 +211,7 @@ def main(argv: Sequence[str]) -> None:
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
 
-    project_id = os.environ.get("PROJECT_ID", "xmc-test-project-6")
+    project_id = os.environ.get("PROJECT_ID", "my-project")
     image_path = os.environ.get(
         "IMAGE_PATH",
         f"us-docker.pkg.dev/{project_id}/xmc/clickhouse-metrics-job:latest",

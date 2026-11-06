@@ -53,10 +53,10 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_success(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test successful execution of reply_comment with full telemetry."""
-        mock_git.return_value = "mock_skill_commit_id"
+        mock_git.return_value.stdout = "mock_skill_commit_id\n"
 
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
@@ -98,16 +98,21 @@ class TestReplyPRComment(unittest.TestCase):
             payload={"body": expected_body, "in_reply_to": 1234},
             user_agent="XMC-Comment-Replier-Agent",
         )
+        # The git lookup stays off stdout so the tool's JSON output remains clean.
+        self.assertEqual(
+            mock_git.call_args.kwargs,
+            {"capture_output": True, "log_on_error": False, "log_cmd": False},
+        )
 
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_user_fetch_fails_gracefully(
         self, mock_git, mock_datetime, mock_call, mock_parse
     ):
         """Test reply_comment handles user info fetch API failure gracefully."""
-        mock_git.return_value = "mock_skill_commit_id"
+        mock_git.return_value.stdout = "mock_skill_commit_id\n"
 
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
@@ -152,10 +157,10 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_git_empty_hash(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test reply_comment when git log returns empty hash."""
-        mock_git.return_value = ""
+        mock_git.return_value.stdout = ""
 
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
@@ -199,7 +204,7 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_git_fails(self, mock_git, mock_datetime, mock_call, mock_parse):
         """Test reply_comment when git command raises exception."""
         mock_git.side_effect = Exception("git failed")
@@ -295,12 +300,12 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_with_message_file_success(
         self, mock_git, mock_datetime, mock_call, mock_parse
     ):
         """Test reply_comment successfully reads message from message_file."""
-        mock_git.return_value = "mock_commit_id"
+        mock_git.return_value.stdout = "mock_commit_id"
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
             "%Y-%m-%d": "2026-06-22",
@@ -381,12 +386,12 @@ class TestReplyPRComment(unittest.TestCase):
     @patch("tools.pr_review.reply_pr_comment.parse_comment_url")
     @patch("tools.pr_review.reply_pr_comment.call_github_api")
     @patch("tools.pr_review.reply_pr_comment.datetime")
-    @patch("tools.pr_review.reply_pr_comment.subprocess.check_output")
+    @patch("tools.pr_review.reply_pr_comment.run_command")
     def test_reply_comment_empty_string_message(
         self, mock_git, mock_datetime, mock_call, mock_parse
     ):
         """Test reply_comment preserves explicit empty string message."""
-        mock_git.return_value = "mock_commit_id"
+        mock_git.return_value.stdout = "mock_commit_id"
         mock_now = MagicMock()
         mock_now.strftime.side_effect = lambda fmt: {
             "%Y-%m-%d": "2026-06-22",
@@ -441,15 +446,22 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         )
         call_patch = patch(
             "tools.pr_review.reply_pr_comment.call_github_api",
-            return_value={"id": 5678},
+            return_value={
+                "id": 5678,
+                "html_url": "https://github.com/google/xmc/pull/29#discussion_r5678",
+                "in_reply_to_id": 1234,
+                "diff_hunk": "@@ -1,3 +1,3 @@\n" + "-old\n+new\n" * 200,
+                "body": "done",
+                "user": {"login": "test_user"},
+            },
         )
         login_patch = patch(
             "tools.pr_review.reply_pr_comment.get_authenticated_login",
             return_value="test_user",
         )
         git_patch = patch(
-            "tools.pr_review.reply_pr_comment.subprocess.check_output",
-            return_value="mock_commit_id",
+            "tools.pr_review.reply_pr_comment.run_command",
+            return_value=MagicMock(stdout="mock_commit_id"),
         )
         for p in (parse_patch, call_patch, login_patch, git_patch):
             p.start()
@@ -474,8 +486,15 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         mock_resolve.assert_called_once_with(
             "google", "xmc", 29, 1234, user_agent="XMC-Comment-Replier-Agent"
         )
-        self.assertEqual(res["id"], 5678)
-        self.assertEqual(res["resolved_thread"]["thread_id"], "PRRT_1")
+        self.assertEqual(
+            res,
+            {
+                "id": 5678,
+                "html_url": "https://github.com/google/xmc/pull/29#discussion_r5678",
+                "in_reply_to": 1234,
+                "resolved": True,
+            },
+        )
 
     @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
     def test_without_resolve_flag_does_not_resolve(self, mock_resolve):
@@ -485,7 +504,16 @@ class TestReplyPRCommentResolve(unittest.TestCase):
         res = reply_comment(self.args)
 
         mock_resolve.assert_not_called()
-        self.assertEqual(res, {"id": 5678})
+        self.assertFalse(res["resolved"])
+
+    def test_output_omits_raw_response_fields(self):
+        """Test bulky API response fields (diff_hunk, body, user) are not echoed."""
+        self.args.resolve = False
+
+        res = reply_comment(self.args)
+
+        self.assertEqual(set(res), {"id", "html_url", "in_reply_to", "resolved"})
+        self.assertEqual(res["in_reply_to"], 1234)
 
     @patch("tools.pr_review.reply_pr_comment.resolve_review_thread")
     def test_resolve_failure_reports_posted_reply(self, mock_resolve):

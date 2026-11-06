@@ -18,7 +18,9 @@
 Polls `gh pr view <pr> --json statusCheckRollup` (supported by every gh release,
 unlike `gh pr checks --json`) with exponential backoff. Unlike bare
 `gh pr checks`, which exits 8 while checks are pending, pending checks are
-treated as in-progress rather than failure.
+treated as in-progress rather than failure. Only the newest run of each check
+is judged, so runs cancelled because a later push superseded them do not count
+as failures.
 
 Exit codes (via `run_tool`):
   0: All checks completed successfully (or were skipped/neutral).
@@ -45,7 +47,13 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, log_info, run_tool  # noqa: E402
+from tools.common.tool_utils import (  # noqa: E402
+    HandledError,
+    log_info,
+    positive_int_arg,
+    run_command,
+    run_tool,
+)
 
 DEFAULT_TIMEOUT_SECONDS = 1800
 DEFAULT_INTERVAL_SECONDS = 30
@@ -154,6 +162,78 @@ def parse_rollup(stdout: str) -> list[dict[str, Any]]:
     return rollup
 
 
+def _check_identity(entry: dict[str, Any]) -> tuple[str, str, str]:
+    """Returns the key shared by repeated runs of the same check."""
+    if entry.get("__typename") == "StatusContext":
+        return ("StatusContext", "", entry.get("context") or "")
+    return ("CheckRun", entry.get("workflowName") or "", entry.get("name") or "")
+
+
+def _recency_key(entry: dict[str, Any]) -> tuple[int, int, bool, str, str]:
+    """Orders runs of one check from oldest to newest by creation order.
+
+    GitHub Actions run and job IDs increase monotonically and exist as soon as a
+    job is queued. Run IDs order first, so the newest push decides: a hung older
+    run cannot shadow a newer one, and a run-only URL (job ID 0) still ranks by
+    its run. Within a run, a re-run job gets a newer job ID and wins. Trade-off:
+    manually re-running an older run's job does not override a newer run.
+    Checks without an Actions URL fall back to ranking unfinished runs newest,
+    then ISO-8601 UTC timestamps, which compare lexically.
+    """
+    ref = parse_run_reference(entry.get("detailsUrl") or entry.get("targetUrl") or "")
+    run_id, job_id = (int(ref[1]), int(ref[2] or 0)) if ref else (0, 0)
+    return (
+        run_id,
+        job_id,
+        classify_check(entry).state == PENDING,
+        entry.get("startedAt") or "",
+        entry.get("completedAt") or "",
+    )
+
+
+def latest_runs(rollup: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keeps only the newest run of each check, in first-seen order.
+
+    A force-push or restack starts new workflow runs whose concurrency group
+    cancels the runs for the previous push. Those CANCELLED runs stay in the
+    rollup for the same head commit, so judging every entry would report them as
+    failures. A cancelled run that is the newest run of its check still counts.
+
+    The rollup does not expose a run's trigger event, so runs of the same job
+    started by different events (e.g. `pull_request` and `workflow_dispatch`)
+    on one commit collapse into a single check judged by its newest run.
+
+    Args:
+      rollup: Raw `statusCheckRollup` entries.
+
+    Returns:
+      One entry per check, keyed by workflow and check name (or status context).
+    """
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for entry in rollup:
+        key = _check_identity(entry)
+        current = latest.get(key)
+        if current is None or _recency_key(entry) >= _recency_key(current):
+            latest[key] = entry
+    return list(latest.values())
+
+
+def _run_gh(cmd: list[str], *, check: bool) -> subprocess.CompletedProcess:
+    """Runs one quiet, bounded gh call, capturing output and replacing bad bytes.
+
+    Errors propagate raw (no handled_instruction) so callers can retry them.
+    """
+    return run_command(
+        cmd,
+        check=check,
+        capture_output=True,
+        log_on_error=False,
+        log_cmd=False,
+        timeout=GH_COMMAND_TIMEOUT_SECONDS,
+        errors="replace",
+    )
+
+
 def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     """Fetches and normalizes the PR's status check rollup via gh.
 
@@ -167,15 +247,8 @@ def fetch_checks(pr: str, repo: str | None) -> list[CheckResult]:
     cmd = ["gh", "pr", "view", pr, "--json", "statusCheckRollup"]
     if repo:
         cmd += ["--repo", repo]
-    res = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        errors="replace",
-        check=True,
-        timeout=GH_COMMAND_TIMEOUT_SECONDS,
-    )
-    return [classify_check(entry) for entry in parse_rollup(res.stdout)]
+    res = _run_gh(cmd, check=True)
+    return [classify_check(entry) for entry in latest_runs(parse_rollup(res.stdout))]
 
 
 def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
@@ -187,14 +260,7 @@ def fetch_job_log_tail(run_repo: str, job_id: str, max_lines: int) -> str:
     """
     cmd = ["gh", "api", f"repos/{run_repo}/actions/jobs/{job_id}/logs"]
     try:
-        res = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            errors="replace",
-            check=False,
-            timeout=GH_COMMAND_TIMEOUT_SECONDS,
-        )
+        res = _run_gh(cmd, check=False)
     except (OSError, subprocess.TimeoutExpired) as e:
         return f"<gh api job logs failed: {e}>"
     if res.returncode != 0:
@@ -374,17 +440,6 @@ def wait_for_ci(
         interval = min(interval * 2, max(MAX_INTERVAL_SECONDS, args.interval))
 
 
-def positive_int(value: str) -> int:
-    """argparse type that accepts only integers >= 1."""
-    try:
-        parsed = int(value)
-    except ValueError as e:
-        raise argparse.ArgumentTypeError(f"invalid integer: {value!r}") from e
-    if parsed < 1:
-        raise argparse.ArgumentTypeError(f"must be >= 1, got {parsed}")
-    return parsed
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Builds the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -393,17 +448,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("pr", help="PR number, branch, or full GitHub PR URL.")
     parser.add_argument("--repo", help="Repository in owner/name form (default: current repo).")
     parser.add_argument(
-        "--timeout", type=positive_int, default=DEFAULT_TIMEOUT_SECONDS, help="Max seconds to wait."
+        "--timeout",
+        type=positive_int_arg,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Max seconds to wait.",
     )
     parser.add_argument(
         "--interval",
-        type=positive_int,
+        type=positive_int_arg,
         default=DEFAULT_INTERVAL_SECONDS,
         help=f"Initial poll interval in seconds; doubles up to {MAX_INTERVAL_SECONDS}s.",
     )
     parser.add_argument(
         "--log-lines",
-        type=positive_int,
+        type=positive_int_arg,
         default=DEFAULT_LOG_LINES,
         help="Max log lines printed per failed job.",
     )

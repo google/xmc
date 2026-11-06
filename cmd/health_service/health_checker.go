@@ -210,6 +210,7 @@ func convertCustomComponentHealth(ch summary.ComponentHealth) *spb.ComponentHeal
 		Type:         spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT,
 		HealthState:  hState,
 		ErrorMessage: errMsg,
+		Stability:    ch.Stability,
 	}
 }
 

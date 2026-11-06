@@ -17,7 +17,7 @@ This skill provides step-by-step procedures for implementing new features, refac
 When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: Run tools with `--help` to inspect parameters and usage.
-3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON; check the exit code per [Helper Tool Exit Codes](../../AGENTS.md#universal-architectural-principles).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
 
 ---
@@ -48,7 +48,10 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 2. **Decouple Mocks & Baseline Test Fixtures**:
    - Centralize shared helpers in global/shared packages.
    - Define baseline test fixtures and express test cases as concise deltas (e.g., using `prototest.Modify`).
-3. **Open-Source Code TODOs**:
+3. **Test Inputs for Parsers & Pollers**:
+   - **Parsers and linters**: Test against the most complex real-world constructs in the target corpus (e.g., for Markdown: nested or long code fences, redirects, URLs, labels; for any parser: empty, malformed, and multibyte inputs), rather than only minimal synthetic inputs.
+   - **Polling and wait tools**: Test every state transition, including the exact deadline boundary.
+4. **Open-Source Code TODOs**:
    - Ensure inline `TODO` comments in public packages use `TODO:` or public issue links `TODO(#123)`, avoiding internal bug IDs.
 
 ---
@@ -62,11 +65,13 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    ```
    - **Output & Exit Codes**: stdout emits structured JSON (`changed_files`, `backend_mode`, `reason`, `bazel_targets`, `other_suites`, `passed_targets`); Bazel output streams to stderr. Exits `0` when tests pass (or dry-run / nothing to run), `1` on test failures or handled errors (with failed targets and log paths in `details`), and `2` on unexpected errors.
    - **Spanner Emulator**: Pre-flights `SPANNER_EMULATOR_HOST` (default `localhost:9010`) and forwards non-default addresses via `--test_env`. Pass `--skip-emulator-check` when affected targets do not use Spanner.
-   - **Other Suites**: When `other_suites` lists the UI or Helm chart suite, run those suites before opening a PR.
+   - **Other Suites**: When `other_suites` lists the UI or Helm chart suite, run those suites before opening a PR: `bazel test //cmd/ui/...` (after `npm ci --legacy-peer-deps` in `cmd/ui`) or `bazel test //test/helm/...`.
 2. **Targeted Package Iteration (During Editing)**:
    ```bash
    bazel test //pkg/auth/oauth2/...
+   bazel query 'tests(//pkg/auth/oauth2/...)'  # list target names; never guess them
    ```
+   Never run host `go build`, `go vet`, or `go test`. They fail on the Bazel-generated protobuf packages.
 
 ---
 

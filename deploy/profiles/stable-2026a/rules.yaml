@@ -3,6 +3,10 @@
 staticChecks:
   enforceDeletionProtection: true
   maxDrainTimeoutSeconds: 300
+  # Kept true for stable-2026a until profile-level experimental policy is finalized,
+  # allowing EXPERIMENTAL catalog components to ship disabled by default while still
+  # requiring spec.acknowledgeExperimental: true when enabled.
+  allowExperimental: true
 
 compatibilityMatrix:
   componentDependencies:
@@ -15,3 +19,12 @@ compatibilityMatrix:
         - component: clickhouse
           version: ">=0.1.0"
           reason: "Ingestion Gateway metrics are only useful with ClickHouse as the metrics store."
+    - component: hpo
+      componentVersion: ">=0.1.0"
+      requires:
+        - component: vizier
+          version: ">=0.1.0"
+          reason: "HPO requires the Vizier optimization engine for trial suggestion and measurement feedback."
+        - component: clickhouse
+          version: ">=0.1.0"
+          reason: "HPO requires ClickHouse to query trial objective measurements."

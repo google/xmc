@@ -19,6 +19,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
+| Study Controller | [`cmd/study_controller`](../../cmd/study_controller) | GKE `Deployment` (`xmc-cmp-hpo` release installed by XMC Bridge) | HTTP `8080` (health & metrics) | `hpo` component enabled (requires `componentsDeployment.enabled`) |
 | Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (or Cloud Run service) | HTTP `8080` (health) | `logMonitorDeployment.enabled` (default `true`) |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
@@ -288,7 +289,9 @@ versions, dependency graph, and rollout state. RPCs cover lifecycle intent
 `ValidateComponentRequirement`, `GetPlatformHealth`).
 
 [`pkg/components/store`](../../pkg/components/store) provides the in-memory graph with prospective
-DAG cycle detection, so an invalid dependency edge is rejected before it is persisted.
+DAG cycle detection and stability-contract validation (`EXPERIMENTAL`/`PREVIEW`/`STABLE` with
+`STABILITY_INVERSION` prevention), so an invalid dependency edge or stability inversion is rejected
+before it is persisted.
 
 ### 5.2 XMC Bridge
 

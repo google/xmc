@@ -34,7 +34,6 @@ index, matching the other repository lint hooks.
 import argparse
 import dataclasses
 import re
-import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -44,7 +43,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
+from tools.common.tool_utils import HandledError, run_command, run_tool  # noqa: E402
 
 # Top-level repository directories whose paths agents copy into commands.
 PATH_ROOTS = (
@@ -222,16 +221,16 @@ def find_violations(
 
 def list_tracked_files(repo_root: Path) -> list[str]:
     """Lists git-tracked files relative to the repository root."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-files", "-z"], cwd=repo_root, capture_output=True, check=True
-        )
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
-        raise HandledError(
-            f"git ls-files failed in {repo_root}: {e}",
-            "Run from inside the repository with git on PATH, or pass --repo-root.",
-        ) from e
-    return [f for f in result.stdout.decode("utf-8", errors="replace").split("\0") if f]
+    result = run_command(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+        errors="replace",
+        handled_instruction="Run from inside the repository with git on PATH, or pass --repo-root.",
+    )
+    return [f for f in result.stdout.split("\0") if f]
 
 
 def scan_docs(

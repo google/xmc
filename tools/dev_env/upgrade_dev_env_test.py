@@ -294,7 +294,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 12)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
@@ -350,7 +350,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_restart(self.config)
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 12)
 
     def _restart_cmd(self, deployment: str) -> list[str]:
         return [
@@ -365,16 +365,20 @@ class TestStepSubprocesses(unittest.TestCase):
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_restart_triggers_bridge_and_gateway(self, mock_run, mock_resolve):
-        mock_resolve.side_effect = lambda service, _ns: f"{service}-deployment"
+        # xmc-study-controller is the Deployment's real name; the others use the -deployment suffix.
+        mock_resolve.side_effect = lambda service, _ns: (
+            service if service == "xmc-study-controller" else f"{service}-deployment"
+        )
         upgrade_dev_env.step_restart(self.config)
         cmds = [call.args[0] for call in mock_run.call_args_list]
         self.assertIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
         self.assertIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
+        self.assertIn(self._restart_cmd("xmc-study-controller"), cmds)
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_restart_skips_bridge_and_gateway_when_absent(self, mock_run, mock_resolve):
-        absent = {"xmc-bridge", "ingestion-gateway"}
+        absent = {"xmc-bridge", "ingestion-gateway", "xmc-study-controller"}
         mock_resolve.side_effect = lambda service, _ns: (
             None if service in absent else f"{service}-deployment"
         )
@@ -383,6 +387,7 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 9)
         self.assertNotIn(self._restart_cmd("xmc-bridge-deployment"), cmds)
         self.assertNotIn(self._restart_cmd("ingestion-gateway-deployment"), cmds)
+        self.assertNotIn(self._restart_cmd("xmc-study-controller"), cmds)
 
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name", return_value=None)
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
@@ -443,7 +448,7 @@ class TestStepSubprocesses(unittest.TestCase):
     @mock.patch("tools.dev_env.upgrade_dev_env.resolve_deployment_name")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_wait_for_deployments_ready(self, mock_run, mock_resolve):
-        absent = {"xmc-bridge", "ingestion-gateway"}
+        absent = {"xmc-bridge", "ingestion-gateway", "xmc-study-controller"}
         mock_resolve.side_effect = lambda service, _ns: (
             None if service in absent else f"{service}-deployment"
         )

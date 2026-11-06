@@ -30,6 +30,7 @@ data:
   HELM_CHART_PATH: {{ .Values.componentsDeployment.chartPath | default "" | quote }}
   PROJECT_ID: {{ .Values.projectId | default "" | quote }}
   DEFAULT_INGESTION_GATEWAY_IMAGE: {{ .Values.ingestion_gateway_custom_image | default "" | quote }}
+  DEFAULT_HPO_IMAGE: {{ .Values.hpo_custom_image | default "" | quote }}
   PROBE_INTERVAL: {{ .Values.componentsDeployment.probeInterval | default "5s" | quote }}
   PROBE_TIMEOUT: {{ .Values.componentsDeployment.probeTimeout | default "2s" | quote }}
   RECONCILE_TIMEOUT: {{ .Values.componentsDeployment.reconcileTimeout | default "60s" | quote }}

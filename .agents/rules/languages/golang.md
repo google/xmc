@@ -33,6 +33,7 @@ This document defines coding standards and conventions for Go development across
 - **Centralize Common Test Utilities**: Shared test and proto utilities must be centralized in global packages (e.g., `prototest.Modify` in `//internal/prototest`) per [Core Engineering Standards](../core_engineering.md#4-high-fidelity-test-doubles--decoupling).
 
 ## 6. Go Dependencies / Bazel
+- **Bazel-Only Go Builds & Tests**: Go packages import Bazel-generated protobuf code, so host `go build`, `go vet`, and `go test` fail. Build and test only through Bazel: `./tools/run_affected_tests.py` for the change set, or `bazel test //<dir>/...` for a directory. Never guess target names; list them with `bazel query 'tests(//<dir>/...)'`.
 - Always inspect proto package `BUILD.bazel` to verify exact `go_proto_library` target name (typically ending in `_go_proto`) before adding Bazel dependencies.
 
 ## 7. Go CLI Entrypoints & Exit Cleanups
@@ -94,7 +95,7 @@ graph TD
 
 ### 1. Tier 1: Pure Domain Constructor (`server.New(p Params) (*Server, error)`)
 - **Interface-Only `Params` Struct**: Accepts a `Params` parameter object containing **pure domain interfaces** (`storage.Storage`, `auth.AuthorizerInterface`, `taskqueue.Client`).
-- **Fail-Fast Dependency Validation**: Validates all required dependencies on initialization and returns descriptive errors on nil/missing parameters (`go/go-style/decisions#panics`). NEVER panic in constructors.
+- **Fail-Fast Dependency Validation**: Validates all required dependencies on initialization and returns descriptive errors on nil/missing parameters (https://google.github.io/styleguide/go/decisions#dont-panic). NEVER panic in constructors.
 - **Zero Cloud SDK Instantiation**: Never instantiate concrete cloud SDKs (Spanner, Redis, K8s, Cloud Identity) or perform external I/O directly in `server.New`.
 - **Ergonomic Test Fixtures (`newTestServer(t, opts...)`)**: Unit tests inject fast in-memory fakes or doubles via functional test fixtures with zero cloud SDK overhead.
 

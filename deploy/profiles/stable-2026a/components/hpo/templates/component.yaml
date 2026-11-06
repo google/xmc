@@ -1,0 +1,36 @@
+{{- if not (hasPrefix "xmc-cmp-" .Release.Name) -}}
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+{{- $global := .Values.global | default dict }}
+{{- $imgTag := $global.imageTag | default .Values.imageTag }}
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: "hpo"
+  namespace: {{ .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) | quote }}
+  labels:
+    xmc.dev/profile: "stable-2026a"
+    xmc.dev/component-type: "custom-1p-component"
+    app.kubernetes.io/name: "hpo"
+    app.kubernetes.io/managed-by: {{ .Release.Service | default "Helm" | quote }}
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  enabled: {{ default false .Values.enabled }}
+  componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
+  componentClass: "hyperparameter-optimization"
+  version: {{ .Chart.Version | default "0.1.0" | quote }}
+  chartVersion: {{ .Chart.Version | default "0.1.0" | quote }}
+  stability: {{ .Values.stability | default "EXPERIMENTAL" | quote }}
+  {{- if hasKey .Values "acknowledgeExperimental" }}
+  acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
+  {{- end }}
+  {{- if $imgTag }}
+  imageTag: {{ $imgTag | toString | quote }}
+  {{- end }}
+  deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
+  deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
+  {{- if .Values.dependencies }}
+  dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
+  {{- end }}
+{{- end }}

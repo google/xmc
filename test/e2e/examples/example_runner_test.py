@@ -288,6 +288,34 @@ class TestExampleRunner(unittest.TestCase):
             self.assertIn("partial stdout stream", str(ctx.exception))
             self.assertIn("partial stderr stream", str(ctx.exception))
 
+    @patch("subprocess.run")
+    @patch("pathlib.Path.exists", return_value=True)
+    @patch("test.e2e.examples.example_runner.fetch_dex_oidc_token")
+    def test_execute_example_launch_timeout_decodes_bytes_output(
+        self,
+        mock_gen_token: MagicMock,
+        mock_exists: MagicMock,
+        mock_subprocess_run: MagicMock,
+    ) -> None:
+        """A text-mode timeout carries bytes output, and stderr may be missing."""
+        mock_gen_token.return_value = "mock.jwt.token"
+        mock_subprocess_run.side_effect = subprocess.TimeoutExpired(
+            cmd=["python3", "launch.py"],
+            timeout=15.0,
+            output=b"partial stdout stream\n",
+            stderr=None,
+        )
+
+        with patch("test.e2e.examples.example_runner.resolve_grpc_endpoint") as mock_resolve:
+            mock_resolve.return_value.__enter__.return_value = "127.0.0.1:50051"
+            with self.assertRaises(RuntimeError) as ctx:
+                execute_example_launch(
+                    launch_script="examples/chart_artifact_job/launch.py",
+                    timeout_sec=15.0,
+                )
+            self.assertIn("timed out after 15.0s:\npartial stdout stream\n", str(ctx.exception))
+            self.assertNotIn("b'", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

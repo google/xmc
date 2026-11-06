@@ -18,12 +18,32 @@ import pwd
 import subprocess
 import sys
 
+# Installs the UI dependencies the same way as .github/actions/run-ui-tests.
+NPM_CI_COMMAND = "npm ci --legacy-peer-deps"
+
+
+def missing_dependencies_error(ui_dir: str) -> str | None:
+    """Returns why `npx ng test` cannot run in ui_dir, or None if the Angular CLI is installed.
+
+    Without this check, a checkout that never ran `npm ci` (e.g. a fresh git worktree) fails
+    with an opaque npx error instead of the command that fixes it.
+    """
+    if os.path.exists(os.path.join(ui_dir, "node_modules", ".bin", "ng")):
+        return None
+    return (
+        f"The UI dependencies are not installed: {ui_dir}/node_modules/.bin/ng is missing. "
+        f"Run `cd {ui_dir} && {NPM_CI_COMMAND}`, then re-run the UI tests."
+    )
+
 
 def main():
     """Runs Angular UI unit tests in physical directory."""
     # Resolve the real physical directory of this script on the host system
     real_script_path = os.path.realpath(__file__)
     real_ui_dir = os.path.dirname(real_script_path)
+    if error := missing_dependencies_error(real_ui_dir):
+        print(error, file=sys.stderr)
+        sys.exit(1)
 
     # Query passwd database for the actual host user's home directory
     try:

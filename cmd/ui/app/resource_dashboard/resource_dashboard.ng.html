@@ -20,8 +20,8 @@
       [availableResourceTypes]="availableResourceTypes()"
       (findMatchingQueues)="onFindMatchingQueues($event)"
     />
-    <div class="rod-split-container">
-      <div class="rod-main-content">
+    <div #splitContainer class="rod-split-container" [class.full-width]="isJobsFullWidth()">
+      <div id="rod-queue-list-pane" class="rod-main-content" [style.flex]="leftPaneFlex()">
         <xmc-rod-queue-list
           [queues]="filteredQueues()"
           [selectedQueue]="selectedQueue()"
@@ -34,8 +34,27 @@
           (selectQueue)="onQueueSelect($event)"
         />
       </div>
-      <div class="jobs-side-pane">
-        <xmc-queue-jobs-table [queueName]="selectedQueue()" />
+      @if (!isJobsFullWidth()) {
+        <xmc-rod-resize-divider
+          controls="rod-queue-list-pane"
+          [containerElement]="splitContainer"
+          [(splitRatio)]="splitRatio"
+        />
+      }
+      <div class="jobs-side-pane" [style.flex]="rightPaneFlex()">
+        <xmc-queue-jobs-table [queueName]="selectedQueue()">
+          <button
+            headerActions
+            type="button"
+            mat-stroked-button
+            class="full-width-toggle-btn"
+            [class.active]="isJobsFullWidth()"
+            (click)="toggleJobsFullWidth()"
+          >
+            <mat-icon aria-hidden="true">{{ fullWidthToggleIcon() }}</mat-icon>
+            {{ fullWidthToggleLabel() }}
+          </button>
+        </xmc-queue-jobs-table>
       </div>
     </div>
   } @else if (activeTab() === TAB_RESOURCE_AVAILABILITY) {

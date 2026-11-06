@@ -144,7 +144,7 @@ func TestSearchExperiments_HappyPath(t *testing.T) {
 		t.Errorf("SearchExperiments() page 2 experiment 1 returned unexpected diff (-want +got):\n%s", diff)
 	}
 
-	// Verify multi-page pagination with default order_by ("") and no filter ("") (b/564895895).
+	// Verify multi-page pagination with default order_by ("") and no filter ("").
 	defaultPage1, err := server.ListExperiments(ctx, &apipb.ListExperimentsRequest{PageSize: 2})
 	if err != nil {
 		t.Fatalf("ListExperiments() page 1 with default order_by failed: %v", err)

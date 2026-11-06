@@ -318,6 +318,46 @@ class UIEntitiesValidatorTest(unittest.TestCase):
         session.settle_and_wait_fonts(timeout_ms=100)
         session._page.wait_for_timeout.assert_called_with(100)
 
+    def test_wait_for_selector_with_retry_handles_timeout_and_http_errors(self) -> None:
+        clean = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        clean._page = mock.MagicMock()
+        clean.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        clean._page.wait_for_selector.assert_called_once_with("xmc-queue-card", timeout=5000)
+        clean._page.reload.assert_not_called()
+
+        for http_errs, page_errs in (
+            (["500 https://xmc.example.com/v1/clusterqueues"], []),
+            ([], ["TypeError: null"]),
+            (["500 https://xmc.example.com/v1/clusterqueues"], ["TypeError: null"]),
+        ):
+            with self.subTest(http_errs=http_errs, page_errs=page_errs):
+                session = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+                mock_page = mock.MagicMock()
+                session._page = mock_page
+                session.http_errors = list(http_errs)
+                session.page_errors = list(page_errs)
+                session.wait_for_selector_with_retry("xmc-queue-card", 5000)
+                self.assertEqual(session.http_errors, [])
+                self.assertEqual(session.page_errors, [])
+                mock_page.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+                self.assertEqual(mock_page.wait_for_selector.call_count, 2)
+
+        session2 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page2 = mock.MagicMock()
+        session2._page = mock_page2
+        mock_page2.wait_for_selector.side_effect = [RuntimeError("timeout"), None]
+        session2.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        mock_page2.reload.assert_called_once_with(wait_until="networkidle", timeout=5000)
+        self.assertEqual(mock_page2.wait_for_selector.call_count, 2)
+
+        session3 = ui_entities_validator.XMCUIBrowserSession("https://xmc.example.com")
+        mock_page3 = mock.MagicMock()
+        session3._page = mock_page3
+        mock_page3.wait_for_selector.side_effect = [RuntimeError("t1"), RuntimeError("t2")]
+        with self.assertRaisesRegex(RuntimeError, "t2"):
+            session3.wait_for_selector_with_retry("xmc-queue-card", 5000)
+        self.assertEqual(mock_page3.wait_for_selector.call_count, 2)
+
     def test_navigate_to_experiment_success(self) -> None:
         session = ui_entities_validator.XMCUIBrowserSession(
             "https://xmc.example.com", screenshots_dir="/tmp/shots"

@@ -16,6 +16,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -161,6 +162,25 @@ class GitRepoTest(unittest.TestCase):
 
         with self.assertRaisesRegex(HandledError, "Cannot read pre-commit snapshot state"):
             self._run("restage")
+
+    def test_git_failure_raises_handled_error(self):
+        args = argparse.Namespace(
+            command="snapshot", state=str(self.state), repo_root=str(self.repo / "missing")
+        )
+        with self.assertRaisesRegex(HandledError, "Cannot run git") as ctx:
+            cli.run(args)
+        self.assertIn("XMC_PRECOMMIT_NO_AUTOSTAGE", ctx.exception.instruction)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "needs byte-string file names")
+    def test_restages_non_utf8_path(self):
+        name = os.fsdecode(b"bad\xff.py")
+        self._write(name, "x = 1\n")
+        self._git("add", name)
+        self._run("snapshot")
+        self._write(name, "x=2\n")
+
+        self.assertEqual(self._run("restage"), {"restaged": [name], "blocked": []})
+        self.assertEqual(self._staged_content(name), "x=2\n")
 
 
 if __name__ == "__main__":
