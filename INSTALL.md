@@ -538,9 +538,10 @@ Once database schemas and container images are updated, upgrade the Kubernetes w
 
 ##### Option A: Using Cluster Toolkit Blueprint v2 (Recommended)
 
-Re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
+Re-compile the blueprint so `ctk-out/<deployment_name>` picks up your updated deployment configuration (for example the new `image_tag`) and chart templates, then re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
 
 ```bash
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
 
@@ -562,7 +563,7 @@ python3 ./deploy/ctk_v2/verify_xmc.py
 
 #### Step 6 (Optional): Migrate Legacy Metrics Workloads to XMC Components
 
-If your deployment currently manages `ingestion-gateway` via legacy umbrella Helm values (`enable_components: false`), follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) on XMC `0.18.x` (before `0.19.0` removes legacy non-component metrics templates).
+If your deployment currently manages `ingestion-gateway` via legacy umbrella Helm values (`enable_components: false`), follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) on XMC `0.18.x` (before `0.19.0` removes legacy non-component metrics templates). After migrating, also upgrade the separate `xmc-profile` release on every XMC upgrade (see [After Migration: Upgrading XMC](docs/migrations/components.md#after-migration-upgrading-xmc)).
 
 ---
 
