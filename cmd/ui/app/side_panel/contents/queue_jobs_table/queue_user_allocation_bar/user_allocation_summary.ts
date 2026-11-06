@@ -62,30 +62,24 @@ const RESOURCE_UNIT_LABELS: Readonly<Record<ResourceType, string>> = {
   [ResourceType.UNKNOWN]: 'units',
 };
 
-/** Returns the display unit for a resource type, e.g. "GPUs" for "nvidia.com/gpu: nvidia-l4". */
-export function resolveResourceUnitLabel(resourceType: string): string {
-  return RESOURCE_UNIT_LABELS[classifyResourceType(resourceType)];
-}
-
 function aggregateByUser(
   allocations: readonly UserResourceAllocation[],
   dominantResource: string,
 ): UserTotals[] {
-  const totals = new Map<string, { running: number; pending: number }>();
+  const totals = new Map<string, UserTotals>();
   for (const alloc of allocations) {
     if (!matchesResourceFilter(alloc.resourceType ?? '', dominantResource)) continue;
     const user = alloc.user?.trim() || UNKNOWN_USER;
-    const entry = totals.get(user) ?? { running: 0, pending: 0 };
+    const entry = totals.get(user) ?? { user, running: 0, pending: 0 };
     totals.set(user, {
+      user,
       running: entry.running + (alloc.runningUnits ?? 0),
       pending: entry.pending + (alloc.pendingUnits ?? 0),
     });
   }
-  return [...totals.entries()]
-    .map(([user, t]) => ({ user, ...t }))
-    .sort(
-      (a, b) => b.running + b.pending - (a.running + a.pending) || a.user.localeCompare(b.user),
-    );
+  return [...totals.values()].sort(
+    (a, b) => b.running + b.pending - (a.running + a.pending) || a.user.localeCompare(b.user),
+  );
 }
 
 function formatUnitsLabel(running: number, pending: number, unit: string): string {
@@ -108,7 +102,7 @@ export function summarizeUserAllocations(
   const totalPending = users.reduce((sum, u) => sum + u.pending, 0);
   const grandTotal = totalRunning + totalPending;
   if (grandTotal <= 0) return null;
-  const unit = resolveResourceUnitLabel(dominantResource);
+  const unit = RESOURCE_UNIT_LABELS[classifyResourceType(dominantResource)];
   return {
     totalsLabel: formatUnitsLabel(totalRunning, totalPending, unit),
     segments: users.map((u, i) => ({

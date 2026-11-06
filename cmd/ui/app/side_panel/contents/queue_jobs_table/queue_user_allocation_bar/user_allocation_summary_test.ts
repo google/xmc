@@ -14,7 +14,7 @@
 
 import { UserResourceAllocation } from 'app/protos/rod';
 
-import { resolveResourceUnitLabel, summarizeUserAllocations } from './user_allocation_summary';
+import { summarizeUserAllocations } from './user_allocation_summary';
 
 const ALLOCATIONS: UserResourceAllocation[] = [
   {
@@ -30,14 +30,6 @@ const ALLOCATIONS: UserResourceAllocation[] = [
 ];
 
 describe('user_allocation_summary', () => {
-  it('resolves display units per resource type', () => {
-    expect(resolveResourceUnitLabel('memory')).toBe('GiB');
-    expect(resolveResourceUnitLabel('cpu')).toBe('cores');
-    expect(resolveResourceUnitLabel('google.com/tpu: tpu-v5-lite-podslice')).toBe('chips');
-    expect(resolveResourceUnitLabel('nvidia.com/gpu')).toBe('GPUs');
-    expect(resolveResourceUnitLabel('example.com/fpga')).toBe('units');
-  });
-
   it('returns null without a dominant resource or matching allocations', () => {
     expect(summarizeUserAllocations(ALLOCATIONS, null)).toBeNull();
     expect(summarizeUserAllocations(ALLOCATIONS, 'google.com/tpu')).toBeNull();
