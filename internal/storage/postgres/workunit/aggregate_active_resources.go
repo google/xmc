@@ -39,16 +39,16 @@ FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-type snapshotRepository struct {
-	tx pgdb.DBTX
+var _ storage.WorkUnitSnapshotRepository = (*TxRepository)(nil)
+
+// FetchActiveWorkUnitsByQueues retrieves one page of active work units within the bound transaction.
+func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken)
 }
 
-func (s *snapshotRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
-	return fetchActiveWorkUnitsFromDB(ctx, s.tx, queueNames, pageSize, pageToken)
-}
-
-func (s *snapshotRepository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	return aggregateActiveResourcesFromDB(ctx, s.tx, queueNames)
+// AggregateActiveResourcesByAuthor sums active work unit resources per author within the bound transaction.
+func (r *TxRepository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	return aggregateActiveResourcesFromDB(ctx, r.tx, queueNames)
 }
 
 // WithReadOnlyWorkUnitSnapshot executes fn in a single PostgreSQL REPEATABLE READ READ ONLY transaction.
@@ -60,7 +60,7 @@ func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(c
 		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
 	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
-		return fn(txCtx, &snapshotRepository{tx: tx})
+		return fn(txCtx, r.WithTx(tx))
 	})
 }
 
