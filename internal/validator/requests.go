@@ -134,6 +134,10 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 	if exp.GetStatus() != nil {
 		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", grpcerr.ErrInvalidArgument)
 	}
+	// experiment_type is immutable after creation, so an unknown value must not be persisted.
+	if expType := exp.GetExperimentType(); expType.Descriptor().Values().ByNumber(expType.Number()) == nil {
+		return fmt.Errorf("experiment.experiment_type %d is not a known type: %w", expType, grpcerr.ErrInvalidArgument)
+	}
 	if err := validateExperimentACLs(exp.GetAcls()); err != nil {
 		return err
 	}

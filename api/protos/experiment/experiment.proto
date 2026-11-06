@@ -35,6 +35,17 @@ message Experiment {
     plural: "experiments"
   };
 
+  // The kind of workload an experiment represents.
+  enum ExperimentType {
+    // Unspecified type. The server stores UNSPECIFIED as STANDARD.
+    EXPERIMENT_TYPE_UNSPECIFIED = 0;
+    // A regular experiment whose work units are created by the client.
+    STANDARD = 1;
+    // A hyperparameter optimization study whose trials are created by the
+    // system.
+    STUDY = 2;
+  }
+
   // Resource name of the experiment.
   // Format: experiments/{xid}
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
@@ -75,4 +86,9 @@ message Experiment {
   // units require 1 V100 each, this will return 2 V100s, not 2 x 1 V100s.
   repeated ResourceSet resources = 13
       [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The type of the experiment. Cannot be changed after creation. The server
+  // stores UNSPECIFIED as STANDARD; experiments created before this field
+  // existed read as STANDARD.
+  ExperimentType experiment_type = 14
+      [(google.api.field_behavior) = IMMUTABLE];
 }

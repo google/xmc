@@ -67,6 +67,7 @@ func TestCreateExperiment_HappyPath(t *testing.T) {
 	}
 
 	exp.Creator = "test@example.com"
+	exp.ExperimentType = msgpb.Experiment_STANDARD
 	wantStatus := &msgpb.ExperimentStatus{
 		ActiveState:             msgpb.ExperimentStatus_ACTIVE,
 		LaunchState:             msgpb.ExperimentStatus_LAUNCHING,
@@ -262,6 +263,67 @@ func TestCreateExperiment_DependencyFailures(t *testing.T) {
 
 func userRole(user string) *xidmsgpb.XidAcls_Role {
 	return &xidmsgpb.XidAcls_Role{Principal: &xidmsgpb.XidAcls_Role_User{User: user}}
+}
+
+func TestCreateExperiment_PersistsExperimentType(t *testing.T) {
+	ctx := context.Background()
+	server, _ := createExperimentStateServer(ctx, t)
+
+	tests := []struct {
+		reqType  msgpb.Experiment_ExperimentType
+		wantType msgpb.Experiment_ExperimentType
+	}{
+		{reqType: msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED, wantType: msgpb.Experiment_STANDARD},
+		{reqType: msgpb.Experiment_STANDARD, wantType: msgpb.Experiment_STANDARD},
+	}
+	for _, tc := range tests {
+		t.Run(tc.reqType.String(), func(t *testing.T) {
+			req := &msgpb.CreateExperimentRequest{
+				Experiment: &msgpb.Experiment{Title: "test experiment", ExperimentType: tc.reqType},
+			}
+			got, err := server.CreateExperiment(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateExperiment() returned an unexpected error: %v", err)
+			}
+			if got.GetExperimentType() != tc.wantType {
+				t.Errorf("CreateExperiment() returned experiment_type %v, want %v", got.GetExperimentType(), tc.wantType)
+			}
+			xid, err := validator.ValidateExperimentName(got.GetName())
+			if err != nil {
+				t.Fatalf("CreateExperiment() returned an invalid experiment name %q: %v", got.GetName(), err)
+			}
+			stored, err := server.ExperimentHandler.storage.FetchExperiment(ctx, xid)
+			if err != nil {
+				t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
+			}
+			if stored.GetExperimentType() != tc.wantType {
+				t.Errorf("stored experiment_type = %v, want %v", stored.GetExperimentType(), tc.wantType)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_StudyUnimplemented(t *testing.T) {
+	ctx := context.Background()
+	xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+	// Any storage write would fail with Internal, so Unimplemented also proves nothing was written.
+	server := newTestServer(t,
+		withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+		withXidClient(xidClient),
+		withStorage(&storage.MockStorage{InsertExperimentErr: errors.New("unexpected write")}),
+	)
+	req := &msgpb.CreateExperimentRequest{
+		Experiment: &msgpb.Experiment{Title: "study", ExperimentType: msgpb.Experiment_STUDY},
+	}
+
+	_, err := server.CreateExperiment(ctx, req)
+
+	if got := status.Code(err); got != codes.Unimplemented {
+		t.Errorf("CreateExperiment(STUDY) returned code %v (error %v), want %v", got, err, codes.Unimplemented)
+	}
+	if xidClient.createXidEntryCalls != 0 {
+		t.Errorf("CreateExperiment(STUDY) made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
+	}
 }
 
 func TestCreateExperiment_CreatorAuthorization(t *testing.T) {

@@ -21,6 +21,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.ExperimentStatus.LaunchState,
   cloud.xmanager.v1.ResourceSet,
   cloud.xmanager.v1.Priority,
+  cloud.xmanager.v1.Experiment.ExperimentType,
 
   -- Protos used in StructuredMessages
   cloud.xmanager.v1.StructuredMessage,
@@ -134,6 +135,10 @@ CREATE TABLE Experiments (
   UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   -- The last time the experiment was moved to a terminal state.
   CompleteTime TIMESTAMP,
+
+  -- The type of the experiment. NULL (rows written before this column existed) reads and filters
+  -- as STANDARD. No DEFAULT: see migration 018.
+  ExperimentType cloud.xmanager.v1.Experiment.ExperimentType,
 ) PRIMARY KEY (BitReversedXid);
 
 CREATE INDEX ExperimentsByCreator ON Experiments (Creator);
