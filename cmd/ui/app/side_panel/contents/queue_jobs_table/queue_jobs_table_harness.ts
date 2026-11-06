@@ -15,8 +15,6 @@
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatPaginatorHarness } from '@angular/material/paginator/testing';
 
-import { WipBannerHarness } from 'app/common/components/wip_banner/wip_banner_harness';
-
 import { QueueUserAllocationBarHarness } from './queue_user_allocation_bar/queue_user_allocation_bar_harness';
 
 /** Harness for interacting with individual rows inside <xmc-queue-jobs-table>. */
@@ -85,17 +83,10 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
   private readonly headerActions = this.locatorForAll('.title-row > [headerActions]');
   private readonly userAllocationBar = this.locatorFor(QueueUserAllocationBarHarness);
-  private readonly wipBanner = this.locatorForOptional(WipBannerHarness);
 
   /** Gets the per-user allocation bar rendered above the jobs table. */
   async getUserAllocationBar(): Promise<QueueUserAllocationBarHarness> {
     return this.userAllocationBar();
-  }
-
-  /** Gets the work-in-progress banner text above the allocation bar, or null when hidden. */
-  async getWipBannerText(): Promise<string | null> {
-    const banner = await this.wipBanner();
-    return banner ? (await banner.getText()).trim() : null;
   }
 
   /** Gets the trimmed text contents of any elements projected into the [headerActions] slot. */

@@ -33,7 +33,6 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
-import { WipBannerComponent } from 'app/common/components/wip_banner/wip_banner';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
@@ -70,7 +69,6 @@ export class QueueJobsTableData implements BaseSidePanelData {
     QueueJobStatusPipe,
     QueueJobResourcesPipe,
     QueueUserAllocationBar,
-    WipBannerComponent,
   ],
 })
 export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> {

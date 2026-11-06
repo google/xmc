@@ -261,7 +261,7 @@ waiting, and what is available.
 | RPC | Answers |
 | :--- | :--- |
 | `ListClusterQueues` | What queues exist and what quota do they hold? |
-| `GetRunningAndPendingJobs` | What is executing and what is waiting? |
+| `GetRunningAndPendingJobs` | What is executing and what is waiting, and who holds which resources? |
 | `GetSubmitQueue` | What is the ordered admission queue? |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched. |
 
@@ -274,6 +274,13 @@ translate into API server load proportional to the number of viewers. Watch once
 
 Unlike the Reconciler, ROD persists nothing — its cache is derived state, rebuilt from a full
 re-list on restart.
+
+Job data is the exception: `GetRunningAndPendingJobs` reads work units from the ESS database. It
+returns a page of jobs and `user_allocations` — the requested units
+(memory in GiB) of every resource type summed per experiment creator across *all* active jobs in
+the queue, split into running (`RUNNING`, `STARTING`) and pending (`SCHEDULING`, `INITIALIZING`).
+The `/resources` page shows the allocation of the first resource picked in "I need" as a stacked
+bar above the jobs table. These are requested amounts, not measured utilization.
 
 ---
 

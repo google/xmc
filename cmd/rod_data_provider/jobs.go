@@ -44,7 +44,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 	pageSize = min(pageSize, 100)
 
-	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
+	result, authorAllocations, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		if errors.Is(err, storage.ErrInvalidPageToken) {
@@ -66,8 +66,17 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		Jobs:            jobs,
 		NextPageToken:   nextPageToken,
 		TotalQueueSize:  totalQueueSize,
-		UserAllocations: mapAuthorResourceAllocations(mockAuthorResourceAllocations(), uniqueAccelerators),
+		UserAllocations: mapAuthorResourceAllocations(authorAllocations, uniqueAccelerators),
 	}, nil
+}
+
+func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
+	result, err := store.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, pageToken)
+	if err != nil {
+		return nil, nil, err
+	}
+	allocations, err := store.AggregateActiveResourcesByAuthor(ctx, targetQueues)
+	return result, allocations, err
 }
 
 func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {

@@ -191,6 +191,10 @@ type WorkUnitStore interface {
 
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+
+	// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
+	// type and state across all active (running + pending) work units of the requested queues.
+	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
