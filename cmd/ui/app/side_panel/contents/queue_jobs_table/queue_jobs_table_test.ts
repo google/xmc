@@ -343,7 +343,21 @@ describe('QueueJobsTable Component', () => {
     expect(document.body.textContent).not.toContain('Unmatched content');
   });
 
-  it('should render the per-user allocation preview with mocked data behind a WIP banner', async () => {
+  it('should render per-user allocations from the jobs response behind a WIP banner', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({
+        ...TEST_QUEUE_JOBS_RESP,
+        userAllocations: [
+          { user: 'alice@example.com', resourceType: 'nvidia.com/gpu: nvidia-l4', runningUnits: 2 },
+          {
+            user: 'bob@example.com',
+            resourceType: 'nvidia.com/gpu: nvidia-tesla-h100',
+            runningUnits: 4,
+            pendingUnits: 1,
+          },
+        ],
+      }),
+    );
     bootstrap(DominantResourceHostComponent);
     await flush();
 
@@ -353,8 +367,8 @@ describe('QueueJobsTable Component', () => {
     );
     const bar = await harness.getUserAllocationBar();
     expect(await bar.getChipTexts()).toEqual([
-      'alice@example.com 8 running + 4 pending GPUs',
-      'bob@example.com 4 running GPUs',
+      'bob@example.com 4 running + 1 pending GPUs',
+      'alice@example.com 2 running GPUs',
     ]);
   });
 });

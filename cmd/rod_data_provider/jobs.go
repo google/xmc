@@ -62,9 +62,10 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 
 	return &spb.GetRunningAndPendingJobsResponse{
-		Jobs:           jobs,
-		NextPageToken:  nextPageToken,
-		TotalQueueSize: totalQueueSize,
+		Jobs:            jobs,
+		NextPageToken:   nextPageToken,
+		TotalQueueSize:  totalQueueSize,
+		UserAllocations: mockUserAllocations(),
 	}, nil
 }
 

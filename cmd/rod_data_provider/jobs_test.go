@@ -496,3 +496,16 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRunningAndPendingJobs_ReturnsUserAllocations(t *testing.T) {
+	fetcher := &mockWorkUnitFetcher{workUnits: newTestWorkUnits(time.Now()), totalQueueSize: 1}
+	srv := newServer(&Config{}, newTestKueueCache(), fetcher, nil)
+
+	resp, err := srv.GetRunningAndPendingJobs(context.Background(), baseReq)
+	if err != nil {
+		t.Fatalf("GetRunningAndPendingJobs() unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(mockUserAllocations(), resp.GetUserAllocations(), protocmp.Transform()); diff != "" {
+		t.Errorf("UserAllocations mismatch (-want +got):\n%s", diff)
+	}
+}

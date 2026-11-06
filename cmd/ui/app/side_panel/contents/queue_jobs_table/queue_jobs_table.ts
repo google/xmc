@@ -34,6 +34,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
 import { WipBannerComponent } from 'app/common/components/wip_banner/wip_banner';
+import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
@@ -42,7 +43,6 @@ import {
   QueueJobResourcesPipe,
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
-import { MOCK_USER_ALLOCATIONS } from './queue_user_allocation_bar/mock_user_allocations';
 import { QueueUserAllocationBar } from './queue_user_allocation_bar/queue_user_allocation_bar';
 
 /** Payload data required to open the queue jobs inspection panel. */
@@ -137,7 +137,10 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   );
 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
-  protected readonly userAllocations = MOCK_USER_ALLOCATIONS;
+  protected readonly userAllocations = computed(() => {
+    const resp: GetRunningAndPendingJobsResponse | undefined = this.jobsResponse();
+    return resp?.userAllocations ?? [];
+  });
 
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
 

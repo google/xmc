@@ -27,7 +27,7 @@
 
   <xmc-wip-banner text="Preview: per-user resource allocation shows mocked data" />
   <xmc-queue-user-allocation-bar
-    [allocations]="userAllocations"
+    [allocations]="userAllocations()"
     [dominantResource]="dominantResource()"
     [isLoading]="isLoading()"
   />

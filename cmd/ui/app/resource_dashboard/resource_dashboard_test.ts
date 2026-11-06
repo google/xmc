@@ -225,6 +225,20 @@ describe('ResourceDashboard Container', () => {
   });
 
   it('should update the per-user allocation bar when the dominant resource changes in the picker', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({
+        jobs: [],
+        totalQueueSize: 0,
+        userAllocations: [
+          {
+            user: 'alice@example.com',
+            resourceType: 'nvidia.com/gpu: nvidia-tesla-a100',
+            runningUnits: 8,
+          },
+          { user: 'bob@example.com', resourceType: 'cpu', runningUnits: 4, pendingUnits: 2 },
+        ],
+      }),
+    );
     bootstrap(TestHostComponent);
     await flush();
 
@@ -236,17 +250,11 @@ describe('ResourceDashboard Container', () => {
     await finderHarness.setAmountValue('1');
     await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
     await flush();
-    expect(await bar.getChipTexts()).toEqual([
-      'alice@example.com 8 running + 4 pending GPUs',
-      'bob@example.com 4 running GPUs',
-    ]);
+    expect(await bar.getChipTexts()).toEqual(['alice@example.com 8 running GPUs']);
 
     await finderHarness.selectResourceType(0, 'cpu');
     await flush();
-    expect(await bar.getChipTexts()).toEqual([
-      'alice@example.com 32 running + 16 pending cores',
-      'bob@example.com 8 running cores',
-    ]);
+    expect(await bar.getChipTexts()).toEqual(['bob@example.com 4 running + 2 pending cores']);
   });
 
   it('should select queue when a queue card is clicked', async () => {
