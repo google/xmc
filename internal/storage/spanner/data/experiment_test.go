@@ -95,6 +95,8 @@ func TestExperimentRowToProto(t *testing.T) {
 
 func TestExperimentRowToProto_NullExperimentType(t *testing.T) {
 	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType"}
+	// The Spanner client encodes NULL for NullProtoEnum as a typed nil with Valid: true; Valid: false
+	// is rejected by spanner.NewRow.
 	values := []any{
 		int64(123), "title", "creator", int64(0), []*pb.Url{}, "", []string{}, []*pb.ResourceSet{},
 		&pb.ExperimentStatus{}, testExpTime, testExpTime, spanner.NullTime{}, spanner.NullProtoEnum{ProtoEnumVal: (*pb.Experiment_ExperimentType)(nil), Valid: true},
