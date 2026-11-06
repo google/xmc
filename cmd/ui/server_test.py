@@ -140,6 +140,31 @@ class SPAHandlerTest(unittest.TestCase):
                 output = self._get_config_js_output(case["environ"])
                 self.assertIn(case["expected"], output)
 
+    def test_config_js_docs_url(self):
+        cases = [
+            {
+                "testcase_name": "defaults",
+                "environ": {},
+                "expected": 'window.XMC_DOCS_URL="https://github.com/google/xmc";',
+            },
+            {
+                "testcase_name": "custom_env",
+                "environ": {"XMC_DOCS_URL": "https://custom.docs.example.com"},
+                "expected": 'window.XMC_DOCS_URL="https://custom.docs.example.com";',
+            },
+            {
+                "testcase_name": "empty_env",
+                "environ": {"XMC_DOCS_URL": ""},
+                "expected": 'window.XMC_DOCS_URL="https://github.com/google/xmc";',
+            },
+        ]
+        for case in cases:
+            with self.subTest(case["testcase_name"]):
+                self.mock_wfile.seek(0)
+                self.mock_wfile.truncate(0)
+                output = self._get_config_js_output(case["environ"])
+                self.assertIn(case["expected"], output)
+
     def test_config_js_feature_flags(self):
         cases = [
             {
@@ -347,6 +372,7 @@ class SPAHandlerTest(unittest.TestCase):
             config = server.generate_runtime_config()
             self.assertIn('window.XMC_API_URL="https://api.example.com/v1";', config)
             self.assertIn("window.XMC_REFRESH_INTERVAL_MS=30000;", config)
+            self.assertIn('window.XMC_DOCS_URL="https://github.com/google/xmc";', config)
 
     def test_generate_runtime_config_custom(self):
         with mock.patch.dict(
@@ -354,6 +380,7 @@ class SPAHandlerTest(unittest.TestCase):
             {
                 "XMC_API_URL": "https://custom.api/v1",
                 "XMC_REFRESH_INTERVAL_MS": "15000",
+                "XMC_DOCS_URL": "https://custom.docs.example.com",
                 "XMC_PERFORMANCE_DASHBOARD_ENABLED": "true",
             },
             clear=True,
@@ -361,6 +388,7 @@ class SPAHandlerTest(unittest.TestCase):
             config = server.generate_runtime_config(default_api_url="/fallback")
             self.assertIn('window.XMC_API_URL="https://custom.api/v1";', config)
             self.assertIn("window.XMC_REFRESH_INTERVAL_MS=15000;", config)
+            self.assertIn('window.XMC_DOCS_URL="https://custom.docs.example.com";', config)
             self.assertIn('"performanceDashboardEnabled": true', config)
 
     def test_fallback_to_index_head(self):

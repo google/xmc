@@ -66,6 +66,8 @@ spec:
           value: {{ include "xmanager-cloud.uiApiUrl" . | quote }}
         - name: XMC_REFRESH_INTERVAL_MS
           value: {{ .Values.ui.refreshIntervalMs | quote }}
+        - name: XMC_DOCS_URL
+          value: {{ .Values.ui.docsUrl | default "https://github.com/google/xmc" | quote }}
         - name: XMC_DEFAULT_TO_CURSOR_PAGINATION
           value: {{ .Values.ui.enableCursorPagination | quote }}
         - name: XMC_ADMIN_PANEL_ENABLED
