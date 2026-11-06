@@ -342,6 +342,7 @@ deployment_groups:
       region: $(vars.region)
       system_node_pool_machine_type: n2-standard-4
       enable_persistent_disk_csi: true
+      enable_gcsfuse_csi: true
       enable_private_endpoint: false
       gcp_public_cidrs_access_enabled: $(vars.gcp_public_cidrs_access_enabled)
       configure_workload_identity_sa: true

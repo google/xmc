@@ -285,7 +285,7 @@ message PersistentVolumeClaimVolumeSource {
   optional bool read_only = 2;
 }
 
-// GCS volume source backed by GKE GCS FUSE CSI driver (gcs.csi.storage.gke.io).
+// GCS volume source backed by GKE GCS FUSE CSI driver (gcsfuse.csi.storage.gke.io).
 message GcsVolumeSource {
   // The GCS bucket name (e.g., "my-bucket" or "gs://my-bucket").
   string bucket = 1;
