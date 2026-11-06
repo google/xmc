@@ -137,9 +137,6 @@ func (m *mockWorkUnitFetcher) AggregateActiveResourcesByAuthor(ctx context.Conte
 	if m.aggregateErr != nil {
 		return nil, m.aggregateErr
 	}
-	if len(queueNames) == 0 {
-		return []storage.AuthorResourceAllocation{}, nil
-	}
 	return m.allocations, nil
 }
 

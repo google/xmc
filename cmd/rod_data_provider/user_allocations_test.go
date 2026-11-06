@@ -15,6 +15,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -66,32 +67,39 @@ func TestMapAuthorResourceAllocations(t *testing.T) {
 		{Author: "alice@example.com", ResourceType: "memory", PendingUnits: 32.5},
 		{Author: "carol@example.com", ResourceType: "nvidia.com/gpu", RunningUnits: 4},
 	}
-
-	singleFlavorCache := buildFlavorCache(map[string]string{"h100-flavor": "nvidia-tesla-h100"}, []string{"h100-flavor"})
-	uniqueMap := buildUniqueQueueAcceleratorMap(singleFlavorCache, "gpu-cq")
-
-	got := mapAuthorResourceAllocations(rows, uniqueMap)
-	want := []*spb.UserResourceAllocation{
-		{User: "alice@example.com", ResourceType: "memory", RunningUnits: 0, PendingUnits: 32.5},
-		{User: "alice@example.com", ResourceType: "cpu", RunningUnits: 16, PendingUnits: 0},
-		{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 8, PendingUnits: 0},
+	unchanged := []*spb.UserResourceAllocation{
+		{User: "alice@example.com", ResourceType: "memory", PendingUnits: 32.5},
+		{User: "alice@example.com", ResourceType: "cpu", RunningUnits: 16},
+		{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 8},
 		{User: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 2, PendingUnits: 4},
-		{User: "carol@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4, PendingUnits: 0},
 	}
-
-	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
-		t.Errorf("mapAuthorResourceAllocations(single flavor) mismatch (-want +got):\n%s", diff)
+	tests := []struct {
+		name      string
+		cache     *cache.KueueCache
+		wantCarol string
+	}{
+		{
+			name:      "single gpu flavor attributes generic requests to its model",
+			cache:     buildFlavorCache(map[string]string{"h100-flavor": "nvidia-tesla-h100"}, []string{"h100-flavor"}),
+			wantCarol: "nvidia.com/gpu: nvidia-tesla-h100",
+		},
+		{
+			name: "several gpu flavors keep generic requests generic",
+			cache: buildFlavorCache(
+				map[string]string{"h100-flavor": "nvidia-tesla-h100", "l4-flavor": "nvidia-l4"},
+				[]string{"h100-flavor", "l4-flavor"},
+			),
+			wantCarol: "nvidia.com/gpu",
+		},
 	}
-}
-
-func TestBuildUniqueQueueAcceleratorMap_MultiFlavorKeepsGeneric(t *testing.T) {
-	multiFlavorCache := buildFlavorCache(
-		map[string]string{"h100-flavor": "nvidia-tesla-h100", "l4-flavor": "nvidia-l4"},
-		[]string{"h100-flavor", "l4-flavor"},
-	)
-	uniqueMap := buildUniqueQueueAcceleratorMap(multiFlavorCache, "gpu-cq")
-	if len(uniqueMap) != 0 {
-		t.Errorf("buildUniqueQueueAcceleratorMap(multi flavor) = %v, want empty map", uniqueMap)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mapAuthorResourceAllocations(rows, buildUniqueQueueAcceleratorMap(tc.cache, "gpu-cq"))
+			want := append(slices.Clone(unchanged), &spb.UserResourceAllocation{User: "carol@example.com", ResourceType: tc.wantCarol, RunningUnits: 4})
+			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("mapAuthorResourceAllocations() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

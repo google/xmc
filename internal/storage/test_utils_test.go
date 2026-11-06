@@ -19,8 +19,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
@@ -73,18 +71,4 @@ func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 			t.Errorf("CommitTime = %v, want zero time on error", got)
 		}
 	})
-}
-
-func TestMockStorage_AggregateActiveResourcesByAuthor(t *testing.T) {
-	want := []AuthorResourceAllocation{
-		{Author: "alice@example.com", ResourceType: "cpu", RunningUnits: 4},
-	}
-	m := &MockStorage{AuthorResourceAllocations: want}
-	got, err := m.AggregateActiveResourcesByAuthor(context.Background(), []string{"gpu-queue"})
-	if err != nil {
-		t.Fatalf("AggregateActiveResourcesByAuthor() error = %v", err)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
-	}
 }
