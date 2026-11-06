@@ -36,11 +36,11 @@ type userResourceTotals struct {
 }
 
 func buildUniqueQueueAcceleratorMap(kueueCache *cache.KueueCache, clusterQueueName string) map[string]string {
-	if kueueCache == nil || kueueCache.ClusterQueues == nil || clusterQueueName == "" {
+	if kueueCache == nil || kueueCache.ClusterQueues == nil {
 		return nil
 	}
 	cq, ok := kueueCache.ClusterQueues.Get(clusterQueueName)
-	if !ok || cq == nil {
+	if !ok {
 		return nil
 	}
 	rfMap := buildResourceFlavorMap(kueueCache)

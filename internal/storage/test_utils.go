@@ -206,7 +206,6 @@ type MockStorage struct {
 	ActiveWorkUnitsResult            *ActiveWorkUnitsResult
 	FetchActiveWorkUnitsByQueuesErr  error
 	AuthorResourceAllocations        []AuthorResourceAllocation
-	AggregateActiveResourcesErr      error
 	ReadOnlyWorkUnitSnapshotErr      error
 	BatchQueueVelocityResp           []QueueMetricRow
 	FetchBatchQueueVelocityErr       error
@@ -614,7 +613,7 @@ func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNam
 
 // AggregateActiveResourcesByAuthor mocks aggregating active work unit resources by author.
 func (s *MockStorage) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error) {
-	return s.AuthorResourceAllocations, s.AggregateActiveResourcesErr
+	return s.AuthorResourceAllocations, nil
 }
 
 // WithReadOnlyWorkUnitSnapshot mocks a read-only snapshot by passing the mock itself as the repository.

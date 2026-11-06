@@ -43,8 +43,8 @@ func TestCanonicalizeResourceType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := CanonicalizeResourceType(tc.raw); got != tc.want {
-				t.Errorf("CanonicalizeResourceType(%q) = %q, want %q", tc.raw, got, tc.want)
+			if got := canonicalizeResourceType(tc.raw); got != tc.want {
+				t.Errorf("canonicalizeResourceType(%q) = %q, want %q", tc.raw, got, tc.want)
 			}
 		})
 	}

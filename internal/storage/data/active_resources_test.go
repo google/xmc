@@ -62,9 +62,9 @@ func TestClassifyActiveResourceState(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			gotState, gotOK := ClassifyActiveResourceState(tc.state)
+			gotState, gotOK := classifyActiveResourceState(tc.state)
 			if gotState != tc.wantState || gotOK != tc.wantOK {
-				t.Errorf("ClassifyActiveResourceState(%v) = (%q, %t), want (%q, %t)", tc.state, gotState, gotOK, tc.wantState, tc.wantOK)
+				t.Errorf("classifyActiveResourceState(%v) = (%q, %t), want (%q, %t)", tc.state, gotState, gotOK, tc.wantState, tc.wantOK)
 			}
 		})
 	}

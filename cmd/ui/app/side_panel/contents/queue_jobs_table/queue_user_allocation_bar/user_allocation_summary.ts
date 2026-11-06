@@ -40,7 +40,6 @@ export interface UserAllocationSegment {
 
 /** Per-user breakdown of the dominant resource across all active jobs in a queue. */
 export interface UserAllocationSummary {
-  readonly unit: string;
   readonly totalsLabel: string;
   readonly segments: readonly UserAllocationSegment[];
 }
@@ -82,7 +81,6 @@ function aggregateByUser(
   }
   return [...totals.entries()]
     .map(([user, t]) => ({ user, ...t }))
-    .filter((t) => t.running + t.pending > 0)
     .sort(
       (a, b) => b.running + b.pending - (a.running + a.pending) || a.user.localeCompare(b.user),
     );
@@ -110,7 +108,6 @@ export function summarizeUserAllocations(
   if (grandTotal <= 0) return null;
   const unit = resolveResourceUnitLabel(dominantResource);
   return {
-    unit,
     totalsLabel: formatUnitsLabel(totalRunning, totalPending, unit),
     segments: users.map((u, i) => ({
       user: u.user,

@@ -59,9 +59,6 @@ func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(c
 }
 
 func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	if len(queueNames) == 0 {
 		return []storage.AuthorResourceAllocation{}, nil
 	}

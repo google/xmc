@@ -24,10 +24,10 @@ import (
 const BytesPerGiB = 1024 * 1024 * 1024
 
 const (
-	// KubernetesGPUResource is the Kubernetes extended resource name for NVIDIA GPUs.
-	KubernetesGPUResource = "nvidia.com/gpu"
-	// KubernetesTPUResource is the Kubernetes extended resource name for Cloud TPUs.
-	KubernetesTPUResource = "google.com/tpu"
+	// kubernetesGPUResource is the Kubernetes extended resource name for NVIDIA GPUs.
+	kubernetesGPUResource = "nvidia.com/gpu"
+	// kubernetesTPUResource is the Kubernetes extended resource name for Cloud TPUs.
+	kubernetesTPUResource = "google.com/tpu"
 )
 
 var symbolicGPUToAccelerator = map[string]string{
@@ -57,30 +57,30 @@ func FormatCompoundAccelerator(resourceName, model string) string {
 	return resourceName + ": " + model
 }
 
-// CanonicalizeResourceType normalizes raw resource identifiers into canonical ROD resource types
+// canonicalizeResourceType normalizes raw resource identifiers into canonical ROD resource types
 // (e.g. "nvidia.com/gpu: nvidia-tesla-h100", "google.com/tpu: tpu-v5-lite-podslice", "cpu", "memory").
-func CanonicalizeResourceType(rawType string) string {
+func canonicalizeResourceType(rawType string) string {
 	lower := strings.ToLower(strings.TrimSpace(rawType))
 	if lower == "" || lower == ResourceTypeCPU || lower == ResourceTypeMemory {
 		return lower
 	}
-	if strings.HasPrefix(lower, KubernetesGPUResource+": ") || strings.HasPrefix(lower, KubernetesTPUResource+": ") {
+	if strings.HasPrefix(lower, kubernetesGPUResource+": ") || strings.HasPrefix(lower, kubernetesTPUResource+": ") {
 		return lower
 	}
 	if IsGenericGPU(lower) {
-		return KubernetesGPUResource
+		return kubernetesGPUResource
 	}
 	if IsGenericTPU(lower) {
-		return KubernetesTPUResource
+		return kubernetesTPUResource
 	}
 	if mapped, ok := symbolicGPUToAccelerator[lower]; ok {
-		return FormatCompoundAccelerator(KubernetesGPUResource, mapped)
+		return FormatCompoundAccelerator(kubernetesGPUResource, mapped)
 	}
 	if IsSpecificTPUKey(lower) {
-		return FormatCompoundAccelerator(KubernetesTPUResource, lower)
+		return FormatCompoundAccelerator(kubernetesTPUResource, lower)
 	}
 	if IsSpecificGPUKey(lower) {
-		return FormatCompoundAccelerator(KubernetesGPUResource, lower)
+		return FormatCompoundAccelerator(kubernetesGPUResource, lower)
 	}
 	return lower
 }
@@ -99,7 +99,7 @@ func ExtractNormalizedExecutableResources(exec *essmsgpb.Executable) map[string]
 		if val <= 0 {
 			continue
 		}
-		canonical := CanonicalizeResourceType(rawType)
+		canonical := canonicalizeResourceType(rawType)
 		if IsMemoryOrStorageResource(canonical) {
 			val /= BytesPerGiB
 		}

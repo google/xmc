@@ -36,8 +36,8 @@ type authorResourceKey struct {
 	state        storage.ActiveResourceState
 }
 
-// ClassifyActiveResourceState maps a WorkUnitState to running or pending resource allocation state.
-func ClassifyActiveResourceState(state essmsgpb.WorkUnitStatus_WorkUnitState) (storage.ActiveResourceState, bool) {
+// classifyActiveResourceState maps a WorkUnitState to running or pending resource allocation state.
+func classifyActiveResourceState(state essmsgpb.WorkUnitStatus_WorkUnitState) (storage.ActiveResourceState, bool) {
 	switch state {
 	case essmsgpb.WorkUnitStatus_RUNNING, essmsgpb.WorkUnitStatus_STARTING:
 		return storage.ActiveResourceStateRunning, true
@@ -52,8 +52,8 @@ func ClassifyActiveResourceState(state essmsgpb.WorkUnitStatus_WorkUnitState) (s
 func AggregateAuthorResourceSamples(samples []ActiveWorkUnitResourceSample) []storage.AuthorResourceAllocation {
 	totals := make(map[authorResourceKey]float64)
 	for _, sample := range samples {
-		state, ok := ClassifyActiveResourceState(sample.ExecutionState)
-		if !ok || sample.Executable == nil {
+		state, ok := classifyActiveResourceState(sample.ExecutionState)
+		if !ok {
 			continue
 		}
 		for resType, units := range resourceaccumulator.ExtractNormalizedExecutableResources(sample.Executable) {
