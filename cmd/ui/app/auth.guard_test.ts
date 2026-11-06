@@ -12,68 +12,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import {
+  ActivatedRouteSnapshot,
+  GuardResult,
+  provideRouter,
+  Router,
+  RouterOutlet,
+  RouterStateSnapshot,
+  UrlTree,
+} from '@angular/router';
+import { firstValueFrom, Observable, of } from 'rxjs';
 
 import { authGuard } from './auth.guard';
-import { AuthService } from './service/auth.service';
-import { cleanState, setupModule } from './testing/test';
+import { HomePage } from './homepage/home_page';
+import { HomePageHarness } from './homepage/home_page_harness';
+import { AuthService, UserResponse } from './service/auth.service';
+import { bootstrap, cleanState, getHarness, setupModule } from './testing/test';
+
+const DESTINATION = '/experiments/30054?filter=needs%20review&tag=a%2Bb#logs';
+const USER: UserResponse = {
+  email: 'user@example.com',
+  name: 'User',
+  pictureUrl: '',
+  sessionExpiresAt: 0,
+  allowedDomains: [],
+};
+
+@Component({ template: '', standalone: true })
+class ProtectedPage {}
+
+@Component({ template: '<router-outlet />', imports: [RouterOutlet], standalone: true })
+class TestApp {}
 
 function setup() {
   return cleanState(() => {
-    const authServiceSpy = jasmine.createSpyObj('AuthService', ['getUser']);
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
-
+    const authService = jasmine.createSpyObj<AuthService>('AuthService', ['getUser']);
+    authService.getUser.and.returnValue(of(null));
     setupModule({
+      imports: [TestApp, HomePage, ProtectedPage],
       providers: [
-        { provide: AuthService, useValue: authServiceSpy },
-        { provide: Router, useValue: routerSpy },
+        { provide: AuthService, useValue: authService },
+        provideRouter([
+          { path: '', component: HomePage, pathMatch: 'full' },
+          { path: 'experiments/:id', component: ProtectedPage, canActivate: [authGuard] },
+        ]),
       ],
     });
-    return {
-      authServiceSpy,
-      routerSpy,
-    };
+    return { authService, router: TestBed.inject(Router) };
   }, beforeEach);
+}
+
+function runGuard(): Promise<GuardResult> {
+  const result = TestBed.runInInjectionContext(() =>
+    authGuard(new ActivatedRouteSnapshot(), { url: DESTINATION } as RouterStateSnapshot),
+  );
+  return firstValueFrom(result as Observable<GuardResult>);
 }
 
 describe('authGuard', () => {
   const state = setup();
 
-  it('should return true if user is logged in', (done) => {
-    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as any));
+  it('allows authenticated users to open the requested page', async () => {
+    state.authService.getUser.and.returnValue(of(USER));
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
-
-    (result as any).subscribe((res: boolean) => {
-      expect(res).toBeTrue();
-      expect(state.routerSpy.navigate).not.toHaveBeenCalled();
-      done();
-    });
+    expect(await runGuard()).toBeTrue();
+    bootstrap(TestApp);
+    await state.router.navigateByUrl(DESTINATION);
+    expect(state.router.url).toBe(DESTINATION);
   });
 
-  it('should redirect to / and return false if user is not logged in', (done) => {
-    state.authServiceSpy.getUser.and.returnValue(of(null));
+  for (const user of [null, { ...USER, email: '' }]) {
+    it(`preserves the destination when the user is ${user ? 'missing an email' : 'signed out'}`, async () => {
+      state.authService.getUser.and.returnValue(of(user));
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
+      const result = await runGuard();
 
-    (result as any).subscribe((res: boolean) => {
-      expect(res).toBeFalse();
-      expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
-      done();
+      expect(result instanceof UrlTree).toBeTrue();
+      expect(state.router.serializeUrl(result as UrlTree)).toBe(
+        `/?return_to=${encodeURIComponent(DESTINATION)}`,
+      );
     });
-  });
+  }
 
-  it('should redirect to / and return false if auth service throws an error', (done) => {
-    state.authServiceSpy.getUser.and.returnValue(throwError(() => new Error('Auth error')));
+  it('passes the initial route through the homepage sign-in button', async () => {
+    const openSpy = spyOn(window, 'open').and.stub();
+    bootstrap(TestApp);
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
+    await state.router.navigateByUrl(DESTINATION);
+    const homePage = await getHarness(HomePageHarness);
+    await homePage.signIn();
 
-    (result as any).subscribe((res: boolean) => {
-      expect(res).toBeFalse();
-      expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
-      done();
-    });
+    expect(openSpy).toHaveBeenCalledWith(
+      `/api/login?return_to=${encodeURIComponent(DESTINATION)}`,
+      '_self',
+      undefined,
+    );
   });
 });

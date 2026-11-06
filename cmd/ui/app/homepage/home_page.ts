@@ -50,7 +50,11 @@ export class HomePage {
     return 'An authentication error occurred. Please try again.';
   });
 
-  login() {
-    safeWindow.open(window, '/api/login', '_self');
+  login(): void {
+    const returnTo = this.queryParams()?.['return_to'];
+    const loginUrl = returnTo
+      ? `/api/login?return_to=${encodeURIComponent(returnTo)}`
+      : '/api/login';
+    safeWindow.open(window, loginUrl, '_self');
   }
 }

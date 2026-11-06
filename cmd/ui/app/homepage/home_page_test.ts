@@ -15,8 +15,9 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ActivatedRoute, Params, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 
-import { bootstrap, cleanState, setupModule } from '../testing/test';
+import { bootstrap, bootstrapTemplate, cleanState, getHarness, setupModule } from '../testing/test';
 import { HomePage } from './home_page';
+import { HomePageHarness } from './home_page_harness';
 
 describe('HomePage Component', () => {
   const state = cleanState(() => {
@@ -74,11 +75,32 @@ describe('HomePage Component', () => {
     );
   });
 
-  it('should redirect user to login endpoint when login is called', () => {
-    const openSpy = spyOn(window, 'open').and.stub();
+  for (const returnTo of [undefined, '']) {
+    it(`opens the login endpoint when the destination is ${returnTo === undefined ? 'missing' : 'empty'}`, async () => {
+      const openSpy = spyOn(window, 'open').and.stub();
+      state.queryParams.next({ return_to: returnTo });
+      bootstrapTemplate('<xmc-home-page />');
 
-    const comp = bootstrap(HomePage);
-    comp.login();
-    expect(openSpy).toHaveBeenCalledWith('/api/login', '_self', undefined);
+      const harness = await getHarness(HomePageHarness);
+      await harness.signIn();
+
+      expect(openSpy).toHaveBeenCalledWith('/api/login', '_self', undefined);
+    });
+  }
+
+  it('passes the destination path, query, and fragment to the login endpoint', async () => {
+    const openSpy = spyOn(window, 'open').and.stub();
+    const returnTo = '/experiments/30054?filter=needs%20review&tag=a%2Bb#logs';
+    state.queryParams.next({ return_to: returnTo });
+    bootstrapTemplate('<xmc-home-page />');
+
+    const harness = await getHarness(HomePageHarness);
+    await harness.signIn();
+
+    expect(openSpy).toHaveBeenCalledWith(
+      `/api/login?return_to=${encodeURIComponent(returnTo)}`,
+      '_self',
+      undefined,
+    );
   });
 });

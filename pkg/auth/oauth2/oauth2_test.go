@@ -531,7 +531,8 @@ func TestHandleCallbackProduction(t *testing.T) {
 	}
 
 	// Login triggers redirect to mockOIDC /auth -> redirects to /api/callback
-	resp, err := client.Get(ts.URL + "/api/login")
+	const returnPath = "/experiments/1?filter=a%2Fb&tab=logs#work-units"
+	resp, err := client.Get(ts.URL + "/api/login?return_to=" + url.QueryEscape(returnPath))
 	if err != nil {
 		t.Fatalf("Login workflow failed: %v", err)
 	}
@@ -539,6 +540,9 @@ func TestHandleCallbackProduction(t *testing.T) {
 
 	if resp.StatusCode != http.StatusTemporaryRedirect {
 		t.Errorf("Expected final dashboard redirect 307, got %d", resp.StatusCode)
+	}
+	if got, want := resp.Header.Get("Location"), ts.URL+returnPath; got != want {
+		t.Errorf("callback destination = %q, want %q", got, want)
 	}
 
 	// 4. Verify session cookie
