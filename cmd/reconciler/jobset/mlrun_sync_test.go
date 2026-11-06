@@ -170,7 +170,7 @@ func TestEnsureMLRunCreated(t *testing.T) {
 				ClusterName: "cluster-a",
 				MLRunClient: tc.client,
 			}
-			gotURL, gotConfirmed := r.ensureMLRunCreated(context.Background(), tc.jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			gotURL, gotConfirmed := r.ensureMLRunCreated(context.Background(), tc.jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 			if tc.wantEmptyURL && gotURL != "" {
 				t.Errorf("ensureMLRunCreated() url = %q, want empty", gotURL)
 			}
@@ -467,13 +467,13 @@ func TestSyncMLRunCachesURLBeforeBatchFlushAndEvictsOnDelete(t *testing.T) {
 	}
 
 	const wantURL = "https://mlrun/op-123?tab=profiles"
-	got1 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	got1 := r.syncMLRun(context.Background(), jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30)
 	if got1 != wantURL {
 		t.Fatalf("first syncMLRun() = %q, want %q", got1, wantURL)
 	}
 
 	// Second reconcile arrives ~70ms later before batcher flushes MlrunUrl to Spanner.
-	got2 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	got2 := r.syncMLRun(context.Background(), jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30)
 	if got2 != wantURL {
 		t.Fatalf("second syncMLRun() = %q, want %q", got2, wantURL)
 	}
@@ -486,7 +486,7 @@ func TestSyncMLRunCachesURLBeforeBatchFlushAndEvictsOnDelete(t *testing.T) {
 
 	// Evicting on JobSet deletion must drop cached entries with EID <= 30.
 	r.evictPendingJobSetUpdate(10, 20, 30)
-	got3 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	got3 := r.syncMLRun(context.Background(), jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30)
 	if got3 != wantURL {
 		t.Fatalf("third syncMLRun() after eviction = %q, want %q", got3, wantURL)
 	}
@@ -527,7 +527,7 @@ func TestSyncMLRunDoesNotCacheUnconfirmedFallbackURL(t *testing.T) {
 
 	// First reconcile hits 409 + UpdateMLRun error and returns fallback console URL,
 	// which must not be cached so the next reconcile retries enrichment.
-	got1 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	got1 := r.syncMLRun(context.Background(), jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30)
 	if !strings.Contains(got1, "console.cloud.google.com") {
 		t.Fatalf("first syncMLRun() = %q, want fallback console URL", got1)
 	}
@@ -539,7 +539,7 @@ func TestSyncMLRunDoesNotCacheUnconfirmedFallbackURL(t *testing.T) {
 	client.updateErr = nil
 	client.updateRes = map[string]any{"url": "https://mlrun/enriched"}
 	const wantEnrichedURL = "https://mlrun/enriched?tab=profiles"
-	got2 := r.syncMLRun(context.Background(), jobSet, 10, 20, 30)
+	got2 := r.syncMLRun(context.Background(), jobSet, "test-proj", "us-central1", "cluster-a", 10, 20, 30)
 	if got2 != wantEnrichedURL {
 		t.Fatalf("second syncMLRun() = %q, want %q", got2, wantEnrichedURL)
 	}

@@ -89,7 +89,7 @@ func (r *Reconciler) evictCachedMLRunURLs(xid, wid, eid int64) {
 
 // syncMLRun resolves ManagedXprof metadata for a JobSet and ensures its MLRun
 // tracking record is created or reused when ManagedXprof is enabled.
-func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64) string {
+func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, project, location, clusterName string, xid, wid, eid int64) string {
 	mlRunStart := time.Now()
 	mxEnvs := getManagedXprofEnvs(jobSet)
 	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
@@ -110,7 +110,7 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
 		var confirmed bool
-		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
+		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, project, location, clusterName, xid, wid, eid, displayName, runGroup, gcsPath)
 		if confirmed {
 			r.cacheMLRunURL(xid, wid, eid, mlRunURL)
 		}
@@ -149,7 +149,7 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, project, location, clusterName string, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
 	if r.MLRunClient == nil || jobSet == nil {
 		return "", false
 	}
@@ -157,8 +157,8 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
-	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
-	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
+	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	clusterPath := resolveClusterPath(clusterName, project, location)
 	labels := buildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)
