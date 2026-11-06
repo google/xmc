@@ -15,8 +15,6 @@
 package workunit
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -40,17 +38,7 @@ func insertActiveResourceWorkUnits(t *testing.T, pool *pgxpool.Pool, repo *Repos
 
 func TestRepository_AggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
 	ctx := t.Context()
-	canceledCtx, cancel := context.WithCancel(ctx)
-	cancel()
-
-	nilPoolRepo := NewRepository(nil)
-	if _, err := nilPoolRepo.AggregateActiveResourcesByAuthor(canceledCtx, []string{"q"}); !errors.Is(err, context.Canceled) {
-		t.Errorf("aggregate(canceled) = %v, want context.Canceled", err)
-	}
-	if _, err := ((*Repository)(nil)).AggregateActiveResourcesByAuthor(ctx, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("aggregate(nil Repository) code = %v, want FailedPrecondition", status.Code(err))
-	}
-	if _, err := nilPoolRepo.AggregateActiveResourcesByAuthor(ctx, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
+	if _, err := NewRepository(nil).AggregateActiveResourcesByAuthor(ctx, []string{"q"}); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("aggregate(nil pool) code = %v, want FailedPrecondition", status.Code(err))
 	}
 

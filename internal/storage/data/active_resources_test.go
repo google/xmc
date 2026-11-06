@@ -34,7 +34,6 @@ func TestAggregateAuthorResourceSamples(t *testing.T) {
 		sample(alice, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{CPUCores: 2, MemoryGiB: 4, GPUType: "H100", GPUCount: 4}),
 		sample(alice, essmsgpb.WorkUnitStatus_STARTING, storagetest.ActiveResourceSpec{CPUCores: 1, MemoryGiB: 2, GPUType: "nvidia-h100-80gb", GPUCount: 2}),
 		sample(alice, essmsgpb.WorkUnitStatus_INITIALIZING, storagetest.ActiveResourceSpec{CPUCores: 0.5, MemoryGiB: 0.5}),
-		sample(alice, essmsgpb.WorkUnitStatus_COMPLETED, storagetest.ActiveResourceSpec{CPUCores: 16, MemoryGiB: 32, GPUType: "H100", GPUCount: 8}),
 		{Creator: alice, Executable: nil, ExecutionState: essmsgpb.WorkUnitStatus_RUNNING},
 	}
 

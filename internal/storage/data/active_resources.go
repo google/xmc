@@ -36,14 +36,12 @@ type authorResourceKey struct {
 }
 
 // AggregateAuthorResourceSamples sums normalized executable resources by (Creator, ResourceType),
-// split into running and pending units. Samples in inactive states are ignored.
+// split into running and pending units. Samples must be active work units (the storage queries
+// select only those); any state other than a running one counts as pending.
 func AggregateAuthorResourceSamples(samples []ActiveWorkUnitResourceSample) []storage.AuthorResourceAllocation {
 	totals := make(map[authorResourceKey]*storage.AuthorResourceAllocation)
 	for _, sample := range samples {
 		running := slices.Contains(state.WorkUnitRunningStates, sample.ExecutionState)
-		if !running && !slices.Contains(state.WorkUnitPendingStates, sample.ExecutionState) {
-			continue
-		}
 		for resType, units := range resourceaccumulator.ExtractNormalizedExecutableResources(sample.Executable) {
 			key := authorResourceKey{author: sample.Creator, resourceType: resType}
 			entry := totals[key]

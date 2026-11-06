@@ -58,12 +58,6 @@ func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spann
 }
 
 func TestAggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
-	canceledCtx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(canceledCtx, []string{"q"}); !errors.Is(err, context.Canceled) {
-		t.Errorf("aggregate(canceled) = %v, want context.Canceled", err)
-	}
 	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(t.Context(), []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("aggregate(nil client) = %v, want ErrFailedPrecondition", err)
 	}

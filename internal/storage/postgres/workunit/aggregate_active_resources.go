@@ -20,7 +20,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
@@ -34,7 +33,7 @@ type activeResourceRow struct {
 	Creator        string `db:"creator"`
 }
 
-var aggregateActiveResourcesSQL = safesql.New(`SELECT wu.Executable, wu.ExecutionState, COALESCE(e.Creator, '') AS creator
+var aggregateActiveResourcesSQL = safesql.New(`SELECT wu.Executable, wu.ExecutionState, e.Creator
 FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
@@ -42,12 +41,6 @@ WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 // AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
 // type and state across all active work units of queueNames in one read-only transaction.
 func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if r == nil || r.pool == nil {
-		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
-	}
 	var res []storage.AuthorResourceAllocation
 	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
 		var innerErr error

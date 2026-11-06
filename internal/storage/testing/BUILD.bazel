@@ -39,7 +39,6 @@ go_library(
 go_test(
     name = "testing_test",
     srcs = [
-        "active_resources_fixture_test.go",
         "pausedtask_fake_test.go",
         "pausestate_fake_test.go",
     ],
@@ -50,7 +49,6 @@ go_test(
         "//internal/grpcerr",
         "//internal/prototest",
         "//internal/storage",
-        "//internal/storage/state",
         "@com_github_google_go_cmp//cmp",
         "@org_golang_google_protobuf//testing/protocmp",
     ],

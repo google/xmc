@@ -26,7 +26,7 @@ import (
 )
 
 var aggregateActiveResourcesSQL = safesql.New(
-	`SELECT COALESCE(e.Creator, '') AS Creator, wu.Executable, wu.ExecutionState
+	`SELECT e.Creator, wu.Executable, wu.ExecutionState
 	FROM WorkUnits wu
 	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
 	WHERE wu.QueueName IN UNNEST(@queueNames)
@@ -34,17 +34,12 @@ var aggregateActiveResourcesSQL = safesql.New(
 )
 
 // AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-// type and state across all active work units of queueNames in one read-only transaction.
+// type and state across all active work units of queueNames in one read.
 func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	if r == nil || r.client == nil {
 		return nil, fmt.Errorf("spanner storage client is uninitialized: %w", grpcerr.ErrFailedPrecondition)
 	}
-	txn := r.client.ReadOnlyTransaction()
-	defer txn.Close()
-	return aggregateActiveResourcesInTxn(ctx, txn, queueNames)
+	return aggregateActiveResourcesInTxn(ctx, r.client.Single(), queueNames)
 }
 
 func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
@@ -74,14 +69,8 @@ func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTra
 
 func scanActiveResourceSample(row *spanner.Row) (data.ActiveWorkUnitResourceSample, error) {
 	var sample data.ActiveWorkUnitResourceSample
-	if err := row.ColumnByName("Creator", &sample.Creator); err != nil {
-		return sample, fmt.Errorf("failed to read column Creator: %w", err)
-	}
-	if err := row.ColumnByName("Executable", &sample.Executable); err != nil {
-		return sample, fmt.Errorf("failed to read column Executable: %w", err)
-	}
-	if err := row.ColumnByName("ExecutionState", &sample.ExecutionState); err != nil {
-		return sample, fmt.Errorf("failed to read column ExecutionState: %w", err)
+	if err := row.Columns(&sample.Creator, &sample.Executable, &sample.ExecutionState); err != nil {
+		return sample, fmt.Errorf("failed to read active work unit resource row: %w", err)
 	}
 	return sample, nil
 }

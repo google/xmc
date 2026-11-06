@@ -55,12 +55,6 @@ var (
 		essmsgpb.WorkUnitStatus_RUNNING,
 	}
 
-	// WorkUnitPendingStates are the active states of work units still waiting for admission.
-	WorkUnitPendingStates = []essmsgpb.WorkUnitStatus_WorkUnitState{
-		essmsgpb.WorkUnitStatus_SCHEDULING,
-		essmsgpb.WorkUnitStatus_INITIALIZING,
-	}
-
 	// WorkUnitTerminalStates are the terminal states for a work unit.
 	WorkUnitTerminalStates = []essmsgpb.WorkUnitStatus_WorkUnitState{
 		essmsgpb.WorkUnitStatus_STOPPED,

@@ -40,8 +40,6 @@ func FormatCompoundAccelerator(resourceName, model string) string {
 func canonicalizeResourceType(key string) string {
 	gpu, tpu := constants.NvidiaGPUResourceName, constants.TPUResourceName
 	switch {
-	case key == ResourceTypeCPU || key == ResourceTypeMemory:
-		return key
 	case strings.HasPrefix(key, gpu+": ") || strings.HasPrefix(key, tpu+": "):
 		return key
 	case IsGenericGPU(key):
