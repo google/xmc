@@ -85,12 +85,16 @@
         "hpo": {
           "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
           "properties": {
+            "imageTag": { "type": "string" },
             "parameters": {
               "type": "object",
               "additionalProperties": false
             }
           },
-          "propertyNames": { "$ref": "#/definitions/commonKeys" }
+          "propertyNames": {
+            "description": "commonKeys plus imageTag.",
+            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
+          }
         }
       }
     }

@@ -1,6 +1,8 @@
 {{- if not (hasPrefix "xmc-cmp-" .Release.Name) -}}
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
+{{- $global := .Values.global | default dict }}
+{{- $imgTag := $global.imageTag | default .Values.imageTag }}
 apiVersion: xmc.dev/v1alpha1
 kind: Component
 metadata:
@@ -22,6 +24,9 @@ spec:
   stability: {{ .Values.stability | default "EXPERIMENTAL" | quote }}
   {{- if hasKey .Values "acknowledgeExperimental" }}
   acknowledgeExperimental: {{ .Values.acknowledgeExperimental }}
+  {{- end }}
+  {{- if $imgTag }}
+  imageTag: {{ $imgTag | toString | quote }}
   {{- end }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}

@@ -174,12 +174,23 @@ func repositoryFromImageRef(imageRef string) string {
 	return ref
 }
 
+// componentImageNames maps components whose container image is not named after the component
+// to their image name.
+var componentImageNames = map[string]string{
+	"hpo": "study-controller",
+}
+
 // DefaultComponentRepository returns the standard default Google Artifact Registry repository
-// for first-party (1P) components in production XMC deployments (e.g. us-docker.pkg.dev/xmc-prod/xmc/<componentName>).
+// for first-party (1P) components in production XMC deployments (e.g. us-docker.pkg.dev/xmc-prod/xmc/<imageName>),
+// where the image name is the component name unless componentImageNames maps it.
 // When deploying to non-prod environments or custom registries, callers supply explicit repository overrides
 // via parameters["imageRepository"] or parameters["image"].
 func DefaultComponentRepository(componentName string) string {
-	return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", componentName)
+	imageName := componentName
+	if name, ok := componentImageNames[componentName]; ok {
+		imageName = name
+	}
+	return fmt.Sprintf("us-docker.pkg.dev/xmc-prod/xmc/%s", imageName)
 }
 
 // ResolveImage resolves the container image following precedence:
