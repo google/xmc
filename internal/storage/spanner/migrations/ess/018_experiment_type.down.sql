@@ -15,5 +15,6 @@
 ALTER TABLE Experiments DROP COLUMN ExperimentType;
 
 ALTER PROTO BUNDLE DELETE (
+  cloud.xmanager.v1.Experiment,
   cloud.xmanager.v1.Experiment.ExperimentType
 );

@@ -12,7 +12,10 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
+-- Cloud Spanner requires the parent message in the bundle before a nested type can be added (the
+-- emulator does not enforce this). Same pattern as WorkUnit / WorkUnit.WorkUnitType.
 ALTER PROTO BUNDLE INSERT (
+  cloud.xmanager.v1.Experiment,
   cloud.xmanager.v1.Experiment.ExperimentType
 );
 

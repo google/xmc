@@ -21,6 +21,7 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.ExperimentStatus.LaunchState,
   cloud.xmanager.v1.ResourceSet,
   cloud.xmanager.v1.Priority,
+  cloud.xmanager.v1.Experiment,
   cloud.xmanager.v1.Experiment.ExperimentType,
 
   -- Protos used in StructuredMessages
