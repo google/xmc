@@ -105,7 +105,7 @@ kill "${PF_PID}"
 `xmc-profile` is a separate Helm release: `gcluster deploy` and umbrella `helm upgrade` do not upgrade it. `prepare` also pins the gateway image that was running at migration time (`components.ingestion-gateway.imageTag`, plus `components.ingestion-gateway.parameters.image` when your umbrella values set a custom gateway image), and these take precedence over the default image `xmc-bridge` would otherwise use. Keep `profile-values.yaml` alongside your deployment configuration and, on every later XMC upgrade:
 
 1. Keep `enable_components: true` (`componentsDeployment.enabled=true`) and upgrade the umbrella release as usual (see [INSTALL.md](../../INSTALL.md#step-4-upgrade-application-workloads)).
-2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to the new release.
+2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to match the new `<IMAGE_TAG>` (the same tag used for the umbrella upgrade).
 3. Re-run the Step 4 `helm upgrade --install --reset-then-reuse-values xmc-profile ...` command from the new release checkout (`dev_env.py gke-upgrade --profile-values` does this automatically).
 
 ---
