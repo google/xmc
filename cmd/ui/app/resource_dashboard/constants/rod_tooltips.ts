@@ -36,6 +36,9 @@ export const ROD_TERM_TOOLTIPS = {
 
   dominantResource:
     'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
+
+  runningTime:
+    'Time elapsed since the job last entered the RUNNING state. Resets if the job restarts.',
 } as const;
 
 export type RodTooltipKey = keyof typeof ROD_TERM_TOOLTIPS;

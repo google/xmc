@@ -261,13 +261,16 @@ waiting, and what is available.
 | RPC | Answers |
 | :--- | :--- |
 | `ListClusterQueues` | What queues exist and what quota do they hold? |
-| `GetRunningAndPendingJobs` | What is executing and what is waiting? |
+| `GetRunningAndPendingJobs` | What is executing (and how long it has been `RUNNING` since its last start) and what is waiting? |
 | `GetSubmitQueue` | What is the ordered admission queue? |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched. |
 
 Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
-cache; they never hit the Kubernetes API.
+cache; they never hit the Kubernetes API. Active job rows in `GetRunningAndPendingJobs` come from
+Spanner, computing `running_duration_seconds` from `WorkUnitStatus.state_update_time` when a job is
+`RUNNING` (note that `state_update_time` resets if a work unit transitions through `RESTARTING`
+back to `RUNNING`, so the duration reflects elapsed time since the latest start).
 
 The reason is the same as everywhere else in XMC. A dashboard that polls every few seconds must not
 translate into API server load proportional to the number of viewers. Watch once, serve many.

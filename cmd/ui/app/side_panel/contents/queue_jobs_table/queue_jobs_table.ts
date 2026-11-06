@@ -33,12 +33,14 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
 import {
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
+  QueueJobRunningTimePipe,
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
 
@@ -64,6 +66,7 @@ export class QueueJobsTableData implements BaseSidePanelData {
     StatusChip,
     ResourceChip,
     QueueJobPositionPipe,
+    QueueJobRunningTimePipe,
     QueueJobStatusPipe,
     QueueJobResourcesPipe,
   ],
@@ -132,11 +135,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
 
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;
+  protected readonly runningTimeTooltip = ROD_TERM_TOOLTIPS.runningTime;
 
   protected readonly displayedColumns: readonly string[] = [
     'position',
     'jobName',
     'status',
+    'runningTime',
     'priority',
     'resources',
     'workUnitId',

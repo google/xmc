@@ -134,6 +134,10 @@ message DashboardJob {
   google.protobuf.Timestamp create_time = 9;
   repeated string tags = 10;
   string experiment_title = 11;
+  // Elapsed seconds since the job last entered the RUNNING state
+  // (resets if the job transitions through RESTARTING back to RUNNING).
+  // Zero when the job is not currently RUNNING.
+  int64 running_duration_seconds = 12;
 }
 
 // GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
