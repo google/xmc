@@ -16,12 +16,67 @@ package workunit
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/jackc/pgx/v5"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/data"
+	postgresdata "xmanager_cloud/internal/storage/postgres/data"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
-// AggregateActiveResourcesByAuthor returns no allocations until the per-author aggregation over
-// active work units is implemented.
+type activeResourceRow struct {
+	Executable     []byte `db:"executable"`
+	ExecutionState int64  `db:"executionstate"`
+	Creator        string `db:"creator"`
+}
+
+var aggregateActiveResourcesSQL = safesql.New(`SELECT wu.Executable, wu.ExecutionState, e.Creator
+FROM WorkUnits wu
+JOIN Experiments e ON wu.Xid = e.Xid
+WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
+
+// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
+// type and state across all active work units of queueNames in one read-only transaction.
 func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	return []storage.AuthorResourceAllocation{}, nil
+	var res []storage.AuthorResourceAllocation
+	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
+		var innerErr error
+		res, innerErr = aggregateActiveResourcesFromDB(txCtx, tx, queueNames)
+		return innerErr
+	})
+	return res, err
+}
+
+func aggregateActiveResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	if len(queueNames) == 0 {
+		return []storage.AuthorResourceAllocation{}, nil
+	}
+	rows, err := pgdb.QueryRows[activeResourceRow](ctx, db, aggregateActiveResourcesSQL.String(), entityName, queueNames)
+	if err != nil {
+		return nil, err
+	}
+	samples, err := toActiveResourceSamples(rows)
+	if err != nil {
+		return nil, err
+	}
+	return data.AggregateAuthorResourceSamples(samples), nil
+}
+
+func toActiveResourceSamples(rows []activeResourceRow) ([]data.ActiveWorkUnitResourceSample, error) {
+	samples := make([]data.ActiveWorkUnitResourceSample, 0, len(rows))
+	for _, row := range rows {
+		exec, err := postgresdata.UnmarshalProto[essmsgpb.Executable](row.Executable)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
+		}
+		samples = append(samples, data.ActiveWorkUnitResourceSample{
+			Creator:        row.Creator,
+			Executable:     exec,
+			ExecutionState: essmsgpb.WorkUnitStatus_WorkUnitState(row.ExecutionState),
+		})
+	}
+	return samples, nil
 }

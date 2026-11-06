@@ -258,12 +258,12 @@ When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, the Health Service, Actuator, an
 The ROD Data Provider answers capacity questions: what queues exist, what is running, what is
 waiting, and what is available.
 
-| RPC                          | Answers                                                                                        |
-| :--------------------------- | :--------------------------------------------------------------------------------------------- |
-| `ListClusterQueues`          | What queues exist and what quota do they hold?                                                 |
-| `GetRunningAndPendingJobs`   | What is executing (and how long since XMC observed it entering `RUNNING`) and what is waiting? |
-| `GetSubmitQueue`             | What is the ordered admission queue?                                                           |
-| `BatchGetQueueSecondaryData` | Derived per-queue detail, batched.                                                             |
+| RPC                          | Answers                                                                                                                         |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `ListClusterQueues`          | What queues exist and what quota do they hold?                                                                                  |
+| `GetRunningAndPendingJobs`   | What is executing (and how long since XMC observed it entering `RUNNING`), what is waiting, and who holds which resources?      |
+| `GetSubmitQueue`             | What is the ordered admission queue?                                                                                            |
+| `BatchGetQueueSecondaryData` | Derived per-queue detail, batched.                                                                                              |
 
 Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
@@ -285,6 +285,12 @@ translate into API server load proportional to the number of viewers. Watch once
 
 Unlike the Reconciler, ROD persists nothing — its cache is derived state, rebuilt from a full
 re-list on restart.
+
+Job data is the exception: `GetRunningAndPendingJobs` reads work units from the ESS database. It
+returns a page of jobs and `user_allocations` — the requested units
+(memory in GiB) of every resource type summed per experiment creator across *all* active jobs in
+the queue, split into running (`RUNNING`, `STARTING`) and pending (`SCHEDULING`, `INITIALIZING`).
+These are requested amounts, not measured utilization.
 
 ---
 

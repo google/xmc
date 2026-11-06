@@ -49,6 +49,12 @@ var (
 		essmsgpb.WorkUnitStatus_RESTARTING:   {},
 	}
 
+	// WorkUnitRunningStates are the active states of work units admitted to their queue.
+	WorkUnitRunningStates = []essmsgpb.WorkUnitStatus_WorkUnitState{
+		essmsgpb.WorkUnitStatus_STARTING,
+		essmsgpb.WorkUnitStatus_RUNNING,
+	}
+
 	// WorkUnitTerminalStates are the terminal states for a work unit.
 	WorkUnitTerminalStates = []essmsgpb.WorkUnitStatus_WorkUnitState{
 		essmsgpb.WorkUnitStatus_STOPPED,

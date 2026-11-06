@@ -38,7 +38,7 @@ export function matchesResourceFilter(resourceType: string, filter: string): boo
   return r.includes(f);
 }
 
-// Delimiter emitted by the ROD backend's formatCompoundAccelerator
+// Delimiter emitted by the ROD backend's resourceaccumulator.FormatCompoundAccelerator
 // (e.g. "nvidia.com/gpu: nvidia-tesla-a100").
 const COMPOUND_RESOURCE_DELIMITER = ': ';
 

@@ -15,14 +15,81 @@
 package workunit_test
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/google/go-cmp/cmp"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
+	"xmanager_cloud/internal/storage/spanner/emulator"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
-func TestAggregateActiveResourcesByAuthor_EmptyUntilImplemented(t *testing.T) {
-	got, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(t.Context(), []string{"gpu-queue"})
+func newEmulatorStorage(ctx context.Context, t *testing.T) *spanner.Storage {
+	t.Helper()
+	_, essClient := emulator.Setup(ctx, t)
+	store, err := spanner.NewStorage(essClient)
+	if err != nil {
+		t.Fatalf("spanner.NewStorage failed: %v", err)
+	}
+	return store
+}
+
+func seedExperimentWithCreator(ctx context.Context, t *testing.T, store *spanner.Storage, xid int64, creator string) {
+	t.Helper()
+	exp := spanner.BlankExperimentProto(xid)
+	exp.Creator = creator
+	_ = spanner.CreateAndStoreExperiment(ctx, t, store, exp)
+}
+
+func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spanner.Storage, specs []storagetest.ActiveResourceSpec) {
+	t.Helper()
+	wus := make([]*essmsgpb.WorkUnit, 0, len(specs))
+	for _, spec := range specs {
+		wu := spanner.BlankWorkUnitProto(spec.XID, spec.WID)
+		wu.CurrentWorkUnitExecution.Status.State = spec.State
+		wu.Executable = spec.Executable()
+		wus = append(wus, wu)
+	}
+	insertWorkUnitsAt(ctx, t, store, time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC), wus)
+}
+
+func TestAggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
+	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(t.Context(), []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("aggregate(nil client) = %v, want ErrFailedPrecondition", err)
+	}
+
+	ctx := t.Context()
+	store := newEmulatorStorage(ctx, t)
+	got, err := store.AggregateActiveResourcesByAuthor(ctx, nil)
 	if err != nil || len(got) != 0 {
-		t.Errorf("AggregateActiveResourcesByAuthor() = (%v, %v), want (empty, nil)", got, err)
+		t.Errorf("aggregate(nil queues) = (%v, %v), want (empty, nil)", got, err)
+	}
+}
+
+func TestAggregateActiveResourcesByAuthor_AllPagesAndNormalization(t *testing.T) {
+	ctx := t.Context()
+	store := newEmulatorStorage(ctx, t)
+	seedExperimentWithCreator(ctx, t, store, 201, "alice@example.com")
+	seedExperimentWithCreator(ctx, t, store, 202, "bob@example.com")
+	seedActiveResourceWorkUnits(ctx, t, store, storagetest.ActiveResourceSpecs(201, 202))
+
+	queues := []string{storagetest.ActiveResourceQueue}
+	pageOne, err := store.FetchActiveWorkUnitsByQueues(ctx, queues, 2, "")
+	if err != nil {
+		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
+	}
+	gotAllocations, err := store.AggregateActiveResourcesByAuthor(ctx, queues)
+	if err != nil {
+		t.Fatalf("AggregateActiveResourcesByAuthor failed: %v", err)
+	}
+	if len(pageOne.WorkUnits) != 2 || pageOne.TotalQueueSize != storagetest.ActiveResourceSpecsActiveCount || pageOne.NextPageToken == "" {
+		t.Fatalf("pageOne = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(pageOne.WorkUnits), pageOne.TotalQueueSize, pageOne.NextPageToken, storagetest.ActiveResourceSpecsActiveCount)
+	}
+	if diff := cmp.Diff(storagetest.WantActiveResourceAllocations(), gotAllocations, storagetest.AuthorAllocationOrder); diff != "" {
+		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
 	}
 }

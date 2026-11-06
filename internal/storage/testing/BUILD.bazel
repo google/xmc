@@ -19,6 +19,7 @@ go_library(
     name = "testing",
     testonly = True,
     srcs = [
+        "active_resources_fixture.go",
         "pausedtask_fake.go",
         "pausestate_fake.go",
     ],
@@ -27,8 +28,10 @@ go_library(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
+        "//internal/common/resourceaccumulator",
         "//internal/grpcerr",
         "//internal/storage",
+        "@com_github_google_go_cmp//cmp/cmpopts",
         "@org_golang_google_protobuf//proto",
     ],
 )
