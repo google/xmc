@@ -461,6 +461,11 @@ type ComponentTxRepository interface {
 	// WriteComponentOwner records owner (a no-op when nil) on componentID with SourceLastSeenTime at the commit time
 	// and leaves UpdateTime unchanged, returning codes.FailedPrecondition when the binding is read-only.
 	WriteComponentOwner(ctx context.Context, componentID int64, owner *store.SourceOwner) error
+	// InsertExperimentComponentSnapshot pins rec at rec.Generation to experiment xid by inserting an
+	// ExperimentComponentSnapshots row with rec's config (name, spec, labels) and access status (NULL when
+	// rec.Status is nil). It returns codes.InvalidArgument when rec is nil, and codes.FailedPrecondition when the
+	// binding is read-only.
+	InsertExperimentComponentSnapshot(ctx context.Context, xid int64, rec *store.ComponentRecord) error
 }
 
 // ComponentStore exposes the repository accessor for component catalog persistence.

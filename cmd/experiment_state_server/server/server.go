@@ -63,8 +63,9 @@ type baseHandler struct {
 // ExperimentHandler handles experiment lifecycle operations.
 type ExperimentHandler struct {
 	baseHandler
-	driftEvaluator *experiment.DriftEvaluator
-	server         apipb.ExperimentStateServiceServer
+	driftEvaluator   *experiment.DriftEvaluator
+	enableComponents bool
+	server           apipb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -92,9 +93,10 @@ func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceS
 		enableComponents = base.cfg.EnableComponents
 	}
 	return &ExperimentHandler{
-		baseHandler:    base,
-		driftEvaluator: experiment.NewDriftEvaluator(base.storage, enableComponents),
-		server:         server,
+		baseHandler:      base,
+		driftEvaluator:   experiment.NewDriftEvaluator(base.storage, enableComponents),
+		enableComponents: enableComponents,
+		server:           server,
 	}
 }
 

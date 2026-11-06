@@ -367,6 +367,9 @@ func TestRepository_WithReadOnlySnapshotRejectsWrites(t *testing.T) {
 			"SoftDeleteComponent":        func() error { return snap.SoftDeleteComponent(ctx, rec, nil) },
 			"WriteComponentOwner(nil)":   func() error { return snap.WriteComponentOwner(ctx, 1, nil) },
 			"WriteComponentOwner(owner)": func() error { return snap.WriteComponentOwner(ctx, 1, owner) },
+			"InsertExperimentComponentSnapshot": func() error {
+				return snap.InsertExperimentComponentSnapshot(ctx, 1, rec)
+			},
 		} {
 			if callErr := call(); !errors.Is(callErr, grpcerr.ErrFailedPrecondition) || status.Code(callErr) != codes.FailedPrecondition {
 				t.Errorf("%s error = %v, want %v", name, callErr, grpcerr.ErrFailedPrecondition)
@@ -558,6 +561,43 @@ func TestTxRepository_ComponentLifecycleWrites(t *testing.T) {
 		return txRepo.InsertComponent(ctx, recreated, nil)
 	}); err != nil {
 		t.Fatalf("InsertComponent(recreated app) unexpected error: %v", err)
+	}
+}
+
+func TestTxRepository_InsertExperimentComponentSnapshot(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	const xid = 42
+	rec := buildRecord(7, "hpo", componentspb.ComponentState_COMPONENT_STATE_ENABLED, 0)
+	rec.Generation = 3
+	rec.Status.ObservedGeneration = 3
+	seedComponent(ctx, t, pool, rec)
+	postgrestest.SeedExperiment(ctx, t, pool, xid)
+
+	if _, err := runWriteTx(ctx, t, pool, repo, func(txRepo *TxRepository) error {
+		return txRepo.InsertExperimentComponentSnapshot(ctx, xid, rec)
+	}); err != nil {
+		t.Fatalf("InsertExperimentComponentSnapshot(%d, %q) unexpected error: %v", xid, rec.Name, err)
+	}
+
+	var got *store.ComponentRecord
+	err := repo.WithReadOnlySnapshot(ctx, func(ctx context.Context, snap storage.ComponentTxRepository) error {
+		var snapErr error
+		got, _, snapErr = snap.GetSnapshotByID(ctx, rec.ComponentID, rec.Generation, rec.Name, rec.CreateTime, rec.UpdateTime)
+		return snapErr
+	})
+	if err != nil {
+		t.Fatalf("GetSnapshotByID(%d, %d) unexpected error: %v", rec.ComponentID, rec.Generation, err)
+	}
+	if got.Generation != rec.Generation {
+		t.Errorf("snapshot generation = %d, want %d", got.Generation, rec.Generation)
+	}
+	if diff := cmp.Diff(rec.Spec, got.Spec, protocmp.Transform()); diff != "" {
+		t.Errorf("snapshot spec mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(rec.Status, got.Status, protocmp.Transform()); diff != "" {
+		t.Errorf("snapshot status mismatch (-want +got):\n%s", diff)
 	}
 }
 

@@ -27,10 +27,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	"xmanager_cloud/pkg/components/naming"
 	"xmanager_cloud/pkg/components/store"
@@ -563,6 +566,64 @@ func TestRepository_MutationsEdgeCases(t *testing.T) {
 
 // TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
 // WithTx without the required transaction, fail instead of dereferencing nil.
+func TestTxRepository_InsertExperimentComponentSnapshot(t *testing.T) {
+	ctx := context.Background()
+	_, client := emulator.Setup(ctx, t)
+	repo := NewRepository(client)
+	const xid = 42
+	rec := buildRecord(7, "hpo", componentspb.ComponentState_COMPONENT_STATE_ENABLED)
+	rec.Generation = 3
+	rec.Status.ObservedGeneration = 3
+	expMut, err := spannerdata.ExperimentProtoToInsertMutation(&essmsgpb.Experiment{
+		Name:       "experiments/42",
+		Urls:       []*essmsgpb.Url{},
+		Tags:       []string{},
+		Resources:  []*essmsgpb.ResourceSet{},
+		Status:     &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_ACTIVE},
+		CreateTime: timestamppb.Now(),
+		UpdateTime: timestamppb.Now(),
+	})
+	if err != nil {
+		t.Fatalf("ExperimentProtoToInsertMutation() failed: %v", err)
+	}
+	if _, err := client.Apply(ctx, []*spanner.Mutation{insertComponentMutation(t, rec), expMut}); err != nil {
+		t.Fatalf("Apply() seed failed: %v", err)
+	}
+
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		return repo.WithTx(tx).InsertExperimentComponentSnapshot(ctx, xid, rec)
+	})
+	if err != nil {
+		t.Fatalf("InsertExperimentComponentSnapshot(%d, %q) failed: %v", xid, rec.Name, err)
+	}
+
+	var got *store.ComponentRecord
+	err = repo.WithReadOnlySnapshot(ctx, func(ctx context.Context, snap storage.ComponentTxRepository) error {
+		var snapErr error
+		got, _, snapErr = snap.GetSnapshotByID(ctx, rec.ComponentID, rec.Generation, rec.Name, rec.CreateTime, rec.UpdateTime)
+		return snapErr
+	})
+	if err != nil {
+		t.Fatalf("GetSnapshotByID(%d, %d) failed: %v", rec.ComponentID, rec.Generation, err)
+	}
+	if got.Generation != rec.Generation {
+		t.Errorf("snapshot generation = %d, want %d", got.Generation, rec.Generation)
+	}
+	if diff := cmp.Diff(rec.Spec, got.Spec, protocmp.Transform()); diff != "" {
+		t.Errorf("snapshot spec mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(rec.Status, got.Status, protocmp.Transform()); diff != "" {
+		t.Errorf("snapshot status mismatch (-want +got):\n%s", diff)
+	}
+
+	_, err = client.ReadWriteTransaction(ctx, func(ctx context.Context, tx *spanner.ReadWriteTransaction) error {
+		return repo.WithTx(tx).InsertExperimentComponentSnapshot(ctx, xid, nil)
+	})
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("InsertExperimentComponentSnapshot(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+}
+
 func TestRepository_NilClientOrTransaction(t *testing.T) {
 	ctx := context.Background()
 	nilRepo := NewRepository(nil)
@@ -634,5 +695,8 @@ func TestRepository_NilClientOrTransaction(t *testing.T) {
 	}
 	if err := nilTxRepo.WriteComponentOwner(ctx, 1, nil); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("WithTx(nil).WriteComponentOwner() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
+	}
+	if err := nilTxRepo.InsertExperimentComponentSnapshot(ctx, 1, &store.ComponentRecord{}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+		t.Errorf("WithTx(nil).InsertExperimentComponentSnapshot() error = %v, want %v", err, grpcerr.ErrFailedPrecondition)
 	}
 }

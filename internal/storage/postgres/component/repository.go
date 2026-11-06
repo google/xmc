@@ -77,6 +77,8 @@ VALUES (@componentid, @name, @componentclass, @configproto, @accesspayload, @sta
 VALUES (1, @activeclusteruid, @activeclustername, @epoch, now(), now())
 ON CONFLICT (FenceId) DO UPDATE SET ActiveClusterUid = EXCLUDED.ActiveClusterUid, ActiveClusterName = EXCLUDED.ActiveClusterName, Epoch = EXCLUDED.Epoch,
   DeclaredTime = EXCLUDED.DeclaredTime, LastSeenTime = EXCLUDED.LastSeenTime`)
+	insertExperimentSnapshotSQL = safesql.New(`INSERT INTO ExperimentComponentSnapshots (Xid, ComponentId, LockedGeneration, ConfigProto, AccessPayload)
+VALUES (@xid, @componentid, @lockedgeneration, @configproto, @accesspayload)`)
 )
 
 var (
@@ -480,6 +482,18 @@ func (r *TxRepository) WriteComponentOwner(ctx context.Context, componentID int6
 	return r.execUpdate(ctx, updateComponentOwnerSQL, entityName, pgx.StrictNamedArgs{
 		"componentid": componentID, "sourceuid": owner.UID, "sourcegeneration": owner.Generation,
 		"sourcenamespace": owner.Namespace, "sourceclusteruid": owner.ClusterUID, "sourceepoch": owner.Epoch,
+	})
+}
+
+// InsertExperimentComponentSnapshot pins rec at rec.Generation to experiment xid.
+func (r *TxRepository) InsertExperimentComponentSnapshot(ctx context.Context, xid int64, rec *store.ComponentRecord) error {
+	configBytes, accessBytes, err := r.prepareRecordWrite(rec)
+	if err != nil {
+		return err
+	}
+	return r.exec(ctx, insertExperimentSnapshotSQL, "experiment component snapshot", pgx.StrictNamedArgs{
+		"xid": xid, "componentid": rec.ComponentID, "lockedgeneration": rec.Generation,
+		"configproto": configBytes, "accesspayload": accessBytes,
 	})
 }
 
