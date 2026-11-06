@@ -42,9 +42,38 @@ GitHub Issues can be used to report and track bugs, production incidents, featur
    ```
 4. **Sanitize sensitive information**: Never include passwords, auth tokens, private GCP project numbers, or service account credentials in logs or YAML manifests.
 
+### Pull request workflow
+
+All changes, including changes from project members, come from feature branches
+in personal forks. Do not push branches to `google/xmc` directly.
+
+1. Fork [google/xmc](https://github.com/google/xmc) and clone your fork. With
+   the GitHub CLI:
+   ```bash
+   gh repo fork google/xmc --clone
+   cd xmc
+   ```
+   Without the GitHub CLI, fork the repository in the GitHub UI, clone your
+   fork, and add the upstream remote:
+   ```bash
+   git remote add upstream https://github.com/google/xmc.git
+   ```
+2. Create a feature branch from the latest upstream `main`:
+   ```bash
+   git fetch upstream
+   git switch -c <topic> upstream/main
+   ```
+3. Commit with a [Conventional Commits](https://www.conventionalcommits.org/)
+   title, such as `fix(reconciler): ...` or `docs(readme): ...`, push the branch
+   to your fork, and open a pull request against `google/xmc:main`.
+4. Keep the branch current by rebasing on `upstream/main` and pushing to your
+   fork. GitHub Actions checks on pull requests from forks can wait for a
+   maintainer to approve the workflow run.
+
 ### Code reviews
 
 All submissions, including submissions by project members, require review. We
 use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
-information on using pull requests.
+information on using pull requests. Maintainers squash-merge approved pull
+requests into `main`.
