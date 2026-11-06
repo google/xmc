@@ -38,7 +38,9 @@ export const ROD_TERM_TOOLTIPS = {
     'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
 
   runningTime:
-    'Time elapsed since the job last entered the RUNNING state. Resets if the job restarts.',
+    'Time since XMC observed the job entering the RUNNING state (at least one pod ready). ' +
+    'Resets whenever the job leaves RUNNING, for example on a restart or lost pod readiness. ' +
+    'May trail the actual container start by a few seconds. Not cumulative across restarts.',
 } as const;
 
 export type RodTooltipKey = keyof typeof ROD_TERM_TOOLTIPS;

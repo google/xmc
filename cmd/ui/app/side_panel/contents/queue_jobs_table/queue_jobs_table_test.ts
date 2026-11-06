@@ -135,8 +135,8 @@ describe('QueueJobsTable Component', () => {
     expect(runningTimeTooltip).not.toBeNull();
     await runningTimeTooltip!.show();
     const tooltipText = await runningTimeTooltip!.getTooltipText();
-    expect(tooltipText).toContain('RUNNING');
-    expect(tooltipText).toContain('Resets');
+    expect(tooltipText).toContain('observed the job entering the RUNNING state');
+    expect(tooltipText).toContain('Resets whenever the job leaves RUNNING');
   });
 
   it('should render correct row cell values for queue jobs using harness', async () => {
