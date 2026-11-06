@@ -128,7 +128,8 @@ export class QueueJobRunningTimePipe implements PipeTransform {
     if (status !== JOB_STATUS_STRINGS.RUNNING) {
       return NOT_RUNNING_DURATION_DISPLAY;
     }
-    // Proto3 JSON encodes int64 as a string and omits zero values.
+    // The gateway sends int64 as a JSON string and emits zero values; the field is
+    // absent only when the backend predates it.
     const seconds = Number(job?.runningDurationSeconds);
     if (!Number.isFinite(seconds)) {
       return NOT_RUNNING_DURATION_DISPLAY;
