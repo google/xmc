@@ -15,7 +15,7 @@ XManager on Cloud (XMC) serves as a central command platform for both human rese
 | **Metrics & profiling (optional)** | Training metric streaming with charts and dashboards, and Managed XProf hardware profiles attached to work units. Both are off by default. |
 
 > [!NOTE]
-> XMC spans two repositories. This repository holds the XMC services, SDKs, and deployment charts. The Python launcher and `xmanager` CLI that define and submit experiments live in [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager) and install with `pip install xmanager`.
+> XMC spans two repositories. This repository holds the XMC services, SDKs, and deployment charts. The Python launcher and `xmanager` CLI that define and submit experiments live in [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager) (see [Getting started](#getting-started) for installation).
 
 ## How it works
 
