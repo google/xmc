@@ -1,0 +1,135 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"cmp"
+	"slices"
+
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	spb "xmanager_cloud/api/protos/rod"
+	"xmanager_cloud/cmd/rod_data_provider/cache"
+	"xmanager_cloud/internal/common/resourceaccumulator"
+	"xmanager_cloud/internal/storage"
+)
+
+type userResourceKey struct {
+	user         string
+	resourceType string
+}
+
+type userResourceTotals struct {
+	running float64
+	pending float64
+}
+
+func buildUniqueQueueAcceleratorMap(kueueCache *cache.KueueCache, clusterQueueName string) map[string]string {
+	if kueueCache == nil || kueueCache.ClusterQueues == nil {
+		return nil
+	}
+	cq, ok := kueueCache.ClusterQueues.Get(clusterQueueName)
+	if !ok {
+		return nil
+	}
+	rfMap := buildResourceFlavorMap(kueueCache)
+	candidates := collectQueueAcceleratorCandidates(cq, rfMap)
+	unique := make(map[string]string, len(candidates))
+	for rawType, resolvedSet := range candidates {
+		if len(resolvedSet) == 1 {
+			for resolved := range resolvedSet {
+				unique[rawType] = resolved
+			}
+		}
+	}
+	return unique
+}
+
+func collectQueueAcceleratorCandidates(cq *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) map[string]map[string]struct{} {
+	candidates := make(map[string]map[string]struct{})
+	for _, rg := range cq.Spec.ResourceGroups {
+		for _, fq := range rg.Flavors {
+			for _, rq := range fq.Resources {
+				rawType := string(rq.Name)
+				if !resourceaccumulator.IsAcceleratorResource(rawType) {
+					continue
+				}
+				resolved := resolveResourceType(rawType, string(fq.Name), rfMap)
+				if candidates[rawType] == nil {
+					candidates[rawType] = make(map[string]struct{})
+				}
+				candidates[rawType][resolved] = struct{}{}
+			}
+		}
+	}
+	return candidates
+}
+
+// mapAuthorResourceAllocations groups storage rows (already canonical and positive) by user and
+// resource type, resolving generic accelerators to the queue's only flavor model when unique.
+func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
+	grouped := make(map[userResourceKey]*userResourceTotals)
+	for _, row := range rows {
+		resType := row.ResourceType
+		if resolved, ok := uniqueAccelerators[resType]; ok {
+			resType = resolved
+		}
+		key := userResourceKey{user: row.Author, resourceType: resType}
+		entry := grouped[key]
+		if entry == nil {
+			entry = &userResourceTotals{}
+			grouped[key] = entry
+		}
+		accumulateStateUnits(entry, row.State, row.Units)
+	}
+	return sortedUserResourceAllocations(grouped)
+}
+
+func accumulateStateUnits(entry *userResourceTotals, state storage.ActiveResourceState, units float64) {
+	switch state {
+	case storage.ActiveResourceStateRunning:
+		entry.running += units
+	case storage.ActiveResourceStatePending:
+		entry.pending += units
+	}
+}
+
+func sortedUserResourceAllocations(grouped map[userResourceKey]*userResourceTotals) []*spb.UserResourceAllocation {
+	allocations := make([]*spb.UserResourceAllocation, 0, len(grouped))
+	for key, totals := range grouped {
+		allocations = append(allocations, &spb.UserResourceAllocation{
+			User:         key.user,
+			ResourceType: key.resourceType,
+			RunningUnits: totals.running,
+			PendingUnits: totals.pending,
+		})
+	}
+	slices.SortFunc(allocations, compareUserResourceAllocations)
+	return allocations
+}
+
+func compareUserResourceAllocations(a, b *spb.UserResourceAllocation) int {
+	aTotal := a.GetRunningUnits() + a.GetPendingUnits()
+	bTotal := b.GetRunningUnits() + b.GetPendingUnits()
+	if c := cmp.Compare(bTotal, aTotal); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(b.GetRunningUnits(), a.GetRunningUnits()); c != 0 {
+		return c
+	}
+	if c := cmp.Compare(a.GetUser(), b.GetUser()); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.GetResourceType(), b.GetResourceType())
+}
