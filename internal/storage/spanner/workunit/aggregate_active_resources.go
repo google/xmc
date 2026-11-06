@@ -33,13 +33,29 @@ var aggregateActiveResourcesSQL = safesql.New(
 	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
-// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-// type and state across all active work units of queueNames in one read.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	if r == nil || r.client == nil {
-		return nil, fmt.Errorf("spanner storage client is uninitialized: %w", grpcerr.ErrFailedPrecondition)
+type snapshotRepository struct {
+	txn *spanner.ReadOnlyTransaction
+}
+
+func (s *snapshotRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsInTxn(ctx, s.txn, queueNames, pageSize, pageToken)
+}
+
+func (s *snapshotRepository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	return aggregateActiveResourcesInTxn(ctx, s.txn, queueNames)
+}
+
+// WithReadOnlyWorkUnitSnapshot executes fn against a single Spanner read-only transaction.
+func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	return aggregateActiveResourcesInTxn(ctx, r.client.Single(), queueNames)
+	if r == nil || r.client == nil {
+		return fmt.Errorf("spanner storage client is uninitialized: %w", grpcerr.ErrFailedPrecondition)
+	}
+	txn := r.client.ReadOnlyTransaction()
+	defer txn.Close()
+	return fn(ctx, &snapshotRepository{txn: txn})
 }
 
 func aggregateActiveResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) ([]storage.AuthorResourceAllocation, error) {

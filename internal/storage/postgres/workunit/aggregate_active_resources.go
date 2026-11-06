@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
@@ -38,16 +39,27 @@ FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-// type and state across all active work units of queueNames in one read-only transaction.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	var res []storage.AuthorResourceAllocation
-	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
-		var innerErr error
-		res, innerErr = aggregateActiveResourcesFromDB(txCtx, tx, queueNames)
-		return innerErr
+// FetchActiveWorkUnitsByQueues retrieves one page of active work units within the bound transaction.
+func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken)
+}
+
+// AggregateActiveResourcesByAuthor sums active work unit resources per author within the bound transaction.
+func (r *TxRepository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	return aggregateActiveResourcesFromDB(ctx, r.tx, queueNames)
+}
+
+// WithReadOnlyWorkUnitSnapshot executes fn in a single PostgreSQL REPEATABLE READ READ ONLY transaction.
+func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r == nil || r.pool == nil {
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
+		return fn(txCtx, r.WithTx(tx))
 	})
-	return res, err
 }
 
 func aggregateActiveResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.AuthorResourceAllocation, error) {

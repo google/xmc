@@ -15,6 +15,10 @@
 package storagetest
 
 import (
+	"context"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/common/resourceaccumulator"
@@ -109,3 +113,50 @@ var AuthorAllocationOrder = cmpopts.SortSlices(func(a, b storage.AuthorResourceA
 	}
 	return a.ResourceType < b.ResourceType
 })
+
+// WorkUnitSnapshotter opens read-only work unit snapshots (implemented by the Spanner and
+// Postgres work unit stores).
+type WorkUnitSnapshotter interface {
+	WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error
+}
+
+// readActiveResourcesSnapshot reads the first jobs page of pageSize and the per-author
+// allocations of queues from one snapshot.
+func readActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, queues []string, pageSize int32) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
+	var page *storage.ActiveWorkUnitsResult
+	var allocations []storage.AuthorResourceAllocation
+	err := s.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var err error
+		if page, err = repo.FetchActiveWorkUnitsByQueues(txCtx, queues, pageSize, ""); err != nil {
+			return err
+		}
+		allocations, err = repo.AggregateActiveResourcesByAuthor(txCtx, queues)
+		return err
+	})
+	return page, allocations, err
+}
+
+// VerifyActiveResourcesSnapshot checks that one snapshot of a store seeded with
+// ActiveResourceSpecs returns a two-job first page and the allocations of every active job.
+func VerifyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter) {
+	t.Helper()
+	page, allocations, err := readActiveResourcesSnapshot(ctx, s, []string{ActiveResourceQueue}, 2)
+	if err != nil {
+		t.Fatalf("readActiveResourcesSnapshot failed: %v", err)
+	}
+	if len(page.WorkUnits) != 2 || page.TotalQueueSize != ActiveResourceSpecsActiveCount || page.NextPageToken == "" {
+		t.Fatalf("page = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(page.WorkUnits), page.TotalQueueSize, page.NextPageToken, ActiveResourceSpecsActiveCount)
+	}
+	if diff := cmp.Diff(WantActiveResourceAllocations(), allocations, AuthorAllocationOrder); diff != "" {
+		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// VerifyEmptyActiveResourcesSnapshot checks that a snapshot read without queues returns no rows.
+func VerifyEmptyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter) {
+	t.Helper()
+	page, allocations, err := readActiveResourcesSnapshot(ctx, s, nil, 10)
+	if err != nil || len(page.WorkUnits) != 0 || len(allocations) != 0 {
+		t.Errorf("readActiveResourcesSnapshot(nil queues) = (%v, %v, %v), want empty", page, allocations, err)
+	}
+}

@@ -286,8 +286,8 @@ translate into API server load proportional to the number of viewers. Watch once
 Unlike the Reconciler, ROD persists nothing — its cache is derived state, rebuilt from a full
 re-list on restart.
 
-Job data is the exception: `GetRunningAndPendingJobs` reads work units from the ESS database. It
-returns a page of jobs and `user_allocations` — the requested units
+Job data is the exception: `GetRunningAndPendingJobs` reads work units from the ESS database. In
+one read-only snapshot it returns a page of jobs and `user_allocations` — the requested units
 (memory in GiB) of every resource type summed per experiment creator across *all* active jobs in
 the queue, split into running (`RUNNING`, `STARTING`) and pending (`SCHEDULING`, `INITIALIZING`).
 These are requested amounts, not measured utilization.

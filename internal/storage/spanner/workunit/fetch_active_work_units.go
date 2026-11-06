@@ -157,72 +157,63 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	var res *storage.ActiveWorkUnitsResult
+	err := r.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		res, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, queueNames, pageSize, pageToken)
+		return innerErr
+	})
+	return res, err
+}
+
+func fetchActiveWorkUnitsInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	if r == nil || r.client == nil {
-		return nil, fmt.Errorf("spanner storage client is uninitialized")
-	}
-
 	if len(queueNames) == 0 {
-		return &storage.ActiveWorkUnitsResult{
-			WorkUnits:     []storage.ActiveWorkUnit{},
-			NextPageToken: "",
-		}, nil
+		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.ActiveWorkUnit{}}, nil
 	}
-
 	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
-
 	offset, err := offsetpagetoken.Decode(pageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
-
-	txn := r.client.ReadOnlyTransaction()
-	defer txn.Close()
-
 	// Query 1: Count total active work units across matching queues
 	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
 	if err != nil {
 		logging.Error(ctx, "failed to count active work units", "error", err)
 		return nil, err
 	}
-
 	// Fetch pageSize + 1 items to determine if nextPageToken is needed
-	limit := int64(pageSizeVal) + 1
-	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
+	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, int64(pageSizeVal)+1, offset)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
 	}
+	return readActiveWorkUnitsPage(ctx, txn, orderedPKs, pageSizeVal, offset, totalQueueSize)
+}
 
+func readActiveWorkUnitsPage(ctx context.Context, txn *spanner.ReadOnlyTransaction, orderedPKs []workUnitPK, pageSizeVal int32, offset, totalQueueSize int64) (*storage.ActiveWorkUnitsResult, error) {
 	if len(orderedPKs) == 0 {
 		return &storage.ActiveWorkUnitsResult{
 			WorkUnits:      []storage.ActiveWorkUnit{},
-			NextPageToken:  "",
 			TotalQueueSize: totalQueueSize,
 		}, nil
 	}
-
 	nextPageToken := ""
 	if int64(len(orderedPKs)) > int64(pageSizeVal) {
 		orderedPKs = orderedPKs[:pageSizeVal]
 		nextPageToken = offsetpagetoken.Encode(offset + int64(pageSizeVal))
 	}
-
 	keys := make([]spanner.KeySet, len(orderedPKs))
 	for i, pk := range orderedPKs {
 		keys[i] = spanner.Key{pk.BitReversedXid, pk.WorkUnitId}
 	}
-	keySetList := []spanner.KeySet{spanner.KeySets(keys...)}
-
-	workUnits, err := batchReadWorkUnits(ctx, txn, keySetList, orderedPKs)
+	workUnits, err := batchReadWorkUnits(ctx, txn, []spanner.KeySet{spanner.KeySets(keys...)}, orderedPKs)
 	if err != nil {
 		logging.Error(ctx, "failed to batch read work units", "error", err)
 		return nil, err
 	}
-
 	return &storage.ActiveWorkUnitsResult{
 		WorkUnits:      workUnits,
 		NextPageToken:  nextPageToken,
