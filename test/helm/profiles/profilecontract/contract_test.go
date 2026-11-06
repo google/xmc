@@ -29,7 +29,7 @@ import (
 var realProfile = Spec{
 	ChartRelPath: "deploy/profiles/stable-2026a",
 	ProfileName:  "stable-2026a",
-	Components:   []string{"redpanda", "clickhouse", "ingestion-gateway"},
+	Components:   []string{"redpanda", "clickhouse", "ingestion-gateway", "vizier", "hpo"},
 }
 
 // copyProfile copies the real profile chart into a temporary directory and returns a Spec for

@@ -256,6 +256,7 @@ ui:
   image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/ui-dev:latest"
   apiUrl: "https://YOUR_API_HOSTNAME/v1"
   refreshIntervalMs: "30000"
+  docsUrl: "https://github.com/google/xmc"
 
 # Shape of the two Kueue queues XMC submits to: what they admit, what they
 # admit it against, and where it runs.

@@ -222,6 +222,8 @@ The **UI** is the frontend portal of XMC, hosting the Angular single-page applic
 
 `.githooks/pre-commit` automatically runs [`tools/run_affected_tests.py`](../tools/run_affected_tests.py) to execute the Bazel unit tests affected by your changes (scoped via [`resolve_test_scope.py`](../tools/benchmark/resolve_test_scope.py) to match CI). To run it standalone or inspect the resolved scope (`--dry-run`), run `python3 ./tools/run_affected_tests.py --help`.
 
+To test one directory, run `bazel test //<dir>/...`. To list its test targets, run `bazel query 'tests(//<dir>/...)'`. Go code imports Bazel-generated protobuf packages, so host `go build`, `go vet`, and `go test` do not work. The UI suite (`bazel test //cmd/ui/...`, `npm test`, `npm run lint`) needs `npm ci --legacy-peer-deps` in `cmd/ui` first in every fresh checkout or worktree.
+
 ---
 
 ## Continuous Integration
@@ -270,6 +272,11 @@ Agent skills and rules (`.agents/**/*.md`, `AGENTS.md`) are checked by [`tools/l
 * Placeholders (`<name>`, `*`, `...`) only require their directory prefix to exist; runtime-created or illustrative paths are listed in the script's `ALLOWLIST` with a reason, and entries no doc references fail the check.
 * The pre-commit hook runs it when agent docs are staged or files are deleted/renamed (always in `--check` mode); CI always runs it.
 
+### 7. UI & Workflow File Naming (`check_file_naming.py`)
+Tracked UI templates, UI test specs, and GitHub Actions script tests are checked by [`tools/lint/check_file_naming.py`](../tools/lint/check_file_naming.py):
+* Enforces `*.ng.html` for HTML files under `cmd/ui/` (requiring templates under `cmd/ui/app/` and allowing root `cmd/ui/index.html`), `*_test.ts` Karma unit test specs under `cmd/ui/app/` (rejecting `*.spec.ts`, `*_spec.ts`, and `*.test.ts` repo-wide outside `cmd/ui/screenshot_tests/`), `*.screenshot.spec.ts` Playwright specs under `cmd/ui/screenshot_tests/`, and top-level `*.test.js` Node workflow script tests under `.github/scripts/`.
+* Prevents misnamed test specs (such as `foo.spec.ts` or `.github/scripts/foo_test.js`) from silently compiling without executing in Karma or CI; runs in both the pre-commit hook and CI.
+
 ---
 
 ### Local Pre-Commit Hook Usage
@@ -280,7 +287,10 @@ Developers can run the pre-commit hook locally in two modes:
   ```bash
   ./.githooks/pre-commit
   ```
-  Automatically formats files and adds missing headers. Formatter fixes to files that were fully staged before the hook ran are restaged automatically ([`tools/lint/precommit_autostage.py`](../tools/lint/precommit_autostage.py)); fixes to partially staged, unstaged, or unrelated files fail the hook so you can review and stage them. Set `XMC_PRECOMMIT_NO_AUTOSTAGE=1` to disable auto-restaging. Affected Bazel unit tests are skipped when every staged path is Markdown or under `docs/`.
+  Automatically formats files and adds missing headers. Formatter fixes to files that were fully staged before the hook ran are restaged automatically ([`tools/lint/precommit_autostage.py`](../tools/lint/precommit_autostage.py)); fixes to partially staged, unstaged, or unrelated files fail the hook so you can review and stage them. Set `XMC_PRECOMMIT_NO_AUTOSTAGE=1` to disable auto-restaging. Affected Bazel unit tests are skipped when every staged path is Markdown or under `docs/`. Which checks run depends on what is staged:
+  * **Per-file linters and formatters** (Ruff, Prettier, ESLint, `terraform fmt`, `addlicense`) only process staged files.
+  * **Cross-file checks** (mypy, TFLint, `helm lint`, Trivy) also run when a staged delete or rename removes a file they cover. mypy also runs when `pyproject.toml` or a `.gitignore` changes, and TFLint when `.tflint.hcl` changes. The agent doc path check runs on any staged delete or rename.
+  * **mypy** runs bare `mypy`, so `[tool.mypy]` in `pyproject.toml` is the single source of truth for the checked files in CI and in both hook modes. It checks every Python file in the repository, so new directories are covered automatically and edits that break unchanged importers fail locally. Two lists deny files: `.gitignore` (`exclude_gitignore`, mypy 1.16 or later) skips local-only directories such as virtualenvs, Bazel output and the `cluster-toolkit` clone, and `exclude` skips tracked files. Untracked `.py` files that `.gitignore` does not cover are checked too, so remove or fix stray scratch files before committing.
 
 * **Check-only mode (mirrors CI validation)**:
   ```bash

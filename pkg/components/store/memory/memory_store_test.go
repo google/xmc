@@ -1134,3 +1134,29 @@ func TestMemoryStore_UnchangedIntentRecordsNoSnapshot(t *testing.T) {
 		t.Errorf("snapshots after repeated unchanged intent = %d, want 1", got)
 	}
 }
+
+func TestMemoryStore_StabilityInversionRejection(t *testing.T) {
+	ctx := context.Background()
+	ms := NewMemoryStore()
+
+	expSpec := &componentspb.ComponentSpec{
+		Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:                 "v1.0.0",
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}
+	if _, err := ms.SetComponentIntent(ctx, "exp-comp", expSpec, nil, 1); err != nil {
+		t.Fatalf("SetComponentIntent(exp-comp) error = %v", err)
+	}
+
+	stableDependingOnExp := &componentspb.ComponentSpec{
+		Type:         componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Version:      "v1.0.0",
+		Stability:    componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+		Dependencies: []string{"exp-comp"},
+	}
+	_, err := ms.SetComponentIntent(ctx, "stable-comp", stableDependingOnExp, nil, 1)
+	if status.Code(err) != codes.FailedPrecondition || store.ErrorInfoReason(err) != store.ReasonStabilityInversion {
+		t.Fatalf("SetComponentIntent(stable -> exp) error = %v, want FailedPrecondition with %s", err, store.ReasonStabilityInversion)
+	}
+}

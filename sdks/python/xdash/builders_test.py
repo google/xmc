@@ -124,9 +124,9 @@ class BuildersTest(unittest.TestCase):
 
     def test_none_children_are_rejected(self) -> None:
         with self.assertRaises(ValueError):
-            ChartBuilder().add_plot(None)  # type: ignore[arg-type]
+            ChartBuilder().add_plot(None)
         with self.assertRaises(ValueError):
-            DashboardBuilder().add_chart(None)  # type: ignore[arg-type]
+            DashboardBuilder().add_chart(None)
 
     def test_blank_titles_are_rejected(self) -> None:
         plot = summary_kpi_plot("p1", "KPI", ["val/loss"])

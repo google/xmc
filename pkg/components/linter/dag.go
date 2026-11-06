@@ -55,7 +55,21 @@ func checkDependencyCompleteness(compManifests []*ComponentManifest, compMap map
 			if cEnabled && !depComp.IsEnabled() && !dep.Optional {
 				res.AddError(c.FilePath, line, "DISABLED_DEPENDENCY", fmt.Sprintf("enabled component %q depends on disabled component %q", cName, depName))
 			}
+			checkStabilityInversion(c, depComp, cName, depName, line, res)
 		}
+	}
+}
+
+// checkStabilityInversion enforces the XMC Component Stability Contract (matching runtime CMS
+// ValidateIntentStability): STABLE and PREVIEW components must not depend on EXPERIMENTAL
+// components, while STABLE components are permitted to depend on PREVIEW components.
+func checkStabilityInversion(c, depComp *ComponentManifest, cName, depName string, line int, res *ValidationResult) {
+	if c == nil || depComp == nil || depComp.EffectiveStability() != "EXPERIMENTAL" {
+		return
+	}
+	cStability := c.EffectiveStability()
+	if cStability == "STABLE" || cStability == "PREVIEW" {
+		res.AddError(c.FilePath, line, "STABILITY_INVERSION", fmt.Sprintf("stability inversion: %s component %q cannot depend on EXPERIMENTAL component %q", cStability, cName, depName))
 	}
 }
 

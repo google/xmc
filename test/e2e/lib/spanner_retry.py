@@ -26,6 +26,7 @@ import time
 from collections.abc import Callable
 
 from test.e2e.lib import cancellation
+from test.e2e.lib.command import captured_text
 
 logger = logging.getLogger("xmc_e2e_runner")
 
@@ -197,24 +198,17 @@ def _next_delay(
     return delay
 
 
-def _decode(stream: str | bytes | None) -> str:
-    """Decodes captured output, which is bytes when a command times out."""
-    if isinstance(stream, bytes):
-        return stream.decode("utf-8", errors="replace")
-    return stream or ""
-
-
 def _captured_output(exc: subprocess.SubprocessError) -> str:
     """Returns the captured stderr and stdout of a failed command."""
-    return f"{_decode(getattr(exc, 'stderr', None))}\n{_decode(getattr(exc, 'output', None))}"
+    return f"{captured_text(getattr(exc, 'stderr', None))}\n{captured_text(getattr(exc, 'output', None))}"
 
 
 def _error_output(exc: Exception) -> str:
     """Returns the failure's stderr, falling back to its stdout, without the command line."""
     if not isinstance(exc, subprocess.SubprocessError):
         return str(exc)
-    stderr = _decode(getattr(exc, "stderr", None)).strip()
-    return stderr or _decode(getattr(exc, "output", None)).strip() or "<none>"
+    stderr = captured_text(getattr(exc, "stderr", None)).strip()
+    return stderr or captured_text(getattr(exc, "output", None)).strip() or "<none>"
 
 
 def _log_failed_attempt(

@@ -17,6 +17,7 @@
 
 import argparse
 import collections
+import json
 import os
 import re
 import sys
@@ -32,6 +33,13 @@ from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
     call_github_api,
+    list_all_pages,
+    list_review_threads,
+)
+from tools.pr_review.review_pr_workspace import (  # noqa: E402
+    DEFAULT_FULL_REVIEW_THRESHOLD,
+    measure_rereview_delta,
+    prepare_review_workspace,
 )
 
 
@@ -44,10 +52,15 @@ def extract_task_references(description: str | None) -> list[str]:
     return sorted(set(tasks + issues))
 
 
-def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) -> Path:
-    """Resolve the output path, defaulting to conversation artifact folder if conv_id provided."""
+def resolve_output_path(
+    output_arg: str, conv_id: str, default_filename: str, out_dir: str | None = None
+) -> Path:
+    """Resolve the output path: explicit path, then `out_dir`, then the conversation folder."""
     if output_arg:
         return Path(output_arg)
+    if out_dir:
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        return Path(out_dir) / default_filename
     if conv_id:
         env_dir = os.environ.get("ARTIFACT_DIR") or os.environ.get("JETSKI_ARTIFACT_DIR")
         if env_dir:
@@ -63,93 +76,66 @@ def resolve_output_path(output_arg: str, conv_id: str, default_filename: str) ->
     return Path(default_filename)
 
 
-def _fetch_paginated_data(endpoint: str) -> list[Any]:
-    """Fetch all pages from a paginated GitHub API endpoint (per_page=100)."""
-    results: list[Any] = []
-    page = 1
-    while True:
-        sep = "&" if "?" in endpoint else "?"
-        page_data = call_github_api(
-            f"{endpoint}{sep}page={page}&per_page=100",
-            user_agent="XMC-PR-Review-Agent",
-        )
-        if not page_data or not isinstance(page_data, list):
-            break
-        results.extend(page_data)
-        if len(page_data) < 100:
-            break
-        page += 1
-    return results
-
-
 def fetch_pr_audit_data(owner: str, repo: str, pr_number: int) -> dict[str, Any]:
-    """Fetch PR details, files, and existing review comments from GitHub API."""
+    """Fetch PR details, files, existing review comments, and review threads from GitHub.
+
+    A review-thread failure does not fail the audit: `threads` is then empty and
+    `threads_error` carries the error, so all threads are treated as open.
+    """
+    pr_endpoint = f"/repos/{owner}/{repo}/pulls/{pr_number}"
     try:
-        pr_info = call_github_api(
-            f"/repos/{owner}/{repo}/pulls/{pr_number}",
-            user_agent="XMC-PR-Review-Agent",
-        )
-        files = _fetch_paginated_data(f"/repos/{owner}/{repo}/pulls/{pr_number}/files")
-        comments = _fetch_paginated_data(f"/repos/{owner}/{repo}/pulls/{pr_number}/comments")
+        pr_info = call_github_api(pr_endpoint, user_agent="XMC-PR-Review-Agent")
+        files = list_all_pages(f"{pr_endpoint}/files", user_agent="XMC-PR-Review-Agent")
+        comments = list_all_pages(f"{pr_endpoint}/comments", user_agent="XMC-PR-Review-Agent")
     except (GithubAuthError, GithubAPIError) as e:
         raise HandledError(
             f"Failed to fetch PR details for {owner}/{repo}#{pr_number}: {e}",
             "Verify GitHub CLI authentication ('gh auth login') or GITHUB_TOKEN environment variable.",
         ) from e
 
-    return {
+    threads, threads_error = _fetch_review_threads(owner, repo, pr_number)
+    data: dict[str, Any] = {
         "pr_info": pr_info,
         "files": files,
         "comments": comments,
+        "threads": threads,
     }
+    if threads_error:
+        data["threads_error"] = threads_error
+    return data
+
+
+def _fetch_review_threads(
+    owner: str, repo: str, pr_number: int
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Returns the PR review threads and, on a GitHub failure, no threads and the error."""
+    try:
+        return list_review_threads(owner, repo, pr_number, user_agent="XMC-PR-Review-Agent"), None
+    except (GithubAuthError, GithubAPIError) as e:
+        return [], str(e)
 
 
 def _get_resolved_thread_ids(
-    owner: str, repo: str, pr_number: int, comments: list[dict[str, Any]]
+    owner: str,
+    repo: str,
+    pr_number: int,
+    comments: list[dict[str, Any]],
+    threads: list[dict[str, Any]] | None = None,
 ) -> set[int]:
-    """Retrieve set of resolved review thread comment IDs via GraphQL API or telemetry tag check."""
-    resolved_ids: set[int] = set()
-    query = """
-    query($owner: String!, $repo: String!, $pr_number: Int!) {
-      repository(owner: $owner, name: $repo) {
-        pullRequest(number: $pr_number) {
-          reviewThreads(first: 100) {
-            nodes {
-              isResolved
-              comments(first: 1) {
-                nodes {
-                  databaseId
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+    """Retrieve set of resolved review thread comment IDs via GraphQL API or telemetry tag check.
+
+    Uses `threads` when already fetched; otherwise fetches them.
     """
-    try:
-        res = call_github_api(
-            "/graphql",
-            method="POST",
-            payload={
-                "query": query,
-                "variables": {"owner": owner, "repo": repo, "pr_number": pr_number},
-            },
-        )
-        threads = (
-            (res.get("data") or {})
-            .get("repository", {})
-            .get("pullRequest", {})
-            .get("reviewThreads", {})
-            .get("nodes", [])
-        )
-        for thread in threads:
-            if thread.get("isResolved"):
-                comment_nodes = (thread.get("comments") or {}).get("nodes", [])
-                if comment_nodes and comment_nodes[0].get("databaseId"):
-                    resolved_ids.add(int(comment_nodes[0]["databaseId"]))
-    except Exception:
-        pass
+    resolved_ids: set[int] = set()
+    if threads is None:
+        threads, _ = _fetch_review_threads(owner, repo, pr_number)
+    for thread in threads:
+        if not thread.get("isResolved"):
+            continue
+        comment_nodes = (thread.get("comments") or {}).get("nodes") or []
+        first_comment = comment_nodes[0] if comment_nodes else None
+        if first_comment and first_comment.get("databaseId"):
+            resolved_ids.add(int(first_comment["databaseId"]))
 
     for c in comments:
         cid = c.get("id")
@@ -185,7 +171,9 @@ def format_initial_audit_markdown(
         for f in files
     )
 
-    resolved_thread_ids = _get_resolved_thread_ids(owner, repo, pr_number, comments)
+    resolved_thread_ids = _get_resolved_thread_ids(
+        owner, repo, pr_number, comments, data.get("threads")
+    )
 
     # Summarize existing inline comments to prevent duplication
     if comments:
@@ -290,6 +278,15 @@ def format_initial_audit_markdown(
 """
 
 
+def _format_delta_line(delta: dict[str, Any] | None) -> str:
+    """Formats the re-review delta bullet line, or an empty string when absent."""
+    if not delta:
+        return ""
+    verdict = "FULL REVIEW RECOMMENDED" if delta["full_review_recommended"] else "delta review"
+    since = delta.get("since_sha") or "none"
+    return f"- **Delta Since Last Review** (`{since}`): {verdict} — {delta['reason']}\n"
+
+
 def format_rereview_audit_markdown(
     owner: str, repo: str, pr_number: int, data: dict[str, Any]
 ) -> str:
@@ -307,7 +304,9 @@ def format_rereview_audit_markdown(
         if reply_to:
             replies_by_root[reply_to].append(c)
 
-    resolved_thread_ids = _get_resolved_thread_ids(owner, repo, pr_number, comments)
+    resolved_thread_ids = _get_resolved_thread_ids(
+        owner, repo, pr_number, comments, data.get("threads")
+    )
 
     thread_blocks = []
     for root in root_comments:
@@ -364,7 +363,7 @@ def format_rereview_audit_markdown(
 ## Pull Request Context
 - **PR**: `{owner}/{repo}` #{pr_number} - *{title}*
 - **Latest Head SHA**: `{head_sha}`
-
+{_format_delta_line(data.get("rereview_delta"))}
 > [!IMPORTANT]
 > **Instructions for Reviewer Iteration**:
 > 1. Review each thread verification status below.
@@ -379,9 +378,84 @@ def format_rereview_audit_markdown(
 """
 
 
+def build_audit_sidecar(
+    owner: str, repo: str, pr_number: int, mode: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Builds the machine-readable JSON sidecar of an audit artifact.
+
+    The sidecar is the source of truth for `review_pr_verify_posted.py`, so item
+    statuses never depend on hand-edited markdown. Initial mode starts with no
+    items; re-review mode lists every root thread with a null `action` for the
+    reviewer to set to `RESOLVE` or `RESPOND`.
+
+    Args:
+        owner: Repository owner.
+        repo: Repository name.
+        pr_number: Pull Request number.
+        mode: Audit mode, `initial` or `re-review`.
+        data: PR data from `fetch_pr_audit_data`.
+
+    Returns:
+        The sidecar document (PR identity and `items`).
+    """
+    items: list[dict[str, Any]] = []
+    if mode == "re-review":
+        items = [
+            {
+                "item_id": str(c.get("id")),
+                "type": "re_review_thread",
+                "thread_id": c.get("id"),
+                "file_path": c.get("path"),
+                "line": c.get("line") or c.get("original_line"),
+                "action": None,
+                "status": "Pending",
+            }
+            for c in data["comments"]
+            if c.get("id") and not c.get("in_reply_to_id")
+        ]
+    return {
+        "owner": owner,
+        "repo": repo,
+        "pr_number": pr_number,
+        "mode": mode,
+        "head_sha": ((data["pr_info"] or {}).get("head") or {}).get("sha"),
+        "items": items,
+    }
+
+
+def _prepare_workspace(args: argparse.Namespace, data: dict[str, Any]) -> dict[str, Any]:
+    """Measures the re-review delta and writes the PR-head review inputs when requested."""
+    if args.mode == "re-review":
+        head_sha = ((data["pr_info"] or {}).get("head") or {}).get("sha") or ""
+        data["rereview_delta"] = measure_rereview_delta(
+            args.owner,
+            args.repo,
+            args.pr_number,
+            head_sha,
+            since_sha=args.since_sha,
+            threshold=args.full_review_threshold,
+            comments=data["comments"],
+        )
+    if not args.out_dir:
+        return {}
+    return prepare_review_workspace(
+        args.owner,
+        args.repo,
+        args.pr_number,
+        data,
+        Path(args.out_dir),
+        checkout=args.checkout,
+        remote=args.remote,
+        rereview_delta=data.get("rereview_delta"),
+    )
+
+
 def main(args: argparse.Namespace) -> dict[str, Any]:
     """Execute PR audit checklist generation."""
+    if args.checkout and not args.out_dir:
+        raise HandledError("--checkout requires --out-dir.", "Pass --out-dir <session_dir>.")
     data = fetch_pr_audit_data(args.owner, args.repo, args.pr_number)
+    workspace = _prepare_workspace(args, data)
 
     if args.mode == "re-review":
         default_filename = "pr_rereview_audit_report.md"
@@ -390,9 +464,15 @@ def main(args: argparse.Namespace) -> dict[str, Any]:
         default_filename = "pr_review_audit_checklist.md"
         content = format_initial_audit_markdown(args.owner, args.repo, args.pr_number, data)
 
-    out_path = resolve_output_path(args.output, args.conv_id, default_filename)
+    out_path = resolve_output_path(args.output, args.conv_id, default_filename, args.out_dir)
     out_path.write_text(content, encoding="utf-8")
+    sidecar_path = out_path.with_suffix(".json")
+    sidecar = build_audit_sidecar(args.owner, args.repo, args.pr_number, args.mode, data)
+    sidecar_path.write_text(json.dumps(sidecar, indent=2) + "\n", encoding="utf-8")
 
+    optional: dict[str, Any] = {
+        k: data[k] for k in ("rereview_delta", "threads_error") if k in data
+    }
     return {
         "status": "success",
         "mode": args.mode,
@@ -400,8 +480,11 @@ def main(args: argparse.Namespace) -> dict[str, Any]:
         "repo": args.repo,
         "pr_number": args.pr_number,
         "output_file": str(out_path.resolve()),
+        "sidecar_file": str(sidecar_path.resolve()),
         "file_count": len(data["files"]),
         "existing_comment_count": len(data["comments"]),
+        **optional,
+        **workspace,
     }
 
 
@@ -422,6 +505,30 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--conv-id",
         help="Conversation ID for storing artifact inside brain directory by default.",
+    )
+    parser.add_argument(
+        "--out-dir",
+        help="Session scratch directory outside the repository: fetches the PR head, writes "
+        "pr.diff, pr_meta.json, review_threads.json, and (without -o) the audit markdown.",
+    )
+    parser.add_argument(
+        "--checkout",
+        action="store_true",
+        help="Check out the PR head detached (requires --out-dir). With local changes to "
+        "tracked files, or if git refuses the checkout, skips it and returns "
+        "checkout_command instead.",
+    )
+    parser.add_argument("--remote", default="origin", help="Git remote hosting the PR.")
+    parser.add_argument(
+        "--since-sha",
+        help="Re-review: last reviewed commit (default: your latest review's commit).",
+    )
+    parser.add_argument(
+        "--full-review-threshold",
+        type=int,
+        default=DEFAULT_FULL_REVIEW_THRESHOLD,
+        help="Re-review: changed lines since the last review above which a full review "
+        "is recommended.",
     )
     return parser
 

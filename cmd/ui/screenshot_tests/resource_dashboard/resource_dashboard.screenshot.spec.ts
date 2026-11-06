@@ -63,4 +63,26 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
 
     await expect(dashboard).toHaveScreenshot('resource-dashboard-queue-selected.png');
   });
+
+  test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 1300 });
+    // Ensure fixed container height for deterministic cross-environment visual bounding box capture
+    await page.addStyleTag({
+      content: `
+        xmc-resource-dashboard {
+          display: block !important;
+          box-sizing: border-box !important;
+          height: 1160px !important;
+          min-height: 1160px !important;
+          overflow: hidden !important;
+        }
+      `,
+    });
+
+    const dashboard = page.locator('xmc-resource-dashboard');
+    await dashboard.locator('.full-width-toggle-btn').click();
+    await expect(dashboard.locator('.rod-split-container.full-width')).toBeVisible();
+    await expect(dashboard.locator('xmc-rod-resize-divider')).toHaveCount(0);
+    await expect(dashboard).toHaveScreenshot('resource-dashboard-full-width.png');
+  });
 });

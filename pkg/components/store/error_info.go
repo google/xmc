@@ -35,6 +35,10 @@ const (
 	// passes through metadata "component": every intent is validated before it is applied, so the
 	// stored dependency graph stays acyclic and only the rejected intent can close a cycle.
 	ReasonDependencyCycle = "DEPENDENCY_CYCLE"
+	// ReasonStabilityInversion rejects an intent where a STABLE or PREVIEW component depends on an
+	// EXPERIMENTAL component. Metadata "component" names the STABLE/PREVIEW dependent and
+	// "dependency" names the EXPERIMENTAL dependency.
+	ReasonStabilityInversion = "STABILITY_INVERSION"
 	// ReasonActiveDependentsExist rejects a PrepareDeactivation or a non-cascading ExecuteDeletion
 	// of a component that active (neither disabled nor deleted) components still depend on,
 	// directly or transitively. Metadata "dependents" lists their

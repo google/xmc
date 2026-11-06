@@ -98,6 +98,8 @@ class SpannerManager:
 
     def __init__(self, config: E2EConfig) -> None:
         self.cfg = config
+        self._cached_bazel_bin: str | None = None
+        self._cached_mig_binary: str | None = None
 
     def _cleanup_stale_databases(self) -> None:
         """Deletes stale ephemeral test databases to stay under quota limits."""
@@ -154,7 +156,7 @@ class SpannerManager:
 
     def _get_bazel_bin(self) -> str:
         """Resolves the actual bazel-bin directory path dynamically."""
-        if getattr(self, "_cached_bazel_bin", None) is not None:
+        if self._cached_bazel_bin is not None:
             return self._cached_bazel_bin
         try:
             res = run_cmd(
@@ -167,7 +169,7 @@ class SpannerManager:
 
     def _resolve_migration_binary(self) -> str | None:
         """Resolves path to compiled migrations binary under bazel-bin."""
-        if getattr(self, "_cached_mig_binary", None) is not None:
+        if self._cached_mig_binary is not None:
             return self._cached_mig_binary
 
         binary_names = ("migrations.exe", "migrations") if os.name == "nt" else ("migrations",)

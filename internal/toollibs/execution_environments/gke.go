@@ -33,19 +33,20 @@ const (
 
 	baseURL = "https://console.cloud.google.com"
 
-	xidPlaceholder       = "${XID}"
-	widPlaceholder       = "${WID}"
-	createdPlaceholder   = "${CREATED}"
-	locationPlaceholder  = "${LOCATION}"
-	namespacePlaceholder = "${NAMESPACE}"
-	clusterPlaceholder   = "${CLUSTER}"
-	resourcePlaceholder  = "${RESOURCE_NAME}"
-	projectPlaceholder   = "${PROJECT}"
+	xidPlaceholder         = "${XID}"
+	widPlaceholder         = "${WID}"
+	createdPlaceholder     = "${CREATED}"
+	locationPlaceholder    = "${LOCATION}"
+	namespacePlaceholder   = "${NAMESPACE}"
+	clusterPlaceholder     = "${CLUSTER}"
+	resourcePlaceholder    = "${RESOURCE_NAME}"
+	projectPlaceholder     = "${PROJECT}"
+	mgmtProjectPlaceholder = "${MGMT_PROJECT}"
 
 	gcpExpDebug      = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0Aresource.labels.namespace_name%3D%22xmc%22%0Alabels.xid%3D%22" + xidPlaceholder + "%22;summaryFields=labels%252Fxid,labels%252Fwid,labels%252Feid,labels%252Fjobset:false:32:beginning;startTime=" + createdPlaceholder
 	gkeDashboardURL  = baseURL + "/kubernetes/aiml/jobset/" + projectPlaceholder + "/GKE_CLUSTER/" + locationPlaceholder + "/" + clusterPlaceholder + "/" + namespacePlaceholder + "/" + resourcePlaceholder + "/overview?project=" + projectPlaceholder
 	gkeWorkloadLogs  = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0A%20%20%20%20resource.labels.location%3D%22" + locationPlaceholder + "%22%0A%20%20%20%20resource.labels.namespace_name%3D%22" + namespacePlaceholder + "%22%0A%20%20%20%20resource.labels.cluster_name%3D%22" + clusterPlaceholder + "%22%0A%20%20%20%20labels.k8s-pod%2Fjobset_sigs_k8s_io%2Fjobset-name%3D%22" + resourcePlaceholder + "%22%20severity%3E%3DDEFAULT;storageScope=project;cursorTimestamp=;duration=PT30M?project=" + projectPlaceholder
-	gkeWorkloadDebug = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0Aresource.labels.namespace_name%3D%22xmc%22%0Alabels.xid%3D%22" + xidPlaceholder + "%22%0Alabels.wid%3D%22" + widPlaceholder + "%22;summaryFields=labels%252Fxid,labels%252Fwid,labels%252Feid,labels%252Fjobset:false:32:beginning;startTime=" + createdPlaceholder + "?project=" + projectPlaceholder
+	gkeWorkloadDebug = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0Aresource.labels.namespace_name%3D%22xmc%22%0Alabels.xid%3D%22" + xidPlaceholder + "%22%0Alabels.wid%3D%22" + widPlaceholder + "%22;summaryFields=labels%252Fxid,labels%252Fwid,labels%252Feid,labels%252Fjobset:false:32:beginning;startTime=" + createdPlaceholder + "?project=" + mgmtProjectPlaceholder
 
 	nvidiaGPUKey          = "nvidia.com/gpu"
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
@@ -274,7 +275,7 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 		}
 		podSpec.NodeSelector[tpuAcceleratorSelectorKey] = tpuRes.GetType()
 		podSpec.NodeSelector[tpuTopologySelectorKey] = tpuRes.GetTopology()
-		// TODO(b/470040109) - Ironwood (TPU7x) requires cloud.google.com/placement-policy-name in the
+		// TODO: Ironwood (TPU7x) requires cloud.google.com/placement-policy-name in the
 		// nodeSelector. The value is a user-created workload policy name, which needs to be plumbed
 		// through the TpuResources proto.
 		return nil

@@ -136,13 +136,27 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertTrue(scope["run_backend"])
         self.assertFalse(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "all")
-        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui:ui_unit_tests")
 
     def test_resolve_test_scope_core_infra_modified(self):
         scope = resolve_test_scope(["go.mod"], use_rdeps=False)
         self.assertTrue(scope["run_backend"])
         self.assertTrue(scope["run_ui"])
         self.assertEqual(scope["backend_mode"], "all")
+
+    def test_full_backend_suite_excludes_only_npm_ui_tests(self):
+        # Every full-suite path selects the //cmd/ui py_tests but not the npm/Karma wrapper.
+        scopes = {
+            "main push": resolve_test_scope([], event_name="push", ref="refs/heads/main"),
+            "no files": resolve_test_scope([""]),
+            "core infra": resolve_test_scope(["go.mod"], use_rdeps=False),
+            "ui server": resolve_test_scope(["cmd/ui/server.py"], use_rdeps=False),
+        }
+        for name, scope in scopes.items():
+            with self.subTest(name):
+                self.assertEqual(scope["backend_mode"], "all")
+                patterns = str(scope["bazel_targets"]).split()
+                self.assertEqual(patterns, ["//...", "-//cmd/ui:ui_unit_tests"])
 
     def test_resolve_test_scope_main_branch_push(self):
         scope = resolve_test_scope(
@@ -198,6 +212,10 @@ class TestResolveTestScope(unittest.TestCase):
             ),
         )
         targets = discover_bazel_rdeps_targets(["cmd/ui/server.py", "pkg/auth/oauth2/handlers.go"])
+        # The query universe excludes only the npm wrapper, so it can return //cmd/ui py_tests.
+        query_expr = mock_run.call_args.args[0][-1]
+        self.assertIn("rdeps(//... except set(//cmd/ui:ui_unit_tests), ", query_expr)
+        self.assertNotIn("//cmd/ui/...", query_expr)
         self.assertIn("//pkg/auth/oauth2:oauth2_test", targets)
         self.assertIn("//cmd/xid_service/server:server_test", targets)
         self.assertIn("//cmd/ui:server_test", targets)
@@ -230,7 +248,7 @@ class TestResolveTestScope(unittest.TestCase):
         scope = resolve_test_scope(["pkg/auth/oauth2/handlers.go"], use_rdeps=True)
         self.assertTrue(scope["run_backend"])
         self.assertEqual(scope["backend_mode"], "all")
-        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui:ui_unit_tests")
         self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")
@@ -239,7 +257,7 @@ class TestResolveTestScope(unittest.TestCase):
         scope = resolve_test_scope(["pkg/auth/oauth2/handlers.go"], use_rdeps=True)
         self.assertTrue(scope["run_backend"])
         self.assertEqual(scope["backend_mode"], "all")
-        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui/...")
+        self.assertEqual(scope["bazel_targets"], "//... -//cmd/ui:ui_unit_tests")
         self.assertEqual(scope["reason"], "fallback to full backend suite for modified files")
 
     @patch("tools.benchmark.resolve_test_scope.subprocess.run")

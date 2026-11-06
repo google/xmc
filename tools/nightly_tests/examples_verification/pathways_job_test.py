@@ -13,14 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validation script for ManagedXprof artifact workload in XMC.
+"""Validation script for Pathways multi-component JobSet workload in XMC.
 
-Asserts that the ManagedXprof WorkUnit Artifact experiment and its WorkUnit were
-correctly created, scheduled to the expected queue, configured with ManagedXprof
-artifact payloads attached during execution lifecycle, and executed to completion.
+Asserts that the Pathways validation experiment and its WorkUnit were correctly
+created, scheduled to the expected queue (e.g. tpu-queue or cpu-queue), configured
+with pathways-head (init containers with container port mappings) and worker daemon roles,
+and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.managed_xprof_artifact_job_verify --xid=25
+    python3 -m tools.nightly_tests.examples_verification.pathways_job_test --xid=26 --expected_queue=tpu-queue
 """
 
 from __future__ import annotations
@@ -30,28 +31,33 @@ from typing import Any
 
 from tools.nightly_tests.verification import verifier_cli, workload_verification
 
-EXPECTED_TITLE_PATTERN: str = "ManagedXprof WorkUnit Artifact Example"
-EXPECTED_WORKER_NAMES: tuple[str, ...] = ("programmatic-xprof-worker",)
-EXPECTED_ARTIFACT_TYPES: tuple[str, ...] = ("managed_xprof",)
+EXPECTED_TITLE_PATTERN: str = "Pathways Multi-Component JobSet Validation"
+EXPECTED_WORKER_NAMES: tuple[str, ...] = ("pathways-head",)
 EXPECTED_JOBSET_SPECS: list[dict[str, Any]] = [
     {
-        "name": "programmatic-xprof-worker",
+        "name": "pathways-head",
         "replicas": 1,
-        "spec": "programmatic-xprof-worker",
-    }
+        "init_containers": ["pathways-rm", "pathways-proxy"],
+        "primary_container": "jax-tpu",
+    },
+    {
+        "name": "worker",
+        "replicas": 2,
+        "primary_container": "pathways-worker",
+    },
 ]
 
 
 def main(argv: Sequence[str]) -> None:
-    """Main verification routine for managed_xprof_artifact_job workload."""
+    """Main verification routine for pathways_job workload."""
     workload_verification.verify_standard_workload(
         argv,
-        banner_title="XMC ManagedXprof Artifact Job Verification & Assertions",
-        summary_title="ALL MANAGED XPROF ARTIFACT ASSERTIONS PASSED SUCCESSFULLY!",
+        banner_title="XMC Pathways Multi-Component Job Verification",
+        summary_title="ALL PATHWAYS JOB ASSERTIONS PASSED SUCCESSFULLY!",
         expected_title_pattern=EXPECTED_TITLE_PATTERN,
         expected_jobs=EXPECTED_JOBSET_SPECS,
         expected_worker_names=EXPECTED_WORKER_NAMES,
-        expected_artifact_types=EXPECTED_ARTIFACT_TYPES,
+        wait_for_completion=False,
     )
 
 

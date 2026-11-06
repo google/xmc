@@ -32,6 +32,7 @@ import sys
 from collections.abc import Generator
 from pathlib import Path
 
+from test.e2e.lib.command import captured_text
 from test.e2e.lib.dev_token import (
     fetch_dex_oidc_token,
 )
@@ -176,7 +177,7 @@ def execute_example_launch(
     logger.info("=== Executing Example Launch Script: %s ===", script_path)
 
     with resolve_grpc_endpoint() as active_grpc_endpoint:
-        effective_user_email = user_email or os.getenv("XMC_USER_EMAIL", "admin@xmc.local")
+        effective_user_email = user_email or os.environ.get("XMC_USER_EMAIL", "admin@xmc.local")
         auth_token = os.getenv("XMC_AUTH_TOKEN")
         if not auth_token:
             auth_token = fetch_dex_oidc_token(email=effective_user_email)
@@ -203,7 +204,7 @@ def execute_example_launch(
                 check=False,
             )
         except subprocess.TimeoutExpired as e:
-            captured_out = (e.stdout or "") + (e.stderr or "")
+            captured_out = captured_text(e.stdout) + captured_text(e.stderr)
             logger.error(
                 "Example launch timed out after %s seconds. Captured output:\n%s",
                 timeout_sec,

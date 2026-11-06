@@ -29,13 +29,13 @@ import { type WorkUnit } from 'app/protos/experiment_state_server';
   templateUrl: './work_unit_details.ng.html',
   styleUrl: './work_unit_details.scss',
   imports: [
-    // go/keep-sorted start
+    // keep-sorted start
     CommonModule,
     MatCardModule,
     MatChipsModule,
     MatDividerModule,
     Tag,
-    // go/keep-sorted end
+    // keep-sorted end
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

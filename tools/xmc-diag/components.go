@@ -122,23 +122,29 @@ func deriveComponentStatus(item unstructured.Unstructured) ComponentStatus {
 	name := item.GetName()
 	enabled, hasEnabled, _ := unstructured.NestedBool(item.Object, "spec", "enabled")
 	enabled = enabled || !hasEnabled
+	stability, _, _ := unstructured.NestedString(item.Object, "spec", "stability")
+	if stability == "" {
+		stability = "STABLE"
+	}
 	obsGen, hasObsGen, _ := unstructured.NestedInt64(item.Object, "status", "observedGeneration")
 	state, _, _ := unstructured.NestedString(item.Object, "status", "state")
 	genStale := (hasObsGen && obsGen != item.GetGeneration()) || (!hasObsGen && item.GetGeneration() > 0)
 	c := parseConditions(item)
 	if c.stalledStatus == "True" {
-		return ComponentStatus{Name: name, Enabled: enabled, State: "STATE_DEGRADED", Message: c.stalledMsg}
+		return ComponentStatus{Name: name, Enabled: enabled, State: "STATE_DEGRADED", Stability: stability, Message: c.stalledMsg}
 	}
 	if !enabled {
-		return deriveDisabledStatus(name, state, hasObsGen, genStale, c)
+		st := deriveDisabledStatus(name, state, hasObsGen, genStale, c)
+		st.Stability = stability
+		return st
 	}
 	if !genStale && c.readyStatus == "True" {
-		return ComponentStatus{Name: name, Enabled: true, State: "STATE_READY", Ready: true, Healthy: true, Message: c.readyMsg}
+		return ComponentStatus{Name: name, Enabled: true, State: "STATE_READY", Stability: stability, Ready: true, Healthy: true, Message: c.readyMsg}
 	}
 	if genStale || c.readyStatus != "" || c.stalledStatus != "" || state != "" {
-		return ComponentStatus{Name: name, Enabled: true, State: "STATE_RECONCILING", Message: c.readyMsg}
+		return ComponentStatus{Name: name, Enabled: true, State: "STATE_RECONCILING", Stability: stability, Message: c.readyMsg}
 	}
-	return ComponentStatus{Name: name, Enabled: true, State: "STATE_UNSPECIFIED"}
+	return ComponentStatus{Name: name, Enabled: true, State: "STATE_UNSPECIFIED", Stability: stability}
 }
 
 func deriveDisabledStatus(name, state string, hasObsGen, genStale bool, c condSummary) ComponentStatus {

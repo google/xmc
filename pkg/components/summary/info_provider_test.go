@@ -421,3 +421,45 @@ func TestStoreComponentsProvider_ParametersCollision(t *testing.T) {
 		t.Errorf("expected custom to be value, got %s", cfgMap["custom"])
 	}
 }
+
+func TestStoreComponentsProvider_StabilityMapping(t *testing.T) {
+	ctx := context.Background()
+	memStore := memory.NewMemoryStore()
+	provider, err := NewStoreComponentsProvider(memStore)
+	if err != nil {
+		t.Fatalf("NewStoreComponentsProvider failed: %v", err)
+	}
+
+	_, _ = memStore.SetComponentIntent(ctx, "exp-comp", &componentspb.ComponentSpec{
+		Type:                    componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Stability:               componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		AcknowledgeExperimental: true,
+	}, nil, 1)
+	_, _ = memStore.SetComponentIntent(ctx, "preview-comp", &componentspb.ComponentSpec{
+		Type:      componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT,
+		Stability: componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW,
+	}, nil, 1)
+
+	healthList, err := provider.GetComponentsHealth(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsHealth failed: %v", err)
+	}
+	healthByName := make(map[string]ComponentHealth, len(healthList))
+	for _, h := range healthList {
+		healthByName[h.Name] = h
+	}
+	if healthByName["exp-comp"].Stability != "EXPERIMENTAL" {
+		t.Errorf("exp-comp Stability = %q, want EXPERIMENTAL", healthByName["exp-comp"].Stability)
+	}
+	if healthByName["preview-comp"].Stability != "PREVIEW" {
+		t.Errorf("preview-comp Stability = %q, want PREVIEW", healthByName["preview-comp"].Stability)
+	}
+
+	configList, err := provider.GetComponentsConfig(ctx)
+	if err != nil {
+		t.Fatalf("GetComponentsConfig failed: %v", err)
+	}
+	if len(configList) != 2 {
+		t.Fatalf("len(configList) = %d, want 2", len(configList))
+	}
+}

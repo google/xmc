@@ -40,6 +40,7 @@ kind: Component
 metadata:
   name: test-component
 spec:
+  stability: STABLE
   componentType: CUSTOM_1P_COMPONENT
   version: "1.0.0"
   deletionPolicy: DELETE
@@ -151,6 +152,7 @@ kind: Component
 metadata:
   name: legacy-policy
 spec:
+  stability: STABLE
   componentType: COMPONENT_TYPE_CUSTOM_1P_COMPONENT
   deletionPolicy: DELETE
 `,
@@ -205,6 +207,7 @@ kind: Component
 metadata:
   name: wrapper-comp
 spec:
+  stability: STABLE
   componentType: CUSTOM_3P_WRAPPER
   wrapperRef:
     crdGroup: jobset.x-k8s.io
@@ -225,6 +228,7 @@ kind: Component
 metadata:
   name: clickhouse
 spec:
+  stability: STABLE
   componentType: COMPONENT_TYPE_CUSTOM_3P_WRAPPER
   parameters:
     host: "clickhouse.xmc-metrics.svc.cluster.local"
@@ -298,6 +302,7 @@ kind: Component
 metadata:
   name: int-duration
 spec:
+  stability: STABLE
   lifecycleControl:
     drainTimeoutSeconds: "300"
     gracePeriodSeconds: "60"
@@ -319,6 +324,7 @@ kind: Component
 metadata:
   name: unprotected
 spec:
+  stability: STABLE
   deletionProtection: false
 `,
 			},
@@ -339,6 +345,7 @@ kind: Component
 metadata:
   name: protected
 spec:
+  stability: STABLE
   deletionProtection: true
 `,
 			},
@@ -436,6 +443,7 @@ kind: Component
 metadata:
   name: proto-type
 spec:
+  stability: STABLE
   componentType: "COMPONENT_TYPE_CUSTOM_1P_COMPONENT"
 `,
 			},
@@ -451,6 +459,7 @@ kind: Component
 metadata:
   name: proto-policy
 spec:
+  stability: STABLE
   deletionPolicy: "DELETION_POLICY_DELETE"
 `,
 				"comp2.yaml": `
@@ -459,6 +468,7 @@ kind: Component
 metadata:
   name: crd-policy
 spec:
+  stability: STABLE
   deletionPolicy: "Delete"
 `,
 			},
@@ -515,8 +525,211 @@ kind: Component
 metadata:
   name: unspecified-comp
 spec:
+  stability: STABLE
   componentType: "UNSPECIFIED"
   deletionPolicy: "UNSPECIFIED"
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name:  "missing spec.stability fails REQUIRED_FIELD",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: missing-stability
+spec:
+  enabled: true
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"REQUIRED_FIELD"},
+		},
+		{
+			name:  "UNSPECIFIED spec.stability fails INVALID_STABILITY",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: unspecified-stability
+spec:
+  enabled: true
+  stability: UNSPECIFIED
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_STABILITY"},
+		},
+		{
+			name:  "enabled EXPERIMENTAL component without acknowledgeExperimental fails EXPERIMENTAL_NOT_ACKNOWLEDGED",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-unack
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:  "enabled EXPERIMENTAL component with acknowledgeExperimental true passes",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-ack
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name:  "disabled EXPERIMENTAL component without acknowledgeExperimental passes when allowExperimental is default true",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-disabled
+spec:
+  enabled: false
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name: "EXPERIMENTAL component fails when staticChecks.allowExperimental is false",
+			rules: &linter.RulesConfig{
+				StaticChecks: linter.StaticChecksConfig{
+					AllowExperimental: boolPtr(false),
+				},
+			},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-forbidden
+spec:
+  enabled: true
+  stability: EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name: "disabled EXPERIMENTAL component also fails when staticChecks.allowExperimental is false",
+			rules: &linter.RulesConfig{
+				StaticChecks: linter.StaticChecksConfig{
+					AllowExperimental: boolPtr(false),
+				},
+			},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: exp-disabled-forbidden
+spec:
+  enabled: false
+  stability: EXPERIMENTAL
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:  "proto-prefixed COMPONENT_STABILITY_* values are accepted",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"stable.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-stable
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_STABLE
+`,
+				"preview.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-preview
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_PREVIEW
+`,
+				"exp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: proto-exp
+spec:
+  enabled: true
+  stability: COMPONENT_STABILITY_EXPERIMENTAL
+  acknowledgeExperimental: true
+`,
+			},
+			wantValid: true,
+		},
+		{
+			name:  "invalid spec.stability value fails INVALID_STABILITY",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"comp.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: bad-stability
+spec:
+  stability: ALPHA
+`,
+			},
+			wantValid: false,
+			wantRules: []string{"INVALID_STABILITY"},
+		},
+		{
+			name:  "PREVIEW and STABLE components do not require acknowledgeExperimental",
+			rules: &linter.RulesConfig{},
+			manifests: map[string]string{
+				"preview.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: preview-comp
+spec:
+  enabled: true
+  stability: PREVIEW
+`,
+				"stable.yaml": `
+apiVersion: xmc.dev/v1alpha1
+kind: Component
+metadata:
+  name: stable-comp
+spec:
+  enabled: true
+  stability: STABLE
 `,
 			},
 			wantValid: true,
@@ -562,6 +775,7 @@ kind: Component
 metadata:
   name: safe-component
 spec:
+  stability: STABLE
   version: "1.0.0"
 `)
 

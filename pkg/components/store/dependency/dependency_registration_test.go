@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -117,5 +118,126 @@ func TestDependencyNotRegisteredError(t *testing.T) {
 	want := []any{&errdetails.ErrorInfo{Reason: "DEPENDENCY_NOT_REGISTERED", Domain: store.ErrorInfoDomain, Metadata: map[string]string{"operation": "SetComponentIntent", "component": "ingestion", "dependency": "redpanda"}}}
 	if diff := cmp.Diff(want, st.Details(), protocmp.Transform()); diff != "" {
 		t.Errorf("details mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestValidateIntentStability(t *testing.T) {
+	now := time.Now().UTC()
+	catalog := func() map[string]*store.ComponentRecord {
+		return map[string]*store.ComponentRecord{
+			"stable-dep": {
+				ComponentID: 1, Name: "stable-dep",
+				Spec: &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE},
+			},
+			"preview-dep": {
+				ComponentID: 2, Name: "preview-dep",
+				Spec: &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW},
+			},
+			"exp-dep": {
+				ComponentID: 3, Name: "exp-dep",
+				Spec: &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL},
+			},
+			"stable-consumer": {
+				ComponentID: 4, Name: "stable-consumer",
+				Spec:         &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE},
+				Dependencies: []string{"stable-dep"},
+			},
+			"exp-consumer": {
+				ComponentID: 5, Name: "exp-consumer",
+				Spec:         &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL},
+				Dependencies: []string{"stable-dep"},
+			},
+			"deleted-consumer": {
+				ComponentID: 6, Name: "deleted-consumer", DeleteTime: &now,
+				Spec:         &componentspb.ComponentSpec{Stability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE},
+				Dependencies: []string{"preview-dep"},
+			},
+		}
+	}
+
+	tests := []struct {
+		name           string
+		target         string
+		stability      componentspb.ComponentStability
+		deps           []string
+		wantComponent  string
+		wantDependency string
+	}{
+		{
+			name:      "STABLE depending on STABLE and PREVIEW is allowed",
+			target:    "gateway",
+			stability: componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+			deps:      []string{"stable-dep", "preview-dep"},
+		},
+		{
+			name:      "EXPERIMENTAL depending on EXPERIMENTAL, PREVIEW, and STABLE is allowed",
+			target:    "gateway",
+			stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			deps:      []string{"exp-dep", "preview-dep", "stable-dep"},
+		},
+		{
+			name:      "flipping component to EXPERIMENTAL when only EXPERIMENTAL or deleted dependents exist is allowed",
+			target:    "preview-dep",
+			stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+		},
+		{
+			name:           "UNSPECIFIED (default STABLE) depending on EXPERIMENTAL is rejected",
+			target:         "gateway",
+			stability:      componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED,
+			deps:           []string{"exp-dep"},
+			wantComponent:  "gateway",
+			wantDependency: "exp-dep",
+		},
+		{
+			name:           "STABLE depending on EXPERIMENTAL is rejected",
+			target:         "gateway",
+			stability:      componentspb.ComponentStability_COMPONENT_STABILITY_STABLE,
+			deps:           []string{"exp-dep"},
+			wantComponent:  "gateway",
+			wantDependency: "exp-dep",
+		},
+		{
+			name:           "PREVIEW depending on EXPERIMENTAL is rejected",
+			target:         "gateway",
+			stability:      componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW,
+			deps:           []string{"exp-dep"},
+			wantComponent:  "gateway",
+			wantDependency: "exp-dep",
+		},
+		{
+			name:           "downgrading a dependency to EXPERIMENTAL while an active STABLE dependent exists is rejected",
+			target:         "stable-dep",
+			stability:      componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+			wantComponent:  "stable-consumer",
+			wantDependency: "stable-dep",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateIntentStability(catalog(), tt.target, tt.stability, tt.deps)
+			if tt.wantComponent == "" {
+				if err != nil {
+					t.Fatalf("ValidateIntentStability() unexpected error = %v", err)
+				}
+				return
+			}
+			st := status.Convert(err)
+			if st.Code() != codes.FailedPrecondition || store.ErrorInfoReason(err) != store.ReasonStabilityInversion {
+				t.Fatalf("ValidateIntentStability() error = %v, want FailedPrecondition with reason %s", err, store.ReasonStabilityInversion)
+			}
+			wantDetails := []any{&errdetails.ErrorInfo{
+				Reason: store.ReasonStabilityInversion,
+				Domain: store.ErrorInfoDomain,
+				Metadata: map[string]string{
+					store.MetadataKeyOperation:  store.OperationSetComponentIntent,
+					store.MetadataKeyComponent:  tt.wantComponent,
+					store.MetadataKeyDependency: tt.wantDependency,
+				},
+			}}
+			if diff := cmp.Diff(wantDetails, st.Details(), protocmp.Transform()); diff != "" {
+				t.Errorf("ValidateIntentStability() details mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

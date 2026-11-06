@@ -43,7 +43,7 @@ graph TD
 When invoking helper tools under `tools/` (e.g. `tools/pr_review/generate_review_checklist.py`, `tools/pr_review/fetch_pr_comment.py`, `tools/pr_review/reply_pr_comment.py`, `tools/pr_review/review_threads.py`, `tools/common/build_oci.py`):
 1. **Do not read tool source code**: Do not open or read the Python source code of helper tools. Refer to [Skills & Automation Guidelines](../../rules/skills_and_automation.md#5-helper-tool-execution-policy--safety-constraints).
 2. **Use `--help`**: To learn about the tool's usage, options, and parameters, run it with the `--help` flag (e.g. `./tools/pr_review/fetch_pr_comment.py --help`).
-3. **Parse Structured Output & Handle Errors**: All tools output structured JSON (exit code 0 for success, 1 for handled error, 2 for unhandled error).
+3. **Parse Structured Output & Handle Errors**: All tools output structured JSON; check the exit code per [Helper Tool Exit Codes](../../AGENTS.md#universal-architectural-principles).
 4. **Shell & Payload Safety**: Execute standalone `.py` script files or pass arguments via script parameters. Avoid double-quoted inline commands (`python3 -c "..."`).
    - **Backtick Safety**: When passing reply messages containing backticks (e.g. markdown code spans), avoid double-quoted string arguments in bash. Use `--message-file` (or `-f`) to safely read the reply message from a file instead.
 
@@ -212,6 +212,9 @@ git push origin HEAD
 > NEVER use `git commit --amend` or `git push --force` (`-f`) when addressing review comments on an active PR branch.
 > Always append distinct follow-up commits so reviewers can inspect incremental diffs via GitHub's **"Changes since last review"** view. Squashing happens automatically at merge time via GitHub's "Squash and merge" feature, NEVER during active review rounds.
 
+### Reconcile Live PR Description & Tradeoffs (`Adopt` Items Only)
+After pushing follow-up commits, compare `gh pr view <pr_number> --json title,body,baseRefName` against `git diff origin/<baseRefName>...HEAD` (fetching `origin <baseRefName>` first if needed, e.g., on stacked `gh-stack` PRs). Whenever review fixes change behavior, touched packages, or surface a load-bearing architectural tradeoff (for example, keeping filtering client-side or deferring a schema migration), update the `Motivation & Context`, `Key Changes`, and `Assumptions` sections via [`./tools/pr_review/update_pr_description.py`](../../../tools/pr_review/update_pr_description.py) after presenting the updated preview for confirmation per [XMC Create PR §4](../xmc_create_pr/SKILL.md#4-pr-description-updates-via-helper-tool).
+
 ### Verify CI on the Pushed Commit (`Adopt` Items Only)
 After the [CI wait buffer](../xmc_create_pr/SKILL.md#5-ci-wait-buffer-period), block on CI for the new head commit with the helper tool instead of polling bare `gh pr checks` (which exits `8` while checks are pending):
 ```bash
@@ -273,41 +276,10 @@ To extract this telemetry and output it as a raw JSON dataset, run:
 
 ## 7. Build, Push, and GKE Redeployment
 
-Using the `.env` configuration file, the agent updates the deployment environment.
+To rebuild, push, and redeploy affected services to a GKE cluster:
 
-### Target Environment (Extracted from `.env`)
-- **GCP Project ID**: `xmc-test-project-6`
-- **GKE Cluster**: `xmc-cttest8d-cttest8e`
-- **GCP Region**: `europe-central2`
-- **K8S Namespace**: `xmc`
-- **Artifact Registry Target**: `us-docker.pkg.dev/xmc-test-project-6/xmc`
-
-### Rebuild and Push Containers
-For each affected binary (e.g. `xid_service`), the agent sets up the environment variables and runs the push script:
-```bash
-# Set build environment variables
-export XMC_ACR_TARGET="us-docker.pkg.dev/xmc-test-project-6/xmc"
-export XMC_ENV="dev"
-
-# Build and push the container image to GCP Artifact Registry
-bazel run //cmd/xid_service:xid_service_image_push
-```
-
-### Rollout Restart in GKE Cluster
-The agent initiates a rolling update to download the newly pushed image (tagged `:latest`):
-
-```bash
-# 1. Authenticate to the GKE Cluster
-gcloud container clusters get-credentials xmc-cttest8d-cttest8e \
-    --region europe-central2 \
-    --project xmc-test-project-6
-
-# 2. Restart the deployment to pick up the updated container image
-kubectl rollout restart deployment/xid-service-deployment -n xmc
-
-# 3. Monitor rollout status
-kubectl rollout status deployment/xid-service-deployment -n xmc
-```
+1. Follow the [XMC Upgrade Environment](../xmc_upgrade/SKILL.md) skill for the affected services (`python3 tools/dev_env/dev_env.py gke-upgrade --only images`, then `--only restart`).
+2. If neither `deploy/ctk_v2/xmanager-cloud-deployment.yaml` nor a local `.env` (from `.env.example`) exists, stop and ask the user for the target environment. Do not guess project, cluster, or region values.
 
 ---
 

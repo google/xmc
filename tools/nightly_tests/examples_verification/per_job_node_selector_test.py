@@ -20,7 +20,7 @@ were correctly created, scheduled to the expected queue, configured with distinc
 nodeSelector mappings (head on cpups, workers on gpu-pool), and executed to completion.
 
 Usage:
-    python3 -m tools.nightly_tests.examples_verification.per_job_node_selector_verify --xid=20
+    python3 -m tools.nightly_tests.examples_verification.per_job_node_selector_test --xid=20
 """
 
 from __future__ import annotations

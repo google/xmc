@@ -91,13 +91,7 @@ limitations under the License.
               </div>
             </a>
           }
-          <a
-            mat-list-item
-            href="https://google.com"
-            target="_blank"
-            rel="noopener"
-            title="Documentation"
-          >
+          <a mat-list-item target="_blank" rel="noopener" title="Documentation" [href]="docsUrl">
             <div class="menu-item-container">
               <mat-icon>book</mat-icon>
               @if (isExpanded()) {

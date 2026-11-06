@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
 
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
@@ -34,14 +35,16 @@ func ParseSpecFromUnstructured(specObj any) (*componentspb.ComponentSpec, bool, 
 		return &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}, true, true
 	}
 	spec := &componentspb.ComponentSpec{
-		Type:           parseComponentType(specMap),
-		DeletionPolicy: parseDeletionPolicy(specMap),
-		Version:        extractStr(specMap, "version"),
-		Description:    extractStr(specMap, "description"),
-		WrapperRef:     parseWrapperRef(specMap),
-		Manifests:      parseManifests(specMap),
-		Parameters:     parseParameters(specMap),
-		Dependencies:   parseDependencies(specMap),
+		Type:                    parseComponentType(specMap),
+		DeletionPolicy:          parseDeletionPolicy(specMap),
+		Version:                 extractStr(specMap, "version"),
+		Description:             extractStr(specMap, "description"),
+		WrapperRef:              parseWrapperRef(specMap),
+		Manifests:               parseManifests(specMap),
+		Parameters:              parseParameters(specMap),
+		Dependencies:            parseDependencies(specMap),
+		Stability:               parseStability(specMap),
+		AcknowledgeExperimental: extractBool(specMap, "acknowledgeExperimental", extractBool(specMap, "acknowledge_experimental", false)),
 	}
 	return spec, extractBool(specMap, "deletionProtection", true), extractBool(specMap, "enabled", true)
 }
@@ -184,6 +187,21 @@ func parseDeletionPolicy(m map[string]any) componentspb.DeletionPolicy {
 		return componentspb.DeletionPolicy_DELETION_POLICY_ORPHAN
 	}
 	return componentspb.DeletionPolicy_DELETION_POLICY_DELETE
+}
+
+// parseStability parses the stability string field into its corresponding protobuf enum.
+// When omitted or unrecognized, it returns COMPONENT_STABILITY_UNSPECIFIED (treated as STABLE).
+func parseStability(m map[string]any) componentspb.ComponentStability {
+	switch strings.ToUpper(strings.TrimSpace(extractStr(m, "stability"))) {
+	case "EXPERIMENTAL", "COMPONENT_STABILITY_EXPERIMENTAL":
+		return componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
+	case "PREVIEW", "COMPONENT_STABILITY_PREVIEW":
+		return componentspb.ComponentStability_COMPONENT_STABILITY_PREVIEW
+	case "STABLE", "COMPONENT_STABILITY_STABLE":
+		return componentspb.ComponentStability_COMPONENT_STABILITY_STABLE
+	default:
+		return componentspb.ComponentStability_COMPONENT_STABILITY_UNSPECIFIED
+	}
 }
 
 // parseWrapperRef extracts a 3P wrapper reference from the unstructured spec map,

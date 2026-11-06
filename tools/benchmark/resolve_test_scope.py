@@ -103,9 +103,17 @@ NON_CODE_FILES: set[str] = {
 }
 
 
-EXCLUDED_TEST_TARGETS: set[str] = {
-    "//cmd/ui:ui_unit_tests",
-}
+# Test targets that the backend Bazel suite never runs. //cmd/ui:ui_unit_tests wraps the npm and
+# Karma suite, which needs node_modules and a browser; the UI CI job runs it instead. Add any new
+# test that needs Node.js here, or the backend suite will select it.
+EXCLUDED_TEST_TARGETS: frozenset[str] = frozenset(
+    {
+        "//cmd/ui:ui_unit_tests",
+    }
+)
+
+# Target patterns of the full backend suite: every test except EXCLUDED_TEST_TARGETS.
+FULL_BACKEND_TARGETS = " ".join(["//...", *(f"-{t}" for t in sorted(EXCLUDED_TEST_TARGETS))])
 
 CODE_EXTENSIONS: tuple[str, ...] = (
     ".go",
@@ -583,7 +591,7 @@ def _query_rdeps_tests(
 ) -> list[str]:
     """Returns the non-manual backend test targets that depend on changed_pkgs ([] on failure)."""
     pkg_set_expr = " ".join(sorted(changed_pkgs))
-    backend_universe = "//... except //cmd/ui/..."
+    backend_universe = f"//... except set({' '.join(sorted(EXCLUDED_TEST_TARGETS))})"
     query_expr = (
         f"let t = kind('.*_test', rdeps({backend_universe}, set({pkg_set_expr}))) "
         f"in $t except attr('tags', 'manual', $t)"
@@ -663,7 +671,7 @@ def resolve_test_scope(
             "run_backend": True,
             "run_ui": True,
             "backend_mode": "all",
-            "bazel_targets": "//... -//cmd/ui/...",
+            "bazel_targets": FULL_BACKEND_TARGETS,
             "reason": "main branch push full regression",
             "run_helm": True,
         }
@@ -673,7 +681,7 @@ def resolve_test_scope(
             "run_backend": True,
             "run_ui": True,
             "backend_mode": "all",
-            "bazel_targets": "//... -//cmd/ui/...",
+            "bazel_targets": FULL_BACKEND_TARGETS,
             "reason": "no modified files detected; defaulting to full test suite for safety",
             "run_helm": True,
         }
@@ -717,7 +725,7 @@ def _resolve_code_scope(
             "run_backend": True,
             "run_ui": run_ui,
             "backend_mode": "all",
-            "bazel_targets": "//... -//cmd/ui/...",
+            "bazel_targets": FULL_BACKEND_TARGETS,
             "reason": "core infra modified or rdeps disabled",
         }
 
@@ -737,7 +745,7 @@ def _resolve_code_scope(
         "run_backend": True,
         "run_ui": run_ui,
         "backend_mode": "all",
-        "bazel_targets": "//... -//cmd/ui/...",
+        "bazel_targets": FULL_BACKEND_TARGETS,
         "reason": "fallback to full backend suite for modified files",
     }
 

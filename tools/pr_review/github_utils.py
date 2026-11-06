@@ -23,6 +23,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from tools.common.tool_utils import run_command
+
 
 class GithubAuthError(Exception):
     """Raised when GitHub authentication fails."""
@@ -97,7 +99,9 @@ def _call_api_with_gh(endpoint, method, payload, _user_agent):
         cmd += ["--input", "-"]
         input_data = json.dumps(payload)
 
-    res = subprocess.run(cmd, input=input_data, capture_output=True, text=True, check=True)
+    res = run_command(
+        cmd, capture_output=True, log_cmd=False, log_on_error=False, input_text=input_data
+    )
     return json.loads(res.stdout)
 
 
@@ -188,6 +192,38 @@ def get_authenticated_login(user_agent: str) -> str:
     if not isinstance(login, str) or not login:
         raise GithubAPIError("GitHub /user response has no login.")
     return login
+
+
+def list_all_pages(endpoint: str, user_agent: str = "XMC-Github-Agent") -> list[Any]:
+    """Fetches every page of a paginated GitHub REST list endpoint.
+
+    Requests 100 items per page and stops at the first short, empty, or
+    non-list page.
+
+    Args:
+        endpoint: REST endpoint path, optionally with a query string.
+        user_agent: User-Agent header for token / unauthenticated HTTP calls.
+
+    Returns:
+        The concatenated items of all pages.
+
+    Raises:
+        GithubAuthError: If GitHub authentication fails.
+        GithubAPIError: If an API call fails.
+    """
+    results: list[Any] = []
+    sep = "&" if "?" in endpoint else "?"
+    page = 1
+    while True:
+        page_data = call_github_api(
+            f"{endpoint}{sep}page={page}&per_page=100", user_agent=user_agent
+        )
+        if not page_data or not isinstance(page_data, list):
+            return results
+        results.extend(page_data)
+        if len(page_data) < 100:
+            return results
+        page += 1
 
 
 _REVIEW_THREADS_QUERY = """

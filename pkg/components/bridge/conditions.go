@@ -155,7 +155,8 @@ func setReadiness(res *ReconcileResult, in ReconcileComponentInput, ready, reaso
 
 func isStalledReason(reason string) bool {
 	switch reason {
-	case ReasonDependencyCycle, ReasonDeactivationBlocked, ReasonContractBroken,
+	case ReasonDependencyCycle, ReasonStabilityInversion, ReasonExperimentalNotAcknowledged,
+		ReasonDeactivationBlocked, ReasonContractBroken,
 		ReasonInvalidWrapperSpec, "InvalidWrapperRef", "CrossNamespaceForbidden", "CRDNotFound",
 		ReasonInvalidComponentRef, ReasonHelmUpgradeFailed, ReasonHelmReleaseStuck, ReasonHelmRunnerUninitialized,
 		ReasonSourceConflict:

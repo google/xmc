@@ -25,6 +25,14 @@ from test.e2e.lib.config import E2EConfig
 from test.e2e.lib.spanner import SpannerManager
 
 
+def _stderr_text(error: subprocess.TimeoutExpired) -> str:
+    """Returns the stderr of a text-mode command, which typeshed declares as bytes."""
+    stderr: object = error.stderr
+    if not isinstance(stderr, str):
+        raise AssertionError(f"expected text stderr, got {stderr!r}")
+    return stderr
+
+
 class TestSpannerManager(unittest.TestCase):
     """Tests for SpannerManager ephemeral database handling."""
 
@@ -328,7 +336,7 @@ class TestSpannerManager(unittest.TestCase):
 
         # Attempt 1 times out at 120 s and waits 15 s; attempt 2 polls every 5 s for its
         # remaining 105 s. A retry after that would not get 30 s of the 240 s budget.
-        self.assertIn("test-db is CREATING, not READY", ctx.exception.stderr)
+        self.assertIn("test-db is CREATING, not READY", _stderr_text(ctx.exception))
         self.assertEqual(clock["now"], 240)
         self.assertEqual(mock_sleep.call_args_list, [call(15)] + [call(5)] * 21)
 
@@ -362,7 +370,7 @@ class TestSpannerManager(unittest.TestCase):
     @patch("os.path.isfile", return_value=True)
     def test_resolve_migration_binary_finds_executable(self, mock_isfile, mock_access):
         binary = self.mgr._resolve_migration_binary()
-        self.assertIsNotNone(binary)
+        assert binary is not None
         self.assertTrue(binary.endswith(("migrations", "migrations.exe")))
 
     @patch("os.path.isdir", return_value=False)
@@ -475,7 +483,7 @@ class TestSpannerManager(unittest.TestCase):
 
         # Waiting for the lock times out like a command would, at 45 s and, after the 5 s
         # wait, at the 90 s cap, without ever running the initialization.
-        self.assertIn("lock held by a concurrent command", ctx.exception.stderr)
+        self.assertIn("lock held by a concurrent command", _stderr_text(ctx.exception))
         self.assertEqual([c.kwargs["timeout"] for c in lock.acquire.call_args_list], [45, 40])
         mock_run.assert_not_called()
         lock.release.assert_not_called()

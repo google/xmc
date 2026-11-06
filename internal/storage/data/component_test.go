@@ -244,3 +244,51 @@ func TestDecodeComponentSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeComponentSpec(t *testing.T) {
+	spec := &componentspb.ComponentSpec{
+		Version:   "v1.0.0",
+		Stability: componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL,
+	}
+	tests := []struct {
+		name    string
+		config  []byte
+		want    *componentspb.ComponentSpec
+		wantErr bool
+	}{
+		{
+			name:   "empty bytes returns nil",
+			config: nil,
+			want:   nil,
+		},
+		{
+			name:   "wrapped Component proto",
+			config: mustMarshal(t, &componentspb.Component{Spec: spec}),
+			want:   spec,
+		},
+		{
+			name:   "bare ComponentSpec proto",
+			config: mustMarshal(t, spec),
+			want:   spec,
+		},
+		{
+			name:    "invalid protobuf bytes",
+			config:  []byte{0xff},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DecodeComponentSpec(tt.config)
+			if gotErr := err != nil; gotErr != tt.wantErr {
+				t.Fatalf("DecodeComponentSpec() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if diff := cmp.Diff(tt.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("DecodeComponentSpec() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

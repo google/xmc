@@ -19,6 +19,7 @@
       <h3 id="queue-jobs-title" class="jobs-card-title">
         Jobs in the queue ({{ tableControls.totalCount() }})
       </h3>
+      <ng-content select="[headerActions]" />
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
     <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>

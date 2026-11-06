@@ -19,13 +19,14 @@ import json
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, NoReturn, TextIO
 
 DEFAULT_BACKEND = "spanner"
 
@@ -149,9 +150,10 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
       0: Success
       1: Handled error
       2: Unhandled error
+      130: Interrupted by Ctrl-C (SIGINT), reported as error_type "interrupted"
     """
-    ensure_venv()
     try:
+        ensure_venv()
         args = parser.parse_args()
         result = main_fn(args)
 
@@ -159,27 +161,36 @@ def run_tool(parser: argparse.ArgumentParser, main_fn):
         print(json.dumps(output, indent=2))
         sys.exit(0)
 
+    except KeyboardInterrupt:
+        _exit_with_error(
+            "interrupted",
+            "Interrupted by Ctrl-C before the tool finished.",
+            130,
+            instruction="Rerun the tool; check for partially applied changes first.",
+        )
+
     except HandledError as e:
-        output = {
-            "status": "error",
-            "error_type": "handled",
-            "message": e.message,
-            "instruction": e.instruction,
-        }
+        fields: dict[str, Any] = {"instruction": e.instruction}
         if e.details is not None:
-            output["details"] = dict(e.details)
-        print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(1)
+            fields["details"] = dict(e.details)
+        _exit_with_error("handled", e.message, 1, **fields)
 
     except Exception as e:
-        output = {
-            "status": "error",
-            "error_type": "unhandled",
-            "message": str(e),
-            "traceback": traceback.format_exc(),
-        }
-        print(json.dumps(output, indent=2), file=sys.stderr)
-        sys.exit(2)
+        _exit_with_error("unhandled", str(e), 2, traceback=traceback.format_exc())
+
+
+def _exit_with_error(error_type: str, message: str, exit_code: int, **fields: Any) -> NoReturn:
+    """Prints the standard error JSON to stderr and exits with exit_code.
+
+    Args:
+        error_type: The "error_type" value, e.g. "handled".
+        message: The human-readable "message" value.
+        exit_code: The process exit code.
+        **fields: Extra JSON fields, e.g. instruction, details, or traceback.
+    """
+    output = {"status": "error", "error_type": error_type, "message": message, **fields}
+    print(json.dumps(output, indent=2), file=sys.stderr)
+    sys.exit(exit_code)
 
 
 # Config validation schemas
@@ -228,6 +239,33 @@ def _resolve_database_backend(raw: Any) -> str:
 def parse_bool_flag(val: Any) -> bool:
     """Parses a boolean configuration flag from a boolean or string."""
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
+
+
+def parse_positive_int(value: Any) -> int | None:
+    """Returns `value` as an int >= 1, or None when it is not a positive integer.
+
+    Accepts ints and strings of ASCII digits with optional surrounding whitespace,
+    e.g. " 15". Rejects bools (even though they are ints), floats, signs, digit
+    separators, and non-ASCII digits.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        digits = value.strip()
+        if not (digits.isascii() and digits.isdigit()):
+            return None
+        value = int(digits)
+    if isinstance(value, int) and value > 0:
+        return value
+    return None
+
+
+def positive_int_arg(value: str) -> int:
+    """argparse `type` that accepts only integers >= 1, per parse_positive_int."""
+    parsed = parse_positive_int(value)
+    if parsed is None:
+        raise argparse.ArgumentTypeError(f"must be an integer >= 1, got {value!r}")
+    return parsed
 
 
 def _parse_yaml_vars_line_fallback(content: str) -> dict[str, Any]:
@@ -363,6 +401,11 @@ def run_command(
     log_cmd: bool = True,
     cwd: Path | str | None = None,
     stream: TextIO | None = None,
+    *,
+    input_text: str | None = None,
+    timeout: float | None = None,
+    errors: str | None = None,
+    handled_instruction: str | None = None,
 ) -> subprocess.CompletedProcess:
     """Helper to run shell commands with unified logging and error handling.
 
@@ -377,12 +420,25 @@ def run_command(
         stream: Optional file-backed text stream, e.g. sys.stderr, that receives the command
             log line and, unless capture_output is set, the command's stdout instead of
             stdout. Tools that print JSON to stdout use it to keep stdout clean.
+        input_text: Optional text written to the command's stdin.
+        timeout: Optional limit in seconds after which the command is killed and
+            subprocess.TimeoutExpired is raised.
+        errors: Optional decoding error handler for captured output, e.g. "replace" to
+            substitute undecodable bytes instead of raising UnicodeDecodeError. None keeps
+            strict decoding.
+        handled_instruction: Optional remediation hint. When set, a missing or
+            non-executable binary (OSError), a timeout, or a non-zero exit with check=True
+            raises HandledError carrying this instruction instead of the raw exception.
 
     Returns:
         A subprocess.CompletedProcess object.
 
     Raises:
-        subprocess.CalledProcessError: If the command fails and check=True.
+        subprocess.CalledProcessError: If the command fails, check=True and
+            handled_instruction is None.
+        subprocess.TimeoutExpired: If timeout elapses and handled_instruction is None.
+        OSError: If the command cannot be started and handled_instruction is None.
+        HandledError: If any of the above occurs and handled_instruction is set.
     """
     if log_cmd:
         log_info(f"Running: {' '.join(cmd)}", stream=stream)
@@ -398,11 +454,32 @@ def run_command(
             capture_output=capture_output,
             cwd=str(cwd) if cwd else None,
             stdout=None if capture_output else stream,
+            input=input_text,
+            timeout=timeout,
+            errors=errors,
         )
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as e:
         if log_on_error:
             log_error(f"Command failed: {' '.join(cmd)}")
-        raise
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+    except (OSError, subprocess.TimeoutExpired) as e:
+        if handled_instruction is None:
+            raise
+        raise _command_error(cmd, e, handled_instruction) from e
+
+
+def _command_error(cmd: list[str], error: Exception, instruction: str) -> HandledError:
+    """Converts a failed subprocess launch, timeout, or exit into a HandledError."""
+    command = shlex.join(cmd)
+    if isinstance(error, subprocess.TimeoutExpired):
+        return HandledError(f"Command timed out after {error.timeout}s: {command}", instruction)
+    if isinstance(error, subprocess.CalledProcessError):
+        stderr = error.stderr.strip() if isinstance(error.stderr, str) else ""
+        message = f"Command failed with exit code {error.returncode}: {command}"
+        return HandledError(f"{message}\n{stderr}" if stderr else message, instruction)
+    return HandledError(f"Cannot run {cmd[0]}: {error}", instruction)
 
 
 def configure_docker_auth(config: DeploymentConfig) -> None:

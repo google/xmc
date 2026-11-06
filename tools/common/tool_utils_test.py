@@ -14,9 +14,12 @@
 
 """Unit tests for tool_utils module."""
 
+import argparse
 import io
 import json
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -36,12 +39,41 @@ from tools.common.tool_utils import (
     load_and_validate_config,
     log_info,
     parse_bool_flag,
+    parse_positive_int,
     parse_semver_prefix,
     parse_yaml_vars,
+    positive_int_arg,
     run_command,
     run_tool,
     verify_helm_min_version,
 )
+
+
+class TestPositiveIntParsing(unittest.TestCase):
+    """Tests for parse_positive_int and its argparse adapter."""
+
+    _VALID = ((1, 1), (15, 15), ("15", 15), (" 7\n", 7), ("007", 7))
+    _INVALID = (0, -3, True, False, 1.0, None, "", " ", "0", "-3", "+5", "1_000", "1.5", "abc", "²")
+
+    def test_parse_positive_int_accepts_positive_integers(self):
+        """Ints >= 1 and ASCII digit strings (whitespace-trimmed) are accepted."""
+        for value, want in self._VALID:
+            with self.subTest(value=value):
+                self.assertEqual(parse_positive_int(value), want)
+
+    def test_parse_positive_int_rejects_everything_else(self):
+        """Bools, floats, non-positive, signed, and non-ASCII values return None."""
+        for value in self._INVALID:
+            with self.subTest(value=value):
+                self.assertIsNone(parse_positive_int(value))
+
+    def test_positive_int_arg_matches_parse_positive_int(self):
+        """The argparse adapter accepts and rejects the same strings."""
+        self.assertEqual(positive_int_arg(" 7\n"), 7)
+        for value in (v for v in self._INVALID if isinstance(v, str)):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(argparse.ArgumentTypeError, "integer >= 1"):
+                    positive_int_arg(value)
 
 
 class TestToolUtils(unittest.TestCase):
@@ -275,6 +307,41 @@ class TestToolUtils(unittest.TestCase):
         self.assertEqual(output["message"], "unexpected value")
         self.assertIn("traceback", output)
 
+    def test_run_tool_keyboard_interrupt(self):
+        """Ctrl-C prints the interrupted error JSON, not a traceback, and exits 130."""
+        main_fn = MagicMock(side_effect=KeyboardInterrupt)
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        output = json.loads(captured_stderr.getvalue())
+        self.assertEqual(output["status"], "error")
+        self.assertEqual(output["error_type"], "interrupted")
+        self.assertIn("Interrupted", output["message"])
+        self.assertIn("instruction", output)
+        self.assertNotIn("traceback", output)
+
+    def test_run_tool_keyboard_interrupt_during_venv_bootstrap(self):
+        """Ctrl-C while the tooling venv bootstraps is also reported as JSON."""
+        main_fn = MagicMock()
+
+        captured_stderr = io.StringIO()
+        with (
+            patch("tools.common.tool_utils.ensure_venv", side_effect=KeyboardInterrupt),
+            patch("sys.stderr", captured_stderr),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            run_tool(MagicMock(), main_fn)
+
+        self.assertEqual(exit_ctx.exception.code, 130)
+        self.assertEqual(json.loads(captured_stderr.getvalue())["error_type"], "interrupted")
+        main_fn.assert_not_called()
+
 
 class TestLogStreams(unittest.TestCase):
     """Tests for the stream parameter of the logging and command helpers."""
@@ -311,6 +378,64 @@ class TestLogStreams(unittest.TestCase):
         self.assertIsNone(default_call.kwargs["stdout"])
         self.assertIsNone(captured_call.kwargs["stdout"])
         self.assertTrue(captured_call.kwargs["capture_output"])
+
+
+class TestRunCommandHardening(unittest.TestCase):
+    """Tests for run_command stdin, timeout, decoding, and HandledError options."""
+
+    _BAD_BYTES = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"]
+
+    def _run(self, cmd: list[str], **kwargs):
+        return run_command(cmd, capture_output=True, log_cmd=False, log_on_error=False, **kwargs)
+
+    def test_input_text_is_written_to_stdin(self):
+        cmd = [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"]
+        self.assertEqual(self._run(cmd, input_text="abc").stdout.strip(), "ABC")
+
+    def test_errors_replace_tolerates_undecodable_output(self):
+        self.assertEqual(self._run(self._BAD_BYTES, errors="replace").stdout, "ok\ufffd")
+
+    def test_default_decoding_stays_strict(self):
+        with self.assertRaises(UnicodeDecodeError):
+            self._run(self._BAD_BYTES)
+
+    def test_raw_exceptions_without_handled_instruction(self):
+        with self.assertRaises(FileNotFoundError):
+            self._run(["xmc-nonexistent-binary"])
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self._run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.2)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self._run([sys.executable, "-c", "raise SystemExit(3)"])
+
+    def test_missing_binary_raises_handled_error(self):
+        with self.assertRaisesRegex(HandledError, "Cannot run xmc-nonexistent-binary") as ctx:
+            self._run(["xmc-nonexistent-binary"], handled_instruction="Install it.")
+        self.assertEqual(ctx.exception.instruction, "Install it.")
+        self.assertIsInstance(ctx.exception.__cause__, FileNotFoundError)
+
+    def test_timeout_raises_handled_error(self):
+        cmd = [sys.executable, "-c", "import time; time.sleep(10)"]
+        with self.assertRaisesRegex(HandledError, r"timed out after 0\.2s"):
+            self._run(cmd, timeout=0.2, handled_instruction="Retry.")
+
+    def test_non_zero_exit_raises_handled_error_with_stderr(self):
+        cmd = [sys.executable, "-c", "import sys; sys.exit('boom')"]
+        with self.assertRaisesRegex(HandledError, r"exit code 1: .*\nboom") as ctx:
+            self._run(cmd, handled_instruction="Fix it.")
+        self.assertEqual(ctx.exception.instruction, "Fix it.")
+        self.assertIn(shlex.quote(cmd[2]), ctx.exception.message)
+
+    def test_non_zero_exit_without_check_returns_result(self):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        result = self._run(cmd, check=False, handled_instruction="Unused.")
+        self.assertEqual(result.returncode, 3)
+
+    @patch("tools.common.tool_utils.log_error")
+    def test_handled_failure_still_logs_when_requested(self, mock_log_error):
+        cmd = [sys.executable, "-c", "raise SystemExit(3)"]
+        with self.assertRaises(HandledError):
+            run_command(cmd, capture_output=True, log_cmd=False, handled_instruction="Fix it.")
+        mock_log_error.assert_called_once()
 
 
 class TestConfigLoader(unittest.TestCase):

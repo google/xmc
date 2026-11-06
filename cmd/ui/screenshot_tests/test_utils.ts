@@ -92,6 +92,19 @@ export const MOCK_HEALTH_STATUS: HealthStatusResponse = {
       name: 'Internal Git Provider',
       type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
       healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'STABLE',
+    },
+    {
+      name: 'Metrics Collector',
+      type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
+      healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'PREVIEW',
+    },
+    {
+      name: 'Custom GPU Profiler',
+      type: 'COMPONENT_TYPE_CUSTOM_COMPONENT',
+      healthState: 'HEALTH_STATE_HEALTHY',
+      stability: 'EXPERIMENTAL',
     },
   ],
   healthCheckTime: { seconds: 1717804800, nanos: 0 },
@@ -321,7 +334,7 @@ export const MOCK_EXPERIMENT_DETAILS: Experiment = {
   },
   urls: [
     {
-      url: 'https://tensorboard.googleplex.com/experiment/10293841',
+      url: 'https://tensorboard.example.com/experiment/10293841',
       displayName: 'Tensorboard Dashboard',
       icon: 'insights',
       priority: 1,
@@ -491,7 +504,7 @@ export const MOCK_EXPERIMENT_ARTIFACTS: ListArtifactsResponse = {
       notes: 'Live scalar training metrics and telemetry stream.',
       payload: {
         url: {
-          url: 'https://tensorboard.googleplex.com/experiment/10293841/scalars',
+          url: 'https://tensorboard.example.com/experiment/10293841/scalars',
           displayName: 'Live Training Scalars',
           icon: 'trending_up',
         },
@@ -594,7 +607,7 @@ export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
       priority: 1,
     },
     {
-      url: 'https://tensorboard.googleplex.com/experiment/10293841',
+      url: 'https://tensorboard.example.com/experiment/10293841',
       displayName: 'Tensorboard',
       icon: 'insights',
       priority: 2,
@@ -610,6 +623,11 @@ export const MOCK_WORK_UNIT_DETAILS: WorkUnit = {
     createTime: '2026-06-01T10:01:00Z',
     metadata: {
       managementCluster: {
+        project: 'xmanager-prod',
+        location: 'us-central1',
+        clusterName: 'xmc-gke-prod-01',
+      },
+      executingCluster: {
         project: 'xmanager-prod',
         location: 'us-central1',
         clusterName: 'xmc-gke-prod-01',
@@ -682,7 +700,7 @@ export const MOCK_WORK_UNIT_ARTIFACTS: ListArtifactsResponse = {
       notes: 'TensorFlow / JAX trace profile.',
       payload: {
         url: {
-          url: 'https://xprof.corp.google.com/trace/10293841-wu1',
+          url: 'https://xprof.example.com/trace/10293841-wu1',
           displayName: 'JAX Profile Trace',
           icon: 'troubleshoot',
         },

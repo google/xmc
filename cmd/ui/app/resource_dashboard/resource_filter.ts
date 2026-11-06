@@ -37,3 +37,23 @@ export function matchesResourceFilter(resourceType: string, filter: string): boo
   }
   return r.includes(f);
 }
+
+// Delimiter emitted by the ROD backend's formatCompoundAccelerator
+// (e.g. "nvidia.com/gpu: nvidia-tesla-a100").
+const COMPOUND_RESOURCE_DELIMITER = ': ';
+
+function parentResourceType(resourceType: string): string | null {
+  const delimiterIndex = resourceType.indexOf(COMPOUND_RESOURCE_DELIMITER);
+  return delimiterIndex > 0 ? resourceType.slice(0, delimiterIndex) : null;
+}
+
+/**
+ * Adds the generic parent (e.g. "nvidia.com/gpu") of every compound accelerator type
+ * and returns the deduplicated, sorted list, so a parent sorts before its models.
+ */
+export function expandResourceTypesWithParents(resourceTypes: string[]): string[] {
+  const parents = resourceTypes
+    .map(parentResourceType)
+    .filter((parent): parent is string => parent !== null);
+  return [...new Set([...resourceTypes, ...parents])].sort();
+}

@@ -34,7 +34,7 @@ import (
 // by earlier non-idempotent writes stop growing once callers pass their own generation. A changed
 // intent is not an unchanged one and is bumped to max(desiredGen, rec.Generation+1) by the stores.
 func IsUnchangedIntent(rec *store.ComponentRecord, spec *componentspb.ComponentSpec, labels map[string]string, deps []string, desiredGen int64) bool {
-	// TODO(b/548436300): reject a changed spec with 0 < desiredGen < rec.Generation (stale writer) once legacy-inflated generations are remediated.
+	// TODO: reject a changed spec with 0 < desiredGen < rec.Generation (stale writer) once legacy-inflated generations are remediated.
 	if desiredGen > rec.Generation {
 		return false
 	}
