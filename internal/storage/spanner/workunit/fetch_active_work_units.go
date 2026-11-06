@@ -22,30 +22,12 @@ import (
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/offsetpagetoken"
 	spannerdata "xmanager_cloud/internal/storage/spanner/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 	"xmanager_cloud/internal/storage/spanner/utils"
 	"xmanager_cloud/internal/validator"
-)
-
-var fetchActiveWorkUnitPKsSQL = safesql.New(
-	`SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle
-	FROM WorkUnits wu
-	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
-	WHERE wu.QueueName IN UNNEST(@queueNames)
-	  AND wu.IsPendingOrRunningJob IS NOT NULL
-	ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC
-	LIMIT @limit OFFSET @offset`,
-)
-
-var countActiveWorkUnitsSQL = safesql.New(
-	`SELECT COUNT(*)
-	FROM WorkUnits wu
-	WHERE wu.QueueName IN UNNEST(@queueNames)
-	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
 )
 
 type workUnitPK struct {
@@ -55,16 +37,7 @@ type workUnitPK struct {
 	ExperimentTitle string
 }
 
-func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string, limit int64, offset int64) ([]workUnitPK, error) {
-	stmt := spanner.Statement{
-		SQL: fetchActiveWorkUnitPKsSQL.String(),
-		Params: map[string]interface{}{
-			"queueNames": queueNames,
-			"limit":      limit,
-			"offset":     offset,
-		},
-	}
-
+func fetchActiveWorkUnitPKs(ctx context.Context, txn *spanner.ReadOnlyTransaction, stmt spanner.Statement) ([]workUnitPK, error) {
 	iter := txn.Query(ctx, stmt)
 	defer iter.Stop()
 
@@ -156,7 +129,7 @@ func batchReadWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, k
 }
 
 // FetchActiveWorkUnitsByQueues queries Spanner for active and pending work units assigned to the given queues.
-func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -179,19 +152,22 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
 
+	countStmt, fetchStmt, err := activeWorkUnitStatements(queueNames, int64(pageSizeVal)+1, offset, query)
+	if err != nil {
+		return nil, err
+	}
 	txn := r.client.ReadOnlyTransaction()
 	defer txn.Close()
 
 	// Query 1: Count total active work units across matching queues
-	totalQueueSize, err := countActiveWorkUnits(ctx, txn, queueNames)
+	totalQueueSize, err := countActiveWorkUnits(ctx, txn, countStmt)
 	if err != nil {
 		logging.Error(ctx, "failed to count active work units", "error", err)
 		return nil, err
 	}
 
 	// Fetch pageSize + 1 items to determine if nextPageToken is needed
-	limit := int64(pageSizeVal) + 1
-	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, queueNames, limit, offset)
+	orderedPKs, err := fetchActiveWorkUnitPKs(ctx, txn, fetchStmt)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active work unit primary keys", "error", err)
 		return nil, err
@@ -230,13 +206,7 @@ func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueName
 	}, nil
 }
 
-func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) (int64, error) {
-	countStmt := spanner.Statement{
-		SQL: countActiveWorkUnitsSQL.String(),
-		Params: map[string]interface{}{
-			"queueNames": queueNames,
-		},
-	}
+func countActiveWorkUnits(ctx context.Context, txn *spanner.ReadOnlyTransaction, countStmt spanner.Statement) (int64, error) {
 	var totalQueueSize int64
 	iterCount := txn.Query(ctx, countStmt)
 	defer iterCount.Stop()

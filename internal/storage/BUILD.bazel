@@ -17,6 +17,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "storage",
     srcs = [
+        "active_workunit_filter.go",
+        "active_workunit_order.go",
         "pause.go",
         "storage.go",
         "test_utils.go",
@@ -25,6 +27,8 @@ go_library(
     importpath = "xmanager_cloud/internal/storage",
     visibility = ["//:__subpackages__"],
     deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
         "//api/protos/components/v1alpha1",
         "//api/protos/dashboard:messages_go_proto",
         "//api/protos/experiment:messages_go_proto",
@@ -42,6 +46,8 @@ go_library(
 go_test(
     name = "storage_test",
     srcs = [
+        "active_workunit_filter_test.go",
+        "active_workunit_order_test.go",
         "test_utils_test.go",
         "workunit_errors_test.go",
     ],
