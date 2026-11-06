@@ -535,8 +535,10 @@ deployment_groups:
         value: $(vars.iap_client_secret)
       - name: auth.iap.clientId
         value: $(vars.iap_client_id)
+      # Helm splits set values on unescaped commas, so the comma-separated allowlist is escaped
+      # here; Helm strips the backslashes and the chart receives the plain list.
       - name: auth.allowedEmails
-        value: $(vars.allowed_emails)
+        value: '$(replace(vars.allowed_emails, ",", "\\,"))'
         type: string
       - name: auth.authorizedIamRole
         value: $(vars.authorized_iam_role)
