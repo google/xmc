@@ -559,3 +559,16 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRunningAndPendingJobs_UserAllocationsEmptyUntilImplemented(t *testing.T) {
+	fetcher := &mockWorkUnitFetcher{workUnits: newTestWorkUnits(time.Now()), totalQueueSize: 1}
+	srv := newServer(&Config{}, newTestKueueCache(), fetcher, nil)
+
+	resp, err := srv.GetRunningAndPendingJobs(context.Background(), baseReq)
+	if err != nil {
+		t.Fatalf("GetRunningAndPendingJobs() unexpected error: %v", err)
+	}
+	if got := resp.GetUserAllocations(); len(got) != 0 {
+		t.Errorf("UserAllocations = %v, want empty until allocations are aggregated", got)
+	}
+}

@@ -146,11 +146,20 @@ message DashboardJob {
   int64 running_duration_seconds = 12;
 }
 
+// UserResourceAllocation represents aggregated requested resources for a user in a queue.
+message UserResourceAllocation {
+  string user = 1;
+  string resource_type = 2;
+  double running_units = 3;
+  double pending_units = 4;
+}
+
 // GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
 message GetRunningAndPendingJobsResponse {
   repeated DashboardJob jobs = 1;
   string next_page_token = 2;
   int64 total_queue_size = 3;
+  repeated UserResourceAllocation user_allocations = 4;
 }
 
 // GetSubmitQueueRequest represents query parameters for fetching the target submission queue.
