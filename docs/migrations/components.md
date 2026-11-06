@@ -55,7 +55,11 @@ Before upgrading the umbrella release with `enable_components=true`, stamp `helm
 Upgrade your XMC umbrella deployment so `xmc-bridge` starts and `ess`, `dashboard-service`, and `ingestion-gateway` enable component discovery without pruning your live gateway pods:
 
 - **`dev_env.py gke-upgrade`**: Set `enable_components: true` in your deployment YAML, then pass `--profile-values "<absolute-path-to>/profile-values.yaml"` to `python3 ./tools/dev_env/dev_env.py gke-upgrade -c <deployment.yaml> --enable-components --profile-values "<absolute-path-to>/profile-values.yaml"` (this automatically executes Step 4 via `deploy_component_profile`).
-- **Standalone Cluster Toolkit (`gcluster`)**: Set `enable_components: true` in your deployment YAML, re-render and run `./cluster-toolkit/gcluster deploy ... --only xmc_app`, then execute Step 4 manually.
+- **Standalone Cluster Toolkit (`gcluster`)**: Set `enable_components: true` in your deployment YAML, re-render the blueprint and deploy the `xmc_app` group, then execute Step 4 manually:
+  ```bash
+  ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
+  ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
+  ```
 - **Direct Helm**:
   ```bash
   helm upgrade --install xmc ./deploy/helm \
@@ -93,6 +97,16 @@ sleep 2
 curl -fsS http://127.0.0.1:18080/readyz
 kill "${PF_PID}"
 ```
+
+---
+
+## After Migration: Upgrading XMC
+
+`xmc-profile` is a separate Helm release: `gcluster deploy` and umbrella `helm upgrade` do not upgrade it. `prepare` also pins the gateway image that was running at migration time (`components.ingestion-gateway.imageTag`, plus `components.ingestion-gateway.parameters.image` when your umbrella values set a custom gateway image), and these take precedence over the default image `xmc-bridge` would otherwise use. Keep `profile-values.yaml` alongside your deployment configuration and, on every later XMC upgrade:
+
+1. Keep `enable_components: true` (`componentsDeployment.enabled=true`) and upgrade the umbrella release as usual (see [INSTALL.md](../../INSTALL.md#step-4-upgrade-application-workloads)).
+2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to the new release.
+3. Re-run the Step 4 `helm upgrade --install --reset-then-reuse-values xmc-profile ...` command from the new release checkout (`dev_env.py gke-upgrade --profile-values` does this automatically).
 
 ---
 
