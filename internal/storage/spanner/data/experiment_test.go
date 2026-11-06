@@ -53,14 +53,15 @@ var (
 			ActiveState: pb.ExperimentStatus_ACTIVE,
 			LaunchState: pb.ExperimentStatus_LAUNCHING,
 		},
-		CreateTime:   timestamppb.New(testExpTime),
-		UpdateTime:   timestamppb.New(testExpTime),
-		CompleteTime: timestamppb.New(testExpCompleteTime),
+		CreateTime:     timestamppb.New(testExpTime),
+		UpdateTime:     timestamppb.New(testExpTime),
+		CompleteTime:   timestamppb.New(testExpCompleteTime),
+		ExperimentType: pb.Experiment_STUDY,
 	}
 )
 
 func TestExperimentRowToProto(t *testing.T) {
-	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime"}
+	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType"}
 	values := []any{
 		int64(123),
 		testExperiment.Title,
@@ -74,6 +75,7 @@ func TestExperimentRowToProto(t *testing.T) {
 		testExpTime,
 		testExpTime,
 		testExpCompleteTime,
+		testExperiment.ExperimentType,
 	}
 
 	row, err := spanner.NewRow(keys, values)
@@ -88,6 +90,28 @@ func TestExperimentRowToProto(t *testing.T) {
 
 	if diff := cmp.Diff(&testExperiment, got, protocmp.Transform()); diff != "" {
 		t.Errorf("ExperimentRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+func TestExperimentRowToProto_NullExperimentType(t *testing.T) {
+	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType"}
+	// The Spanner client encodes NULL for NullProtoEnum as a typed nil with Valid: true; Valid: false
+	// is rejected by spanner.NewRow.
+	values := []any{
+		int64(123), "title", "creator", int64(0), []*pb.Url{}, "", []string{}, []*pb.ResourceSet{},
+		&pb.ExperimentStatus{}, testExpTime, testExpTime, spanner.NullTime{}, spanner.NullProtoEnum{ProtoEnumVal: (*pb.Experiment_ExperimentType)(nil), Valid: true},
+	}
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("spanner.NewRow() failed: %v", err)
+	}
+
+	got, err := ExperimentRowToProto(row)
+	if err != nil {
+		t.Fatalf("ExperimentRowToProto() failed: %v", err)
+	}
+	if got.GetExperimentType() != pb.Experiment_STANDARD {
+		t.Errorf("ExperimentRowToProto() experiment_type = %v, want %v", got.GetExperimentType(), pb.Experiment_STANDARD)
 	}
 }
 
@@ -123,6 +147,7 @@ func TestExperimentProtoToInsertMutation(t *testing.T) {
 			exp.CreateTime.AsTime(),
 			exp.UpdateTime.AsTime(),
 			spanner.NullTime{Time: exp.CompleteTime.AsTime(), Valid: true},
+			pb.Experiment_STUDY,
 		},
 	)
 	got, err := ExperimentProtoToInsertMutation(exp)

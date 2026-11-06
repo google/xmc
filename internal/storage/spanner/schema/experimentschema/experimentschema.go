@@ -43,6 +43,8 @@ const (
 	createdTableField   = querytools.TableField("created")
 	updatedTableField   = querytools.TableField("updated")
 	completedTableField = querytools.TableField("completed")
+
+	experimentTypeTableField = querytools.TableField("experiment_type")
 )
 
 // ExperimentColumns is the full list of columns in the Experiments table. It is used when fetching
@@ -61,6 +63,7 @@ var ExperimentColumns = []string{
 	"CreateTime",
 	"UpdateTime",
 	"CompleteTime",
+	"ExperimentType",
 }
 
 // ExperimentUpdateColumns is the list of columns that can be mutated in the Experiments table.
@@ -196,6 +199,14 @@ var (
 				Selectable:   true,
 				Nullable:     true,
 			},
+			experimentTypeTableField: {
+				Name: experimentTypeTableField,
+				// Rows written before the column existed hold NULL and filter as STANDARD.
+				QueryLiteral:    safesql.New("IFNULL(e.ExperimentType, CAST('STANDARD' AS cloud.xmanager.v1.Experiment.ExperimentType))"),
+				SelectSQLString: safesql.New("e.ExperimentType"),
+				Type:            filtervisitor.String,
+				Selectable:      true,
+			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
@@ -222,6 +233,7 @@ var (
 		createdTableField,
 		updatedTableField,
 		completedTableField,
+		experimentTypeTableField,
 	}
 
 	// ExperimentsFullTextFields is the list of fields that can be used for full text search for Experiments queries.

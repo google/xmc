@@ -44,6 +44,16 @@ func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
 	if err := row.ColumnByName("Priority", &experiment.Priority); err != nil {
 		return nil, fmt.Errorf("failed to read column Priority: %w", err)
 	}
+	// ExperimentType is nullable; NULL (rows written before the column existed) reads as STANDARD.
+	var experimentType pb.Experiment_ExperimentType
+	nullExperimentType := spanner.NullProtoEnum{ProtoEnumVal: &experimentType}
+	if err := row.ColumnByName("ExperimentType", &nullExperimentType); err != nil {
+		return nil, fmt.Errorf("failed to read column ExperimentType: %w", err)
+	}
+	experiment.ExperimentType = pb.Experiment_STANDARD
+	if nullExperimentType.Valid {
+		experiment.ExperimentType = experimentType
+	}
 
 	if err := row.ColumnByName("Urls", &experiment.Urls); err != nil {
 		return nil, fmt.Errorf("failed to read column Urls: %w", err)
@@ -117,6 +127,7 @@ func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, err
 			exp.CreateTime.AsTime(), // CreateTime
 			exp.UpdateTime.AsTime(), // UpdateTime
 			completeTime,            // CompleteTime
+			exp.ExperimentType,      // ExperimentType
 		},
 	), nil
 }

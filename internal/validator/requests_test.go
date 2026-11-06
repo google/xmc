@@ -198,6 +198,21 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
+			name: "experiment_type_unknown",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.ExperimentType = essmsgpb.Experiment_ExperimentType(99)
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			// STUDY is a known type; CreateExperiment rejects it separately with Unimplemented.
+			name: "experiment_type_study",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
+			}),
+			wantErr: nil,
+		},
+		{
 			name: "create_time_not_empty",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.CreateTime = timestamppb.New(time.Now())
