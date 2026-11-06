@@ -90,6 +90,16 @@ class TestHostComponent {
 })
 class ProjectedHeaderActionsHostComponent {}
 
+@Component({
+  standalone: true,
+  imports: [QueueJobsTable],
+  template: `<xmc-queue-jobs-table
+    [queueName]="'gpu-cluster-queue'"
+    [dominantResource]="'nvidia.com/gpu'"
+  />`,
+})
+class DominantResourceHostComponent {}
+
 describe('QueueJobsTable Component', () => {
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
@@ -98,7 +108,12 @@ describe('QueueJobsTable Component', () => {
     resourceService.getQueueJobs.and.returnValue(of(TEST_QUEUE_JOBS_RESP));
 
     setupModule({
-      imports: [TestHostComponent, ProjectedHeaderActionsHostComponent, NoopAnimationsModule],
+      imports: [
+        TestHostComponent,
+        ProjectedHeaderActionsHostComponent,
+        DominantResourceHostComponent,
+        NoopAnimationsModule,
+      ],
       providers: [provideRouter([]), { provide: ResourceService, useValue: resourceService }],
     });
 
@@ -326,5 +341,20 @@ describe('QueueJobsTable Component', () => {
     const harness = await getHarness(QueueJobsTableHarness);
     expect(await harness.getHeaderActionTexts()).toEqual(['Custom header action']);
     expect(document.body.textContent).not.toContain('Unmatched content');
+  });
+
+  it('should render the per-user allocation preview with mocked data behind a WIP banner', async () => {
+    bootstrap(DominantResourceHostComponent);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    expect(await harness.getWipBannerText()).toBe(
+      'Preview: per-user resource allocation shows mocked data',
+    );
+    const bar = await harness.getUserAllocationBar();
+    expect(await bar.getChipTexts()).toEqual([
+      'alice@example.com 8 running + 4 pending GPUs',
+      'bob@example.com 4 running GPUs',
+    ]);
   });
 });

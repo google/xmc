@@ -25,6 +25,13 @@
     <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
   </div>
 
+  <xmc-wip-banner text="Preview: per-user resource allocation shows mocked data" />
+  <xmc-queue-user-allocation-bar
+    [allocations]="userAllocations"
+    [dominantResource]="dominantResource()"
+    [isLoading]="isLoading()"
+  />
+
   @if (isLoading()) {
     <div class="loading-container">
       <span>Loading jobs...</span>

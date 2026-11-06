@@ -224,6 +224,31 @@ describe('ResourceDashboard Container', () => {
     expect(await dashboard.getQueueJobsTable()).not.toBeNull();
   });
 
+  it('should update the per-user allocation bar when the dominant resource changes in the picker', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const dashboard = await getHarness(ResourceDashboardHarness);
+    const bar = await (await dashboard.getQueueJobsTable())!.getUserAllocationBar();
+    expect(await bar.getHintText()).toContain('Pick a resource in "I need"');
+
+    const finderHarness = (await dashboard.getSmartResourceFinder())!;
+    await finderHarness.setAmountValue('1');
+    await finderHarness.selectResourceType(0, 'nvidia.com/gpu');
+    await flush();
+    expect(await bar.getChipTexts()).toEqual([
+      'alice@example.com 8 running + 4 pending GPUs',
+      'bob@example.com 4 running GPUs',
+    ]);
+
+    await finderHarness.selectResourceType(0, 'cpu');
+    await flush();
+    expect(await bar.getChipTexts()).toEqual([
+      'alice@example.com 32 running + 16 pending cores',
+      'bob@example.com 8 running cores',
+    ]);
+  });
+
   it('should select queue when a queue card is clicked', async () => {
     bootstrap(TestHostComponent);
     await flush();
