@@ -505,7 +505,8 @@ func TestGetRunningAndPendingJobs_ReturnsUserAllocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRunningAndPendingJobs() unexpected error: %v", err)
 	}
-	if diff := cmp.Diff(mockUserAllocations(), resp.GetUserAllocations(), protocmp.Transform()); diff != "" {
+	want := mapAuthorResourceAllocations(mockAuthorResourceAllocations(), nil)
+	if diff := cmp.Diff(want, resp.GetUserAllocations(), protocmp.Transform()); diff != "" {
 		t.Errorf("UserAllocations mismatch (-want +got):\n%s", diff)
 	}
 }

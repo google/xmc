@@ -16,14 +16,14 @@ package main
 
 import "testing"
 
-func TestMockUserAllocations(t *testing.T) {
-	allocations := mockUserAllocations()
-	if len(allocations) == 0 {
-		t.Fatal("mockUserAllocations() returned no allocations")
+func TestMockAuthorResourceAllocations(t *testing.T) {
+	rows := mockAuthorResourceAllocations()
+	if len(rows) == 0 {
+		t.Fatal("mockAuthorResourceAllocations() returned no rows")
 	}
-	for _, a := range allocations {
-		if a.GetUser() == "" || a.GetResourceType() == "" || a.GetRunningUnits()+a.GetPendingUnits() <= 0 {
-			t.Errorf("mockUserAllocations() returned incomplete allocation %v", a)
+	for _, row := range rows {
+		if row.Author == "" || row.ResourceType == "" || row.State == "" || row.Units <= 0 {
+			t.Errorf("mockAuthorResourceAllocations() returned incomplete row %+v", row)
 		}
 	}
 }

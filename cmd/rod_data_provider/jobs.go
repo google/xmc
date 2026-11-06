@@ -61,11 +61,12 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		totalQueueSize = result.TotalQueueSize
 	}
 
+	uniqueAccelerators := buildUniqueQueueAcceleratorMap(s.cache, clusterQueueName)
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:            jobs,
 		NextPageToken:   nextPageToken,
 		TotalQueueSize:  totalQueueSize,
-		UserAllocations: mockUserAllocations(),
+		UserAllocations: mapAuthorResourceAllocations(mockAuthorResourceAllocations(), uniqueAccelerators),
 	}, nil
 }
 
