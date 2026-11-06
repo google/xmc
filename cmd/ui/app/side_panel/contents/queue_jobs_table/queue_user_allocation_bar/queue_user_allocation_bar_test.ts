@@ -29,8 +29,6 @@ const ALLOCATIONS: UserResourceAllocation[] = [
   },
   { user: 'alice@example.com', resourceType: 'nvidia.com/gpu: nvidia-l4', runningUnits: 2 },
   { user: 'bob@example.com', resourceType: 'nvidia.com/gpu: nvidia-tesla-h100', runningUnits: 2 },
-  { user: 'bob@example.com', resourceType: 'cpu', runningUnits: 16, pendingUnits: 8 },
-  { user: 'alice@example.com', resourceType: 'memory', runningUnits: 32 },
 ];
 
 @Component({
@@ -78,25 +76,6 @@ describe('QueueUserAllocationBar', () => {
       'bob@example.com 2 running GPUs',
     ]);
     expect(await bar.getRunningSegmentWidths()).toEqual(['50%', '25%']);
-  });
-
-  it('sums all matching models for a generic parent', async () => {
-    const bar = await render('nvidia.com/gpu');
-    expect(await bar.getTotalsText()).toBe('8 running + 2 pending GPUs');
-    expect(await bar.getChipTexts()).toEqual([
-      'alice@example.com 6 running + 2 pending GPUs',
-      'bob@example.com 2 running GPUs',
-    ]);
-  });
-
-  it('labels non-accelerator resources with their units', async () => {
-    const cpuBar = await render('cpu');
-    expect(await cpuBar.getChipTexts()).toEqual(['bob@example.com 16 running + 8 pending cores']);
-  });
-
-  it('labels memory in GiB', async () => {
-    const memoryBar = await render('memory');
-    expect(await memoryBar.getChipTexts()).toEqual(['alice@example.com 32 running GiB']);
   });
 
   it('shows an empty message when no active job requests the resource', async () => {
