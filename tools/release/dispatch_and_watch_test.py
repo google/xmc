@@ -19,8 +19,10 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
+from tools.common import tool_utils
 from tools.common.tool_utils import HandledError
 from tools.release.dispatch_and_watch import (
     create_parser,
@@ -31,15 +33,45 @@ from tools.release.dispatch_and_watch import (
 class DispatchAndWatchTest(unittest.TestCase):
     """Focused test suite for dispatch_and_watch."""
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value=None)
-    def test_gh_missing(self, mock_which):
-        p = create_parser().parse_args(["--workflow", "build.yml"])
-        with self.assertRaises(HandledError):
+    def setUp(self) -> None:
+        super().setUp()
+        self.repo_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        wf = self.repo_dir / ".github" / "workflows" / "nightly-examples-e2e.yml"
+        wf.parent.mkdir(parents=True)
+        wf.write_text(
+            "matrix:\n  example:\n    - id: simple_job\n    - id: resource_dashboard_ui\n",
+            encoding="utf-8",
+        )
+        self.mock_run = self.enterContext(patch("tools.release.dispatch_and_watch.run_command"))
+
+    @staticmethod
+    def _proc(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
+
+    def _run_list(self, run_id: int, sha: str) -> subprocess.CompletedProcess[str]:
+        created_at = "2099-01-01T00:00:00Z"
+        run = {"databaseId": run_id, "headSha": sha, "url": "run_url", "createdAt": created_at}
+        return self._proc(json.dumps([run]))
+
+    def _view(self, payload: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+        return self._proc(json.dumps(payload))
+
+    def _watched_run_mocks(self, run_id: int, sha: str) -> list[subprocess.CompletedProcess[str]]:
+        return [
+            self._proc(),
+            self._run_list(run_id, sha),
+            self._proc(),
+            self._view({"conclusion": "success", "jobs": []}),
+        ]
+
+    @patch("tools.common.tool_utils.subprocess.run", side_effect=FileNotFoundError("gh"))
+    def test_gh_missing(self, _mock_subproc: Any) -> None:
+        self.mock_run.side_effect = tool_utils.run_command
+        p = create_parser().parse_args(["--workflow=build.yml", "--target-sha=abc1234"])
+        with self.assertRaisesRegex(HandledError, "Cannot run gh"):
             dispatch_and_watch(p)
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_find_existing_success(self, mock_run, mock_which):
+    def test_find_existing_success(self) -> None:
         run_list = json.dumps(
             [
                 {
@@ -49,9 +81,7 @@ class DispatchAndWatchTest(unittest.TestCase):
                 }
             ]
         )
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=run_list, stderr=""
-        )
+        self.mock_run.return_value = self._proc(run_list)
         p = create_parser().parse_args(
             [
                 "--workflow",
@@ -66,57 +96,111 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_dispatch_and_watch_success(self, mock_run, mock_which):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {
-                            "databaseId": 202,
-                            "headSha": "target_sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
-                        }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps({"conclusion": "success", "jobs": []}),
-            ),  # view
+    def test_dispatch_and_watch_success(self) -> None:
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(202, "target_sha"),  # list
+            self._proc(),  # watch
+            self._view({"conclusion": "success", "jobs": []}),  # view
         ]
         p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "target_sha"])
         res = dispatch_and_watch(p)
         self.assertEqual(res["run_id"], 202)
         self.assertEqual(res["conclusion"], "success")
         self.assertEqual(res["page_url"], "")
+        dispatch_cmd = self.mock_run.call_args_list[0].args[0]
+        self.assertEqual(dispatch_cmd, ["gh", "workflow", "run", "build.yml", "--ref", "main"])
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_dispatch_sha_mismatch(self, mock_run, mock_which):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {
-                            "databaseId": 303,
-                            "headSha": "wrong_sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
-                        }
-                    ]
-                ),
-            ),  # list
+    def test_dispatch_forwards_inputs_and_validates_examples_filter(self) -> None:
+        self.mock_run.side_effect = self._watched_run_mocks(210, "target_sha")
+        argv = [
+            "--workflow=nightly-examples-e2e.yml",
+            "--ref=fix/nightly-example",
+            "--target-sha=target_sha",
+            f"--repo-dir={self.repo_dir}",
+            "--input=examples_filter=SIMPLE_JOB,resource_dashboard_ui",
+            "--input=xmanager_version=",
+        ]
+        res = dispatch_and_watch(create_parser().parse_args(argv))
+        self.assertEqual(res["conclusion"], "success")
+        expected = [
+            *["gh", "workflow", "run", "nightly-examples-e2e.yml", "--ref", "fix/nightly-example"],
+            "-f",
+            "examples_filter=SIMPLE_JOB,resource_dashboard_ui",
+            "-f",
+            "xmanager_version=",
+        ]
+        self.assertEqual(self.mock_run.call_args_list[0].args[0], expected)
+
+    def test_auto_resolves_remote_sha_when_target_sha_omitted(self) -> None:
+        state_path = self.repo_dir / "verify_state.json"
+        self.mock_run.side_effect = [
+            self._proc(),
+            self._proc("deadbeef1234\n"),
+            *self._watched_run_mocks(220, "deadbeef12345678"),
+        ]
+        argv = [
+            "--workflow=nightly-examples-e2e.yml",
+            "--ref=fix/nightly-slug",
+            f"--repo-dir={self.repo_dir}",
+            "--input=examples_filter=",
+            f"--state-file={state_path}",
+        ]
+        res = dispatch_and_watch(create_parser().parse_args(argv))
+        self.assertEqual((res["run_id"], res["conclusion"]), (220, "success"))
+        cmds = [c.args[0] for c in self.mock_run.call_args_list[:2]]
+        self.assertEqual(
+            cmds,
+            [
+                ["git", "fetch", "--", "origin", "fix/nightly-slug"],
+                ["git", "rev-parse", "--verify", "FETCH_HEAD^{commit}"],
+            ],
+        )
+        self.assertEqual(json.loads(state_path.read_text())["target_sha"], "deadbeef1234")
+
+    @patch("tools.common.tool_utils.subprocess.run")
+    def test_remote_sha_resolution_errors(self, mock_subproc: Any) -> None:
+        self.mock_run.side_effect = tool_utils.run_command
+        p = create_parser().parse_args(["--workflow=build.yml", "--ref=fix/unpushed"])
+        mock_subproc.side_effect = FileNotFoundError("git")
+        with self.assertRaisesRegex(HandledError, "Cannot run git"):
+            dispatch_and_watch(p)
+
+        git_err = subprocess.CalledProcessError(128, ["git"], stderr="missing ref")
+        mock_subproc.side_effect = [git_err]
+        with self.assertRaisesRegex(HandledError, "git fetch -- origin fix/unpushed"):
+            dispatch_and_watch(p)
+
+        mock_subproc.side_effect = [self._proc(), git_err]
+        with self.assertRaisesRegex(HandledError, "git rev-parse"):
+            dispatch_and_watch(p)
+
+    def test_preflight_rejects_bad_ref_inputs_and_examples_filter(self) -> None:
+        repo = f"--repo-dir={self.repo_dir}"
+        bad_refs = ("", "origin/main", "-upload-pack", "a:b", "a..b", "a//b", "a/")
+        bad_inputs = ("examples_filter", "1bad=v", "valid_key\n=v")
+        bad_cases = [
+            *(["--workflow=build.yml", f"--ref={r}"] for r in bad_refs),
+            *(["--workflow=build.yml", f"--input={i}"] for i in bad_inputs),
+            ["--workflow=build.yml", "--input=k=1", "--input=k=2"],
+            ["--workflow=build.yml", "--find-existing", "--input=k=1"],
+            ["--workflow=nightly-examples-e2e.yml", repo, "--input=examples_filter=bad_id"],
+            ["--workflow=examples-smoke.yml", repo, "--input=examples_filter=simple_job,"],
+            [
+                "--workflow=nightly-examples-e2e.yml",
+                "--repo-dir=/missing",
+                "--input=examples_filter=simple_job",
+            ],
+        ]
+        for argv in bad_cases:
+            with self.subTest(argv=argv), self.assertRaises(HandledError):
+                dispatch_and_watch(create_parser().parse_args(argv))
+        self.mock_run.assert_not_called()
+
+    def test_dispatch_sha_mismatch(self) -> None:
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(303, "wrong_sha"),  # list
         ]
         p = create_parser().parse_args(
             [
@@ -134,68 +218,30 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["conclusion"], "sha_mismatch")
         self.assertEqual(res["page_url"], "")
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_dispatch_cancelled(self, mock_run, mock_which):
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {
-                            "databaseId": 404,
-                            "headSha": "sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
-                        }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps({"conclusion": "cancelled", "jobs": []}),
-            ),  # view
+    def test_dispatch_cancelled(self) -> None:
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(404, "sha"),  # list
+            self._proc(returncode=1),  # watch
+            self._view({"conclusion": "cancelled", "jobs": []}),  # view
         ]
         p = create_parser().parse_args(["--workflow", "build.yml", "--target-sha", "sha"])
         res = dispatch_and_watch(p)
         self.assertEqual(res["conclusion"], "cancelled")
         self.assertEqual(res["page_url"], "")
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_page_url_extraction(self, mock_run, mock_which):
+    def test_page_url_extraction(self) -> None:
         # 1. Direct page_url in view_data
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
-                        {
-                            "databaseId": 501,
-                            "headSha": "sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
-                        }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "conclusion": "success",
-                        "page_url": "https://google.github.io/xmc/",
-                        "jobs": [],
-                    }
-                ),
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(501, "sha"),  # list
+            self._proc(),  # watch
+            self._view(
+                {
+                    "conclusion": "success",
+                    "page_url": "https://google.github.io/xmc/",
+                    "jobs": [],
+                }
             ),  # view
         ]
         p = create_parser().parse_args(
@@ -205,161 +251,91 @@ class DispatchAndWatchTest(unittest.TestCase):
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/")
 
         # 2. Extracted from jobs step outputs
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(502, "sha"),  # list
+            self._proc(),  # watch
+            self._view(
+                {
+                    "conclusion": "success",
+                    "jobs": [
                         {
-                            "databaseId": 502,
-                            "headSha": "sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
+                            "name": "Deploy to GitHub Pages",
+                            "steps": [
+                                {
+                                    "name": "deploy",
+                                    "outputs": {
+                                        "page_url": "https://google.github.io/xmc/gallery/"
+                                    },
+                                }
+                            ],
                         }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "conclusion": "success",
-                        "jobs": [
-                            {
-                                "name": "Deploy to GitHub Pages",
-                                "steps": [
-                                    {
-                                        "name": "deploy",
-                                        "outputs": {
-                                            "page_url": "https://google.github.io/xmc/gallery/"
-                                        },
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ),
+                    ],
+                }
             ),  # view
         ]
         res = dispatch_and_watch(p)
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/gallery/")
 
         # 3. Extracted from job environment URL
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(503, "sha"),  # list
+            self._proc(),  # watch
+            self._view(
+                {
+                    "conclusion": "success",
+                    "jobs": [
                         {
-                            "databaseId": 503,
-                            "headSha": "sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
+                            "name": "Deploy Gallery to GitHub Pages",
+                            "environment": {"url": "https://google.github.io/xmc/env-gallery/"},
                         }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "conclusion": "success",
-                        "jobs": [
-                            {
-                                "name": "Deploy Gallery to GitHub Pages",
-                                "environment": {"url": "https://google.github.io/xmc/env-gallery/"},
-                            }
-                        ],
-                    }
-                ),
+                    ],
+                }
             ),  # view
         ]
         res = dispatch_and_watch(p)
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/env-gallery/")
 
         # 4. Extracted from serialized JSON string step outputs
-        mock_run.side_effect = [
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    [
+        self.mock_run.side_effect = [
+            self._proc(),  # dispatch
+            self._run_list(504, "sha"),  # list
+            self._proc(),  # watch
+            self._view(
+                {
+                    "conclusion": "success",
+                    "jobs": [
                         {
-                            "databaseId": 504,
-                            "headSha": "sha",
-                            "url": "run_url",
-                            "createdAt": "2099-01-01T00:00:00Z",
+                            "name": "Deploy",
+                            "steps": [
+                                {
+                                    "name": "deploy",
+                                    "outputs": json.dumps(
+                                        {"page_url": "https://google.github.io/xmc/str-out/"}
+                                    ),
+                                }
+                            ],
                         }
-                    ]
-                ),
-            ),  # list
-            subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-            subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=json.dumps(
-                    {
-                        "conclusion": "success",
-                        "jobs": [
-                            {
-                                "name": "Deploy",
-                                "steps": [
-                                    {
-                                        "name": "deploy",
-                                        "outputs": json.dumps(
-                                            {"page_url": "https://google.github.io/xmc/str-out/"}
-                                        ),
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ),
+                    ],
+                }
             ),  # view
         ]
         res = dispatch_and_watch(p)
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/str-out/")
 
-    @patch("tools.release.dispatch_and_watch.shutil.which", return_value="/bin/gh")
-    @patch("tools.release.dispatch_and_watch.run_command")
-    def test_state_file_updates(self, mock_run, mock_which):
+    def test_state_file_updates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             state_path = Path(tmpdir) / "release_state.json"
             # Pre-populate state file with existing field
             state_path.write_text(json.dumps({"existing_key": "val"}), encoding="utf-8")
 
             # Test successful watched run
-            mock_run.side_effect = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {
-                                "databaseId": 601,
-                                "headSha": "sha601",
-                                "url": "run_url",
-                                "createdAt": "2099-01-01T00:00:00Z",
-                            }
-                        ]
-                    ),
-                ),  # list
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # watch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps({"conclusion": "success", "jobs": []}),
-                ),  # view
+            self.mock_run.side_effect = [
+                self._proc(),  # dispatch
+                self._run_list(601, "sha601"),  # list
+                self._proc(),  # watch
+                self._view({"conclusion": "success", "jobs": []}),  # view
             ]
             p = create_parser().parse_args(
                 [
@@ -380,22 +356,9 @@ class DispatchAndWatchTest(unittest.TestCase):
             self.assertEqual(state["conclusion"], "success")
 
             # Test sha_mismatch outcome
-            mock_run.side_effect = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {
-                                "databaseId": 602,
-                                "headSha": "other_sha",
-                                "url": "run_url",
-                                "createdAt": "2099-01-01T00:00:00Z",
-                            }
-                        ]
-                    ),
-                ),  # list
+            self.mock_run.side_effect = [
+                self._proc(),  # dispatch
+                self._run_list(602, "other_sha"),  # list
             ]
             p = create_parser().parse_args(
                 [
@@ -419,11 +382,9 @@ class DispatchAndWatchTest(unittest.TestCase):
             self.assertEqual(state["conclusion"], "sha_mismatch")
 
             # Test find_existing outcome
-            mock_run.side_effect = [
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps([{"databaseId": 603, "headSha": "sha603", "url": "run_url"}]),
+            self.mock_run.side_effect = [
+                self._proc(
+                    json.dumps([{"databaseId": 603, "headSha": "sha603", "url": "run_url"}])
                 ),
             ]
             p = create_parser().parse_args(
@@ -445,28 +406,11 @@ class DispatchAndWatchTest(unittest.TestCase):
             self.assertEqual(state["conclusion"], "success")
 
             # Test failure outcome persistence
-            mock_run.side_effect = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {
-                                "databaseId": 604,
-                                "headSha": "sha604",
-                                "url": "run_url",
-                                "createdAt": "2099-01-01T00:00:00Z",
-                            }
-                        ]
-                    ),
-                ),  # list
-                subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps({"conclusion": "failure", "jobs": []}),
-                ),  # view
+            self.mock_run.side_effect = [
+                self._proc(),  # dispatch
+                self._run_list(604, "sha604"),  # list
+                self._proc(returncode=1),  # watch
+                self._view({"conclusion": "failure", "jobs": []}),  # view
             ]
             p = create_parser().parse_args(
                 [
@@ -486,28 +430,11 @@ class DispatchAndWatchTest(unittest.TestCase):
             self.assertEqual(state["conclusion"], "failure")
 
             # Test cancelled outcome persistence
-            mock_run.side_effect = [
-                subprocess.CompletedProcess(args=[], returncode=0, stdout=""),  # dispatch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps(
-                        [
-                            {
-                                "databaseId": 605,
-                                "headSha": "sha605",
-                                "url": "run_url",
-                                "createdAt": "2099-01-01T00:00:00Z",
-                            }
-                        ]
-                    ),
-                ),  # list
-                subprocess.CompletedProcess(args=[], returncode=1, stdout=""),  # watch
-                subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout=json.dumps({"conclusion": "cancelled", "jobs": []}),
-                ),  # view
+            self.mock_run.side_effect = [
+                self._proc(),  # dispatch
+                self._run_list(605, "sha605"),  # list
+                self._proc(returncode=1),  # watch
+                self._view({"conclusion": "cancelled", "jobs": []}),  # view
             ]
             p = create_parser().parse_args(
                 [
