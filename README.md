@@ -25,7 +25,8 @@ flowchart LR
     CP -->|"Submits JobSets"| K8s["Kubernetes + Kueue<br/>(GPU / TPU / CPU)"]
     K8s -->|"Status"| CP
     CP --> UI["XMC web UI"]
-    K8s -.->|"Metrics (optional)"| UI
+    K8s -.->|"Metrics (optional)"| MP["XMC metrics pipeline"]
+    MP -.-> UI
 ```
 
 XMC organizes work around three concepts:
