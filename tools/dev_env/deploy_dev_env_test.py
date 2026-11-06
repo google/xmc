@@ -1161,11 +1161,11 @@ image_tag: latest
     def test_step_images_default(self, mock_docker_auth, mock_run):
         bazel_res = MagicMock()
 
-        mock_run.side_effect = [bazel_res] * 11
+        mock_run.side_effect = [bazel_res] * 12
 
         deploy_dev_env.step_images(self.valid_config)
 
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 12)
         mock_docker_auth.assert_called_once_with(self.valid_config)
         mock_run.assert_any_call(
             ["bazel", "run", "//cmd/actuator:actuator_image_push"],

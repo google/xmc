@@ -1,0 +1,53 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//:oci.bzl", "oci_image_for_service")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "study_controller_lib",
+    srcs = [
+        "health.go",
+        "main.go",
+    ],
+    importpath = "xmanager_cloud/cmd/study_controller",
+    deps = [
+        "//cmd/study_controller/config",
+        "//internal/logging",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
+    ],
+)
+
+go_binary(
+    name = "study_controller",
+    embed = [":study_controller_lib"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_for_service(
+    name = "study_controller_image",
+    binary = ":study_controller",
+)
+
+go_test(
+    name = "study_controller_test",
+    srcs = [
+        "health_test.go",
+        "main_test.go",
+    ],
+    embed = [":study_controller_lib"],
+)

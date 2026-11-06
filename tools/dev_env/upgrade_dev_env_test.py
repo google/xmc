@@ -294,7 +294,7 @@ class TestStepSubprocesses(unittest.TestCase):
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_images(self.config)
-        self.assertEqual(mock_run.call_count, 11)
+        self.assertEqual(mock_run.call_count, 12)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
