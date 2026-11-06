@@ -14,6 +14,7 @@
 
 import { ComponentHarness } from '@angular/cdk/testing';
 import { MatPaginatorHarness } from '@angular/material/paginator/testing';
+import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
 /** Harness for interacting with individual rows inside <xmc-queue-jobs-table>. */
 export class QueueJobsTableRowHarness extends ComponentHarness {
@@ -22,6 +23,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
   private readonly positionCell = this.locatorForOptional('.position-cell');
   private readonly nameCell = this.locatorForOptional('.name-cell');
   private readonly statusCell = this.locatorForOptional('.status-cell');
+  private readonly runningTimeCell = this.locatorForOptional('.running-time-cell');
   private readonly priorityCell = this.locatorForOptional('.priority-cell');
   private readonly resourcesCell = this.locatorForOptional('.resources-cell');
   private readonly workunitCell = this.locatorForOptional('.workunit-cell');
@@ -33,6 +35,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
     position: string;
     jobName: string;
     status: string;
+    runningTime: string;
     priority: string;
     resources: string;
     workUnitId: string;
@@ -41,6 +44,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
     const pos = await this.positionCell();
     const name = await this.nameCell();
     const status = await this.statusCell();
+    const runningTime = await this.runningTimeCell();
     const priority = await this.priorityCell();
     const res = await this.resourcesCell();
     const workunit = await this.workunitCell();
@@ -50,6 +54,7 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
       position: pos ? await pos.text() : '',
       jobName: name ? await name.text() : '',
       status: status ? await status.text() : '',
+      runningTime: runningTime ? await runningTime.text() : '',
       priority: priority ? await priority.text() : '',
       resources: res ? await res.text() : '',
       workUnitId: workunit ? await workunit.text() : '',
@@ -93,10 +98,18 @@ export class QueueJobsTableHarness extends ComponentHarness {
     return this.paginator();
   }
 
-  /** Gets an array of header cell texts. */
+  /** Gets an array of header cell texts (excluding help icon ligatures). */
   async getHeaderCellTexts(): Promise<string[]> {
     const cells = await this.headerCells();
-    return Promise.all(cells.map((c) => c.text()));
+    const texts = await Promise.all(cells.map((c) => c.text({ exclude: '.help-tip-icon' })));
+    return texts.map((text) => text.trim());
+  }
+
+  /** Gets the tooltip harness for the Running time header explanation icon if present. */
+  async getRunningTimeTooltip(): Promise<MatTooltipHarness | null> {
+    return this.locatorForOptional(
+      MatTooltipHarness.with({ selector: '.running-time-help-icon' }),
+    )();
   }
 
   /** Gets the total number of table rows currently displayed. */
@@ -110,6 +123,7 @@ export class QueueJobsTableHarness extends ComponentHarness {
     position: string;
     jobName: string;
     status: string;
+    runningTime: string;
     priority: string;
     resources: string;
     workUnitId: string;

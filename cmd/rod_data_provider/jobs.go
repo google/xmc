@@ -21,6 +21,7 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/internal/logging"
@@ -113,17 +114,18 @@ func mapWorkUnitToDashboardJob(ctx context.Context, item storage.ActiveWorkUnit,
 		return nil
 	}
 	return &spb.DashboardJob{
-		Xid:                xid,
-		WorkUnitId:         wid,
-		User:               item.Author,
-		Priority:           int64(wu.GetPriority()),
-		Status:             extractWorkUnitState(wu),
-		TimeInQueueSeconds: calculateQueueDuration(wu, now),
-		RequestedResources: extractRequestedResources(wu),
-		PositionInQueue:    extractQueuePosition(wu),
-		CreateTime:         wu.GetCreateTime(),
-		Tags:               wu.GetTags(),
-		ExperimentTitle:    item.ExperimentTitle,
+		Xid:                    xid,
+		WorkUnitId:             wid,
+		User:                   item.Author,
+		Priority:               int64(wu.GetPriority()),
+		Status:                 extractWorkUnitState(wu),
+		TimeInQueueSeconds:     calculateQueueDuration(wu, now),
+		RunningDurationSeconds: calculateRunningDuration(wu, now),
+		RequestedResources:     extractRequestedResources(wu),
+		PositionInQueue:        extractQueuePosition(wu),
+		CreateTime:             wu.GetCreateTime(),
+		Tags:                   wu.GetTags(),
+		ExperimentTitle:        item.ExperimentTitle,
 	}
 }
 
@@ -147,13 +149,20 @@ func extractQueuePosition(wu *essmsgpb.WorkUnit) int64 {
 }
 
 func calculateQueueDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
-	createTime := wu.GetCreateTime()
-	if createTime == nil || !createTime.IsValid() {
+	return elapsedSecondsSince(wu.GetCreateTime(), now)
+}
+
+func calculateRunningDuration(wu *essmsgpb.WorkUnit, now time.Time) int64 {
+	status := wu.GetCurrentWorkUnitExecution().GetStatus()
+	if status.GetState() != essmsgpb.WorkUnitStatus_RUNNING {
 		return 0
 	}
-	diff := int64(now.Sub(createTime.AsTime()).Seconds())
-	if diff > 0 {
-		return diff
+	return elapsedSecondsSince(status.GetStateUpdateTime(), now)
+}
+
+func elapsedSecondsSince(ts *timestamppb.Timestamp, now time.Time) int64 {
+	if ts == nil || !ts.IsValid() {
+		return 0
 	}
-	return 0
+	return max(int64(now.Sub(ts.AsTime()).Seconds()), 0)
 }
