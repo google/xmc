@@ -2,12 +2,12 @@
 
 Four independent paths answer four different questions about a running system:
 
-| Question | Path | Store |
-| :--- | :--- | :--- |
-| How is my model training? | [Metrics pipeline](#1-the-metrics-pipeline) | ClickHouse |
-| Why did my job fail? | [Log monitoring](#3-log-monitoring-pipeline) | Spanner (status messages) |
-| Is XMC itself healthy? | [Health service](#4-platform-health) | in-memory cache |
-| Where is cluster capacity going? | [Resource observability](#5-resource-observability-rod) | in-memory cache |
+| Question                         | Path                                                    | Store                     |
+| :------------------------------- | :------------------------------------------------------ | :------------------------ |
+| How is my model training?        | [Metrics pipeline](#1-the-metrics-pipeline)             | ClickHouse                |
+| Why did my job fail?             | [Log monitoring](#3-log-monitoring-pipeline)            | Spanner (status messages) |
+| Is XMC itself healthy?           | [Health service](#4-platform-health)                    | in-memory cache           |
+| Where is cluster capacity going? | [Resource observability](#5-resource-observability-rod) | in-memory cache           |
 
 They share no infrastructure, deliberately: a ClickHouse outage must not hide a failing job, and a
 metrics firehose must not compete with the control plane for Spanner throughput.
@@ -46,14 +46,14 @@ block an experiment RPC.
 The SDK reads its configuration entirely from the environment. Some of it the Actuator injects; the
 rest you must supply in the work unit spec:
 
-| Variable | Source | Purpose |
-| :--- | :--- | :--- |
-| `XMC_XID` | **you** (work unit `EnvVar`) | Experiment ID. Mandatory. |
-| `XMC_GATEWAY_URL` | **you** (work unit `EnvVar`) | Ingestion Gateway address. Mandatory. |
-| `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID` | Actuator | Mandatory identity. |
-| `XMC_JOB_NAME`, `XMC_JOB_INDEX` | Actuator | Which replicated job, and the rank fallback. |
-| `XMC_REPLICA_ID` | optional override | Explicit rank, if the automatic resolution is wrong. |
-| `XMC_METRICS_DISABLED` | optional | Opt-out switch. |
+| Variable                               | Source                       | Purpose                                              |
+| :------------------------------------- | :--------------------------- | :--------------------------------------------------- |
+| `XMC_XID`                              | **you** (work unit `EnvVar`) | Experiment ID. Mandatory.                            |
+| `XMC_GATEWAY_URL`                      | **you** (work unit `EnvVar`) | Ingestion Gateway address. Mandatory.                |
+| `XMC_WORK_UNIT_ID`, `XMC_EXECUTION_ID` | Actuator                     | Mandatory identity.                                  |
+| `XMC_JOB_NAME`, `XMC_JOB_INDEX`        | Actuator                     | Which replicated job, and the rank fallback.         |
+| `XMC_REPLICA_ID`                       | optional override            | Explicit rank, if the automatic resolution is wrong. |
+| `XMC_METRICS_DISABLED`                 | optional                     | Opt-out switch.                                      |
 
 > [!IMPORTANT]
 > The Actuator injects the experiment ID as **`XMC_EXPERIMENT_ID`**, but the Python SDK reads
@@ -66,7 +66,7 @@ sets `is_silenced`, and keeps quiet. Telemetry never takes down the job it is ob
 
 Rank resolution in `dist_harvest.py` runs three stages: framework ranks (`RANK`,
 `JAX_PROCESS_INDEX`, `OMPI_COMM_WORLD_RANK`); a fail-closed safety net that silences when generic
-distributed indicators (`WORLD_SIZE > 1`, `MASTER_ADDR`, `RAY_ADDRESS`) appear *without* a strict
+distributed indicators (`WORLD_SIZE > 1`, `MASTER_ADDR`, `RAY_ADDRESS`) appear _without_ a strict
 rank; and finally the orchestrator index (`XMC_JOB_INDEX` or `JOB_COMPLETION_INDEX`).
 
 **By default only rank zero emits.** Non-zero ranks are silenced, because a 512-worker job logging
@@ -80,13 +80,13 @@ body as it arrives rather than buffering it, giving O(1) memory regardless of ba
 are produced asynchronously, but the handler waits on every in-flight publish before it answers, so
 a `202` means the broker took them — not merely that they were queued in the client.
 
-| Status | Meaning |
-| :--- | :--- |
-| `202` | Batch decoded, validated, and acknowledged by the message bus. |
-| `400` | Malformed JSON or empty body. |
-| `422` | Valid JSON, but records failed field validation (empty `metric_name`, non-finite value, negative `step`) — the response names them. |
-| `503` | Producer unavailable or a terminal broker error. |
-| `504` | The request deadline elapsed while publishes were still in flight. |
+| Status | Meaning                                                                                                                             |
+| :----- | :---------------------------------------------------------------------------------------------------------------------------------- |
+| `202`  | Batch decoded, validated, and acknowledged by the message bus.                                                                      |
+| `400`  | Malformed JSON or empty body.                                                                                                       |
+| `422`  | Valid JSON, but records failed field validation (empty `metric_name`, non-finite value, negative `step`) — the response names them. |
+| `503`  | Producer unavailable or a terminal broker error.                                                                                    |
+| `504`  | The request deadline elapsed while publishes were still in flight.                                                                  |
 
 The distinction between `400` and `422` matters in practice: `422` returns the specific failed
 records, so a mostly-good batch tells the user exactly which metrics were dropped.
@@ -125,7 +125,7 @@ name, so those lead the key and let ClickHouse prune almost everything before re
 ### 1.4 Query — the Dashboard Service
 
 `GetChartData` resolves the chart, authorizes the caller against the experiment's XID ACLs — the
-*same* check the ESS applies, so dashboards cannot leak data the user could not read directly —
+_same_ check the ESS applies, so dashboards cannot leak data the user could not read directly —
 and compiles the plot spec into SQL against `xmc_metrics`.
 
 Charts are downsampled server-side. The client sends its plot width in pixels; the engine divides
@@ -144,14 +144,14 @@ service is built not to require them.
 
 When a chart is empty, the pipeline's stages fail in distinguishable ways:
 
-| Symptom | Likely stage |
-| :--- | :--- |
-| SDK logs "disabling metrics ingestion for misconfigured pod" | Missing `XMC_*` identity vars — the work unit spec, not the pipeline. |
-| Gateway returns `422` | Client-side validation; the response lists the offending records. |
-| Gateway returns `503` | Redpanda unreachable or the topic missing (auto-creation is disabled by design). |
-| Gateway `202`, nothing in ClickHouse | Kafka engine table consumer — check the consumer group and the mounted `metrics.proto` format schema. |
-| Data present, chart empty | Plot spec filters (metric name, step range) or the authorization check. |
-| Dashboard Service up, all queries fail | It started without a ClickHouse connection. |
+| Symptom                                                      | Likely stage                                                                                          |
+| :----------------------------------------------------------- | :---------------------------------------------------------------------------------------------------- |
+| SDK logs "disabling metrics ingestion for misconfigured pod" | Missing `XMC_*` identity vars — the work unit spec, not the pipeline.                                 |
+| Gateway returns `422`                                        | Client-side validation; the response lists the offending records.                                     |
+| Gateway returns `503`                                        | Redpanda unreachable or the topic missing (auto-creation is disabled by design).                      |
+| Gateway `202`, nothing in ClickHouse                         | Kafka engine table consumer — check the consumer group and the mounted `metrics.proto` format schema. |
+| Data present, chart empty                                    | Plot spec filters (metric name, step range) or the authorization check.                               |
+| Dashboard Service up, all queries fail                       | It started without a ClickHouse connection.                                                           |
 
 ---
 
@@ -211,15 +211,15 @@ The Health Service answers "is XMC working?" for the UI's status page and for op
 
 `GetHealthStatus` fans out in parallel across:
 
-| Target | Probe |
-| :--- | :--- |
-| ESS | HTTP `GET /readyz` |
-| Actuator | HTTP `GET /readyz` |
-| Reconciler | HTTP `GET /readyz` |
-| XID Service | gRPC health check on `xmc.XidService` |
-| Log Monitor | HTTP `GET /readyz` on `log-monitor-service` (GKE) or Cloud Run service state |
-| Redis | `PING` |
-| Spanner ESS / Spanner XID | Connectivity **plus schema version comparison** |
+| Target                    | Probe                                                                        |
+| :------------------------ | :--------------------------------------------------------------------------- |
+| ESS                       | HTTP `GET /readyz`                                                           |
+| Actuator                  | HTTP `GET /readyz`                                                           |
+| Reconciler                | HTTP `GET /readyz`                                                           |
+| XID Service               | gRPC health check on `xmc.XidService`                                        |
+| Log Monitor               | HTTP `GET /readyz` on `log-monitor-service` (GKE) or Cloud Run service state |
+| Redis                     | `PING`                                                                       |
+| Spanner ESS / Spanner XID | Connectivity **plus schema version comparison**                              |
 
 The Spanner checks are the interesting ones. They compare the live schema version against the
 version the binaries expect, so a partially applied migration is reported as unhealthy rather than
@@ -242,14 +242,14 @@ RPCs (see [Work Unit Lifecycle §7](work_unit_lifecycle.md#7-pause-and-resume-wo
 
 When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, the Health Service, Actuator, and ESS expose Prometheus metrics under `/metrics`:
 
-| Metric | Type | Component | Labels | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `xmc_actuator_scheduling_paused` | Gauge | Actuator | — | Current pause state in the local Actuator cache (1 = paused, 0 = unpaused). |
-| `xmc_actuator_paused_tasks_buffered_total` | Counter | Actuator | `action` | Total WorkUnit tasks intercepted and buffered into Spanner `PausedTasks` during pause. |
-| `xmc_resumption_tasks_total` | Counter | ESS | `action`, `result` | Paused tasks processed during resumption replay, differentiating `replayed` from `skipped`. |
-| `xmc_resumption_throttles_total` | Counter | ESS | — | Number of times the resumption worker paused replay for 10s due to task queue backlog. |
-| `xmc_resumption_errors_total` | Counter | ESS | `stage` | Errors encountered by the resumption worker during replay batches. |
-| `xmc_scheduling_pause_events_total` | Counter | Health Service | `action`, `status` | Total count of pause and resume operations triggered via the Health Service API. |
+| Metric                                     | Type    | Component      | Labels             | Description                                                                                 |
+| :----------------------------------------- | :------ | :------------- | :----------------- | :------------------------------------------------------------------------------------------ |
+| `xmc_actuator_scheduling_paused`           | Gauge   | Actuator       | —                  | Current pause state in the local Actuator cache (1 = paused, 0 = unpaused).                 |
+| `xmc_actuator_paused_tasks_buffered_total` | Counter | Actuator       | `action`           | Total WorkUnit tasks intercepted and buffered into Spanner `PausedTasks` during pause.      |
+| `xmc_resumption_tasks_total`               | Counter | ESS            | `action`, `result` | Paused tasks processed during resumption replay, differentiating `replayed` from `skipped`. |
+| `xmc_resumption_throttles_total`           | Counter | ESS            | —                  | Number of times the resumption worker paused replay for 10s due to task queue backlog.      |
+| `xmc_resumption_errors_total`              | Counter | ESS            | `stage`            | Errors encountered by the resumption worker during replay batches.                          |
+| `xmc_scheduling_pause_events_total`        | Counter | Health Service | `action`, `status` | Total count of pause and resume operations triggered via the Health Service API.            |
 
 ---
 
@@ -258,16 +258,27 @@ When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, the Health Service, Actuator, an
 The ROD Data Provider answers capacity questions: what queues exist, what is running, what is
 waiting, and what is available.
 
-| RPC | Answers |
-| :--- | :--- |
-| `ListClusterQueues` | What queues exist and what quota do they hold? |
-| `GetRunningAndPendingJobs` | What is executing and what is waiting? |
-| `GetSubmitQueue` | What is the ordered admission queue? |
-| `BatchGetQueueSecondaryData` | Derived per-queue detail, batched. |
+| RPC                          | Answers                                                                                        |
+| :--------------------------- | :--------------------------------------------------------------------------------------------- |
+| `ListClusterQueues`          | What queues exist and what quota do they hold?                                                 |
+| `GetRunningAndPendingJobs`   | What is executing (and how long since XMC observed it entering `RUNNING`) and what is waiting? |
+| `GetSubmitQueue`             | What is the ordered admission queue?                                                           |
+| `BatchGetQueueSecondaryData` | Derived per-queue detail, batched.                                                             |
 
 Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
-cache; they never hit the Kubernetes API.
+cache; they never hit the Kubernetes API. Active job rows in `GetRunningAndPendingJobs` come from
+Spanner. For a `RUNNING` job, `running_duration_seconds` is `now - WorkUnitStatus.state_update_time`:
+the time since XMC observed the job entering `RUNNING`. It is not a container uptime:
+
+- `RUNNING` means at least one pod is ready, and `state_update_time` is when the Reconciler observed
+  that transition. XMC jobs have no readiness probes, so the value usually trails the actual
+  container start by a few seconds; it trails by longer if the Reconciler was unavailable when the
+  job started. It never overstates the runtime.
+- It resets whenever the work unit leaves `RUNNING` (for example a pod is replaced or the work unit
+  restarts) and is not cumulative across restarts.
+- It is `0` for jobs that are not `RUNNING`, and when `state_update_time` is missing, invalid, or in
+  the future.
 
 The reason is the same as everywhere else in XMC. A dashboard that polls every few seconds must not
 translate into API server load proportional to the number of viewers. Watch once, serve many.

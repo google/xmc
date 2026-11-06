@@ -20,6 +20,7 @@ import { DashboardJob, Resource } from 'app/protos/rod';
 import {
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
+  QueueJobRunningTimePipe,
   QueueJobStatusPipe,
 } from './queue_jobs_pipes';
 
@@ -177,6 +178,93 @@ describe('QueueJobPositionPipe', () => {
       description: 'undefined position field',
     },
     { input: null, expected: '-', description: 'null job object' },
+  ];
+
+  for (const tc of testCases) {
+    it(`should return "${tc.expected}" for ${tc.description}`, () => {
+      expect(pipe.transform(tc.input)).toBe(tc.expected);
+    });
+  }
+});
+
+describe('QueueJobRunningTimePipe', () => {
+  let pipe: QueueJobRunningTimePipe;
+
+  beforeEach(() => {
+    pipe = new QueueJobRunningTimePipe();
+  });
+
+  const testCases: Array<{
+    input?: DashboardJob | null;
+    expected: string;
+    description: string;
+  }> = [
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 0 },
+      expected: '0s',
+      description: 'zero seconds',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 45 },
+      expected: '45s',
+      description: 'seconds under one minute',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 300 },
+      expected: '5m',
+      description: 'exact minutes',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 90 },
+      expected: '1m 30s',
+      description: 'minutes and seconds',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 7200 },
+      expected: '2h',
+      description: 'exact hours',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 51720 },
+      expected: '14h 22m',
+      description: 'hours and minutes',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 259200 },
+      expected: '3d',
+      description: 'exact days',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: 414000 },
+      expected: '4d 19h',
+      description: 'days and hours',
+    },
+    {
+      input: { status: 'RUNNING', runningDurationSeconds: '3660' },
+      expected: '1h 1m',
+      description: 'Proto3 JSON int64 string value',
+    },
+    {
+      input: { status: 'running', runningDurationSeconds: 125 },
+      expected: '2m 5s',
+      description: 'lowercase running status',
+    },
+    {
+      input: { status: 'RUNNING' },
+      expected: '–',
+      description: 'missing runningDurationSeconds on RUNNING job',
+    },
+    {
+      input: { status: 'SCHEDULING', runningDurationSeconds: 600, timeInQueueSeconds: 600 },
+      expected: '–',
+      description: 'SCHEDULING job',
+    },
+    {
+      input: { status: 'PENDING', timeInQueueSeconds: 120 },
+      expected: '–',
+      description: 'PENDING job',
+    },
+    { input: null, expected: '–', description: 'null job' },
   ];
 
   for (const tc of testCases) {
