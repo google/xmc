@@ -10,7 +10,7 @@ Every phase of preparing Cacio e Pepe operates within a narrow thermal window. E
 
 | Stage | Target Temperature (°C) | Target Temperature (°F) | Thermal Rationale |
 | :--- | :--- | :--- | :--- |
-| **Dry-Toasting Peppercorns** | `130°C – 160°C` | `265°F – 320°F` | Releases volatile aromatic oils and piperine without scorching (`> 180°C / 355°F` turns bitter). |
+| **Dry-Toasting Peppercorns** | `130°C – 160°C` | `265°F – 320°F` | Releases volatile aromatic oils (such as terpenes) and heat-activates piperine without scorching (`> 180°C / 355°F` turns bitter). |
 | **Boiling Pasta Water** | `100°C` | `212°F` | Hydrates dried durum wheat semolina pasta and extracts surface amylose/amylopectin starches. |
 | **Starch Gelatinization** | `60°C – 85°C` | `140°F – 185°F` | Swells starch granules into a viscous hydrocolloid network that coats casein proteins and prevents aggregation. |
 | **Water for Cheese Paste (*Crema*)** | `45°C – 55°C` | `113°F – 131°F` | Softens finely grated Pecorino Romano into a smooth paste without pre-coagulating proteins before hitting the pan. |
@@ -29,7 +29,7 @@ Every phase of preparing Cacio e Pepe operates within a narrow thermal window. E
 * **Cheese**: `200 g` (`7 oz`) aged **Pecorino Romano DOP** (aged `8–12 months`), finely grated at room temperature (`20°C – 22°C / 68°F – 72°F`) using a microplane or fine rasp so particles melt rapidly without requiring high heat.
 * **Black Pepper**: `8 g` (`1 tbsp`) whole black peppercorns (such as Tellicherry or Sarawak), crushed coarsely in a mortar and pestle or spice mill just before cooking.
 * **Cooking Water**: `2.5 L – 3.0 L` (`2.5 – 3 quarts`) water—intentionally less water than standard pasta cooking (`~60%` of normal volume) to concentrate dissolved starch to `1.5% – 2.5%`.
-* **Salt**: `10 g – 12 g` (`~2 tsp` kosher salt, or `~0.4%` by water weight)—keep salinity low because Pecorino Romano DOP already contains `~4.5% – 5.5%` salt by weight.
+* **Salt**: `10 g – 12 g` (`~2 tsp` Morton kosher salt or `~4 tsp` Diamond Crystal kosher salt, or `~0.4%` by water weight)—keep salinity low because Pecorino Romano DOP already contains `~4.5% – 5.5%` salt by weight.
 * **Optional Phase-Stabilizer (Scientific Method)**: `4 g` (`1.5 tsp`) cornstarch or potato starch (`2%` of cheese weight) dissolved in `40 mL` cool water.
 
 ---
@@ -45,7 +45,7 @@ Every phase of preparing Cacio e Pepe operates within a narrow thermal window. E
 1. Bring `2.5 L – 3.0 L` of lightly salted water to a rolling boil (**`100°C / 212°F`**) in a narrow pot.
 2. Add the pasta and stir frequently during the first `2 minutes` to prevent sticking and encourage surface starch release.
 3. Cook the pasta for **`2 – 3 minutes` less** than the package *al dente* time (the internal pasta core should be around `85°C – 90°C` while still firm in the center).
-4. Halfway through boiling, ladle `60 mL` (`1/4 cup`) of starchy water into the skillet with the toasted black pepper and simmer gently for `1 minute` to extract water-soluble piperine, then turn the burner under the skillet **completely off**.
+4. Halfway through boiling, ladle `60 mL` (`1/4 cup`) of starchy water into the skillet with the toasted black pepper and simmer gently for `1 minute` to hydrate the pepper and suspend the aromatic oils, then turn the burner under the skillet **completely off**.
 
 ### Step 3: Temper the Cheese Paste (*Crema di Pecorino*) (`45°C – 55°C / 113°F – 131°F`)
 1. Ladle `180 mL` (`3/4 cup`) of starchy pasta cooking water into a separate heatproof measuring cup or bowl and let it cool for `2 – 3 minutes` until an instant-read thermometer reads **`45°C – 55°C (113°F – 131°F)`**.
