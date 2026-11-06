@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { ResourceType } from 'app/common/components/resource_chip/resource_chip';
 import { UserResourceAllocation } from 'app/protos/rod';
 import { matchesResourceFilter } from 'app/resource_dashboard/resource_filter';
+import { formatRate } from 'app/resource_dashboard/resource_velocity';
+import { classifyResourceType } from 'app/side_panel/contents/queue_jobs_table/queue_jobs_pipes';
 
 /** Colors assigned to users in the stacked bar, in descending order of allocation. */
 const USER_COLORS: readonly string[] = [
@@ -50,19 +53,18 @@ interface UserTotals {
   readonly pending: number;
 }
 
+/** Display units of each resource type, matching the backend's normalization. */
+const RESOURCE_UNIT_LABELS: Readonly<Record<ResourceType, string>> = {
+  [ResourceType.CPU]: 'cores',
+  [ResourceType.MEMORY]: 'GiB',
+  [ResourceType.GPU]: 'GPUs',
+  [ResourceType.TPU]: 'chips',
+  [ResourceType.UNKNOWN]: 'units',
+};
+
 /** Returns the display unit for a resource type, e.g. "GPUs" for "nvidia.com/gpu: nvidia-l4". */
 export function resolveResourceUnitLabel(resourceType: string): string {
-  const lower = resourceType.trim().toLowerCase();
-  if (lower === 'memory') return 'GiB';
-  if (lower === 'cpu') return 'cores';
-  if (lower.includes('tpu')) return 'chips';
-  if (lower.includes('gpu')) return 'GPUs';
-  return 'units';
-}
-
-/** Formats units with at most two decimals and no trailing zeros. */
-export function formatAllocationUnits(value: number): string {
-  return String(Math.round(value * 100) / 100);
+  return RESOURCE_UNIT_LABELS[classifyResourceType(resourceType)];
 }
 
 function aggregateByUser(
@@ -87,9 +89,9 @@ function aggregateByUser(
 }
 
 function formatUnitsLabel(running: number, pending: number, unit: string): string {
-  const runningText = `${formatAllocationUnits(running)} running`;
+  const runningText = `${formatRate(running)} running`;
   if (pending <= 0) return `${runningText} ${unit}`;
-  return `${runningText} + ${formatAllocationUnits(pending)} pending ${unit}`;
+  return `${runningText} + ${formatRate(pending)} pending ${unit}`;
 }
 
 /**
