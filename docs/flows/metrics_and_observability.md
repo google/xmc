@@ -272,9 +272,11 @@ Spanner. For a `RUNNING` job, `running_duration_seconds` is `now - WorkUnitStatu
 the time since XMC observed the job entering `RUNNING`. It is not a container uptime:
 
 - `RUNNING` means at least one pod is ready, and `state_update_time` is when the Reconciler observed
-  that transition, so the value trails the actual container start by the reconciliation delay.
-- It resets whenever the work unit leaves `RUNNING` (restart, lost pod readiness, `STARTING` and
-  back) and is not cumulative across restarts.
+  that transition. XMC jobs have no readiness probes, so the value usually trails the actual
+  container start by a few seconds; it trails by longer if the Reconciler was unavailable when the
+  job started. It never overstates the runtime.
+- It resets whenever the work unit leaves `RUNNING` (for example a pod is replaced or the work unit
+  restarts) and is not cumulative across restarts.
 - It is `0` for jobs that are not `RUNNING`, and when `state_update_time` is missing, invalid, or in
   the future.
 

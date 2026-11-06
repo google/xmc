@@ -137,9 +137,10 @@ message DashboardJob {
   // Seconds since XMC observed the job entering the RUNNING state, computed as
   // now - WorkUnitStatus.state_update_time. RUNNING means at least one pod is
   // ready, and state_update_time is when the reconciler observed that
-  // transition, so the value may trail the actual container start by the
-  // reconciliation delay. It resets whenever the job leaves RUNNING (e.g.
-  // restart, lost pod readiness) and is not cumulative across restarts.
+  // transition, so the value usually trails the actual container start by a
+  // few seconds, and by longer if the reconciler was unavailable when the job
+  // started. It resets whenever the job leaves RUNNING (e.g. a pod is replaced
+  // or the job restarts) and is not cumulative across restarts.
   // Zero when the job is not currently RUNNING or its state_update_time is
   // missing, invalid, or in the future.
   int64 running_duration_seconds = 12;

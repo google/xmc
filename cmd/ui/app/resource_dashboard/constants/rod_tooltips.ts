@@ -39,8 +39,9 @@ export const ROD_TERM_TOOLTIPS = {
 
   runningTime:
     'Time since XMC observed the job entering the RUNNING state (at least one pod ready). ' +
-    'Resets whenever the job leaves RUNNING, for example on a restart or lost pod readiness. ' +
-    'May trail the actual container start by a few seconds. Not cumulative across restarts.',
+    'Usually trails the actual container start by a few seconds; longer if XMC was ' +
+    'unavailable when the job started. Resets whenever the job leaves RUNNING, for example ' +
+    'when a pod is replaced or the job restarts.',
 } as const;
 
 export type RodTooltipKey = keyof typeof ROD_TERM_TOOLTIPS;
