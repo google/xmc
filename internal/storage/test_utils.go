@@ -169,6 +169,9 @@ func (m *MockComponentRepository) GetActiveComponent(_ context.Context, canonica
 // InsertExperimentComponentSnapshot records a copy of rec as pinned to xid, returning
 // grpcerr.ErrAlreadyExists when rec's component is already pinned to xid, as the backends do.
 func (m *MockComponentRepository) InsertExperimentComponentSnapshot(_ context.Context, xid int64, rec *store.ComponentRecord) error {
+	if rec == nil {
+		return grpcerr.ErrInvalidArgument
+	}
 	if m.InsertSnapshotErr != nil {
 		return m.InsertSnapshotErr
 	}
