@@ -609,6 +609,11 @@ func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNam
 	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
 }
 
+// AggregateActiveResourcesByAuthor mocks aggregating active work unit resources by author.
+func (s *MockStorage) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error) {
+	return nil, nil
+}
+
 // FetchBatchQueueVelocity mocks fetching batch queue velocity metrics.
 func (s *MockStorage) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
 	return s.BatchQueueVelocityResp, s.FetchBatchQueueVelocityErr

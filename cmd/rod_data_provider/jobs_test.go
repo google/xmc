@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -103,9 +104,11 @@ func newTestWorkUnits(now time.Time) []storage.ActiveWorkUnit {
 
 type mockWorkUnitFetcher struct {
 	workUnits      []storage.ActiveWorkUnit
+	allocations    []storage.AuthorResourceAllocation
 	nextPageToken  string
 	totalQueueSize int64
 	err            error
+	aggregateErr   error
 	lastQueueNames []string
 	lastPageSize   int32
 	lastPageToken  string
@@ -130,21 +133,29 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}, nil
 }
 
+func (m *mockWorkUnitFetcher) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	if m.aggregateErr != nil {
+		return nil, m.aggregateErr
+	}
+	return m.allocations, nil
+}
+
 func TestGetRunningAndPendingJobs(t *testing.T) {
 	cfg := &Config{Port: "8080", GRPCPort: "50051"}
 	now := time.Now()
 
 	tests := []struct {
-		name               string
-		ctx                context.Context
-		req                *spb.GetRunningAndPendingJobsRequest
-		setupCache         func() *cache.KueueCache
-		fetcher            WorkUnitFetcher
-		wantCode           codes.Code
-		wantCount          int
-		wantPageSize       int32
-		wantPageToken      string
-		wantTotalQueueSize int64
+		name                string
+		ctx                 context.Context
+		req                 *spb.GetRunningAndPendingJobsRequest
+		setupCache          func() *cache.KueueCache
+		fetcher             WorkUnitFetcher
+		wantCode            codes.Code
+		wantCount           int
+		wantPageSize        int32
+		wantPageToken       string
+		wantTotalQueueSize  int64
+		wantUserAllocations []*spb.UserResourceAllocation
 	}{
 		{
 			name:       "Success With Fetcher",
@@ -160,6 +171,29 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantPageSize:       10,
 			wantPageToken:      "",
 			wantTotalQueueSize: 1,
+		},
+		{
+			name:       "Success With User Allocations",
+			ctx:        context.Background(),
+			req:        baseReq,
+			setupCache: newTestKueueCache,
+			fetcher: &mockWorkUnitFetcher{
+				workUnits:      newTestWorkUnits(now),
+				totalQueueSize: 5,
+				allocations: []storage.AuthorResourceAllocation{
+					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4},
+					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", PendingUnits: 2},
+					{Author: "bob@example.com", ResourceType: "cpu", RunningUnits: 8},
+				},
+			},
+			wantCode:           codes.OK,
+			wantCount:          1,
+			wantPageSize:       10,
+			wantTotalQueueSize: 5,
+			wantUserAllocations: []*spb.UserResourceAllocation{
+				{User: "bob@example.com", ResourceType: "cpu", RunningUnits: 8},
+				{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4, PendingUnits: 2},
+			},
 		},
 		{
 			name: "Success With PageSize and PageToken",
@@ -265,6 +299,15 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCode:  codes.Internal,
 			wantCount: 0,
 		},
+		{
+			name:       "Aggregate Resources Error",
+			ctx:        context.Background(),
+			req:        baseReq,
+			setupCache: newTestKueueCache,
+			fetcher:    &mockWorkUnitFetcher{aggregateErr: fmt.Errorf("aggregation failure")},
+			wantCode:   codes.Internal,
+			wantCount:  0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -289,6 +332,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			}
 			if len(resp.Jobs) != tt.wantCount {
 				t.Errorf("Jobs count = %d, want %d", len(resp.Jobs), tt.wantCount)
+			}
+			if diff := cmp.Diff(tt.wantUserAllocations, resp.GetUserAllocations(), protocmp.Transform(), cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("UserAllocations mismatch (-want +got):\n%s", diff)
 			}
 			fetcherImpl, ok := tt.fetcher.(*mockWorkUnitFetcher)
 			if !ok {
