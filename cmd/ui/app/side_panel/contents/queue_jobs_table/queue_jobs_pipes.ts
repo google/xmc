@@ -157,12 +157,19 @@ function isGpuResource(lower: string): boolean {
   return GPU_RESOURCE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-function getResourceTypeEnum(typeRaw?: string): ResourceType {
+/** Classifies a resource type string, returning ResourceType.UNKNOWN when it is not recognized. */
+export function classifyResourceType(typeRaw?: string): ResourceType {
   const lower = (typeRaw || '').trim().toLowerCase();
   if (lower === RESOURCE_TYPE_CPU) return ResourceType.CPU;
   if (lower === RESOURCE_TYPE_MEMORY) return ResourceType.MEMORY;
   if (lower.includes(RESOURCE_TYPE_TPU)) return ResourceType.TPU;
   if (isGpuResource(lower)) return ResourceType.GPU;
+  return ResourceType.UNKNOWN;
+}
+
+function getResourceTypeEnum(typeRaw?: string): ResourceType {
+  const resourceType = classifyResourceType(typeRaw);
+  if (resourceType !== ResourceType.UNKNOWN) return resourceType;
 
   if (typeRaw) {
     console.warn(`Unrecognized resource type: "${typeRaw}"`);
