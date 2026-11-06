@@ -15,7 +15,7 @@ Explore the folders and guides below to set up, build, or deploy XMC:
   Sequence-level walkthroughs of the principal paths: [experiment lifecycle](docs/flows/experiment_lifecycle.md), [work unit lifecycle](docs/flows/work_unit_lifecycle.md) (the asynchronous actuation path), [reconciliation](docs/flows/reconciliation.md), and [metrics & observability](docs/flows/metrics_and_observability.md).
 
 * ### [Installation & Deployment Guide](INSTALL.md)
-  Step-by-step setup guides covering automated agent skills, Cluster Toolkit v2 blueprints, and direct Terraform/Helm commands, alongside the global configuration reference table.
+  Step-by-step setup guides covering automated agent skills, Cluster Toolkit v2 blueprints, and direct Terraform/Helm commands, alongside the global configuration reference table and the [Component Migration Runbook](docs/migrations/components.md).
 
 * ### [Authentication & Experiment Access](docs/authentication.md)
   Signing clients in as yourself with `xmanager login`, authenticating CI jobs with a service account, and sharing experiments through ACLs.
