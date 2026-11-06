@@ -184,9 +184,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 5,
 				allocations: []storage.AuthorResourceAllocation{
-					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStateRunning, Units: 4},
-					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", State: storage.ActiveResourceStatePending, Units: 2},
-					{Author: "bob@example.com", ResourceType: "cpu", State: storage.ActiveResourceStateRunning, Units: 8},
+					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4},
+					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", PendingUnits: 2},
+					{Author: "bob@example.com", ResourceType: "cpu", RunningUnits: 8},
 				},
 			},
 			wantCode:           codes.OK,

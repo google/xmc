@@ -210,22 +210,28 @@ func aggregateClusterQueueNominalAndBorrowingLimits(clusterQueue *kueuev1beta1.C
 		return result
 	}
 
+	forEachResolvedFlavorResource(clusterQueue, rfMap, func(_, resolvedType string, resourceQuota kueuev1beta1.ResourceQuota) {
+		if _, exists := result.aggregators[resolvedType]; !exists {
+			result.aggregators[resolvedType] = &ResourceQuotaAggregator{}
+			result.orderedTypes = append(result.orderedTypes, resolvedType)
+		}
+		addFlavorResourceQuotaToAggregator(resourceQuota, result.aggregators[resolvedType])
+	})
+	return result
+}
+
+// forEachResolvedFlavorResource calls fn for every resource quota of every flavor in the
+// ClusterQueue, passing the raw resource name and the type resolved through the flavor's labels.
+func forEachResolvedFlavorResource(clusterQueue *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor, fn func(rawType, resolvedType string, quota kueuev1beta1.ResourceQuota)) {
 	for _, resourceGroup := range clusterQueue.Spec.ResourceGroups {
 		for _, flavorQuota := range resourceGroup.Flavors {
 			flavorName := string(flavorQuota.Name)
 			for _, resourceQuota := range flavorQuota.Resources {
-				rawResourceType := string(resourceQuota.Name)
-				resolvedType := resolveResourceType(rawResourceType, flavorName, rfMap)
-
-				if _, exists := result.aggregators[resolvedType]; !exists {
-					result.aggregators[resolvedType] = &ResourceQuotaAggregator{}
-					result.orderedTypes = append(result.orderedTypes, resolvedType)
-				}
-				addFlavorResourceQuotaToAggregator(resourceQuota, result.aggregators[resolvedType])
+				rawType := string(resourceQuota.Name)
+				fn(rawType, resolveResourceType(rawType, flavorName, rfMap), resourceQuota)
 			}
 		}
 	}
-	return result
 }
 
 // addFlavorResourceQuotaToAggregator parses a single flavor's ResourceQuota and adds its nominal quota and borrowing limit to the aggregator.

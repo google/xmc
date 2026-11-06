@@ -16,6 +16,7 @@ package main
 
 import (
 	"cmp"
+	"maps"
 	"slices"
 
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
@@ -30,11 +31,6 @@ type userResourceKey struct {
 	resourceType string
 }
 
-type userResourceTotals struct {
-	running float64
-	pending float64
-}
-
 func buildUniqueQueueAcceleratorMap(kueueCache *cache.KueueCache, clusterQueueName string) map[string]string {
 	if kueueCache == nil || kueueCache.ClusterQueues == nil {
 		return nil
@@ -43,8 +39,7 @@ func buildUniqueQueueAcceleratorMap(kueueCache *cache.KueueCache, clusterQueueNa
 	if !ok {
 		return nil
 	}
-	rfMap := buildResourceFlavorMap(kueueCache)
-	candidates := collectQueueAcceleratorCandidates(cq, rfMap)
+	candidates := collectQueueAcceleratorCandidates(cq, buildResourceFlavorMap(kueueCache))
 	unique := make(map[string]string, len(candidates))
 	for rawType, resolvedSet := range candidates {
 		if len(resolvedSet) == 1 {
@@ -58,28 +53,22 @@ func buildUniqueQueueAcceleratorMap(kueueCache *cache.KueueCache, clusterQueueNa
 
 func collectQueueAcceleratorCandidates(cq *kueuev1beta1.ClusterQueue, rfMap map[string]*kueuev1beta1.ResourceFlavor) map[string]map[string]struct{} {
 	candidates := make(map[string]map[string]struct{})
-	for _, rg := range cq.Spec.ResourceGroups {
-		for _, fq := range rg.Flavors {
-			for _, rq := range fq.Resources {
-				rawType := string(rq.Name)
-				if !resourceaccumulator.IsAcceleratorResource(rawType) {
-					continue
-				}
-				resolved := resolveResourceType(rawType, string(fq.Name), rfMap)
-				if candidates[rawType] == nil {
-					candidates[rawType] = make(map[string]struct{})
-				}
-				candidates[rawType][resolved] = struct{}{}
-			}
+	forEachResolvedFlavorResource(cq, rfMap, func(rawType, resolvedType string, _ kueuev1beta1.ResourceQuota) {
+		if !resourceaccumulator.IsAcceleratorResource(rawType) {
+			return
 		}
-	}
+		if candidates[rawType] == nil {
+			candidates[rawType] = make(map[string]struct{})
+		}
+		candidates[rawType][resolvedType] = struct{}{}
+	})
 	return candidates
 }
 
 // mapAuthorResourceAllocations groups storage rows (already canonical and positive) by user and
 // resource type, resolving generic accelerators to the queue's only flavor model when unique.
 func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
-	grouped := make(map[userResourceKey]*userResourceTotals)
+	grouped := make(map[userResourceKey]*spb.UserResourceAllocation)
 	for _, row := range rows {
 		resType := row.ResourceType
 		if resolved, ok := uniqueAccelerators[resType]; ok {
@@ -88,33 +77,13 @@ func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqu
 		key := userResourceKey{user: row.Author, resourceType: resType}
 		entry := grouped[key]
 		if entry == nil {
-			entry = &userResourceTotals{}
+			entry = &spb.UserResourceAllocation{User: row.Author, ResourceType: resType}
 			grouped[key] = entry
 		}
-		accumulateStateUnits(entry, row.State, row.Units)
+		entry.RunningUnits += row.RunningUnits
+		entry.PendingUnits += row.PendingUnits
 	}
-	return sortedUserResourceAllocations(grouped)
-}
-
-func accumulateStateUnits(entry *userResourceTotals, state storage.ActiveResourceState, units float64) {
-	switch state {
-	case storage.ActiveResourceStateRunning:
-		entry.running += units
-	case storage.ActiveResourceStatePending:
-		entry.pending += units
-	}
-}
-
-func sortedUserResourceAllocations(grouped map[userResourceKey]*userResourceTotals) []*spb.UserResourceAllocation {
-	allocations := make([]*spb.UserResourceAllocation, 0, len(grouped))
-	for key, totals := range grouped {
-		allocations = append(allocations, &spb.UserResourceAllocation{
-			User:         key.user,
-			ResourceType: key.resourceType,
-			RunningUnits: totals.running,
-			PendingUnits: totals.pending,
-		})
-	}
+	allocations := slices.Collect(maps.Values(grouped))
 	slices.SortFunc(allocations, compareUserResourceAllocations)
 	return allocations
 }

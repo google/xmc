@@ -192,8 +192,9 @@ type WorkUnitStore interface {
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 
-	// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-	// type and state across all active (running + pending) work units of the requested queues.
+	// AggregateActiveResourcesByAuthor sums requested units by experiment creator and canonical
+	// resource type, split into running and pending, across all active work units of the requested
+	// queues.
 	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error)
 }
 
@@ -226,22 +227,13 @@ type ActiveWorkUnitsResult struct {
 	TotalQueueSize int64
 }
 
-// ActiveResourceState classifies whether an active work unit's requested resources are running or pending.
-type ActiveResourceState string
-
-const (
-	// ActiveResourceStateRunning represents resources held by admitted work units (RUNNING or STARTING).
-	ActiveResourceStateRunning ActiveResourceState = "RUNNING"
-	// ActiveResourceStatePending represents resources requested by unadmitted work units (SCHEDULING or INITIALIZING).
-	ActiveResourceStatePending ActiveResourceState = "PENDING"
-)
-
-// AuthorResourceAllocation holds aggregated requested units for one (author, resource type, state) tuple.
+// AuthorResourceAllocation holds the units one author requests for one resource type, split into
+// running (RUNNING or STARTING) and pending (SCHEDULING or INITIALIZING) work units.
 type AuthorResourceAllocation struct {
 	Author       string
 	ResourceType string
-	State        ActiveResourceState
-	Units        float64
+	RunningUnits float64
+	PendingUnits float64
 }
 
 // QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.

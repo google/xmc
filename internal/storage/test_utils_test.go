@@ -77,7 +77,7 @@ func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 
 func TestMockStorage_AggregateActiveResourcesByAuthor(t *testing.T) {
 	want := []AuthorResourceAllocation{
-		{Author: "alice@example.com", ResourceType: "cpu", State: ActiveResourceStateRunning, Units: 4},
+		{Author: "alice@example.com", ResourceType: "cpu", RunningUnits: 4},
 	}
 	m := &MockStorage{AuthorResourceAllocations: want}
 	got, err := m.AggregateActiveResourcesByAuthor(context.Background(), []string{"gpu-queue"})
