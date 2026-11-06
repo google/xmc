@@ -108,6 +108,7 @@ type mockWorkUnitFetcher struct {
 	totalQueueSize int64
 	err            error
 	aggregateErr   error
+	snapshotCalls  int
 	lastQueueNames []string
 	lastPageSize   int32
 	lastPageToken  string
@@ -140,6 +141,11 @@ func (m *mockWorkUnitFetcher) AggregateActiveResourcesByAuthor(ctx context.Conte
 		return []storage.AuthorResourceAllocation{}, nil
 	}
 	return m.allocations, nil
+}
+
+func (m *mockWorkUnitFetcher) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	m.snapshotCalls++
+	return fn(ctx, m)
 }
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
@@ -518,7 +524,7 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	}
 }
 
-func TestGetRunningAndPendingJobs_PopulatesUserAllocations(t *testing.T) {
+func TestGetRunningAndPendingJobs_PopulatesUserAllocationsInSingleSnapshot(t *testing.T) {
 	now := time.Now()
 	fetcher := &mockWorkUnitFetcher{
 		workUnits:      newTestWorkUnits(now),
@@ -535,6 +541,10 @@ func TestGetRunningAndPendingJobs_PopulatesUserAllocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRunningAndPendingJobs() unexpected error: %v", err)
 	}
+	if fetcher.snapshotCalls != 1 {
+		t.Errorf("snapshotCalls = %d, want 1", fetcher.snapshotCalls)
+	}
+
 	wantAllocations := []*spb.UserResourceAllocation{
 		{User: "bob@example.com", ResourceType: "cpu", RunningUnits: 8, PendingUnits: 0},
 		{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4, PendingUnits: 2},

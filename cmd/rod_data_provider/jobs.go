@@ -71,11 +71,17 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 }
 
 func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
-	result, err := store.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, pageToken)
-	if err != nil {
-		return nil, nil, err
-	}
-	allocations, err := store.AggregateActiveResourcesByAuthor(ctx, targetQueues)
+	var result *storage.ActiveWorkUnitsResult
+	var allocations []storage.AuthorResourceAllocation
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		result, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken)
+		if innerErr != nil {
+			return innerErr
+		}
+		allocations, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, targetQueues)
+		return innerErr
+	})
 	return result, allocations, err
 }
 

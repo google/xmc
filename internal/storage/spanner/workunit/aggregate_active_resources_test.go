@@ -67,26 +67,36 @@ func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spann
 	}
 }
 
+func aggregateInSnapshot(ctx context.Context, store *spanner.Storage, queues []string) ([]storage.AuthorResourceAllocation, error) {
+	var got []storage.AuthorResourceAllocation
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		got, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, queues)
+		return innerErr
+	})
+	return got, err
+}
+
 func TestAggregateActiveResourcesByAuthor_GuardsAndEmpty(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(canceledCtx, []string{"q"}); !errors.Is(err, context.Canceled) {
+	if _, err := aggregateInSnapshot(canceledCtx, &spanner.Storage{}, []string{"q"}); !errors.Is(err, context.Canceled) {
 		t.Errorf("aggregate(canceled) = %v, want context.Canceled", err)
 	}
-	if _, err := (&spanner.Storage{}).AggregateActiveResourcesByAuthor(t.Context(), []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
+	if _, err := aggregateInSnapshot(t.Context(), &spanner.Storage{}, []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
 		t.Errorf("aggregate(nil client) = %v, want ErrFailedPrecondition", err)
 	}
 
 	ctx := t.Context()
 	store := newEmulatorStorage(ctx, t)
-	got, err := store.AggregateActiveResourcesByAuthor(ctx, nil)
+	got, err := aggregateInSnapshot(ctx, store, nil)
 	if err != nil || len(got) != 0 {
 		t.Errorf("aggregate(nil queues) = (%v, %v), want (empty, nil)", got, err)
 	}
 }
 
-func TestAggregateActiveResourcesByAuthor_AllPagesAndNormalization(t *testing.T) {
+func TestAggregateActiveResourcesByAuthor_MultiPageSnapshotAndNormalization(t *testing.T) {
 	ctx := t.Context()
 	store := newEmulatorStorage(ctx, t)
 	seedExperimentWithCreator(ctx, t, store, 201, "alice@example.com")
@@ -94,13 +104,18 @@ func TestAggregateActiveResourcesByAuthor_AllPagesAndNormalization(t *testing.T)
 	seedActiveResourceWorkUnits(ctx, t, store, storagetest.ActiveResourceSpecs(201, 202))
 
 	queues := []string{storagetest.ActiveResourceQueue}
-	pageOne, err := store.FetchActiveWorkUnitsByQueues(ctx, queues, 2, "")
+	var pageOne *storage.ActiveWorkUnitsResult
+	var gotAllocations []storage.AuthorResourceAllocation
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		if pageOne, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, queues, 2, ""); innerErr != nil {
+			return innerErr
+		}
+		gotAllocations, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, queues)
+		return innerErr
+	})
 	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitsByQueues failed: %v", err)
-	}
-	gotAllocations, err := store.AggregateActiveResourcesByAuthor(ctx, queues)
-	if err != nil {
-		t.Fatalf("AggregateActiveResourcesByAuthor failed: %v", err)
+		t.Fatalf("WithReadOnlyWorkUnitSnapshot failed: %v", err)
 	}
 	if len(pageOne.WorkUnits) != 2 || pageOne.TotalQueueSize != storagetest.ActiveResourceSpecsActiveCount || pageOne.NextPageToken == "" {
 		t.Fatalf("pageOne = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(pageOne.WorkUnits), pageOne.TotalQueueSize, pageOne.NextPageToken, storagetest.ActiveResourceSpecsActiveCount)

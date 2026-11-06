@@ -75,16 +75,37 @@ func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 	})
 }
 
-func TestMockStorage_AggregateActiveResourcesByAuthor(t *testing.T) {
-	want := []AuthorResourceAllocation{
+func TestMockStorage_WithReadOnlyWorkUnitSnapshot(t *testing.T) {
+	ctx := context.Background()
+	wantRows := []AuthorResourceAllocation{
 		{Author: "alice@example.com", ResourceType: "cpu", State: ActiveResourceStateRunning, Units: 4},
 	}
-	m := &MockStorage{AuthorResourceAllocations: want}
-	got, err := m.AggregateActiveResourcesByAuthor(context.Background(), []string{"gpu-queue"})
-	if err != nil {
-		t.Fatalf("AggregateActiveResourcesByAuthor() error = %v", err)
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
-	}
+
+	t.Run("invokes callback with snapshot repository", func(t *testing.T) {
+		m := &MockStorage{AuthorResourceAllocations: wantRows}
+		var gotRows []AuthorResourceAllocation
+		err := m.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo WorkUnitSnapshotRepository) error {
+			var innerErr error
+			gotRows, innerErr = repo.AggregateActiveResourcesByAuthor(txCtx, []string{"gpu-queue"})
+			return innerErr
+		})
+		if err != nil {
+			t.Fatalf("WithReadOnlyWorkUnitSnapshot() error = %v", err)
+		}
+		if diff := cmp.Diff(wantRows, gotRows); diff != "" {
+			t.Errorf("AggregateActiveResourcesByAuthor() mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("propagates configured snapshot error", func(t *testing.T) {
+		wantErr := errors.New("snapshot unavailable")
+		m := &MockStorage{ReadOnlyWorkUnitSnapshotErr: wantErr}
+		err := m.WithReadOnlyWorkUnitSnapshot(ctx, func(context.Context, WorkUnitSnapshotRepository) error {
+			t.Fatal("callback must not be called when ReadOnlyWorkUnitSnapshotErr is set")
+			return nil
+		})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("WithReadOnlyWorkUnitSnapshot() error = %v, want %v", err, wantErr)
+		}
+	})
 }

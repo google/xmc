@@ -192,9 +192,9 @@ type WorkUnitStore interface {
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 
-	// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-	// type and state across all active (running + pending) work units of the requested queues.
-	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error)
+	// WithReadOnlyWorkUnitSnapshot runs fn with a repository whose active work unit reads all come
+	// from one consistent read-only snapshot.
+	WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo WorkUnitSnapshotRepository) error) error
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -242,6 +242,14 @@ type AuthorResourceAllocation struct {
 	ResourceType string
 	State        ActiveResourceState
 	Units        float64
+}
+
+// WorkUnitSnapshotRepository defines active work unit reads bound to a single read-only snapshot.
+type WorkUnitSnapshotRepository interface {
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+	// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
+	// type and state across all active (running + pending) work units of the requested queues.
+	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error)
 }
 
 // QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.

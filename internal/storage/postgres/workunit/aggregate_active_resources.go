@@ -39,22 +39,29 @@ FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-// AggregateActiveResourcesByAuthor sums requested units by experiment creator, canonical resource
-// type and state across all active work units of queueNames in one read-only transaction.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+type snapshotRepository struct {
+	tx pgdb.DBTX
+}
+
+func (s *snapshotRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsFromDB(ctx, s.tx, queueNames, pageSize, pageToken)
+}
+
+func (s *snapshotRepository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
+	return aggregateActiveResourcesFromDB(ctx, s.tx, queueNames)
+}
+
+// WithReadOnlyWorkUnitSnapshot executes fn in a single PostgreSQL REPEATABLE READ READ ONLY transaction.
+func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return err
 	}
 	if r == nil || r.pool == nil {
-		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
 	}
-	var res []storage.AuthorResourceAllocation
-	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
-		var innerErr error
-		res, innerErr = aggregateActiveResourcesFromDB(txCtx, tx, queueNames)
-		return innerErr
+	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
+		return fn(txCtx, &snapshotRepository{tx: tx})
 	})
-	return res, err
 }
 
 func aggregateActiveResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
