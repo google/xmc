@@ -12,17 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verifies actuator-config renders dev OIDC settings only when isDevEnvironment is true."""
+"""Verifies actuator OIDC settings and the shared ESS-to-actuator OIDC audience contract."""
 
+import re
 import unittest
 
 from chart_test_lib import render_template, require_helm
 
 ACTUATOR_CONFIGMAP = "templates/actuator/configmap.yaml"
+ESS_CONFIGMAP = "templates/ess/configmap.yaml"
+CLUSTER_LOCAL_ACTUATOR_URI = "https://actuator.xmc.svc.cluster.local/actuate"
+
+
+def _configmap_data_value(manifest: str, key: str) -> str:
+    """Extracts a double-quoted top-level data key from a rendered ConfigMap manifest."""
+    match = re.search(rf'^\s{{2}}{re.escape(key)}:\s*"([^"]*)"\s*$', manifest, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"ConfigMap data key {key!r} not found in manifest:\n{manifest}")
+    return match.group(1)
 
 
 class ActuatorDevOidcConfigTest(unittest.TestCase):
-    """Asserts CLIENT_ID and OIDC_USERNAME render in actuator-config only for dev environments."""
+    """Asserts dev-only OIDC settings in actuator-config and the shared audience in ess-config."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -64,6 +75,18 @@ class ActuatorDevOidcConfigTest(unittest.TestCase):
         )
         self.assertIn('CLIENT_ID: ""', manifest)
         self.assertIn('OIDC_USERNAME: ""', manifest)
+
+    def test_actuator_and_ess_configmaps_use_cluster_local_actuator_uri(self) -> None:
+        """actuator-config audience and ess-config ess_actuator_url must match the cluster-local URI."""
+        actuator_manifest = render_template(ACTUATOR_CONFIGMAP, {})
+        ess_manifest = render_template(ESS_CONFIGMAP, {"essDeployment.enabled": "true"})
+        audience = _configmap_data_value(actuator_manifest, "audience")
+        ess_actuator_url = _configmap_data_value(ess_manifest, "ess_actuator_url")
+
+        self.assertEqual(audience, ess_actuator_url)
+        self.assertEqual(audience, CLUSTER_LOCAL_ACTUATOR_URI)
+        self.assertNotIn("actuator.api.", actuator_manifest)
+        self.assertNotIn("actuator.api.", ess_manifest)
 
 
 if __name__ == "__main__":

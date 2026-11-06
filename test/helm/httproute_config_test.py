@@ -16,7 +16,7 @@
 
 import unittest
 
-from chart_test_lib import render_template, require_helm
+from chart_test_lib import render_chart, render_template, require_helm
 
 
 class HTTPRouteConfigTest(unittest.TestCase):
@@ -71,6 +71,12 @@ class HTTPRouteConfigTest(unittest.TestCase):
             manifest,
             r"backendRefs:\s*\n\s+-\s+name:\s+rod-data-provider-service\s*\n\s+port:\s+8080",
         )
+
+    def test_chart_omits_legacy_ingress_backend_config(self) -> None:
+        """The Gateway API chart must not render legacy GKE Ingress BackendConfig resources."""
+        manifests = render_chart({})
+        self.assertNotIn("kind: BackendConfig", manifests)
+        self.assertNotIn("shared-backend-config", manifests)
 
 
 if __name__ == "__main__":

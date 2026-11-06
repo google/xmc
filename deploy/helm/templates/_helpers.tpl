@@ -119,6 +119,15 @@ Get the UI API URL.
 {{- end -}}
 
 {{/*
+Logical JWT/OIDC audience shared by the ESS task signer and the actuator validator.
+Never dialed; must be identical on both sides. Upgrading from the legacy
+https://actuator.api.<env>.<domain>/actuate value changes the JWT aud contract
+while ess and actuator Deployments roll independently; quiesce launches until the
+xmc-tasks-stream Redis backlog is 0 before running helm upgrade.
+*/}}
+{{- define "xmanager-cloud.actuatorAudience" -}}https://actuator.xmc.svc.cluster.local/actuate{{- end -}}
+
+{{/*
 Reports whether an auth flag value enables its setting, mirroring the backend's boolean env parsing
 (true, 1 or yes, case-insensitive, surrounding whitespace ignored). Renders "true" when enabled and
 nothing otherwise, so string overrides such as "false" or "no" are not mistaken for enabled flags.
