@@ -98,7 +98,13 @@ func TestInsertExperiment_ExperimentTypeRoundTripAndImmutable(t *testing.T) {
 	for xid, expType := range map[int64]essmsgpb.Experiment_ExperimentType{201: essmsgpb.Experiment_STANDARD, 202: essmsgpb.Experiment_STUDY} {
 		exp := spanner.BlankExperimentProto(xid)
 		exp.ExperimentType = expType
-		spanner.CreateAndStoreExperiment(ctx, t, storageClient, exp)
+		exp.CreateTime, exp.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+		// Insert through the repository: experiment.CreateExperiment would also require a STUDY's components.
+		if err := storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+			return tx.Experiments.InsertExperiment(ctx, exp)
+		}); err != nil {
+			t.Fatalf("InsertExperiment(%d) failed: %v", xid, err)
+		}
 	}
 
 	for xid, want := range map[int64]essmsgpb.Experiment_ExperimentType{200: essmsgpb.Experiment_STANDARD, 201: essmsgpb.Experiment_STANDARD, 202: essmsgpb.Experiment_STUDY} {

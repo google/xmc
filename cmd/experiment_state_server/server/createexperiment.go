@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -46,10 +47,6 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 		logging.Warn(ctx, "CreateExperiment validation failed", "error", err)
 		return nil, fmt.Errorf("CreateExperiment validation failed: %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
-	if err := rejectUnsupportedExperimentType(req.GetExperiment()); err != nil {
-		logging.Warn(ctx, "CreateExperiment rejected unsupported experiment type", "error", err)
-		return nil, err
-	}
 
 	// 2.1. Fill in any null values in the request payload, in place. Unset or empty
 	// ACLs default to the creator as the sole OWNER.
@@ -70,6 +67,13 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 2.3. Check that the creator has write permissions on the requested ACLs before provisioning
 	// an XID, so that a denied request does not leave an orphaned XIDEntry behind.
 	if err := h.authorizeCreator(ctx, creator, exp.GetAcls()); err != nil {
+		return nil, err
+	}
+
+	// 2.4. Check the components that the experiment requires before provisioning an XID, so that a
+	// rejected request does not leave an orphaned XIDEntry behind. Step 5 repeats the check
+	// authoritatively in the transaction that inserts the experiment.
+	if err := h.precheckComponentRequirements(ctx, exp); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +117,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	retExp, err := experiment.CreateExperiment(ctx, h.storage, newExp)
 	if err != nil {
 		logging.Error(ctx, "Failed to save experiment", "experiment_name", newExp.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, grpcerr.ErrInternal)
+		return nil, componentRequirementError(fmt.Sprintf("failed to save experiment %s", newExp.GetName()), err)
 	}
 
 	// 5.1. Set the experiment's ACLs to the XIDEntry's ACLs.
@@ -132,14 +136,32 @@ func normalizeExperimentType(t msgpb.Experiment_ExperimentType) msgpb.Experiment
 	return t
 }
 
-// rejectUnsupportedExperimentType returns an Unimplemented error for STUDY experiments, before any
-// XID or storage write. This is a temporary guard until CreateExperiment validates the components
-// a study requires.
-func rejectUnsupportedExperimentType(exp *msgpb.Experiment) error {
-	if exp.GetExperimentType() != msgpb.Experiment_STUDY {
+// precheckComponentRequirements returns a FailedPrecondition error when exp requires components and
+// the Components feature is disabled or a required component is missing or not ready in a read-only
+// catalog snapshot. Experiments that require no components read nothing.
+func (h *ExperimentHandler) precheckComponentRequirements(ctx context.Context, exp *msgpb.Experiment) error {
+	if err := experiment.CheckComponentsFeature(exp, h.enableComponents); err != nil {
+		logging.Warn(ctx, "CreateExperiment requires the disabled Components feature", "error", err)
+		return err
+	}
+	reqs := experiment.RequirementsFor(exp)
+	if len(reqs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("experiment type STUDY is not supported yet: %w", grpcerr.ErrUnimplemented)
+	if err := experiment.ValidateComponentRequirements(ctx, h.storage.Components(), reqs); err != nil {
+		logging.Warn(ctx, "CreateExperiment component requirements are not met", "error", err)
+		return componentRequirementError("failed to check component requirements", err)
+	}
+	return nil
+}
+
+// componentRequirementError prefixes err with msg. An unmet component requirement keeps its
+// FailedPrecondition code; any other error is reported as Internal.
+func componentRequirementError(msg string, err error) error {
+	if errors.Is(err, experiment.ErrComponentRequirementNotMet) {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return fmt.Errorf("%s: %v: %w", msg, err, grpcerr.ErrInternal)
 }
 
 // authorizeCreator returns a PermissionDenied error unless the creator holds WRITER (directly or

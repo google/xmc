@@ -28,6 +28,8 @@ import (
 )
 
 // CreateExperiment orchestrates the creation of a new experiment using the provided transaction runner.
+// In the same transaction, it checks the components that the experiment requires and pins them to it,
+// returning an error wrapping ErrComponentRequirementNotMet when one is missing or not ready.
 // It returns the experiment proto with initial commit timestamps populated.
 func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
 	if exp == nil {
@@ -42,7 +44,8 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 		return nil, err
 	}
 
-	err = txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+	reqs := RequirementsFor(exp)
+	err = runCreateTransaction(ctx, txRunner, len(reqs) > 0, func(ctx context.Context, tx *storage.Transaction) error {
 		if exp.Status == nil {
 			exp.Status = &essmsgpb.ExperimentStatus{}
 		}
@@ -56,6 +59,11 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 		// 3. Insert the experiment via the transaction-scoped repository.
 		if err := tx.Experiments.InsertExperiment(ctx, exp); err != nil {
 			logging.Error(ctx, "failed to insert experiment", "experiment", exp, "error", err)
+			return err
+		}
+
+		// 3.1. Check and pin the required components, after the experiment row they reference.
+		if err := PinComponentRequirements(ctx, tx.Components, xid, reqs); err != nil {
 			return err
 		}
 
@@ -73,4 +81,16 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 
 	logging.Info(ctx, "Written experiment to storage")
 	return exp, nil
+}
+
+// runCreateTransaction runs fn in a read-write transaction, a serializable one when the experiment
+// pins components, so that a concurrent catalog write conflicts with the check instead of committing
+// between the check and the pin. Spanner read-write transactions are always serializable, so the
+// choice only matters for PostgreSQL.
+func runCreateTransaction(ctx context.Context, txRunner storage.TransactionRunner, serializable bool, fn func(ctx context.Context, tx *storage.Transaction) error) error {
+	if !serializable {
+		return txRunner.RunInTransaction(ctx, fn)
+	}
+	_, err := txRunner.RunInSerializableTransaction(ctx, fn)
+	return err
 }

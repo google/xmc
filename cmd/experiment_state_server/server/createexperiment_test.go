@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,9 @@ import (
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/pkg/components/store"
 
+	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
@@ -303,26 +306,89 @@ func TestCreateExperiment_PersistsExperimentType(t *testing.T) {
 	}
 }
 
-func TestCreateExperiment_StudyUnimplemented(t *testing.T) {
+// readyHPOCatalog returns ready hpo, vizier, and clickhouse components, with hpo depending on the
+// other two.
+func readyHPOCatalog() map[string]*store.ComponentRecord {
+	ready := func(id int64, name string, componentType componentspb.ComponentType, deps ...string) *store.ComponentRecord {
+		return &store.ComponentRecord{
+			ComponentID: id, Name: name, State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
+			Spec:       &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Dependencies: deps},
+			Generation: 1, ObservedGeneration: proto.Int64(1),
+		}
+	}
+	return map[string]*store.ComponentRecord{
+		"hpo":        ready(1, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "vizier", "clickhouse"),
+		"vizier":     ready(2, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
+		"clickhouse": ready(3, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
+	}
+}
+
+func pendingVizierCatalog() map[string]*store.ComponentRecord {
+	catalog := readyHPOCatalog()
+	catalog["vizier"].State = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION
+	return catalog
+}
+
+func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 	ctx := context.Background()
-	xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
-	// Any storage write would fail with Internal, so Unimplemented also proves nothing was written.
-	server := newTestServer(t,
-		withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
-		withXidClient(xidClient),
-		withStorage(&storage.MockStorage{InsertExperimentErr: errors.New("unexpected write")}),
-	)
-	req := &msgpb.CreateExperimentRequest{
-		Experiment: &msgpb.Experiment{Title: "study", ExperimentType: msgpb.Experiment_STUDY},
+	tests := []struct {
+		name             string
+		expType          msgpb.Experiment_ExperimentType
+		enableComponents bool
+		catalog          *storage.MockComponentRepository
+		// txCatalog, when set, is what the creation transaction reads instead of catalog.
+		txCatalog    *storage.MockComponentRepository
+		wantCode     codes.Code
+		wantText     string
+		wantXidCalls int
+		wantPinned   int
+	}{
+		{name: "study with components disabled", expType: msgpb.Experiment_STUDY,
+			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
+			wantCode: codes.FailedPrecondition, wantText: "HPO requires the Components feature"},
+		{name: "study rejected by the pre-check", expType: msgpb.Experiment_STUDY, enableComponents: true,
+			catalog:  &storage.MockComponentRepository{Records: pendingVizierCatalog()},
+			wantCode: codes.FailedPrecondition, wantText: `"vizier"`},
+		{name: "study rejected in the creation transaction", expType: msgpb.Experiment_STUDY, enableComponents: true,
+			catalog:   &storage.MockComponentRepository{Records: readyHPOCatalog()},
+			txCatalog: &storage.MockComponentRepository{Records: pendingVizierCatalog()},
+			wantCode:  codes.FailedPrecondition, wantText: `"vizier"`, wantXidCalls: 1},
+		{name: "study catalog read failure is internal", expType: msgpb.Experiment_STUDY, enableComponents: true,
+			catalog:  &storage.MockComponentRepository{GetActiveComponentErr: grpcerr.ErrUnavailable},
+			wantCode: codes.Internal},
+		{name: "study with ready components is pinned", expType: msgpb.Experiment_STUDY, enableComponents: true,
+			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
+			wantCode: codes.OK, wantXidCalls: 1, wantPinned: 3},
+		{name: "standard experiment reads no components", expType: msgpb.Experiment_STANDARD,
+			catalog:  &storage.MockComponentRepository{GetActiveComponentErr: errors.New("unexpected read")},
+			wantCode: codes.OK, wantXidCalls: 1},
 	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+			st := &storage.MockStorage{ComponentRepository: tc.catalog}
+			if tc.txCatalog != nil {
+				st.Transaction = &storage.Transaction{Components: tc.txCatalog}
+			}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: tc.enableComponents}),
+				withXidClient(xidClient),
+				withStorage(st),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
 
-	_, err := server.CreateExperiment(ctx, req)
+			_, err := server.CreateExperiment(ctx, req)
 
-	if got := status.Code(err); got != codes.Unimplemented {
-		t.Errorf("CreateExperiment(STUDY) returned code %v (error %v), want %v", got, err, codes.Unimplemented)
-	}
-	if xidClient.createXidEntryCalls != 0 {
-		t.Errorf("CreateExperiment(STUDY) made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
+			if got := status.Code(err); got != tc.wantCode || (tc.wantText != "" && !strings.Contains(err.Error(), tc.wantText)) {
+				t.Errorf("CreateExperiment(%v) error = %v (code %v), want code %v containing %q", tc.expType, err, got, tc.wantCode, tc.wantText)
+			}
+			if xidClient.createXidEntryCalls != tc.wantXidCalls {
+				t.Errorf("CreateExperiment(%v) made %d CreateXidEntry calls, want %d", tc.expType, xidClient.createXidEntryCalls, tc.wantXidCalls)
+			}
+			if got := len(tc.catalog.Snapshots[123]); got != tc.wantPinned {
+				t.Errorf("CreateExperiment(%v) pinned %d components, want %d", tc.expType, got, tc.wantPinned)
+			}
+		})
 	}
 }
 
