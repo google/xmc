@@ -233,3 +233,19 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "ui_docs_url_test",
+    srcs = ["ui_docs_url_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "ui_docs_url_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)

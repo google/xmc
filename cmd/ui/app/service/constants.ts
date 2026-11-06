@@ -16,6 +16,7 @@ import { InjectionToken } from '@angular/core';
 declare global {
   interface Window {
     XMC_API_URL?: string;
+    XMC_DOCS_URL?: string;
   }
 }
 
@@ -36,3 +37,15 @@ export const DEFAULT_REFRESH_INTERVAL_MS = 30000; // 30 seconds
  * Injection token for the auto-refresh interval in milliseconds.
  */
 export const AUTO_REFRESH_INTERVAL_MS = new InjectionToken<number>('Auto-refresh interval ms');
+
+/** Default documentation URL. */
+export const DEFAULT_DOCS_URL = 'https://github.com/google/xmc';
+
+/**
+ * Injection token for the documentation URL.
+ */
+export const DOCS_URL = new InjectionToken<string>('Documentation URL', {
+  providedIn: 'root',
+  factory: () =>
+    typeof window !== 'undefined' && window.XMC_DOCS_URL ? window.XMC_DOCS_URL : DEFAULT_DOCS_URL,
+});
