@@ -39,8 +39,6 @@ FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-var _ storage.WorkUnitSnapshotRepository = (*TxRepository)(nil)
-
 // FetchActiveWorkUnitsByQueues retrieves one page of active work units within the bound transaction.
 func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
 	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken)

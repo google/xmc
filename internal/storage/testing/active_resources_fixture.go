@@ -120,9 +120,9 @@ type WorkUnitSnapshotter interface {
 	WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error
 }
 
-// ReadActiveResourcesSnapshot reads the first jobs page of pageSize and the per-author
+// readActiveResourcesSnapshot reads the first jobs page of pageSize and the per-author
 // allocations of queues from one snapshot.
-func ReadActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, queues []string, pageSize int32) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
+func readActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, queues []string, pageSize int32) (*storage.ActiveWorkUnitsResult, []storage.AuthorResourceAllocation, error) {
 	var page *storage.ActiveWorkUnitsResult
 	var allocations []storage.AuthorResourceAllocation
 	err := s.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
@@ -140,9 +140,9 @@ func ReadActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, que
 // ActiveResourceSpecs returns a two-job first page and the allocations of every active job.
 func VerifyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter) {
 	t.Helper()
-	page, allocations, err := ReadActiveResourcesSnapshot(ctx, s, []string{ActiveResourceQueue}, 2)
+	page, allocations, err := readActiveResourcesSnapshot(ctx, s, []string{ActiveResourceQueue}, 2)
 	if err != nil {
-		t.Fatalf("ReadActiveResourcesSnapshot failed: %v", err)
+		t.Fatalf("readActiveResourcesSnapshot failed: %v", err)
 	}
 	if len(page.WorkUnits) != 2 || page.TotalQueueSize != ActiveResourceSpecsActiveCount || page.NextPageToken == "" {
 		t.Fatalf("page = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(page.WorkUnits), page.TotalQueueSize, page.NextPageToken, ActiveResourceSpecsActiveCount)
@@ -155,8 +155,8 @@ func VerifyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnit
 // VerifyEmptyActiveResourcesSnapshot checks that a snapshot read without queues returns no rows.
 func VerifyEmptyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter) {
 	t.Helper()
-	page, allocations, err := ReadActiveResourcesSnapshot(ctx, s, nil, 10)
+	page, allocations, err := readActiveResourcesSnapshot(ctx, s, nil, 10)
 	if err != nil || len(page.WorkUnits) != 0 || len(allocations) != 0 {
-		t.Errorf("ReadActiveResourcesSnapshot(nil queues) = (%v, %v, %v), want empty", page, allocations, err)
+		t.Errorf("readActiveResourcesSnapshot(nil queues) = (%v, %v, %v), want empty", page, allocations, err)
 	}
 }
