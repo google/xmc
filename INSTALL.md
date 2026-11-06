@@ -538,9 +538,10 @@ Once database schemas and container images are updated, upgrade the Kubernetes w
 
 ##### Option A: Using Cluster Toolkit Blueprint v2 (Recommended)
 
-Re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
+Re-compile the blueprint so `ctk-out/<deployment_name>` picks up your updated deployment configuration (for example the new `image_tag`) and chart templates, then re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
 
 ```bash
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
 
