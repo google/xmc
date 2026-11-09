@@ -76,12 +76,13 @@ function processUser(user: User | null) {
     - **Combined Code (Prod + Tests)**: $\ge 1,000$ lines triggers mandatory split verification.
     - **Documentation / Markdown**: $\ge 1,000$ lines triggers modularization check.
     - *Generated Code & Lockfiles*: Automatically excluded from sizing.
+    - *Build Definitions* (`BUILD`, `BUILD.bazel`, `*.bzl`): Reported as `build_lines` and excluded from code totals.
   - **Vertical Slicing over Horizontal Splitting**: Always prioritize vertical slices (end-to-end usable flows spanning models, logic, and tests) over horizontal architectural layers (e.g. database-only PRs).
   - **Dead Code & Reachability Invariant**: Intermediate PRs in a stack must NOT submit dead, uncalled, or orphaned logic (even with unit tests). Every PR merged to `main` must have an active production call site or be a self-contained runnable entrypoint (e.g., a new CLI binary).
   - **Mandatory Subagent Audit**: If any sizing threshold is exceeded, agents MUST spawn the PR Split Verification Subagent per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) and propose a stacked PR plan via [`gh-stack`](conversation://skills/gh-stack) before opening a PR.
 - **System Contract & API Changes**:
   - **Mandatory User Confirmation**: Seek explicit user confirmation before introducing breaking changes to public APIs, protobuf schemas, CLI flags, or core system contracts.
-  - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change.
+  - **Documentation Alignment**: Synchronize repository markdown documents (including, but not limited to, `README.md`, `INSTALL.md`, and component specs), schemas, and inline API references within the exact same pull request whenever system contracts or behaviors change. Check at least the flow docs (`docs/flows/*.md`), the README of each touched binary (`cmd/<binary>/README.md`), component and profile READMEs (`pkg/components/**/README.md`, `deploy/profiles/**/README.md`), and migration guides (`docs/migrations/*.md`). When `tools/analyze_diff_size.py` emits a doc-sync entry in `warnings`, update the affected docs or state in the PR body why none apply.
 
 ## 6. Post-Implementation Reflection & Meta-Learning
 - **Iterative Reflection Triggers**: Trigger the [Iterative Reflection Skill](../skills/xmc_iterative_reflection/SKILL.md) after major implementations, following PR review comment resolutions (to diagnose and codify missing guidelines/tools), or upon explicit user request. Validate candidate rule additions empirically using the [XMC Trajectory Comparison Skill](../skills/xmc_trajectory_comparison/SKILL.md). Do NOT trigger for routine minor typo fixes where no underlying guideline was violated.
