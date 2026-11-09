@@ -38,6 +38,7 @@ CREATE TABLE Experiments (
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
   CompleteTime TIMESTAMPTZ,
+  ExperimentType BIGINT NOT NULL DEFAULT 1, -- Experiment.ExperimentType; legacy rows default to STANDARD.
   PRIMARY KEY (Xid)
 );
 

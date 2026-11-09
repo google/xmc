@@ -46,6 +46,10 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 		logging.Warn(ctx, "CreateExperiment validation failed", "error", err)
 		return nil, fmt.Errorf("CreateExperiment validation failed: %v: %w", err, grpcerr.ErrInvalidArgument)
 	}
+	if err := rejectUnsupportedExperimentType(req.GetExperiment()); err != nil {
+		logging.Warn(ctx, "CreateExperiment rejected unsupported experiment type", "error", err)
+		return nil, err
+	}
 
 	// 2.1. Fill in any null values in the request payload, in place. Unset or empty
 	// ACLs default to the creator as the sole OWNER.
@@ -92,15 +96,16 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 4. Assemble the experiment object.
 	logging.Info(ctx, "Assembling experiment object")
 	newExp := &msgpb.Experiment{
-		Name:      name,
-		Title:     exp.Title,
-		Creator:   creator,
-		Status:    newExperimentStatus(name),
-		Priority:  exp.Priority,
-		Urls:      exp.GetUrls(),
-		Tags:      exp.GetTags(),
-		Notes:     exp.GetNotes(),
-		Resources: []*msgpb.ResourceSet{},
+		Name:           name,
+		Title:          exp.Title,
+		Creator:        creator,
+		Status:         newExperimentStatus(name),
+		Priority:       exp.Priority,
+		Urls:           exp.GetUrls(),
+		Tags:           exp.GetTags(),
+		Notes:          exp.GetNotes(),
+		Resources:      []*msgpb.ResourceSet{},
+		ExperimentType: normalizeExperimentType(exp.GetExperimentType()),
 	}
 
 	// 5. Persist the experiment to the storage layer.
@@ -117,6 +122,24 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 6. Return the successful response.
 	logging.Info(ctx, "Successfully created experiment", "experiment_name", retExp.GetName())
 	return retExp, nil
+}
+
+// normalizeExperimentType maps UNSPECIFIED to STANDARD so that the server never stores UNSPECIFIED.
+func normalizeExperimentType(t msgpb.Experiment_ExperimentType) msgpb.Experiment_ExperimentType {
+	if t == msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED {
+		return msgpb.Experiment_STANDARD
+	}
+	return t
+}
+
+// rejectUnsupportedExperimentType returns an Unimplemented error for STUDY experiments, before any
+// XID or storage write. This is a temporary guard until CreateExperiment validates the components
+// a study requires.
+func rejectUnsupportedExperimentType(exp *msgpb.Experiment) error {
+	if exp.GetExperimentType() != msgpb.Experiment_STUDY {
+		return nil
+	}
+	return fmt.Errorf("experiment type STUDY is not supported yet: %w", grpcerr.ErrUnimplemented)
 }
 
 // authorizeCreator returns a PermissionDenied error unless the creator holds WRITER (directly or

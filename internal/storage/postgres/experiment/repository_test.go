@@ -225,6 +225,83 @@ func TestInsertAndFetchExperiment(t *testing.T) {
 	}
 }
 
+func TestExperimentType_RoundTripAndImmutable(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	// experiments/200 is a legacy row inserted without the ExperimentType column (DEFAULT 1).
+	postgrestest.SeedExperiment(ctx, t, essPool, 200)
+	var exps []*essmsgpb.Experiment
+	for i, expType := range []essmsgpb.Experiment_ExperimentType{essmsgpb.Experiment_STANDARD, essmsgpb.Experiment_STUDY} {
+		exps = append(exps, seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+			e.Name = validator.ConstructExperimentName(int64(201 + i))
+			e.ExperimentType = expType
+		})))
+	}
+
+	legacy, err := repo.FetchExperiment(ctx, 200)
+	if err != nil {
+		t.Fatalf("FetchExperiment(200) failed: %v", err)
+	}
+	if legacy.GetExperimentType() != essmsgpb.Experiment_STANDARD {
+		t.Errorf("FetchExperiment(200).ExperimentType = %v, want %v", legacy.GetExperimentType(), essmsgpb.Experiment_STANDARD)
+	}
+	for i, want := range exps {
+		got, err := repo.FetchExperiment(ctx, int64(201+i))
+		if err != nil {
+			t.Fatalf("FetchExperiment(%d) failed: %v", 201+i, err)
+		}
+		if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+			t.Errorf("FetchExperiment(%d) diff (-want +got):\n%s", 201+i, diff)
+		}
+	}
+
+	for filter, want := range map[string][]string{
+		`experiment_type = "STANDARD"`: {"experiments/200", "experiments/201"},
+		`experiment_type != "STUDY"`:   {"experiments/200", "experiments/201"},
+		`experiment_type = "STUDY"`:    {"experiments/202"},
+	} {
+		gotList, _, err := repo.ListExperiments(ctx, 10, "", filter, "xid", 0)
+		if err != nil {
+			t.Fatalf("ListExperiments(%s) failed: %v", filter, err)
+		}
+		var gotNames []string
+		for _, exp := range gotList {
+			gotNames = append(gotNames, exp.GetName())
+		}
+		if diff := cmp.Diff(want, gotNames); diff != "" {
+			t.Errorf("ListExperiments(%s) names diff (-want +got):\n%s", filter, diff)
+		}
+	}
+
+	studyXID := int64(202)
+	_, err = repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        studyXID,
+		Experiment: &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STANDARD},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"experiment_type"}},
+	})
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateExperiment(experiment_type) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+
+	res, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        studyXID,
+		Experiment: &essmsgpb.Experiment{Title: "Renamed", ExperimentType: essmsgpb.Experiment_STANDARD},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateExperiment(title) failed: %v", err)
+	}
+	got, err := repo.FetchExperiment(ctx, studyXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment(%d) failed: %v", studyXID, err)
+	}
+	if res.Updated.GetExperimentType() != essmsgpb.Experiment_STUDY || got.GetExperimentType() != essmsgpb.Experiment_STUDY {
+		t.Errorf("experiment_type after UpdateExperiment(title) = %v (returned), %v (stored), want %v", res.Updated.GetExperimentType(), got.GetExperimentType(), essmsgpb.Experiment_STUDY)
+	}
+}
+
 func TestUpdateExperiment(t *testing.T) {
 	ctx := context.Background()
 	_, essPool := postgrestest.Setup(ctx, t)
