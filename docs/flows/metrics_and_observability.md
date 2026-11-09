@@ -293,8 +293,8 @@ each active work unit's creator, executable and state; ROD canonicalizes the res
 (memory in GiB) and splits them into running (`RUNNING`, `STARTING`, i.e. admitted by Kueue) and
 pending (`SCHEDULING`, `INITIALIZING`). `INITIALIZING` counts as pending because it precedes
 admission, even though the jobs table orders it with running jobs. A generic accelerator request
-is attributed to the queue's GPU model only when the queue has a single flavor for it. These are
-requested amounts, not measured utilization.
+(e.g. `nvidia.com/gpu`) is attributed to a model only when the queue's flavors resolve that
+accelerator to exactly one model. These are requested amounts, not measured utilization.
 
 ---
 
