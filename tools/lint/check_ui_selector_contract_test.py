@@ -192,6 +192,12 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         )
         self.assertEqual(self._run(source), {"selectors_scanned": 7, "violations": 0})
 
+    def test_backtick_component_selector(self) -> None:
+        self._write("cmd/ui/app/page/q.ts", "@Component({selector: `xmc-backtick`})\n")
+        self.assertEqual(
+            self._run('A_SEL = "xmc-backtick"\n'), {"selectors_scanned": 1, "violations": 0}
+        )
+
     def test_reports_missing_dom(self) -> None:
         cases = {
             "missing_class": ('A_SEL = "xmc-child .gone"\n', [("dom-class", "gone")]),
