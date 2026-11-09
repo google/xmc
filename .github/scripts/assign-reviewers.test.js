@@ -106,41 +106,41 @@ test('parseDdMmYyyy validates strict DD.MM.YYYY calendar dates', () => {
 test('parseAbsenceFile handles bare NICK and inclusive DD.MM.YYYY-DD.MM.YYYY ranges', () => {
   const absenceContent = `
 # Unconditional absence
-pachopepe
+alice
 
 # Scheduled absence (inclusive)
-janzak 10.11.2026-15.11.2026
-- @alice 12.11.2026-12.11.2026 # single-day absence
+bob 10.11.2026-15.11.2026
+- @charlie 12.11.2026-12.11.2026 # single-day absence
 `;
 
-  // Before janzak's range (09.11.2026)
+  // Before bob's range (09.11.2026)
   assert.deepStrictEqual(
     parseAbsenceFile(absenceContent, new Date(2026, 10, 9)),
-    ['pachopepe']
+    ['alice']
   );
 
   // On start boundary (10.11.2026) - inclusive
   assert.deepStrictEqual(
     parseAbsenceFile(absenceContent, new Date(2026, 10, 10, 15, 30)),
-    ['pachopepe', 'janzak']
+    ['alice', 'bob']
   );
 
-  // Single-day range + middle of janzak's range (12.11.2026)
+  // Single-day range + middle of bob's range (12.11.2026)
   assert.deepStrictEqual(
     parseAbsenceFile(absenceContent, new Date(2026, 10, 12)),
-    ['pachopepe', 'janzak', 'alice']
+    ['alice', 'bob', 'charlie']
   );
 
   // On end boundary (15.11.2026) - inclusive
   assert.deepStrictEqual(
     parseAbsenceFile(absenceContent, new Date(2026, 10, 15, 23, 59)),
-    ['pachopepe', 'janzak']
+    ['alice', 'bob']
   );
 
   // After end boundary (16.11.2026)
   assert.deepStrictEqual(
     parseAbsenceFile(absenceContent, new Date(2026, 10, 16)),
-    ['pachopepe']
+    ['alice']
   );
 });
 

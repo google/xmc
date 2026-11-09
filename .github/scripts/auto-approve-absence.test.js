@@ -81,9 +81,9 @@ test('shouldAutoApproveAbsencePR approves valid bare NICK and NICK DD.MM.YYYY-DD
   const owners = ['alice', 'bob'];
   const absenceContent = `
 # Absence file
-pachopepe
-janzak 10.11.2026-15.11.2026
-bob 29.02.2028-29.02.2028 # single-day leap year
+alice
+bob 10.11.2026-15.11.2026
+charlie 29.02.2028-29.02.2028 # single-day leap year
 `;
   const decision = shouldAutoApproveAbsencePR({
     modifiedFileNames: ['ABSENCE.md'],
@@ -99,23 +99,23 @@ test('validateAbsenceContent and shouldAutoApproveAbsencePR reject invalid dates
   const owners = ['alice'];
   const invalidCases = [
     {
-      content: 'janzak 16.11.2026-15.11.2026\n',
+      content: 'alice 16.11.2026-15.11.2026\n',
       expectedSubstring: 'after end date'
     },
     {
-      content: 'janzak 31.02.2026-15.03.2026\n',
+      content: 'alice 31.02.2026-15.03.2026\n',
       expectedSubstring: 'invalid start date'
     },
     {
-      content: 'janzak 10.11.2026-29.02.2027\n',
+      content: 'alice 10.11.2026-29.02.2027\n',
       expectedSubstring: 'invalid end date'
     },
     {
-      content: 'janzak 2026-11-10-2026-11-15\n',
+      content: 'alice 2026-11-10-2026-11-15\n',
       expectedSubstring: 'invalid date range format'
     },
     {
-      content: 'janzak 10.11.2026-15.11.2026 extra\n',
+      content: 'alice 10.11.2026-15.11.2026 extra\n',
       expectedSubstring: 'invalid format'
     },
     {
