@@ -41,9 +41,9 @@ GENERATED_PATTERNS = (
 )
 
 # Bazel build definitions are reported separately and excluded from code totals.
-# `BUILD` is matched case-sensitively so lowercase `build` scripts stay in prod.
+# These are compiled case-sensitively so lowercase `build` scripts stay in prod.
 BUILD_PATTERNS = (
-    r"(^|.*/)(?-i:BUILD)(\.bazel)?$",
+    r"(^|.*/)BUILD(\.bazel)?$",
     r".*\.bzl$",
 )
 
@@ -66,11 +66,17 @@ DOC_PATTERNS = (
 # Production roots whose behavior changes usually require documentation updates.
 DOC_SYNC_PROD_ROOTS = ("api/", "cmd/", "deploy/", "internal/", "pkg/")
 
+
+def _compile_all(patterns: tuple[str, ...], flags: int = 0) -> tuple[re.Pattern[str], ...]:
+    return tuple(re.compile(p, flags) for p in patterns)
+
+
+# Evaluated in order; the first matching category wins.
 _ORDERED_CATEGORIES = (
-    ("generated", GENERATED_PATTERNS),
-    ("build", BUILD_PATTERNS),
-    ("doc", DOC_PATTERNS),
-    ("test", TEST_PATTERNS),
+    ("generated", _compile_all(GENERATED_PATTERNS, re.IGNORECASE)),
+    ("build", _compile_all(BUILD_PATTERNS)),
+    ("doc", _compile_all(DOC_PATTERNS, re.IGNORECASE)),
+    ("test", _compile_all(TEST_PATTERNS, re.IGNORECASE)),
 )
 
 
@@ -78,7 +84,7 @@ def classify_file(file_path: str) -> str:
     """Classifies a relative path as 'generated', 'build', 'doc', 'test', or 'prod'."""
     normalized = file_path.replace("\\", "/").strip()
     for category, patterns in _ORDERED_CATEGORIES:
-        if any(re.match(p, normalized, re.IGNORECASE) for p in patterns):
+        if any(p.match(normalized) for p in patterns):
             return category
     return "prod"
 
