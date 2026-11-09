@@ -71,7 +71,9 @@ func NewBigQuery(conn xmcbigquery.Conn, opts ...Option) (*Querier, error) {
 func newQuerier(b backend, table string, opts []Option) *Querier {
 	q := &Querier{backend: b, table: table}
 	for _, opt := range opts {
-		opt(q)
+		if opt != nil {
+			opt(q)
+		}
 	}
 	return q
 }

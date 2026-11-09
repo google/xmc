@@ -31,6 +31,7 @@ func TestNewClickHouse(t *testing.T) {
 		{name: "default table", conn: &fakeClickHouseConn{}, wantTable: "xmc_metrics"},
 		{name: "table name option", conn: &fakeClickHouseConn{}, opts: []Option{WithTableName("custom")}, wantTable: "custom"},
 		{name: "empty table name keeps default", conn: &fakeClickHouseConn{}, opts: []Option{WithTableName("")}, wantTable: "xmc_metrics"},
+		{name: "nil option is ignored", conn: &fakeClickHouseConn{}, opts: []Option{nil, WithTableName("custom")}, wantTable: "custom"},
 		{name: "nil connection", conn: nil, wantErr: true},
 	}
 	for _, tt := range tests {
