@@ -91,6 +91,37 @@ async function run({ github, context, core }) {
  * @param {string} content - Raw string content of the OWNERS file.
  * @returns {string[]} Array of reviewer candidate usernames.
  */
+
+/**
+ * Parses ABSENCE.md and evaluates date ranges.
+ * @param {string} content
+ * @param {Date} [currentDate=new Date()]
+ * @returns {string[]} Array of currently absent usernames
+ */
+function parseAbsenceFile(content, currentDate = new Date()) {
+  const users = [];
+  const lines = (content || '').split(/\r?\n/);
+  for (let line of lines) {
+    line = line.split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
+    if (!line) continue;
+    const parts = line.split(/\s+/);
+    if (parts.length === 1) {
+      users.push(parts[0]);
+    } else if (parts.length === 2) {
+      const match = parts[1].match(/^(\d{2})\.(\d{2})\.(\d{4})-(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (match) {
+        const dStart = new Date(match[3], match[2] - 1, match[1]);
+        const dEnd = new Date(match[6], match[5] - 1, match[4]);
+        const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
+        if (today >= dStart && today <= dEnd) {
+          users.push(parts[0]);
+        }
+      }
+    }
+  }
+  return users;
+}
+
 function parseReviewersFromOwners(content) {
   return (content || '')
     .split(/\r?\n/)
@@ -186,6 +217,7 @@ async function getPullRequestMetadata(github, context, core) {
 }
 
 module.exports = {
+  parseAbsenceFile,
   NUM_REVIEWERS_TO_ASSIGN,
   parseReviewersFromOwners,
   filterEligibleReviewers,

@@ -49,7 +49,55 @@ function isAuthorCodeOwner(prAuthor, ownersList) {
  * @param {string[]} params.ownersList - Array of code owner usernames.
  * @returns {{ canApprove: boolean, reason: string }} Decision result object.
  */
-function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList }) {
+
+/**
+ * Validates the contents of ABSENCE.md.
+ * @param {string} content
+ * @returns {{valid: boolean, reason?: string}}
+ */
+function validateAbsenceContent(content) {
+  const lines = (content || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
+    if (!line) continue;
+
+    const parts = line.split(/\s+/);
+    if (parts.length > 2) {
+      return { valid: false, reason: `Line ${i + 1} has invalid format` };
+    }
+    if (parts.length === 2) {
+      const dateRangeStr = parts[1];
+      const match = dateRangeStr.match(/^(\d{2})\.(\d{2})\.(\d{4})-(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (!match) {
+        return { valid: false, reason: `Line ${i + 1} has invalid date range format` };
+      }
+
+      const checkDate = (dd, mm, yyyy) => {
+        const d = parseInt(dd, 10);
+        const m = parseInt(mm, 10);
+        const y = parseInt(yyyy, 10);
+        const dateObj = new Date(y, m - 1, d);
+        return dateObj.getFullYear() === y && dateObj.getMonth() === m - 1 && dateObj.getDate() === d;
+      };
+
+      if (!checkDate(match[1], match[2], match[3])) {
+        return { valid: false, reason: `Line ${i + 1} has invalid start date` };
+      }
+      if (!checkDate(match[4], match[5], match[6])) {
+        return { valid: false, reason: `Line ${i + 1} has invalid end date` };
+      }
+
+      const dStart = new Date(match[3], match[2] - 1, match[1]);
+      const dEnd = new Date(match[6], match[5] - 1, match[4]);
+      if (dStart > dEnd) {
+        return { valid: false, reason: `Line ${i + 1} start date is after end date` };
+      }
+    }
+  }
+  return { valid: true };
+}
+
+function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, absenceContent }) {
   if (!isOnlyAbsenceFileModified(modifiedFileNames)) {
     return {
       canApprove: false,
@@ -62,6 +110,16 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList })
       canApprove: false,
       reason: `PR author @${prAuthor} is not listed in OWNERS.`
     };
+  }
+
+  if (absenceContent !== undefined) {
+    const validation = validateAbsenceContent(absenceContent);
+    if (!validation.valid) {
+      return {
+        canApprove: false,
+        reason: `Invalid ABSENCE.md content: ${validation.reason}`
+      };
+    }
   }
 
   return {
@@ -98,7 +156,8 @@ async function run({ github, context, core }) {
   }
 
   const ownersList = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
-  const decision = shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList });
+  const absenceContent = fs.existsSync('ABSENCE.md') ? fs.readFileSync('ABSENCE.md', 'utf8') : undefined;
+  const decision = shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, absenceContent });
 
   if (!decision.canApprove) {
     core.info(`${decision.reason} Skipping auto-approval.`);
@@ -122,6 +181,7 @@ async function run({ github, context, core }) {
 }
 
 module.exports = {
+  validateAbsenceContent,
   isOnlyAbsenceFileModified,
   isAuthorCodeOwner,
   shouldAutoApproveAbsencePR,
