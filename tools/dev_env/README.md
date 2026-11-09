@@ -135,7 +135,7 @@ Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice
 | `dash`, `dashboard` | `dashboard_service` |
 | `health` | `health_service` |
 | `rod` | `rod_data_provider` |
-| `comp` | `components` |
+| `comp` | `components` (`xmc_bridge`) |
 | `all` | Reload all enabled microservices |
 
 > [!TIP]
@@ -281,7 +281,7 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--skip-terraform-init`: Skip `terraform init` during deployment.
 - `--skip-migrations`: Skip automatic Cloud Spanner database schema migrations.
 - `--skip-verification`: Skip environment health verification step.
-- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0` when `enable_components` is enabled).
+- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
 
 > [!NOTE]
 > The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy. It also passes a SHA-256 of `deploy/helm` as the `helm_chart_content_hash` blueprint variable (recorded in the umbrella Helm release description), so template-only chart changes trigger a real Helm upgrade that prunes removed objects.
@@ -308,7 +308,7 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 - `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
 - `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
 - `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
-- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0` when `enable_components` is enabled).
+- `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
 
 ---
 
@@ -340,7 +340,7 @@ To adapt the production XMC Helm chart for local development, `values-local.yaml
 1. **Base Values**: Loaded from `deploy/helm/values-local.yaml`.
 2. **Spanner Configuration**: Local Spanner instance, databases (`ess_database`, `xid_database`), and emulator endpoints.
 3. **Container Images**: Local image repositories and image tags (`local-dev`) side-loaded via KinD.
-4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `enable_components`, `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
+4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
 
 ### Deployment & Rollout Monitoring
 `HelmDeployer.deploy()` applies the Helm release (`xmc`) and invokes `wait_for_rollouts()`:
@@ -386,12 +386,11 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 | Feature Flag in YAML | Enabled Microservice Target | Default |
 | :--- | :--- | :--- |
 | `enable_metrics: true` | `ingestion_gateway` | `false` |
-| `enable_components: true` | `components` | `false` |
 | `rod_deployment_enabled: true` | `rod_data_provider` | `true` |
 | `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
 | `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |
 
-*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`) are always enabled.
+*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`) are always enabled.
 
 ### Dynamic Resource Naming Rules
 

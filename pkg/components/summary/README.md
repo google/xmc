@@ -9,21 +9,20 @@ The `pkg/components/summary` package provides administrative discovery, health i
 ### 1. Zero External RPCs on the Hot Path
 A core architectural invariant of the Components Subsystem is that **health reporting and administrative discovery must never block on or depend upon live external endpoints on the hot path**. 
 
-- **State Purely Derived from Spanner**: The `StoreComponentsProvider` reads component state exclusively from the Cloud Spanner store via `store.Store.ListComponents(ctx)`.
-- **Fault Isolation**: External service probes, Kubernetes API calls, or third-party webhooks are strictly prohibited on the summary path. If an external component cluster is down, slow, or partitioned, the health service responds immediately based on the recorded observed state in Cloud Spanner without incurring network timeouts or cascade failures.
+- **State Purely Derived from the ESS Database**: The `StoreComponentsProvider` reads component state exclusively from the configured ESS database (`Cloud Spanner` or `PostgreSQL`) via `store.Store.ListComponents(ctx)`.
+- **Fault Isolation**: External service probes, Kubernetes API calls, or third-party webhooks are strictly prohibited on the summary path. If an external component cluster is down, slow, or partitioned, the health service responds immediately based on the recorded observed state in the ESS database without incurring network timeouts or cascade failures.
 
 ### 2. Defensive Timeout Guardrails
 When querying the backing store from `cmd/health_service/health_checker.go`, the health checker wraps the provider call in a dedicated 3-second timeout context:
 ```go
 compCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 defer cancel()
-customHealths, customErr = c.componentsProvider.GetComponentsHealth(compCtx)
+customHealths, customErr = provider.GetComponentsHealth(compCtx)
 ```
 This protects health check latency and prevents slow database read locks from impacting overall health check throughput.
 
 ### 3. Graceful Degradation & Resilient Startup
-- **Explicit Flag Guard**: Custom component discovery is controlled by the `--enable_components` flag (environment variable: `enable_components`).
-- **Resilient Startup on Store Initialization**: If `--enable_components` is enabled but `EssSpannerDatabase` is not configured or the Cloud Spanner client cannot be initialized, the daemon logs a warning and disables custom component discovery (`logging.Warn`) without crashing the daemon. The health checker then reports custom components as disabled.
+- **Lazy Backend-Agnostic Store Initialization**: Custom component discovery is always enabled. In `cmd/health_service`, `HealthServiceLazyDBWrapper` lazily initializes the configured ESS database handle (`Spanner` or `PostgreSQL`) via `internal/storage/factory` on demand rather than blocking daemon startup. If the ESS database is unconfigured or unreachable during a check, the daemon logs a warning (`Failed to retrieve custom components health`) and continues serving health and configuration endpoints without crashing.
 - **Hermetic Dependency Injection**: Tests and mock environments explicitly provide their own store (e.g., `store.NewMemoryStore()`) via dependency injection into `NewStoreComponentsProvider(store)`. Production code does not contain hidden or implicit in-memory fallbacks, ensuring fail-fast observability.
 
 ---

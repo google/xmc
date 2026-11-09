@@ -38,9 +38,9 @@ The meta-chart has no Helm `dependencies:`. It reads each co-located component c
 
 ### Prerequisites
 
-The XMC umbrella chart must be installed with `enable_components=true` (Helm value `componentsDeployment.enabled=true`). That installs `xmc-bridge`. The chart installs the `Component` CRD and the `component-deletion-protection` admission policy regardless of the flag and never deletes them (see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)).
+In XMC `1.0.0+`, the XMC umbrella chart (`deploy/helm`) installs `xmc-bridge`, the `Component` CRD (`components.xmc.dev`), and the `component-deletion-protection` `ValidatingAdmissionPolicy` out-of-the-box (the CRD and deletion-protection policy carry `helm.sh/resource-policy: keep` and are never deleted by Helm; see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)). Upgrading the profile with `--reset-then-reuse-values` requires **Helm `>= 3.14.0`**.
 
-Components are an unlaunched feature, so install the profile fresh. If you installed a component chart directly as its own Helm release during development, uninstall that release first. To migrate an existing umbrella-managed `ingestion-gateway` deployment (`enable_components=false`) to this profile without downtime, follow [`docs/migrations/components.md`](../../../docs/migrations/components.md).
+If you installed a component chart directly as its own Helm release during development, uninstall that release first. To migrate a `< 1.0.0` deployment with an umbrella-managed `ingestion-gateway` workload to this profile without downtime, follow [`docs/migrations/components.md`](../../../docs/migrations/components.md).
 
 ### Install
 

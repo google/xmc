@@ -1,17 +1,17 @@
 # Migrating Legacy Metrics Workloads to XMC Components (`stable-2026a`)
 
-This runbook guides platform operators through the one-time, zero-downtime migration of an existing XMC installation from legacy umbrella-managed metrics workloads (`enable_components: false` / `componentsDeployment.enabled=false`) to the `stable-2026a` Component profile (`enable_components: true` / `componentsDeployment.enabled=true`).
+This runbook guides platform operators through the one-time, zero-downtime migration of a pre-`1.0.0` XMC installation from legacy umbrella-managed metrics workloads (`enable_components: false` / `componentsDeployment.enabled=false`) to the `stable-2026a` Component profile (`xmc-profile`).
 
 > [!IMPORTANT]
 > **Supported XMC Versions (`from` -> `target`)**:
-> - **Source (`from`)**: Any existing XMC installation running legacy umbrella mode (`enable_components: false` / `componentsDeployment.enabled=false`) — including `0.4.0`–`0.17.x` deployments with live `ingestion-gateway` workloads (and `0.18.x` clusters that have not yet enabled components). Pre-`0.4.0` clusters or installations where `ingestionGatewayDeployment.enabled=false` are also handled safely (`handoff` is a no-op).
-> - **Target (`to`)**: XMC **`0.18.0` – `0.18.x`**. Targets `<= 0.17.0` are unsupported (`0.17.0` shipped prior to this migration CLI, and `<= 0.16.0` lacks `stable-2026a` `ingestion-gateway` parameter/schema parity, multi-broker resolution, and `--profile-values` support). Complete this cutover on `0.18.x` before upgrading to `0.19.0`, where legacy non-component metrics templates are slated for removal.
+> - **Source (`from`)**: Any pre-`1.0.0` XMC installation running legacy umbrella mode (`enable_components: false` / `componentsDeployment.enabled=false`, including `0.4.0`–`0.18.x` deployments with live `ingestion-gateway` workloads, plus pre-`0.4.0` or gateway-disabled clusters where `handoff` is a no-op).
+> - **Target (`to`)**: XMC **`0.18.0` – `0.18.x` or `1.0.0+` (`1.x`)**. Targets `<= 0.17.0` are unsupported (`0.17.0` shipped prior to this migration CLI, and `<= 0.16.0` lacks `stable-2026a` `ingestion-gateway` parameter/schema parity, multi-broker resolution, and `--profile-values` support). In `1.0.0+`, XMC Components are mandatory and legacy non-component `ingestion-gateway` templates are removed (passing `componentsDeployment.enabled=false` or `ingestionGatewayDeployment.enabled=true` fails closed), so unmigrated `< 1.0.0` clusters with live `ingestion-gateway` workloads **must** run `prepare` -> `handoff` **before** upgrading the umbrella release to `1.0.0+`.
 
 ---
 
 ## Prerequisites
 
-- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` in an **interactive terminal** with cluster admin access to the target namespace (default: `xmc`). Each `migrate.py` subcommand verifies the source cluster and local codebase match the `0.18.x` transition window and prompts for interactive `yes` confirmation on `stdin` (non-TTY invocations abort automatically).
+- **Helm `>= 3.14.0`** (required for `--reset-then-reuse-values`), `kubectl`, and `python3` in an **interactive terminal** with cluster admin access to the target namespace (default: `xmc`). Each `migrate.py` subcommand verifies the source cluster and local target codebase (`0.18.x` or `1.x`) and prompts for interactive `yes` confirmation on `stdin` (non-TTY invocations abort automatically).
 - Updated XMC container images (including `xmc-bridge` and `ingestion-gateway`) built and pushed to your registry (see [INSTALL.md](../../INSTALL.md#step-2-build-and-push-updated-container-images)).
 - **`xmc-bridge` Workload Identity binding (older Cluster Toolkit deployments)**: If your cluster was provisioned before `module.xmc_wi_binding_xmc_bridge` was added to the `compute` group (and you upgrade only `xmc_app`), ensure `<namespace>/xmc-bridge-sa` holds `roles/iam.workloadIdentityUser` on `<deployment_name>-xmc-wl-sa@<project_id>.iam.gserviceaccount.com` (for example via `terraform -chdir=ctk-out/<deployment_name>/compute apply -target=module.xmc_wi_binding_xmc_bridge` after reviewing `terraform plan`).
 
@@ -42,7 +42,7 @@ bazel run //cmd/component-linter -- \
 
 ### Step 2: Hand Off Live `ingestion-gateway` Helm Ownership
 
-Before upgrading the umbrella release with `enable_components=true`, stamp `helm.sh/resource-policy=keep` and transfer `meta.helm.sh/release-name` to `xmc-cmp-ingestion-gateway` on the live `Deployment`, `Service`, and optional `HorizontalPodAutoscaler` (while keeping `<release>-ingestion-gateway-network-policy` in place until replacement):
+Before upgrading the umbrella release, stamp `helm.sh/resource-policy=keep` and transfer `meta.helm.sh/release-name` to `xmc-cmp-ingestion-gateway` on the live `Deployment`, `Service`, and optional `HorizontalPodAutoscaler` (while keeping `<release>-ingestion-gateway-network-policy` in place until replacement):
 
 ```bash
 ./tools/migrations/components/migrate.py handoff -n xmc -r xmc
@@ -50,22 +50,22 @@ Before upgrading the umbrella release with `enable_components=true`, stamp `helm
 
 *(If you need to abort before Step 3, run `./tools/migrations/components/migrate.py handoff --undo -n xmc -r xmc`.)*
 
-### Step 3: Upgrade the XMC Umbrella Release (`enable_components=true`)
+### Step 3: Upgrade the XMC Umbrella Release
 
-Upgrade your XMC umbrella deployment so `xmc-bridge` starts and `ess`, `dashboard-service`, and `ingestion-gateway` enable component discovery without pruning your live gateway pods:
+On **`1.0.0+`**, XMC Components are enabled automatically (no `enable_components: true` or `--set componentsDeployment.enabled=true` flag is needed). Before upgrading, **remove** any legacy `enable_components: false`, `componentsDeployment.enabled: false`, or `ingestionGatewayDeployment` block from your `xmanager-cloud-deployment.yaml` or `my-values.yaml`, as `1.0.0+` fails closed when those legacy keys are set. Then upgrade the umbrella release so `xmc-bridge` starts and `ess`, `dashboard-service`, and `ingestion-gateway` use component discovery without pruning your live gateway pods:
 
-- **`dev_env.py gke-upgrade`**: Set `enable_components: true` in your deployment YAML, then pass `--profile-values "<absolute-path-to>/profile-values.yaml"` to `python3 ./tools/dev_env/dev_env.py gke-upgrade -c <deployment.yaml> --enable-components --profile-values "<absolute-path-to>/profile-values.yaml"` (this automatically executes Step 4 via `deploy_component_profile`).
-- **Standalone Cluster Toolkit (`gcluster`)**: Set `enable_components: true` in your deployment YAML, re-render the blueprint and deploy the `xmc_app` group, then execute Step 4 manually:
+- **`dev_env.py gke-upgrade`**: Remove any legacy `enable_components: false` from your deployment YAML, then run `python3 ./tools/dev_env/dev_env.py gke-upgrade -c <deployment.yaml> --profile-values "<absolute-path-to>/profile-values.yaml"` (this automatically executes Step 4 via `deploy_component_profile`; if targeting `0.18.x`, also set `enable_components: true`).
+- **Standalone Cluster Toolkit (`gcluster`)**: Remove any legacy `enable_components: false` from your deployment YAML *(or set `enable_components: true` if targeting `0.18.x`)*, clear any stale staged templates, re-render the blueprint, and deploy the `xmc_app` group, then execute Step 4 manually:
   ```bash
+  rm -rf ctk-out/<deployment_name>/.ghpc/staged
   ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
   ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
   ```
-- **Direct Helm**:
+- **Direct Helm**: Remove any legacy `componentsDeployment.enabled: false` or `ingestionGatewayDeployment` block from `my-values.yaml` *(or pass `--set componentsDeployment.enabled=true` if targeting `0.18.x`)*, then run:
   ```bash
   helm upgrade --install xmc ./deploy/helm \
     -n xmc \
     -f my-values.yaml \
-    --set componentsDeployment.enabled=true \
     --wait
   ```
 
@@ -104,7 +104,7 @@ kill "${PF_PID}"
 
 `xmc-profile` is a separate Helm release: `gcluster deploy` and umbrella `helm upgrade` do not upgrade it. `prepare` also pins the gateway image that was running at migration time (`components.ingestion-gateway.imageTag`, plus `components.ingestion-gateway.parameters.image` when your umbrella values set a custom gateway image), and these take precedence over the default image `xmc-bridge` would otherwise use. Keep `profile-values.yaml` alongside your deployment configuration and, on every later XMC upgrade:
 
-1. Keep `enable_components: true` (`componentsDeployment.enabled=true`) and upgrade the umbrella release as usual (see [INSTALL.md](../../INSTALL.md#step-4-upgrade-application-workloads)).
+1. Upgrade the umbrella release as usual (see [INSTALL.md](../../INSTALL.md#step-4-upgrade-application-workloads)).
 2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to match the new `<IMAGE_TAG>` (the same tag used for the umbrella upgrade).
 3. Re-run the Step 4 `helm upgrade --install --reset-then-reuse-values xmc-profile ...` command from the new release checkout (`dev_env.py gke-upgrade --profile-values` does this automatically).
 
@@ -112,7 +112,10 @@ kill "${PF_PID}"
 
 ## Rollback Procedure
 
-To revert back to legacy umbrella ownership without dropping live `ingestion-gateway` pods:
+> [!WARNING]
+> Rolling back to legacy umbrella `ingestion-gateway` ownership is **only supported when downgrading to (or running on) XMC `<= 0.18.x`**, because XMC `1.0.0+` removes the legacy umbrella `ingestion-gateway` templates and fails closed when `componentsDeployment.enabled=false` or `ingestionGatewayDeployment.enabled=true` is passed.
+
+To revert back to legacy umbrella ownership on XMC `<= 0.18.x` without dropping live `ingestion-gateway` pods:
 
 1. **Orphan workloads and remove `Component` CRs**:
    ```bash

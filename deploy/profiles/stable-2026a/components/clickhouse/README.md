@@ -27,7 +27,7 @@ The following fields are structural constants encapsulated in [`templates/compon
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `bool` | `false` | Enables or disables the ClickHouse component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
+| `enabled` | `bool` | `false` | Enables or disables the ClickHouse component in the XMC catalog. Defaults to `false` until explicitly enabled in profile values. |
 | `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
@@ -135,7 +135,7 @@ spec:
 
 ## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
 
-When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
+`dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
 
 1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
 2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).
