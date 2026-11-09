@@ -16,12 +16,52 @@ package workunit
 
 import (
 	"context"
+	"fmt"
 
+	"cloud.google.com/go/spanner"
+	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 )
 
-// FetchActiveWorkUnitResources returns no rows until active work units are queried.
-// TODO(#1597): query the creator, executable and state of active work units in queueNames.
+var fetchActiveWorkUnitResourcesSQL = safesql.New(
+	`SELECT e.Creator, wu.Executable, wu.ExecutionState
+	FROM WorkUnits wu
+	JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid
+	WHERE wu.QueueName IN UNNEST(@queueNames)
+	  AND wu.IsPendingOrRunningJob IS NOT NULL`,
+)
+
+// FetchActiveWorkUnitResources reads the creator, executable and state of every active work unit
+// in queueNames in a single read.
 func (r *Repository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
-	return []storage.ActiveWorkUnitResources{}, nil
+	if r == nil || r.client == nil {
+		return nil, fmt.Errorf("spanner storage client is uninitialized: %w", grpcerr.ErrFailedPrecondition)
+	}
+	return fetchActiveWorkUnitResourcesInTxn(ctx, r.client.Single(), queueNames)
+}
+
+func fetchActiveWorkUnitResourcesInTxn(ctx context.Context, txn *spanner.ReadOnlyTransaction, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	result := []storage.ActiveWorkUnitResources{}
+	if len(queueNames) == 0 {
+		return result, nil
+	}
+	stmt := spanner.Statement{
+		SQL:    fetchActiveWorkUnitResourcesSQL.String(),
+		Params: map[string]any{"queueNames": queueNames},
+	}
+	iter := txn.Query(ctx, stmt)
+	defer iter.Stop()
+	err := iter.Do(func(row *spanner.Row) error {
+		var wu storage.ActiveWorkUnitResources
+		if err := row.Columns(&wu.Creator, &wu.Executable, &wu.ExecutionState); err != nil {
+			return fmt.Errorf("failed to read active work unit resources row: %w", err)
+		}
+		result = append(result, wu)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query active work unit resources: %w", err)
+	}
+	return result, nil
 }

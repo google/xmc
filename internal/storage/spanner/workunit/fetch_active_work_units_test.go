@@ -26,7 +26,6 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
-	"xmanager_cloud/internal/storage/spanner/emulator"
 )
 
 func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
@@ -51,11 +50,7 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 
 	t.Run("empty queue names returns empty result", func(t *testing.T) {
 		ctx := context.Background()
-		_, essClient := emulator.Setup(ctx, t)
-		storage, err := spanner.NewStorage(essClient)
-		if err != nil {
-			t.Fatalf("spanner.NewStorage failed: %v", err)
-		}
+		storage := newEmulatorStorage(ctx, t)
 		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{}, 10, "")
 		if err != nil {
 			t.Fatalf("FetchActiveWorkUnitsByQueues() unexpected error: %v", err)
@@ -68,11 +63,7 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 
 func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	store, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("spanner.NewStorage failed: %v", err)
-	}
+	store := newEmulatorStorage(ctx, t)
 
 	invalidTokens := []string{
 		"invalid-token-!!!",
@@ -95,11 +86,7 @@ func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 
 func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	ctx := context.Background()
-	_, essClient := emulator.Setup(ctx, t)
-	storage, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("spanner.NewStorage failed: %v", err)
-	}
+	storage := newEmulatorStorage(ctx, t)
 
 	xid := int64(100)
 	_ = spanner.CreateBlankExperiment(ctx, t, storage, xid)
@@ -158,11 +145,7 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 
 func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T) {
 	ctx := t.Context()
-	_, essClient := emulator.Setup(ctx, t)
-	store, err := spanner.NewStorage(essClient)
-	if err != nil {
-		t.Fatalf("spanner.NewStorage failed: %v", err)
-	}
+	store := newEmulatorStorage(ctx, t)
 
 	// ReverseBits orders [101, 104, 102], whereas logical Xid ASC orders [101, 102, 104].
 	seedTiedActiveWorkUnits(ctx, t, store, []int64{104, 102, 101}, "tie-queue")
@@ -187,19 +170,25 @@ func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T)
 
 func seedTiedActiveWorkUnits(ctx context.Context, t *testing.T, store *spanner.Storage, xids []int64, queueName string) {
 	t.Helper()
-	fixedTS := timestamppb.New(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	wus := make([]*essmsgpb.WorkUnit, 0, len(xids))
 	for _, xid := range xids {
 		_ = spanner.CreateBlankExperiment(ctx, t, store, xid)
+		wu := spanner.BlankWorkUnitProto(xid, 1)
+		wu.Executable.SchedulingConstraints.QueueName = queueName
+		wu.CurrentWorkUnitExecution.Status.State = essmsgpb.WorkUnitStatus_RUNNING
+		wus = append(wus, wu)
 	}
+	insertWorkUnitsAt(ctx, t, store, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), wus)
+}
+
+// insertWorkUnitsAt inserts wus in one transaction with every create and update time set to ts.
+func insertWorkUnitsAt(ctx context.Context, t *testing.T, store *spanner.Storage, ts time.Time, wus []*essmsgpb.WorkUnit) {
+	t.Helper()
+	fixedTS := timestamppb.New(ts)
 	err := store.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		for _, xid := range xids {
-			wu := spanner.BlankWorkUnitProto(xid, 1)
-			wu.CreateTime = fixedTS
-			wu.UpdateTime = fixedTS
-			wu.Executable.SchedulingConstraints.QueueName = queueName
-			wu.CurrentWorkUnitExecution.CreateTime = fixedTS
-			wu.CurrentWorkUnitExecution.UpdateTime = fixedTS
-			wu.CurrentWorkUnitExecution.Status.State = essmsgpb.WorkUnitStatus_RUNNING
+		for _, wu := range wus {
+			wu.CreateTime, wu.UpdateTime = fixedTS, fixedTS
+			wu.CurrentWorkUnitExecution.CreateTime, wu.CurrentWorkUnitExecution.UpdateTime = fixedTS, fixedTS
 			if err := tx.WorkUnits.InsertWorkUnit(ctx, wu); err != nil {
 				return err
 			}
@@ -207,6 +196,6 @@ func seedTiedActiveWorkUnits(ctx context.Context, t *testing.T, store *spanner.S
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("seedTiedActiveWorkUnits RunInTransaction failed: %v", err)
+		t.Fatalf("insertWorkUnitsAt RunInTransaction failed: %v", err)
 	}
 }

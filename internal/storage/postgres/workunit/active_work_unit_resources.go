@@ -16,12 +16,51 @@ package workunit
 
 import (
 	"context"
+	"fmt"
 
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
+	postgresdata "xmanager_cloud/internal/storage/postgres/data"
+	"xmanager_cloud/internal/storage/postgres/pgdb"
 )
 
-// FetchActiveWorkUnitResources returns no rows until active work units are queried.
-// TODO(#1597): query the creator, executable and state of active work units in queueNames.
+type activeWorkUnitResourcesRow struct {
+	Executable     []byte `db:"executable"`
+	ExecutionState int64  `db:"executionstate"`
+	Creator        string `db:"creator"`
+}
+
+var fetchActiveWorkUnitResourcesSQL = safesql.New(`SELECT wu.Executable, wu.ExecutionState, e.Creator
+FROM WorkUnits wu
+JOIN Experiments e ON wu.Xid = e.Xid
+WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
+
+// FetchActiveWorkUnitResources reads the creator, executable and state of every active work unit
+// in queueNames in a single statement.
 func (r *Repository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
-	return []storage.ActiveWorkUnitResources{}, nil
+	return fetchActiveWorkUnitResourcesFromDB(ctx, r.db, queueNames)
+}
+
+func fetchActiveWorkUnitResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	if len(queueNames) == 0 {
+		return []storage.ActiveWorkUnitResources{}, nil
+	}
+	rows, err := pgdb.QueryRows[activeWorkUnitResourcesRow](ctx, db, fetchActiveWorkUnitResourcesSQL.String(), entityName, queueNames)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]storage.ActiveWorkUnitResources, 0, len(rows))
+	for _, row := range rows {
+		exec, err := postgresdata.UnmarshalProto[essmsgpb.Executable](row.Executable)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal Executable: %w", err)
+		}
+		result = append(result, storage.ActiveWorkUnitResources{
+			Creator:        row.Creator,
+			Executable:     exec,
+			ExecutionState: essmsgpb.WorkUnitStatus_WorkUnitState(row.ExecutionState),
+		})
+	}
+	return result, nil
 }
