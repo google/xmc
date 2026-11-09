@@ -13,6 +13,7 @@
 // limitations under the License.
 
 const fs = require('fs');
+const { parseAbsenceFile } = require('./absence-schedule');
 
 const NUM_REVIEWERS_TO_ASSIGN = 1;
 
@@ -55,9 +56,11 @@ async function run({ github, context, core }) {
 
   let absentUsers = [];
   if (fs.existsSync('ABSENCE.md')) {
-    absentUsers = parseReviewersFromOwners(fs.readFileSync('ABSENCE.md', 'utf8'))
-      .map(u => u.replace(/^[-*+@\s]+/, '').trim())
-      .filter(Boolean);
+    const parsedAbsence = parseAbsenceFile(fs.readFileSync('ABSENCE.md', 'utf8'));
+    absentUsers = parsedAbsence.absentUsers;
+    for (const err of parsedAbsence.errors) {
+      core.warning(`Invalid ABSENCE.md entry ignored: ${err}`);
+    }
     core.info(`Parsed absent reviewers from ABSENCE.md: ${absentUsers.join(', ')}`);
   }
 

@@ -14,6 +14,7 @@
 
 const fs = require('fs');
 const { parseReviewersFromOwners } = require('./assign-reviewers');
+const { validateAbsenceContent } = require('./absence-schedule');
 
 /**
  * Pure function: Checks if the list of modified files contains strictly ABSENCE.md and nothing else.
@@ -47,9 +48,15 @@ function isAuthorCodeOwner(prAuthor, ownersList) {
  * @param {string[]} params.modifiedFileNames - Array of file paths modified in the PR.
  * @param {string} params.prAuthor - Username of the PR author.
  * @param {string[]} params.ownersList - Array of code owner usernames.
+ * @param {string} [params.absenceContent=''] - Raw content of ABSENCE.md.
  * @returns {{ canApprove: boolean, reason: string }} Decision result object.
  */
-function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList }) {
+function shouldAutoApproveAbsencePR({
+  modifiedFileNames,
+  prAuthor,
+  ownersList,
+  absenceContent = ''
+}) {
   if (!isOnlyAbsenceFileModified(modifiedFileNames)) {
     return {
       canApprove: false,
@@ -64,6 +71,14 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList })
     };
   }
 
+  const validation = validateAbsenceContent(absenceContent);
+  if (!validation.valid) {
+    return {
+      canApprove: false,
+      reason: `Invalid ABSENCE.md content: ${validation.reason}`
+    };
+  }
+
   return {
     canApprove: true,
     reason: `PR only modifies ABSENCE.md and author @${prAuthor} is an authorized code owner.`
@@ -71,7 +86,7 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList })
 }
 
 /**
- * Orchestrator: Fetches PR files, reads OWNERS, evaluates eligibility, and posts approval review via REST API.
+ * Orchestrator: Fetches PR files, reads OWNERS and ABSENCE.md, evaluates eligibility, and posts approval review via REST API.
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
@@ -97,8 +112,19 @@ async function run({ github, context, core }) {
     return;
   }
 
+  if (!fs.existsSync('ABSENCE.md')) {
+    core.info('ABSENCE.md not found in repository root. Skipping auto-approval.');
+    return;
+  }
+
   const ownersList = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
-  const decision = shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList });
+  const absenceContent = fs.readFileSync('ABSENCE.md', 'utf8');
+  const decision = shouldAutoApproveAbsencePR({
+    modifiedFileNames,
+    prAuthor,
+    ownersList,
+    absenceContent
+  });
 
   if (!decision.canApprove) {
     core.info(`${decision.reason} Skipping auto-approval.`);
@@ -122,6 +148,7 @@ async function run({ github, context, core }) {
 }
 
 module.exports = {
+  validateAbsenceContent,
   isOnlyAbsenceFileModified,
   isAuthorCodeOwner,
   shouldAutoApproveAbsencePR,

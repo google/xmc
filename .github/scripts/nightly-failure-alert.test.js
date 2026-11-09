@@ -101,6 +101,50 @@ describe('resolveActiveOwners', () => {
     }
   });
 
+  test('respects scheduled DD.MM.YYYY-DD.MM.YYYY date ranges and logs warnings for invalid lines in ABSENCE.md', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-resolve-owners-range-'));
+    const ownersFile = path.join(tempDir, 'OWNERS');
+    const absenceFile = path.join(tempDir, 'ABSENCE.md');
+    const warnings = [];
+    const mockCore = { info: () => {}, warning: (msg) => warnings.push(msg) };
+
+    try {
+      fs.writeFileSync(ownersFile, 'User1\nUser2\nUser3\n');
+      fs.writeFileSync(
+        absenceFile,
+        'User2\nUser3 10.11.2026-15.11.2026\nUser1 31.02.2026-15.03.2026\n'
+      );
+
+      // Before User3's absence window: User3 is active, User2 is unconditionally absent
+      assert.deepEqual(
+        resolveActiveOwners(ownersFile, absenceFile, mockCore, new Date('2026-11-09T12:00:00Z')),
+        ['User1', 'User3']
+      );
+      assert.equal(warnings.length, 1);
+      assert.ok(warnings[0].includes('invalid start date'));
+
+      // On start boundary (2026-11-10 UTC): both User2 and User3 are absent
+      assert.deepEqual(
+        resolveActiveOwners(ownersFile, absenceFile, mockCore, new Date('2026-11-10T00:00:00Z')),
+        ['User1']
+      );
+
+      // On end boundary (2026-11-15 UTC): both User2 and User3 are absent
+      assert.deepEqual(
+        resolveActiveOwners(ownersFile, absenceFile, mockCore, new Date('2026-11-15T23:59:59Z')),
+        ['User1']
+      );
+
+      // After User3's absence window (2026-11-16 UTC): User3 is active again
+      assert.deepEqual(
+        resolveActiveOwners(ownersFile, absenceFile, mockCore, new Date('2026-11-16T00:00:00Z')),
+        ['User1', 'User3']
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('handles missing owners and absence files gracefully', () => {
     let warningLogged = false;
     const mockCore = {
