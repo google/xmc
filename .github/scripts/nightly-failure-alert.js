@@ -13,7 +13,7 @@
 // limitations under the License.
 
 const fs = require('fs');
-const { parseAbsenceFile } = require('./assign-reviewers');
+const { parseAbsenceFile } = require('./absence-schedule');
 
 /**
  * Parses a flat text file (like OWNERS) containing usernames.
@@ -56,10 +56,13 @@ function resolveActiveOwners(ownersPath, absencePath, core, currentDate = new Da
   const ownersContent = fs.existsSync(ownersPath) ? fs.readFileSync(ownersPath, 'utf8') : '';
   const absenceContent = fs.existsSync(absencePath) ? fs.readFileSync(absencePath, 'utf8') : '';
 
-  const activeOwners = filterActiveOwners(
-    parseUsernames(ownersContent),
-    parseAbsenceFile(absenceContent, currentDate)
-  );
+  const { absentUsers, errors } = parseAbsenceFile(absenceContent, currentDate);
+  if (core) {
+    for (const err of errors) {
+      core.warning(`Invalid ABSENCE.md entry ignored: ${err}`);
+    }
+  }
+  const activeOwners = filterActiveOwners(parseUsernames(ownersContent), absentUsers);
   if (core) {
     core.info(`Active OWNERS to notify (${activeOwners.length}): ${activeOwners.join(', ') || 'none'}`);
   }
@@ -354,7 +357,6 @@ async function run({
 }
 
 module.exports = {
-  parseAbsenceFile,
   parseUsernames,
   filterActiveOwners,
   resolveActiveOwners,

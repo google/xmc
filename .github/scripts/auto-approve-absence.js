@@ -13,7 +13,8 @@
 // limitations under the License.
 
 const fs = require('fs');
-const { parseReviewersFromOwners, parseAbsenceLine } = require('./assign-reviewers');
+const { parseReviewersFromOwners } = require('./assign-reviewers');
+const { validateAbsenceContent } = require('./absence-schedule');
 
 /**
  * Pure function: Checks if the list of modified files contains strictly ABSENCE.md and nothing else.
@@ -39,27 +40,6 @@ function isAuthorCodeOwner(prAuthor, ownersList) {
   }
   const authorLower = prAuthor.toLowerCase();
   return ownersList.some(owner => (owner || '').toLowerCase() === authorLower);
-}
-
-/**
- * Pure function: Validates the contents of ABSENCE.md, checking that every non-empty
- * non-comment line is either "NICK" or "NICK DD.MM.YYYY-DD.MM.YYYY" with valid
- * calendar dates and start <= end.
- * @param {string} content - Raw ABSENCE.md content.
- * @returns {{ valid: boolean, reason?: string }}
- */
-function validateAbsenceContent(content) {
-  if (typeof content !== 'string') {
-    return { valid: false, reason: 'ABSENCE.md content is missing or not a string' };
-  }
-  const lines = content.split(/\r?\n/);
-  for (let i = 0; i < lines.length; i++) {
-    const entry = parseAbsenceLine(lines[i], i + 1);
-    if (!entry.valid) {
-      return { valid: false, reason: entry.reason };
-    }
-  }
-  return { valid: true };
 }
 
 /**
