@@ -111,16 +111,14 @@ func main() {
 	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
 
 	spb.RegisterExperimentStateServiceServer(s, prodServer)
-	if cfg.EnableComponents {
-		cmsAuth, err := newCMSAuthorizer(ctx, &cfg, oauthCfg, oauthAuth)
-		if err != nil {
-			logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
-		}
-		stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
-		// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
-		// database handle is closed.
-		defer stopCMS()
+	cmsAuth, err := newCMSAuthorizer(ctx, &cfg, oauthCfg, oauthAuth)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
 	}
+	stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
+	// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
+	// database handle is closed.
+	defer stopCMS()
 
 	reflection.Register(s)
 

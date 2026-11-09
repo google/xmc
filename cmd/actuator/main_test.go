@@ -15,10 +15,21 @@
 package main
 
 import (
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestDeprecatedEnableComponentsFlagRegistered(t *testing.T) {
+	f := flag.Lookup("enable_components")
+	if f == nil {
+		t.Fatal("flag -enable_components is not registered")
+	}
+	if err := f.Value.Set("false"); err != nil {
+		t.Errorf("setting -enable_components=false failed: %v", err)
+	}
+}
 
 func TestSetupMux(t *testing.T) {
 	t.Run("nil_prod_server_routes", func(t *testing.T) {

@@ -15,10 +15,21 @@
 package main
 
 import (
+	"flag"
 	"testing"
 
 	"xmanager_cloud/internal/storage/dbconfig"
 )
+
+func TestDeprecatedEnableComponentsFlagRegistered(t *testing.T) {
+	f := flag.Lookup("enable_components")
+	if f == nil {
+		t.Fatal("flag -enable_components is not registered")
+	}
+	if err := f.Value.Set("false"); err != nil {
+		t.Errorf("setting -enable_components=false failed: %v", err)
+	}
+}
 
 func TestLoadConfig(t *testing.T) {
 	tests := []struct {

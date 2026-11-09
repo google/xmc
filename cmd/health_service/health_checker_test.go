@@ -306,6 +306,9 @@ func (m *mockLazyDB) ComponentsProvider(ctx context.Context) (summary.CustomComp
 	if m.componentsErr != nil {
 		return nil, m.componentsErr
 	}
+	if m.componentsProvider == nil {
+		return &mockComponentsInfoProvider{}, nil
+	}
 	return m.componentsProvider, nil
 }
 
@@ -859,11 +862,10 @@ func TestHealthChecker_RunChecks_WithCustomComponents(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
 		},
 		LazyDB: &mockLazyDB{
 			componentsProvider: mockProvider,
@@ -925,11 +927,10 @@ func TestHealthChecker_RunChecks_CustomComponentsError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
 		},
 		LazyDB: &mockLazyDB{
 			componentsProvider: mockProvider,
@@ -979,12 +980,11 @@ func TestHealthChecker_RunChecks_LazyDBInitError(t *testing.T) {
 
 	checker, err := NewHealthChecker(HealthCheckerParams{
 		Config: &Config{
-			XidAddr:          xidListener.Addr().String(),
-			EssURL:           httpServer.URL,
-			ActuatorURL:      httpServer.URL,
-			ReconcilerURL:    httpServer.URL,
-			EnableComponents: true,
-			DB:               dbconfig.Config{Backend: dbconfig.BackendSpanner},
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
+			DB:            dbconfig.Config{Backend: dbconfig.BackendSpanner},
 		},
 		LazyDB: &mockLazyDB{
 			essHealthErr:  errors.New("ess spanner init failed"),
@@ -1051,12 +1051,11 @@ func TestHealthChecker_RunChecks_CustomComponentsRunsAcrossBackends(t *testing.T
 		t.Run(string(backend), func(t *testing.T) {
 			checker, err := NewHealthChecker(HealthCheckerParams{
 				Config: &Config{
-					XidAddr:          xidListener.Addr().String(),
-					EssURL:           httpServer.URL,
-					ActuatorURL:      httpServer.URL,
-					ReconcilerURL:    httpServer.URL,
-					EnableComponents: true,
-					DB:               dbconfig.Config{Backend: backend},
+					XidAddr:       xidListener.Addr().String(),
+					EssURL:        httpServer.URL,
+					ActuatorURL:   httpServer.URL,
+					ReconcilerURL: httpServer.URL,
+					DB:            dbconfig.Config{Backend: backend},
 				},
 				LazyDB: &mockLazyDB{
 					componentsProvider: mockProvider,

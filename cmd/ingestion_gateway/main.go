@@ -44,7 +44,7 @@ func main() {
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	resolveComponentConfigIfEnabled(ctx, cfg)
+	resolveComponentConfig(ctx, cfg)
 	logInitializing(ctx, cfg)
 
 	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
@@ -62,8 +62,8 @@ func main() {
 	awaitShutdown(ctx, server)
 }
 
-func resolveComponentConfigIfEnabled(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
-	if cfg == nil || !cfg.EnableComponents {
+func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
+	if cfg == nil || cfg.MessageBus == ingestiongateway.MessageBusPubSub {
 		return
 	}
 	var getter ingestiongateway.ComponentGetter

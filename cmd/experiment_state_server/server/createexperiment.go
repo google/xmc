@@ -137,13 +137,9 @@ func normalizeExperimentType(t msgpb.Experiment_ExperimentType) msgpb.Experiment
 }
 
 // precheckComponentRequirements returns a FailedPrecondition error when exp requires components and
-// the Components feature is disabled or a required component is missing or not ready in a read-only
-// catalog snapshot. Experiments that require no components read nothing.
+// a required component is missing or not ready in a read-only catalog snapshot. Experiments that
+// require no components read nothing.
 func (h *ExperimentHandler) precheckComponentRequirements(ctx context.Context, exp *msgpb.Experiment) error {
-	if err := experiment.CheckComponentsFeature(exp, h.enableComponents); err != nil {
-		logging.Warn(ctx, "CreateExperiment requires the disabled Components feature", "error", err)
-		return err
-	}
 	reqs := experiment.RequirementsFor(exp)
 	if len(reqs) == 0 {
 		return nil

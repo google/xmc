@@ -431,39 +431,31 @@ func TestLoadConfig_ComponentsFlagsAndEnv(t *testing.T) {
 		if err != nil {
 			t.Fatalf("LoadConfig() unexpected error: %v", err)
 		}
-		if cfg.EnableComponents {
-			t.Errorf("EnableComponents = true, want false")
-		}
 		if cfg.ComponentsNamespace != "xmc" {
 			t.Errorf("ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "xmc")
 		}
 	})
 
-	t.Run("env variables configure EnableComponents and ComponentsNamespace", func(t *testing.T) {
-		t.Setenv("ENABLE_COMPONENTS", "true")
+	t.Run("env variables configure ComponentsNamespace", func(t *testing.T) {
 		t.Setenv("COMPONENTS_NAMESPACE", "custom-ns")
 		cfg, err := LoadConfig(&Flags{})
 		if err != nil {
 			t.Fatalf("LoadConfig() unexpected error: %v", err)
-		}
-		if !cfg.EnableComponents {
-			t.Errorf("EnableComponents = false, want true")
 		}
 		if cfg.ComponentsNamespace != "custom-ns" {
 			t.Errorf("ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "custom-ns")
 		}
 	})
 
-	t.Run("flags take precedence over defaults", func(t *testing.T) {
-		cfg, err := LoadConfig(&Flags{
-			EnableComponents:    true,
-			ComponentsNamespace: "flag-ns",
-		})
+	t.Run("flags take precedence over defaults and deprecated -enable_components parses cleanly", func(t *testing.T) {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		flags := RegisterFlags(fs)
+		if err := fs.Parse([]string{"-enable_components=false", "-components_namespace=flag-ns"}); err != nil {
+			t.Fatalf("fs.Parse() with -enable_components=false failed: %v", err)
+		}
+		cfg, err := LoadConfig(flags)
 		if err != nil {
 			t.Fatalf("LoadConfig() unexpected error: %v", err)
-		}
-		if !cfg.EnableComponents {
-			t.Errorf("EnableComponents = false, want true")
 		}
 		if cfg.ComponentsNamespace != "flag-ns" {
 			t.Errorf("ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "flag-ns")

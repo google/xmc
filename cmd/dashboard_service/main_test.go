@@ -256,6 +256,13 @@ func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
 	// readiness would hold every one of their pods out of the service endpoints.
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("CLICKHOUSE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
 
 	if provider := initDataEngine(context.Background(), &server.Config{}); provider != nil {
 		t.Errorf("initDataEngine() = %v, want nil when ClickHouse is not configured", provider)
@@ -288,7 +295,7 @@ func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
 }
 
 func TestChartDataEngine_WrapsProvider(t *testing.T) {
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(false, "", nil))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver("", nil))
 
 	got := chartDataEngine(provider)
 
@@ -465,7 +472,7 @@ func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *test
 	}
 	t.Setenv("KUBECONFIG", badKubeconfig)
 
-	resolve := buildClickHouseResolver(true, "xmc", nil)
+	resolve := buildClickHouseResolver("xmc", nil)
 	if _, _, err := resolve(context.Background()); err == nil {
 		t.Errorf("resolve() with invalid kubeconfig succeeded, want error")
 	}
@@ -496,7 +503,7 @@ func TestBuildClickHouseResolver_UsesCustomGetter(t *testing.T) {
 	}
 	customGetter := &crreadertest.FakeGetter{Component: cr}
 
-	resolve := buildClickHouseResolver(true, "xmc", customGetter)
+	resolve := buildClickHouseResolver("xmc", customGetter)
 	fp, connect, err := resolve(context.Background())
 	if err != nil {
 		t.Fatalf("resolve() with customGetter error: %v", err)
@@ -597,15 +604,22 @@ func TestIsClickHouseExpected(t *testing.T) {
 
 	t.Run("returns true when static environment is configured", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
-		if !isClickHouseExpected(ctx, false, "xmc", nil) {
+		if !isClickHouseExpected(ctx, "xmc", nil) {
 			t.Errorf("isClickHouseExpected() = false, want true")
 		}
 	})
 
-	t.Run("returns false when static env unset and components disabled", func(t *testing.T) {
+	t.Run("returns false when static env unset and kubeconfig unavailable", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
-		if isClickHouseExpected(ctx, false, "xmc", nil) {
+		t.Setenv("KUBERNETES_SERVICE_HOST", "")
+		t.Setenv("KUBERNETES_SERVICE_PORT", "")
+		badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+		if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+			t.Fatalf("failed to write invalid kubeconfig: %v", err)
+		}
+		t.Setenv("KUBECONFIG", badKubeconfig)
+		if isClickHouseExpected(ctx, "xmc", nil) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -614,7 +628,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
 		getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
-		if isClickHouseExpected(ctx, true, "xmc", getter) {
+		if isClickHouseExpected(ctx, "xmc", getter) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -629,7 +643,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 			},
 		}
 		getter := &crreadertest.FakeGetter{Component: u}
-		if isClickHouseExpected(ctx, true, "xmc", getter) {
+		if isClickHouseExpected(ctx, "xmc", getter) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -644,7 +658,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 			},
 		}
 		getter := &crreadertest.FakeGetter{Component: u}
-		if !isClickHouseExpected(ctx, true, "xmc", getter) {
+		if !isClickHouseExpected(ctx, "xmc", getter) {
 			t.Errorf("isClickHouseExpected() = false, want true")
 		}
 	})
@@ -679,7 +693,6 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	t.Setenv("BIGQUERY_DATASET", "")
 	t.Setenv("METRICS_STORE", "")
 	serverCfg := &server.Config{
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 	getter := &countingComponentGetter{
@@ -817,10 +830,10 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	_ = os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600)
 	t.Setenv("KUBECONFIG", badKubeconfig)
 
-	if _, _, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx); err == nil {
+	if _, _, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx); err == nil {
 		t.Error("buildBigQueryResolver() with invalid kubeconfig succeeded, want error")
 	}
-	if isBigQueryExpected(ctx, true, "xmc", nil) {
+	if isBigQueryExpected(ctx, "xmc", nil) {
 		t.Error("isBigQueryExpected() with invalid kubeconfig = true, want false")
 	}
 
@@ -837,10 +850,10 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 		},
 	}
 	getter := &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"bigquery": cr}}
-	if !isBigQueryExpected(ctx, true, "xmc", getter) {
+	if !isBigQueryExpected(ctx, "xmc", getter) {
 		t.Error("isBigQueryExpected() with enabled Component/bigquery = false, want true")
 	}
-	if fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", getter)(ctx); err != nil || fp == "" || build == nil {
+	if fp, build, err := buildBigQueryResolver("xmc", "proj-1", getter)(ctx); err != nil || fp == "" || build == nil {
 		t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want non-empty fp and builder", fp, build, err)
 	}
 
@@ -885,7 +898,7 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 	t.Run("clickhouse static fallback", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 		t.Setenv("CLICKHOUSE_PORT", "9000")
-		fp, connect, err := buildClickHouseResolver(true, "xmc", nil)(ctx)
+		fp, connect, err := buildClickHouseResolver("xmc", nil)(ctx)
 		if err != nil || fp == "" || connect == nil {
 			t.Fatalf("buildClickHouseResolver() = (%q, %v, %v), want static fallback", fp, connect, err)
 		}
@@ -894,7 +907,7 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 	t.Run("bigquery static fallback", func(t *testing.T) {
 		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
 		t.Setenv("BIGQUERY_TABLE", "xmc_metrics")
-		fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx)
+		fp, build, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx)
 		if err != nil || fp == "" || build == nil {
 			t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want static fallback", fp, build, err)
 		}

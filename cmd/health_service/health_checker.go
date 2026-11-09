@@ -128,11 +128,11 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 		xidComp, xidVersion = c.CheckXIDDatabase(ctx)
 	}()
 
-	// 3. Run custom component checks in parallel if enabled
+	// 3. Run custom component checks in parallel
 	var customCompHealths []summary.ComponentHealth
 	var customCompErr error
 
-	checkComponents := c.cfg != nil && c.cfg.EnableComponents && c.lazyDB != nil
+	checkComponents := c.lazyDB != nil
 	if checkComponents {
 		wg.Add(1)
 		go func() {
@@ -148,7 +148,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 	// 4. Append database results to the components list
 	components = append(components, essComp, xidComp)
 
-	// 5. Append custom components health if enabled
+	// 5. Append custom components health
 	if checkComponents {
 		if customCompErr != nil {
 			logging.Warn(ctx, "Failed to retrieve custom components health", "error", customCompErr)
