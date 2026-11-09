@@ -68,7 +68,62 @@ func (e *DataEngine) fetchSeriesData(ctx context.Context, xid int64, wid int64, 
 	if err != nil {
 		return nil, err
 	}
+	if bucketSize > 1 {
+		points = collapseSeriesBuckets(points)
+	}
 	return scatterPlots(plot.GetPlotId(), points), nil
+}
+
+// collapseSeriesBuckets merges adjacent bucketed points sharing (metric, work unit, step) across
+// executions, jobs, and replicas into one work-unit-level bucket point.
+func collapseSeriesBuckets(points []metricsquery.MetricPoint) []metricsquery.MetricPoint {
+	if len(points) == 0 {
+		return nil
+	}
+	collapsed := make([]metricsquery.MetricPoint, 0, len(points))
+	start := 0
+	for i := 1; i <= len(points); i++ {
+		if i < len(points) && sameSeriesStep(points[start], points[i]) {
+			continue
+		}
+		collapsed = append(collapsed, mergeBucketPoints(points[start:i]))
+		start = i
+	}
+	return collapsed
+}
+
+func sameSeriesStep(a, b metricsquery.MetricPoint) bool {
+	return a.XID == b.XID && a.MetricName == b.MetricName && a.WorkUnitID == b.WorkUnitID && a.Step == b.Step
+}
+
+func mergeBucketPoints(bucket []metricsquery.MetricPoint) metricsquery.MetricPoint {
+	merged := metricsquery.MetricPoint{
+		XID:        bucket[0].XID,
+		WorkUnitID: bucket[0].WorkUnitID,
+		MetricName: bucket[0].MetricName,
+		Step:       bucket[0].Step,
+		Timestamp:  bucket[0].Timestamp,
+		Avg:        bucket[0].Avg,
+		Min:        bucket[0].Min,
+		Max:        bucket[0].Max,
+		Count:      max(bucket[0].Count, 1),
+	}
+	if len(bucket) == 1 {
+		return merged
+	}
+	weightedSum := merged.Avg * float64(merged.Count)
+	for _, p := range bucket[1:] {
+		weight := max(p.Count, 1)
+		weightedSum += p.Avg * float64(weight)
+		merged.Count += weight
+		merged.Min = min(merged.Min, p.Min)
+		merged.Max = max(merged.Max, p.Max)
+		if p.Timestamp.After(merged.Timestamp) {
+			merged.Timestamp = p.Timestamp
+		}
+	}
+	merged.Avg = weightedSum / float64(merged.Count)
+	return merged
 }
 
 // scatterPlots groups ordered points into one scatter series per (metric, work unit), keeping the

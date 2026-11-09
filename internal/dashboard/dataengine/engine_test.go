@@ -190,8 +190,8 @@ func TestFetchChartData(t *testing.T) {
 					{"loss", 0.05, 0.02, 0.99, 0.25, int64(500), sampleTime},
 				},
 				"scatter": {
-					{int64(100), 0.85, 0.85, 0.85, sampleTime, "accuracy", int64(1), int64(1001)},
-					{int64(200), 0.92, 0.92, 0.92, sampleTime, "accuracy", int64(1), int64(1001)},
+					{int64(100), 0.85, 0.85, 0.85, int64(1), sampleTime, "accuracy", int64(1), int64(1001), int64(1), "worker", "0"},
+					{int64(200), 0.92, 0.92, 0.92, int64(1), sampleTime, "accuracy", int64(1), int64(1001), int64(1), "worker", "0"},
 				},
 			},
 			wantPlots: 2,
@@ -303,7 +303,7 @@ func TestDataEngineCloseAndMultiPlotOrdering(t *testing.T) {
 				return &mockRows{Data: [][]any{{"loss", 0.1, 0.1, 0.1, 0.1, int64(10), sampleTime}}}, nil
 			}
 			close(slowGate)
-			return &mockRows{Data: [][]any{{int64(20), 0.9, 0.9, 0.9, sampleTime, "acc", int64(1), int64(1)}}}, nil
+			return &mockRows{Data: [][]any{{int64(20), 0.9, 0.9, 0.9, int64(1), sampleTime, "acc", int64(1), int64(1), int64(1), "worker", "0"}}}, nil
 		},
 	}
 	orderedEngine, _ := New(orderedConn)

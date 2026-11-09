@@ -70,7 +70,7 @@ func TestBigQueryEngineAndSQLGeneration(t *testing.T) {
 			if strings.Contains(sql, "ARRAY_AGG") {
 				return &mockRows{Data: [][]any{{"loss", 0.05, 0.01, 0.99, 0.25, int64(500), sampleTime}}}, nil
 			}
-			return &mockRows{Data: [][]any{{int64(0), 0.9, 0.8, 1.0, sampleTime, "acc", int64(1), int64(1001)}}}, nil
+			return &mockRows{Data: [][]any{{int64(0), 0.9, 0.8, 1.0, int64(10), sampleTime, "acc", int64(1), int64(1001), int64(1), "worker", "0"}}}, nil
 		},
 	}
 	engine, err := NewBigQuery(conn)
