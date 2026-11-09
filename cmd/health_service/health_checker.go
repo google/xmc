@@ -165,7 +165,7 @@ func (c *HealthChecker) RunChecks(ctx context.Context) RunChecksResult {
 
 func (c *HealthChecker) checkCustomComponents(ctx context.Context) ([]summary.ComponentHealth, error) {
 	provider, err := c.lazyDB.ComponentsProvider(ctx)
-	if err != nil {
+	if err != nil || provider == nil {
 		return nil, err
 	}
 	return provider.GetComponentsHealth(ctx)

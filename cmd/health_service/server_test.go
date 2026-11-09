@@ -435,6 +435,13 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 	if len(customGroup.Configs) != 2 {
 		t.Fatalf("expected 2 configs in custom group, got %d", len(customGroup.Configs))
 	}
+
+	sNilProvider := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsProvider: nil}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	defer sNilProvider.Close()
+	respNil, err := sNilProvider.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err != nil || len(respNil.ConfigGroups) != 1 {
+		t.Fatalf("ListConfigEntries(nil provider) = (%d groups, %v), want (1 group, nil)", len(respNil.GetConfigGroups()), err)
+	}
 }
 
 func TestListConfigEntries_CustomComponentsError(t *testing.T) {

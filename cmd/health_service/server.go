@@ -267,6 +267,9 @@ func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigG
 		logging.Warn(ctx, "Failed to initialize custom components provider", "error", err)
 		return nil, nil
 	}
+	if provider == nil {
+		return nil, nil
+	}
 	customConfigs, err := provider.GetComponentsConfig(ctx)
 	if err != nil {
 		if ctx.Err() != nil {

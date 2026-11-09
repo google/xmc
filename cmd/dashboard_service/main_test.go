@@ -904,4 +904,27 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 			t.Error("isComponentExpected() on Forbidden = false, want true")
 		}
 	})
+
+	t.Run("nil lazyComponentGetter guards do not panic", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		t.Setenv("BIGQUERY_DATASET", "")
+		if isComponentExpectedWithLazy(ctx, "xmc", "clickhouse", nil) {
+			t.Error("isComponentExpectedWithLazy(nil) = true, want false")
+		}
+		if _, _, err := buildClickHouseResolverWithLazy("xmc", nil)(ctx); err == nil {
+			t.Error("buildClickHouseResolverWithLazy(nil) without static env succeeded, want error")
+		}
+		if _, _, err := buildBigQueryResolverWithLazy("xmc", "proj-1", nil)(ctx); err == nil {
+			t.Error("buildBigQueryResolverWithLazy(nil) without static env succeeded, want error")
+		}
+		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+		if _, connect, err := buildClickHouseResolverWithLazy("xmc", nil)(ctx); err != nil || connect == nil {
+			t.Errorf("buildClickHouseResolverWithLazy(nil) static fallback = (%v, %v), want non-nil connector", connect, err)
+		}
+		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
+		if _, build, err := buildBigQueryResolverWithLazy("xmc", "proj-1", nil)(ctx); err != nil || build == nil {
+			t.Errorf("buildBigQueryResolverWithLazy(nil) static fallback = (%v, %v), want non-nil builder", build, err)
+		}
+	})
 }

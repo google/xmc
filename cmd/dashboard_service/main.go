@@ -145,6 +145,9 @@ type lazyComponentGetter struct {
 }
 
 func (l *lazyComponentGetter) get() (crreader.Getter, error) {
+	if l == nil {
+		return nil, fmt.Errorf("component getter is nil")
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.getter != nil {
@@ -166,6 +169,12 @@ func buildClickHouseResolver(namespace string, customGetter crreader.Getter) dat
 func buildClickHouseResolverWithLazy(namespace string, getter *lazyComponentGetter) dataengine.Resolver {
 	secrets := &lazySecretReader{}
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
+		if getter == nil {
+			if clickhouse.Configured() {
+				return resolveClickHouseWithSource(componentconfig.Source{Enabled: false})(ctx)
+			}
+			return "", nil, fmt.Errorf("component getter is nil")
+		}
 		g, err := getter.get()
 		if err != nil {
 			if clickhouse.Configured() {
@@ -221,6 +230,12 @@ func buildBigQueryResolver(namespace, projectID string, customGetter crreader.Ge
 
 func buildBigQueryResolverWithLazy(namespace, projectID string, getter *lazyComponentGetter) dataengine.EngineResolver {
 	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
+		if getter == nil {
+			if xmcbigquery.Configured() {
+				return resolveBigQueryWithSource(bqconfig.Source{Enabled: false, FallbackProjectID: projectID})(ctx)
+			}
+			return "", nil, fmt.Errorf("component getter is nil")
+		}
 		g, err := getter.get()
 		if err != nil {
 			if xmcbigquery.Configured() {
@@ -319,6 +334,9 @@ func isComponentExpected(ctx context.Context, namespace, componentName string, c
 }
 
 func isComponentExpectedWithLazy(ctx context.Context, namespace, componentName string, lazy *lazyComponentGetter) bool {
+	if lazy == nil {
+		return false
+	}
 	getter, err := lazy.get()
 	if err != nil {
 		return false
