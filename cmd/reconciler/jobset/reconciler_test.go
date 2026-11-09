@@ -972,52 +972,147 @@ func TestResolveExecutionCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newScheme() error: %v", err)
 	}
-	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "default", UID: "js-uid"}}
-	workload := func(clusterName *string) *v1beta1.Workload {
-		return &v1beta1.Workload{
+	newJobSet := func(queued, suspended bool) *v1alpha2.JobSet {
+		js := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{Name: "js", Namespace: "default", UID: "js-uid"}}
+		if queued {
+			js.Labels = map[string]string{"kueue.x-k8s.io/queue-name": "q"}
+		}
+		js.Spec.Suspend = &suspended
+		return js
+	}
+	workloadOwnedBy := func(ownerName string, clusterName *string, admitted bool) *v1beta1.Workload {
+		wl := &v1beta1.Workload{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            "jobset-js-abc",
 				Namespace:       "default",
 				Labels:          map[string]string{kueueJobUIDLabel: "js-uid"},
-				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
+				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: ownerName, APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
 			},
 			Status: v1beta1.WorkloadStatus{ClusterName: clusterName},
 		}
+		if admitted {
+			wl.Status.Admission = &v1beta1.Admission{ClusterQueue: "cq"}
+		}
+		return wl
+	}
+	workload := func(clusterName *string, admitted bool) *v1beta1.Workload {
+		return workloadOwnedBy("js", clusterName, admitted)
+	}
+	multiKueueCluster := func(labels map[string]string) *v1beta1.MultiKueueCluster {
+		return &v1beta1.MultiKueueCluster{ObjectMeta: metav1.ObjectMeta{Name: "worker-1", Labels: labels}}
 	}
 	worker := "worker-1"
 	empty := ""
-	workerCluster := &v1beta1.MultiKueueCluster{ObjectMeta: metav1.ObjectMeta{
-		Name: worker,
-		Labels: map[string]string{
-			"xmc.google.com/project":      "worker-proj",
-			"xmc.google.com/location":     "us-east4",
-			"xmc.google.com/cluster-name": "worker-gke",
-		},
-	}}
+	workerLabels := map[string]string{
+		"xmc.google.com/project":      "worker-proj",
+		"xmc.google.com/location":     "us-east4",
+		"xmc.google.com/cluster-name": "worker-gke",
+	}
+	manager := []string{"mgr-proj", "us-central1", "mgr-gke"}
+	unresolved := []string{"", "", ""}
 
 	tests := []struct {
-		name string
-		objs []client.Object
-		want []string
+		name    string
+		jobSet  *v1alpha2.JobSet
+		objs    []client.Object
+		listErr bool
+		want    []string
+		wantOK  bool
 	}{
-		{name: "no workload", want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
-		{name: "workload not dispatched", objs: []client.Object{workload(nil)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
-		{name: "workload with empty cluster name", objs: []client.Object{workload(&empty)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
-		{name: "MultiKueueCluster not found", objs: []client.Object{workload(&worker)}, want: []string{"mgr-proj", "us-central1", "mgr-gke"}},
-		{name: "dispatched to worker", objs: []client.Object{workload(&worker), workerCluster}, want: []string{"worker-proj", "us-east4", "worker-gke"}},
+		{name: "not queued in Kueue uses manager", jobSet: newJobSet(false, false), want: manager, wantOK: true},
+		{name: "queued workload not created yet skips", jobSet: newJobSet(true, true), want: unresolved},
+		{name: "workload not admitted and suspended skips", jobSet: newJobSet(true, true), objs: []client.Object{workload(nil, false)}, want: unresolved},
+		{name: "admitted locally uses manager", jobSet: newJobSet(true, false), objs: []client.Object{workload(nil, true)}, want: manager, wantOK: true},
+		{name: "admitted with empty cluster name uses manager", jobSet: newJobSet(true, false), objs: []client.Object{workload(&empty, true)}, want: manager, wantOK: true},
+		{name: "MultiKueueCluster not found skips", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true)}, want: unresolved},
+		{name: "MultiKueueCluster missing labels skips", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true), multiKueueCluster(map[string]string{"xmc.google.com/project": "worker-proj"})}, want: unresolved},
+		{name: "MultiKueueCluster without labels skips", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true), multiKueueCluster(nil)}, want: unresolved},
+		{name: "workload owned by another JobSet is ignored", jobSet: newJobSet(true, true), objs: []client.Object{workloadOwnedBy("other-js", &worker, true), multiKueueCluster(workerLabels)}, want: unresolved},
+		{name: "workload owned by another JobSet, not queued uses manager", jobSet: newJobSet(false, false), objs: []client.Object{workloadOwnedBy("other-js", &worker, true), multiKueueCluster(workerLabels)}, want: manager, wantOK: true},
+		{name: "workload list error skips", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true), multiKueueCluster(workerLabels)}, listErr: true, want: unresolved},
+		{name: "dispatched to worker", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true), multiKueueCluster(workerLabels)}, want: []string{"worker-proj", "us-east4", "worker-gke"}, wantOK: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			builder := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objs...)
+			if tc.listErr {
+				builder = builder.WithInterceptorFuncs(interceptor.Funcs{
+					List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+						return errors.New("list failed")
+					},
+				})
+			}
 			r := &Reconciler{
-				Client:      fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.objs...).Build(),
+				Client:      builder.Build(),
 				Project:     "mgr-proj",
 				Location:    "us-central1",
 				ClusterName: "mgr-gke",
 			}
-			project, location, clusterName := r.resolveExecutionCluster(t.Context(), jobSet)
+			project, location, clusterName, ok := r.resolveExecutionCluster(t.Context(), tc.jobSet)
 			if diff := cmp.Diff(tc.want, []string{project, location, clusterName}); diff != "" {
-				t.Errorf("resolveExecutionCluster() mismatch (-want +got):\n%s", diff)
+				t.Errorf("resolveExecutionCluster() cluster mismatch (-want +got):\n%s", diff)
+			}
+			if ok != tc.wantOK {
+				t.Errorf("resolveExecutionCluster() ok = %v, want %v", ok, tc.wantOK)
 			}
 		})
 	}
+}
+
+func TestEnsureMLRunCreatedUsesExecutionCluster(t *testing.T) {
+	scheme, err := newScheme()
+	if err != nil {
+		t.Fatalf("newScheme() error: %v", err)
+	}
+	created := metav1.NewTime(time.UnixMilli(1680000000000))
+	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{
+		Name: "js", Namespace: "default", UID: "js-uid", CreationTimestamp: created,
+		Labels: map[string]string{"kueue.x-k8s.io/queue-name": "q"},
+	}}
+	worker := "worker-1"
+	wl := &v1beta1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "jobset-js-abc",
+			Namespace:       "default",
+			Labels:          map[string]string{kueueJobUIDLabel: "js-uid"},
+			OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
+		},
+		Status: v1beta1.WorkloadStatus{ClusterName: &worker, Admission: &v1beta1.Admission{ClusterQueue: "cq"}},
+	}
+	mc := &v1beta1.MultiKueueCluster{ObjectMeta: metav1.ObjectMeta{Name: worker, Labels: map[string]string{
+		"xmc.google.com/project":      "worker-proj",
+		"xmc.google.com/location":     "us-east4",
+		"xmc.google.com/cluster-name": "worker-gke",
+	}}}
+	newReconciler := func(mlRun MLRunCreator, objs ...client.Object) *Reconciler {
+		return &Reconciler{
+			Client:      fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(),
+			Project:     "mgr-proj",
+			Location:    "us-central1",
+			ClusterName: "mgr-gke",
+			MLRunClient: mlRun,
+		}
+	}
+
+	t.Run("dispatched to worker", func(t *testing.T) {
+		mock := &mockMLRunCreator{}
+		newReconciler(mock, wl, mc).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+		if mock.createCalls != 1 {
+			t.Fatalf("CreateMLRun calls = %d, want 1", mock.createCalls)
+		}
+		if want := ConstructMLRunID("worker-gke", "default", "JobSet", "js", created.Time); mock.lastID != want {
+			t.Errorf("MLRun ID = %q, want worker-cluster ID %q", mock.lastID, want)
+		}
+		if got, want := mock.lastOpts.WorkloadDetails.Cluster, resolveClusterPath("worker-gke", "worker-proj", "us-east4"); got != want {
+			t.Errorf("WorkloadDetails.Cluster = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("execution cluster unresolved", func(t *testing.T) {
+		mock := &mockMLRunCreator{}
+		gotURL, gotConfirmed := newReconciler(mock, wl).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+		if mock.createCalls != 0 || gotURL != "" || gotConfirmed {
+			t.Errorf("ensureMLRunCreated() = (%q, %v) with %d CreateMLRun calls, want (\"\", false) with 0", gotURL, gotConfirmed, mock.createCalls)
+		}
+	})
 }

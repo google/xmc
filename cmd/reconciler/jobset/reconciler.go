@@ -390,15 +390,7 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 		result, podErrorMsg, startupWarningMsg = checkRes.Result, checkRes.PodErrorMsg, checkRes.StartupWarningMsg
 	}
 
-	// Under MultiKueue the JobSet executes on a remote worker cluster, so the MLRun
-	// (its workloadDetails cluster and ID) must reference the worker, not the
-	// manager. Resolve it from the JobSet's Workload -> MultiKueueCluster labels;
-	// this falls back to the manager values when the JobSet is not dispatched via
-	// MultiKueue. The update keeps the manager values: they populate
-	// metadata.managementCluster, and links use metadata.executingCluster.
-	project, location, clusterName := r.resolveExecutionCluster(ctx, jobSet)
-
-	mlRunURL := r.syncMLRun(ctx, jobSet, project, location, clusterName, xid, wid, eid)
+	mlRunURL := r.syncMLRun(ctx, jobSet, xid, wid, eid)
 
 	update := ConvertJobSetToWorkUnitExecutionUpdate(ctx, jobSet, wid, eid, r.Project, r.Location, r.ClusterName, podErrorMsg, startupWarningMsg)
 	setMLRunURL(update, mlRunURL)
@@ -415,49 +407,46 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 // kueueJobUIDLabel is the label Kueue sets on a Workload to the UID of the job that owns it.
 const kueueJobUIDLabel = "kueue.x-k8s.io/job-uid"
 
-func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string) {
-	project, location, clusterName = r.Project, r.Location, r.ClusterName
-
-	// Kueue labels each Workload with its owning job's UID, so this lists only the
-	// JobSet's Workload rather than every Workload in the namespace.
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string, ok bool) {
+	if r.Client == nil || jobSet == nil {
+		return r.Project, r.Location, r.ClusterName, true
+	}
 	var wlList v1beta1.WorkloadList
 	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace), client.MatchingLabels{kueueJobUIDLabel: string(jobSet.UID)}); err != nil {
-		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; using manager cluster", "error", err)
-		return project, location, clusterName
+		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; skipping MLRun sync", "error", err)
+		return "", "", "", false
 	}
-	var wl *v1beta1.Workload
-	for i := range wlList.Items {
-		for _, or := range wlList.Items[i].OwnerReferences {
-			if or.Kind == "JobSet" && or.Name == jobSet.Name {
-				wl = &wlList.Items[i]
-				break
-			}
-		}
-		if wl != nil {
-			break
-		}
-	}
+	wl := findJobSetWorkload(wlList.Items, jobSet.Name)
 	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
-		return project, location, clusterName // not MultiKueue-dispatched
+		if (wl == nil && jobSet.Labels["kueue.x-k8s.io/queue-name"] != "") || (wl != nil && wl.Status.Admission == nil && jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend) {
+			return "", "", "", false
+		}
+		return r.Project, r.Location, r.ClusterName, true
 	}
-
 	var mc v1beta1.MultiKueueCluster
 	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
-		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; using manager cluster", "cluster", *wl.Status.ClusterName, "error", err)
-		return project, location, clusterName
+		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; skipping MLRun sync", "cluster", *wl.Status.ClusterName, "error", err)
+		return "", "", "", false
 	}
-	if mc.Labels != nil {
-		if v := mc.Labels["xmc.google.com/project"]; v != "" {
-			project = v
-		}
-		if v := mc.Labels["xmc.google.com/location"]; v != "" {
-			location = v
-		}
-		if v := mc.Labels["xmc.google.com/cluster-name"]; v != "" {
-			clusterName = v
+	project = mc.Labels["xmc.google.com/project"]
+	location = mc.Labels["xmc.google.com/location"]
+	clusterName = mc.Labels["xmc.google.com/cluster-name"]
+	if project == "" || location == "" || clusterName == "" {
+		logging.Warn(ctx, "resolveExecutionCluster: MultiKueueCluster is missing XMC cluster labels; skipping MLRun sync", "cluster", *wl.Status.ClusterName)
+		return "", "", "", false
+	}
+	return project, location, clusterName, true
+}
+
+func findJobSetWorkload(workloads []v1beta1.Workload, jobSetName string) *v1beta1.Workload {
+	for i := range workloads {
+		for _, or := range workloads[i].OwnerReferences {
+			if or.Kind == "JobSet" && or.Name == jobSetName {
+				return &workloads[i]
+			}
 		}
 	}
-	return project, location, clusterName
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

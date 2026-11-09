@@ -89,7 +89,7 @@ func (r *Reconciler) evictCachedMLRunURLs(xid, wid, eid int64) {
 
 // syncMLRun resolves ManagedXprof metadata for a JobSet and ensures its MLRun
 // tracking record is created or reused when ManagedXprof is enabled.
-func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, project, location, clusterName string, xid, wid, eid int64) string {
+func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64) string {
 	mlRunStart := time.Now()
 	mxEnvs := getManagedXprofEnvs(jobSet)
 	displayName, runGroup, gcsPath := mxEnvs.DisplayName, mxEnvs.RunGroup, mxEnvs.GCSPath
@@ -110,7 +110,7 @@ func (r *Reconciler) syncMLRun(ctx context.Context, jobSet *v1alpha2.JobSet, pro
 	if !skipMLRunCreation && mlRunURL == "" {
 		logging.Info(ctx, "Begin to create MLRun URL.")
 		var confirmed bool
-		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, project, location, clusterName, xid, wid, eid, displayName, runGroup, gcsPath)
+		mlRunURL, confirmed = r.ensureMLRunCreated(ctx, jobSet, xid, wid, eid, displayName, runGroup, gcsPath)
 		if confirmed {
 			r.cacheMLRunURL(xid, wid, eid, mlRunURL)
 		}
@@ -149,7 +149,7 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 //
 // Extracted to separate MLRun control-plane invocation and error handling from the
 // core JobSet status synchronization workflow.
-func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, project, location, clusterName string, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
+func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, displayName, runGroup, gcsPath string) (string, bool) {
 	if r.MLRunClient == nil || jobSet == nil {
 		return "", false
 	}
@@ -157,6 +157,16 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
+	// Under MultiKueue the JobSet executes on a remote worker cluster, so the MLRun
+	// (its ID and workloadDetails cluster) must reference the worker, not the
+	// manager. JobSets not managed by MultiKueue use the manager values. While the
+	// execution cluster cannot be determined yet (for example, before Kueue admits
+	// the Workload), report the MLRun as unconfirmed so nothing is cached and a
+	// later reconcile retries.
+	project, location, clusterName, ok := r.resolveExecutionCluster(ctx, jobSet)
+	if !ok {
+		return "", false
+	}
 	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
 	clusterPath := resolveClusterPath(clusterName, project, location)
 	labels := buildMLRunLabels(xid, wid)
