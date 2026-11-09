@@ -29,7 +29,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `ingestion-gateway` Component CR in the catalog. |
 | `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace`, `-components_namespace`, & `RoleBinding.subjects` | Target Kubernetes namespace for the `Component` CR and component reader RBAC subject. |
-| `deployWorkload` | `false` | Template guard | When `true` (or when actuated as `xmc-cmp-ingestion-gateway` by `xmc-bridge`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`, `NetworkPolicy`). |
+| `deployWorkload` | `false` | Template guard | Standalone template/linter guard; when `true` (or when `xmc-bridge` sets sub-chart `ingestionGatewayDeployment.enabled=true` on `xmc-cmp-ingestion-gateway`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`, `NetworkPolicy`). |
 | `global.imageTag` | `""` | `spec.imageTag` & Container `image` | Overrides the container image tag across both the `Component` CR (`spec.imageTag`) and the `Deployment` container spec (`{{ repository }}:{{ global.imageTag }}`). |
 | `imageTag` | `""` | `spec.imageTag` & Container `image` | Per-component fallback image tag used when `global.imageTag` is empty. |
 | `parameters.port` | `8080` (`"8080"`) | `-port`, `containerPort`, `Service.spec.ports` | HTTP/gRPC port exposed by the Ingestion Gateway container and ClusterIP Service. |
@@ -53,7 +53,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 ## 3. Actuation Lifecycle
 
 1. **Declare intent**: install the [`stable-2026a` profile](../../README.md) with `components.ingestion-gateway.enabled=true`. The profile renders only the `Component/ingestion-gateway` CR from [`templates/component.yaml`](templates/component.yaml); this chart's workload templates are never rendered by the profile.
-2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart (passing `deployWorkload` / sub-chart workload guards). The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`.
+2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart (setting sub-chart `ingestionGatewayDeployment.enabled=true`). The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`.
 3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`. This removes the workload together with its RBAC and NetworkPolicy.
 
 The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that the `RoleBinding` subject always matches the `Deployment` `serviceAccountName`. [`templates/component.yaml`](templates/component.yaml) is skipped for `xmc-cmp-*` releases because the `Component` CR is owned by the user's release, not by `xmc-bridge`.
