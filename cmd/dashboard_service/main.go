@@ -160,33 +160,33 @@ func (l *lazyComponentGetter) get() (crreader.Getter, error) {
 
 // buildClickHouseResolver constructs the dynamic resolver the dataengine Provider uses on dial and readiness checks.
 func buildClickHouseResolver(namespace string, customGetter crreader.Getter) dataengine.Resolver {
-	getter := &lazyComponentGetter{getter: customGetter}
+	return buildClickHouseResolverWithLazy(namespace, &lazyComponentGetter{getter: customGetter})
+}
+
+func buildClickHouseResolverWithLazy(namespace string, getter *lazyComponentGetter) dataengine.Resolver {
 	secrets := &lazySecretReader{}
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
 		g, err := getter.get()
 		if err != nil {
 			if clickhouse.Configured() {
 				logging.Warn(ctx, "Kubernetes component client unavailable; falling back to static ClickHouse configuration", "error", err)
-				return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)(ctx)
+				return resolveClickHouseWithSource(componentconfig.Source{Enabled: false})(ctx)
 			}
 			return "", nil, err
 		}
 		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: secrets}
-		return resolveClickHouseWithSource(src, nil)(ctx)
+		return resolveClickHouseWithSource(src)(ctx)
 	}
 }
 
-func resolveClickHouseWithSource(src componentconfig.Source, initErr error) dataengine.Resolver {
-	return resolveClickHouseWithDialer(src, initErr, func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
+func resolveClickHouseWithSource(src componentconfig.Source) dataengine.Resolver {
+	return resolveClickHouseWithDialer(src, func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
 		return clickhouse.ConnectWithOptions(ctx, opts)
 	})
 }
 
-func resolveClickHouseWithDialer(src componentconfig.Source, initErr error, dial func(context.Context, *clickhouse.Options) (dataengine.ClickHouseConn, error)) dataengine.Resolver {
+func resolveClickHouseWithDialer(src componentconfig.Source, dial func(context.Context, *clickhouse.Options) (dataengine.ClickHouseConn, error)) dataengine.Resolver {
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
-		if initErr != nil {
-			return "", nil, initErr
-		}
 		opts, err := componentconfig.ResolveOptions(ctx, src)
 		if err != nil {
 			return "", nil, err
@@ -216,7 +216,10 @@ func resolveMetricsStore(cfg *server.Config) (string, error) {
 }
 
 func buildBigQueryResolver(namespace, projectID string, customGetter crreader.Getter) dataengine.EngineResolver {
-	getter := &lazyComponentGetter{getter: customGetter}
+	return buildBigQueryResolverWithLazy(namespace, projectID, &lazyComponentGetter{getter: customGetter})
+}
+
+func buildBigQueryResolverWithLazy(namespace, projectID string, getter *lazyComponentGetter) dataengine.EngineResolver {
 	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
 		g, err := getter.get()
 		if err != nil {
@@ -271,14 +274,19 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 	if cfg != nil {
 		componentsNamespace, projectID = cfg.ComponentsNamespace, cfg.ProjectID
 	}
-	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, componentsNamespace, customGetter) && isBigQueryExpected(ctx, componentsNamespace, customGetter)) {
-		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, customGetter)))
+	lazy := &lazyComponentGetter{getter: customGetter}
+	if store == storeBigQuery {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolverWithLazy(componentsNamespace, projectID, lazy)))
 	}
-	if !isClickHouseExpected(ctx, componentsNamespace, customGetter) {
+	chExpected := isClickHouseExpectedWithLazy(ctx, componentsNamespace, lazy)
+	if store == "" && !chExpected && isBigQueryExpectedWithLazy(ctx, componentsNamespace, lazy) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolverWithLazy(componentsNamespace, projectID, lazy)))
+	}
+	if !chExpected {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
-	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolver(componentsNamespace, customGetter)))
+	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolverWithLazy(componentsNamespace, lazy)))
 }
 
 func warmProvider(ctx context.Context, name string, provider *dataengine.Provider) *dataengine.Provider {
@@ -291,21 +299,29 @@ func warmProvider(ctx context.Context, name string, provider *dataengine.Provide
 }
 
 func isClickHouseExpected(ctx context.Context, namespace string, customGetter crreader.Getter) bool {
-	return clickhouse.Configured() || isComponentExpected(ctx, namespace, componentconfig.ClickHouseComponentName, customGetter)
+	return isClickHouseExpectedWithLazy(ctx, namespace, &lazyComponentGetter{getter: customGetter})
+}
+
+func isClickHouseExpectedWithLazy(ctx context.Context, namespace string, getter *lazyComponentGetter) bool {
+	return clickhouse.Configured() || isComponentExpectedWithLazy(ctx, namespace, componentconfig.ClickHouseComponentName, getter)
 }
 
 func isBigQueryExpected(ctx context.Context, namespace string, customGetter crreader.Getter) bool {
-	return xmcbigquery.Configured() || isComponentExpected(ctx, namespace, bqconfig.BigQueryComponentName, customGetter)
+	return isBigQueryExpectedWithLazy(ctx, namespace, &lazyComponentGetter{getter: customGetter})
+}
+
+func isBigQueryExpectedWithLazy(ctx context.Context, namespace string, getter *lazyComponentGetter) bool {
+	return xmcbigquery.Configured() || isComponentExpectedWithLazy(ctx, namespace, bqconfig.BigQueryComponentName, getter)
 }
 
 func isComponentExpected(ctx context.Context, namespace, componentName string, customGetter crreader.Getter) bool {
-	getter := customGetter
-	if getter == nil {
-		g, err := crreader.NewK8sGetter()
-		if err != nil {
-			return false
-		}
-		getter = g
+	return isComponentExpectedWithLazy(ctx, namespace, componentName, &lazyComponentGetter{getter: customGetter})
+}
+
+func isComponentExpectedWithLazy(ctx context.Context, namespace, componentName string, lazy *lazyComponentGetter) bool {
+	getter, err := lazy.get()
+	if err != nil {
+		return false
 	}
 	ns := crreader.ResolveNamespace(namespace)
 	probeCtx, cancel := context.WithTimeout(ctx, readinessTimeout)

@@ -26,6 +26,8 @@ func TestDeprecatedEnableComponentsFlagRegistered(t *testing.T) {
 	if f == nil {
 		t.Fatal("flag -enable_components is not registered")
 	}
+	orig := f.Value.String()
+	t.Cleanup(func() { _ = f.Value.Set(orig) })
 	if err := f.Value.Set("false"); err != nil {
 		t.Errorf("setting -enable_components=false failed: %v", err)
 	}
