@@ -60,8 +60,8 @@ func RequirementsFor(exp *essmsgpb.Experiment) []Requirement {
 }
 
 // ValidateComponentRequirements checks reqs and their transitive dependencies against one read-only
-// snapshot of catalog without writing. It is a cheap pre-check: PinComponentRequirements repeats the
-// check authoritatively in the transaction that pins the components.
+// snapshot of catalog without writing. It is a cheap pre-check: ResolveComponentRequirements repeats
+// the check authoritatively in the transaction that pins the components.
 func ValidateComponentRequirements(ctx context.Context, catalog storage.ComponentRepository, reqs []Requirement) error {
 	if len(reqs) == 0 {
 		return nil
@@ -72,17 +72,19 @@ func ValidateComponentRequirements(ctx context.Context, catalog storage.Componen
 	})
 }
 
-// PinComponentRequirements checks reqs and their transitive dependencies through the caller's
-// read-write transaction repo, and pins each resolved component to experiment xid at its current
-// generation.
-func PinComponentRequirements(ctx context.Context, repo storage.ComponentTxRepository, xid int64, reqs []Requirement) error {
+// ResolveComponentRequirements checks reqs and their transitive dependencies through the caller's
+// read-write transaction repo and returns the records that satisfy them, requirements first. It
+// returns nil when reqs is empty.
+func ResolveComponentRequirements(ctx context.Context, repo storage.ComponentTxRepository, reqs []Requirement) ([]*store.ComponentRecord, error) {
 	if len(reqs) == 0 {
-		return nil
+		return nil, nil
 	}
-	recs, err := resolveRequirements(ctx, repo, reqs)
-	if err != nil {
-		return err
-	}
+	return resolveRequirements(ctx, repo, reqs)
+}
+
+// PinComponentRecords pins each of recs to experiment xid at its current generation through the
+// caller's read-write transaction repo. The experiment row must already exist.
+func PinComponentRecords(ctx context.Context, repo storage.ComponentTxRepository, xid int64, recs []*store.ComponentRecord) error {
 	for _, rec := range recs {
 		if err := repo.InsertExperimentComponentSnapshot(ctx, xid, rec); err != nil {
 			return fmt.Errorf("failed to pin component %q to experiment %d: %w", rec.Name, xid, err)

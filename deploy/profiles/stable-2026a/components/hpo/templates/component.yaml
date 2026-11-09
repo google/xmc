@@ -30,6 +30,11 @@ spec:
   {{- end }}
   deletionProtection: {{ if hasKey .Values "deletionProtection" }}{{ .Values.deletionProtection }}{{ else }}true{{ end }}
   deletionPolicy: {{ .Values.deletionPolicy | default "Delete" | quote }}
+  {{- $params := .Values.parameters | default dict }}
+  {{- /* Helm parses YAML integers as float64; render them without scientific notation. */}}
+  {{- $maxTrialBudget := $params.maxTrialBudget | default "1000" }}
+  parameters:
+    maxTrialBudget: {{ ternary ($maxTrialBudget | int64) $maxTrialBudget (kindIs "float64" $maxTrialBudget) | toString | quote }}
   {{- if .Values.dependencies }}
   dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
   {{- end }}

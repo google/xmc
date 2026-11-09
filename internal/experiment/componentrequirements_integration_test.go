@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -29,12 +30,17 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
 	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 )
 
-const experimentalComponentsPrefix = "uses experimental components: "
+const (
+	experimentalComponentsPrefix = "uses experimental components: "
+	// seededMaxTrialBudget is the maxTrialBudget parameter of the seeded hpo component.
+	seededMaxTrialBudget = 5
+)
 
 // catalogRecord returns an ENABLED record at generation 1 that has observed that generation.
 func catalogRecord(id int64, name string, componentType componentspb.ComponentType, stability componentspb.ComponentStability, deps ...string) *store.ComponentRecord {
@@ -50,13 +56,16 @@ func catalogRecord(id int64, name string, componentType componentspb.ComponentTy
 }
 
 // seedHPOCatalog writes ready EXPERIMENTAL hpo and vizier components and a ready STABLE clickhouse
-// component, on which hpo depends, through the transaction-scoped component repository.
+// component, on which hpo depends, through the transaction-scoped component repository. hpo limits
+// study trial budgets to seededMaxTrialBudget.
 func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) {
 	t.Helper()
+	hpo := catalogRecord(103, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL, "clickhouse", "vizier")
+	hpo.Spec.Parameters = map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)}
 	recs := []*store.ComponentRecord{
 		catalogRecord(101, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, componentspb.ComponentStability_COMPONENT_STABILITY_STABLE),
 		catalogRecord(102, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL),
-		catalogRecord(103, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL, "clickhouse", "vizier"),
+		hpo,
 	}
 	depIDs := map[string]int64{"clickhouse": 101, "vizier": 102}
 	for _, rec := range recs {
@@ -175,5 +184,60 @@ func assertExperimentalWarning(ctx context.Context, t *testing.T, st storage.Sto
 	}
 	if strings.Contains(msg.GetUserFacingText(), "drift") {
 		t.Errorf("status message %q reports drift, want none", msg.GetUserFacingText())
+	}
+}
+
+func TestCreateExperiment_StudyTrialBudgetIsClampedOnEveryBackend(t *testing.T) {
+	const clampWarning = "max_trial_budget 10 exceeds the hpo component limit; clamped to 5"
+	for _, backend := range dbstoretest.Backends() {
+		t.Run(backend.Name, func(t *testing.T) {
+			ctx := t.Context()
+			st, _ := backend.Open(ctx, t)
+			seedHPOCatalog(ctx, t, st)
+			const xid = 601
+			study := newStudy(xid)
+			study.StudyConfig = experimenttest.StudyConfig() // max_trial_budget 10.
+			if _, err := experiment.CreateExperiment(ctx, st, study); err != nil {
+				t.Fatalf("CreateExperiment(STUDY) failed: %v", err)
+			}
+
+			got, err := st.FetchExperiment(ctx, xid)
+			if err != nil {
+				t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
+			}
+			if budget := got.GetStudyConfig().GetMaxTrialBudget(); budget != seededMaxTrialBudget {
+				t.Errorf("stored max_trial_budget = %d, want %d", budget, seededMaxTrialBudget)
+			}
+			msg := got.GetStatus().GetStructuredStatusMessage()
+			if msg.GetSeverity() != essmsgpb.StructuredMessage_WARNING || msg.GetUserFacingText() != clampWarning {
+				t.Errorf("stored status message = %v, want WARNING %q", msg, clampWarning)
+			}
+			assertRecordedStatusMessages(ctx, t, st, xid, []string{clampWarning})
+
+			// The read-time experimental components warning is merged into the stored warning.
+			if err := experiment.NewDriftEvaluator(st, true).Evaluate(ctx, xid, got.GetStatus()); err != nil {
+				t.Fatalf("Evaluate(%d) failed: %v", xid, err)
+			}
+			text := got.GetStatus().GetStructuredStatusMessage().GetUserFacingText()
+			if strings.Count(text, clampWarning) != 1 || strings.Count(text, experimentalComponentsPrefix) != 1 {
+				t.Errorf("merged status message %q, want the clamp and experimental components warnings once each", text)
+			}
+		})
+	}
+}
+
+// assertRecordedStatusMessages checks the texts of the status message history of experiment xid.
+func assertRecordedStatusMessages(ctx context.Context, t *testing.T, st storage.Storage, xid int64, want []string) {
+	t.Helper()
+	msgs, _, err := st.ListStatusMessages(ctx, fmt.Sprintf("experiments/%d", xid), 10, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListStatusMessages(%d) failed: %v", xid, err)
+	}
+	var got []string
+	for _, msg := range msgs {
+		got = append(got, msg.GetContent().GetUserFacingText())
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("status message history mismatch (-want +got):\n%s", diff)
 	}
 }

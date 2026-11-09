@@ -36,6 +36,7 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | `deletionProtection` | `true` | `spec.deletionProtection` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `["vizier", "clickhouse"]` | `spec.dependencies` | Upstream XMC Component names required before `hpo` is actuated. |
+| `parameters.maxTrialBudget` | `"1000"` | `spec.parameters.maxTrialBudget` | Largest `max_trial_budget` a study may use: a positive decimal integer, at most `2147483647`. The Experiment State Server reads it when a study is created, clamps larger budgets to it, and records a WARNING status message on the experiment; a missing or invalid value falls back to `1000`. A change applies to studies created afterwards; existing studies keep their stored budget. `xmc-bridge` also passes the value into the `xmc-cmp-hpo` release values, where it is unused, so changing it triggers a no-op upgrade during which study creation may briefly return `FAILED_PRECONDITION`. |
 
 ---
 
@@ -56,7 +57,7 @@ Rendered only for the `xmc-cmp-hpo` release:
 | `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
 | `ServiceAccount` | `xmc-study-controller` | Pod identity, without a Workload Identity annotation. |
 
-The pod carries the label `xmc.google.com/vizier-client: "true"`, which admits it through the [`vizier`](../vizier/README.md) NetworkPolicy.
+The pod carries the label `xmc.google.com/vizier-client: "true"`. XMC ships no NetworkPolicy for Vizier, which is bring-your-own; operators who restrict access to their Vizier server can admit pods with this label.
 
 `xmc-bridge` may only manage the objects named above; their names are allowlisted in the bridge Role ([`deploy/helm/templates/components/rbac.yaml`](../../../../helm/templates/components/rbac.yaml)), so renaming or adding an object requires updating that Role.
 

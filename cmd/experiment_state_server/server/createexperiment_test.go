@@ -308,20 +308,9 @@ func TestCreateExperiment_PersistsExperimentType(t *testing.T) {
 }
 
 // readyHPOCatalog returns ready hpo, vizier, and clickhouse components, with hpo depending on the
-// other two.
+// other two and setting no parameters.
 func readyHPOCatalog() map[string]*store.ComponentRecord {
-	ready := func(id int64, name string, componentType componentspb.ComponentType, deps ...string) *store.ComponentRecord {
-		return &store.ComponentRecord{
-			ComponentID: id, Name: name, State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			Spec:       &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Dependencies: deps},
-			Generation: 1, ObservedGeneration: proto.Int64(1),
-		}
-	}
-	return map[string]*store.ComponentRecord{
-		"hpo":        ready(1, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "vizier", "clickhouse"),
-		"vizier":     ready(2, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-		"clickhouse": ready(3, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-	}
+	return experimenttest.HPOCatalog(nil)
 }
 
 func pendingVizierCatalog() map[string]*store.ComponentRecord {
@@ -470,6 +459,56 @@ func TestCreateExperiment_RejectsStudyConfigOnNonStudy(t *testing.T) {
 			}
 			if xidClient.createXidEntryCalls != 0 {
 				t.Errorf("CreateExperiment(%v with study_config) made %d CreateXidEntry calls, want 0", expType, xidClient.createXidEntryCalls)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_StudyTrialBudgetLimit(t *testing.T) {
+	ctx := context.Background()
+	const launchText = "Experiment is being launched."
+	tests := []struct {
+		name         string
+		parameters   map[string]string // hpo component parameters.
+		budget       int32
+		wantBudget   int32
+		wantText     string
+		wantSeverity msgpb.StructuredMessage_Severity
+	}{
+		{name: "above limit is clamped", parameters: map[string]string{"maxTrialBudget": "5"}, budget: 10, wantBudget: 5,
+			wantText: launchText + "; max_trial_budget 10 exceeds the hpo component limit; clamped to 5", wantSeverity: msgpb.StructuredMessage_WARNING},
+		{name: "within limit is kept", parameters: map[string]string{"maxTrialBudget": "10"}, budget: 10, wantBudget: 10,
+			wantText: launchText, wantSeverity: msgpb.StructuredMessage_DEBUG},
+		{name: "missing limit falls back to the default", budget: 1000, wantBudget: 1000,
+			wantText: launchText, wantSeverity: msgpb.StructuredMessage_DEBUG},
+		{name: "malformed limit falls back to the default", parameters: map[string]string{"maxTrialBudget": "many"}, budget: 2000, wantBudget: 1000,
+			wantText: launchText + "; max_trial_budget 2000 exceeds the hpo component limit; clamped to 1000", wantSeverity: msgpb.StructuredMessage_WARNING},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: experimenttest.HPOCatalog(tc.parameters)}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: true}),
+				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
+				withStorage(st),
+			)
+			cfg := prototest.Modify(experimenttest.StudyConfig(), func(cfg *msgpb.StudyConfig) { cfg.MaxTrialBudget = tc.budget })
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "study", ExperimentType: msgpb.Experiment_STUDY, StudyConfig: cfg}}
+
+			got, err := server.CreateExperiment(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateExperiment() failed: %v", err)
+			}
+
+			for desc, exp := range map[string]*msgpb.Experiment{"returned": got, "persisted": st.Experiment} {
+				if budget := exp.GetStudyConfig().GetMaxTrialBudget(); budget != tc.wantBudget {
+					t.Errorf("%s max_trial_budget = %d, want %d", desc, budget, tc.wantBudget)
+				}
+				// A clamp warning is merged into the initial launch message, which it raises to WARNING.
+				msg := exp.GetStatus().GetStructuredStatusMessage()
+				if msg.GetUserFacingText() != tc.wantText || msg.GetSeverity() != tc.wantSeverity {
+					t.Errorf("%s status message = %v, want %v %q", desc, msg, tc.wantSeverity, tc.wantText)
+				}
 			}
 		})
 	}
