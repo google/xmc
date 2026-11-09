@@ -809,3 +809,41 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 		t.Errorf("dialedRefs mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
+
+	t.Run("clickhouse static fallback", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+		t.Setenv("CLICKHOUSE_PORT", "9000")
+		fp, connect, err := buildClickHouseResolver(true, "xmc", nil)(ctx)
+		if err != nil || fp == "" || connect == nil {
+			t.Fatalf("buildClickHouseResolver() = (%q, %v, %v), want static fallback", fp, connect, err)
+		}
+	})
+
+	t.Run("bigquery static fallback", func(t *testing.T) {
+		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
+		t.Setenv("BIGQUERY_TABLE", "xmc_metrics")
+		fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx)
+		if err != nil || fp == "" || build == nil {
+			t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want static fallback", fp, build, err)
+		}
+	})
+
+	t.Run("isComponentExpected logs and returns true on non-NotFound error", func(t *testing.T) {
+		forbiddenGetter := &crreadertest.FakeGetter{
+			Err: apierrors.NewForbidden(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "bigquery", errors.New("denied")),
+		}
+		if !isComponentExpected(ctx, "xmc", "bigquery", forbiddenGetter) {
+			t.Error("isComponentExpected() on Forbidden = false, want true")
+		}
+	})
+}
