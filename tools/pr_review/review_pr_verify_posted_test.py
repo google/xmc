@@ -25,18 +25,54 @@ from unittest.mock import MagicMock, patch
 from tools.common.tool_utils import HandledError
 from tools.pr_review.review_pr_verify_posted import (
     _is_re_review_thread_posted,
+    _LiveState,
     approved_sidecar_items,
     load_sidecar,
     parse_checklist_approved_items,
     verify_review_comments_posted,
 )
 
-# Live comments are fetched via the shared github_utils.list_all_pages helper.
+# Live comments and review threads are fetched via the shared github_utils helpers.
 _GH_API = "tools.pr_review.github_utils.call_github_api"
+_LOGIN = "tools.pr_review.review_pr_verify_posted.get_authenticated_login"
+_TELEMETRY = '\n\n<!-- xmc-telemetry: {"git_username": "me"} -->'
+
+
+def _live_comment(
+    line: int = 15, body: str = "Add nil check", login: str = "me", path: str = "pkg/a.go"
+) -> dict[str, Any]:
+    """Builds a live inline review comment as posted by review_pr_post_inline_comment.py."""
+    return {"path": path, "line": line, "body": body + _TELEMETRY, "user": {"login": login}}
+
+
+def _thread(root_id: int, is_resolved: bool) -> dict[str, Any]:
+    """Builds a GraphQL review thread node whose root comment has `root_id`."""
+    return {
+        "id": f"PRRT_{root_id}",
+        "isResolved": is_resolved,
+        "comments": {"nodes": [{"databaseId": root_id}, {"databaseId": root_id + 1000}]},
+    }
+
+
+def _route_github(comments: list[dict[str, Any]], threads: list[dict[str, Any]]):
+    """Returns a fake call_github_api serving REST comments and GraphQL review threads."""
+
+    def fake(endpoint: str, method: str = "GET", payload: Any = None, user_agent: str = ""):
+        if endpoint != "/graphql":
+            return comments
+        review_threads = {"pageInfo": {"hasNextPage": False}, "nodes": threads}
+        return {"data": {"repository": {"pullRequest": {"reviewThreads": review_threads}}}}
+
+    return fake
 
 
 class TestReviewPRVerifyPosted(unittest.TestCase):
     """Test suite for review_pr_verify_posted tool."""
+
+    def setUp(self):
+        login_patch = patch(_LOGIN, return_value="me")
+        login_patch.start()
+        self.addCleanup(login_patch.stop)
 
     def test_parse_checklist_approved_items_initial(self):
         content = """
@@ -80,9 +116,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
             f.write(content)
             f_path = f.name
 
-        mock_api.return_value = [
-            {"path": "pkg/auth/handler.go", "line": 15, "body": "Posted comment"}
-        ]
+        mock_api.return_value = [_live_comment(path="pkg/auth/handler.go", body="Add check")]
 
         args = MagicMock()
         args.owner = "google"
@@ -127,6 +161,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
 
     @patch(_GH_API)
     def test_verify_review_comments_posted_unverified_resolve(self, mock_api):
+        """Regression: RESOLVE fails unless GitHub reports the thread resolved, even if marked [x]."""
         content = """
 ### Thread ID `201` (`pkg/test.go`:L10)
 - **Audit Verification Status**: `- [ ] Pending Analysis`
@@ -140,7 +175,8 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
             f.write(content)
             f_path = f.name
 
-        mock_api.return_value = []  # No replies posted
+        # Thread 202 has a reply but is still unresolved on GitHub.
+        mock_api.side_effect = _route_github([{"in_reply_to_id": 202}], [_thread(202, False)])
 
         args = MagicMock()
         args.owner = "google"
@@ -151,10 +187,9 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
         with self.assertRaises(HandledError) as ctx:
             verify_review_comments_posted(args)
 
-        self.assertIn(
-            "RESOLVE action on Thread ID `201` has not been verified",
-            str(ctx.exception.instruction),
-        )
+        instruction = str(ctx.exception.instruction)
+        self.assertIn("RESOLVE action on Thread ID `201` has not been verified", instruction)
+        self.assertIn("RESOLVE action on Thread ID `202` has not been verified", instruction)
 
     def test_parse_checklist_approved_items_dynamic_columns(self):
         content = """
@@ -174,7 +209,7 @@ class TestReviewPRVerifyPosted(unittest.TestCase):
 
     def test_is_re_review_thread_posted_unknown_action(self):
         item = {"action": "CUSTOM_ACTION", "thread_id": 301}
-        ok, err = _is_re_review_thread_posted(item, "", [])
+        ok, err = _is_re_review_thread_posted(item, _LiveState("me", [], frozenset()))
         self.assertFalse(ok)
         self.assertEqual(err, "Unknown action 'CUSTOM_ACTION' on Thread ID `301`")
 
@@ -201,6 +236,16 @@ def _inline_item(item_id: str, status: str, line: int = 15) -> dict[str, Any]:
     }
 
 
+def _resolve_item(thread_id: int, status: str = "Pending") -> dict[str, Any]:
+    return {
+        "item_id": str(thread_id),
+        "type": "re_review_thread",
+        "thread_id": thread_id,
+        "status": status,
+        "action": "RESOLVE",
+    }
+
+
 class TestVerifyPostedSidecar(unittest.TestCase):
     """Tests for the JSON sidecar, zero-item failure, and --mark-posted."""
 
@@ -212,6 +257,9 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         api_patch = patch(_GH_API)
         self.mock_api = api_patch.start()
         self.addCleanup(api_patch.stop)
+        login_patch = patch(_LOGIN, return_value="me")
+        login_patch.start()
+        self.addCleanup(login_patch.stop)
 
     def _args(self, checklist: Path, mark_posted: list[str] | None = None) -> argparse.Namespace:
         return argparse.Namespace(
@@ -261,7 +309,7 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         self._write(
             _HEADING_CHECKLIST, [_inline_item("#1", "Approved"), _inline_item("#2", "Draft")]
         )
-        self.mock_api.return_value = [{"path": "pkg/a.go", "line": 15}]
+        self.mock_api.return_value = [_live_comment()]
 
         res = verify_review_comments_posted(self._args(self.md_path))
 
@@ -273,7 +321,7 @@ class TestVerifyPostedSidecar(unittest.TestCase):
         """Regression: a comment beyond the first 30 (or 100) live comments is found."""
         self._write("", [_inline_item("#1", "Approved", line=500)])
         first_page = [{"path": "pkg/a.go", "line": n} for n in range(1, 101)]
-        self.mock_api.side_effect = [first_page, [{"path": "pkg/a.go", "line": 500}]]
+        self.mock_api.side_effect = [first_page, [_live_comment(line=500)]]
 
         res = verify_review_comments_posted(self._args(self.md_path))
 
@@ -286,13 +334,66 @@ class TestVerifyPostedSidecar(unittest.TestCase):
     def test_unposted_items_are_not_marked_posted(self):
         """Only verified items get the Posted status."""
         self._write("", [_inline_item("#1", "Approved"), _inline_item("#2", "Approved", line=99)])
-        self.mock_api.return_value = [{"path": "pkg/a.go", "line": 15}]
+        self.mock_api.return_value = [_live_comment()]
 
         with self.assertRaises(HandledError) as ctx:
             verify_review_comments_posted(self._args(self.json_path))
 
         self.assertIn("'#2'", ctx.exception.instruction)
         self.assertEqual(self._sidecar_statuses(), {"#1": "Posted", "#2": "Approved"})
+
+    def test_other_users_comment_on_same_line_is_not_posted(self):
+        """Regression: someone else's comment on the item's line does not satisfy it."""
+        self._write("", [_inline_item("#1", "Approved")])
+        self.mock_api.return_value = [_live_comment(login="other-reviewer")]
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertIn("no comment by @me", ctx.exception.instruction)
+        self.assertEqual(self._sidecar_statuses(), {"#1": "Approved"})
+
+    def test_own_comment_with_different_body_is_not_posted(self):
+        """Regression: an own comment on the line without the proposed text does not count."""
+        self._write("", [_inline_item("#1", "Approved")])
+        self.mock_api.return_value = [_live_comment(body="Rename this variable.")]
+
+        with self.assertRaises(HandledError):
+            verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(self._sidecar_statuses(), {"#1": "Approved"})
+
+    def test_proposed_text_matches_after_normalization(self):
+        """The proposed text matches inside a longer, reformatted posted body."""
+        self._write("", [_inline_item("#1", "Approved")])
+        body = "**ADD   nil\ncheck**: guard `cfg` first.\n\n```go\nif cfg == nil {}\n```"
+        self.mock_api.return_value = [_live_comment(body=body)]
+
+        res = verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(res["posted_items"], 1)
+
+    def test_resolve_marked_posted_but_unresolved_thread_fails(self):
+        """Regression: a RESOLVE item recorded as Posted fails while the thread is unresolved."""
+        self._write("", [_resolve_item(101, status="Posted")])
+        self.mock_api.side_effect = _route_github([{"in_reply_to_id": 101}], [_thread(101, False)])
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertIn("not resolved on GitHub", ctx.exception.instruction)
+
+    def test_resolve_passes_when_thread_resolved_on_github(self):
+        """A RESOLVE item passes once GitHub reports its review thread resolved."""
+        self._write("", [_resolve_item(101)])
+        self.mock_api.side_effect = _route_github([], [_thread(7, False), _thread(101, True)])
+
+        res = verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(res["posted_items"], 1)
+        self.assertEqual(self._sidecar_statuses()["101"], "Posted")
+        graphql_calls = [c for c in self.mock_api.call_args_list if c.args[0] == "/graphql"]
+        self.assertEqual(len(graphql_calls), 1)
 
     def test_sidecar_rereview_thread_actions(self):
         """Re-review sidecar threads with an action are verified; null actions are skipped."""

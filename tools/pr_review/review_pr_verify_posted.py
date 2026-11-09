@@ -19,6 +19,7 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +31,27 @@ from tools.common.tool_utils import HandledError, parse_positive_int, run_tool  
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
+    get_authenticated_login,
     list_all_pages,
+    list_review_threads,
 )
+
+_USER_AGENT = "XMC-PR-Review-Agent"
 
 # Item statuses that mark a checklist item as approved for posting.
 _APPROVED_STATUS = re.compile(r"\b(approved|confirmed|posted)\b|\[x\]", re.IGNORECASE)
+
+# Telemetry marker that review_pr_post_inline_comment.py appends to every comment.
+_TELEMETRY_MARKER = re.compile(r"<!--\s*xmc-telemetry:.*?-->", re.DOTALL)
+
+
+@dataclass(frozen=True)
+class _LiveState:
+    """Live GitHub state of a PR that checklist items are verified against."""
+
+    login: str
+    comments: list[dict[str, Any]]
+    resolved_comment_ids: frozenset[int]
 
 
 def _parse_table_column_indices(headers: list[str]) -> dict[str, int]:
@@ -248,48 +265,58 @@ def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
-def _is_initial_inline_posted(
-    item: dict[str, Any],
-    live_comments: list[dict[str, Any]],
-) -> bool:
-    """Checks whether an initial inline review comment matches an active PR comment."""
-    for lc in live_comments:
-        lc_path = lc.get("path")
+def _normalize_body(text: str) -> str:
+    """Normalizes comment text for matching.
+
+    Drops the telemetry marker and markdown backticks/asterisks, collapses
+    whitespace, and casefolds.
+    """
+    without_marker = _TELEMETRY_MARKER.sub("", text)
+    return " ".join(re.sub(r"[`*]", "", without_marker).split()).casefold()
+
+
+def _is_initial_inline_posted(item: dict[str, Any], live: _LiveState) -> bool:
+    """Checks whether the authenticated user posted the item's comment on its file line.
+
+    A live comment matches when it targets the item's path and line, is authored
+    by the authenticated user, and its normalized body contains the item's
+    normalized `proposed` text (any body matches when `proposed` is empty).
+    """
+    proposed = _normalize_body(str(item.get("proposed") or ""))
+    for lc in live.comments:
         lc_line = lc.get("line") or lc.get("original_line")
-        if lc_path == item["file_path"] and str(lc_line) == str(item["line"]):
+        if lc.get("path") != item["file_path"] or str(lc_line) != str(item["line"]):
+            continue
+        if (lc.get("user") or {}).get("login") != live.login:
+            continue
+        if proposed in _normalize_body(str(lc.get("body") or "")):
             return True
     return False
 
 
 def _is_re_review_thread_posted(
     item: dict[str, Any],
-    content: str,
-    live_comments: list[dict[str, Any]],
+    live: _LiveState,
 ) -> tuple[bool, str | None]:
-    """Verifies that a re-review thread action (RESPOND or RESOLVE) is fulfilled."""
+    """Verifies that a re-review thread action (RESPOND or RESOLVE) is fulfilled.
+
+    RESPOND requires a live reply to the thread's root comment. RESOLVE requires
+    GitHub to report the thread resolved; a reply or a local `Posted` / `[x]`
+    status is not sufficient.
+    """
     thread_id = item["thread_id"]
     if item["action"] == "RESPOND":
-        replies = [lc for lc in live_comments if lc.get("in_reply_to_id") == thread_id]
+        replies = [lc for lc in live.comments if lc.get("in_reply_to_id") == thread_id]
         if replies:
             return True, None
         return False, f"Recommended response on Thread ID `{thread_id}` has not been posted"
 
     if item["action"] == "RESOLVE":
-        is_checked = str(item.get("status") or "").lower() == "posted"
-        thread_header = f"### Thread ID `{thread_id}`"
-        if thread_header in content:
-            start_idx = content.find(thread_header)
-            next_thread_idx = content.find("### Thread ID", start_idx + len(thread_header))
-            thread_block = (
-                content[start_idx:next_thread_idx] if next_thread_idx != -1 else content[start_idx:]
-            )
-            is_checked = is_checked or "- **Audit Verification Status**: `- [x]" in thread_block
-        has_reply = any(lc.get("in_reply_to_id") == thread_id for lc in live_comments)
-        if is_checked or has_reply:
+        if thread_id in live.resolved_comment_ids:
             return True, None
         return (
             False,
-            f"RESOLVE action on Thread ID `{thread_id}` has not been verified (neither marked [x] nor has a reply)",
+            f"RESOLVE action on Thread ID `{thread_id}` has not been verified (the review thread is not resolved on GitHub)",
         )
 
     return False, f"Unknown action '{item.get('action')}' on Thread ID `{thread_id}`"
@@ -297,10 +324,9 @@ def _is_re_review_thread_posted(
 
 def _verify_all_checklist_items(
     items: list[dict[str, Any]],
-    content: str,
-    live_comments: list[dict[str, Any]],
+    live: _LiveState,
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Verifies each checklist item against live GitHub comments.
+    """Verifies each checklist item against the live GitHub state.
 
     Returns:
         The verified items and a description of every unposted item.
@@ -309,14 +335,15 @@ def _verify_all_checklist_items(
     verified: list[dict[str, Any]] = []
     for item in items:
         if item["type"] == "initial_inline":
-            if _is_initial_inline_posted(item, live_comments):
+            if _is_initial_inline_posted(item, live):
                 verified.append(item)
             else:
                 unposted.append(
                     f"Approved comment '{item['item_id']}' on {item['file_path']}:L{item['line']} missing from live PR diff"
+                    f" (no comment by @{live.login} there contains the proposed text)"
                 )
         elif item["type"] == "re_review_thread":
-            ok, err = _is_re_review_thread_posted(item, content, live_comments)
+            ok, err = _is_re_review_thread_posted(item, live)
             if ok:
                 verified.append(item)
             elif err:
@@ -409,16 +436,39 @@ def _mark_posted(checklist: _Checklist, raw_ids: list[str]) -> dict[str, Any]:
     }
 
 
-def _fetch_live_comments(args: argparse.Namespace) -> list[dict[str, Any]]:
-    """Fetches every live review comment of the PR, across all pages."""
+def _fetch_resolved_comment_ids(
+    args: argparse.Namespace, items: list[dict[str, Any]]
+) -> frozenset[int]:
+    """Returns the database IDs of comments in resolved review threads.
+
+    Queries GitHub's review threads only when an item has a RESOLVE action.
+    """
+    if not any(item.get("action") == "RESOLVE" for item in items):
+        return frozenset()
+    threads = list_review_threads(args.owner, args.repo, args.pr_number, user_agent=_USER_AGENT)
+    return frozenset(
+        comment["databaseId"]
+        for thread in threads
+        if thread.get("isResolved")
+        for comment in (thread.get("comments") or {}).get("nodes") or []
+        if comment and comment.get("databaseId")
+    )
+
+
+def _fetch_live_state(args: argparse.Namespace, items: list[dict[str, Any]]) -> _LiveState:
+    """Fetches the authenticated login, every live review comment, and resolved threads."""
     try:
-        return list_all_pages(
-            f"/repos/{args.owner}/{args.repo}/pulls/{args.pr_number}/comments",
-            user_agent="XMC-PR-Review-Agent",
+        return _LiveState(
+            login=get_authenticated_login(user_agent=_USER_AGENT),
+            comments=list_all_pages(
+                f"/repos/{args.owner}/{args.repo}/pulls/{args.pr_number}/comments",
+                user_agent=_USER_AGENT,
+            ),
+            resolved_comment_ids=_fetch_resolved_comment_ids(args, items),
         )
     except (GithubAuthError, GithubAPIError) as e:
         raise HandledError(
-            f"Failed to fetch live GitHub comments for PR #{args.pr_number}: {e}",
+            f"Failed to fetch live GitHub review state for PR #{args.pr_number}: {e}",
             "Check GitHub API connectivity and authentication credentials.",
         ) from e
 
@@ -436,8 +486,8 @@ def verify_review_comments_posted(args: argparse.Namespace) -> dict[str, Any]:
         return _mark_posted(checklist, mark_posted_ids)
 
     items = _require_items(checklist)
-    live_comments = _fetch_live_comments(args)
-    verified, unposted = _verify_all_checklist_items(items, checklist.content, live_comments)
+    live = _fetch_live_state(args, items)
+    verified, unposted = _verify_all_checklist_items(items, live)
     checklist.record_posted({_item_key(item) for item in verified})
 
     if unposted:
