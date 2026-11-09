@@ -69,17 +69,6 @@ jobs:
               - 'tools/common/tool_utils.py'
               - '.github/workflows/nightly-examples-e2e.yml'
               - '.github/workflows/lint.yml'
-            ui_selector_contract:
-              - 'cmd/ui/app/**/*.ng.html'
-              - 'cmd/ui/app/**/*.ts'
-              - 'cmd/ui/index.html'
-              - 'tools/nightly_tests/verification/ui_css_selectors.py'
-              - 'tools/nightly_tests/verification/ui_entities_validator.py'
-              - 'tools/nightly_tests/examples_verification/*_ui_test.py'
-              - 'tools/nightly_tests/weekly_visual_snapshot.py'
-              - 'tools/lint/check_ui_selector_contract.py'
-              - 'tools/common/tool_utils.py'
-              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Install Ruff'
@@ -168,7 +157,6 @@ jobs:
           python3 tools/lint/check_file_naming.py
 
       - name: 'Check Nightly UI Selector Contract'
-        if: steps.changes.outputs.ui_selector_contract == 'true'
         env:
           XMC_BYPASS_VENV: '1'
         run: |
