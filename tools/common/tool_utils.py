@@ -43,7 +43,6 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
-    enable_components: bool = False
     log_monitor_deployment_enabled: bool = True
     database_backend: str = DEFAULT_BACKEND
     profile_values: str | None = None
@@ -215,7 +214,6 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
-    "ENABLE_COMPONENTS": "enable_components",
     "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
     "DB_BACKEND": "database_backend",
 }
@@ -362,7 +360,6 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        enable_components=parse_bool_flag(config.get("enable_components", False)),
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
@@ -599,7 +596,7 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
 
 
 def deploy_component_profile(config: DeploymentConfig) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+    """Deploys default XMC component profile (stable-2026a).
 
     Args:
         config: Loaded DeploymentConfig instance.
@@ -607,8 +604,6 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
     Raises:
         FileNotFoundError: If config.profile_values is specified and missing.
     """
-    if not config.enable_components:
-        return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
     cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]

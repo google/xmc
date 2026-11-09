@@ -68,7 +68,7 @@ vars:
   # If true, deletion protection will be enabled on supported resources (databases)
   deletion_protection: false
 
-  # Enable Metrics Pipeline (Ingestion Gateway & ROD Data Provider)
+  # Enable Metrics Configuration (ClickHouse chart data wiring; deploy ingestion-gateway via xmc-profile)
   enable_metrics: false
 
   # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
@@ -101,9 +101,6 @@ vars:
   postgres_ess_database: ""
   postgres_xid_database: ""
   postgres_ssl_mode: ""
-
-  # Enable Foundational Component Controllers
-  enable_components: false
 
   # Enable Resource Optimization & Diagnostics (ROD) Data Provider
   rod_deployment_enabled: true

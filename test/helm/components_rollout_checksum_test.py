@@ -24,6 +24,7 @@ COMPONENT_AWARE_DEPLOYMENTS: tuple[tuple[str, str], ...] = (
     ("templates/dashboard-service/deployment.yaml", "dashboard-service-deployment"),
     ("templates/actuator/deployment.yaml", "actuator-deployment"),
     ("templates/health-service/deployment.yaml", "health-service-deployment"),
+    ("templates/components/deployment.yaml", "xmc-bridge-deployment"),
 )
 
 BASE_VALUES: dict[str, str] = {
@@ -57,6 +58,12 @@ CONFIG_MUTATIONS: tuple[tuple[str, str, dict[str, str], str | None], ...] = (
         {"healthService.cacheTTL": "45s"},
         None,
     ),
+    (
+        "templates/components/deployment.yaml",
+        "xmc-bridge-deployment",
+        {"componentsDeployment.cmsAddress": "grpc-service:60051"},
+        None,
+    ),
 )
 
 POD_CONFIG_CHECKSUM_PATTERN = re.compile(
@@ -75,7 +82,7 @@ def pod_config_checksum(manifest: str) -> str:
 
 
 class ComponentsRolloutChecksumTest(unittest.TestCase):
-    """Verifies ConfigMap mutations rotate pod checksum/config annotations."""
+    """Verifies ConfigMap mutations rotate pod checksum/config annotations and legacy flags fail closed."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -96,6 +103,20 @@ class ComponentsRolloutChecksumTest(unittest.TestCase):
                     pod_config_checksum(baseline_manifest),
                     pod_config_checksum(mutated_manifest),
                 )
+
+    def test_legacy_components_disabled_or_gateway_enabled_fails_closed(self) -> None:
+        """Passing componentsDeployment.enabled=false or ingestionGatewayDeployment.enabled=true fails closed."""
+        for flag, expected_msg in (
+            ("componentsDeployment.enabled=false", "componentsDeployment.enabled=false"),
+            ("ingestionGatewayDeployment.enabled=true", "ingestionGatewayDeployment.enabled=true"),
+        ):
+            key, val = flag.split("=", 1)
+            with self.subTest(flag=flag), self.assertRaises(RuntimeError) as ctx:
+                render_template("templates/components/deployment.yaml", {**BASE_VALUES, key: val})
+            err_text = str(ctx.exception)
+            self.assertIn(expected_msg, err_text)
+            self.assertIn("1.0.0+", err_text)
+            self.assertIn("migrate.py", err_text)
 
     def test_pod_config_checksum_is_deterministic_for_identical_values(self) -> None:
         """Repeated renders with identical values produce the same checksum/config digest."""

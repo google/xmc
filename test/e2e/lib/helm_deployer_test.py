@@ -86,7 +86,7 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn('username: "admin@xmc.local"', values)
         self.assertIn('password: "password123"', values)
         self.assertIn('xmc_bridge_custom_image: "xmc_bridge_image:latest"', values)
-        self.assertIn("componentsDeployment:\n  enabled: true", values)
+        self.assertIn('componentsDeployment:\n  probeInterval: "2s"', values)
 
     @patch("test.e2e.lib.helm_deployer.run_cmd")
     def test_wait_for_rollouts_success(self, mock_run) -> None:

@@ -239,14 +239,14 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         dest="enable_components",
         action="store_true",
         default=None,
-        help="Enable components service.",
+        help="Deprecated no-op: Components are always enabled.",
     )
     p.add_argument(
         "--no-enable-components",
         dest="enable_components",
         action="store_false",
         default=None,
-        help="Disable components service.",
+        help="Removed in XMC 1.0.0+ (rejected).",
     )
     p.add_argument(
         "--rod-deployment-enabled",
@@ -645,6 +645,10 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args(argv)
+    if getattr(args, "enable_components", None) is False:
+        parser.error(
+            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
+        )
     if getattr(args, "verbose", False):
         logging.basicConfig(
             level=logging.DEBUG,

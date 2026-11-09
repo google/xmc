@@ -639,7 +639,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)
-	verifyNetworkPolicyParity(t, helmDir, igDir)
+	verifyGatewayNetworkPolicy(t, igDir)
 }
 
 func verifySubChartOverridesAndGuards(t *testing.T, igDir string) {
@@ -722,38 +722,64 @@ func assertWellFormedManifests(t *testing.T, manifest string) {
 	}
 }
 
-// verifyUmbrellaChartIntegration checks the umbrella chart renders the gateway only while
-// components are disabled; with components enabled the ingestion-gateway component chart owns it.
+// verifyUmbrellaChartIntegration checks the umbrella chart renders all xmc-bridge resources and
+// kept CRD/VAP objects by default, ships no legacy gateway or umbrella NetworkPolicy templates,
+// and fails closed when legacy flags (componentsDeployment.enabled=false or
+// ingestionGatewayDeployment.enabled=true) are passed.
 func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 	t.Helper()
 
-	tests := []struct {
-		name        string
-		components  bool
-		wantGateway bool
-	}{
-		{name: "components disabled keeps legacy umbrella gateway", components: false, wantGateway: true},
-		{name: "components enabled hands gateway to component chart", components: true, wantGateway: false},
+	rendered, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(umbrella, default) failed: %v", err)
 	}
-	for _, tt := range tests {
-		rendered, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
-			"componentsDeployment":       map[string]any{"enabled": tt.components},
-			"ingestionGatewayDeployment": map[string]any{"enabled": true},
-		})
-		if err != nil {
-			t.Fatalf("%s: renderChartWithValues(umbrella) failed: %v", tt.name, err)
+	for _, f := range []string{
+		"components/deployment.yaml",
+		"components/configmap.yaml",
+		"components/rbac.yaml",
+		"components/serviceaccount.yaml",
+	} {
+		if !strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:") {
+			t.Errorf("umbrella %s did not render any Kubernetes object by default", f)
 		}
-		for _, f := range []string{"ingestion-gateway/deployment.yaml", "ingestion-gateway/service.yaml", "ingestion-gateway/hpa.yaml", "network-policies.yaml"} {
-			if got := strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:"); got != tt.wantGateway {
-				t.Errorf("%s: umbrella %s rendered = %v, want %v", tt.name, f, got, tt.wantGateway)
-			}
+	}
+	for _, legacy := range []string{
+		"ingestion-gateway/deployment.yaml",
+		"ingestion-gateway/service.yaml",
+		"ingestion-gateway/hpa.yaml",
+		"network-policies.yaml",
+	} {
+		if _, exists := rendered["xmanager-cloud/templates/"+legacy]; exists {
+			t.Errorf("legacy umbrella template %s still present in rendered map", legacy)
 		}
-		verifyUmbrellaKeptResources(t, tt.name, rendered)
+	}
+	verifyUmbrellaKeptResources(t, "default", rendered)
+
+	failClosedCases := []struct {
+		name    string
+		values  map[string]any
+		wantErr string
+	}{
+		{
+			name:    "componentsDeployment.enabled=false rejected",
+			values:  map[string]any{"componentsDeployment": map[string]any{"enabled": false}},
+			wantErr: "componentsDeployment.enabled=false",
+		},
+		{
+			name:    "ingestionGatewayDeployment.enabled=true rejected",
+			values:  map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": true}},
+			wantErr: "ingestionGatewayDeployment.enabled=true",
+		},
+	}
+	for _, tc := range failClosedCases {
+		if _, err := renderChartWithValues(helmDir, "xmanager-cloud", tc.values); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: renderChartWithValues error = %v, want substring %q", tc.name, err, tc.wantErr)
+		}
 	}
 }
 
 // verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the
-// deletion admission policy with their keep policy, whatever componentsDeployment.enabled is set to.
+// deletion admission policy with their keep policy.
 func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]string) {
 	t.Helper()
 	wantByFile := map[string][]string{
@@ -770,27 +796,56 @@ func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]
 	}
 }
 
-// verifyNetworkPolicyParity checks the component release ships the same gateway NetworkPolicy
-// rules as the umbrella chart, so traffic rules don't change with enable_components.
-func verifyNetworkPolicyParity(t *testing.T, helmDir, igDir string) {
+// verifyGatewayNetworkPolicy checks the xmc-cmp-ingestion-gateway release ships the expected
+// pod-level NetworkPolicy ingress and egress rules.
+func verifyGatewayNetworkPolicy(t *testing.T, igDir string) {
 	t.Helper()
 
-	umbrella, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
-		"ingestionGatewayDeployment": map[string]any{"enabled": true},
-	})
-	if err != nil {
-		t.Fatalf("renderChartWithValues(umbrella) failed: %v", err)
-	}
 	component, err := renderChartWithValues(igDir, "xmc-cmp-ingestion-gateway", map[string]any{
 		"ingestionGatewayDeployment": map[string]any{"enabled": true},
 	})
 	if err != nil {
 		t.Fatalf("renderChartWithValues(xmc-cmp-ingestion-gateway) failed: %v", err)
 	}
-	want := manifestSpecByKind(t, umbrella["xmanager-cloud/templates/network-policies.yaml"], "NetworkPolicy")
+	const wantNetworkPolicyYAML = `
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              xmc.google.com/metrics-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9644
+`
+	want := manifestSpecByKind(t, wantNetworkPolicyYAML, "NetworkPolicy")
 	got := manifestSpecByKind(t, component["ingestion-gateway/templates/deployment.yaml"], "NetworkPolicy")
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("component NetworkPolicy spec differs from umbrella (-umbrella +component):\n%s", diff)
+		t.Errorf("xmc-cmp-ingestion-gateway NetworkPolicy spec mismatch (-want +got):\n%s", diff)
 	}
 }
 

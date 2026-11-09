@@ -35,11 +35,10 @@ def _validate_identifiers(ns: str, rel: str) -> None:
 
 
 def _verify_target_codebase(chart: Path = DEFAULT_PROFILE_CHART, desc: str | None = None) -> None:
-    """Verifies local repository templates and git tag match XMC 0.18.x."""
+    """Verifies local repository templates and git tag match XMC 0.18.x or 1.x."""
     gw_tpl = chart / "components/ingestion-gateway/templates/deployment.yaml"
-    legacy_ok = (_ROOT / "deploy/helm/templates/ingestion-gateway/deployment.yaml").is_file()
-    if not legacy_ok or not gw_tpl.is_file() or "hpaEnabled" not in gw_tpl.read_text("utf-8"):
-        raise tu.HandledError("Unsupported target codebase.", "Checkout XMC 0.18.x.")
+    if not gw_tpl.is_file() or "hpaEnabled" not in gw_tpl.read_text("utf-8"):
+        raise tu.HandledError("Unsupported target codebase.", "Checkout XMC 0.18.x or 1.x.")
     if desc is None:
         cmd = ["git", "-C", str(_ROOT), "describe", "--tags", "--match", "[0-9]*.[0-9]*.[0-9]*"]
         try:
@@ -50,8 +49,10 @@ def _verify_target_codebase(chart: Path = DEFAULT_PROFILE_CHART, desc: str | Non
     if m := re.match(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9]+)-g[0-9a-f]+)?\Z", desc):
         ver = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
         min_v = (0, 17, 0) if int(m.group(4) or 0) > 0 else (0, 18, 0)
-        if not (min_v <= ver < (0, 19, 0)):
-            raise tu.HandledError(f"Unsupported target XMC '{desc}'.", "Checkout 0.18.x.")
+        if not (min_v <= ver < (2, 0, 0)):
+            raise tu.HandledError(
+                f"Unsupported target XMC '{desc}'.", "Checkout XMC 0.18.x or 1.x."
+            )
 
 
 def _verify_source_env(vals: Mapping[str, Any], *, require_legacy: bool) -> None:
@@ -65,7 +66,8 @@ def _verify_source_env(vals: Mapping[str, Any], *, require_legacy: bool) -> None
         ver = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
         ig_on = tu.parse_bool_flag(_mapping(vals, "ingestionGatewayDeployment").get("enabled"))
         min_v = (0, 4, 0) if ig_on else (0, 0, 0)
-        if not (min_v <= ver < (0, 19, 0)):
+        max_v = (1, 0, 0) if require_legacy else (2, 0, 0)
+        if not (min_v <= ver < max_v):
             raise tu.HandledError(f"Unsupported source imageTag '{tag}'.", "Check XMC version.")
 
 
@@ -355,7 +357,7 @@ def _confirm_and_run(args: argparse.Namespace) -> dict[str, Any]:
     """Prompts on an interactive TTY before running the selected migration subcommand."""
     if not sys.stdin.isatty():
         raise tu.HandledError("Interactive TTY confirmation required.", "Run manually in a TTY.")
-    msg = f"WARNING: XMC 0.18.x '{args.subcommand}' ({args.namespace}/{args.release})."
+    msg = f"WARNING: XMC component migration '{args.subcommand}' ({args.namespace}/{args.release})."
     sys.stderr.write(f"{msg} Type 'yes' to confirm: ")
     sys.stderr.flush()
     if sys.stdin.readline().strip().lower() != "yes":

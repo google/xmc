@@ -332,6 +332,20 @@ jobs:
             enable_metrics: ${ENABLE_METRICS}
           EOF_YAML
 
+          if [ "${ENABLE_METRICS}" = "true" ]; then
+            cat << 'EOF_PROFILE' > "${RUNNER_TEMP}/xmc-profile-values.yaml"
+          components:
+            redpanda:
+              enabled: true
+            clickhouse:
+              enabled: true
+            ingestion-gateway:
+              enabled: true
+              parameters:
+                hpaMinReplicas: 1
+          EOF_PROFILE
+          fi
+
       - name: 'Pre-Deploy Metrics Addons on Existing Cluster'
         if: ${{ inputs.enable_metrics == true }}
         run: |
@@ -344,13 +358,20 @@ jobs:
           fi
 
       - name: 'Execute GKE Deployment Pipeline'
+        env:
+          ENABLE_METRICS: '${{ inputs.enable_metrics }}'
         run: |
           # Defer verification to the downstream 'Run Environment Health Verification'
           # step so that metrics addons (when enabled) are provisioned before health checks run.
+          PROFILE_ARGS=()
+          if [ "${ENABLE_METRICS}" = "true" ]; then
+            PROFILE_ARGS=(--profile-values "${RUNNER_TEMP}/xmc-profile-values.yaml")
+          fi
           python3 tools/dev_env/dev_env.py gke-deploy \
             --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
             --dns-project "${DNS_PROJECT_ID}" \
             --dns-zone "${DNS_ZONE_NAME}" \
+            "${PROFILE_ARGS[@]}" \
             --skip-verification
 
       - name: 'Deploy Metrics Addons (ClickHouse & Redpanda)'

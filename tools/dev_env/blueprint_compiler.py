@@ -78,8 +78,6 @@ def compile_blueprint(
     config_path: str,
     deployment_name: str,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
-    *,
-    enable_components: bool = False,
 ) -> None:
     """Purges staged artifacts and re-compiles the XMC blueprint.
 
@@ -91,11 +89,9 @@ def compile_blueprint(
         config_path: Path to the deployment configuration YAML.
         deployment_name: Deployment name used to locate the staging directory.
         output_dir: Cluster Toolkit output directory.
-        enable_components: When True, passes `--vars enable_components=true` to gcluster.
     """
     purge_staged_artifacts(output_dir, deployment_name)
     chart_hash = compute_chart_content_hash(HELM_CHART_DIR)
-    extra_vars = ["--vars", f"enable_components={'true' if enable_components else 'false'}"]
     run_command(
         [
             "./cluster-toolkit/gcluster",
@@ -107,7 +103,6 @@ def compile_blueprint(
             str(output_dir),
             "--vars",
             f"helm_chart_content_hash={chart_hash}",
-            *extra_vars,
             "-l",
             "WARNING",
             "-w",

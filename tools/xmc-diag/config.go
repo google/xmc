@@ -50,7 +50,7 @@ type Config struct {
 }
 
 func parseComponentFlagDefaults() (bool, bool, string) {
-	raw := strings.TrimSpace(strings.ToLower(cmp.Or(os.Getenv("CHECK_COMPONENTS"), os.Getenv("ENABLE_COMPONENTS"))))
+	raw := strings.TrimSpace(strings.ToLower(os.Getenv("CHECK_COMPONENTS")))
 	enabled := raw == "" || raw == "true" || raw == "1" || raw == "yes"
 	return enabled, raw != "" && enabled, cmp.Or(os.Getenv("XMC_NAMESPACE"), os.Getenv("NAMESPACE"), "xmc")
 }

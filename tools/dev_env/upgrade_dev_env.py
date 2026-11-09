@@ -113,6 +113,12 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
 
     parsed = parser.parse_args(args)
 
+    if parsed.enable_components is False:
+        error_exit(
+            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory.",
+            exit_code=1,
+        )
+
     if parsed.start_from and parsed.only:
         error_exit(
             "Arguments --start-from and --only are mutually exclusive.",
@@ -153,15 +159,14 @@ def step_check(config: UpgradeConfig) -> None:
     for binary in ["gcloud", "kubectl", "helm", "bazel"]:
         if not shutil.which(binary):
             error_exit(f"Required CLI tool '{binary}' is not installed or not in PATH.")
-    if config.enable_components:
-        try:
-            verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
-            error_exit(f"Failed Helm version check: {e}")
-        if config.profile_values and not Path(config.profile_values).is_file():
-            error_exit(
-                f"Profile values file '{config.profile_values}' does not exist or is not a file."
-            )
+    try:
+        verify_helm_min_version()
+    except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
+        error_exit(f"Failed Helm version check: {e}")
+    if config.profile_values and not Path(config.profile_values).is_file():
+        error_exit(
+            f"Profile values file '{config.profile_values}' does not exist or is not a file."
+        )
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
     if not gcluster_path.is_file() or not os.access(gcluster_path, os.X_OK):
@@ -374,9 +379,7 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    compile_blueprint(
-        config.config_path, config.deployment_name, enable_components=config.enable_components
-    )
+    compile_blueprint(config.config_path, config.deployment_name)
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
@@ -524,7 +527,6 @@ def step_verify(config: UpgradeConfig) -> None:
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
-        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
         "LOG_MONITOR_DEPLOYMENT_ENABLED": (
             "true" if config.log_monitor_deployment_enabled else "false"
         ),
@@ -567,9 +569,6 @@ def _build_resume_cmd(args: argparse.Namespace, config: UpgradeConfig, step: str
     cmd = f"python3 tools/dev_env/upgrade_dev_env.py --config {shlex.quote(config.config_path)}"
     if getattr(args, "run_migrations", False):
         cmd += " --run-migrations"
-    if getattr(args, "enable_components", None) is not None:
-        flag = "--enable-components" if args.enable_components else "--no-enable-components"
-        cmd += f" {flag}"
     if getattr(args, "profile_values", None):
         cmd += f" --profile-values {shlex.quote(args.profile_values)}"
     step_flag = "--only" if args.only else "--start-from"
@@ -614,9 +613,12 @@ def run_upgrade(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments.
     """
+    if getattr(args, "enable_components", None) is False:
+        error_exit(
+            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory.",
+            exit_code=1,
+        )
     config = load_config(args.config, run_migrations=args.run_migrations)
-    if getattr(args, "enable_components", None) is not None:
-        config = replace(config, enable_components=args.enable_components)
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)
     run_pipeline(args, config, STEPS)

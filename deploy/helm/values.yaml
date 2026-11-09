@@ -43,7 +43,6 @@ featureFlags:
   pause_scheduling_enabled: true
 
 componentsDeployment:
-  enabled: false
   cmsAddress: "grpc-service:50051"
   # Human-readable cluster label reported in CMS ownership fence declarations; defaults to release name when empty.
   clusterName: ""
@@ -93,38 +92,6 @@ metrics:
     # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
     # through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
-
-ingestionGatewayDeployment:
-  # Deploys the gateway from this chart only while componentsDeployment.enabled is false. With
-  # components enabled, the gateway is optional and installed via the stable-2026a
-  # ingestion-gateway component chart (actuated by xmc-bridge).
-  enabled: false
-  hpa:
-    minReplicas: 3
-    maxReplicas: 10
-  # Static defaults used when componentsDeployment.enabled is false or the redpanda Component CR
-  # (xmc.dev/v1alpha1) is disabled/absent. When componentsDeployment.enabled is true and the
-  # redpanda Component CR is enabled, ingestion-gateway resolves broker addresses and defaultTopic
-  # dynamically from the Component CR.
-  redpandaBrokers: "redpanda-0.redpanda.xmc.svc.cluster.local:9092"
-  topicName: "xmc-metrics"
-  minPartitions: 128
-  minReplicas: 1
-  sasl:
-    enabled: false
-    mechanism: "SCRAM-SHA-256"
-    secretName: ""
-  tls:
-    enabled: false
-    secretName: ""
-  serviceAccountName: "default"
-  resources:
-    requests:
-      cpu: "10m"
-      memory: "64Mi"
-    limits:
-      cpu: "100m"
-      memory: "256Mi"
 
 rodDeployment:
   enabled: true
