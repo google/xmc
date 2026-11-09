@@ -27,7 +27,7 @@ Every phase of preparing Cacio e Pepe operates within a narrow thermal window. E
 
 * **Pasta**: `400 g` (`14 oz`) bronze-die extruded *tonnarelli*, *spaghetti alla chitarra*, or *spaghettoni* (rough bronze-extruded surfaces shed significantly more starch than Teflon-extruded pasta).
 * **Cheese**: `200 g` (`7 oz`) aged **Pecorino Romano DOP** (aged `8–12 months`), finely grated at room temperature (`20°C – 22°C / 68°F – 72°F`) using a microplane or fine rasp so particles melt rapidly without requiring high heat.
-* **Black Pepper**: `8 g` (`1 tbsp`) whole black peppercorns (such as Tellicherry or Sarawak), crushed coarsely in a mortar and pestle or spice mill just before cooking.
+* **Black Pepper**: `8 g` (`1 tbsp`) whole black peppercorns (such as Tellicherry or Sarawak), toasted whole and crushed coarsely in a mortar and pestle or spice mill immediately after toasting.
 * **Cooking Water**: `2.5 L – 3.0 L` (`2.5 – 3 quarts`) water—intentionally less water than standard pasta cooking (`~60%` of normal volume) to concentrate dissolved starch to `1.5% – 2.5%`.
 * **Salt**: `10 g – 12 g` (`~2 tsp` Morton kosher salt or `~4 tsp` Diamond Crystal kosher salt, or `~0.4%` by water weight)—keep salinity low because Pecorino Romano DOP already contains `~4.5% – 5.5%` salt by weight.
 * **Optional Phase-Stabilizer (Scientific Method)**: `4 g` (`1.5 tsp`) cornstarch or potato starch (`2%` of cheese weight) dissolved in `40 mL` cool water.
@@ -36,10 +36,10 @@ Every phase of preparing Cacio e Pepe operates within a narrow thermal window. E
 
 ## 3. Step-by-Step Preparation
 
-### Step 1: Toast and Bloom the Black Pepper (`130°C – 160°C / 265°F – 320°F`)
+### Step 1: Toast and Crush the Black Pepper (`130°C – 160°C / 265°F – 320°F`)
 1. Place a wide, heavy-bottomed stainless steel or aluminum skillet over medium-low heat.
-2. Add the freshly cracked black peppercorns to the dry skillet and toast for `1.5 – 2 minutes`, shaking the pan until the surface reaches **`130°C – 160°C (265°F – 320°F)`** and the pepper is fragrant and barely wisps smoke.
-3. Remove the skillet from the heat immediately so the pepper does not scorch (`> 180°C / 355°F`).
+2. Add the **whole** black peppercorns to the dry skillet and toast for `1.5 – 2 minutes`, shaking the pan until the surface reaches **`130°C – 160°C (265°F – 320°F)`** and the peppercorns are fragrant and barely wisp smoke. Toasting the peppercorns whole prevents fine pepper dust from scorching (`> 180°C / 355°F`) and retains volatile terpenes inside the pericarp until crushing.
+3. Transfer the warm toasted peppercorns immediately to a mortar and pestle (or coarse spice mill), crush them coarsely, and return the crushed pepper to the off-heat skillet.
 
 ### Step 2: Boil the Pasta in Reduced Water (`100°C / 212°F`)
 1. Bring `2.5 L – 3.0 L` of lightly salted water to a rolling boil (**`100°C / 212°F`**) in a narrow pot.
