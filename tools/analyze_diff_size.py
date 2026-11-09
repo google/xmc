@@ -109,9 +109,7 @@ def _count_stream_lines(stream: BinaryIO) -> int:
     return lines
 
 
-def get_untracked_entries(
-    excluded_paths: set[str], repo_root: Path = _REPO_ROOT
-) -> list[tuple[int, str]]:
+def get_untracked_entries(excluded_paths: set[str], repo_root: Path) -> list[tuple[int, str]]:
     """Returns (added lines, path) for untracked, non-ignored files not in excluded_paths.
 
     Raises:
@@ -124,14 +122,34 @@ def get_untracked_entries(
     ]
 
 
-def _run_numstat(diff_spec: str | None) -> str:
-    """Returns the stdout of `git diff --numstat [diff_spec]`."""
-    cmd = ["git", "diff", "--numstat"]
+def _find_repo_root() -> Path:
+    """Returns the top-level directory of the git checkout containing the working directory.
+
+    Raises:
+        HandledError: If the working directory is not inside a git checkout.
+    """
+    cmd = ["git", "rev-parse", "--show-toplevel"]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise HandledError(
+            f"Failed to find the git repository root: {e.stderr.strip()}",
+            "Verify that you are inside a valid git workspace.",
+        ) from e
+    return Path(res.stdout.strip())
+
+
+def _run_numstat(diff_spec: str | None, repo_root: Path) -> str:
+    """Returns the stdout of `git diff --numstat [diff_spec]` run in repo_root.
+
+    core.quotePath=false keeps non-ASCII paths unescaped, matching `git ls-files -z`.
+    """
+    cmd = ["git", "-c", "core.quotePath=false", "diff", "--numstat"]
     if diff_spec:
         cmd.append(diff_spec)
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=repo_root)
     except subprocess.CalledProcessError as e:
         raise HandledError(
             f"Failed to execute git diff: {e.stderr.strip()}",
@@ -145,10 +163,13 @@ def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
 
     Untracked files that git does not ignore count every line as added, so the size gate
     holds before new files are committed. Paths already in the diff are not counted twice.
+    Both listings run from the root of the checkout containing the working directory, so
+    their repository-relative paths match.
     """
+    repo_root = _find_repo_root()
     entries: list[tuple[int, str]] = []
     diff_paths: set[str] = set()
-    for line in _run_numstat(diff_spec).splitlines():
+    for line in _run_numstat(diff_spec, repo_root).splitlines():
         parts = line.strip().split("\t")
         if len(parts) < 3:
             continue
@@ -156,7 +177,7 @@ def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
         if parts[0].isdigit():
             entries.append((int(parts[0]), parts[2]))
 
-    return entries + get_untracked_entries(diff_paths)
+    return entries + get_untracked_entries(diff_paths, repo_root)
 
 
 def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:

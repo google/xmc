@@ -31,6 +31,9 @@ from tools import analyze_diff_size  # noqa: E402
 from tools.common.changed_files import ChangedFilesError  # noqa: E402
 from tools.common.tool_utils import HandledError  # noqa: E402
 
+# Repository root that the _find_repo_root double reports.
+_FAKE_ROOT = Path("/work/xmc")
+
 
 def _write_file(root: Path, relative_path: str, content: bytes) -> Path:
     """Writes content to root/relative_path, creating parents, and returns the path."""
@@ -40,8 +43,19 @@ def _write_file(root: Path, relative_path: str, content: bytes) -> Path:
     return path
 
 
+def _patch_repo_root(test: unittest.TestCase) -> None:
+    """Makes _find_repo_root return _FAKE_ROOT for the rest of the test."""
+    patcher = mock.patch.object(analyze_diff_size, "_find_repo_root", return_value=_FAKE_ROOT)
+    patcher.start()
+    test.addCleanup(patcher.stop)
+
+
 class AnalyzeDiffSizeTest(unittest.TestCase):
     """Tests for file classification and diff analysis functions."""
+
+    def setUp(self):
+        super().setUp()
+        _patch_repo_root(self)
 
     def test_classify_file_generated(self):
         self.assertEqual(analyze_diff_size.classify_file("pkg/api/v1/api.pb.go"), "generated")
@@ -84,7 +98,14 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(len(entries), 2)
         self.assertEqual(entries[0], (100, "pkg/reconciler/handler.go"))
         self.assertEqual(entries[1], (50, "pkg/reconciler/handler_test.go"))
-        mock_untracked.assert_called_once_with(analyze_diff_size._REPO_ROOT)
+        mock_run.assert_called_once_with(
+            ["git", "-c", "core.quotePath=false", "diff", "--numstat", "origin/main..."],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=_FAKE_ROOT,
+        )
+        mock_untracked.assert_called_once_with(_FAKE_ROOT)
 
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
     @mock.patch.object(analyze_diff_size.subprocess, "run")
@@ -117,7 +138,19 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(
             entries, [(10, "pkg/reconciler/handler.go"), (3, "pkg/new dir/new file.go")]
         )
-        mock_count.assert_called_once_with(analyze_diff_size._REPO_ROOT / "pkg/new dir/new file.go")
+        mock_count.assert_called_once_with(_FAKE_ROOT / "pkg/new dir/new file.go")
+
+    @mock.patch.object(analyze_diff_size, "count_added_lines", autospec=True, return_value=3)
+    @mock.patch.object(analyze_diff_size, "list_untracked_files")
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
+    def test_get_diff_entries_dedupes_non_ascii_paths(self, mock_run, mock_untracked, _):
+        # With core.quotePath=false numstat prints multibyte paths verbatim, as ls-files -z does.
+        mock_run.return_value = mock.Mock(stdout="5\t1\tdocs/ñew.md\n", returncode=0)
+        mock_untracked.return_value = ["docs/ñew.md", "pkg/日本.go"]
+
+        entries = analyze_diff_size.get_diff_entries("origin/main")
+
+        self.assertEqual(entries, [(5, "docs/ñew.md"), (3, "pkg/日本.go")])
 
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
     @mock.patch.object(analyze_diff_size.subprocess, "run")
@@ -147,6 +180,33 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
             mock_untracked.assert_called_once_with(repo_root)
         self.assertEqual(
             entries, [(2, "docs/with space.md"), (0, "pkg/blob.bin"), (0, "pkg/empty.go")]
+        )
+
+
+class FindRepoRootTest(unittest.TestCase):
+    """Tests _find_repo_root against canned git output."""
+
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
+    def test_find_repo_root_returns_toplevel(self, mock_run):
+        mock_run.return_value = mock.Mock(stdout="/work/xmc\n", returncode=0)
+
+        self.assertEqual(analyze_diff_size._find_repo_root(), Path("/work/xmc"))
+        mock_run.assert_called_once_with(
+            ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=True
+        )
+
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
+    def test_find_repo_root_outside_git_raises_handled_error(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            128, ["git", "rev-parse"], stderr="fatal: not a git repository\n"
+        )
+
+        with self.assertRaises(HandledError) as ctx:
+            analyze_diff_size._find_repo_root()
+
+        self.assertEqual(
+            ctx.exception.message,
+            "Failed to find the git repository root: fatal: not a git repository",
         )
 
 
@@ -216,6 +276,10 @@ class CountAddedLinesTest(unittest.TestCase):
 
 class AnalyzeDiffSizeThresholdTest(unittest.TestCase):
     """Tests threshold evaluation in analyze_diff_size."""
+
+    def setUp(self):
+        super().setUp()
+        _patch_repo_root(self)
 
     @mock.patch.object(analyze_diff_size, "count_added_lines", autospec=True, return_value=450)
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
