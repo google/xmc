@@ -193,7 +193,7 @@ func TestFetchSeriesData(t *testing.T) {
 					if tt.mockErr != nil {
 						return nil, tt.mockErr
 					}
-					return &mockRows{data: tt.mockData}, nil
+					return &mockRows{Data: tt.mockData}, nil
 				},
 			}
 

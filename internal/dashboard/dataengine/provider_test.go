@@ -391,7 +391,7 @@ func newSummaryConn(metricName string, lastVal float64) *closableMockConn {
 		if conn.closed.Load() {
 			return nil, errors.New("clickhouse connection is closed")
 		}
-		return &mockRows{data: [][]any{
+		return &mockRows{Data: [][]any{
 			{metricName, lastVal, lastVal, lastVal, lastVal, int64(1), sampleTime},
 		}}, nil
 	}

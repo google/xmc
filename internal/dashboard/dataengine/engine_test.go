@@ -56,6 +56,13 @@ func TestNew(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			var gotSQL string
+			if m, ok := tt.conn.(*mockClickHouseConn); ok {
+				m.queryFn = func(_ context.Context, query string, _ ...any) (driver.Rows, error) {
+					gotSQL = query
+					return &mockRows{}, nil
+				}
+			}
 			engine, err := New(tt.conn, tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("New() error = %v, wantErr = %v", err, tt.wantErr)
@@ -63,8 +70,11 @@ func TestNew(t *testing.T) {
 			if tt.wantErr {
 				return
 			}
-			if engine.tableName != tt.wantTable {
-				t.Errorf("engine.tableName = %q, want %q", engine.tableName, tt.wantTable)
+			if _, err := engine.fetchSummaryBox(context.Background(), 1, 0, &dpb.PlotSpec{Data: &dpb.DataSpec{}}); err != nil {
+				t.Fatalf("fetchSummaryBox() error: %v", err)
+			}
+			if wantFrom := "FROM " + tt.wantTable + " WHERE"; !strings.Contains(strings.Join(strings.Fields(gotSQL), " "), wantFrom) {
+				t.Errorf("engine SQL = %q, want it to contain %q", gotSQL, wantFrom)
 			}
 		})
 	}
@@ -72,6 +82,13 @@ func TestNew(t *testing.T) {
 
 func TestPing(t *testing.T) {
 	pingErr := fmt.Errorf("connection refused")
+	newEngine := func(conn ClickHouseConn) *DataEngine {
+		engine, err := New(conn)
+		if err != nil {
+			t.Fatalf("New() error: %v", err)
+		}
+		return engine
+	}
 	tests := []struct {
 		name    string
 		engine  *DataEngine
@@ -79,13 +96,13 @@ func TestPing(t *testing.T) {
 	}{
 		{
 			name:   "reachable",
-			engine: &DataEngine{backend: clickHouseBackend{conn: &mockClickHouseConn{}}},
+			engine: newEngine(&mockClickHouseConn{}),
 		},
 		{
 			name: "unreachable",
-			engine: &DataEngine{backend: clickHouseBackend{conn: &mockClickHouseConn{
+			engine: newEngine(&mockClickHouseConn{
 				pingFn: func(context.Context) error { return pingErr },
-			}}},
+			}),
 			wantErr: true,
 		},
 		{
@@ -212,9 +229,9 @@ func TestFetchChartData(t *testing.T) {
 						return nil, fmt.Errorf("unexpected query: %s", query)
 					}
 					if strings.Contains(query, "argMax") {
-						return &mockRows{data: tt.queryResponses["summary"]}, nil
+						return &mockRows{Data: tt.queryResponses["summary"]}, nil
 					}
-					return &mockRows{data: tt.queryResponses["scatter"]}, nil
+					return &mockRows{Data: tt.queryResponses["scatter"]}, nil
 				},
 			}
 
@@ -254,7 +271,7 @@ func TestDataEngineCloseAndMultiPlotOrdering(t *testing.T) {
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
 	closable := &closableMockConn{}
 	closable.queryFn = func(ctx context.Context, query string, args ...any) (driver.Rows, error) {
-		return &mockRows{data: [][]any{{"only", 0.1, 0.1, 0.1, 0.1, int64(10), sampleTime}}}, nil
+		return &mockRows{Data: [][]any{{"only", 0.1, 0.1, 0.1, 0.1, int64(10), sampleTime}}}, nil
 	}
 	engine, err := New(closable)
 	if err != nil {
@@ -283,10 +300,10 @@ func TestDataEngineCloseAndMultiPlotOrdering(t *testing.T) {
 		queryFn: func(ctx context.Context, query string, args ...any) (driver.Rows, error) {
 			if strings.Contains(query, "argMax") {
 				<-slowGate
-				return &mockRows{data: [][]any{{"loss", 0.1, 0.1, 0.1, 0.1, int64(10), sampleTime}}}, nil
+				return &mockRows{Data: [][]any{{"loss", 0.1, 0.1, 0.1, 0.1, int64(10), sampleTime}}}, nil
 			}
 			close(slowGate)
-			return &mockRows{data: [][]any{{int64(20), 0.9, 0.9, 0.9, sampleTime, "acc", int64(1), int64(1)}}}, nil
+			return &mockRows{Data: [][]any{{int64(20), 0.9, 0.9, 0.9, sampleTime, "acc", int64(1), int64(1)}}}, nil
 		},
 	}
 	orderedEngine, _ := New(orderedConn)
