@@ -163,6 +163,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	// execution cluster cannot be determined yet (for example, before Kueue admits
 	// the Workload), report the MLRun as unconfirmed so nothing is cached and a
 	// later reconcile retries.
+	//
+	// The MLRun itself is still created under MLRunProject/MLRunLocation (the
+	// client is built once in manager.go), so only workloadDetails.cluster follows
+	// the worker. MultiKueue workers must therefore be in MLRunLocation, and in
+	// MLRunProject unless it is set to the worker's project.
 	project, location, clusterName, ok := r.resolveExecutionCluster(ctx, jobSet)
 	if !ok {
 		return "", false

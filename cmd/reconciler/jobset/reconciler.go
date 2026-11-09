@@ -418,7 +418,7 @@ func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alph
 	}
 	wl := findJobSetWorkload(wlList.Items, jobSet.Name)
 	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
-		if (wl == nil && jobSet.Labels["kueue.x-k8s.io/queue-name"] != "") || (wl != nil && wl.Status.Admission == nil && jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend) {
+		if awaitingAdmission(jobSet, wl) {
 			return "", "", "", false
 		}
 		return r.Project, r.Location, r.ClusterName, true
@@ -434,6 +434,16 @@ func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alph
 		return "", "", "", false
 	}
 	return info.GetProject(), info.GetLocation(), info.GetClusterName(), true
+}
+
+// awaitingAdmission reports whether a JobSet without an assigned MultiKueue
+// cluster may still get one: it is queued but its Workload does not exist yet,
+// or its Workload is not admitted while the JobSet is suspended.
+func awaitingAdmission(jobSet *v1alpha2.JobSet, wl *v1beta1.Workload) bool {
+	if wl == nil {
+		return jobSet.Labels["kueue.x-k8s.io/queue-name"] != ""
+	}
+	return wl.Status.Admission == nil && jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend
 }
 
 func findJobSetWorkload(workloads []v1beta1.Workload, jobSetName string) *v1beta1.Workload {

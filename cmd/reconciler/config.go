@@ -71,7 +71,7 @@ func init() {
 	flag.StringVar(&defaultExecutionEnvironment, "default_execution_environment", "gke", "The execution environment to use if not specified in the request.")
 	flag.StringVar(&mldiagnosticsEnvironment, "mldiagnostics_environment", "prod", "The ML Diagnostics (Hypercompute Cluster ML Run) control-plane environment: one of autopush, staging, or prod.")
 	flag.StringVar(&mlRunProject, "mlrun_project", "", "Optional target GCP project for the Hypercompute Cluster ML Run API (defaults to cluster project).")
-	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Optional target location for the Hypercompute Cluster ML Run API (defaults to cluster location).")
+	flag.StringVar(&mlRunLocation, "mlrun_location", "", "Optional target location for the Hypercompute Cluster ML Run API (defaults to cluster location). MultiKueue worker clusters must be in this location.")
 	flag.StringVar(&mlRunImpersonateSA, "mlrun_impersonate_sa", "", "Optional service account to impersonate for the Hypercompute Cluster ML Run API.")
 	flag.IntVar(&metricsPort, "metrics_port", 8082, "The port on which the reconciler serves Prometheus metrics.")
 	registerConfigs()
