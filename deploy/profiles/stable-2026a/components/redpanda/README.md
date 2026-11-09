@@ -27,7 +27,7 @@ The following fields are structural constants of the Redpanda blueprint hardcode
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `bool` | `false` | Enables or disables the Redpanda component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
+| `enabled` | `bool` | `false` | Enables or disables the Redpanda component in the XMC catalog. Defaults to `false` until explicitly enabled in profile values. |
 | `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
@@ -48,7 +48,7 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 
 ## 3. Downstream Consumer Discovery (`ingestion-gateway`)
 
-When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-gateway` queries the `redpanda` `Component` CR (`xmc.dev/v1alpha1`) in `COMPONENTS_NAMESPACE` (using the namespace-scoped `ingestion-gateway-components-reader` `Role`) at startup:
+At startup, `ingestion-gateway` queries the `redpanda` `Component` CR (`xmc.dev/v1alpha1`) in `COMPONENTS_NAMESPACE` (using the namespace-scoped `ingestion-gateway-components-reader` `Role`):
 
 1. **Broker Resolution Precedence**:
    - **Multi-Broker Live Coordinates (`status.access.envVars.ENDPOINT`)**: When `status.access.envVars["ENDPOINT"]` lists multiple comma-separated brokers, prefers those live coordinates (appending `status.access.envVars["PORT"]` or `spec.parameters["kafkaPort"]` to any portless entry).
@@ -57,7 +57,7 @@ When `componentsDeployment.enabled` (`enable_components`) is `true`, `ingestion-
 2. **Default Topic Resolution**:
    - Overrides `-topic_name` with `spec.parameters["defaultTopic"]` when non-empty.
 3. **Graceful Fallback Contract**:
-   - When `enable_components=false`, or when `Component/redpanda` is absent or disabled (`spec.enabled: false` / `status.state: COMPONENT_STATE_DISABLED`), `ingestion-gateway` retains its static CLI flag values (`-redpanda_brokers`, `-topic_name`).
+   - When `Component/redpanda` is absent or disabled (`spec.enabled: false` / `status.state: COMPONENT_STATE_DISABLED`), `ingestion-gateway` retains its static CLI flag values (`-redpanda_brokers`, `-topic_name`).
 
 ---
 

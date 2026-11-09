@@ -43,7 +43,7 @@ Before running any upgrade step, verify that the required CLI tools are installe
 | :--- | :--- | :--- |
 | **`gcloud`** | `gcloud --version` | Prints Google Cloud SDK version info |
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
-| **`helm`** | `helm version` | Prints Helm client version |
+| **`helm`** | `helm version` | Prints Helm client version (minimum 3.14.0) |
 | **`bazel`** | `bazel --version` | Prints Bazel version |
 
 > [!CAUTION]
@@ -95,9 +95,6 @@ python3 tools/dev_env/dev_env.py gke-upgrade --only migrate
 
 ### Step 3: Execute Upgrade
 If no migrations were pending, or if the user approved running migrations:
-
-> [!NOTE]
-> **Feature Flag Awareness**: During the `images` step (building/pushing microservice OCI images) and `restart` step (rolling restarts of Kubernetes deployments), `gke-upgrade` reads feature flags from the deployment configuration YAML (e.g. `rod_deployment_enabled: false`). If a feature is disabled (e.g., `rod_deployment_enabled: false`), `rod_data_provider` image pushing and `rod-data-provider` deployment restarts are automatically skipped.
 
 *   **Case A: No pending migrations**:
     Run the upgrade starting from the `images` step (skipping migration step):

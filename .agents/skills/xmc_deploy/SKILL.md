@@ -51,7 +51,7 @@ Before running any compilation or deployment steps, verify that all necessary CL
 | :--- | :--- | :--- |
 | **`gcloud`** | `gcloud --version` | Prints Google Cloud SDK version info |
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
-| **`helm`** | `helm version` | Prints Helm client version |
+| **`helm`** | `helm version` | Prints Helm client version (minimum 3.14.0) |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
 | **`bazel`** | `bazel --version` | Prints Bazel version |
 | **`gcluster`** | `./cluster-toolkit/gcluster --version` | Prints gcluster tool version |
@@ -196,8 +196,6 @@ gcloud container clusters update <cluster_name> \
 
 ### Step 8: Build and Push XMC Service Images
 Before deploying the application Helm chart, build and push all service Docker images to GCP Artifact Registry. You must set the project's target registry and environment variables:
-> [!NOTE]
-> **Feature Flag Awareness**: `deploy_dev_env.py` and manual step 8 check feature flags in the deployment configuration YAML (such as `rod_deployment_enabled: false`). If a feature is disabled (e.g. `rod_deployment_enabled: false`), the corresponding image target (e.g. `//cmd/rod_data_provider:rod_data_provider_image_push`) is skipped.
 
 ```bash
 export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
@@ -211,9 +209,11 @@ bazel run //cmd/ui:ui_image_push
 bazel run //cmd/xid_service:xid_service_image_push
 bazel run //cmd/health_service:health_service_image_push
 bazel run //cmd/dashboard_service:dashboard_service_image_push
-# Optional: Only run if rod_deployment_enabled is true (default: false)
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
+bazel run //cmd/xmc_bridge:xmc_bridge_image_push
+# Workload of the hpo component (xmc-study-controller)
+bazel run //cmd/study_controller:study_controller_image_push
 ```
 
 ### Step 9: Deploy XMC Application (`xmc_app` group)

@@ -104,11 +104,10 @@ Only one `xmc-bridge` process reconciles at a time. Each process competes for th
 
 ## Helm Integration & Deployment
 
-The component bridge controller is feature-flagged under `componentsDeployment` in Helm values:
+`xmc-bridge` is always deployed by `deploy/helm` and configured under `componentsDeployment` in Helm values (passing `componentsDeployment.enabled=false` fails closed in XMC `1.0.0+`):
 
 ```yaml
 componentsDeployment:
-  enabled: false                                  # Set to true to deploy xmc-bridge controller
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
   clusterName: ""                                 # Cluster label in CMS fence declarations (defaults to release name)
   ownershipEpoch: 1                               # Monotonic CMS ownership fencing epoch (>= 1)
@@ -133,23 +132,22 @@ To install or upgrade:
 
 ```bash
 helm upgrade --install xmc deploy/helm \
-  --set componentsDeployment.enabled=true \
   --set componentsDeployment.cmsAddress=grpc-service:50051
 ```
 
 ### CRD lifecycle
 
-The `components.xmc.dev` CRD is rendered whether or not `componentsDeployment.enabled` is set, because deleting a CRD deletes every CR of that type. It carries:
+The `components.xmc.dev` CRD is installed by `deploy/helm` and never deleted automatically, because deleting a CRD deletes every CR of that type. It carries:
 
-- `helm.sh/resource-policy: keep`, so `helm uninstall` and a flag flip leave the CRD and all Component CRs in place.
+- `helm.sh/resource-policy: keep`, so `helm uninstall` leaves the CRD and all Component CRs in place.
 - `argocd.argoproj.io/sync-options: Prune=false,Delete=false`, so Argo CD never prunes or deletes it.
 - `argocd.argoproj.io/sync-wave: "-1"`, which orders it before the Component CRs only when both are synced by the same Argo CD Application. Across Applications it has no effect: sync the Application that installs this chart first, or give the Application holding the CRs a sync retry policy.
 
 The `stable-2026a` profile's Component CRs carry `argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true`, so an Argo CD application's first sync does not fail its dry run before the CRD exists. Set the same annotation on any Component CR you author yourself.
 
-Because the CRD renders even with `componentsDeployment.enabled=false`, whoever installs or upgrades the chart needs permission to create and update `customresourcedefinitions`.
+Whoever installs or upgrades the chart needs permission to create and update `customresourcedefinitions`.
 
-The `component-deletion-protection` `ValidatingAdmissionPolicy` and its binding follow the CRD: they render whatever `componentsDeployment.enabled` is set to and carry `helm.sh/resource-policy: keep`, so disabling the bridge or uninstalling the chart never silently drops deletion protection for the CRs the kept CRD still holds. The installer therefore also needs permission to manage `validatingadmissionpolicies` and `validatingadmissionpolicybindings`. The policy exempts only the Kubernetes namespace controller and garbage collector, and `system:masters`; there is no `xmc-platform-admins` breakglass group. To delete a protected Component, set `spec.deletionProtection: false` first. A kept policy and binding also retain their release annotations, so reassign them the same way as the CRD below before installing under a different release.
+The `component-deletion-protection` `ValidatingAdmissionPolicy` and its binding follow the CRD: they carry `helm.sh/resource-policy: keep`, so uninstalling the chart never silently drops deletion protection for the CRs the kept CRD still holds. The installer therefore also needs permission to manage `validatingadmissionpolicies` and `validatingadmissionpolicybindings`. The policy exempts only the Kubernetes namespace controller and garbage collector, and `system:masters`; there is no `xmc-platform-admins` breakglass group. To delete a protected Component, set `spec.deletionProtection: false` first. A kept policy and binding also retain their release annotations, so reassign them the same way as the CRD below before installing under a different release.
 
 The kept CRD retains the `meta.helm.sh/release-name` and `meta.helm.sh/release-namespace` annotations of the release that created it. Reinstalling under the same release name and namespace adopts it again. Installing under a different release name or namespace fails with an ownership error; reassign the CRD first:
 
@@ -158,7 +156,7 @@ kubectl annotate crd components.xmc.dev --overwrite \
   meta.helm.sh/release-name=<release> meta.helm.sh/release-namespace=<namespace>
 ```
 
-With `componentsDeployment.enabled=false`, nothing removes the `xmc.dev/cms-cleanup` finalizer that `xmc-bridge` attached, so deleting a Component CR, or the namespace that holds it, hangs. Re-enable the bridge, or strip the finalizer by hand. Stripping it skips the bridge's CMS cleanup and teardown of the component's workload release:
+If `xmc-bridge` is not running (for example after `helm uninstall`), nothing removes the `xmc.dev/cms-cleanup` finalizer that `xmc-bridge` attached, so deleting a Component CR, or the namespace that holds it, hangs. Reinstall the umbrella chart so `xmc-bridge` runs cleanup, or strip the finalizer by hand. Stripping it skips the bridge's CMS cleanup and teardown of the component's workload release:
 
 ```bash
 kubectl patch components.xmc.dev <name> -n <namespace> --type=merge -p '{"metadata":{"finalizers":null}}'
@@ -182,7 +180,7 @@ Removing the CRD is a deliberate manual step. While `xmc-bridge` is still runnin
   - `core/events`: `create`, `patch`.
   - `core/configmaps`: `create`, plus `get`, `update` on `xmc-component-values` only.
   - `core/secrets` (Helm release storage, one Secret per revision): `get`, `list`, `create`, `update`, `delete`.
-  - `core/services`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `rbac.authorization.k8s.io` `roles`/`rolebindings` and `networking.k8s.io` `networkpolicies`: `create`, plus `get`, `update`, `patch`, `delete` limited by `resourceNames` to the objects of the shipped 1P chart (`ingestion-gateway-deployment`, `ingestion-gateway-service`, `ingestion-gateway-hpa`, `ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`). A custom 1P chart loaded through `--chart-path` or `spec.parameters.chartPath` can only manage objects with these names; add its object names to `deploy/helm/templates/components/rbac.yaml` first, or its Helm install fails with `Forbidden`.
+  - `core/services`, `core/serviceaccounts`, `apps/deployments`, `autoscaling/horizontalpodautoscalers`, `rbac.authorization.k8s.io` `roles`/`rolebindings` and `networking.k8s.io` `networkpolicies`: `create`, plus `get`, `update`, `patch`, `delete` limited by `resourceNames` to the objects of the shipped 1P charts (`ingestion-gateway-deployment`, `ingestion-gateway-service`, `ingestion-gateway-hpa`, `ingestion-gateway-components-reader`, `ingestion-gateway-components-reader-binding`, `ingestion-gateway-network-policy`, `xmc-study-controller`). A custom 1P chart loaded through `--chart-path` or `spec.parameters.chartPath` can only manage objects with these names; add its object names to `deploy/helm/templates/components/rbac.yaml` first, or its Helm install fails with `Forbidden`.
   - `componentsDeployment.rbac.wrapperRules` (3P wrapper CRDs inspected via `spec.wrapperRef`): `get`. The defaults cover `clickhouse.altinity.com/clickhouseinstallations`, `cluster.redpanda.com` & `redpanda.vectorized.io` `clusters`/`redpandas`, and `ray.io` `rayclusters`/`rayservices`. A cross-namespace `wrapperRef` is rejected (`CrossNamespaceForbidden`), so wrapper resources are only read in the release namespace.
 - **Cluster identity ClusterRole (`xmc-bridge-cluster-identity-<namespace>`)**: Grants `get` on `namespaces` restricted to `resourceNames: ["kube-system"]` so `xmc-bridge` can read the cluster UID for CMS ownership fence declarations.
 - **Leader election Role (`xmc-bridge-leader-election`)**: Grants `create` on `coordination.k8s.io` leases, and `get` and `update` on the `xmc-bridge` Lease only. It is a namespaced `Role` in the release namespace, so the bridge cannot write Leases of other namespaces.
