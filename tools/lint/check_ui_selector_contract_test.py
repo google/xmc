@@ -32,6 +32,7 @@ _BASE_TEMPLATE = """\
   <span [class]="cond ? 'tern-yes' : 'tern-no'" [attr.data-row]="r">−5 Ünïcödé</span>
   <input placeholder="Filter" (input)="f()" [disabled]="d" />
   <button hidden (click)="go()" [value]="v" *ngIf="a > b" class="b-one {{ a ? 'b-two' : '' }}">
+  <p class='sq-one sq-two' [ngClass]='{"dq-key": c}'></p>
 </div>
 """
 _BASE_TS = "@Component({\n  selector: 'xmc-root-page',\n  templateUrl: './p.ng.html',\n})\n"
@@ -94,14 +95,18 @@ class ExtractSelectorsTest(unittest.TestCase):
             'C_SEL = (\n    "xmc-c"\n    ".d"\n)\n'
             'NOT_A_SELECTOR = ".ignored"\n'
             "A_SEL, other = 1, 2\n"
+            '[L_SEL, M_SEL] = [".l", ".m"]\n'
             "def f(page, s):\n"
             '    page.locator(".e").first\n'
             '    page.wait_for_selector(f"{s}, .f")\n'
+            '    page.wait_for_selector(selector=".k", timeout=1)\n'
             "    page.locator(s)\n"
             '    page.goto(".ignored")\n'
         )
         texts = [s.text for s in _extract(source)]
-        self.assertEqual(texts, [".a", '.b[x="{xid}"]', "xmc-c.d", ".e", "{}, .f"])
+        self.assertEqual(
+            texts, [".a", '.b[x="{xid}"]', "xmc-c.d", ".l", ".m", ".e", "{}, .f", ".k"]
+        )
 
     def test_empty_source_has_no_selectors(self) -> None:
         self.assertEqual(_extract(""), [])
@@ -183,8 +188,9 @@ class CheckUiSelectorContractTest(unittest.TestCase):
             'D_SEL = "input[placeholder][disabled][aria-label], a[href]"\n'
             'E_SEL = "mat-tab-header .mdc-tab .mat-row cdk-overlay-pane, body h1"\n'
             'F_SEL = "button.b-one[hidden]"\n'
+            'G_SEL = "p.sq-one.sq-two.dq-key"\n'
         )
-        self.assertEqual(self._run(source), {"selectors_scanned": 6, "violations": 0})
+        self.assertEqual(self._run(source), {"selectors_scanned": 7, "violations": 0})
 
     def test_reports_missing_dom(self) -> None:
         cases = {
@@ -212,6 +218,10 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         (self.root / cli.SELECTOR_SOURCES[1]).unlink()
         with self.assertRaisesRegex(HandledError, "not found"):
             self._run("")
+
+    def test_missing_app_dir_is_handled(self) -> None:
+        with self.assertRaisesRegex(HandledError, "UI app directory not found"):
+            cli.check_ui_selector_contract(argparse.Namespace(repo_root=str(self.root / "none")))
 
     def test_malformed_source_is_handled(self) -> None:
         with self.assertRaisesRegex(HandledError, "Cannot parse"):
