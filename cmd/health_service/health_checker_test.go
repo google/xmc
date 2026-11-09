@@ -306,9 +306,6 @@ func (m *mockLazyDB) ComponentsProvider(ctx context.Context) (summary.CustomComp
 	if m.componentsErr != nil {
 		return nil, m.componentsErr
 	}
-	if m.componentsProvider == nil {
-		return &mockComponentsInfoProvider{}, nil
-	}
 	return m.componentsProvider, nil
 }
 
@@ -1077,5 +1074,22 @@ func TestHealthChecker_RunChecks_CustomComponentsRunsAcrossBackends(t *testing.T
 				t.Errorf("expected custom component clickhouse to be checked for backend %s", backend)
 			}
 		})
+	}
+
+	nilProviderChecker, err := NewHealthChecker(HealthCheckerParams{
+		Config: &Config{
+			XidAddr:       xidListener.Addr().String(),
+			EssURL:        httpServer.URL,
+			ActuatorURL:   httpServer.URL,
+			ReconcilerURL: httpServer.URL,
+		},
+		LazyDB: &mockLazyDB{componentsProvider: nil},
+	})
+	if err != nil {
+		t.Fatalf("failed to create nil-provider health checker: %v", err)
+	}
+	defer nilProviderChecker.Close()
+	if nilRes := nilProviderChecker.RunChecks(context.Background()); len(nilRes.Components) == 0 {
+		t.Fatal("RunChecks(nil components provider) returned 0 core components")
 	}
 }

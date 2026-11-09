@@ -141,6 +141,7 @@ spec:
           name: http-port
         args:
         - "-port={{ $port }}"
+        - "-enable_components=true"
         - "-components_namespace={{ $ns }}"
         - "-redpanda_brokers={{ $ig.redpandaBrokers | default $params.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
         - "-topic_name={{ $ig.topicName | default $params.topicName | default "xmc-metrics" }}"
