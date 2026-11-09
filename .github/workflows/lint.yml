@@ -66,6 +66,7 @@ jobs:
             examples_coverage:
               - 'examples/**'
               - 'tools/nightly_tests/**'
+              - 'tools/common/tool_utils.py'
               - '.github/workflows/nightly-examples-e2e.yml'
               - '.github/workflows/lint.yml'
 
@@ -135,6 +136,13 @@ jobs:
           XMC_BYPASS_VENV: '1'
         run: |
           python3 tools/nightly_tests/check_examples_coverage.py
+
+      - name: 'Check Nightly Matrix Contract'
+        if: steps.changes.outputs.examples_coverage == 'true'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/nightly_tests/check_matrix_contract.py
 
       - name: 'Check Agent Doc Path References'
         env:

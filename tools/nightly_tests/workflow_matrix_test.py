@@ -34,6 +34,8 @@ _WORKFLOW_SAMPLE = textwrap.dedent(
                 name: "OK Job"
                 example_path: examples/ok_job  # inline comment
                 entrypoint: 'launch.py'
+                expected_work_units: 3
+                expected_duration_sec: '60'
             id: 'not_an_item_key'
         steps:
           - name: 'Step sharing matrix key'
@@ -60,6 +62,8 @@ class WorkflowMatrixTest(unittest.TestCase):
             "name": "OK Job",
             "example_path": "examples/ok_job",
             "entrypoint": "launch.py",
+            "expected_work_units": "3",
+            "expected_duration_sec": "60",
         }
         self.assertEqual(
             wm.parse_matrix_items(_WORKFLOW_SAMPLE),

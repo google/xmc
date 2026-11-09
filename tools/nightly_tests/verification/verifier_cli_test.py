@@ -103,6 +103,22 @@ class VerifierCliTest(unittest.TestCase):
             with mock.patch.dict("os.environ", {}, clear=True):
                 self.assertEqual(verifier_cli.resolve_expected_work_units(3), 3)
 
+    def test_resolve_expected_duration_sec(self) -> None:
+        cases = (
+            ("flag_wins", 180, 180),
+            ("unset_uses_default", None, 60),
+            ("zero_uses_default", 0, 60),
+            ("negative_uses_default", -5, 60),
+            ("non_integer_uses_default", "invalid", 60),
+        )
+        for name, flag_value, want in cases:
+            with (
+                self.subTest(name),
+                mock.patch.object(verifier_cli, "get_flag", return_value=flag_value) as get_flag,
+            ):
+                self.assertEqual(verifier_cli.resolve_expected_duration_sec(60), want)
+                get_flag.assert_called_once_with(verifier_cli.FLAGS, "expected_duration_sec", None)
+
     def test_run_main(self) -> None:
         mock_fn = mock.MagicMock()
         with mock.patch.object(verifier_cli.app, "run") as mock_run:

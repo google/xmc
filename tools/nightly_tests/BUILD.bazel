@@ -95,6 +95,35 @@ py_library(
     imports = ["../.."],
 )
 
+py_library(
+    name = "check_matrix_contract_lib",
+    srcs = ["check_matrix_contract.py"],
+    imports = ["../.."],
+    deps = [
+        ":workflow_matrix_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "check_matrix_contract",
+    srcs = ["check_matrix_contract.py"],
+    imports = ["../.."],
+    deps = [":check_matrix_contract_lib"],
+)
+
+py_test(
+    name = "check_matrix_contract_test",
+    size = "small",
+    srcs = ["check_matrix_contract_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_matrix_contract_lib",
+        ":workflow_matrix_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
 py_test(
     name = "workflow_matrix_test",
     size = "small",

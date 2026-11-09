@@ -88,6 +88,7 @@ Export `<example_name>_test.py` in `exports_files` and add the corresponding `py
 
 1. **Container Image (if applicable)**: If the example has a custom `Dockerfile`, add a build-and-push entry in the `build-example-images` job of [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml).
 2. **Matrix Entry**: Add an entry under `jobs.run-and-verify-examples.strategy.matrix.example` in [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) (follow existing entries for workload-backed, ClickHouse-backed, or standalone `verify_ui: true` checks). Ensure workload entrypoints print `Experiment XID: <xid>` (or `experiments/<xid>` / `dashboards/<id>`) to stdout so the workflow launch step can extract the identifier.
+3. **Launch Args & Verifier Expectations**: When `args` sets `--num_work_units=N` or `--duration=D`, also set `expected_work_units: N` or `expected_duration_sec: D` on the entry. The verify step forwards them as `--expected_work_units` and `--expected_duration_sec` (see [`verification/verifier_cli.py`](verification/verifier_cli.py)). [`check_matrix_contract.py`](check_matrix_contract.py) (tested by [`check_matrix_contract_test.py`](check_matrix_contract_test.py)) enforces this in [`.githooks/pre-commit`](../../.githooks/pre-commit) and [`.github/workflows/lint.yml`](../../.github/workflows/lint.yml).
 
 ### Step 4: Verify Locally and in CI
 
@@ -95,6 +96,7 @@ Export `<example_name>_test.py` in `exports_files` and add the corresponding `py
    ```bash
    bazel test //tools/nightly_tests/...
    python3 tools/nightly_tests/check_examples_coverage.py
+   python3 tools/nightly_tests/check_matrix_contract.py
    ./.githooks/pre-commit --check
    ```
 2. **Run a Verifier Against a Deployed GKE Environment**:

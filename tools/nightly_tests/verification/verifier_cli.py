@@ -46,6 +46,11 @@ flags.DEFINE_integer(
     None,
     "Expected number of WorkUnits",
 )
+flags.DEFINE_integer(
+    "expected_duration_sec",
+    None,
+    "Expected per-WorkUnit workload duration in seconds (the launcher's --duration)",
+)
 flags.DEFINE_string(
     "clickhouse_endpoint",
     None,
@@ -102,6 +107,20 @@ def parse_xid(raw_xid: str | None, required: bool = True) -> str:
     return xid
 
 
+def _first_positive_int(candidates: Sequence[Any], default: int) -> int:
+    """Returns the first candidate that parses as an integer > 0, or `default`."""
+    # Intentionally keeps the legacy int() semantics rather than tool_utils.parse_positive_int.
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            if (val := int(candidate)) > 0:
+                return val
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
 def resolve_expected_work_units(default: int = 3) -> int:
     """Resolves expected work units count from flag, NUM_WORK_UNITS env var, or default.
 
@@ -111,17 +130,22 @@ def resolve_expected_work_units(default: int = 3) -> int:
     Returns:
         The resolved integer number of work units.
     """
-    for candidate in (
-        get_flag(FLAGS, "expected_work_units", None),
-        os.environ.get("NUM_WORK_UNITS"),
-    ):
-        if candidate is not None:
-            try:
-                if (val := int(candidate)) > 0:
-                    return val
-            except (ValueError, TypeError):
-                pass
-    return default
+    return _first_positive_int(
+        (get_flag(FLAGS, "expected_work_units", None), os.environ.get("NUM_WORK_UNITS")),
+        default,
+    )
+
+
+def resolve_expected_duration_sec(default: int) -> int:
+    """Resolves the expected per-WorkUnit workload duration from the flag or default.
+
+    Args:
+        default: Fallback duration in seconds if the flag is unset or not positive.
+
+    Returns:
+        The resolved integer duration in seconds.
+    """
+    return _first_positive_int((get_flag(FLAGS, "expected_duration_sec", None),), default)
 
 
 def run_main(main_fn: Any) -> None:
