@@ -199,6 +199,39 @@ class AuditWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(_audit(_workflow(_BASELINE_ENTRY, step)), [])
 
+    def test_id_as_first_step_key_opens_verify_step(self) -> None:
+        workflow = textwrap.dedent(
+            """\
+            jobs:
+            - outer: 'less-indented list item above the steps'
+              strategy:
+                matrix:
+                  example:
+                    - id: 'simple_job'
+                      args: '--num_work_units=3 --duration=60'
+                      expected_work_units: '3'
+                      expected_duration_sec: '60'
+              steps:
+                - name: 'Launch'
+                  run: echo launch
+                - id: verify-example
+                  env:
+                    EXPECTED_WORK_UNITS: '${{ matrix.example.expected_work_units }}'
+                    EXPECTED_DURATION_SEC: '${{ matrix.example.expected_duration_sec }}'
+                  run: |
+                    ARGS+=("--expected_work_units=${EXPECTED_WORK_UNITS}")
+                    ARGS+=("--expected_duration_sec=${EXPECTED_DURATION_SEC}")
+                - name: 'Upload'
+                  run: echo upload
+            """
+        )
+        block = cmc.verify_step_block(workflow)
+        self.assertTrue(block.startswith("    - id: verify-example"), block)
+        self.assertNotIn("Upload", block)
+        self.assertEqual(_audit(workflow), [])
+        unwired = workflow.replace('        ARGS+=("--expected_duration_sec=', '        # ("', 1)
+        self.assertEqual(_audit(unwired), [_DURATION_WIRING_VIOLATION])
+
     def test_reports_missing_verify_step(self) -> None:
         step = _VERIFY_STEP.replace("id: verify-example", "id: something-else")
         self.assertEqual(

@@ -45,7 +45,7 @@ CONTRACT: dict[str, str] = {
 }
 # Step `id` of the workflow step that runs the verifier and must forward every CONTRACT field.
 VERIFY_STEP_ID = "verify-example"
-_VERIFY_STEP_ID_RE = re.compile(rf"^\s*id:\s*['\"]?{re.escape(VERIFY_STEP_ID)}['\"]?\s*$")
+_VERIFY_STEP_ID_RE = re.compile(rf"^\s*(?:-\s+)?id:\s*['\"]?{re.escape(VERIFY_STEP_ID)}['\"]?\s*$")
 _UNSET = "<unset>"
 
 
@@ -53,7 +53,7 @@ def launch_flag_values(args: str) -> dict[str, str]:
     """Returns `CONTRACT` launch flag values from `args` (`--flag=value` or `--flag value`).
 
     A repeated flag resolves to its last value, matching absl/argparse behavior. In the
-    space form, a following token that starts with "-" is another flag, so the value is "".
+    space form, a following token that starts with "--" is another flag, so the value is "".
     """
     tokens = shlex.split(args)
     values: dict[str, str] = {}
@@ -105,16 +105,16 @@ def _ends_step(line: str, step_indent: int) -> bool:
     return indent < step_indent or (indent == step_indent and stripped.startswith("- "))
 
 
-def verify_step_block(workflow_text: str) -> str:
-    """Returns the text of the step with `id: verify-example`, or "" if absent."""
-    lines = workflow_text.splitlines()
-    id_index = next((i for i, line in enumerate(lines) if _VERIFY_STEP_ID_RE.match(line)), None)
-    if id_index is None:
-        return ""
-    # The step opener is the nearest preceding "- " line indented less than `id:`;
-    # deeper "- " lines belong to nested values such as run blocks.
+def _step_start(lines: list[str], id_index: int) -> int:
+    """Returns the index of the "- " line opening the step that owns `lines[id_index]`.
+
+    The opener is the id line itself (`- id: ...`) or the nearest preceding "- " line
+    indented less than `id:`; deeper "- " lines belong to nested values such as run blocks.
+    """
+    if lines[id_index].lstrip().startswith("- "):
+        return id_index
     id_indent = _indent(lines[id_index])
-    start = next(
+    return next(
         (
             i
             for i in range(id_index - 1, -1, -1)
@@ -122,6 +122,15 @@ def verify_step_block(workflow_text: str) -> str:
         ),
         id_index,
     )
+
+
+def verify_step_block(workflow_text: str) -> str:
+    """Returns the text of the step with `id: verify-example`, or "" if absent."""
+    lines = workflow_text.splitlines()
+    id_index = next((i for i, line in enumerate(lines) if _VERIFY_STEP_ID_RE.match(line)), None)
+    if id_index is None:
+        return ""
+    start = _step_start(lines, id_index)
     step_indent = _indent(lines[start])
     end = next(
         (i for i in range(start + 1, len(lines)) if _ends_step(lines[i], step_indent)),
