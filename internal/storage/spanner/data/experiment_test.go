@@ -22,6 +22,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/experimentschema"
 )
@@ -57,11 +59,12 @@ var (
 		UpdateTime:     timestamppb.New(testExpTime),
 		CompleteTime:   timestamppb.New(testExpCompleteTime),
 		ExperimentType: pb.Experiment_STUDY,
+		StudyConfig:    experimenttest.StudyConfig(),
 	}
 )
 
 func TestExperimentRowToProto(t *testing.T) {
-	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType"}
+	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType", "StudyConfig"}
 	values := []any{
 		int64(123),
 		testExperiment.Title,
@@ -76,6 +79,7 @@ func TestExperimentRowToProto(t *testing.T) {
 		testExpTime,
 		testExpCompleteTime,
 		testExperiment.ExperimentType,
+		testExperiment.StudyConfig,
 	}
 
 	row, err := spanner.NewRow(keys, values)
@@ -93,13 +97,14 @@ func TestExperimentRowToProto(t *testing.T) {
 	}
 }
 
-func TestExperimentRowToProto_NullExperimentType(t *testing.T) {
-	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType"}
-	// The Spanner client encodes NULL for NullProtoEnum as a typed nil with Valid: true; Valid: false
-	// is rejected by spanner.NewRow.
+func TestExperimentRowToProto_NullExperimentTypeAndStudyConfig(t *testing.T) {
+	keys := []string{"Xid", "Title", "Creator", "Priority", "Urls", "Notes", "Tags", "Resources", "Status", "CreateTime", "UpdateTime", "CompleteTime", "ExperimentType", "StudyConfig"}
+	// The Spanner client encodes NULL for NullProtoEnum and NullProtoMessage as a typed nil with
+	// Valid: true; Valid: false is rejected by spanner.NewRow.
 	values := []any{
 		int64(123), "title", "creator", int64(0), []*pb.Url{}, "", []string{}, []*pb.ResourceSet{},
 		&pb.ExperimentStatus{}, testExpTime, testExpTime, spanner.NullTime{}, spanner.NullProtoEnum{ProtoEnumVal: (*pb.Experiment_ExperimentType)(nil), Valid: true},
+		spanner.NullProtoMessage{ProtoMessageVal: (*pb.StudyConfig)(nil), Valid: true},
 	}
 	row, err := spanner.NewRow(keys, values)
 	if err != nil {
@@ -112,6 +117,9 @@ func TestExperimentRowToProto_NullExperimentType(t *testing.T) {
 	}
 	if got.GetExperimentType() != pb.Experiment_STANDARD {
 		t.Errorf("ExperimentRowToProto() experiment_type = %v, want %v", got.GetExperimentType(), pb.Experiment_STANDARD)
+	}
+	if got.GetStudyConfig() != nil {
+		t.Errorf("ExperimentRowToProto() study_config = %v, want nil", got.GetStudyConfig())
 	}
 }
 
@@ -128,34 +136,77 @@ func TestExperimentRowToProto_MissingColumn(t *testing.T) {
 	}
 }
 
-func TestExperimentProtoToInsertMutation(t *testing.T) {
-	xid := int64(123)
-	exp := &testExperiment
-	want := spanner.Insert(
-		experimentschema.ExperimentTableName,
-		experimentschema.ExperimentColumns,
-		[]any{
-			xid,
-			exp.Title,
-			exp.Creator,
-			int64(exp.Priority),
-			exp.Urls,
-			exp.Tags,
-			exp.Notes,
-			exp.Resources,
-			exp.Status,
-			exp.CreateTime.AsTime(),
-			exp.UpdateTime.AsTime(),
-			spanner.NullTime{Time: exp.CompleteTime.AsTime(), Valid: true},
-			pb.Experiment_STUDY,
-		},
-	)
-	got, err := ExperimentProtoToInsertMutation(exp)
-	if err != nil {
-		t.Fatalf("ExperimentProtoToInsertMutation() returned unexpected error: %v", err)
+func TestStudyConfigFromNullProto(t *testing.T) {
+	studyConfig := experimenttest.StudyConfig()
+	tests := []struct {
+		name    string
+		column  spanner.NullProtoMessage
+		want    *pb.StudyConfig
+		wantErr bool
+	}{
+		{name: "null", column: spanner.NullProtoMessage{ProtoMessageVal: &pb.StudyConfig{}}},
+		{name: "study_config", column: spanner.NullProtoMessage{ProtoMessageVal: studyConfig, Valid: true}, want: studyConfig},
+		{name: "unexpected_message_type", column: spanner.NullProtoMessage{ProtoMessageVal: &pb.ExperimentStatus{}, Valid: true}, wantErr: true},
 	}
-	if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
-		t.Errorf("ExperimentProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := studyConfigFromNullProto(tc.column)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("studyConfigFromNullProto() error = %v, want error %v", err, tc.wantErr)
+			}
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("studyConfigFromNullProto() diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestExperimentProtoToInsertMutation(t *testing.T) {
+	tests := []struct {
+		name string
+		exp  *pb.Experiment
+	}{
+		{name: "study", exp: &testExperiment},
+		{
+			// A nil study config is written as NULL.
+			name: "standard_nil_study_config",
+			exp: prototest.Modify(&testExperiment, func(e *pb.Experiment) {
+				e.ExperimentType = pb.Experiment_STANDARD
+				e.StudyConfig = nil
+			}),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			exp := tc.exp
+			want := spanner.Insert(
+				experimentschema.ExperimentTableName,
+				experimentschema.ExperimentColumns,
+				[]any{
+					int64(123),
+					exp.Title,
+					exp.Creator,
+					int64(exp.Priority),
+					exp.Urls,
+					exp.Tags,
+					exp.Notes,
+					exp.Resources,
+					exp.Status,
+					exp.CreateTime.AsTime(),
+					exp.UpdateTime.AsTime(),
+					spanner.NullTime{Time: exp.CompleteTime.AsTime(), Valid: true},
+					exp.ExperimentType,
+					exp.StudyConfig,
+				},
+			)
+			got, err := ExperimentProtoToInsertMutation(exp)
+			if err != nil {
+				t.Fatalf("ExperimentProtoToInsertMutation() returned unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(want, got, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+				t.Errorf("ExperimentProtoToInsertMutation() returned unexpected diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

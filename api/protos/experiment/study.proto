@@ -1,0 +1,134 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+syntax = "proto3";
+
+package cloud.xmanager.v1;
+
+import "google/api/field_behavior.proto";
+
+option go_package = "xmanager_cloud/api/protos/experiment";
+option java_multiple_files = true;
+
+// The definition of a hyperparameter optimization study: the search space, the
+// objective, and the execution limits. The parameter and metric types mirror the
+// StudySpec of OSS Vizier (https://github.com/google/vizier) without depending
+// on its protos.
+message StudyConfig {
+  // The parameters to tune: between 1 and 100, with unique parameter IDs. The
+  // search space is flat; conditional parameters are not supported.
+  repeated ParameterSpec parameters = 1
+      [(google.api.field_behavior) = REQUIRED];
+  // The metrics to optimize. Exactly one metric (a single objective) is
+  // supported.
+  repeated MetricSpec metrics = 2 [(google.api.field_behavior) = REQUIRED];
+  // The maximum number of trials that the study runs. Must be positive.
+  int32 max_trial_budget = 3 [(google.api.field_behavior) = REQUIRED];
+  // The search algorithm, named as in the OSS Vizier StudySpec. Supported
+  // values: "RANDOM_SEARCH", "QUASI_RANDOM_SEARCH" and "GRID_SEARCH". The
+  // DEFAULT algorithm is not supported yet.
+  string algorithm = 4 [(google.api.field_behavior) = REQUIRED];
+
+  // Field 5 is reserved for a future automated stopping configuration.
+
+  // The maximum number of trials that run at the same time. Must be positive.
+  // It may exceed max_trial_budget: the effective parallelism never exceeds
+  // the remaining budget.
+  int32 max_parallel_trials = 6 [(google.api.field_behavior) = REQUIRED];
+}
+
+// An objective metric of a study.
+message MetricSpec {
+  // Whether the metric is maximized or minimized.
+  enum GoalType {
+    // Unspecified goal. Not accepted.
+    GOAL_TYPE_UNSPECIFIED = 0;
+    // Maximize the metric.
+    MAXIMIZE = 1;
+    // Minimize the metric.
+    MINIMIZE = 2;
+  }
+
+  // The name of the metric that trials report. At most 256 bytes, not blank,
+  // without leading or trailing whitespace or non-printable characters.
+  string metric_id = 1 [(google.api.field_behavior) = REQUIRED];
+  // The optimization goal of the metric.
+  GoalType goal = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A parameter to tune and its feasible values.
+message ParameterSpec {
+  // How the search algorithm scales a numeric parameter.
+  enum ScaleType {
+    // Unspecified scale. The search algorithm picks one.
+    SCALE_TYPE_UNSPECIFIED = 0;
+    // Values are sampled uniformly.
+    LINEAR = 1;
+    // Values are sampled on a logarithmic scale, e.g. a learning rate from
+    // 1e-5 to 1e-1. All feasible values must be positive.
+    LOG = 2;
+    // Values are sampled on a reverse logarithmic scale, denser close to the
+    // maximum. All feasible values must be positive.
+    REVERSE_LOG = 3;
+  }
+
+  // The name of the parameter. Trials receive it as a command-line flag
+  // `--<parameter_id>=<value>`, so it must match `^[A-Za-z_][A-Za-z0-9_.-]*$`
+  // and be at most 128 characters long.
+  string parameter_id = 1 [(google.api.field_behavior) = REQUIRED];
+  // The feasible values of the parameter. Exactly one must be set.
+  oneof parameter_value_spec {
+    // A continuous range of real values.
+    DoubleValueSpec double_value_spec = 2;
+    // A range of integer values.
+    IntegerValueSpec integer_value_spec = 3;
+    // A set of unordered string values.
+    CategoricalValueSpec categorical_value_spec = 4;
+    // A set of numeric values.
+    DiscreteValueSpec discrete_value_spec = 5;
+  }
+  // The scale of a double, integer or discrete parameter. Must be unset for
+  // categorical parameters.
+  ScaleType scale_type = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// A continuous range of real values. Equal bounds fix the parameter.
+message DoubleValueSpec {
+  // The inclusive lower bound. Must be finite and at most max_value.
+  double min_value = 1 [(google.api.field_behavior) = REQUIRED];
+  // The inclusive upper bound. Must be finite.
+  double max_value = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A range of integer values. Equal bounds fix the parameter. Search algorithms
+// may handle values as doubles, so bounds are only exact up to 2^53 in
+// magnitude.
+message IntegerValueSpec {
+  // The inclusive lower bound. Must be at most max_value.
+  int64 min_value = 1 [(google.api.field_behavior) = REQUIRED];
+  // The inclusive upper bound.
+  int64 max_value = 2 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A set of unordered string values.
+message CategoricalValueSpec {
+  // The feasible values: between 1 and 1000, non-empty and unique.
+  repeated string values = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// A set of numeric values.
+message DiscreteValueSpec {
+  // The feasible values: between 1 and 1000, finite and unique. Their order
+  // does not matter.
+  repeated double values = 1 [(google.api.field_behavior) = REQUIRED];
+}

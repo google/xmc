@@ -43,6 +43,7 @@ type ExperimentRow struct {
 	UpdateTime     time.Time          `db:"updatetime"`
 	CompleteTime   pgtype.Timestamptz `db:"completetime"`
 	ExperimentType int64              `db:"experimenttype"`
+	StudyConfig    []byte             `db:"studyconfig"`
 }
 
 // GetInsertArgs returns the strict named arguments required by the Experiments INSERT statement.
@@ -63,6 +64,7 @@ func (r ExperimentRow) GetInsertArgs() pgx.StrictNamedArgs {
 		"updatetime":     r.UpdateTime,
 		"completetime":   r.CompleteTime,
 		"experimenttype": r.ExperimentType,
+		"studyconfig":    r.StudyConfig,
 	}
 }
 
@@ -131,6 +133,12 @@ func ExperimentRowToProto(row ExperimentRow) (*essmsgpb.Experiment, error) {
 	if row.CompleteTime.Valid {
 		exp.CompleteTime = timestamppb.New(row.CompleteTime.Time)
 	}
+	// StudyConfig is NULL for experiments that are not studies.
+	if row.StudyConfig != nil {
+		if exp.StudyConfig, err = UnmarshalProto[essmsgpb.StudyConfig](row.StudyConfig); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal StudyConfig: %w", err)
+		}
+	}
 	return exp, nil
 }
 
@@ -151,6 +159,10 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 	statusBytes, err := MarshalProto(exp.GetStatus())
 	if err != nil {
 		return ExperimentRow{}, fmt.Errorf("failed to marshal Status: %w", err)
+	}
+	studyConfig, err := MarshalNullableProto(exp.GetStudyConfig())
+	if err != nil {
+		return ExperimentRow{}, fmt.Errorf("failed to marshal StudyConfig: %w", err)
 	}
 	tags := slices.Clone(exp.GetTags())
 	if tags == nil {
@@ -176,6 +188,7 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 		UpdateTime:     exp.GetUpdateTime().AsTime(),
 		CompleteTime:   completeTime,
 		ExperimentType: int64(exp.GetExperimentType()),
+		StudyConfig:    studyConfig,
 	}, nil
 }
 

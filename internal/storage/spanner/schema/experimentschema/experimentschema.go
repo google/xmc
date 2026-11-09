@@ -45,6 +45,7 @@ const (
 	completedTableField = querytools.TableField("completed")
 
 	experimentTypeTableField = querytools.TableField("experiment_type")
+	studyConfigTableField    = querytools.TableField("study_config")
 )
 
 // ExperimentColumns is the full list of columns in the Experiments table. It is used when fetching
@@ -64,6 +65,7 @@ var ExperimentColumns = []string{
 	"UpdateTime",
 	"CompleteTime",
 	"ExperimentType",
+	"StudyConfig",
 }
 
 // ExperimentUpdateColumns is the list of columns that can be mutated in the Experiments table.
@@ -207,6 +209,13 @@ var (
 				Type:            filtervisitor.String,
 				Selectable:      true,
 			},
+			studyConfigTableField: {
+				Name:         studyConfigTableField,
+				QueryLiteral: safesql.New("e.StudyConfig"),
+				Type:         filtervisitor.Bytes,
+				Selectable:   true,
+				Nullable:     true,
+			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
@@ -234,6 +243,7 @@ var (
 		updatedTableField,
 		completedTableField,
 		experimentTypeTableField,
+		studyConfigTableField,
 	}
 
 	// ExperimentsFullTextFields is the list of fields that can be used for full text search for Experiments queries.

@@ -24,6 +24,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 )
 
 var (
@@ -61,6 +62,16 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 		UpdateTime:     timestamppb.New(testExpTime),
 		CompleteTime:   timestamppb.New(testExpCompleteTime),
 		ExperimentType: essmsgpb.Experiment_STUDY,
+		StudyConfig:    experimenttest.StudyConfig(),
+	}
+
+	// An empty study config is stored as empty bytes, not NULL, and reads back as set.
+	emptyStudyConfigExp := &essmsgpb.Experiment{
+		Name:           "experiments/789",
+		CreateTime:     timestamppb.New(testExpTime),
+		UpdateTime:     timestamppb.New(testExpTime),
+		ExperimentType: essmsgpb.Experiment_STUDY,
+		StudyConfig:    &essmsgpb.StudyConfig{},
 	}
 
 	minimalExp := &essmsgpb.Experiment{
@@ -116,6 +127,25 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 				UpdateTime: timestamppb.New(testExpTime),
 			},
 		},
+		{
+			name: "experiment with empty study config",
+			exp:  emptyStudyConfigExp,
+			wantRow: ExperimentRow{
+				Xid:            789,
+				Tags:           []string{},
+				CreateTime:     testExpTime,
+				UpdateTime:     testExpTime,
+				ExperimentType: int64(essmsgpb.Experiment_STUDY),
+			},
+			wantProto: &essmsgpb.Experiment{
+				Name:           "experiments/789",
+				Status:         &essmsgpb.ExperimentStatus{},
+				CreateTime:     timestamppb.New(testExpTime),
+				UpdateTime:     timestamppb.New(testExpTime),
+				ExperimentType: essmsgpb.Experiment_STUDY,
+				StudyConfig:    &essmsgpb.StudyConfig{},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -124,11 +154,15 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ExperimentProtoToRow() failed: %v", err)
 			}
-			if diff := cmp.Diff(tc.wantRow, row, cmpopts.IgnoreFields(ExperimentRow{}, "Urls", "Resources", "Status")); diff != "" {
+			if diff := cmp.Diff(tc.wantRow, row, cmpopts.IgnoreFields(ExperimentRow{}, "Urls", "Resources", "Status", "StudyConfig")); diff != "" {
 				t.Errorf("ExperimentProtoToRow() row diff (-want +got):\n%s", diff)
 			}
 			if row.Urls == nil || row.Resources == nil || row.Tags == nil || row.Status == nil {
 				t.Errorf("ExperimentProtoToRow() produced nil slice for NOT NULL column: Urls=%v Resources=%v Tags=%v Status=%v", row.Urls != nil, row.Resources != nil, row.Tags != nil, row.Status != nil)
+			}
+			// StudyConfig binds SQL NULL exactly when the experiment has no study config.
+			if gotNull, wantNull := row.StudyConfig == nil, tc.exp.GetStudyConfig() == nil; gotNull != wantNull {
+				t.Errorf("ExperimentProtoToRow() StudyConfig is NULL = %v, want %v", gotNull, wantNull)
 			}
 			got, err := ExperimentRowToProto(row)
 			if err != nil {
@@ -154,8 +188,8 @@ func TestExperimentRowNamedArgs(t *testing.T) {
 	if !row.UpdateTime.Equal(testExpTime) {
 		t.Errorf("row.UpdateTime = %v, want %v", row.UpdateTime, testExpTime)
 	}
-	if args := row.GetInsertArgs(); len(args) != 15 || args["xid"] != int64(123) {
-		t.Errorf("GetInsertArgs() = %v, want 15 entries with xid=123", args)
+	if args := row.GetInsertArgs(); len(args) != 16 || args["xid"] != int64(123) {
+		t.Errorf("GetInsertArgs() = %v, want 16 entries with xid=123", args)
 	}
 	if args := row.GetUpdateArgs(); len(args) != 7 || args["title"] != "Title" {
 		t.Errorf("GetUpdateArgs() = %v, want 7 entries with title=Title", args)
@@ -179,6 +213,7 @@ func TestExperimentConversionErrors(t *testing.T) {
 		{Xid: 1, Urls: [][]byte{corrupt}, CreateTime: testExpTime, UpdateTime: testExpTime},
 		{Xid: 1, Resources: [][]byte{corrupt}, CreateTime: testExpTime, UpdateTime: testExpTime},
 		{Xid: 1, Status: corrupt, CreateTime: testExpTime, UpdateTime: testExpTime},
+		{Xid: 1, StudyConfig: corrupt, CreateTime: testExpTime, UpdateTime: testExpTime},
 	}
 	for i, r := range badRows {
 		if _, err := ExperimentRowToProto(r); err == nil {
