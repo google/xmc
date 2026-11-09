@@ -428,14 +428,12 @@ func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alph
 		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; skipping MLRun sync", "cluster", *wl.Status.ClusterName, "error", err)
 		return "", "", "", false
 	}
-	project = mc.Labels["xmc.google.com/project"]
-	location = mc.Labels["xmc.google.com/location"]
-	clusterName = mc.Labels["xmc.google.com/cluster-name"]
-	if project == "" || location == "" || clusterName == "" {
+	info := shared.ClusterInfoFromMultiKueueCluster(&mc)
+	if info.GetProject() == "" || info.GetLocation() == "" || info.GetClusterName() == "" {
 		logging.Warn(ctx, "resolveExecutionCluster: MultiKueueCluster is missing XMC cluster labels; skipping MLRun sync", "cluster", *wl.Status.ClusterName)
 		return "", "", "", false
 	}
-	return project, location, clusterName, true
+	return info.GetProject(), info.GetLocation(), info.GetClusterName(), true
 }
 
 func findJobSetWorkload(workloads []v1beta1.Workload, jobSetName string) *v1beta1.Workload {

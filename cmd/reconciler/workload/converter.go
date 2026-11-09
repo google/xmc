@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/logging"
 	storagepkg "xmanager_cloud/internal/storage"
 )
@@ -94,16 +95,8 @@ func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, m
 		return MultiKueueClusterResult{}, fmt.Errorf("failed to get MultiKueueCluster %s: %w", clusterName, err)
 	}
 
-	var clusterInfo *spb.ClusterInfo
-	if mc.Labels != nil {
-		clusterInfo = &spb.ClusterInfo{
-			Project:     mc.Labels["xmc.google.com/project"],
-			Location:    mc.Labels["xmc.google.com/location"],
-			ClusterName: mc.Labels["xmc.google.com/cluster-name"],
-		}
-	}
 	return MultiKueueClusterResult{
-		ClusterInfo: clusterInfo,
+		ClusterInfo: shared.ClusterInfoFromMultiKueueCluster(&mc),
 		ClusterName: clusterName,
 	}, nil
 }

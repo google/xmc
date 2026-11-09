@@ -32,6 +32,14 @@ const (
 	// ExperimentIDLabel is the label used to identify the experiment ID.
 	ExperimentIDLabel = "xmc.google.com/experiment-id"
 
+	// MultiKueueClusterProjectLabel, MultiKueueClusterLocationLabel, and
+	// MultiKueueClusterNameLabel identify the GKE cluster behind a MultiKueueCluster.
+	// They are set by the MultiKueue deployment (Helm kueue-dev/multikueue.yaml and
+	// deploy/addons/multikueue).
+	MultiKueueClusterProjectLabel  = "xmc.google.com/project"
+	MultiKueueClusterLocationLabel = "xmc.google.com/location"
+	MultiKueueClusterNameLabel     = "xmc.google.com/cluster-name"
+
 	// JobSetFinalizer is the finalizer used by XManager Cloud to manage JobSet lifecycle.
 	JobSetFinalizer = "jobset.xmanager.cloud/finalizer"
 
