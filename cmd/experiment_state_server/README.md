@@ -9,6 +9,7 @@ The **Experiment State Server (ESS)** is the central control plane service in XM
 - **Experiment Lifecycle & State Management**: Tracks active, completed, failed, and aborted experiments (`Experiments` and `WorkUnits` tables in Cloud Spanner).
 - **gRPC & HTTP APIs**: Implements AIP-compliant APIs defined in `api/protos/experiment/` (`GetExperiment`, `FetchExperimentStatus`, `ListExperiments`, `CreateExperiment`, `UpdateExperiment`).
 - **Component Drift Evaluation**: Dynamically evaluates live component drift against locked snapshot generations on read endpoints, propagating warning banners to client consoles (see [Dynamic Drift Detection](#dynamic-drift-detection)).
+- **Hyperparameter Optimization Studies**: Persists `STUDY` experiments with their study definition, and pins the components a study requires (see [STUDY Experiments](#study-experiments)).
 - **Paused Task Resumption (`resumption/`)**: When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, runs a background consumer on `xmc-scheduling-resume-stream` (`ess-group`) that claims resumption triggers from the Health Service, fences concurrent workers via `PauseSchedulingState.ResumptionWorkerId`, filters obsolete/terminal tasks, and replays buffered `PausedTasks` back to `xmc-tasks-stream` with backlog throttling.
 - **Expired Row Sweeping (`retentionsweep/`)**: Every replica calls `storage.ExpiredRowStore.DeleteExpiredRows` at startup and then every 12 hours to delete expired status messages, status history, processed paused tasks, and CLI login codes. On PostgreSQL an advisory lock lets only one replica sweep at a time; on Cloud Spanner the call is a no-op because `ROW DELETION POLICY` deletes these rows (see [Expired Rows](../../internal/storage/README.md#expired-rows-expiredrowstore)).
 - **Authentication & Authorization**: Integrates OAuth2/OIDC token verification and Google Cloud IAM validation (`auth_dev.go` / `auth_prod.go`).
@@ -55,6 +56,25 @@ When components are updated or deleted in the global catalog, active running exp
 4. **Transaction Safety**: Drift checks execute in isolated read-only transactions, ensuring read-write transactions (`FetchExperimentTransaction`) remain strictly side-effect free.
 
 For comprehensive details on the Components subsystem, see [pkg/components/README.md](../../pkg/components/README.md).
+
+---
+
+## STUDY Experiments
+
+An experiment with `experiment_type: STUDY` is a hyperparameter optimization study. Its
+`study_config` ([`study.proto`](../../api/protos/experiment/study.proto)) carries the search space
+(`parameters`), the objective (`metrics`), the search `algorithm`, `max_trial_budget`, and
+`max_parallel_trials`. Like `experiment_type`, `study_config` is immutable: it is set only by
+`CreateExperiment`, returned by `GetExperiment` and `ListExperiments`, and an `UpdateExperiment`
+mask that names it fails with `INVALID_ARGUMENT`.
+
+A study requires the `hpo` component, which depends on `vizier` and `clickhouse`. `CreateExperiment`
+checks that all three are ready before allocating an XID and again in the transaction that inserts
+the experiment, then pins them as `ExperimentComponentSnapshots` at their current generation (see
+[Create Experiment](../../docs/flows/experiment_lifecycle.md#1-create-experiment)). Because `hpo` and
+`vizier` are `EXPERIMENTAL`, [Dynamic Drift Detection](#dynamic-drift-detection) attaches a
+"uses experimental components" `WARNING` to the study's status when it is read; the warning is
+computed at read time and never stored.
 
 ---
 
