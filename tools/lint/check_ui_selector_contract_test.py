@@ -20,11 +20,14 @@ import argparse
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.common.tool_utils import HandledError
 from tools.lint import check_ui_selector_contract as cli
 
-_CSS_SOURCE = cli.SELECTOR_SOURCES[0]
+_CSS_SOURCE = cli.SELECTOR_MODULE
+_VERIFIER = "tools/nightly_tests/examples_verification/any_name.py"
+_IMPORT_SEL = "from tools.nightly_tests.verification import ui_css_selectors as sel\n"
 
 _BASE_TEMPLATE = """\
 <div class="queue-card {{ extra }}" [class.active-toggle]="on">
@@ -96,6 +99,7 @@ class ExtractSelectorsTest(unittest.TestCase):
             'NOT_A_SELECTOR = ".ignored"\n'
             "A_SEL, other = 1, 2\n"
             '[L_SEL, M_SEL] = [".l", ".m"]\n'
+            'N_SEL: str = ".n"\n'
             "def f(page, s):\n"
             '    page.locator(".e").first\n'
             '    page.wait_for_selector(f"{s}, .f")\n'
@@ -105,7 +109,7 @@ class ExtractSelectorsTest(unittest.TestCase):
         )
         texts = [s.text for s in _extract(source)]
         self.assertEqual(
-            texts, [".a", '.b[x="{xid}"]', "xmc-c.d", ".l", ".m", ".e", "{}, .f", ".k"]
+            texts, [".a", '.b[x="{xid}"]', "xmc-c.d", ".l", ".m", ".n", ".e", "{}, .f", ".k"]
         )
 
     def test_empty_source_has_no_selectors(self) -> None:
@@ -163,8 +167,7 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         self._write("cmd/ui/app/page/p.ts", _BASE_TS)
         self._write("cmd/ui/app/page/p_test.ts", "selector: 'xmc-test-only'\n")
         self._write("cmd/ui/index.html", "<xmc-root></xmc-root>\n")
-        for pattern in cli.SELECTOR_SOURCES[1:]:
-            self._write(pattern.replace("*", "x"), "")
+        self._write("tools/nightly_tests/no_selectors.py", "X = 1\n")
 
     def _write(self, rel_path: str, content: str) -> None:
         path = self.root / rel_path
@@ -172,8 +175,11 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
 
     def _run(self, css_source: str) -> dict:
+        """Run the lint; stash discovered sources in self.sources and return the rest."""
         self._write(_CSS_SOURCE, css_source)
-        return cli.check_ui_selector_contract(argparse.Namespace(repo_root=str(self.root)))
+        result = cli.check_ui_selector_contract(argparse.Namespace(repo_root=str(self.root)))
+        self.sources = result.pop("sources")
+        return result
 
     def _violations(self, css_source: str) -> list[tuple[str, str]]:
         with self.assertRaises(HandledError) as ctx:
@@ -219,10 +225,77 @@ class CheckUiSelectorContractTest(unittest.TestCase):
 
     def test_empty_sources_pass(self) -> None:
         self.assertEqual(self._run(""), {"selectors_scanned": 0, "violations": 0})
+        self.assertEqual(self.sources, [])
 
-    def test_missing_source_is_handled(self) -> None:
-        (self.root / cli.SELECTOR_SOURCES[1]).unlink()
-        with self.assertRaisesRegex(HandledError, "not found"):
+    def test_discovers_arbitrary_verifier_and_ignores_plain_files(self) -> None:
+        self._write(_VERIFIER, 'page.locator(".queue-card")\n')
+        self.assertEqual(self._run('A_SEL = ".queue-card"\n')["selectors_scanned"], 2)
+        self.assertCountEqual(self.sources, [_VERIFIER, _CSS_SOURCE])
+        self._write(_VERIFIER, 'page.locator(".gone")\n')
+        self.assertEqual(self._violations(""), [("dom-class", "gone")])
+
+    def test_has_text_literal_marks_source(self) -> None:
+        self._write(_VERIFIER, '# ui-contract: label\nx.filter(has_text="Go")\n')
+        self._run("")
+        self.assertEqual(self.sources, [_VERIFIER])
+
+    def test_excluded_sources_are_skipped(self) -> None:
+        self._write(_VERIFIER, 'page.locator(".gone")\nbroken = (\n')
+        with mock.patch.object(cli, "EXCLUDED_SOURCES", (_VERIFIER,)):
+            self.assertEqual(self._run(""), {"selectors_scanned": 0, "violations": 0})
+
+    def test_selector_constant_references(self) -> None:
+        css = 'KNOWN_SEL = ".queue-card"\n'
+        cases = {
+            "known_alias": (_IMPORT_SEL + "page.locator(sel.KNOWN_SEL.format(x=1))\n", []),
+            "missing_alias": (_IMPORT_SEL + "helper(sel.MISSING_SEL)\n", ["MISSING_SEL"]),
+            "missing_import_as": (
+                "import tools.nightly_tests.verification.ui_css_selectors as s\ns.GONE_SEL\n",
+                ["GONE_SEL"],
+            ),
+            "from_import": (
+                "from tools.nightly_tests.verification.ui_css_selectors import (\n"
+                "    KNOWN_SEL, GONE_SEL as G)\npage.locator(KNOWN_SEL)\npage.locator(G)\n",
+                ["GONE_SEL"],
+            ),
+            "unrelated_alias": ("import os as sel\nsel.MISSING_SEL\n", []),
+            "from_pkg_no_alias": (
+                "from tools.nightly_tests.verification import ui_css_selectors\n"
+                "ui_css_selectors.GONE_SEL\n",
+                ["GONE_SEL"],
+            ),
+            "relative_alias": (
+                "from . import ui_css_selectors as sel\nsel.GONE_SEL\n",
+                ["GONE_SEL"],
+            ),
+            "similar_module_not_matched": (
+                "from pkg import my_ui_css_selectors as sel\n"
+                "from pkg.my_ui_css_selectors import GONE_SEL\nsel.GONE_SEL\nGONE_SEL\n",
+                [],
+            ),
+        }
+        for name, (verifier, expected) in cases.items():
+            with self.subTest(name):
+                self._write(_VERIFIER, verifier)
+                if not expected:
+                    self.assertEqual(self._run(css)["violations"], 0)
+                    continue
+                got = self._violations(css)
+                self.assertEqual(got, [("unknown-selector-constant", t) for t in expected])
+
+    def test_hidden_and_pycache_paths_are_ignored(self) -> None:
+        self._write("tools/nightly_tests/.venv/x.py", "def broken(:\n")
+        self._write("tools/nightly_tests/__pycache__/y.py", "def broken(:\n")
+        self.assertEqual(self._run(""), {"selectors_scanned": 0, "violations": 0})
+
+    def test_missing_selector_module_is_handled(self) -> None:
+        with mock.patch.object(cli, "SELECTOR_MODULE", "tools/nightly_tests/gone.py"):
+            with self.assertRaisesRegex(HandledError, "Selector module not found"):
+                self._run("")
+
+    def test_syntax_error_in_any_nightly_file_is_handled(self) -> None:
+        self._write("tools/nightly_tests/no_selectors.py", "def broken(:\n")
+        with self.assertRaisesRegex(HandledError, "Cannot parse.*no_selectors.py"):
             self._run("")
 
     def test_missing_app_dir_is_handled(self) -> None:

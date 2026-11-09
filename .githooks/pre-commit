@@ -192,7 +192,7 @@ check_file_naming() {
 }
 
 check_ui_selector_contract() {
-  # Runs unconditionally (~0.2s): a path gate would duplicate SELECTOR_SOURCES.
+  # Runs unconditionally (~0.2s): sources are discovered by content, so no path gate.
   echo "--> Checking Nightly UI Selector Contract..."
   if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_ui_selector_contract.py >/dev/null; then
     echo "❌ Nightly UI selectors reference missing DOM or unannotated copy (see JSON error above)."
