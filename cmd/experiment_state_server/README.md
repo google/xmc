@@ -9,7 +9,7 @@ The **Experiment State Server (ESS)** is the central control plane service in XM
 - **Experiment Lifecycle & State Management**: Tracks active, completed, failed, and aborted experiments (`Experiments` and `WorkUnits` tables in Cloud Spanner).
 - **gRPC & HTTP APIs**: Implements AIP-compliant APIs defined in `api/protos/experiment/` (`GetExperiment`, `FetchExperimentStatus`, `ListExperiments`, `CreateExperiment`, `UpdateExperiment`).
 - **Component Drift Evaluation**: Dynamically evaluates live component drift against locked snapshot generations on read endpoints, propagating warning banners to client consoles (see [Dynamic Drift Detection](#dynamic-drift-detection)).
-- **Hyperparameter Optimization Studies**: Persists `STUDY` experiments with their study definition, and pins the components a study requires (see [STUDY Experiments](#study-experiments)).
+- **Hyperparameter Optimization Studies**: Validates and persists `STUDY` experiments with their study definition, and pins the components a study requires (see [STUDY Experiments](#study-experiments)).
 - **Paused Task Resumption (`resumption/`)**: When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, runs a background consumer on `xmc-scheduling-resume-stream` (`ess-group`) that claims resumption triggers from the Health Service, fences concurrent workers via `PauseSchedulingState.ResumptionWorkerId`, filters obsolete/terminal tasks, and replays buffered `PausedTasks` back to `xmc-tasks-stream` with backlog throttling.
 - **Expired Row Sweeping (`retentionsweep/`)**: Every replica calls `storage.ExpiredRowStore.DeleteExpiredRows` at startup and then every 12 hours to delete expired status messages, status history, processed paused tasks, and CLI login codes. On PostgreSQL an advisory lock lets only one replica sweep at a time; on Cloud Spanner the call is a no-op because `ROW DELETION POLICY` deletes these rows (see [Expired Rows](../../internal/storage/README.md#expired-rows-expiredrowstore)).
 - **Authentication & Authorization**: Integrates OAuth2/OIDC token verification and Google Cloud IAM validation (`auth_dev.go` / `auth_prod.go`).
@@ -79,6 +79,22 @@ for studies, carries the search space (`parameters`), the objective (`metrics`),
 is immutable: it is set only by `CreateExperiment`, returned by `GetExperiment` and
 `ListExperiments`, and an `UpdateExperiment` mask that names it fails with `INVALID_ARGUMENT`. It
 cannot be used in list filters.
+
+`CreateExperiment` validates the study config before allocating an XID
+([`internal/validator/study.go`](../../internal/validator/study.go)) and returns `INVALID_ARGUMENT`
+unless:
+
+- `study_config` is set exactly when `experiment_type` is `STUDY`.
+- There is exactly one metric (a single objective) with a `MAXIMIZE` or `MINIMIZE` goal and a
+  printable `metric_id` of at most 256 bytes without surrounding whitespace.
+- `algorithm` is `RANDOM_SEARCH`, `QUASI_RANDOM_SEARCH`, or `GRID_SEARCH`.
+- There are 1 to 100 parameters with unique IDs. Trials receive each parameter as a
+  `--<parameter_id>=<value>` flag, so IDs must match `^[A-Za-z_][A-Za-z0-9_.-]*$` and be at most 128
+  characters long.
+- Double and integer bounds satisfy `min_value <= max_value` (equal bounds fix the parameter) and
+  double bounds are finite. Categorical and discrete parameters have 1 to 1000 unique values.
+  `LOG` and `REVERSE_LOG` scales require positive values, and categorical parameters take no scale.
+- `max_trial_budget` and `max_parallel_trials` are positive.
 
 A study requires the `hpo` component, which depends on `vizier` and `clickhouse`. `CreateExperiment`
 checks that all three are ready before allocating an XID and again in the transaction that inserts

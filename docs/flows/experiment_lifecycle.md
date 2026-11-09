@@ -19,7 +19,7 @@ sequenceDiagram
     participant Storage as Storage (Spanner/Postgres)
 
     Client->>ESS: 1. CreateExperiment(req)
-    ESS->>ESS: 2. Authenticate & Validate
+    ESS->>ESS: 2. Authenticate & Validate (incl. study_config)
     ESS->>ESS: 3. Default ACLs & Authorize(WRITER)
     opt Experiment type requires components (STUDY)
         ESS->>Storage: 4. Pre-check component requirements (read-only)
@@ -42,8 +42,10 @@ and leaves its XID entry in place.
 
 **Validation (step 2).** Malformed requests fail with `INVALID_ARGUMENT`. Besides the general field
 rules, `experiment_type` must be a known value, and a missing or `UNSPECIFIED` `experiment_type` is
-normalized to `STANDARD` before the experiment is stored. `study_config` is rejected unless the type
-is `STUDY`.
+normalized to `STANDARD` before the experiment is stored. `study_config` is required when the type
+is `STUDY` and rejected for every other type. A study config must have a single objective metric, a
+supported search algorithm, and valid parameters; see
+[STUDY Experiments](../../cmd/experiment_state_server/README.md#study-experiments).
 
 **Authorization (step 3).** Because there is no XID entry to check against yet, ESS authorizes the
 creator directly against the requested ACLs, using the same `internal/auth` evaluation the XID
