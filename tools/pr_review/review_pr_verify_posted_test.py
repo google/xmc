@@ -26,6 +26,7 @@ from tools.common.tool_utils import HandledError
 from tools.pr_review.review_pr_verify_posted import (
     _is_re_review_thread_posted,
     _LiveState,
+    _normalize_body,
     approved_sidecar_items,
     load_sidecar,
     parse_checklist_approved_items,
@@ -487,6 +488,17 @@ class TestApprovedSidecarItems(unittest.TestCase):
     def test_missing_sidecar_returns_none(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.assertIsNone(load_sidecar(Path(tmpdir) / "checklist.json"))
+
+
+class TestNormalizeBody(unittest.TestCase):
+    def test_none_returns_empty_string(self):
+        self.assertEqual(_normalize_body(None), "")
+
+    def test_non_str_is_stringified(self):
+        self.assertEqual(_normalize_body(42), "42")
+
+    def test_strips_marker_markdown_and_whitespace(self):
+        self.assertEqual(_normalize_body(f"  Use **`Foo`**\n now{_TELEMETRY}"), "use foo now")
 
 
 if __name__ == "__main__":

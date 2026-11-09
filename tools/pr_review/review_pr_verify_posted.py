@@ -265,13 +265,14 @@ def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
-def _normalize_body(text: str) -> str:
+def _normalize_body(text: Any) -> str:
     """Normalizes comment text for matching.
 
-    Drops the telemetry marker and markdown backticks/asterisks, collapses
+    Treats None or other falsy values as empty and stringifies non-str values,
+    then drops the telemetry marker and markdown backticks/asterisks, collapses
     whitespace, and casefolds.
     """
-    without_marker = _TELEMETRY_MARKER.sub("", text)
+    without_marker = _TELEMETRY_MARKER.sub("", str(text or ""))
     return " ".join(re.sub(r"[`*]", "", without_marker).split()).casefold()
 
 
@@ -282,14 +283,14 @@ def _is_initial_inline_posted(item: dict[str, Any], live: _LiveState) -> bool:
     by the authenticated user, and its normalized body contains the item's
     normalized `proposed` text (any body matches when `proposed` is empty).
     """
-    proposed = _normalize_body(str(item.get("proposed") or ""))
+    proposed = _normalize_body(item.get("proposed"))
     for lc in live.comments:
         lc_line = lc.get("line") or lc.get("original_line")
         if lc.get("path") != item["file_path"] or str(lc_line) != str(item["line"]):
             continue
         if (lc.get("user") or {}).get("login") != live.login:
             continue
-        if proposed in _normalize_body(str(lc.get("body") or "")):
+        if proposed in _normalize_body(lc.get("body")):
             return True
     return False
 
