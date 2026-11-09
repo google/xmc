@@ -20,7 +20,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -36,6 +36,9 @@ DOC_THRESHOLD = 1000
 
 # Prefix git inspects for NUL bytes when deciding whether a file is binary.
 _BINARY_SNIFF_BYTES = 8000
+
+# Read size used when streaming a file to count its lines.
+_LINE_COUNT_CHUNK_BYTES = 64 * 1024
 
 GENERATED_PATTERNS = (
     r".*\.pb(\.gw)?\.go$",
@@ -73,15 +76,29 @@ def count_added_lines(file_path: Path) -> int:
 
     Mirrors git's binary heuristic (a NUL byte in the first 8000 bytes): binary or
     unreadable files count 0, like numstat's '-'. A final line without a newline counts.
+    The file is streamed in fixed-size chunks, so memory use stays bounded.
     """
     try:
-        content = file_path.read_bytes()
+        with file_path.open("rb") as stream:
+            return _count_stream_lines(stream)
     except OSError:
         return 0
-    if b"\0" in content[:_BINARY_SNIFF_BYTES]:
+
+
+def _count_stream_lines(stream: BinaryIO) -> int:
+    """Returns the newline-terminated (plus trailing partial) lines in a binary stream.
+
+    Returns 0 when a NUL byte appears within the first _BINARY_SNIFF_BYTES bytes.
+    """
+    head = stream.read(_BINARY_SNIFF_BYTES)
+    if b"\0" in head:
         return 0
-    lines = content.count(b"\n")
-    if content and not content.endswith(b"\n"):
+    lines = head.count(b"\n")
+    last_byte = head[-1:]
+    while chunk := stream.read(_LINE_COUNT_CHUNK_BYTES):
+        lines += chunk.count(b"\n")
+        last_byte = chunk[-1:]
+    if last_byte and last_byte != b"\n":
         lines += 1
     return lines
 

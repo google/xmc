@@ -17,6 +17,7 @@
 import argparse
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -28,6 +29,14 @@ if str(_REPO_ROOT) not in sys.path:
 from tools import analyze_diff_size  # noqa: E402
 from tools.common.changed_files import ChangedFilesError  # noqa: E402
 from tools.common.tool_utils import HandledError  # noqa: E402
+
+
+def _write_file(root: Path, relative_path: str, content: bytes) -> Path:
+    """Writes content to root/relative_path, creating parents, and returns the path."""
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
 
 
 class AnalyzeDiffSizeTest(unittest.TestCase):
@@ -86,11 +95,11 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
             analyze_diff_size.get_diff_entries("invalid-branch")
         mock_untracked.assert_not_called()
 
-    @mock.patch.object(analyze_diff_size.Path, "read_bytes", autospec=True)
+    @mock.patch.object(analyze_diff_size, "count_added_lines", autospec=True, return_value=3)
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
     @mock.patch.object(analyze_diff_size.subprocess, "run")
     def test_get_diff_entries_combines_tracked_and_untracked_without_double_counting(
-        self, mock_run, mock_untracked, mock_read_bytes
+        self, mock_run, mock_untracked, mock_count
     ):
         mock_run.return_value = mock.Mock(
             stdout="10\t2\tpkg/reconciler/handler.go\n-\t-\tassets/logo.png\n", returncode=0
@@ -101,16 +110,13 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
             "pkg/new dir/new file.go",
             "pkg/reconciler/handler.go",
         ]
-        mock_read_bytes.return_value = b"a\nb\nc\n"
 
         entries = analyze_diff_size.get_diff_entries("origin/main")
 
         self.assertEqual(
             entries, [(10, "pkg/reconciler/handler.go"), (3, "pkg/new dir/new file.go")]
         )
-        mock_read_bytes.assert_called_once_with(
-            analyze_diff_size._REPO_ROOT / "pkg/new dir/new file.go"
-        )
+        mock_count.assert_called_once_with(analyze_diff_size._REPO_ROOT / "pkg/new dir/new file.go")
 
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
     @mock.patch.object(analyze_diff_size.subprocess, "run")
@@ -123,28 +129,39 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         with self.assertRaises(HandledError):
             analyze_diff_size.get_diff_entries("origin/main")
 
-    @mock.patch.object(analyze_diff_size.Path, "read_bytes", autospec=True)
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
-    def test_get_untracked_entries_counts_lines_per_file(self, mock_untracked, mock_read_bytes):
+    def test_get_untracked_entries_counts_lines_per_file(self, mock_untracked):
         # Ignored files are never listed by `git ls-files --exclude-standard`, so the
         # double only returns the non-ignored ones.
-        mock_untracked.return_value = ["docs/with space.md", "pkg/blob.bin", "pkg/empty.go"]
-        contents = {
-            "with space.md": b"one\ntwo",
-            "blob.bin": b"\x89PNG\x00\x01\n\n",
-            "empty.go": b"",
-        }
-        mock_read_bytes.side_effect = lambda path: contents[path.name]
+        paths = ["docs/with space.md", "pkg/blob.bin", "pkg/empty.go"]
+        mock_untracked.return_value = paths
+        contents = [b"one\ntwo", b"\x89PNG\x00\x01\n\n", b""]
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            for path, content in zip(paths, contents, strict=True):
+                _write_file(repo_root, path, content)
 
-        entries = analyze_diff_size.get_untracked_entries(set(), Path("/fake/repo"))
+            entries = analyze_diff_size.get_untracked_entries(set(), repo_root)
 
+            mock_untracked.assert_called_once_with(repo_root)
         self.assertEqual(
             entries, [(2, "docs/with space.md"), (0, "pkg/blob.bin"), (0, "pkg/empty.go")]
         )
-        mock_untracked.assert_called_once_with(Path("/fake/repo"))
 
-    @mock.patch.object(analyze_diff_size.Path, "read_bytes", autospec=True)
-    def test_count_added_lines(self, mock_read_bytes):
+
+class CountAddedLinesTest(unittest.TestCase):
+    """Tests count_added_lines against real files in a temporary directory.
+
+    Real files exercise the actual open/read path instead of a mocked file object.
+    """
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+
+    def test_count_added_lines(self):
         cases = {
             "trailing_newline": (b"a\nb\n", 2),
             "no_trailing_newline": (b"a\nb", 2),
@@ -155,23 +172,42 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         }
         for name, (content, want) in cases.items():
             with self.subTest(name):
-                mock_read_bytes.return_value = content
-                self.assertEqual(analyze_diff_size.count_added_lines(Path("f")), want)
+                path = _write_file(self.root, name, content)
+                self.assertEqual(analyze_diff_size.count_added_lines(path), want)
 
-    @mock.patch.object(analyze_diff_size.Path, "read_bytes", autospec=True)
-    def test_count_added_lines_unreadable_file_counts_zero(self, mock_read_bytes):
-        mock_read_bytes.side_effect = PermissionError("denied")
-        self.assertEqual(analyze_diff_size.count_added_lines(Path("secret")), 0)
+    @mock.patch.object(analyze_diff_size, "_LINE_COUNT_CHUNK_BYTES", 3)
+    def test_count_added_lines_spanning_multiple_chunks(self):
+        head = b"a" * 7999 + b"\n"  # Exactly fills the binary sniff window.
+        cases = {
+            "trailing_newline": (head + b"ab\ncd\nef\n", 4),
+            "no_trailing_newline": (head + b"ab\ncd\nefg", 4),
+            "newline_ends_chunk_boundary": (head + b"ab\n", 2),
+            "nul_after_sniff_window": (head + b"\x00b\nc", 3),
+        }
+        for name, (content, want) in cases.items():
+            with self.subTest(name):
+                path = _write_file(self.root, name, content)
+                self.assertEqual(analyze_diff_size.count_added_lines(path), want)
 
-    @mock.patch.object(analyze_diff_size.Path, "read_bytes", autospec=True)
+    def test_count_added_lines_missing_file_counts_zero(self):
+        self.assertEqual(analyze_diff_size.count_added_lines(self.root / "missing"), 0)
+
+    @mock.patch.object(analyze_diff_size.Path, "open", side_effect=PermissionError("denied"))
+    def test_count_added_lines_unreadable_file_counts_zero(self, _):
+        self.assertEqual(analyze_diff_size.count_added_lines(self.root / "secret"), 0)
+
+
+class AnalyzeDiffSizeThresholdTest(unittest.TestCase):
+    """Tests threshold evaluation in analyze_diff_size."""
+
+    @mock.patch.object(analyze_diff_size, "count_added_lines", autospec=True, return_value=450)
     @mock.patch.object(analyze_diff_size, "list_untracked_files")
     @mock.patch.object(analyze_diff_size.subprocess, "run")
     def test_analyze_diff_size_untracked_prod_file_exceeds_prod_threshold(
-        self, mock_run, mock_untracked, mock_read_bytes
+        self, mock_run, mock_untracked, _
     ):
         mock_run.return_value = mock.Mock(stdout="", returncode=0)
         mock_untracked.return_value = ["pkg/reconciler/new_handler.go"]
-        mock_read_bytes.return_value = b"line\n" * 450
 
         res = analyze_diff_size.analyze_diff_size(argparse.Namespace(base_ref="origin/main"))
 
