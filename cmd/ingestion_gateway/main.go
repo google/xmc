@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -62,8 +63,10 @@ func main() {
 	awaitShutdown(ctx, server)
 }
 
+const componentResolveTimeout = 5 * time.Second
+
 func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
-	if cfg == nil || cfg.MessageBus == ingestiongateway.MessageBusPubSub {
+	if cfg == nil || (cfg.MessageBus != "" && !strings.EqualFold(strings.TrimSpace(cfg.MessageBus), ingestiongateway.MessageBusRedpanda)) {
 		return
 	}
 	var getter ingestiongateway.ComponentGetter
@@ -78,7 +81,9 @@ func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, o
 			return
 		}
 	}
-	if err := ingestiongateway.ResolveRedpandaComponentConfig(ctx, cfg, getter); err != nil {
+	resolveCtx, cancel := context.WithTimeout(ctx, componentResolveTimeout)
+	defer cancel()
+	if err := ingestiongateway.ResolveRedpandaComponentConfig(resolveCtx, cfg, getter); err != nil {
 		logging.Warn(ctx, "Failed to resolve redpanda Component CR; falling back to static flags",
 			"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)
 	}

@@ -251,11 +251,8 @@ func connectorReturning(conn dataengine.ClickHouseConn, err error) dataengine.Co
 	}
 }
 
-func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
-	// Most deployments run without the metrics pipeline. They must not acquire a provider, or
-	// readiness would hold every one of their pods out of the service endpoints.
-	t.Setenv("CLICKHOUSE_DSN", "")
-	t.Setenv("CLICKHOUSE_HOST", "")
+func isolateInvalidKubeconfig(t *testing.T) {
+	t.Helper()
 	t.Setenv("KUBERNETES_SERVICE_HOST", "")
 	t.Setenv("KUBERNETES_SERVICE_PORT", "")
 	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
@@ -263,6 +260,14 @@ func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
 		t.Fatalf("failed to write invalid kubeconfig: %v", err)
 	}
 	t.Setenv("KUBECONFIG", badKubeconfig)
+}
+
+func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
+	// Most deployments run without the metrics pipeline. They must not acquire a provider, or
+	// readiness would hold every one of their pods out of the service endpoints.
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("CLICKHOUSE_HOST", "")
+	isolateInvalidKubeconfig(t)
 
 	if provider := initDataEngine(context.Background(), &server.Config{}); provider != nil {
 		t.Errorf("initDataEngine() = %v, want nil when ClickHouse is not configured", provider)
@@ -275,6 +280,7 @@ func TestInitDataEngine_SurvivesUnreachableClickHouse(t *testing.T) {
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 	t.Setenv("CLICKHOUSE_PORT", "1")
+	isolateInvalidKubeconfig(t)
 
 	provider := initDataEngine(context.Background(), &server.Config{})
 
@@ -445,18 +451,11 @@ func TestResolveClickHouseWithSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	t.Run("surfaces initialization error", func(t *testing.T) {
-		resolve := resolveClickHouseWithSource(componentconfig.Source{}, errors.New("k8s init failed"))
-		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "k8s init failed") {
-			t.Errorf("resolve() error = %v, want k8s init failed", err)
-		}
-	})
-
 	t.Run("surfaces component resolution error", func(t *testing.T) {
 		resolve := resolveClickHouseWithSource(componentconfig.Source{
 			Enabled: true,
 			Getter:  &crreadertest.FakeGetter{Err: errors.New("rbac forbidden")},
-		}, nil)
+		})
 		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
 			t.Errorf("resolve() error = %v, want rbac forbidden", err)
 		}
@@ -464,13 +463,7 @@ func TestResolveClickHouseWithSource(t *testing.T) {
 }
 
 func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *testing.T) {
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	isolateInvalidKubeconfig(t)
 
 	resolve := buildClickHouseResolver("xmc", nil)
 	if _, _, err := resolve(context.Background()); err == nil {
@@ -479,13 +472,7 @@ func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *test
 }
 
 func TestBuildClickHouseResolver_UsesCustomGetter(t *testing.T) {
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	isolateInvalidKubeconfig(t)
 
 	pwFile := t.TempDir() + "/ch-pw"
 	if err := os.WriteFile(pwFile, []byte("secret-pw\n"), 0600); err != nil {
@@ -566,7 +553,6 @@ func TestClickHouseProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	var dialedAddrs [][]string
 	resolve := resolveClickHouseWithDialer(
 		componentconfig.Source{Enabled: true, Namespace: "xmc", Getter: getter, Secrets: secrets},
-		nil,
 		func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
 			dialedAddrs = append(dialedAddrs, opts.Addr)
 			return stubClickHouseConn{}, nil
@@ -805,6 +791,7 @@ func TestBigQueryMetricsStoreSelectionAndBuilder(t *testing.T) {
 
 	t.Setenv("CLICKHOUSE_HOST", "")
 	t.Setenv("CLICKHOUSE_DSN", "")
+	isolateInvalidKubeconfig(t)
 	if p := initDataEngineWithGetter(ctx, &server.Config{MetricsStore: "invalid"}, nil); p != nil {
 		t.Errorf("initDataEngineWithGetter(invalid) = %v, want nil", p)
 	}
@@ -824,11 +811,7 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	t.Setenv("BIGQUERY_DATASET", "")
 	t.Setenv("BIGQUERY_PROJECT_ID", "")
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	_ = os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600)
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	isolateInvalidKubeconfig(t)
 
 	if _, _, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx); err == nil {
 		t.Error("buildBigQueryResolver() with invalid kubeconfig succeeded, want error")
