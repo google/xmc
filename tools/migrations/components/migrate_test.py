@@ -132,6 +132,7 @@ class PrepareTests(unittest.TestCase):
         migrate._verify_source_env({"imageTag": "1.0.0"}, require_legacy=False)
         for bad_src in (
             {"componentsDeployment": {"enabled": True}},
+            {"componentsDeployment": {"cmsAddress": "grpc-service:50051"}},
             {"imageTag": "1.0.0"},
             {"imageTag": "v1.0.0"},
             {"imageTag": "0.3.0", "ingestionGatewayDeployment": {"enabled": True}},
@@ -388,6 +389,21 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                 for c in recorded
             )
         )
+
+        def undo_active_1_0_run(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
+                return _done(cmd, rc=1, stderr="NotFound")
+            if cmd[:3] == ["helm", "get", "values"]:
+                return _done(
+                    cmd, stdout=json.dumps({"componentsDeployment": {"cmsAddress": "grpc:50051"}})
+                )
+            return _done(cmd)
+
+        with (
+            mock.patch("tools.common.tool_utils.run_command", side_effect=undo_active_1_0_run),
+            self.assertRaises(HandledError),
+        ):
+            migrate.run_handoff(args)
 
     def test_finalize_waits_prunes_or_keeps_hpa_and_guards_disabled_component(self) -> None:
         args = migrate.build_parser().parse_args(["finalize", "--timeout-seconds", "60"])

@@ -646,9 +646,10 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(0)
     args = parser.parse_args(argv)
     if getattr(args, "enable_components", None) is False:
-        parser.error(
+        log_error(
             "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
         )
+        sys.exit(1)
     if getattr(args, "verbose", False):
         logging.basicConfig(
             level=logging.DEBUG,

@@ -55,10 +55,20 @@ def _verify_target_codebase(chart: Path = DEFAULT_PROFILE_CHART, desc: str | Non
             )
 
 
+def _is_components_active(vals: Mapping[str, Any]) -> bool:
+    """Returns True when merged umbrella Helm values come from an active-components release."""
+    comp = _mapping(vals, "componentsDeployment")
+    if comp and tu.parse_bool_flag(comp.get("enabled", True)):
+        return True
+    tag = _opt_str(vals.get("imageTag"), "imageTag")
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\Z", tag)
+    return bool(m and int(m[1]) < 2000 and (int(m[1]), int(m[2]), int(m[3])) >= (1, 0, 0))
+
+
 def _verify_source_env(vals: Mapping[str, Any], *, require_legacy: bool) -> None:
     """Verifies live cluster Helm release state and SemVer imageTag match a valid source."""
-    if require_legacy and tu.parse_bool_flag(_mapping(vals, "componentsDeployment").get("enabled")):
-        raise tu.HandledError("componentsDeployment.enabled is already true.", "Use legacy chart.")
+    if require_legacy and _is_components_active(vals):
+        raise tu.HandledError("Components are already active on release.", "Use legacy chart.")
     tag = _opt_str(vals.get("imageTag"), "imageTag")
     if (m := re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\Z", tag)) and int(
         m[1]
@@ -263,6 +273,13 @@ def _undo_handoff(ns: str, rel: str) -> dict[str, Any]:
         hint = "Uninstall xmc-profile with deletionPolicy=Orphan and deletionProtection=false."
         raise tu.HandledError(f"Cannot undo while '{COMPONENT_RESOURCE}' exists in '{ns}'.", hint)
     umbrella_vals = _load_source_values(ns, rel, require_legacy=False)
+    cmp_on = _is_components_active(umbrella_vals)
+    legacy_gw_tpl = _ROOT / "deploy/helm/templates/ingestion-gateway/deployment.yaml"
+    if cmp_on and not legacy_gw_tpl.is_file():
+        raise tu.HandledError(
+            "Cannot undo handoff onto an active-components release from an XMC 1.0.0+ checkout.",
+            "Checkout XMC 0.18.x and downgrade the umbrella release before rolling back.",
+        )
     workloads = _collect_gateway_workloads(ns, {rel, COMPONENT_RELEASE})
     cmp_res = _exec(["helm", "status", "-n", ns, "-o", "json", COMPONENT_RELEASE], check=False)
     if uninstalled := (cmp_res.returncode == 0):
@@ -273,7 +290,6 @@ def _undo_handoff(ns: str, rel: str) -> dict[str, Any]:
     for resource in workloads:
         _annotate(ns, resource, "helm.sh/resource-policy-", owner=rel)
     netpol = f"networkpolicy/{rel}-ingestion-gateway-network-policy"
-    cmp_on = tu.parse_bool_flag(_mapping(umbrella_vals, "componentsDeployment").get("enabled"))
     if not cmp_on and _get_k8s_json(ns, netpol) is not None:
         _annotate(ns, netpol, "helm.sh/resource-policy-")
     return {"command": "handoff", "undo": True, "uninstalled_component_release": uninstalled}

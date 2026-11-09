@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- $comp := default (dict) .Values.componentsDeployment -}}
-{{- if and (hasKey $comp "enabled") (not $comp.enabled) -}}
+{{ $rawComp := .Values.componentsDeployment -}}
+{{- if and (not (kindIs "invalid" $rawComp)) (not (kindIs "map" $rawComp)) -}}
+{{- fail "componentsDeployment must be a map; componentsDeployment.enabled=false is no longer supported in XMC 1.0.0+: Components are mandatory. Migrate legacy workloads via ./tools/migrations/components/migrate.py before upgrading." -}}
+{{- end -}}
+{{- $comp := default (dict) $rawComp -}}
+{{- if and (hasKey $comp "enabled") (not (kindIs "invalid" $comp.enabled)) (ne (include "xmanager-cloud.authFlagEnabled" $comp.enabled) "true") -}}
 {{- fail "componentsDeployment.enabled=false is no longer supported in XMC 1.0.0+: Components are mandatory. Migrate legacy workloads via ./tools/migrations/components/migrate.py before upgrading." -}}
 {{- end -}}
-{{- $igLegacy := default (dict) .Values.ingestionGatewayDeployment -}}
-{{- if $igLegacy.enabled -}}
+{{- $rawIG := .Values.ingestionGatewayDeployment -}}
+{{- if and (kindIs "map" $rawIG) (eq (include "xmanager-cloud.authFlagEnabled" $rawIG.enabled) "true") -}}
 {{- fail "ingestionGatewayDeployment.enabled=true is removed in XMC 1.0.0+: deploy ingestion-gateway via the stable-2026a xmc-profile release (or migrate existing workloads via ./tools/migrations/components/migrate.py)." -}}
-{{- end -}}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

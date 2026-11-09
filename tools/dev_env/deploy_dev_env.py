@@ -115,9 +115,10 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     )
     parsed_args = p.parse_args(args)
     if parsed_args.enable_components is False:
-        p.error(
+        log_error(
             "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
         )
+        sys.exit(1)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
     return parsed_args

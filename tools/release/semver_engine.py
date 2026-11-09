@@ -85,7 +85,7 @@ def _has_database_migrations(commits: list[CommitInfo]) -> bool:
         for f in c.files_changed:
             if not f:
                 continue
-            normalized = f.lower().replace("\\", "/").lstrip("./")
+            normalized = re.sub(r"^(?:\./|/)+", "", f.lower().replace("\\", "/"))
             if normalized.endswith((".sql", ".ddl")):
                 return True
             parts = normalized.split("/")

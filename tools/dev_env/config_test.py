@@ -215,9 +215,21 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertIn("health_service", cfg.enabled_services)
         self.assertIn("dashboard_service", cfg.enabled_services)
 
-        with self.assertRaisesRegex(ValueError, "--no-enable-components is no longer supported"):
+        with self.assertRaisesRegex(ValueError, "--no-enable-components"):
             config.load_config(
                 argparse.Namespace(project_id="my-proj", enable_components=False),
+                repo_root=self.root,
+            )
+        with (
+            patch.dict("os.environ", {"ENABLE_COMPONENTS": "false"}),
+            self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"),
+        ):
+            config.load_config(argparse.Namespace(project_id="my-proj"), repo_root=self.root)
+        disabled_cfg = self.root / "disabled_comp.yaml"
+        disabled_cfg.write_text("vars:\n  project_id: my-proj\n  enable_components: false\n")
+        with self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"):
+            config.load_config(
+                argparse.Namespace(config=str(disabled_cfg)),
                 repo_root=self.root,
             )
 

@@ -48,9 +48,13 @@ rules:
     verbs: ["get", "list", "create", "update", "delete"]
   # Objects that 1P component releases render (e.g. xmc-cmp-ingestion-gateway). Helm reads, patches
   # and deletes them by name; add their names here when a 1P chart adds or renames objects.
+  # xmc-bridge installs 1P Component Services (e.g. ingestion-gateway-service) in the release namespace.
+  # trivy:ignore:KSV-0056
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["create"]
+  # Scoped via resourceNames to 1P Component Services managed by xmc-bridge.
+  # trivy:ignore:KSV-0056
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["ingestion-gateway-service"]
@@ -77,18 +81,24 @@ rules:
     resources: ["horizontalpodautoscalers"]
     resourceNames: ["ingestion-gateway-hpa"]
     verbs: ["get", "update", "patch", "delete"]
-  # ...their self-provisioned reader RBAC...
+  # ...their self-provisioned reader RBAC (Kubernetes RBAC escalation checks block granting permissions xmc-bridge lacks)...
+  # trivy:ignore:KSV-0050
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     verbs: ["create"]
+  # Scoped via resourceNames to fixed 1P Component reader Roles and RoleBindings.
+  # trivy:ignore:KSV-0050
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
     verbs: ["get", "update", "patch", "delete"]
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
+  # trivy:ignore:KSV-0056
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["create"]
+  # Scoped via resourceNames to 1P Component NetworkPolicies managed by xmc-bridge.
+  # trivy:ignore:KSV-0056
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     resourceNames: ["ingestion-gateway-network-policy"]

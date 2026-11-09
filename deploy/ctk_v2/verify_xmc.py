@@ -320,39 +320,39 @@ def _is_pod_ready(pod_json_str: str) -> bool:
     )
 
 
-def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
-    """Returns (all_ready, count) for Component CRs in the kubectl JSON list."""
+def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int, str]:
+    """Returns (all_ready, count, unready_name) for Component CRs in kubectl JSON."""
     if not crs_json_str.strip():
-        return False, 0
+        return False, 0, ""
     try:
         data = json.loads(crs_json_str)
     except json.JSONDecodeError:
-        return False, 0
+        return False, 0, ""
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-        return False, 0
+        return False, 0, ""
     items = [i for i in data["items"] if isinstance(i, dict)]
-    if not items:
-        return True, 0
     for item in items:
         enabled = (item.get("spec") or {}).get("enabled", True)
         status = item.get("status") or {}
-        cs = status.get("conditions") or []
-        conds = {c.get("type"): c.get("status") for c in cs if isinstance(c, dict)}
-        st, suffix = (
-            status.get("state"),
-            ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED"),
-        )
-        exp = (f"COMPONENT_STATE_{suffix[0]}", f"STATE_{suffix[1]}")
+        conds = {
+            c.get("type"): c.get("status")
+            for c in (status.get("conditions") or [])
+            if isinstance(c, dict)
+        }
+        st, sfx = status.get("state"), ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED")
         if (
             conds.get("Stalled") == "True"
             or conds.get("Synced") == "False"
             or conds.get("Ready") != str(enabled)
-            or (st and st not in exp)
+            or (st and st not in (f"COMPONENT_STATE_{sfx[0]}", f"STATE_{sfx[1]}"))
         ):
-            name = (item.get("metadata") or {}).get("name", "unknown")
-            print(f"❌ Component CR '{name}' not Ready.")
-            return False, len(items)
-    return True, len(items)
+            return False, len(items), str((item.get("metadata") or {}).get("name", "unknown"))
+    return True, len(items), ""
+
+
+def _wait_for_xmc_deployments() -> None:
+    """Waits for all Deployments in namespace xmc (including 1P component workloads) to roll out."""
+    _run_command(["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"])
 
 
 def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) -> bool:
@@ -377,8 +377,9 @@ def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) 
         return False
     print("✅ xmc-bridge pod is Running and Ready.")
     crs_cmd = ["kubectl", "get", "components.xmc.dev", "-n", "xmc", "-o", "json"]
-    for attempt in range(max(1, max_attempts)):
-        ready, count = _are_component_crs_ready(_run_command(crs_cmd))
+    attempts, last_unready = max(1, max_attempts), ""
+    for attempt in range(attempts):
+        ready, count, last_unready = _are_component_crs_ready(_run_command(crs_cmd))
         if ready:
             if count == 0:
                 print(
@@ -387,8 +388,10 @@ def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) 
             else:
                 print(f"✅ All {count} Component CRs verified in expected state.")
             return True
-        if attempt + 1 < max_attempts:
+        if attempt + 1 < attempts:
             time.sleep(retry_interval_s)
+    if last_unready:
+        print(f"❌ Component CR '{last_unready}' not Ready.")
     print("❌ Component CRs verification failed after waiting for reconciliation.")
     return False
 
@@ -406,11 +409,14 @@ def main() -> int:
 
     env, region, project_id = _resolve_config()
     log_monitor_deployment_enabled = _resolve_log_monitor_deployment_enabled()
+    components_ok = _check_components()
+    if components_ok:
+        _wait_for_xmc_deployments()
     checks = [
+        components_ok,
         _check_k8s_resources(),
         _check_connectivity(),
         _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled),
-        _check_components(),
     ]
 
     print("=========================================")
