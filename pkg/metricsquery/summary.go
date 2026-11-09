@@ -20,16 +20,18 @@ import (
 	"time"
 )
 
-// clickHouseSummarySQL summarizes each metric; "latest" is the value at the newest timestamp.
+// clickHouseSummarySQL summarizes each metric; "latest" is the value at the newest timestamp, with
+// ties broken by the highest step (matching bigQuerySummarySQL). Ordering both argMax calls by the
+// same (timestamp, step) tuple keeps latest_val and latest_step from the same row.
 // Placeholders: table, WHERE clause.
 const clickHouseSummarySQL = `
 	SELECT
 		metric_name,
-		argMax(metric_value, timestamp) AS latest_val,
+		argMax(metric_value, (timestamp, step)) AS latest_val,
 		min(metric_value) AS min_val,
 		max(metric_value) AS max_val,
 		avg(metric_value) AS mean_val,
-		argMax(step, timestamp) AS latest_step,
+		argMax(step, (timestamp, step)) AS latest_step,
 		max(timestamp) AS latest_ts
 	FROM %s
 	WHERE %s

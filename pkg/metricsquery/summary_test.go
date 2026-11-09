@@ -35,8 +35,8 @@ func TestQuerySummaryByMetricSQL(t *testing.T) {
 		{
 			name:    "clickhouse uses argMax",
 			dialect: dialectClickHouse,
-			wantSQL: "SELECT metric_name, argMax(metric_value, timestamp) AS latest_val, min(metric_value) AS min_val, " +
-				"max(metric_value) AS max_val, avg(metric_value) AS mean_val, argMax(step, timestamp) AS latest_step, " +
+			wantSQL: "SELECT metric_name, argMax(metric_value, (timestamp, step)) AS latest_val, min(metric_value) AS min_val, " +
+				"max(metric_value) AS max_val, avg(metric_value) AS mean_val, argMax(step, (timestamp, step)) AS latest_step, " +
 				"max(timestamp) AS latest_ts FROM tbl WHERE xid = ? AND metric_name IN (?, ?) " +
 				"GROUP BY metric_name ORDER BY metric_name ASC;",
 		},
