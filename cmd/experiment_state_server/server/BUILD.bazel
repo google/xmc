@@ -132,6 +132,7 @@ go_test(
     # integration tests and live Spanner emulator operations across CI slots.
     shard_count = 10,
     deps = [
+        "//api/protos/components/v1alpha1",
         "//api/protos/experiment:api_go_proto",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
@@ -149,6 +150,7 @@ go_test(
         "//internal/task_queue",
         "//internal/task_queue_redis/redisclient",
         "//internal/validator",
+        "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",

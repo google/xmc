@@ -24,6 +24,7 @@ import (
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/pkg/components/store"
 )
 
 // MockXidTxRepository is an in-memory mock implementation of XidTxRepository for unit testing.
@@ -137,6 +138,66 @@ func (m *MockStatusHistoryTxRepository) SaveWorkUnitStatusHistory(_ context.Cont
 		Timestamp: timestamp,
 	})
 	return m.SaveErr
+}
+
+// MockComponentRepository is an in-memory ComponentRepository and ComponentTxRepository for unit testing.
+// Reads come from Records keyed by canonical name, read-only snapshots run against the mock itself, and
+// InsertExperimentComponentSnapshot records the pinned records in Snapshots. Calling any other method panics.
+type MockComponentRepository struct {
+	ComponentTxRepository // nil: methods not overridden below panic.
+
+	Records               map[string]*store.ComponentRecord
+	GetActiveComponentErr error
+	InsertSnapshotErr     error
+	Snapshots             map[int64][]*store.ComponentRecord
+}
+
+// GetActiveComponent returns a copy of Records[canonicalName], or store.ErrComponentNotFound when missing.
+func (m *MockComponentRepository) GetActiveComponent(_ context.Context, canonicalName string) (*store.ComponentRecord, error) {
+	if m.GetActiveComponentErr != nil {
+		return nil, m.GetActiveComponentErr
+	}
+	rec, ok := m.Records[canonicalName]
+	if !ok {
+		return nil, store.ErrComponentNotFound
+	}
+	return store.CloneRecord(rec), nil
+}
+
+// InsertExperimentComponentSnapshot records a copy of rec as pinned to xid, returning
+// grpcerr.ErrAlreadyExists when rec's component is already pinned to xid, as the backends do.
+func (m *MockComponentRepository) InsertExperimentComponentSnapshot(_ context.Context, xid int64, rec *store.ComponentRecord) error {
+	if rec == nil {
+		return grpcerr.ErrInvalidArgument
+	}
+	if m.InsertSnapshotErr != nil {
+		return m.InsertSnapshotErr
+	}
+	for _, pinned := range m.Snapshots[xid] {
+		if pinned.ComponentID == rec.ComponentID {
+			return grpcerr.ErrAlreadyExists
+		}
+	}
+	if m.Snapshots == nil {
+		m.Snapshots = make(map[int64][]*store.ComponentRecord)
+	}
+	m.Snapshots[xid] = append(m.Snapshots[xid], store.CloneRecord(rec))
+	return nil
+}
+
+// WithReadOnlySnapshot runs fn against the mock itself.
+func (m *MockComponentRepository) WithReadOnlySnapshot(ctx context.Context, fn func(ctx context.Context, repo ComponentTxRepository) error) error {
+	return fn(ctx, m)
+}
+
+// GetComponentWithFence is not supported by the mock.
+func (m *MockComponentRepository) GetComponentWithFence(context.Context, string) (*store.ComponentRecord, *store.ClusterIdentity, error) {
+	return nil, nil, grpcerr.ErrUnimplemented
+}
+
+// ReadOwnershipGauges is not supported by the mock.
+func (m *MockComponentRepository) ReadOwnershipGauges(context.Context, time.Time) (store.OwnershipGauges, error) {
+	return store.OwnershipGauges{}, grpcerr.ErrUnimplemented
 }
 
 // MockStorage is a mock implementation of Storage for testing.

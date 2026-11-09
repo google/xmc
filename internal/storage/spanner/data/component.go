@@ -181,6 +181,22 @@ func componentOwnerUpdateColumns(componentID int64, owner *store.SourceOwner) ma
 	return cols
 }
 
+// ExperimentComponentSnapshotInsertMutation builds a Spanner mutation pinning rec at rec.Generation to
+// experiment xid, keyed by the bit-reversed XID.
+func ExperimentComponentSnapshotInsertMutation(xid int64, rec *store.ComponentRecord) (*spanner.Mutation, error) {
+	if rec == nil {
+		return nil, fmt.Errorf("component record must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	configBytes, accessBytes, err := data.MarshalComponentPayloads(rec.Name, rec.Spec, rec.Labels, rec.Status)
+	if err != nil {
+		return nil, err
+	}
+	return spanner.Insert("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+		[]any{data.ReverseBits(xid), rec.ComponentID, rec.Generation, configBytes, accessBytes},
+	), nil
+}
+
 func appendDependencyMutations(mutations []*spanner.Mutation, componentID int64, deps []string, depIDs map[string]int64) ([]*spanner.Mutation, error) {
 	for _, dep := range deps {
 		depID, ok := depIDs[dep]
