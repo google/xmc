@@ -92,3 +92,5 @@ Metrics streaming and Managed XProf are optional and off by default. Enable metr
 - File bug reports and feature requests in [GitHub Issues](https://github.com/google/xmc/issues). Self-hosted deployments receive best-effort support without contractual SLAs; for a managed offering with contractual SLAs, see [Google Cloud Managed Training Clusters](https://docs.cloud.google.com/gemini-enterprise-agent-platform/machine-learning/training/training-clusters/overview).
 - Report security vulnerabilities privately through [g.co/vulnz](https://g.co/vulnz) rather than in public issues.
 - Released under the [Apache 2.0 License](LICENSE).
+
+<!-- Example draft PR verification note -->
