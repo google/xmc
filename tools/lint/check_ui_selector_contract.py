@@ -16,7 +16,8 @@
 """Lint keeping nightly UI verifier selectors in sync with the Angular templates.
 
 Selectors in SELECTOR_SOURCES are string values assigned to names matching
-_SEL_NAME_RE (incl. tuple unpacking) and first arguments of _SELECTOR_CALLS;
+_SEL_NAME_RE (incl. tuple/list unpacking) and the first positional or selector=
+argument of _SELECTOR_CALLS;
 `{...}` placeholders are wildcards. Rules:
   * dom-tag: custom tags (with `-`) must be a component selector or template tag.
   * dom-class / dom-attribute: names must appear in a cmd/ui/app template.
@@ -80,9 +81,9 @@ _TPL_TAG_RE = re.compile(r"<([A-Za-z][\w-]*)")
 _TPL_OPEN_TAG_RE = re.compile(r"""<[A-Za-z][\w-]*((?:"[^"]*"|'[^']*'|[^'">])*)>""")
 _TPL_ATTR_NAME_RE = re.compile(r"(?<!\S)(?:\[attr\.([\w-]+)\]|([A-Za-z][\w-]*))(?=[\s=/]|$)")
 _TPL_INTERPOLATION_RE = re.compile(r"\{\{.*?\}\}", re.DOTALL)
-_TPL_STATIC_CLASS_RE = re.compile(r"(?<![\w.\[-])class\s*=\s*\"([^\"]*)\"")
+_TPL_STATIC_CLASS_RE = re.compile(r"(?<![\w.\[-])class\s*=\s*([\"'])(.*?)\1", re.DOTALL)
 _TPL_CLASS_PROP_RE = re.compile(r"\[class\.([\w-]+)\]")
-_TPL_CLASS_BINDING_RE = re.compile(r"\[(?:class|ngClass)\]\s*=\s*\"([^\"]*)\"")
+_TPL_CLASS_BINDING_RE = re.compile(r"\[(?:class|ngClass)\]\s*=\s*([\"'])(.*?)\1", re.DOTALL)
 _TPL_BINDING_KEY_RE = re.compile(r"([\w-]+)\s*:")
 
 
@@ -119,11 +120,13 @@ def _string_value(node: ast.expr) -> str | None:
 
 
 def _assigned_pairs(node: ast.Assign) -> Iterator[tuple[str, ast.expr]]:
-    """Yield (target name, value) pairs, expanding tuple unpacking."""
+    """Yield (target name, value) pairs, expanding tuple/list unpacking."""
     for target in node.targets:
         if isinstance(target, ast.Name):
             yield target.id, node.value
-        if isinstance(target, ast.Tuple) and isinstance(node.value, ast.Tuple):
+        if isinstance(target, ast.Tuple | ast.List) and isinstance(
+            node.value, ast.Tuple | ast.List
+        ):
             for elt, val in zip(target.elts, node.value.elts, strict=False):
                 if isinstance(elt, ast.Name):
                     yield elt.id, val
@@ -138,9 +141,9 @@ def _selector_nodes(tree: ast.AST) -> Iterator[ast.expr]:
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr in _SELECTOR_CALLS
-            and node.args
         ):
-            yield node.args[0]
+            yield from node.args[:1]
+            yield from (kw.value for kw in node.keywords if kw.arg == "selector")
 
 
 def parse_source(rel_path: str, source: str) -> ast.Module:
@@ -183,9 +186,9 @@ def tokenize_selector(text: str) -> dict[str, set[str]]:
 def _template_classes(html: str) -> set[str]:
     """Collect class names from static attributes and class bindings."""
     classes: set[str] = set(_TPL_CLASS_PROP_RE.findall(html))
-    for value in _TPL_STATIC_CLASS_RE.findall(html):
+    for _, value in _TPL_STATIC_CLASS_RE.findall(html):
         classes.update(_TPL_INTERPOLATION_RE.sub(" ", value).split())
-    for expr in _TPL_CLASS_BINDING_RE.findall(html):
+    for _, expr in _TPL_CLASS_BINDING_RE.findall(html):
         for literal in _QUOTED_RE.findall(expr):
             classes.update(literal[1:-1].split())
         classes.update(_TPL_BINDING_KEY_RE.findall(expr))
@@ -204,6 +207,10 @@ def _template_attributes(html: str) -> set[str]:
 def build_template_index(repo_root: Path) -> TemplateIndex:
     """Index tags, classes, and attributes from cmd/ui/app templates and index.html."""
     app_dir = repo_root / UI_APP_DIR
+    if not app_dir.is_dir():
+        raise HandledError(
+            f"UI app directory not found: {app_dir}", "Pass the repository root via --repo-root."
+        )
     htmls = sorted(app_dir.rglob("*.ng.html"))
     index_html = repo_root / UI_INDEX_HTML
     htmls += [index_html] if index_html.is_file() else []
