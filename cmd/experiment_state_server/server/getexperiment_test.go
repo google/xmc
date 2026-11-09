@@ -24,7 +24,6 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
-	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -186,7 +185,6 @@ func TestGetExperiment_DriftWarningPropagation(t *testing.T) {
 		getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")},
 	}
 	server := newTestServer(t,
-		withConfig(&config.Config{EnableComponents: true}),
 		withStorage(mockStorage),
 		withXidClient(xidClient),
 	)

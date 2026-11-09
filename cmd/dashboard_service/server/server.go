@@ -57,7 +57,6 @@ type Config struct {
 	ProjectID           string
 	XidServiceAddr      string
 	MetricsStore        string
-	EnableComponents    bool
 	ComponentsNamespace string
 }
 

@@ -106,7 +106,6 @@ func createWorkUnitWithSnapshots(namespace string, snapshotsJSON string) *esspb.
 
 func setupComponentTestClient() (context.Context, *Client) {
 	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
-	client.RuntimeConfig.EnableComponents = true
 	return ctx, client
 }
 
@@ -430,7 +429,6 @@ func TestConstructJobSet_ComponentSnapshot_ClusterWideFallback(t *testing.T) {
 
 func TestConstructJobSet_ComponentSnapshot_DynamicClientFallback(t *testing.T) {
 	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
-	client.RuntimeConfig.EnableComponents = true
 	targetNS := constants.XmcLabelValue
 
 	compCR := createTestComponentCR("dynamic-comp", targetNS, 1, true, "COMPONENT_STATE_ENABLED",
@@ -477,32 +475,8 @@ func TestConstructJobSet_ComponentSnapshot_NormalWorkUnit(t *testing.T) {
 	}
 }
 
-func TestConstructJobSet_ComponentsDisabled_WithSnapshots_FailsFast(t *testing.T) {
-	ctx, client, _ := setupTestClient(true, &alwaysPassingPreconditionsValidator{})
-	targetNS := constants.XmcLabelValue
-
-	workUnit := createWorkUnitWithSnapshots(targetNS, `{"metrics-collector": 1}`)
-	jobSet, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", targetNS, testTime, Priorities{})
-	if err == nil {
-		t.Fatalf("constructJobSet succeeded when EnableComponents=false, want non-retryable error")
-	}
-	if jobSet != nil {
-		t.Errorf("expected jobSet to be nil on error, got: %v", jobSet)
-	}
-
-	expectedSub := "components feature is disabled on this cluster (enable_components=false)"
-	if !strings.Contains(err.Error(), expectedSub) {
-		t.Errorf("error %q does not contain expected substring %q", err.Error(), expectedSub)
-	}
-
-	if apierrors.IsServiceUnavailable(err) {
-		t.Errorf("expected error to be terminal/non-retryable, but got ServiceUnavailable")
-	}
-}
-
 func TestCreateWorkUnit_ComponentSnapshotValidation_Success(t *testing.T) {
 	ctx, actuatorClient, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	actuatorClient.RuntimeConfig.EnableComponents = true
 
 	compCR := createTestComponentCR("audit-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
@@ -530,7 +504,6 @@ func TestCreateWorkUnit_ComponentSnapshotValidation_Success(t *testing.T) {
 
 func TestCreateWorkUnit_ComponentSnapshotInjection_MissingComponent_Retryable(t *testing.T) {
 	ctx, actuatorClient, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	actuatorClient.RuntimeConfig.EnableComponents = true
 	actuatorClient.SetManagerClient(createFakeManagerClient())
 
 	payload := proto.Clone(createPayload).(*actuatortaskpb.ActuatorPayload)
@@ -552,7 +525,6 @@ func TestCreateWorkUnit_ComponentSnapshotInjection_MissingComponent_Retryable(t 
 
 func TestCreateWorkUnit_ComponentSnapshotInjection_EnvVars_Success(t *testing.T) {
 	ctx, actuatorClient, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	actuatorClient.RuntimeConfig.EnableComponents = true
 
 	compCR := createTestComponentCR("audit-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{
@@ -813,7 +785,6 @@ func TestBuildSecretEnvVars_EdgeCases(t *testing.T) {
 
 func TestCreateWorkUnit_ComponentSnapshotInjection_Volumes_Success(t *testing.T) {
 	ctx, actuatorClient, dynamicClient := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
-	actuatorClient.RuntimeConfig.EnableComponents = true
 
 	compCR := createTestComponentCR("vol-sidecar", testNamespace, 1, true, "COMPONENT_STATE_ENABLED",
 		[]map[string]any{

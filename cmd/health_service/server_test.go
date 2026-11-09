@@ -395,12 +395,11 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	checker := &mockHealthChecker{}
 	mockProvider := &mockComponentsInfoProvider{
@@ -449,12 +448,11 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
@@ -484,12 +482,11 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
@@ -508,12 +505,11 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel context immediately

@@ -70,21 +70,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name: "no-op when enable_components is false",
-			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: false,
-			},
-			getter:      &crreadertest.FakeGetter{Err: errors.New("should not be called")},
-			wantBrokers: []string{"static-broker:9092"},
-			wantTopic:   "static-topic",
-		},
-		{
 			name: "resolves live status.access.envVars ENDPOINT with port and defaultTopic from Component CR",
 			cfg: &Config{
 				Port:                "8080",
@@ -93,7 +78,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter:      &crreadertest.FakeGetter{Component: baselineRedpandaComponent()},
@@ -109,7 +93,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
@@ -129,7 +112,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
@@ -149,7 +131,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter:      &crreadertest.FakeGetter{Err: errors.New("k8s api unavailable")},
@@ -158,15 +139,14 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantErr:     true,
 		},
 		{
-			name: "returns error when getter is nil and enable_components is true",
+			name: "returns error when getter is nil",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter:      nil,
 			wantBrokers: []string{"static-broker:9092"},
@@ -174,14 +154,13 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 			wantErr:     true,
 		},
 		{
-			name: "no-op when message_bus is pubsub even if enable_components is true",
+			name: "no-op when message_bus is pubsub",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusPubSub,
-				ProjectID:        "test-proj",
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusPubSub,
+				ProjectID:       "test-proj",
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
 			},
 			getter:      &crreadertest.FakeGetter{Err: errors.New("should not be called")},
 			wantBrokers: []string{"static-broker:9092"},
@@ -190,13 +169,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "preserves static config when status.state is COMPONENT_STATE_DISABLED",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
@@ -209,13 +187,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "preserves static config when Component CR is empty",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter:      &crreadertest.FakeGetter{Component: &unstructured.Unstructured{}},
 			wantBrokers: []string{"static-broker:9092"},
@@ -224,13 +201,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "does not duplicate port when ENDPOINT already contains host:port",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
@@ -243,13 +219,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "falls back to spec.parameters.kafkaPort when status.access.envVars.PORT is absent",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
@@ -263,13 +238,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "retains static brokers when Component CR has neither ENDPOINT nor brokerEndpoints",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
@@ -283,13 +257,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "appends port to each broker in comma-separated status.access.envVars.ENDPOINT",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
 				u := baselineRedpandaComponent()
@@ -315,7 +288,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
@@ -346,7 +318,6 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 				TopicName:           "static-topic",
 				MinPartitions:       1,
 				MinReplicas:         1,
-				EnableComponents:    true,
 				ComponentsNamespace: "xmc",
 			},
 			getter: &crreadertest.FakeGetter{Component: func() *unstructured.Unstructured {
@@ -373,13 +344,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "restores original brokers and topic when cfg.Validate fails",
 			cfg: &Config{
-				Port:             "invalid-port",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "invalid-port",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter:      &crreadertest.FakeGetter{Component: baselineRedpandaComponent()},
 			wantBrokers: []string{"static-broker:9092"},
@@ -389,13 +359,12 @@ func TestResolveRedpandaComponentConfig(t *testing.T) {
 		{
 			name: "handles malformed field types in Component CR and retains static config",
 			cfg: &Config{
-				Port:             "8080",
-				MessageBus:       MessageBusRedpanda,
-				RedpandaBrokers:  []string{"static-broker:9092"},
-				TopicName:        "static-topic",
-				MinPartitions:    1,
-				MinReplicas:      1,
-				EnableComponents: true,
+				Port:            "8080",
+				MessageBus:      MessageBusRedpanda,
+				RedpandaBrokers: []string{"static-broker:9092"},
+				TopicName:       "static-topic",
+				MinPartitions:   1,
+				MinReplicas:     1,
 			},
 			getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{
 				Object: map[string]any{
@@ -562,7 +531,6 @@ func TestK8sComponentGetter_FakeDynamicClient(t *testing.T) {
 		TopicName:           "xmc-metrics",
 		MinPartitions:       1,
 		MinReplicas:         1,
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 

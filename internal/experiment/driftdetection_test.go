@@ -158,18 +158,16 @@ func activeStatus() *essmsgpb.ExperimentStatus {
 func TestDriftEvaluator_Evaluate_SkipsWithoutLookups(t *testing.T) {
 	compName := "comp-a"
 	tests := []struct {
-		name             string
-		enableComponents bool
-		expStatus        *essmsgpb.ExperimentStatus
+		name      string
+		expStatus *essmsgpb.ExperimentStatus
 	}{
-		{name: "components disabled", enableComponents: false, expStatus: activeStatus()},
-		{name: "nil status", enableComponents: true, expStatus: nil},
-		{name: "inactive experiment", enableComponents: true, expStatus: &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_INACTIVE}},
+		{name: "nil status", expStatus: nil},
+		{name: "inactive experiment", expStatus: &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_INACTIVE}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			src := &fakeDriftStore{diffs: []storage.ComponentDiff{{ComponentID: 1, Name: &compName, LockedGeneration: 1}}}
-			e := NewDriftEvaluator(src, tt.enableComponents)
+			e := NewDriftEvaluator(src)
 
 			if err := e.Evaluate(context.Background(), testXID, tt.expStatus); err != nil {
 				t.Fatalf("Evaluate() error = %v, want nil", err)
@@ -186,7 +184,7 @@ func TestDriftEvaluator_Evaluate_SkipsWithoutLookups(t *testing.T) {
 
 func TestDriftEvaluator_Evaluate_Consistent(t *testing.T) {
 	src := &fakeDriftStore{}
-	e := NewDriftEvaluator(src, true)
+	e := NewDriftEvaluator(src)
 
 	for i := range 2 {
 		expStatus := activeStatus()
@@ -211,7 +209,7 @@ func TestDriftEvaluator_Evaluate_DriftedAttachesWarningAndCaches(t *testing.T) {
 	src := &fakeDriftStore{
 		diffs: []storage.ComponentDiff{{ComponentID: 1, Name: &compName, LockedGeneration: 1, ObservedGeneration: &observed}},
 	}
-	e := NewDriftEvaluator(src, true)
+	e := NewDriftEvaluator(src)
 	want := &essmsgpb.StructuredMessage{
 		Severity:       essmsgpb.StructuredMessage_WARNING,
 		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
@@ -241,7 +239,7 @@ func TestDriftEvaluator_Evaluate_DriftedAttachesWarningAndCaches(t *testing.T) {
 
 func TestDriftEvaluator_Evaluate_LookupError(t *testing.T) {
 	errLookup := errors.New("lookup failed")
-	e := NewDriftEvaluator(&fakeDriftStore{fetchErr: errLookup}, true)
+	e := NewDriftEvaluator(&fakeDriftStore{fetchErr: errLookup})
 	expStatus := activeStatus()
 
 	err := e.Evaluate(context.Background(), testXID, expStatus)
@@ -261,7 +259,7 @@ func TestDriftEvaluator_FetchDriftDetails_TruncatesAfterMaxDriftDetails(t *testi
 	for i := range diffs {
 		diffs[i] = storage.ComponentDiff{ComponentID: int64(i + 1), LockedGeneration: 1}
 	}
-	e := NewDriftEvaluator(&fakeDriftStore{diffs: diffs}, true)
+	e := NewDriftEvaluator(&fakeDriftStore{diffs: diffs})
 
 	got, err := e.fetchDriftDetails(context.Background(), testXID)
 	if err != nil {
@@ -427,7 +425,7 @@ func TestDriftEvaluator_Evaluate_ExperimentalComponentWarningAndCaches(t *testin
 			},
 		},
 	}
-	e := NewDriftEvaluator(src, true)
+	e := NewDriftEvaluator(src)
 	want := &essmsgpb.StructuredMessage{
 		Severity:       essmsgpb.StructuredMessage_WARNING,
 		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
@@ -508,7 +506,7 @@ func TestDriftEvaluator_Evaluate_ExperimentalComponentScenarios(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := NewDriftEvaluator(&fakeDriftStore{diffs: tt.diffs, snapshots: tt.snapshots}, true)
+			e := NewDriftEvaluator(&fakeDriftStore{diffs: tt.diffs, snapshots: tt.snapshots})
 			expStatus := activeStatus()
 			if err := e.Evaluate(context.Background(), testXID, expStatus); err != nil {
 				t.Fatalf("Evaluate() error = %v, want nil", err)
@@ -522,7 +520,7 @@ func TestDriftEvaluator_Evaluate_ExperimentalComponentScenarios(t *testing.T) {
 
 func TestDriftEvaluator_Evaluate_SnapshotLookupError(t *testing.T) {
 	errSnap := errors.New("snapshot lookup failed")
-	e := NewDriftEvaluator(&fakeDriftStore{fetchSnapshotErr: errSnap}, true)
+	e := NewDriftEvaluator(&fakeDriftStore{fetchSnapshotErr: errSnap})
 	expStatus := activeStatus()
 
 	err := e.Evaluate(context.Background(), testXID, expStatus)
