@@ -314,7 +314,9 @@ func isComponentExpected(ctx context.Context, namespace, componentName string, c
 		getter = g
 	}
 	ns := crreader.ResolveNamespace(namespace)
-	comp, err := getter.GetComponent(ctx, ns, componentName)
+	probeCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
+	defer cancel()
+	comp, err := getter.GetComponent(probeCtx, ns, componentName)
 	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
 		return false
 	}
