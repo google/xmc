@@ -56,7 +56,7 @@ def _thread(root_id: int, is_resolved: bool) -> dict[str, Any]:
     }
 
 
-def _route_github(comments: list[dict[str, Any]], threads: list[dict[str, Any]]):
+def _route_github(comments: list[Any], threads: list[dict[str, Any]]):
     """Returns a fake call_github_api serving REST comments and GraphQL review threads."""
 
     def fake(endpoint: str, method: str = "GET", payload: Any = None, user_agent: str = ""):
@@ -375,6 +375,26 @@ class TestVerifyPostedSidecar(unittest.TestCase):
 
         self.assertEqual(res["posted_items"], 1)
 
+    def test_non_dict_live_comments_are_skipped(self):
+        """Stray non-dict elements in the live comments do not break matching."""
+        self._write("", [_inline_item("#1", "Approved"), _resolve_item(101)])
+        threads = [_thread(101, True)]
+        threads[0]["comments"]["nodes"].insert(0, "not a node")
+        self.mock_api.side_effect = _route_github(["not a comment", _live_comment()], threads)
+
+        res = verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(res["posted_items"], 2)
+
+    def test_non_dict_live_comments_skipped_for_respond(self):
+        """A RESPOND item ignores non-dict live comments and still finds the reply."""
+        self._write("", [{**_resolve_item(101), "action": "RESPOND"}])
+        self.mock_api.return_value = [None, {"in_reply_to_id": 101}]
+
+        res = verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertEqual(res["posted_items"], 1)
+
     def test_resolve_marked_posted_but_unresolved_thread_fails(self):
         """Regression: a RESOLVE item recorded as Posted fails while the thread is unresolved."""
         self._write("", [_resolve_item(101, status="Posted")])
@@ -497,6 +517,10 @@ class TestNormalizeBody(unittest.TestCase):
 
     def test_non_str_is_stringified(self):
         self.assertEqual(_normalize_body(42), "42")
+
+    def test_falsy_non_none_is_not_treated_as_empty(self):
+        self.assertEqual(_normalize_body(0), "0")
+        self.assertEqual(_normalize_body(False), "false")
 
     def test_strips_marker_markdown_and_whitespace(self):
         self.assertEqual(_normalize_body(f"  Use **`Foo`**\n now{_TELEMETRY}"), "use foo now")

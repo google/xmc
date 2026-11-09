@@ -270,12 +270,12 @@ def approved_sidecar_items(sidecar: dict[str, Any]) -> list[dict[str, Any]]:
 def _normalize_body(text: Any) -> str:
     """Normalizes comment text for matching.
 
-    Treats None or other falsy values as empty and stringifies non-str values,
-    then drops the telemetry marker, undoes markdown table-cell escapes
+    Treats only None as empty and stringifies other values (so `0` becomes
+    "0"), then drops the telemetry marker, undoes markdown table-cell escapes
     (`\\|` and `<br>`), drops backticks/asterisks, collapses whitespace, and
     casefolds.
     """
-    without_marker = _TELEMETRY_MARKER.sub("", str(text or ""))
+    without_marker = _TELEMETRY_MARKER.sub("", "" if text is None else str(text))
     unescaped = _TABLE_CELL_BREAK.sub(" ", without_marker.replace("\\|", "|"))
     return " ".join(re.sub(r"[`*]", "", unescaped).split()).casefold()
 
@@ -289,6 +289,8 @@ def _is_initial_inline_posted(item: dict[str, Any], live: _LiveState) -> bool:
     """
     proposed = _normalize_body(item.get("proposed"))
     for lc in live.comments:
+        if not isinstance(lc, dict):
+            continue
         lc_line = lc.get("line") or lc.get("original_line")
         if lc.get("path") != item["file_path"] or str(lc_line) != str(item["line"]):
             continue
@@ -311,7 +313,11 @@ def _is_re_review_thread_posted(
     """
     thread_id = item["thread_id"]
     if item["action"] == "RESPOND":
-        replies = [lc for lc in live.comments if lc.get("in_reply_to_id") == thread_id]
+        replies = [
+            lc
+            for lc in live.comments
+            if isinstance(lc, dict) and lc.get("in_reply_to_id") == thread_id
+        ]
         if replies:
             return True, None
         return False, f"Recommended response on Thread ID `{thread_id}` has not been posted"
@@ -456,7 +462,7 @@ def _fetch_resolved_comment_ids(
         for thread in threads
         if thread.get("isResolved")
         for comment in (thread.get("comments") or {}).get("nodes") or []
-        if comment and comment.get("databaseId")
+        if isinstance(comment, dict) and comment.get("databaseId")
     )
 
 
