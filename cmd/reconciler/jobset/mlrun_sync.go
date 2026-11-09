@@ -168,10 +168,11 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	// client is built once in manager.go), so only workloadDetails.cluster follows
 	// the worker. MultiKueue workers must therefore be in MLRunLocation, and in
 	// MLRunProject unless it is set to the worker's project.
-	project, location, clusterName, ok := r.resolveExecutionCluster(ctx, jobSet)
+	cluster, ok := r.resolveExecutionCluster(ctx, jobSet)
 	if !ok {
 		return "", false
 	}
+	project, location, clusterName := cluster.GetProject(), cluster.GetLocation(), cluster.GetClusterName()
 	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
 	clusterPath := resolveClusterPath(clusterName, project, location)
 	labels := buildMLRunLabels(xid, wid)

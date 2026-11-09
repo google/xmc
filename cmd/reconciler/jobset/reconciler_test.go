@@ -1048,8 +1048,8 @@ func TestResolveExecutionCluster(t *testing.T) {
 				Location:    "us-central1",
 				ClusterName: "mgr-gke",
 			}
-			project, location, clusterName, ok := r.resolveExecutionCluster(t.Context(), tc.jobSet)
-			if diff := cmp.Diff(tc.want, []string{project, location, clusterName}); diff != "" {
+			cluster, ok := r.resolveExecutionCluster(t.Context(), tc.jobSet)
+			if diff := cmp.Diff(tc.want, []string{cluster.GetProject(), cluster.GetLocation(), cluster.GetClusterName()}); diff != "" {
 				t.Errorf("resolveExecutionCluster() cluster mismatch (-want +got):\n%s", diff)
 			}
 			if ok != tc.wantOK {

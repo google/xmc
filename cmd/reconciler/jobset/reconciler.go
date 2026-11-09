@@ -407,33 +407,37 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 // kueueJobUIDLabel is the label Kueue sets on a Workload to the UID of the job that owns it.
 const kueueJobUIDLabel = "kueue.x-k8s.io/job-uid"
 
-func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (project, location, clusterName string, ok bool) {
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (*spb.ClusterInfo, bool) {
 	if r.Client == nil || jobSet == nil {
-		return r.Project, r.Location, r.ClusterName, true
+		return r.managerClusterInfo(), true
 	}
 	var wlList v1beta1.WorkloadList
 	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace), client.MatchingLabels{kueueJobUIDLabel: string(jobSet.UID)}); err != nil {
 		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; skipping MLRun sync", "error", err)
-		return "", "", "", false
+		return nil, false
 	}
 	wl := findJobSetWorkload(wlList.Items, jobSet.Name)
 	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
 		if awaitingAdmission(jobSet, wl) {
-			return "", "", "", false
+			return nil, false
 		}
-		return r.Project, r.Location, r.ClusterName, true
+		return r.managerClusterInfo(), true
 	}
 	var mc v1beta1.MultiKueueCluster
 	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
 		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; skipping MLRun sync", "cluster", *wl.Status.ClusterName, "error", err)
-		return "", "", "", false
+		return nil, false
 	}
 	info := shared.ClusterInfoFromMultiKueueCluster(&mc)
 	if info.GetProject() == "" || info.GetLocation() == "" || info.GetClusterName() == "" {
 		logging.Warn(ctx, "resolveExecutionCluster: MultiKueueCluster is missing XMC cluster labels; skipping MLRun sync", "cluster", *wl.Status.ClusterName)
-		return "", "", "", false
+		return nil, false
 	}
-	return info.GetProject(), info.GetLocation(), info.GetClusterName(), true
+	return info, true
+}
+
+func (r *Reconciler) managerClusterInfo() *spb.ClusterInfo {
+	return &spb.ClusterInfo{Project: r.Project, Location: r.Location, ClusterName: r.ClusterName}
 }
 
 // awaitingAdmission reports whether a JobSet without an assigned MultiKueue
