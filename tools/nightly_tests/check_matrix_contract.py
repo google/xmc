@@ -52,7 +52,8 @@ _UNSET = "<unset>"
 def launch_flag_values(args: str) -> dict[str, str]:
     """Returns `CONTRACT` launch flag values from `args` (`--flag=value` or `--flag value`).
 
-    A repeated flag resolves to its last value, matching absl/argparse behavior.
+    A repeated flag resolves to its last value, matching absl/argparse behavior. In the
+    space form, a following token that starts with "-" is another flag, so the value is "".
     """
     tokens = shlex.split(args)
     values: dict[str, str] = {}
@@ -61,7 +62,7 @@ def launch_flag_values(args: str) -> dict[str, str]:
         if name not in CONTRACT:
             continue
         next_token = tokens[index + 1] if index + 1 < len(tokens) else ""
-        values[name] = value if sep else next_token
+        values[name] = value if sep else ("" if next_token.startswith("--") else next_token)
     return values
 
 
@@ -87,12 +88,20 @@ def item_violations(item: dict[str, str]) -> list[str]:
     return violations
 
 
+def _indent(line: str) -> int:
+    """Returns the number of leading whitespace characters in `line`."""
+    return len(line) - len(line.lstrip())
+
+
 def _ends_step(line: str, step_indent: int) -> bool:
-    """Returns whether `line` starts a sibling step or leaves the steps list."""
+    """Returns whether `line` starts a sibling step or leaves the steps list.
+
+    Blank and comment lines never end a step, whatever their indentation.
+    """
     stripped = line.lstrip()
-    if not stripped:
+    if not stripped or stripped.startswith("#"):
         return False
-    indent = len(line) - len(stripped)
+    indent = _indent(line)
     return indent < step_indent or (indent == step_indent and stripped.startswith("- "))
 
 
@@ -102,10 +111,18 @@ def verify_step_block(workflow_text: str) -> str:
     id_index = next((i for i, line in enumerate(lines) if _VERIFY_STEP_ID_RE.match(line)), None)
     if id_index is None:
         return ""
+    # The step opener is the nearest preceding "- " line indented less than `id:`;
+    # deeper "- " lines belong to nested values such as run blocks.
+    id_indent = _indent(lines[id_index])
     start = next(
-        (i for i in range(id_index, -1, -1) if lines[i].lstrip().startswith("- ")), id_index
+        (
+            i
+            for i in range(id_index - 1, -1, -1)
+            if lines[i].lstrip().startswith("- ") and _indent(lines[i]) < id_indent
+        ),
+        id_index,
     )
-    step_indent = len(lines[start]) - len(lines[start].lstrip())
+    step_indent = _indent(lines[start])
     end = next(
         (i for i in range(start + 1, len(lines)) if _ends_step(lines[i], step_indent)),
         len(lines),

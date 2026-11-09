@@ -101,6 +101,12 @@ class LaunchFlagValuesTest(unittest.TestCase):
             ("empty_args", "", {}),
             ("quoted_multibyte", "--name='débogage ✓' --duration=9", {"--duration": "9"}),
             ("repeated_flag_last_wins", "--duration=60 --duration 90", {"--duration": "90"}),
+            (
+                "space_form_followed_by_flag",
+                "--duration --num_work_units=3",
+                {"--duration": "", "--num_work_units": "3"},
+            ),
+            ("space_form_negative_value_kept", "--duration -5", {"--duration": "-5"}),
         )
         for name, args, want in cases:
             with self.subTest(name):
@@ -167,6 +173,31 @@ class AuditWorkflowTest(unittest.TestCase):
             """
         )
         self.assertEqual(_audit(_workflow(_BASELINE_ENTRY, step)), [_DURATION_WIRING_VIOLATION])
+
+    def test_less_indented_comment_does_not_end_verify_step(self) -> None:
+        workflow = _workflow(_BASELINE_ENTRY).replace(
+            "    env:\n", "# less-indented comment inside the verify step\n    env:\n", 1
+        )
+        self.assertIn("# less-indented comment", workflow)
+        self.assertEqual(_audit(workflow), [])
+
+    def test_nested_list_item_before_id_does_not_start_verify_step(self) -> None:
+        step = textwrap.dedent(
+            """\
+            - name: 'Launch'
+              run: echo launch
+            - name: 'Run Workload Verification Assertions'
+              env:
+                EXPECTED_WORK_UNITS: '${{ matrix.example.expected_work_units }}'
+                EXPECTED_DURATION_SEC: '${{ matrix.example.expected_duration_sec }}'
+              run: |
+                ARGS+=("--expected_work_units=${EXPECTED_WORK_UNITS}")
+                ARGS+=("--expected_duration_sec=${EXPECTED_DURATION_SEC}")
+                - nested item inside the run block
+              id: verify-example
+            """
+        )
+        self.assertEqual(_audit(_workflow(_BASELINE_ENTRY, step)), [])
 
     def test_reports_missing_verify_step(self) -> None:
         step = _VERIFY_STEP.replace("id: verify-example", "id: something-else")
