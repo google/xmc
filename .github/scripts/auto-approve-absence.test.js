@@ -15,6 +15,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  validateAbsenceContent,
   isOnlyAbsenceFileModified,
   isAuthorCodeOwner,
   shouldAutoApproveAbsencePR
@@ -74,4 +75,70 @@ test('shouldAutoApproveAbsencePR rejects PR by non-owner author', () => {
 
   assert.strictEqual(decision.canApprove, false);
   assert.ok(decision.reason.includes('not listed in OWNERS'));
+});
+
+test('shouldAutoApproveAbsencePR approves valid bare NICK and NICK DD.MM.YYYY-DD.MM.YYYY entries', () => {
+  const owners = ['alice', 'bob'];
+  const absenceContent = `
+# Absence file
+pachopepe
+janzak 10.11.2026-15.11.2026
+bob 29.02.2028-29.02.2028 # single-day leap year
+`;
+  const decision = shouldAutoApproveAbsencePR({
+    modifiedFileNames: ['ABSENCE.md'],
+    prAuthor: 'alice',
+    ownersList: owners,
+    absenceContent
+  });
+
+  assert.strictEqual(decision.canApprove, true);
+});
+
+test('validateAbsenceContent and shouldAutoApproveAbsencePR reject invalid dates and formats', () => {
+  const owners = ['alice'];
+  const invalidCases = [
+    {
+      content: 'janzak 16.11.2026-15.11.2026\n',
+      expectedSubstring: 'after end date'
+    },
+    {
+      content: 'janzak 31.02.2026-15.03.2026\n',
+      expectedSubstring: 'invalid start date'
+    },
+    {
+      content: 'janzak 10.11.2026-29.02.2027\n',
+      expectedSubstring: 'invalid end date'
+    },
+    {
+      content: 'janzak 2026-11-10-2026-11-15\n',
+      expectedSubstring: 'invalid date range format'
+    },
+    {
+      content: 'janzak 10.11.2026-15.11.2026 extra\n',
+      expectedSubstring: 'invalid format'
+    },
+    {
+      content: '10.11.2026-15.11.2026\n',
+      expectedSubstring: 'invalid username'
+    }
+  ];
+
+  for (const { content, expectedSubstring } of invalidCases) {
+    const validation = validateAbsenceContent(content);
+    assert.strictEqual(validation.valid, false, `Expected invalid for: ${content}`);
+    assert.ok(
+      validation.reason.includes(expectedSubstring),
+      `Expected "${validation.reason}" to include "${expectedSubstring}"`
+    );
+
+    const decision = shouldAutoApproveAbsencePR({
+      modifiedFileNames: ['ABSENCE.md'],
+      prAuthor: 'alice',
+      ownersList: owners,
+      absenceContent: content
+    });
+    assert.strictEqual(decision.canApprove, false);
+    assert.ok(decision.reason.includes(expectedSubstring));
+  }
 });

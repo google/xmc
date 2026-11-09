@@ -13,7 +13,7 @@
 // limitations under the License.
 
 const fs = require('fs');
-const { parseReviewersFromOwners } = require('./assign-reviewers');
+const { parseReviewersFromOwners, parseAbsenceLine } = require('./assign-reviewers');
 
 /**
  * Pure function: Checks if the list of modified files contains strictly ABSENCE.md and nothing else.
@@ -42,62 +42,41 @@ function isAuthorCodeOwner(prAuthor, ownersList) {
 }
 
 /**
- * Pure function: Evaluates whether a PR modifying ABSENCE.md should be auto-approved.
- * @param {Object} params
- * @param {string[]} params.modifiedFileNames - Array of file paths modified in the PR.
- * @param {string} params.prAuthor - Username of the PR author.
- * @param {string[]} params.ownersList - Array of code owner usernames.
- * @returns {{ canApprove: boolean, reason: string }} Decision result object.
- */
-
-/**
- * Validates the contents of ABSENCE.md.
- * @param {string} content
- * @returns {{valid: boolean, reason?: string}}
+ * Pure function: Validates the contents of ABSENCE.md, checking that every non-empty
+ * non-comment line is either "NICK" or "NICK DD.MM.YYYY-DD.MM.YYYY" with valid
+ * calendar dates and start <= end.
+ * @param {string} content - Raw ABSENCE.md content.
+ * @returns {{ valid: boolean, reason?: string }}
  */
 function validateAbsenceContent(content) {
-  const lines = (content || '').split(/\r?\n/);
+  if (typeof content !== 'string') {
+    return { valid: false, reason: 'ABSENCE.md content is missing or not a string' };
+  }
+  const lines = content.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
-    let line = lines[i].split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
-    if (!line) continue;
-
-    const parts = line.split(/\s+/);
-    if (parts.length > 2) {
-      return { valid: false, reason: `Line ${i + 1} has invalid format` };
-    }
-    if (parts.length === 2) {
-      const dateRangeStr = parts[1];
-      const match = dateRangeStr.match(/^(\d{2})\.(\d{2})\.(\d{4})-(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (!match) {
-        return { valid: false, reason: `Line ${i + 1} has invalid date range format` };
-      }
-
-      const checkDate = (dd, mm, yyyy) => {
-        const d = parseInt(dd, 10);
-        const m = parseInt(mm, 10);
-        const y = parseInt(yyyy, 10);
-        const dateObj = new Date(y, m - 1, d);
-        return dateObj.getFullYear() === y && dateObj.getMonth() === m - 1 && dateObj.getDate() === d;
-      };
-
-      if (!checkDate(match[1], match[2], match[3])) {
-        return { valid: false, reason: `Line ${i + 1} has invalid start date` };
-      }
-      if (!checkDate(match[4], match[5], match[6])) {
-        return { valid: false, reason: `Line ${i + 1} has invalid end date` };
-      }
-
-      const dStart = new Date(match[3], match[2] - 1, match[1]);
-      const dEnd = new Date(match[6], match[5] - 1, match[4]);
-      if (dStart > dEnd) {
-        return { valid: false, reason: `Line ${i + 1} start date is after end date` };
-      }
+    const entry = parseAbsenceLine(lines[i], i + 1);
+    if (!entry.valid) {
+      return { valid: false, reason: entry.reason };
     }
   }
   return { valid: true };
 }
 
-function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, absenceContent }) {
+/**
+ * Pure function: Evaluates whether a PR modifying ABSENCE.md should be auto-approved.
+ * @param {Object} params
+ * @param {string[]} params.modifiedFileNames - Array of file paths modified in the PR.
+ * @param {string} params.prAuthor - Username of the PR author.
+ * @param {string[]} params.ownersList - Array of code owner usernames.
+ * @param {string} [params.absenceContent=''] - Raw content of ABSENCE.md.
+ * @returns {{ canApprove: boolean, reason: string }} Decision result object.
+ */
+function shouldAutoApproveAbsencePR({
+  modifiedFileNames,
+  prAuthor,
+  ownersList,
+  absenceContent = ''
+}) {
   if (!isOnlyAbsenceFileModified(modifiedFileNames)) {
     return {
       canApprove: false,
@@ -112,14 +91,12 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, a
     };
   }
 
-  if (absenceContent !== undefined) {
-    const validation = validateAbsenceContent(absenceContent);
-    if (!validation.valid) {
-      return {
-        canApprove: false,
-        reason: `Invalid ABSENCE.md content: ${validation.reason}`
-      };
-    }
+  const validation = validateAbsenceContent(absenceContent);
+  if (!validation.valid) {
+    return {
+      canApprove: false,
+      reason: `Invalid ABSENCE.md content: ${validation.reason}`
+    };
   }
 
   return {
@@ -129,7 +106,7 @@ function shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, a
 }
 
 /**
- * Orchestrator: Fetches PR files, reads OWNERS, evaluates eligibility, and posts approval review via REST API.
+ * Orchestrator: Fetches PR files, reads OWNERS and ABSENCE.md, evaluates eligibility, and posts approval review via REST API.
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
@@ -155,9 +132,19 @@ async function run({ github, context, core }) {
     return;
   }
 
+  if (!fs.existsSync('ABSENCE.md')) {
+    core.info('ABSENCE.md not found in repository root. Skipping auto-approval.');
+    return;
+  }
+
   const ownersList = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
-  const absenceContent = fs.existsSync('ABSENCE.md') ? fs.readFileSync('ABSENCE.md', 'utf8') : undefined;
-  const decision = shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList, absenceContent });
+  const absenceContent = fs.readFileSync('ABSENCE.md', 'utf8');
+  const decision = shouldAutoApproveAbsencePR({
+    modifiedFileNames,
+    prAuthor,
+    ownersList,
+    absenceContent
+  });
 
   if (!decision.canApprove) {
     core.info(`${decision.reason} Skipping auto-approval.`);

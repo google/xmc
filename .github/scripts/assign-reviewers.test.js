@@ -15,6 +15,9 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const {
+  parseDdMmYyyy,
+  parseAbsenceLine,
+  parseAbsenceFile,
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
@@ -72,10 +75,87 @@ test('filterEligibleReviewers excludes absent reviewers case-insensitively', () 
 
 test('absent reviewers mapping handles markdown formatted lists (- , * , @)', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
-  const rawAbsent = ['- alice', '* @dave', '+ eve'];
-  const absent = rawAbsent.map(u => u.replace(/^[-*+@\s]+/, '').trim()).filter(Boolean);
+  const rawAbsent = ['- alice', '* @dave', '+ eve'].join('\n');
+  const absent = parseAbsenceFile(rawAbsent);
   const result = filterEligibleReviewers(candidates, 'bob', absent);
   assert.deepStrictEqual(result, ['charlie']);
+});
+
+test('parseDdMmYyyy validates strict DD.MM.YYYY calendar dates', () => {
+  const valid = parseDdMmYyyy('10.11.2026');
+  assert.ok(valid instanceof Date);
+  assert.strictEqual(valid.getFullYear(), 2026);
+  assert.strictEqual(valid.getMonth(), 10);
+  assert.strictEqual(valid.getDate(), 10);
+
+  // Leap year Feb 29 is valid; non-leap year Feb 29 is rejected
+  assert.ok(parseDdMmYyyy('29.02.2024') instanceof Date);
+  assert.strictEqual(parseDdMmYyyy('29.02.2026'), null);
+
+  // Impossible calendar dates and malformed strings are rejected
+  assert.strictEqual(parseDdMmYyyy('31.02.2026'), null);
+  assert.strictEqual(parseDdMmYyyy('31.04.2026'), null);
+  assert.strictEqual(parseDdMmYyyy('00.11.2026'), null);
+  assert.strictEqual(parseDdMmYyyy('10.13.2026'), null);
+  assert.strictEqual(parseDdMmYyyy('10.00.2026'), null);
+  assert.strictEqual(parseDdMmYyyy('2026-11-10'), null);
+  assert.strictEqual(parseDdMmYyyy('9.11.2026'), null);
+  assert.strictEqual(parseDdMmYyyy(''), null);
+});
+
+test('parseAbsenceFile handles bare NICK and inclusive DD.MM.YYYY-DD.MM.YYYY ranges', () => {
+  const absenceContent = `
+# Unconditional absence
+pachopepe
+
+# Scheduled absence (inclusive)
+janzak 10.11.2026-15.11.2026
+- @alice 12.11.2026-12.11.2026 # single-day absence
+`;
+
+  // Before janzak's range (09.11.2026)
+  assert.deepStrictEqual(
+    parseAbsenceFile(absenceContent, new Date(2026, 10, 9)),
+    ['pachopepe']
+  );
+
+  // On start boundary (10.11.2026) - inclusive
+  assert.deepStrictEqual(
+    parseAbsenceFile(absenceContent, new Date(2026, 10, 10, 15, 30)),
+    ['pachopepe', 'janzak']
+  );
+
+  // Single-day range + middle of janzak's range (12.11.2026)
+  assert.deepStrictEqual(
+    parseAbsenceFile(absenceContent, new Date(2026, 10, 12)),
+    ['pachopepe', 'janzak', 'alice']
+  );
+
+  // On end boundary (15.11.2026) - inclusive
+  assert.deepStrictEqual(
+    parseAbsenceFile(absenceContent, new Date(2026, 10, 15, 23, 59)),
+    ['pachopepe', 'janzak']
+  );
+
+  // After end boundary (16.11.2026)
+  assert.deepStrictEqual(
+    parseAbsenceFile(absenceContent, new Date(2026, 10, 16)),
+    ['pachopepe']
+  );
+});
+
+test('parseAbsenceFile ignores malformed or inverted date ranges', () => {
+  const content = `
+validUser
+invertedUser 15.11.2026-10.11.2026
+badDateUser 31.02.2026-15.11.2026
+extraTokensUser 10.11.2026-15.11.2026 extra
+`;
+  assert.deepStrictEqual(
+    parseAbsenceFile(content, new Date(2026, 10, 12)),
+    ['validUser']
+  );
+  assert.strictEqual(parseAbsenceLine('invertedUser 15.11.2026-10.11.2026', 2).valid, false);
 });
 
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {

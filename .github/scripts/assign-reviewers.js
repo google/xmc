@@ -16,6 +16,10 @@ const fs = require('fs');
 
 const NUM_REVIEWERS_TO_ASSIGN = 1;
 
+const USERNAME_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/;
+const DATE_PATTERN = /^(\d{2})\.(\d{2})\.(\d{4})$/;
+const DATE_RANGE_PATTERN = /^([^-\s]+)-([^-\s]+)$/;
+
 /**
  * Orchestrator: Coordinates reading the OWNERS file, calling pure parsing/selection functions,
  * and calling the GitHub REST API to assign reviewers.
@@ -55,9 +59,7 @@ async function run({ github, context, core }) {
 
   let absentUsers = [];
   if (fs.existsSync('ABSENCE.md')) {
-    absentUsers = parseReviewersFromOwners(fs.readFileSync('ABSENCE.md', 'utf8'))
-      .map(u => u.replace(/^[-*+@\s]+/, '').trim())
-      .filter(Boolean);
+    absentUsers = parseAbsenceFile(fs.readFileSync('ABSENCE.md', 'utf8'));
     core.info(`Parsed absent reviewers from ABSENCE.md: ${absentUsers.join(', ')}`);
   }
 
@@ -86,42 +88,151 @@ async function run({ github, context, core }) {
 }
 
 /**
+ * Pure function: Strictly parses a DD.MM.YYYY calendar date string.
+ * Rejects impossible calendar dates (e.g., 31.02.2026 or 29.02.2026).
+ * @param {string} dateStr - Date string in DD.MM.YYYY format.
+ * @returns {Date|null} Parsed local midnight Date or null if invalid.
+ */
+function parseDdMmYyyy(dateStr) {
+  const match = (dateStr || '').match(DATE_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  const date = new Date(year, month - 1, day);
+  date.setFullYear(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+/**
+ * Pure function: Parses and validates a DD.MM.YYYY-DD.MM.YYYY date range token.
+ * @param {string} rangeStr - Date range token.
+ * @param {number} lineNumber - 1-based line number for error reporting.
+ * @returns {{ valid: boolean, startDate?: Date, endDate?: Date, reason?: string }}
+ */
+function parseAbsenceDateRange(rangeStr, lineNumber) {
+  const match = (rangeStr || '').match(DATE_RANGE_PATTERN);
+  if (!match) {
+    return {
+      valid: false,
+      reason: `Line ${lineNumber} has invalid date range format "${rangeStr}" (expected DD.MM.YYYY-DD.MM.YYYY)`
+    };
+  }
+  const startDate = parseDdMmYyyy(match[1]);
+  if (!startDate) {
+    return {
+      valid: false,
+      reason: `Line ${lineNumber} has invalid start date "${match[1]}" (expected valid DD.MM.YYYY calendar date)`
+    };
+  }
+  const endDate = parseDdMmYyyy(match[2]);
+  if (!endDate) {
+    return {
+      valid: false,
+      reason: `Line ${lineNumber} has invalid end date "${match[2]}" (expected valid DD.MM.YYYY calendar date)`
+    };
+  }
+  if (startDate > endDate) {
+    return {
+      valid: false,
+      reason: `Line ${lineNumber} has start date "${match[1]}" after end date "${match[2]}"`
+    };
+  }
+  return { valid: true, startDate, endDate };
+}
+
+/**
+ * Pure function: Parses and validates a single line from ABSENCE.md.
+ * Supports either bare "NICK" or "NICK DD.MM.YYYY-DD.MM.YYYY" (inclusive).
+ * @param {string} rawLine - Raw line from ABSENCE.md.
+ * @param {number} [lineNumber=1] - 1-based line number for error reporting.
+ * @returns {{ empty: boolean, valid: boolean, username?: string, startDate?: Date|null, endDate?: Date|null, reason?: string }}
+ */
+function parseAbsenceLine(rawLine, lineNumber = 1) {
+  const cleaned = (rawLine || '').split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
+  if (!cleaned) {
+    return { empty: true, valid: true };
+  }
+  const parts = cleaned.split(/\s+/);
+  if (parts.length > 2) {
+    return {
+      empty: false,
+      valid: false,
+      reason: `Line ${lineNumber} has invalid format "${cleaned}" (expected "NICK" or "NICK DD.MM.YYYY-DD.MM.YYYY")`
+    };
+  }
+  const username = parts[0];
+  if (!USERNAME_PATTERN.test(username)) {
+    return {
+      empty: false,
+      valid: false,
+      reason: `Line ${lineNumber} has invalid username "${username}"`
+    };
+  }
+  if (parts.length === 1) {
+    return { empty: false, valid: true, username, startDate: null, endDate: null };
+  }
+  const rangeResult = parseAbsenceDateRange(parts[1], lineNumber);
+  if (!rangeResult.valid) {
+    return { empty: false, valid: false, reason: rangeResult.reason };
+  }
+  return {
+    empty: false,
+    valid: true,
+    username,
+    startDate: rangeResult.startDate,
+    endDate: rangeResult.endDate
+  };
+}
+
+/**
+ * Pure function: Parses ABSENCE.md content and returns usernames absent on `currentDate`.
+ * Bare "NICK" entries are unconditionally absent; "NICK X-Y" entries are absent when
+ * `currentDate` falls within `[X, Y]` inclusive (with valid DD.MM.YYYY dates and X <= Y).
+ * @param {string} content - Raw string content of ABSENCE.md.
+ * @param {Date} [currentDate=new Date()] - Date to evaluate scheduled absences against.
+ * @returns {string[]} Array of currently absent usernames.
+ */
+function parseAbsenceFile(content, currentDate = new Date()) {
+  const today = new Date(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    currentDate.getDate()
+  );
+  today.setFullYear(
+    currentDate.getFullYear(),
+    currentDate.getMonth(),
+    currentDate.getDate()
+  );
+  const absentUsers = [];
+  const lines = (content || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const entry = parseAbsenceLine(lines[i], i + 1);
+    if (entry.empty || !entry.valid) {
+      continue;
+    }
+    if (!entry.startDate || (today >= entry.startDate && today <= entry.endDate)) {
+      absentUsers.push(entry.username);
+    }
+  }
+  return absentUsers;
+}
+
+/**
  * Pure function: Parses a flat text OWNERS file containing one username per line.
  * Strips comments and trims whitespace.
  * @param {string} content - Raw string content of the OWNERS file.
  * @returns {string[]} Array of reviewer candidate usernames.
  */
-
-/**
- * Parses ABSENCE.md and evaluates date ranges.
- * @param {string} content
- * @param {Date} [currentDate=new Date()]
- * @returns {string[]} Array of currently absent usernames
- */
-function parseAbsenceFile(content, currentDate = new Date()) {
-  const users = [];
-  const lines = (content || '').split(/\r?\n/);
-  for (let line of lines) {
-    line = line.split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
-    if (!line) continue;
-    const parts = line.split(/\s+/);
-    if (parts.length === 1) {
-      users.push(parts[0]);
-    } else if (parts.length === 2) {
-      const match = parts[1].match(/^(\d{2})\.(\d{2})\.(\d{4})-(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (match) {
-        const dStart = new Date(match[3], match[2] - 1, match[1]);
-        const dEnd = new Date(match[6], match[5] - 1, match[4]);
-        const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-        if (today >= dStart && today <= dEnd) {
-          users.push(parts[0]);
-        }
-      }
-    }
-  }
-  return users;
-}
-
 function parseReviewersFromOwners(content) {
   return (content || '')
     .split(/\r?\n/)
@@ -217,8 +328,10 @@ async function getPullRequestMetadata(github, context, core) {
 }
 
 module.exports = {
-  parseAbsenceFile,
   NUM_REVIEWERS_TO_ASSIGN,
+  parseDdMmYyyy,
+  parseAbsenceLine,
+  parseAbsenceFile,
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,

@@ -13,9 +13,10 @@
 // limitations under the License.
 
 const fs = require('fs');
+const { parseAbsenceFile } = require('./assign-reviewers');
 
 /**
- * Parses a flat text file (like OWNERS or ABSENCE.md) containing usernames.
+ * Parses a flat text file (like OWNERS) containing usernames.
  * Strips inline comments, markdown bullets/prefixes, and trims whitespace.
  * @param {string} content - Raw file content.
  * @returns {string[]} Array of parsed usernames.
@@ -35,37 +36,6 @@ function parseUsernames(content) {
  * @param {string[]} absences - Array of absent usernames.
  * @returns {string[]} Filtered list of active owners.
  */
-
-/**
- * Parses ABSENCE.md and evaluates date ranges.
- * @param {string} content
- * @param {Date} [currentDate=new Date()]
- * @returns {string[]} Array of currently absent usernames
- */
-function parseAbsenceFile(content, currentDate = new Date()) {
-  const users = [];
-  const lines = (content || '').split(/\r?\n/);
-  for (let line of lines) {
-    line = line.split('#')[0].trim().replace(/^[-*+@\s]+/, '').trim();
-    if (!line) continue;
-    const parts = line.split(/\s+/);
-    if (parts.length === 1) {
-      users.push(parts[0]);
-    } else if (parts.length === 2) {
-      const match = parts[1].match(/^(\d{2})\.(\d{2})\.(\d{4})-(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (match) {
-        const dStart = new Date(match[3], match[2] - 1, match[1]);
-        const dEnd = new Date(match[6], match[5] - 1, match[4]);
-        const today = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate());
-        if (today >= dStart && today <= dEnd) {
-          users.push(parts[0]);
-        }
-      }
-    }
-  }
-  return users;
-}
-
 function filterActiveOwners(owners = [], absences = []) {
   const absentSet = new Set((absences || []).map(u => (u || '').toLowerCase()));
   return (owners || []).filter(o => !absentSet.has((o || '').toLowerCase()));
@@ -76,16 +46,20 @@ function filterActiveOwners(owners = [], absences = []) {
  * @param {string} ownersPath
  * @param {string} absencePath
  * @param {any} core
+ * @param {Date} [currentDate=new Date()]
  * @returns {string[]} Active owner usernames.
  */
-function resolveActiveOwners(ownersPath, absencePath, core) {
+function resolveActiveOwners(ownersPath, absencePath, core, currentDate = new Date()) {
   if (!fs.existsSync(ownersPath) && core) {
     core.warning(`Owners file not found at '${ownersPath}'.`);
   }
   const ownersContent = fs.existsSync(ownersPath) ? fs.readFileSync(ownersPath, 'utf8') : '';
   const absenceContent = fs.existsSync(absencePath) ? fs.readFileSync(absencePath, 'utf8') : '';
 
-  const activeOwners = filterActiveOwners(parseUsernames(ownersContent), parseAbsenceFile(absenceContent));
+  const activeOwners = filterActiveOwners(
+    parseUsernames(ownersContent),
+    parseAbsenceFile(absenceContent, currentDate)
+  );
   if (core) {
     core.info(`Active OWNERS to notify (${activeOwners.length}): ${activeOwners.join(', ') || 'none'}`);
   }
