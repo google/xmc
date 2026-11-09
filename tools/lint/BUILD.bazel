@@ -73,6 +73,23 @@ py_test(
 )
 
 py_library(
+    name = "check_ui_selector_contract_lib",
+    srcs = ["check_ui_selector_contract.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_ui_selector_contract_test",
+    srcs = ["check_ui_selector_contract_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_ui_selector_contract_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "precommit_autostage_lib",
     srcs = ["precommit_autostage.py"],
     imports = ["../.."],

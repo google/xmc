@@ -32,9 +32,13 @@ PREDICTABILITY_STATS_GRID_SEL = ".predictability-stats-grid"
 PREDICTABILITY_CONTENT_SEL = ".predictability-stats-grid, .predictability-spinner-container"
 PREDICTABILITY_METRIC_VAL_SEL = ".predictability-stats-grid .cell-value"
 RESOURCE_SELECT_SEL = "xmc-smart-resource-finder mat-select.query-select-box"
+# ui-contract: queue_list.ng.html renders each velocityPeriods value as the pill text.
 VELOCITY_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill:has-text("{tf}")'
+# ui-contract: queue_list.ng.html renders each velocityPeriods value as the pill text.
 ACTIVE_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill.active-toggle:has-text("{tf}")'
+# ui-contract: subnav_tabs.ng.html tab buttons share one class; label is the only key.
 AVAILABILITY_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Resource availability")'
+# ui-contract: subnav_tabs.ng.html tab buttons share one class; label is the only key.
 SMART_FINDER_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Smart resource finder")'
 
 DASHBOARDS_LIST_ROOT_SEL = "xmc-dashboards-list-page"

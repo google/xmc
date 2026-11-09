@@ -393,6 +393,7 @@ class XMCUIBrowserSession:
         """
         print(f"\n[UI Action] Traversing to tab: '{tab_name}'...")
         tab_locator = self.page.locator(
+            # ui-contract: experiment_page.ng.html <mat-tab label="..."> is the only tab key.
             f'mat-tab-header .mdc-tab:has-text("{tab_name}"), .mat-tab-label:has-text("{tab_name}")'
         ).first
         tab_locator.wait_for(state="visible", timeout=timeout_ms)
