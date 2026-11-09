@@ -88,9 +88,23 @@ class GitOpsTest(unittest.TestCase):
         mock_run.side_effect = _fake_git_describe(["1.2.3-rc1", "1.2.2", "1.2.1"])
         tag = get_latest_tag_before("HEAD", Path("."))
         self.assertEqual(tag, "1.2.2")
-        last_cmd = mock_run.call_args[0][0]
-        self.assertIn("--exclude", last_cmd)
-        self.assertIn("1.2.3-rc1", last_cmd)
+        self.assertEqual(mock_run.call_count, 1)
+        self.assertIn("*-*", mock_run.call_args[0][0])
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_latest_tag_before_retries_past_non_semver_tag(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = _fake_git_describe(["1.2.3.4", "1.2.2", "1.2.1"])
+        tag = get_latest_tag_before("HEAD", Path("."))
+        self.assertEqual(tag, "1.2.2")
+        self.assertEqual(mock_run.call_count, 2)
+        self.assertIn("1.2.3.4", mock_run.call_args[0][0])
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_latest_tag_before_git_not_found(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = FileNotFoundError()
+        with self.assertRaises(HandledError) as ctx:
+            get_latest_tag_before("HEAD", Path("."))
+        self.assertIn("git command not found", str(ctx.exception))
 
     @patch("tools.release.git_ops.subprocess.run")
     def test_get_latest_tag_before_no_semver_tag(self, mock_run: MagicMock) -> None:
@@ -104,7 +118,7 @@ class GitOpsTest(unittest.TestCase):
     def test_get_latest_tag_before_retry_cap_exhausted(self, mock_run: MagicMock) -> None:
         counter = iter(range(1000))
         mock_run.side_effect = lambda cmd, **_: MagicMock(
-            stdout=f"0.17.0-rc{next(counter)}\n", returncode=0
+            stdout=f"0.17.0.{next(counter)}\n", returncode=0
         )
         tag = get_latest_tag_before("HEAD", Path("."))
         self.assertIsNone(tag)

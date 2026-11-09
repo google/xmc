@@ -26,30 +26,41 @@ from tools.release.semver_engine import is_semver_tag
 
 _RELEASE_TAG_GLOBS = ("[0-9]*.[0-9]*.[0-9]*", "v[0-9]*.[0-9]*.[0-9]*")
 
+# Pre-release tags such as 1.2.3-rc1 contain a hyphen; bare release tags never do.
+_PRE_RELEASE_TAG_GLOB = "*-*"
+
 # Upper bound on `git describe` calls while skipping glob-matching but non-semver
-# tags (e.g. 1.2.3-rc1), so a repository full of such tags cannot loop unbounded.
+# tags (e.g. 1.2.3.4), so a repository full of such tags cannot loop unbounded.
 _MAX_DESCRIBE_ATTEMPTS = 20
 
 
 def _describe_release_tag(target_ref: str, excluded: list[str], cwd: str | None) -> str | None:
     """Returns the closest tag before target_ref matching the release globs.
 
-    Tags in excluded are passed to `git describe --exclude` so callers can skip
-    candidates they already rejected.
+    Pre-release tags are always excluded; tags in excluded are also passed to
+    `git describe --exclude` so callers can skip candidates they already rejected.
 
     Returns:
         The tag name, or None when git fails or no matching tag is reachable.
+
+    Raises:
+        HandledError: If the git executable is not found.
     """
     cmd = ["git", "describe", "--tags", "--abbrev=0"]
     for glob in _RELEASE_TAG_GLOBS:
         cmd.extend(["--match", glob])
-    for tag in excluded:
+    for tag in [_PRE_RELEASE_TAG_GLOB, *excluded]:
         cmd.extend(["--exclude", tag])
     cmd.append(f"{target_ref}^")
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
     except subprocess.CalledProcessError:
         return None
+    except FileNotFoundError as e:
+        raise HandledError(
+            "git command not found.",
+            "Ensure Git is installed and available in your system PATH.",
+        ) from e
     return res.stdout.strip() or None
 
 
@@ -57,12 +68,16 @@ def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str 
     """Finds the most recent semver release tag before target_ref.
 
     Non-release tags such as the daily nightly-YYYY-MM-DD.N tags are skipped by
-    the match globs; glob-matching but non-semver tags such as 1.2.3-rc1 are
-    excluded and the lookup retried, up to _MAX_DESCRIBE_ATTEMPTS times.
+    the match globs and pre-release tags such as 1.2.3-rc1 by the `*-*` exclude.
+    Any remaining glob-matching but non-semver tag such as 1.2.3.4 is excluded
+    and the lookup retried, up to _MAX_DESCRIBE_ATTEMPTS times.
 
     Returns:
         The tag name, or None when git fails, no semver release tag is reachable,
         or the retry cap is exhausted.
+
+    Raises:
+        HandledError: If the git executable is not found.
     """
     cwd = str(repo_dir) if repo_dir else None
     excluded: list[str] = []
