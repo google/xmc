@@ -13,9 +13,11 @@ XMC CI workflows execute on standard GitHub-hosted runners (`ubuntu-latest`) wit
 - CI builds use the `--config=ci` profile in [`.bazelrc`](../.bazelrc):
   ```ini
   build:ci --disk_cache=~/.cache/bazel-disk
+  build:ci --remote_cache_compression=true
+  build:ci --modify_execution_info=GoLink=+no-remote-cache
   test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
   ```
-- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk` before running Bazel and save updated caches on `refs/heads/main` and `merge_group` runs.
+- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk` before running Bazel and save updated caches on `refs/heads/main`, `merge_group`, or initial cold-start (`matched-key == ''`) runs (while [`.github/workflows/deploy-gke.yml`](../.github/workflows/deploy-gke.yml) restores both caches before building OCI images).
 
 ---
 
@@ -89,13 +91,17 @@ To switch between self-hosted ARC runners and GitHub-hosted cloud runners (`ubun
 
 Search and replace `runs-on: 'arc-runner-set'` with `runs-on: 'ubuntu-latest'` across all `.github/workflows/*.yml` files:
 
-- `.github/workflows/unit-tests.yml`
-- `.github/workflows/lint.yml`
-- `.github/workflows/terraform-lint.yml`
 - `.github/workflows/auto-approve-absence.yml`
 - `.github/workflows/auto-assign-reviewers.yml`
-- `.github/workflows/block-feature-request-merges.yml`
-- `.github/workflows/e2e-tests.yml` (if enabled)
+- `.github/workflows/deploy-gke.yml`
+- `.github/workflows/e2e-tests.yml`
+- `.github/workflows/examples-smoke.yml`
+- `.github/workflows/incremental-pr-approval.yml`
+- `.github/workflows/lint.yml`
+- `.github/workflows/nightly-build.yml`
+- `.github/workflows/nightly-examples-e2e.yml`
+- `.github/workflows/nightly-visual-snapshot.yml`
+- `.github/workflows/unit-tests.yml`
 
 ```yaml
 # Example change in workflow jobs:
@@ -116,7 +122,7 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
 #### Option A: GitHub Actions Cache (`actions/cache`) — Simple, Zero GCP Infrastructure
 
-1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps around the `run-backend-tests` step:
+1. In `.github/actions/run-backend-tests/action.yml` (and `.github/workflows/e2e-tests.yml`), configure the disk cache restore and save steps around Bazel execution:
 
 ```yaml
       - name: 'Restore Bazel Disk Cache'
@@ -128,12 +134,9 @@ Choose one of the two options below for caching on GitHub-hosted runners:
           restore-keys: |
             bazel-disk-${{ runner.os }}-
 
-      - name: 'Run Backend Unit Tests'
-        uses: './.github/actions/run-backend-tests'
-
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        if: github.ref == 'refs/heads/main' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/bazel-disk
           key: bazel-disk-${{ runner.os }}-${{ github.sha }}
@@ -143,6 +146,8 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 ```ini
 # build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
 build:ci --disk_cache=~/.cache/bazel-disk
+build:ci --remote_cache_compression=true
+build:ci --modify_execution_info=GoLink=+no-remote-cache
 ```
 
 #### Option B: Google Cloud Storage (GCS) Remote Cache — High Performance & Shared Across GitHub Runners
@@ -165,7 +170,7 @@ GitHub-hosted `ubuntu-latest` virtual environments come with many pre-installed 
 
 - `actions/setup-go@v5` (pins Go version, e.g. `1.26.0`)
 - `actions/setup-node@v4` (pins Node version, e.g. `22`)
-- `actions/setup-python@v5` (pins Python version, e.g. `3.14`)
+- `actions/setup-python@v5` (pins Python version, e.g. `3.13`)
 - `bazelbuild/setup-bazelisk@v3` (installs `bazelisk`)
 
 ---
@@ -279,5 +284,5 @@ Workload Identity Federation allows GitHub Actions to authenticate directly to G
   - Requires `runs-on: 'ubuntu-latest'` in `.github/workflows/e2e-tests.yml`.
   - Docker is natively available.
   - WIF authentication requires the GitHub repository `google/xmc` to be mapped in the GCP Workload Identity Pool.
-  - Bazel caching will use the fallback GitHub Actions cache or GCS remote cache as configured in Section 2.
+  - Bazel caching will use the fallback GitHub Actions cache or GCS remote cache as configured in Section 1 and Section 3.
 

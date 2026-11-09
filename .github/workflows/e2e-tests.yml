@@ -176,6 +176,13 @@ jobs:
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           exec python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
 
+      - name: 'Save Bazel Repository Cache'
+        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.matched-key == '') && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
         if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
