@@ -14,11 +14,14 @@
 
 package workunit
 
-import "testing"
+import (
+	"context"
 
-func TestRepository_AggregateActiveResourcesByAuthor_EmptyUntilImplemented(t *testing.T) {
-	got, err := NewRepository(nil).AggregateActiveResourcesByAuthor(t.Context(), []string{"gpu-queue"})
-	if err != nil || len(got) != 0 {
-		t.Errorf("AggregateActiveResourcesByAuthor() = (%v, %v), want (empty, nil)", got, err)
-	}
+	"xmanager_cloud/internal/storage"
+)
+
+// FetchActiveWorkUnitResources returns no rows until active work units are queried.
+// TODO(#1597): query the creator, executable and state of active work units in queueNames.
+func (r *Repository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	return []storage.ActiveWorkUnitResources{}, nil
 }

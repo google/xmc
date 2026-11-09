@@ -15,89 +15,74 @@
 package main
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/internal/storage"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
-func buildFlavorCache(flavors map[string]string, cqFlavors []string) *cache.KueueCache {
+// gpuQueueCache returns a cache with cluster queue "gpu-cq" offering nvidia.com/gpu in each flavor.
+func gpuQueueCache(flavors ...*kueuev1beta1.ResourceFlavor) *cache.KueueCache {
 	c := cache.NewKueueCache()
-	for name, accLabel := range flavors {
-		c.ResourceFlavors.Set(name, &kueuev1beta1.ResourceFlavor{
-			ObjectMeta: metav1.ObjectMeta{Name: name},
-			Spec: kueuev1beta1.ResourceFlavorSpec{
-				NodeLabels: map[string]string{"cloud.google.com/gke-accelerator": accLabel},
-			},
+	specs := make([]testFlavorSpec, 0, len(flavors))
+	for _, rf := range flavors {
+		c.ResourceFlavors.Set(rf.Name, rf)
+		specs = append(specs, testFlavorSpec{
+			name:   rf.Name,
+			quotas: []kueuev1beta1.ResourceQuota{{Name: "nvidia.com/gpu", NominalQuota: resource.MustParse("8")}},
 		})
 	}
-	fqList := make([]kueuev1beta1.FlavorQuotas, 0, len(cqFlavors))
-	for _, fName := range cqFlavors {
-		fqList = append(fqList, kueuev1beta1.FlavorQuotas{
-			Name: kueuev1beta1.ResourceFlavorReference(fName),
-			Resources: []kueuev1beta1.ResourceQuota{
-				{Name: corev1.ResourceName("nvidia.com/gpu"), NominalQuota: resource.MustParse("8")},
-				{Name: corev1.ResourceCPU, NominalQuota: resource.MustParse("64")},
-			},
-		})
-	}
-	c.ClusterQueues.Set("gpu-cq", &kueuev1beta1.ClusterQueue{
-		ObjectMeta: metav1.ObjectMeta{Name: "gpu-cq"},
-		Spec: kueuev1beta1.ClusterQueueSpec{
-			ResourceGroups: []kueuev1beta1.ResourceGroup{{Flavors: fqList}},
-		},
-	})
+	c.ClusterQueues.Set("gpu-cq", createTestClusterQueueMulti("gpu-cq", "", specs...))
 	return c
 }
 
-func TestMapAuthorResourceAllocations(t *testing.T) {
-	rows := []storage.AuthorResourceAllocation{
-		{Author: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 2},
-		{Author: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", PendingUnits: 4},
-		{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 8},
-		{Author: "alice@example.com", ResourceType: "cpu", RunningUnits: 16},
-		{Author: "alice@example.com", ResourceType: "memory", PendingUnits: 32.5},
-		{Author: "carol@example.com", ResourceType: "nvidia.com/gpu", RunningUnits: 4},
+func activeWorkUnit(creator string, wuState essmsgpb.WorkUnitStatus_WorkUnitState, spec storagetest.ActiveResourceSpec) storage.ActiveWorkUnitResources {
+	return storage.ActiveWorkUnitResources{Creator: creator, ExecutionState: wuState, Executable: spec.Executable()}
+}
+
+func TestAggregateUserAllocations(t *testing.T) {
+	const alice, bob, carol = "alice@example.com", "bob@example.com", "carol@example.com"
+	const h100 = "nvidia.com/gpu: nvidia-tesla-h100"
+	workUnits := []storage.ActiveWorkUnitResources{
+		activeWorkUnit(bob, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 2}),
+		activeWorkUnit(bob, essmsgpb.WorkUnitStatus_SCHEDULING, storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 4}),
+		activeWorkUnit(alice, essmsgpb.WorkUnitStatus_STARTING, storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 8}),
+		activeWorkUnit(alice, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{CPUCores: 16}),
+		activeWorkUnit(alice, essmsgpb.WorkUnitStatus_INITIALIZING, storagetest.ActiveResourceSpec{MemoryGiB: 32.5}),
+		activeWorkUnit(carol, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{GPUCount: 4}),
 	}
-	unchanged := []*spb.UserResourceAllocation{
-		{User: "alice@example.com", ResourceType: "memory", PendingUnits: 32.5},
-		{User: "alice@example.com", ResourceType: "cpu", RunningUnits: 16},
-		{User: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 8},
-		{User: "bob@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 2, PendingUnits: 4},
-	}
+	h100Flavor := createTestResourceFlavor("h100-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"})
+	l4Flavor := createTestResourceFlavor("l4-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-l4"})
 	tests := []struct {
-		name      string
-		cache     *cache.KueueCache
-		wantCarol string
+		name         string
+		cache        *cache.KueueCache
+		clusterQueue string
+		wantCarol    string
 	}{
-		{
-			name:      "single gpu flavor attributes generic requests to its model",
-			cache:     buildFlavorCache(map[string]string{"h100-flavor": "nvidia-tesla-h100"}, []string{"h100-flavor"}),
-			wantCarol: "nvidia.com/gpu: nvidia-tesla-h100",
-		},
-		{
-			name: "several gpu flavors keep generic requests generic",
-			cache: buildFlavorCache(
-				map[string]string{"h100-flavor": "nvidia-tesla-h100", "l4-flavor": "nvidia-l4"},
-				[]string{"h100-flavor", "l4-flavor"},
-			),
-			wantCarol: "nvidia.com/gpu",
-		},
+		{name: "single gpu flavor attributes generic requests to its model", cache: gpuQueueCache(h100Flavor), clusterQueue: "gpu-cq", wantCarol: h100},
+		{name: "several labeled gpu flavors keep generic requests generic", cache: gpuQueueCache(h100Flavor, l4Flavor), clusterQueue: "gpu-cq", wantCarol: "nvidia.com/gpu"},
+		{name: "labeled and unlabeled gpu flavors keep generic requests generic", cache: gpuQueueCache(h100Flavor, createTestResourceFlavor("default-flavor", nil)), clusterQueue: "gpu-cq", wantCarol: "nvidia.com/gpu"},
+		{name: "queue missing from cache keeps generic requests generic", cache: gpuQueueCache(h100Flavor), clusterQueue: "other-cq", wantCarol: "nvidia.com/gpu"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mapAuthorResourceAllocations(rows, buildUniqueQueueAcceleratorMap(tc.cache, "gpu-cq"))
-			want := append(slices.Clone(unchanged), &spb.UserResourceAllocation{User: "carol@example.com", ResourceType: tc.wantCarol, RunningUnits: 4})
+			got := aggregateUserAllocations(workUnits, buildUniqueQueueAcceleratorMap(tc.cache, tc.clusterQueue))
+			want := []*spb.UserResourceAllocation{
+				{User: alice, ResourceType: "memory", PendingUnits: 32.5},
+				{User: alice, ResourceType: "cpu", RunningUnits: 16},
+				{User: alice, ResourceType: h100, RunningUnits: 8},
+				{User: bob, ResourceType: h100, RunningUnits: 2, PendingUnits: 4},
+				{User: carol, ResourceType: tc.wantCarol, RunningUnits: 4},
+			}
 			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
-				t.Errorf("mapAuthorResourceAllocations() mismatch (-want +got):\n%s", diff)
+				t.Errorf("aggregateUserAllocations() mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

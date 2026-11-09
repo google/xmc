@@ -24,6 +24,7 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/state"
 )
 
 type userResourceKey struct {
@@ -65,27 +66,40 @@ func collectQueueAcceleratorCandidates(cq *kueuev1beta1.ClusterQueue, rfMap map[
 	return candidates
 }
 
-// mapAuthorResourceAllocations groups storage rows (already canonical and positive) by user and
-// resource type, resolving generic accelerators to the queue's only flavor model when unique.
-func mapAuthorResourceAllocations(rows []storage.AuthorResourceAllocation, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
+// aggregateUserAllocations sums each active work unit's requested resources (canonical resource
+// types; memory in GiB) per creator and resource type. STARTING and RUNNING work units are admitted
+// by Kueue and count as running; SCHEDULING and INITIALIZING are not admitted yet and count as
+// pending, even though the jobs table orders INITIALIZING with running jobs. A generic accelerator
+// is attributed to the queue's only flavor model when uniqueAccelerators has one.
+func aggregateUserAllocations(workUnits []storage.ActiveWorkUnitResources, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
 	grouped := make(map[userResourceKey]*spb.UserResourceAllocation)
-	for _, row := range rows {
-		resType := row.ResourceType
-		if resolved, ok := uniqueAccelerators[resType]; ok {
-			resType = resolved
+	for _, wu := range workUnits {
+		running := slices.Contains(state.WorkUnitRunningStates, wu.ExecutionState)
+		for resType, units := range resourceaccumulator.ExtractNormalizedExecutableResources(wu.Executable) {
+			if resolved, ok := uniqueAccelerators[resType]; ok {
+				resType = resolved
+			}
+			entry := userAllocationEntry(grouped, wu.Creator, resType)
+			if running {
+				entry.RunningUnits += units
+			} else {
+				entry.PendingUnits += units
+			}
 		}
-		key := userResourceKey{user: row.Author, resourceType: resType}
-		entry := grouped[key]
-		if entry == nil {
-			entry = &spb.UserResourceAllocation{User: row.Author, ResourceType: resType}
-			grouped[key] = entry
-		}
-		entry.RunningUnits += row.RunningUnits
-		entry.PendingUnits += row.PendingUnits
 	}
 	allocations := slices.Collect(maps.Values(grouped))
 	slices.SortFunc(allocations, compareUserResourceAllocations)
 	return allocations
+}
+
+func userAllocationEntry(grouped map[userResourceKey]*spb.UserResourceAllocation, user, resType string) *spb.UserResourceAllocation {
+	key := userResourceKey{user: user, resourceType: resType}
+	if entry, ok := grouped[key]; ok {
+		return entry
+	}
+	entry := &spb.UserResourceAllocation{User: user, ResourceType: resType}
+	grouped[key] = entry
+	return entry
 }
 
 func compareUserResourceAllocations(a, b *spb.UserResourceAllocation) int {

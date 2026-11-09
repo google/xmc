@@ -609,8 +609,8 @@ func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNam
 	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
 }
 
-// AggregateActiveResourcesByAuthor mocks aggregating active work unit resources by author.
-func (s *MockStorage) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error) {
+// FetchActiveWorkUnitResources mocks fetching the resources of active work units.
+func (s *MockStorage) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error) {
 	return nil, nil
 }
 

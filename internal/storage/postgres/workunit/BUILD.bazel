@@ -17,7 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "workunit",
     srcs = [
-        "aggregate_active_resources.go",
+        "active_work_unit_resources.go",
         "queries.go",
         "repository.go",
     ],
@@ -49,7 +49,6 @@ go_library(
 go_test(
     name = "workunit_test",
     srcs = [
-        "aggregate_active_resources_test.go",
         "queries_test.go",
         "repository_test.go",
     ],

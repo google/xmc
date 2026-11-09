@@ -27,7 +27,7 @@ import (
 // WorkUnitFetcher defines storage operations required to fetch active jobs by queue name.
 type WorkUnitFetcher interface {
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error)
-	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error)
+	FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error)
 }
 
 type server struct {

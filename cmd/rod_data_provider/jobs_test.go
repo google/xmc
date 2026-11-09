@@ -33,6 +33,7 @@ import (
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 var (
@@ -103,15 +104,15 @@ func newTestWorkUnits(now time.Time) []storage.ActiveWorkUnit {
 }
 
 type mockWorkUnitFetcher struct {
-	workUnits      []storage.ActiveWorkUnit
-	allocations    []storage.AuthorResourceAllocation
-	nextPageToken  string
-	totalQueueSize int64
-	err            error
-	aggregateErr   error
-	lastQueueNames []string
-	lastPageSize   int32
-	lastPageToken  string
+	workUnits       []storage.ActiveWorkUnit
+	activeResources []storage.ActiveWorkUnitResources
+	nextPageToken   string
+	totalQueueSize  int64
+	err             error
+	resourcesErr    error
+	lastQueueNames  []string
+	lastPageSize    int32
+	lastPageToken   string
 }
 
 func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
@@ -133,11 +134,11 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, 
 	}, nil
 }
 
-func (m *mockWorkUnitFetcher) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	if m.aggregateErr != nil {
-		return nil, m.aggregateErr
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	if m.resourcesErr != nil {
+		return nil, m.resourcesErr
 	}
-	return m.allocations, nil
+	return m.activeResources, nil
 }
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
@@ -180,10 +181,10 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			fetcher: &mockWorkUnitFetcher{
 				workUnits:      newTestWorkUnits(now),
 				totalQueueSize: 5,
-				allocations: []storage.AuthorResourceAllocation{
-					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", RunningUnits: 4},
-					{Author: "alice@example.com", ResourceType: "nvidia.com/gpu: nvidia-tesla-h100", PendingUnits: 2},
-					{Author: "bob@example.com", ResourceType: "cpu", RunningUnits: 8},
+				activeResources: []storage.ActiveWorkUnitResources{
+					{Creator: "alice@example.com", ExecutionState: essmsgpb.WorkUnitStatus_RUNNING, Executable: storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 4}.Executable()},
+					{Creator: "alice@example.com", ExecutionState: essmsgpb.WorkUnitStatus_SCHEDULING, Executable: storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 2}.Executable()},
+					{Creator: "bob@example.com", ExecutionState: essmsgpb.WorkUnitStatus_RUNNING, Executable: storagetest.ActiveResourceSpec{CPUCores: 8}.Executable()},
 				},
 			},
 			wantCode:           codes.OK,
@@ -300,11 +301,11 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name:       "Aggregate Resources Error",
+			name:       "Fetch Active Resources Error",
 			ctx:        context.Background(),
 			req:        baseReq,
 			setupCache: newTestKueueCache,
-			fetcher:    &mockWorkUnitFetcher{aggregateErr: fmt.Errorf("aggregation failure")},
+			fetcher:    &mockWorkUnitFetcher{resourcesErr: fmt.Errorf("active resources failure")},
 			wantCode:   codes.Internal,
 			wantCount:  0,
 		},

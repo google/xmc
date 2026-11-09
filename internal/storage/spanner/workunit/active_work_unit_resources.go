@@ -20,8 +20,8 @@ import (
 	"xmanager_cloud/internal/storage"
 )
 
-// AggregateActiveResourcesByAuthor returns no allocations until the per-author aggregation over
-// active work units is implemented.
-func (r *Repository) AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]storage.AuthorResourceAllocation, error) {
-	return []storage.AuthorResourceAllocation{}, nil
+// FetchActiveWorkUnitResources returns no rows until active work units are queried.
+// TODO(#1597): query the creator, executable and state of active work units in queueNames.
+func (r *Repository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	return []storage.ActiveWorkUnitResources{}, nil
 }

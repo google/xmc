@@ -192,10 +192,10 @@ type WorkUnitStore interface {
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 
-	// AggregateActiveResourcesByAuthor sums requested units by experiment creator and canonical
-	// resource type, split into running and pending, across all active work units of the requested
-	// queues.
-	AggregateActiveResourcesByAuthor(ctx context.Context, queueNames []string) ([]AuthorResourceAllocation, error)
+	// FetchActiveWorkUnitResources returns the creator, executable and state of every active work
+	// unit (SCHEDULING, INITIALIZING, STARTING or RUNNING) in the requested queues. The result is
+	// unordered and not paginated; empty queueNames returns an empty slice.
+	FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -227,13 +227,12 @@ type ActiveWorkUnitsResult struct {
 	TotalQueueSize int64
 }
 
-// AuthorResourceAllocation holds the units one author requests for one resource type, split into
-// running (RUNNING or STARTING) and pending (SCHEDULING or INITIALIZING) work units.
-type AuthorResourceAllocation struct {
-	Author       string
-	ResourceType string
-	RunningUnits float64
-	PendingUnits float64
+// ActiveWorkUnitResources is the data needed to attribute an active work unit's requested
+// resources to its experiment creator: the raw Executable and the current execution state.
+type ActiveWorkUnitResources struct {
+	Creator        string
+	Executable     *essmsgpb.Executable
+	ExecutionState essmsgpb.WorkUnitStatus_WorkUnitState
 }
 
 // QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.
