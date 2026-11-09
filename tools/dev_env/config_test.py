@@ -200,11 +200,10 @@ class ConfigResolutionTest(unittest.TestCase):
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_service_mappings(self) -> None:
-        """Verifies feature flags conditionally expand enabled services."""
+        """Verifies feature flags conditionally expand enabled services and components is always on."""
         args = argparse.Namespace(
             project_id="my-proj",
             enable_metrics=True,
-            enable_components=True,
             rod_deployment_enabled=True,
             enable_health_service=True,
             enable_dashboard_service=True,
@@ -216,6 +215,12 @@ class ConfigResolutionTest(unittest.TestCase):
         self.assertIn("health_service", cfg.enabled_services)
         self.assertIn("dashboard_service", cfg.enabled_services)
 
+        with self.assertRaisesRegex(ValueError, "--no-enable-components is no longer supported"):
+            config.load_config(
+                argparse.Namespace(project_id="my-proj", enable_components=False),
+                repo_root=self.root,
+            )
+
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_yaml_and_env_mappings(self) -> None:
         """Verifies feature flags resolved from YAML and environment variables."""
@@ -226,14 +231,13 @@ class ConfigResolutionTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with patch.dict("os.environ", {"ENABLE_COMPONENTS": "true"}, clear=True):
-            args = argparse.Namespace(config=str(cfg_file))
-            cfg = config.load_config(args, repo_root=self.root)
-            self.assertIn("ingestion_gateway", cfg.enabled_services)
-            self.assertIn("components", cfg.enabled_services)
-            self.assertNotIn("health_service", cfg.enabled_services)
-            self.assertNotIn("rod_data_provider", cfg.enabled_services)
-            self.assertNotIn("dashboard_service", cfg.enabled_services)
+        args = argparse.Namespace(config=str(cfg_file))
+        cfg = config.load_config(args, repo_root=self.root)
+        self.assertIn("ingestion_gateway", cfg.enabled_services)
+        self.assertIn("components", cfg.enabled_services)
+        self.assertNotIn("health_service", cfg.enabled_services)
+        self.assertNotIn("rod_data_provider", cfg.enabled_services)
+        self.assertNotIn("dashboard_service", cfg.enabled_services)
 
     @patch.dict("os.environ", {}, clear=True)
     def test_load_config_ingestion_gateway_disabled_overrides_enable_metrics(self) -> None:

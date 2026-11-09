@@ -131,8 +131,6 @@ class CompileBlueprintTest(unittest.TestCase):
                         "ctk-out",
                         "--vars",
                         "helm_chart_content_hash=abc123",
-                        "--vars",
-                        "enable_components=false",
                         "-l",
                         "WARNING",
                         "-w",
@@ -140,32 +138,6 @@ class CompileBlueprintTest(unittest.TestCase):
                     ]
                 ),
             ],
-        )
-
-    @mock.patch.object(blueprint_compiler, "run_command")
-    @mock.patch.object(blueprint_compiler, "compute_chart_content_hash", return_value="abc123")
-    @mock.patch.object(blueprint_compiler, "purge_staged_artifacts")
-    def test_passes_enable_components_var(self, _mock_purge, _mock_hash, mock_run) -> None:
-        blueprint_compiler.compile_blueprint("my-config.yaml", _DEPLOYMENT, enable_components=True)
-
-        mock_run.assert_called_once_with(
-            [
-                "./cluster-toolkit/gcluster",
-                "create",
-                "deploy/ctk_v2/xmanager-cloud.yaml",
-                "-d",
-                "my-config.yaml",
-                "-o",
-                "ctk-out",
-                "--vars",
-                "helm_chart_content_hash=abc123",
-                "--vars",
-                "enable_components=true",
-                "-l",
-                "WARNING",
-                "-w",
-                "--force",
-            ]
         )
 
 

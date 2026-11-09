@@ -717,33 +717,9 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertFalse(parse_bool_flag("0"))
         self.assertFalse(parse_bool_flag(None))
 
-    @patch.dict(os.environ, {"ENABLE_COMPONENTS": "true"})
-    def test_load_config_enable_components_env_override(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            cfg_path = Path(tmp_dir) / "cfg.yaml"
-            cfg_path.write_text(
-                "vars:\n"
-                "  deployment_name: xmc-dev\n"
-                "  project_id: my-project\n"
-                "  environment: dev\n"
-                "  region: us-central1\n"
-                "  domain_name: example.com\n"
-                "  image_registry: us-central1-docker.pkg.dev/my-project/xmc\n"
-                "  image_tag: latest\n",
-                encoding="utf-8",
-            )
-            cfg = load_and_validate_config(str(cfg_path))
-            self.assertTrue(cfg.enable_components)
-
     @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_disabled(self, mock_run):
+    def test_deploy_component_profile_default(self, mock_run):
         deploy_component_profile(self.base_config)
-        mock_run.assert_not_called()
-
-    @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_enabled(self, mock_run):
-        cfg = replace(self.base_config, enable_components=True)
-        deploy_component_profile(cfg)
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         self.assertEqual(
@@ -758,7 +734,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
         cfg = replace(
             self.base_config,
-            enable_components=True,
             namespace="tenant-a",
             profile_values="/tmp/profile-values.yaml",
         )
@@ -772,7 +747,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
         cfg = replace(
             self.base_config,
-            enable_components=True,
             profile_values="/tmp/missing-profile-values.yaml",
         )
         with self.assertRaises(FileNotFoundError):

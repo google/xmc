@@ -21,6 +21,5 @@ metadata:
     app: dashboard-service
 data:
   dashboard_xid_service_addr: "xid-svc:50051"
-  enable_components: {{ (default (dict) .Values.componentsDeployment).enabled | default false | quote }}
   components_namespace: {{ .Release.Namespace | default "xmc" | quote }}
 {{- end }}

@@ -740,6 +740,15 @@ class DevEnvCliTest(unittest.TestCase):
         )
         self.assertEqual(parsed_deploy.profile_values, "/tmp/pv.yaml")
 
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    def test_no_enable_components_rejected(self, _mock_venv: MagicMock) -> None:
+        """Verifies --no-enable-components fails closed with parser error."""
+        err_stream = io.StringIO()
+        with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+            dev_env.main(["gke-upgrade", "--no-enable-components"])
+        self.assertEqual(cm.exception.code, 2)
+        self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

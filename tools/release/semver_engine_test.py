@@ -228,35 +228,46 @@ class SemverEngineTest(unittest.TestCase):
         self.assertEqual(rec_ref.recommended_version, "v0.6.0")
 
     def test_calculate_version_recommendation_migration_heuristics(self) -> None:
-        # Non-migration file that happens to contain "migration" in name
-        commits_non_migration = [
-            CommitInfo(
-                commit_hash="5555",
-                short_hash="5555",
-                subject="chore: refactor migration engine (#505)",
-                author="Dev",
-                date="2026-08-21",
-                commit_type="chore",
-                files_changed=["tools/release/migration_engine.py"],
-            )
-        ]
-        rec_non = calculate_version_recommendation("0.5.0", commits_non_migration, [])
-        self.assertFalse(rec_non.has_migrations)
+        # Non-DB migration/CLI/doc paths do not false-trigger has_migrations
+        for non_db_path in (
+            "tools/release/migration_engine.py",
+            "tools/migrations/components/migrate.py",
+            "docs/migrations/components.md",
+        ):
+            with self.subTest(path=non_db_path):
+                commits_non_migration = [
+                    CommitInfo(
+                        commit_hash="5555",
+                        short_hash="5555",
+                        subject="chore: update migration docs/tooling (#505)",
+                        author="Dev",
+                        date="2026-08-21",
+                        commit_type="chore",
+                        files_changed=[non_db_path],
+                    )
+                ]
+                rec_non = calculate_version_recommendation("0.5.0", commits_non_migration, [])
+                self.assertFalse(rec_non.has_migrations)
 
-        # Migration file in migrations directory
-        commits_migration_dir = [
-            CommitInfo(
-                commit_hash="5556",
-                short_hash="5556",
-                subject="chore: add migration file (#506)",
-                author="Dev",
-                date="2026-08-21",
-                commit_type="chore",
-                files_changed=["db/migrations/001_create_users.py"],
-            )
-        ]
-        rec_dir = calculate_version_recommendation("0.5.0", commits_migration_dir, [])
-        self.assertTrue(rec_dir.has_migrations)
+        # Storage migration Go/SQL files under internal/storage/ DO trigger has_migrations
+        for db_path in (
+            "internal/storage/spanner/migrations/ess/019_foo.up.sql",
+            "internal/storage/spanner/migrations/migrations.go",
+        ):
+            with self.subTest(path=db_path):
+                commits_migration_dir = [
+                    CommitInfo(
+                        commit_hash="5556",
+                        short_hash="5556",
+                        subject="chore: add migration file (#506)",
+                        author="Dev",
+                        date="2026-08-21",
+                        commit_type="chore",
+                        files_changed=[db_path],
+                    )
+                ]
+                rec_dir = calculate_version_recommendation("0.5.0", commits_migration_dir, [])
+                self.assertTrue(rec_dir.has_migrations)
 
         # DDL file
         commits_ddl = [

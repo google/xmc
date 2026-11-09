@@ -40,6 +40,7 @@ BASE_SERVICES: list[str] = [
     "actuator",
     "reconciler",
     "ui",
+    "components",
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
@@ -247,14 +248,10 @@ def _resolve_enabled_services(
     if enable_metrics and "ingestion_gateway" not in services:
         services.append("ingestion_gateway")
 
-    enable_components = _resolve_bool_flag(
-        getattr(args, "enable_components", None) if args else None,
-        os.environ.get("ENABLE_COMPONENTS"),
-        yaml_vars.get("enable_components"),
-        default=False,
-    )
-    if enable_components and "components" not in services:
-        services.append("components")
+    if args and getattr(args, "enable_components", None) is False:
+        raise ValueError(
+            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
+        )
 
     rod_enabled = _resolve_bool_flag(
         getattr(args, "rod_deployment_enabled", None) if args else None,

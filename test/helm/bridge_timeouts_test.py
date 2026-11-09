@@ -27,7 +27,7 @@ class BridgeTimeoutsTest(unittest.TestCase):
         require_helm()
 
     def test_defaults(self) -> None:
-        manifest = render_template(_CONFIGMAP, {"componentsDeployment.enabled": "true"})
+        manifest = render_template(_CONFIGMAP, {})
         self.assertIn('PROBE_TIMEOUT: "2s"', manifest)
         self.assertIn('RECONCILE_TIMEOUT: "60s"', manifest)
 
@@ -35,7 +35,6 @@ class BridgeTimeoutsTest(unittest.TestCase):
         manifest = render_template(
             _CONFIGMAP,
             {
-                "componentsDeployment.enabled": "true",
                 "componentsDeployment.probeTimeout": "3s",
                 "componentsDeployment.reconcileTimeout": "120s",
             },
@@ -44,14 +43,13 @@ class BridgeTimeoutsTest(unittest.TestCase):
         self.assertIn('RECONCILE_TIMEOUT: "120s"', manifest)
 
     def test_max_concurrent_reconciles_default(self) -> None:
-        manifest = render_template(_CONFIGMAP, {"componentsDeployment.enabled": "true"})
+        manifest = render_template(_CONFIGMAP, {})
         self.assertIn('MAX_CONCURRENT_RECONCILES: "1"', manifest)
 
     def test_max_concurrent_reconciles_override(self) -> None:
         manifest = render_template(
             _CONFIGMAP,
             {
-                "componentsDeployment.enabled": "true",
                 "componentsDeployment.maxConcurrentReconciles": "4",
             },
         )
@@ -62,7 +60,6 @@ class BridgeTimeoutsTest(unittest.TestCase):
         manifest = render_template(
             _CONFIGMAP,
             {
-                "componentsDeployment.enabled": "true",
                 "componentsDeployment.maxConcurrentReconciles": "0",
             },
         )

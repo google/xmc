@@ -84,7 +84,7 @@ func startAdmissionEnvtest(ctx context.Context, t *testing.T) admissionClients {
 func startComponentEnvtest(t *testing.T) *rest.Config {
 	t.Helper()
 	crdDir := t.TempDir()
-	crdBytes := renderHelmManifestTemplate(t, "crd.yaml", true)
+	crdBytes := renderHelmManifestTemplate(t, "crd.yaml")
 	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), crdBytes, 0600); err != nil {
 		t.Fatalf("failed to write CRD manifest: %v", err)
 	}
@@ -150,7 +150,7 @@ func buildAdmissionClients(t *testing.T, baseCfg *rest.Config) admissionClients 
 
 func installDeletionProtectionVAP(ctx context.Context, t *testing.T, clients admissionClients) {
 	t.Helper()
-	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml", true)), 4096)
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml")), 4096)
 	var policy admissionregistrationv1.ValidatingAdmissionPolicy
 	if err := dec.Decode(&policy); err != nil {
 		t.Fatalf("failed to decode ValidatingAdmissionPolicy: %v", err)
@@ -192,70 +192,44 @@ func waitForVAPActivation(ctx context.Context, t *testing.T, compClient dynamic.
 	}
 }
 
-// TestDeletionVAPIgnoresEnableComponentsFlag asserts the deletion admission policy and its binding
-// render whatever componentsDeployment.enabled is set to, and survive helm uninstall, so disabling
-// xmc-bridge never drops deletion protection for the CRs the kept CRD still holds.
-func TestDeletionVAPIgnoresEnableComponentsFlag(t *testing.T) {
+// TestDeletionVAPKeepPolicy asserts the deletion admission policy and its binding render
+// unconditionally and carry helm.sh/resource-policy=keep so helm uninstall never drops deletion
+// protection for the CRs the kept CRD still holds.
+func TestDeletionVAPKeepPolicy(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name    string
-		enabled bool
-	}{
-		{name: "components disabled", enabled: false},
-		{name: "components enabled", enabled: true},
+	dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml")), 4096)
+	var gotKinds []string
+	for {
+		var doc unstructured.Unstructured
+		err := dec.Decode(&doc.Object)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("decoding deletion-vap.yaml: %v", err)
+		}
+		gotKinds = append(gotKinds, doc.GetKind())
+		if got := doc.GetAnnotations()["helm.sh/resource-policy"]; got != "keep" {
+			t.Errorf("%s helm.sh/resource-policy = %q, want %q", doc.GetKind(), got, "keep")
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			dec := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(renderHelmManifestTemplate(t, "deletion-vap.yaml", tt.enabled)), 4096)
-			var gotKinds []string
-			for {
-				var doc unstructured.Unstructured
-				err := dec.Decode(&doc.Object)
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				if err != nil {
-					t.Fatalf("decoding deletion-vap.yaml: %v", err)
-				}
-				gotKinds = append(gotKinds, doc.GetKind())
-				if got := doc.GetAnnotations()["helm.sh/resource-policy"]; got != "keep" {
-					t.Errorf("%s helm.sh/resource-policy = %q, want %q", doc.GetKind(), got, "keep")
-				}
-			}
-			wantKinds := []string{"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"}
-			if diff := cmp.Diff(wantKinds, gotKinds); diff != "" {
-				t.Errorf("deletion-vap.yaml rendered kinds mismatch (-want +got):\n%s", diff)
-			}
-		})
+	wantKinds := []string{"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"}
+	if diff := cmp.Diff(wantKinds, gotKinds); diff != "" {
+		t.Errorf("deletion-vap.yaml rendered kinds mismatch (-want +got):\n%s", diff)
 	}
 }
 
-// TestCRDIgnoresEnableComponentsFlag asserts the Component CRD renders whatever
-// componentsDeployment.enabled is set to. It is a pure template check, so it runs outside the
-// envtest suite.
-func TestCRDIgnoresEnableComponentsFlag(t *testing.T) {
+// TestCRDManifestRenders asserts the Component CRD template renders cleanly as a Kubernetes object.
+func TestCRDManifestRenders(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name    string
-		enabled bool
-	}{
-		{name: "components disabled", enabled: false},
-		{name: "components enabled", enabled: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var doc map[string]any
-			if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", tt.enabled), &doc); err != nil || doc["kind"] == nil {
-				t.Errorf("expected crd.yaml with componentsDeployment.enabled=%v to render K8s object, got %v (err=%v)", tt.enabled, doc, err)
-			}
-		})
+	var doc map[string]any
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml"), &doc); err != nil || doc["kind"] == nil {
+		t.Errorf("expected crd.yaml to render K8s object, got %v (err=%v)", doc, err)
 	}
 }
 
-// TestCRDLifecycleAnnotations asserts the CRD survives helm uninstall, a componentsDeployment.enabled
-// flip and an Argo CD prune, because deleting the CRD deletes every Component CR.
+// TestCRDLifecycleAnnotations asserts the CRD survives helm uninstall and Argo CD prune,
+// because deleting the CRD deletes every Component CR.
 func TestCRDLifecycleAnnotations(t *testing.T) {
 	t.Parallel()
 	var crd struct {
@@ -263,7 +237,7 @@ func TestCRDLifecycleAnnotations(t *testing.T) {
 			Annotations map[string]string `json:"annotations"`
 		} `json:"metadata"`
 	}
-	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml", false), &crd); err != nil {
+	if err := yaml.Unmarshal(renderHelmManifestTemplate(t, "crd.yaml"), &crd); err != nil {
 		t.Fatalf("yaml.Unmarshal(crd.yaml) = %v", err)
 	}
 	want := map[string]string{
@@ -502,7 +476,7 @@ func newComponentManifest(name string, spec map[string]any) *unstructured.Unstru
 	}
 }
 
-func renderHelmManifestTemplate(t *testing.T, fileName string, enabled bool) []byte {
+func renderHelmManifestTemplate(t *testing.T, fileName string) []byte {
 	t.Helper()
 	candidates := []string{
 		filepath.Join("..", "..", "..", "deploy", "helm", "templates", "components", fileName),
@@ -518,7 +492,7 @@ func renderHelmManifestTemplate(t *testing.T, fileName string, enabled bool) []b
 			t.Fatalf("failed to parse template %s: %v", fileName, err)
 		}
 		var buf bytes.Buffer
-		vals := map[string]any{"Values": map[string]any{"componentsDeployment": map[string]any{"enabled": enabled}}}
+		vals := map[string]any{"Values": map[string]any{}}
 		if err := tmpl.Execute(&buf, vals); err != nil {
 			t.Fatalf("failed to execute template %s: %v", fileName, err)
 		}

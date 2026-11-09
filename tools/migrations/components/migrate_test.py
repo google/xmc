@@ -84,16 +84,24 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(non_tty.returncode, 1)
         self.assertIn("Interactive TTY confirmation required", non_tty.stdout + non_tty.stderr)
 
-        for ok_desc in ("", "0.17.0-4-gfc398e3af", "0.18.0", "0.18.2", "0.18.2-3-gabcdef0"):
+        for ok_desc in (
+            "",
+            "0.17.0-4-gfc398e3af",
+            "0.18.0",
+            "0.18.2",
+            "0.18.2-3-gabcdef0",
+            "0.19.0",
+            "1.0.0",
+            "1.0.2-3-gabcdef0",
+        ):
             migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=ok_desc)
         for bad_desc in (
             "0.15.0",
             "0.16.0",
             "0.16.0-36-g726f0edb5",
             "0.17.0",
-            "0.19.0",
-            "0.19.0-2-gabcdef0",
-            "1.0.0",
+            "2.0.0",
+            "2.0.0-2-gabcdef0",
         ):
             with self.assertRaises(HandledError):
                 migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=bad_desc)
@@ -109,6 +117,7 @@ class PrepareTests(unittest.TestCase):
 
         migrate._verify_source_env({"imageTag": "0.17.0"}, require_legacy=True)
         migrate._verify_source_env({"imageTag": "0.18.0"}, require_legacy=True)
+        migrate._verify_source_env({"imageTag": "0.19.0"}, require_legacy=True)
         migrate._verify_source_env(
             {"imageTag": "v0.4.0", "ingestionGatewayDeployment": {"enabled": True}},
             require_legacy=True,
@@ -120,9 +129,10 @@ class PrepareTests(unittest.TestCase):
         migrate._verify_source_env(
             {"componentsDeployment": {"enabled": True}}, require_legacy=False
         )
+        migrate._verify_source_env({"imageTag": "1.0.0"}, require_legacy=False)
         for bad_src in (
             {"componentsDeployment": {"enabled": True}},
-            {"imageTag": "0.19.0"},
+            {"imageTag": "1.0.0"},
             {"imageTag": "v1.0.0"},
             {"imageTag": "0.3.0", "ingestionGatewayDeployment": {"enabled": True}},
         ):
