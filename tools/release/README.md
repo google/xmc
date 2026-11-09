@@ -29,7 +29,7 @@ python3 tools/release/extract_release_metadata.py \
 | Flag | Short | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--target-ref` | | `HEAD` | Target git commit, tag, or branch |
-| `--base-ref` | | `""` (auto-detected) | Base git tag to diff against (defaults to previous semver release tag before `target-ref`, skipping `nightly-*` tags) |
+| `--base-ref` | | `""` (auto-detected) | Base git tag to diff against (defaults to previous semver release tag before `target-ref`, skipping `nightly-*` and pre-release tags such as `1.2.3-rc1`) |
 | `--repo-dir` | | `.` | Root path to git repository |
 | `--approved-flags` | | `[]` | Feature flags approved for production deployment in this release |
 | `--output` | `-o` | `stdout` | Path to write output JSON file |

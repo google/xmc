@@ -26,29 +26,54 @@ from tools.release.semver_engine import is_semver_tag
 
 _RELEASE_TAG_GLOBS = ("[0-9]*.[0-9]*.[0-9]*", "v[0-9]*.[0-9]*.[0-9]*")
 
+# Upper bound on `git describe` calls while skipping glob-matching but non-semver
+# tags (e.g. 1.2.3-rc1), so a repository full of such tags cannot loop unbounded.
+_MAX_DESCRIBE_ATTEMPTS = 20
 
-def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str | None:
-    """Finds the most recent semver release tag before target_ref.
 
-    Non-release tags such as the daily nightly-YYYY-MM-DD.N tags are skipped.
+def _describe_release_tag(target_ref: str, excluded: list[str], cwd: str | None) -> str | None:
+    """Returns the closest tag before target_ref matching the release globs.
+
+    Tags in excluded are passed to `git describe --exclude` so callers can skip
+    candidates they already rejected.
 
     Returns:
-        The tag name, or None when git fails or no semver release tag is reachable.
+        The tag name, or None when git fails or no matching tag is reachable.
     """
-    cwd = str(repo_dir) if repo_dir else None
     cmd = ["git", "describe", "--tags", "--abbrev=0"]
     for glob in _RELEASE_TAG_GLOBS:
         cmd.extend(["--match", glob])
+    for tag in excluded:
+        cmd.extend(["--exclude", tag])
     cmd.append(f"{target_ref}^")
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
     except subprocess.CalledProcessError:
         return None
+    return res.stdout.strip() or None
 
-    tag = res.stdout.strip()
-    if not is_semver_tag(tag):
-        return None
-    return tag
+
+def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str | None:
+    """Finds the most recent semver release tag before target_ref.
+
+    Non-release tags such as the daily nightly-YYYY-MM-DD.N tags are skipped by
+    the match globs; glob-matching but non-semver tags such as 1.2.3-rc1 are
+    excluded and the lookup retried, up to _MAX_DESCRIBE_ATTEMPTS times.
+
+    Returns:
+        The tag name, or None when git fails, no semver release tag is reachable,
+        or the retry cap is exhausted.
+    """
+    cwd = str(repo_dir) if repo_dir else None
+    excluded: list[str] = []
+    for _ in range(_MAX_DESCRIBE_ATTEMPTS):
+        tag = _describe_release_tag(target_ref, excluded, cwd)
+        if tag is None:
+            return None
+        if is_semver_tag(tag):
+            return tag
+        excluded.append(tag)
+    return None
 
 
 def get_git_file_content(ref: str, file_path: str, repo_dir: Path | None = None) -> str | None:
