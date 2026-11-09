@@ -564,8 +564,6 @@ func TestRepository_MutationsEdgeCases(t *testing.T) {
 	})
 }
 
-// TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
-// WithTx without the required transaction, fail instead of dereferencing nil.
 func TestTxRepository_InsertExperimentComponentSnapshot(t *testing.T) {
 	ctx := context.Background()
 	_, client := emulator.Setup(ctx, t)
@@ -624,6 +622,8 @@ func TestTxRepository_InsertExperimentComponentSnapshot(t *testing.T) {
 	}
 }
 
+// TestRepository_NilClientOrTransaction checks that reads and writes without a client, or through
+// WithTx without the required transaction, fail instead of dereferencing nil.
 func TestRepository_NilClientOrTransaction(t *testing.T) {
 	ctx := context.Background()
 	nilRepo := NewRepository(nil)

@@ -146,16 +146,14 @@ func (m *MockStatusHistoryTxRepository) SaveWorkUnitStatusHistory(_ context.Cont
 type MockComponentRepository struct {
 	ComponentTxRepository // nil: methods not overridden below panic.
 
-	Records                 map[string]*store.ComponentRecord
-	GetActiveComponentErr   error
-	GetActiveComponentCalls int
-	InsertSnapshotErr       error
-	Snapshots               map[int64][]*store.ComponentRecord
+	Records               map[string]*store.ComponentRecord
+	GetActiveComponentErr error
+	InsertSnapshotErr     error
+	Snapshots             map[int64][]*store.ComponentRecord
 }
 
 // GetActiveComponent returns a copy of Records[canonicalName], or store.ErrComponentNotFound when missing.
 func (m *MockComponentRepository) GetActiveComponent(_ context.Context, canonicalName string) (*store.ComponentRecord, error) {
-	m.GetActiveComponentCalls++
 	if m.GetActiveComponentErr != nil {
 		return nil, m.GetActiveComponentErr
 	}

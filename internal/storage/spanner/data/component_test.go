@@ -351,3 +351,28 @@ func TestComponentSoftDeleteAndOwnerColumns(t *testing.T) {
 		t.Errorf("ComponentSoftDeleteMutation() = (%v, %v), want (non-nil, nil)", m, err)
 	}
 }
+
+func TestExperimentComponentSnapshotInsertMutation(t *testing.T) {
+	if _, err := ExperimentComponentSnapshotInsertMutation(42, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ExperimentComponentSnapshotInsertMutation(42, nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+
+	rec := &store.ComponentRecord{
+		ComponentID: 7,
+		Name:        "hpo",
+		Spec:        &componentspb.ComponentSpec{Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
+		Generation:  2,
+	}
+	cfgBytes, accessBytes := mustMarshalPayloads(t, rec.Name, rec.Spec, nil, nil)
+	want := spanner.Insert("ExperimentComponentSnapshots",
+		[]string{"BitReversedXid", "ComponentId", "LockedGeneration", "ConfigProto", "AccessPayload"},
+		[]any{data.ReverseBits(42), int64(7), int64(2), cfgBytes, accessBytes},
+	)
+	got, err := ExperimentComponentSnapshotInsertMutation(42, rec)
+	if err != nil {
+		t.Fatalf("ExperimentComponentSnapshotInsertMutation() failed: %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ExperimentComponentSnapshotInsertMutation() mismatch (-want +got):\n%s", diff)
+	}
+}

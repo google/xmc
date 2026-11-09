@@ -154,6 +154,27 @@ func TestValidateComponentRequirements_PinsNothing(t *testing.T) {
 	if len(repo.Snapshots) != 0 {
 		t.Errorf("ValidateComponentRequirements() pinned %v, want nothing", repo.Snapshots)
 	}
+	if err := experiment.ValidateComponentRequirements(context.Background(), nil, nil); err != nil {
+		t.Errorf("ValidateComponentRequirements(empty) unexpected error: %v", err)
+	}
+}
+
+func TestCheckComponentsFeature(t *testing.T) {
+	tests := []struct {
+		expType          essmsgpb.Experiment_ExperimentType
+		enableComponents bool
+		wantCode         codes.Code
+	}{
+		{essmsgpb.Experiment_STUDY, false, codes.FailedPrecondition},
+		{essmsgpb.Experiment_STUDY, true, codes.OK},
+		{essmsgpb.Experiment_STANDARD, false, codes.OK},
+	}
+	for _, tc := range tests {
+		exp := &essmsgpb.Experiment{ExperimentType: tc.expType}
+		if got := status.Code(experiment.CheckComponentsFeature(exp, tc.enableComponents)); got != tc.wantCode {
+			t.Errorf("CheckComponentsFeature(%v, %t) code = %v, want %v", tc.expType, tc.enableComponents, got, tc.wantCode)
+		}
+	}
 }
 
 func TestRequirementsFor(t *testing.T) {

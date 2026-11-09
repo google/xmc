@@ -385,7 +385,11 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 			if xidClient.createXidEntryCalls != tc.wantXidCalls {
 				t.Errorf("CreateExperiment(%v) made %d CreateXidEntry calls, want %d", tc.expType, xidClient.createXidEntryCalls, tc.wantXidCalls)
 			}
-			if got := len(tc.catalog.Snapshots[123]); got != tc.wantPinned {
+			pinnedCatalog := tc.catalog
+			if tc.txCatalog != nil {
+				pinnedCatalog = tc.txCatalog
+			}
+			if got := len(pinnedCatalog.Snapshots[123]); got != tc.wantPinned {
 				t.Errorf("CreateExperiment(%v) pinned %d components, want %d", tc.expType, got, tc.wantPinned)
 			}
 		})
