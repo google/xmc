@@ -185,8 +185,14 @@ const (
 	DefaultComponentsNamespace = "xmc"
 )
 
-// GPUTypeToGKEAccelerator maps XManager GPU types (GpuResources.type) to GKE accelerator node labels.
-var GPUTypeToGKEAccelerator = map[string]string{
+// GKEAcceleratorForGPUType returns the GKE accelerator node label for an XManager GPU type
+// (GpuResources.type).
+func GKEAcceleratorForGPUType(gpuType string) (string, bool) {
+	accelerator, ok := gpuTypeToGKEAccelerator[gpuType]
+	return accelerator, ok
+}
+
+var gpuTypeToGKEAccelerator = map[string]string{
 	"P4":         "nvidia-tesla-p4",
 	"T4":         "nvidia-tesla-t4",
 	"L4_24TH":    "nvidia-l4",

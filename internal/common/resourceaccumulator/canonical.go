@@ -47,7 +47,7 @@ func canonicalizeResourceType(key string) string {
 	case IsGenericTPU(key):
 		return tpu
 	}
-	if mapped, ok := constants.GPUTypeToGKEAccelerator[strings.ToUpper(key)]; ok {
+	if mapped, ok := constants.GKEAcceleratorForGPUType(strings.ToUpper(key)); ok {
 		return FormatCompoundAccelerator(gpu, mapped)
 	}
 	if IsSpecificTPUKey(key) {

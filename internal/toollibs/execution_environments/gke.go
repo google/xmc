@@ -265,7 +265,7 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 		podSpec.NodeSelector = make(map[string]string)
 	}
 
-	accelerator, ok := constants.GPUTypeToGKEAccelerator[gpuRes.GetType()]
+	accelerator, ok := constants.GKEAcceleratorForGPUType(gpuRes.GetType())
 	if !ok {
 		return fmt.Errorf("unsupported GPU type: %q", gpuRes.GetType())
 	}

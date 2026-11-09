@@ -48,7 +48,7 @@ func activeWorkUnit(creator string, wuState essmsgpb.WorkUnitStatus_WorkUnitStat
 }
 
 func TestAggregateUserAllocations(t *testing.T) {
-	const alice, bob, carol = "alice@example.com", "bob@example.com", "carol@example.com"
+	const alice, bob, carol, dave = "alice@example.com", "bob@example.com", "carol@example.com", "dave@example.com"
 	const h100 = "nvidia.com/gpu: nvidia-tesla-h100"
 	workUnits := []storage.ActiveWorkUnitResources{
 		activeWorkUnit(bob, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{GPUType: "nvidia-tesla-h100", GPUCount: 2}),
@@ -57,6 +57,7 @@ func TestAggregateUserAllocations(t *testing.T) {
 		activeWorkUnit(alice, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{CPUCores: 16}),
 		activeWorkUnit(alice, essmsgpb.WorkUnitStatus_INITIALIZING, storagetest.ActiveResourceSpec{MemoryGiB: 32.5}),
 		activeWorkUnit(carol, essmsgpb.WorkUnitStatus_RUNNING, storagetest.ActiveResourceSpec{GPUCount: 4}),
+		activeWorkUnit(dave, essmsgpb.WorkUnitStatus_SCHEDULING, storagetest.ActiveResourceSpec{TPUType: "tpu-v5-lite-podslice", TPUTopology: "2x2"}),
 	}
 	h100Flavor := createTestResourceFlavor("h100-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-tesla-h100"})
 	l4Flavor := createTestResourceFlavor("l4-flavor", map[string]string{"cloud.google.com/gke-accelerator": "nvidia-l4"})
@@ -80,6 +81,7 @@ func TestAggregateUserAllocations(t *testing.T) {
 				{User: alice, ResourceType: h100, RunningUnits: 8},
 				{User: bob, ResourceType: h100, RunningUnits: 2, PendingUnits: 4},
 				{User: carol, ResourceType: tc.wantCarol, RunningUnits: 4},
+				{User: dave, ResourceType: "google.com/tpu: tpu-v5-lite-podslice", PendingUnits: 4},
 			}
 			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("aggregateUserAllocations() mismatch (-want +got):\n%s", diff)

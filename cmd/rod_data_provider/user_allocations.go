@@ -74,7 +74,7 @@ func collectQueueAcceleratorCandidates(cq *kueuev1beta1.ClusterQueue, rfMap map[
 func aggregateUserAllocations(workUnits []storage.ActiveWorkUnitResources, uniqueAccelerators map[string]string) []*spb.UserResourceAllocation {
 	grouped := make(map[userResourceKey]*spb.UserResourceAllocation)
 	for _, wu := range workUnits {
-		running := slices.Contains(state.WorkUnitRunningStates, wu.ExecutionState)
+		running := slices.Contains(state.WorkUnitAdmittedStates, wu.ExecutionState)
 		for resType, units := range resourceaccumulator.ExtractNormalizedExecutableResources(wu.Executable) {
 			if resolved, ok := uniqueAccelerators[resType]; ok {
 				resType = resolved
