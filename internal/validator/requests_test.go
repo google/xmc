@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmessagespb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 )
@@ -205,9 +206,11 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
+			// study_config rules are covered by TestValidateCreateExperimentRequest_StudyConfig.
 			name: "experiment_type_study",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
+				r.Experiment.StudyConfig = experimenttest.StudyConfig()
 			}),
 			wantErr: nil,
 		},

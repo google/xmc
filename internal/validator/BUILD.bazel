@@ -21,6 +21,7 @@ go_library(
         "names.go",
         "parameters.go",
         "requests.go",
+        "study.go",
         "volumes.go",
     ],
     importpath = "xmanager_cloud/internal/validator",
@@ -34,6 +35,7 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/grpcerr",
         "//internal/kubernetes/common/jobsetutil",
+        "@org_golang_google_protobuf//reflect/protoreflect",
     ],
 )
 
@@ -44,6 +46,7 @@ go_test(
         "names_test.go",
         "parameters_test.go",
         "requests_test.go",
+        "study_test.go",
         "volumes_test.go",
     ],
     embed = [":validator"],
@@ -55,6 +58,7 @@ go_test(
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:api_go_proto",
         "//api/protos/xid:messages_go_proto",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/prototest",
         "@com_github_google_go_cmp//cmp",

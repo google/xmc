@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmessagespb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
@@ -135,17 +136,26 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", grpcerr.ErrInvalidArgument)
 	}
 	// experiment_type is immutable after creation, so an unknown value must not be persisted.
-	if expType := exp.GetExperimentType(); expType.Descriptor().Values().ByNumber(expType.Number()) == nil {
+	if expType := exp.GetExperimentType(); !isKnownEnumValue(expType) {
 		return fmt.Errorf("experiment.experiment_type %d is not a known type: %w", expType, grpcerr.ErrInvalidArgument)
 	}
 	// Only studies carry a study config; UNSPECIFIED is stored as STANDARD.
 	if exp.GetExperimentType() != essmsgpb.Experiment_STUDY && exp.GetStudyConfig() != nil {
 		return fmt.Errorf("experiment.study_config must be unset unless experiment.experiment_type is STUDY: %w", grpcerr.ErrInvalidArgument)
 	}
+	if err := validateExperimentStudyConfig(exp); err != nil {
+		return err
+	}
 	if err := validateExperimentACLs(exp.GetAcls()); err != nil {
 		return err
 	}
 	return validateExperimentMetadata(exp)
+}
+
+// isKnownEnumValue reports whether e is a value declared by its enum. Values unknown to this server
+// must not be persisted in fields that cannot be updated later.
+func isKnownEnumValue(e protoreflect.Enum) bool {
+	return e.Descriptor().Values().ByNumber(e.Number()) != nil
 }
 
 // validateExperimentACLs rejects malformed ACLs on experiment creation. Unset or empty ACLs are
