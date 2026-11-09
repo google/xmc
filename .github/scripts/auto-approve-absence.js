@@ -86,29 +86,7 @@ function shouldAutoApproveAbsencePR({
 }
 
 /**
- * Fetches and decodes ABSENCE.md from the pull request head commit via GitHub REST API.
- * @param {Object} github - GitHub REST API client.
- * @param {string} owner - Repository owner.
- * @param {string} repo - Repository name.
- * @param {string} ref - Pull request head commit SHA.
- * @returns {Promise<string>} Decoded UTF-8 content of ABSENCE.md.
- */
-async function fetchPrAbsenceContent(github, owner, repo, ref) {
-  const { data } = await github.rest.repos.getContent({
-    owner,
-    repo,
-    path: 'ABSENCE.md',
-    ref
-  });
-  if (!data || Array.isArray(data) || typeof data.content !== 'string') {
-    throw new Error('Unexpected response format for ABSENCE.md');
-  }
-  return Buffer.from(data.content, data.encoding || 'base64').toString('utf8');
-}
-
-/**
- * Orchestrator: Fetches PR files and head ABSENCE.md via REST API, reads trusted base-branch
- * OWNERS from disk, evaluates eligibility, and posts approval review.
+ * Orchestrator: Fetches PR files, reads OWNERS and ABSENCE.md, evaluates eligibility, and posts approval review via REST API.
  * @param {Object} params - Context and tools injected by actions/github-script.
  */
 async function run({ github, context, core }) {
@@ -120,11 +98,6 @@ async function run({ github, context, core }) {
 
   const prNumber = pr.number;
   const prAuthor = pr.user ? pr.user.login : '';
-  const headSha = pr.head ? pr.head.sha : '';
-  if (!headSha) {
-    core.setFailed('Pull request payload is missing head SHA.');
-    return;
-  }
 
   const { data: files } = await github.rest.pulls.listFiles({
     owner: context.repo.owner,
@@ -139,26 +112,13 @@ async function run({ github, context, core }) {
     return;
   }
 
+  if (!fs.existsSync('ABSENCE.md')) {
+    core.info('ABSENCE.md not found in repository root. Skipping auto-approval.');
+    return;
+  }
+
   const ownersList = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
-  if (!isOnlyAbsenceFileModified(modifiedFileNames) || !isAuthorCodeOwner(prAuthor, ownersList)) {
-    const precheck = shouldAutoApproveAbsencePR({ modifiedFileNames, prAuthor, ownersList });
-    core.info(`${precheck.reason} Skipping auto-approval.`);
-    return;
-  }
-
-  let absenceContent;
-  try {
-    absenceContent = await fetchPrAbsenceContent(
-      github,
-      context.repo.owner,
-      context.repo.repo,
-      headSha
-    );
-  } catch (error) {
-    core.info(`Failed to fetch ABSENCE.md at ${headSha}: ${error.message}. Skipping auto-approval.`);
-    return;
-  }
-
+  const absenceContent = fs.readFileSync('ABSENCE.md', 'utf8');
   const decision = shouldAutoApproveAbsencePR({
     modifiedFileNames,
     prAuthor,
@@ -188,7 +148,6 @@ async function run({ github, context, core }) {
 }
 
 module.exports = {
-  fetchPrAbsenceContent,
   validateAbsenceContent,
   isOnlyAbsenceFileModified,
   isAuthorCodeOwner,

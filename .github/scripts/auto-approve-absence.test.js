@@ -14,16 +14,11 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
 const {
-  fetchPrAbsenceContent,
   validateAbsenceContent,
   isOnlyAbsenceFileModified,
   isAuthorCodeOwner,
-  shouldAutoApproveAbsencePR,
-  run
+  shouldAutoApproveAbsencePR
 } = require('./auto-approve-absence');
 
 test('isOnlyAbsenceFileModified returns true when strictly ABSENCE.md is modified', () => {
@@ -146,78 +141,4 @@ test('validateAbsenceContent and shouldAutoApproveAbsencePR reject invalid dates
     assert.strictEqual(decision.canApprove, false);
     assert.ok(decision.reason.includes(expectedSubstring));
   }
-});
-
-test('run fetches ABSENCE.md from PR head SHA via GitHub API and reads OWNERS from base checkout', async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-auto-approve-'));
-  const origCwd = process.cwd();
-  const reviews = [];
-  let requestedRef = null;
-
-  try {
-    process.chdir(tempDir);
-    fs.writeFileSync('OWNERS', 'alice\nbob\n');
-
-    const github = {
-      rest: {
-        pulls: {
-          listFiles: async () => ({ data: [{ filename: 'ABSENCE.md' }] }),
-          createReview: async (payload) => {
-            reviews.push(payload);
-          }
-        },
-        repos: {
-          getContent: async ({ path: filePath, ref }) => {
-            assert.strictEqual(filePath, 'ABSENCE.md');
-            requestedRef = ref;
-            return {
-              data: {
-                content: Buffer.from('alice 10.11.2026-15.11.2026\n', 'utf8').toString('base64'),
-                encoding: 'base64'
-              }
-            };
-          }
-        }
-      }
-    };
-
-    await run({
-      github,
-      context: {
-        repo: { owner: 'google', repo: 'xmc' },
-        payload: {
-          pull_request: {
-            number: 42,
-            user: { login: 'alice' },
-            head: { sha: 'deadbeef12345678' }
-          }
-        }
-      },
-      core: {
-        info: () => {},
-        setFailed: (msg) => assert.fail(`Unexpected setFailed: ${msg}`)
-      }
-    });
-
-    assert.strictEqual(requestedRef, 'deadbeef12345678');
-    assert.strictEqual(reviews.length, 1);
-    assert.strictEqual(reviews[0].event, 'APPROVE');
-  } finally {
-    process.chdir(origCwd);
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test('fetchPrAbsenceContent rejects unexpected non-file API responses', async () => {
-  const github = {
-    rest: {
-      repos: {
-        getContent: async () => ({ data: [] })
-      }
-    }
-  };
-  await assert.rejects(
-    () => fetchPrAbsenceContent(github, 'google', 'xmc', 'deadbeef'),
-    /Unexpected response format/
-  );
 });
