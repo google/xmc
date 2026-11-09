@@ -44,6 +44,25 @@ py_test(
 )
 
 py_test(
+    name = "allowed_emails_test",
+    srcs = ["allowed_emails_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/helm:chart",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "allowed_emails_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "bridge_cluster_identity_test",
     srcs = ["bridge_cluster_identity_test.py"],
     data = ["//deploy/helm:chart"],
