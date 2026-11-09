@@ -307,20 +307,26 @@ def _is_re_review_thread_posted(
 ) -> tuple[bool, str | None]:
     """Verifies that a re-review thread action (RESPOND or RESOLVE) is fulfilled.
 
-    RESPOND requires a live reply to the thread's root comment. RESOLVE requires
-    GitHub to report the thread resolved; a reply or a local `Posted` / `[x]`
-    status is not sufficient.
+    RESPOND requires a live reply to the thread's root comment by the
+    authenticated user. RESOLVE requires GitHub to report the thread resolved;
+    a reply or a local `Posted` / `[x]` status is not sufficient.
     """
     thread_id = item["thread_id"]
     if item["action"] == "RESPOND":
         replies = [
             lc
             for lc in live.comments
-            if isinstance(lc, dict) and lc.get("in_reply_to_id") == thread_id
+            if isinstance(lc, dict)
+            and lc.get("in_reply_to_id") == thread_id
+            and (lc.get("user") or {}).get("login") == live.login
         ]
         if replies:
             return True, None
-        return False, f"Recommended response on Thread ID `{thread_id}` has not been posted"
+        return (
+            False,
+            f"Recommended response on Thread ID `{thread_id}` has not been posted"
+            f" (no reply by @{live.login})",
+        )
 
     if item["action"] == "RESOLVE":
         if thread_id in live.resolved_comment_ids:

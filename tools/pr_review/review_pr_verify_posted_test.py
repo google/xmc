@@ -47,6 +47,11 @@ def _live_comment(
     return {"path": path, "line": line, "body": body + _TELEMETRY, "user": {"login": login}}
 
 
+def _reply(root_id: int, login: str = "me") -> dict[str, Any]:
+    """Builds a live reply to the review thread whose root comment has `root_id`."""
+    return {"in_reply_to_id": root_id, "user": {"login": login}}
+
+
 def _thread(root_id: int, is_resolved: bool) -> dict[str, Any]:
     """Builds a GraphQL review thread node whose root comment has `root_id`."""
     return {
@@ -389,11 +394,22 @@ class TestVerifyPostedSidecar(unittest.TestCase):
     def test_non_dict_live_comments_skipped_for_respond(self):
         """A RESPOND item ignores non-dict live comments and still finds the reply."""
         self._write("", [{**_resolve_item(101), "action": "RESPOND"}])
-        self.mock_api.return_value = [None, {"in_reply_to_id": 101}]
+        self.mock_api.return_value = [None, _reply(101)]
 
         res = verify_review_comments_posted(self._args(self.md_path))
 
         self.assertEqual(res["posted_items"], 1)
+
+    def test_respond_reply_by_other_user_is_not_posted(self):
+        """Regression: a RESPOND item fails when only another user replied."""
+        self._write("", [{**_resolve_item(101), "action": "RESPOND"}])
+        self.mock_api.return_value = [_reply(101, login="other-reviewer")]
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self._args(self.md_path))
+
+        self.assertIn("no reply by @me", ctx.exception.instruction)
+        self.assertEqual(self._sidecar_statuses(), {"101": "Pending"})
 
     def test_resolve_marked_posted_but_unresolved_thread_fails(self):
         """Regression: a RESOLVE item recorded as Posted fails while the thread is unresolved."""
@@ -432,7 +448,7 @@ class TestVerifyPostedSidecar(unittest.TestCase):
                 {**thread, "item_id": "102", "thread_id": 102, "action": None},
             ],
         )
-        self.mock_api.return_value = [{"in_reply_to_id": 101}]
+        self.mock_api.return_value = [_reply(101)]
 
         res = verify_review_comments_posted(self._args(self.md_path))
 
