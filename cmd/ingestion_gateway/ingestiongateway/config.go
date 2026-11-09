@@ -228,10 +228,10 @@ func (c *Config) Validate() error {
 //
 // LoadConfig always populates MessageBus; this covers Config values built directly, notably in tests.
 func (c *Config) messageBusOrDefault() string {
-	if c.MessageBus == "" {
-		return MessageBusRedpanda
+	if bus := strings.ToLower(strings.TrimSpace(c.MessageBus)); bus != "" {
+		return bus
 	}
-	return c.MessageBus
+	return MessageBusRedpanda
 }
 
 // validateRedpanda checks the broker addressing, topology thresholds, and Kafka wire-protocol
