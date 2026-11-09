@@ -297,6 +297,7 @@ in the queue, not just the current page.
   running jobs.
 - A generic accelerator request (e.g. `nvidia.com/gpu`) is attributed to a model only when the
   queue's flavors resolve that accelerator to exactly one model.
+- The jobs page and `user_allocations` are read from one read-only snapshot, so they always agree.
 
 ---
 

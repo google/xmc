@@ -18,9 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"google.golang.org/protobuf/testing/protocmp"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	storagetest "xmanager_cloud/internal/storage/testing"
 )
@@ -35,7 +33,13 @@ func insertActiveResourceWorkUnits(t *testing.T, pool *pgxpool.Pool, repo *Repos
 	}
 }
 
-func TestRepository_FetchActiveWorkUnitResources(t *testing.T) {
+func TestRepository_FetchActiveWorkUnitResources_EmptyQueues(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	storagetest.VerifyEmptyActiveResourcesSnapshot(ctx, t, NewRepository(essPool))
+}
+
+func TestRepository_FetchActiveWorkUnitResources_MultiPageSnapshot(t *testing.T) {
 	ctx := t.Context()
 	_, essPool := postgrestest.Setup(ctx, t)
 	repo := NewRepository(essPool)
@@ -43,16 +47,6 @@ func TestRepository_FetchActiveWorkUnitResources(t *testing.T) {
 	postgrestest.SeedExperimentWithCreator(ctx, t, essPool, 702, "bob@example.com")
 	specs := storagetest.ActiveResourceSpecs(701, 702)
 	insertActiveResourceWorkUnits(t, essPool, repo, specs)
-
-	if got, err := repo.FetchActiveWorkUnitResources(ctx, nil); err != nil || len(got) != 0 {
-		t.Errorf("FetchActiveWorkUnitResources(nil queues) = (%v, %v), want (empty, nil)", got, err)
-	}
-	got, err := repo.FetchActiveWorkUnitResources(ctx, []string{storagetest.ActiveResourceQueue})
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitResources failed: %v", err)
-	}
 	want := storagetest.WantActiveWorkUnitResources(specs, map[int64]string{701: "alice@example.com", 702: "bob@example.com"})
-	if diff := cmp.Diff(want, got, storagetest.ActiveWorkUnitResourcesOrder, protocmp.Transform()); diff != "" {
-		t.Errorf("FetchActiveWorkUnitResources() mismatch (-want +got):\n%s", diff)
-	}
+	storagetest.VerifyActiveResourcesSnapshot(ctx, t, repo, want)
 }

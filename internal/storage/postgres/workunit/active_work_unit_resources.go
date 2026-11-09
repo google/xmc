@@ -18,7 +18,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 	postgresdata "xmanager_cloud/internal/storage/postgres/data"
@@ -36,10 +38,27 @@ FROM WorkUnits wu
 JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
-// FetchActiveWorkUnitResources reads the creator, executable and state of every active work unit
-// in queueNames in a single statement.
-func (r *Repository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
-	return fetchActiveWorkUnitResourcesFromDB(ctx, r.db, queueNames)
+// FetchActiveWorkUnitsByQueues retrieves one page of active work units within the bound transaction.
+func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken)
+}
+
+// FetchActiveWorkUnitResources reads the resources of active work units within the bound transaction.
+func (r *TxRepository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
+	return fetchActiveWorkUnitResourcesFromDB(ctx, r.tx, queueNames)
+}
+
+// WithReadOnlyWorkUnitSnapshot executes fn in a single PostgreSQL REPEATABLE READ READ ONLY transaction.
+func (r *Repository) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r == nil || r.pool == nil {
+		return pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
+	}
+	return pgdb.RunInReadOnlyTx(ctx, r.pool, func(txCtx context.Context, tx pgx.Tx) error {
+		return fn(txCtx, r.WithTx(tx))
+	})
 }
 
 func fetchActiveWorkUnitResourcesFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {
