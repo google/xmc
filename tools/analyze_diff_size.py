@@ -76,8 +76,14 @@ def count_added_lines(file_path: Path) -> int:
 
     Mirrors git's binary heuristic (a NUL byte in the first 8000 bytes): binary or
     unreadable files count 0, like numstat's '-'. A final line without a newline counts.
-    The file is streamed in fixed-size chunks, so memory use stays bounded.
+    The file is streamed in fixed-size chunks, so memory use stays bounded. A symlink
+    counts 1 (git diffs its target string), and other non-regular files (FIFOs,
+    devices) count 0 so reading them can never block.
     """
+    if file_path.is_symlink():
+        return 1
+    if not file_path.is_file():
+        return 0
     try:
         with file_path.open("rb") as stream:
             return _count_stream_lines(stream)

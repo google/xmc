@@ -15,6 +15,7 @@
 """Unit tests for analyze_diff_size tool."""
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -192,9 +193,25 @@ class CountAddedLinesTest(unittest.TestCase):
     def test_count_added_lines_missing_file_counts_zero(self):
         self.assertEqual(analyze_diff_size.count_added_lines(self.root / "missing"), 0)
 
-    @mock.patch.object(analyze_diff_size.Path, "open", side_effect=PermissionError("denied"))
-    def test_count_added_lines_unreadable_file_counts_zero(self, _):
-        self.assertEqual(analyze_diff_size.count_added_lines(self.root / "secret"), 0)
+    def test_count_added_lines_unreadable_file_counts_zero(self):
+        path = _write_file(self.root, "secret", b"a\n")
+        with mock.patch.object(
+            analyze_diff_size.Path, "open", side_effect=PermissionError("denied")
+        ) as mock_open:
+            self.assertEqual(analyze_diff_size.count_added_lines(path), 0)
+        mock_open.assert_called_once()
+
+    def test_count_added_lines_symlink_counts_one(self):
+        target = _write_file(self.root, "target", b"a\nb\nc\n")
+        link = self.root / "link"
+        link.symlink_to(target)
+        self.assertEqual(analyze_diff_size.count_added_lines(link), 1)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires os.mkfifo")
+    def test_count_added_lines_fifo_counts_zero_without_blocking(self):
+        fifo = self.root / "fifo"
+        os.mkfifo(fifo)
+        self.assertEqual(analyze_diff_size.count_added_lines(fifo), 0)
 
 
 class AnalyzeDiffSizeThresholdTest(unittest.TestCase):
