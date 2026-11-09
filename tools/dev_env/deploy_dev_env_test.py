@@ -14,6 +14,7 @@
 
 """Unit tests for deploy_dev_env.py."""
 
+import argparse
 import io
 import pathlib
 import subprocess
@@ -1413,8 +1414,13 @@ image_tag: latest
                     "--no-enable-components",
                 ]
             )
-        self.assertEqual(cm.exception.code, 2)
+        self.assertEqual(cm.exception.code, 1)
         self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
+
+        err_run = io.StringIO()
+        with patch("sys.stderr", err_run), self.assertRaises(SystemExit) as cm_run:
+            deploy_dev_env.run_deployment(argparse.Namespace(enable_components=False))
+        self.assertEqual(cm_run.exception.code, 1)
 
 
 if __name__ == "__main__":

@@ -267,7 +267,7 @@ func newHarnessHelmManager(t *testing.T, clientset kubernetes.Interface, kubecon
 func installComponentCRD(ctx context.Context, t *testing.T, h *kindClusterHarness) {
 	t.Helper()
 	chartRoot := filepath.Dir(filepath.Dir(filepath.Dir(locateHelmComponentCRDPath(t))))
-	renderedYAML := renderHelmTemplate(ctx, t, "xmc-e2e", chartRoot, "--set", "componentsDeployment.enabled=true", "--show-only", "templates/components/crd.yaml")
+	renderedYAML := renderHelmTemplate(ctx, t, "xmc-e2e", chartRoot, "--show-only", "templates/components/crd.yaml")
 	objs, err := decodeYAMLDocuments(renderedYAML)
 	if err != nil || len(objs) != 1 {
 		t.Fatalf("failed to decode CRD YAML into exactly one object (got %d): %v", len(objs), err)

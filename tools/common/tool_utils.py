@@ -351,6 +351,18 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
+    env_comp = os.getenv("ENABLE_COMPONENTS")
+    raw_comp = (
+        env_comp
+        if env_comp is not None and env_comp.strip() != ""
+        else config.get("enable_components")
+    )
+    if raw_comp is not None and not parse_bool_flag(raw_comp):
+        raise ValueError(
+            "enable_components=false is no longer supported in XMC 1.0.0+: Components are mandatory. "
+            "Migrate legacy workloads via ./tools/migrations/components/migrate.py and remove enable_components."
+        )
+
     return DeploymentConfig(
         project_id=config["project_id"],
         deployment_name=config["deployment_name"],

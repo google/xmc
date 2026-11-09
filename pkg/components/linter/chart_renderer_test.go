@@ -739,7 +739,29 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		"components/rbac.yaml",
 		"components/serviceaccount.yaml",
 	} {
-		if !strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:") {
+		dec := yaml.NewDecoder(strings.NewReader(rendered["xmanager-cloud/templates/"+f]))
+		docCount := 0
+		for {
+			var doc map[string]any
+			err := dec.Decode(&doc)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("umbrella %s YAML decode failed: %v", f, err)
+			}
+			if len(doc) == 0 {
+				continue
+			}
+			docCount++
+			if apiVer, _ := doc["apiVersion"].(string); apiVer == "" {
+				t.Errorf("umbrella %s doc[%d] missing apiVersion: %v", f, docCount-1, doc)
+			}
+			if kind, _ := doc["kind"].(string); kind == "" {
+				t.Errorf("umbrella %s doc[%d] missing kind: %v", f, docCount-1, doc)
+			}
+		}
+		if docCount == 0 {
 			t.Errorf("umbrella %s did not render any Kubernetes object by default", f)
 		}
 	}
@@ -766,8 +788,23 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 			wantErr: "componentsDeployment.enabled=false",
 		},
 		{
+			name:    "componentsDeployment.enabled string false rejected",
+			values:  map[string]any{"componentsDeployment": map[string]any{"enabled": "false"}},
+			wantErr: "componentsDeployment.enabled=false",
+		},
+		{
+			name:    "componentsDeployment scalar false rejected",
+			values:  map[string]any{"componentsDeployment": false},
+			wantErr: "componentsDeployment must be a map",
+		},
+		{
 			name:    "ingestionGatewayDeployment.enabled=true rejected",
 			values:  map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": true}},
+			wantErr: "ingestionGatewayDeployment.enabled=true",
+		},
+		{
+			name:    "ingestionGatewayDeployment.enabled string true rejected",
+			values:  map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": "true"}},
 			wantErr: "ingestionGatewayDeployment.enabled=true",
 		},
 	}
@@ -775,6 +812,12 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		if _, err := renderChartWithValues(helmDir, "xmanager-cloud", tc.values); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Errorf("%s: renderChartWithValues error = %v, want substring %q", tc.name, err, tc.wantErr)
 		}
+	}
+	if _, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
+		"componentsDeployment":       map[string]any{"enabled": "true"},
+		"ingestionGatewayDeployment": map[string]any{"enabled": "false"},
+	}); err != nil {
+		t.Errorf("renderChartWithValues with deprecated no-op string flags failed: %v", err)
 	}
 }
 

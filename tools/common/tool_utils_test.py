@@ -617,6 +617,24 @@ class TestConfigLoader(unittest.TestCase):
         )
         self.assertEqual(config, expected)
 
+    def test_load_and_validate_config_rejects_disabled_components_yaml_and_env(self):
+        self.config_path.write_text(
+            self.valid_yaml + "\n  enable_components: false\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"):
+            load_and_validate_config(str(self.config_path))
+
+        self.config_path.write_text(
+            self.valid_yaml + "\n  enable_components: true\n", encoding="utf-8"
+        )
+        self.assertEqual(load_and_validate_config(str(self.config_path)).project_id, "my-project")
+
+        with patch.dict(os.environ, {"ENABLE_COMPONENTS": "false"}):
+            with self.assertRaisesRegex(
+                ValueError, "enable_components=false is no longer supported"
+            ):
+                load_and_validate_config(str(self.config_path))
+
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""

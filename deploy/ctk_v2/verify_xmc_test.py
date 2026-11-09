@@ -382,10 +382,12 @@ vars:
             captured.getvalue(),
         )
 
-        # 4. Unreconciled disabled CR (empty status: {}) and kubectl error ("") fail on max_attempts=1 without sleeping
+        # 4. Unreconciled disabled CR (empty status: {}), malformed JSON, missing items, and kubectl error ("") fail on max_attempts=1 without sleeping
         mock_sleep.reset_mock()
         for bad_payload in (
             '{"items": [{"metadata": {"name": "comp-b"}, "spec": {"enabled": false}, "status": {}}]}',
+            "{bad",
+            "{}",
             "",
         ):
             mock_run.side_effect = [crd_name, running_pod, bad_payload]
@@ -393,6 +395,7 @@ vars:
                 self.assertFalse(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
         mock_sleep.assert_not_called()
 
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
@@ -409,7 +412,17 @@ vars:
         mock_connectivity,
         mock_log_monitor,
         mock_components,
+        mock_wait_deployments,
     ):
+        call_order: list[str] = []
+
+        def record_true(label: str) -> bool:
+            call_order.append(label)
+            return True
+
+        mock_components.side_effect = lambda: record_true("components")
+        mock_wait_deployments.side_effect = lambda: call_order.append("wait_deployments")
+        mock_k8s.side_effect = lambda: record_true("k8s")
         mock_resolve_config.return_value = ("dev", "us-central1", "test-proj")
         mock_resolve_lm_enabled.return_value = False
         captured = io.StringIO()
@@ -417,6 +430,7 @@ vars:
             exit_code = verify_xmc.main()
 
         self.assertEqual(exit_code, 0)
+        self.assertEqual(call_order, ["components", "wait_deployments", "k8s"])
         mock_ensure_venv.assert_called_once()
         mock_resolve_config.assert_called_once()
         mock_resolve_lm_enabled.assert_called_once()
@@ -424,7 +438,9 @@ vars:
         mock_connectivity.assert_called_once()
         mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj", False)
         mock_components.assert_called_once_with()
+        mock_wait_deployments.assert_called_once_with()
 
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
@@ -443,6 +459,7 @@ vars:
         mock_connectivity,
         mock_log_monitor,
         mock_components,
+        mock_wait_deployments,
     ):
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):

@@ -432,9 +432,9 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
     return None
 
 
-# Optional deployments (e.g. xmc-bridge, ingestion-gateway, xmc-study-controller)
-# are skipped by resolve_deployment_name when their feature flag leaves them
-# undeployed.
+# Optional deployments (e.g. dashboard-service, ingestion-gateway, xmc-study-controller)
+# are skipped by resolve_deployment_name when their feature flag or Component CR leaves
+# them undeployed.
 # xmc-bridge is triggered first because it may own component releases (e.g.
 # the ingestion-gateway workload). `rollout restart` is asynchronous, so the
 # rollouts overlap; the bridge re-reconciles its releases once its new pod

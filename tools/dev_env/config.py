@@ -248,9 +248,14 @@ def _resolve_enabled_services(
     if enable_metrics and "ingestion_gateway" not in services:
         services.append("ingestion_gateway")
 
-    if args and getattr(args, "enable_components", None) is False:
+    if not _resolve_bool_flag(
+        getattr(args, "enable_components", None) if args else None,
+        os.environ.get("ENABLE_COMPONENTS"),
+        yaml_vars.get("enable_components"),
+        default=True,
+    ):
         raise ValueError(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
+            "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: Components are mandatory."
         )
 
     rod_enabled = _resolve_bool_flag(
