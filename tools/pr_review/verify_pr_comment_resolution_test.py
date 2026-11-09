@@ -184,6 +184,20 @@ class TestVerifyPRCommentResolution(unittest.TestCase):
 
         self.assertIn("API error", ctx.exception.message)
 
+    def test_login_api_error_gets_auth_hint(self, mock_login):
+        """An unauthenticated /user failure (GithubAPIError) points at authentication."""
+        with tempfile.NamedTemporaryFile("w+", encoding="utf-8", delete=False) as f:
+            f.write("# PR Checklist\n- [ ] **Comment ID `101`**\n")
+            f_path = f.name
+        mock_login.side_effect = GithubAPIError("401 Unauthorized")
+        args = MagicMock(owner="google", repo="xmc", pull_number=145, checklist_file=f_path)
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_resolution(args)
+
+        self.assertIn("401 Unauthorized", ctx.exception.message)
+        self.assertIn("gh auth login", str(ctx.exception.instruction))
+
 
 if __name__ == "__main__":
     unittest.main()

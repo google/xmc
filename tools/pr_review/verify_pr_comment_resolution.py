@@ -47,7 +47,15 @@ def _fetch_my_replied_to_ids(owner: str, repo: str, pull_number: int) -> set[int
     """
     endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}/comments"
     try:
+        # An unauthenticated /user call fails with a 401 surfaced as
+        # GithubAPIError, so every login failure gets the authentication hint.
         login = get_authenticated_login(user_agent=_USER_AGENT)
+    except (GithubAuthError, GithubAPIError) as e:
+        raise HandledError(
+            str(e),
+            "Please authenticate using 'gh auth login' or set GITHUB_TOKEN.",
+        ) from e
+    try:
         comments = list_all_pages(endpoint, user_agent=_USER_AGENT)
     except GithubAuthError as e:
         raise HandledError(

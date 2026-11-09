@@ -43,6 +43,8 @@ _APPROVED_STATUS = re.compile(r"\b(approved|confirmed|posted)\b|\[x\]", re.IGNOR
 
 # Telemetry marker that review_pr_post_inline_comment.py appends to every comment.
 _TELEMETRY_MARKER = re.compile(r"<!--\s*xmc-telemetry:.*?-->", re.DOTALL)
+# Line breaks written as <br> inside markdown table cells.
+_TABLE_CELL_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -269,11 +271,13 @@ def _normalize_body(text: Any) -> str:
     """Normalizes comment text for matching.
 
     Treats None or other falsy values as empty and stringifies non-str values,
-    then drops the telemetry marker and markdown backticks/asterisks, collapses
-    whitespace, and casefolds.
+    then drops the telemetry marker, undoes markdown table-cell escapes
+    (`\\|` and `<br>`), drops backticks/asterisks, collapses whitespace, and
+    casefolds.
     """
     without_marker = _TELEMETRY_MARKER.sub("", str(text or ""))
-    return " ".join(re.sub(r"[`*]", "", without_marker).split()).casefold()
+    unescaped = _TABLE_CELL_BREAK.sub(" ", without_marker.replace("\\|", "|"))
+    return " ".join(re.sub(r"[`*]", "", unescaped).split()).casefold()
 
 
 def _is_initial_inline_posted(item: dict[str, Any], live: _LiveState) -> bool:

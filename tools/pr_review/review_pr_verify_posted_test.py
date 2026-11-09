@@ -23,6 +23,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 from tools.common.tool_utils import HandledError
+from tools.pr_review.github_utils import GithubAuthError
 from tools.pr_review.review_pr_verify_posted import (
     _is_re_review_thread_posted,
     _LiveState,
@@ -499,6 +500,56 @@ class TestNormalizeBody(unittest.TestCase):
 
     def test_strips_marker_markdown_and_whitespace(self):
         self.assertEqual(_normalize_body(f"  Use **`Foo`**\n now{_TELEMETRY}"), "use foo now")
+
+    def test_table_cell_escapes_match_rendered_body(self):
+        cell = _normalize_body(r"Use `a \| b`<br>then <BR/>guard")
+        self.assertEqual(cell, _normalize_body("Use `a | b`\nthen\nguard"))
+
+
+class TestVerifyPostedLiveState(unittest.TestCase):
+    """Tests for live-state fetching and author/line-only matching."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.json_path = Path(tmp.name) / "pr_review_audit_checklist.json"
+        api_patch = patch(_GH_API)
+        self.mock_api = api_patch.start()
+        self.addCleanup(api_patch.stop)
+        self.args = argparse.Namespace(
+            owner="google", repo="xmc", pr_number=10, checklist_file=str(self.json_path)
+        )
+
+    def _write(self, items: list[dict[str, Any]]) -> None:
+        self.json_path.write_text(json.dumps(_sidecar(items)), encoding="utf-8")
+
+    @patch(_LOGIN, return_value="me")
+    def test_empty_proposed_matches_on_author_path_and_line(self, _):
+        self._write([{**_inline_item("#1", "Approved"), "proposed": ""}])
+        self.mock_api.return_value = [_live_comment(body="Anything at all")]
+
+        res = verify_review_comments_posted(self.args)
+
+        self.assertEqual(res["posted_items"], 1)
+
+    @patch(_LOGIN, return_value="me")
+    def test_review_threads_not_fetched_without_resolve_items(self, _):
+        self._write([_inline_item("#1", "Approved")])
+        self.mock_api.return_value = [_live_comment()]
+
+        verify_review_comments_posted(self.args)
+
+        endpoints = [c.args[0] for c in self.mock_api.call_args_list]
+        self.assertNotIn("/graphql", endpoints)
+
+    @patch(_LOGIN, side_effect=GithubAuthError("no credentials"))
+    def test_login_failure_raises_handled_error(self, _):
+        self._write([_inline_item("#1", "Approved")])
+
+        with self.assertRaises(HandledError) as ctx:
+            verify_review_comments_posted(self.args)
+
+        self.assertIn("no credentials", ctx.exception.message)
 
 
 if __name__ == "__main__":
