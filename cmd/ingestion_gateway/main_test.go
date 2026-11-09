@@ -117,6 +117,21 @@ func TestResolveComponentConfig(t *testing.T) {
 		t.Errorf("TopicName = %q, want dynamic-topic", redpandaCfg.TopicName)
 	}
 
+	// Whitespace-only MessageBus defaults to Redpanda and resolves Component CR.
+	wsBusCfg := &ingestiongateway.Config{
+		Port:                "8080",
+		MessageBus:          "   ",
+		RedpandaBrokers:     []string{"static:9092"},
+		TopicName:           "static-topic",
+		MinPartitions:       1,
+		MinReplicas:         1,
+		ComponentsNamespace: "xmc",
+	}
+	resolveComponentConfig(ctx, wsBusCfg, &crreadertest.FakeGetter{Component: comp})
+	if wsBusCfg.TopicName != "dynamic-topic" {
+		t.Errorf("whitespace MessageBus TopicName = %q, want dynamic-topic", wsBusCfg.TopicName)
+	}
+
 	// 4. Getter error logs warning and retains static config.
 	fallbackCfg := &ingestiongateway.Config{
 		Port:            "8080",

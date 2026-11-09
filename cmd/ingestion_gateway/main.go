@@ -66,7 +66,11 @@ func main() {
 const componentResolveTimeout = 5 * time.Second
 
 func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
-	if cfg == nil || (cfg.MessageBus != "" && !strings.EqualFold(strings.TrimSpace(cfg.MessageBus), ingestiongateway.MessageBusRedpanda)) {
+	if cfg == nil {
+		return
+	}
+	bus := strings.TrimSpace(cfg.MessageBus)
+	if bus != "" && !strings.EqualFold(bus, ingestiongateway.MessageBusRedpanda) {
 		return
 	}
 	var getter ingestiongateway.ComponentGetter
