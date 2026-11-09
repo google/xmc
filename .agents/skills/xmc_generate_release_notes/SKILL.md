@@ -32,9 +32,9 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
 
 2. **Identify Base and Target References**:
    - Determine target version (e.g., `0.6.0`, `origin/main`, or a specific release commit SHA). Default to `origin/main` for standard releases.
-   - If not specified by the user, discover the latest previous tag on `origin/main`:
+   - If not specified by the user, discover the latest previous semver release tag (e.g. `0.17.0`) on `origin/main`. The `--match` globs skip the daily `nightly-YYYY-MM-DD.N` tags; `extract_release_metadata.py` applies the same rule when `--base-ref` is omitted:
      ```bash
-     git describe --tags --abbrev=0 origin/main^ 2>/dev/null || git rev-list --max-parents=0 origin/main
+     git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' --match 'v[0-9]*.[0-9]*.[0-9]*' origin/main^ 2>/dev/null || git rev-list --max-parents=0 origin/main
      ```
 3. **Inspect Commit Range**:
    ```bash

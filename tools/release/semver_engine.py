@@ -22,6 +22,19 @@ from tools.release.models import (
     VersionRecommendation,
 )
 
+_RELEASE_TAG_PATTERN = re.compile(r"v?\d+\.\d+\.\d+")
+
+
+def is_semver_tag(tag: str) -> bool:
+    """Reports whether tag is exactly a release tag such as 0.17.0 or v1.2.3.
+
+    Unlike parse_semver, this rejects prefixed or suffixed names such as
+    nightly-2026-11-09.115 or 1.2.3-rc1 instead of falling back to a default.
+    """
+    if not tag or not isinstance(tag, str):
+        return False
+    return _RELEASE_TAG_PATTERN.fullmatch(tag.strip()) is not None
+
 
 def parse_semver(tag: str) -> tuple[int, int, int]:
     """Parses a semantic version string (e.g. 0.5.0 or v1.2.3) into (major, minor, patch)."""

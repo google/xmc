@@ -22,21 +22,33 @@ from pathlib import Path
 
 from tools.common.tool_utils import HandledError
 from tools.release.models import CommitInfo
+from tools.release.semver_engine import is_semver_tag
+
+_RELEASE_TAG_GLOBS = ("[0-9]*.[0-9]*.[0-9]*", "v[0-9]*.[0-9]*.[0-9]*")
 
 
 def get_latest_tag_before(target_ref: str, repo_dir: Path | None = None) -> str | None:
-    """Finds the most recent semver tag before target_ref."""
-    cwd = str(repo_dir) if repo_dir else None
-    try:
-        cmd = ["git", "describe", "--tags", "--abbrev=0", f"{target_ref}^"]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
-        tag = res.stdout.strip()
-        if tag:
-            return tag
-    except subprocess.CalledProcessError:
-        pass
+    """Finds the most recent semver release tag before target_ref.
 
-    return None
+    Non-release tags such as the daily nightly-YYYY-MM-DD.N tags are skipped.
+
+    Returns:
+        The tag name, or None when git fails or no semver release tag is reachable.
+    """
+    cwd = str(repo_dir) if repo_dir else None
+    cmd = ["git", "describe", "--tags", "--abbrev=0"]
+    for glob in _RELEASE_TAG_GLOBS:
+        cmd.extend(["--match", glob])
+    cmd.append(f"{target_ref}^")
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+    except subprocess.CalledProcessError:
+        return None
+
+    tag = res.stdout.strip()
+    if not is_semver_tag(tag):
+        return None
+    return tag
 
 
 def get_git_file_content(ref: str, file_path: str, repo_dir: Path | None = None) -> str | None:

@@ -14,8 +14,10 @@
 
 """Unit tests for git operations and log streaming."""
 
+import fnmatch
 import subprocess
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -35,6 +37,19 @@ from tools.release.git_ops import (
 )
 
 
+def _fake_git_describe(tags_newest_first: list[str]) -> Callable[..., MagicMock]:
+    """Returns a subprocess.run double emulating `git describe --match` over tags."""
+
+    def run(cmd: list[str], **_: object) -> MagicMock:
+        globs = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--match"]
+        for tag in tags_newest_first:
+            if not globs or any(fnmatch.fnmatchcase(tag, g) for g in globs):
+                return MagicMock(stdout=f"{tag}\n", returncode=0)
+        raise subprocess.CalledProcessError(128, cmd)
+
+    return run
+
+
 class GitOpsTest(unittest.TestCase):
     """Tests for Git subprocess log extractor and tag discovery."""
 
@@ -47,6 +62,24 @@ class GitOpsTest(unittest.TestCase):
     @patch("tools.release.git_ops.subprocess.run")
     def test_get_latest_tag_before_not_found(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = subprocess.CalledProcessError(1, ["git", "describe"])
+        tag = get_latest_tag_before("HEAD", Path("."))
+        self.assertIsNone(tag)
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_latest_tag_before_skips_newer_nightly_tag(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = _fake_git_describe(["nightly-2026-11-09.115", "0.17.0", "0.16.0"])
+        tag = get_latest_tag_before("HEAD", Path("."))
+        self.assertEqual(tag, "0.17.0")
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_latest_tag_before_no_semver_tag(self, mock_run: MagicMock) -> None:
+        mock_run.side_effect = _fake_git_describe(["nightly-2026-11-09.115", "1.2.3-rc1"])
+        tag = get_latest_tag_before("HEAD", Path("."))
+        self.assertIsNone(tag)
+
+    @patch("tools.release.git_ops.subprocess.run")
+    def test_get_latest_tag_before_rejects_non_semver_output(self, mock_run: MagicMock) -> None:
+        mock_run.return_value = MagicMock(stdout="0.17.0-rc1\n", returncode=0)
         tag = get_latest_tag_before("HEAD", Path("."))
         self.assertIsNone(tag)
 

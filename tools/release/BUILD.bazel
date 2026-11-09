@@ -48,6 +48,7 @@ py_library(
     imports = ["../.."],
     deps = [
         ":models_lib",
+        ":semver_engine_lib",
         "//tools/common:tool_utils",
     ],
 )

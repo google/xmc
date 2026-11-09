@@ -21,12 +21,23 @@ from tools.release.models import CommitInfo, FlagTransition
 from tools.release.semver_engine import (
     calculate_version_recommendation,
     format_bumped_version,
+    is_semver_tag,
     parse_semver,
 )
 
 
 class SemverEngineTest(unittest.TestCase):
     """Tests for SemVer parser and recommendation engine."""
+
+    def test_is_semver_tag_accepts_release_tags(self) -> None:
+        for tag in ("0.17.0", "v1.2.3", " 10.20.30\n"):
+            with self.subTest(tag=tag):
+                self.assertTrue(is_semver_tag(tag))
+
+    def test_is_semver_tag_rejects_non_release_tags(self) -> None:
+        for tag in ("nightly-2026-11-09.115", "1.2.3-rc1", "1.2", "x1.2.3", "", None, 123):
+            with self.subTest(tag=tag):
+                self.assertFalse(is_semver_tag(tag))  # type: ignore[arg-type]
 
     def test_parse_semver(self) -> None:
         self.assertEqual(parse_semver("0.5.0"), (0, 5, 0))
