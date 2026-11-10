@@ -451,7 +451,7 @@ vars:
     @mock.patch.object(verify_xmc, "_check_components", return_value=False)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
-    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=False)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=True)
     @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled", return_value=False)
     @mock.patch.object(
         verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj")

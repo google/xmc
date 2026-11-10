@@ -348,8 +348,9 @@ jobs:
         if: ${{ inputs.enable_metrics == true }}
         run: |
           # When upgrading an existing cluster, ensure Redpanda, ClickHouse, and the
-          # xmc-metrics topic are present BEFORE the xmc_app Helm release rolls out
-          # ingestion-gateway (which validates topic topology on startup).
+          # xmc-metrics topic are present BEFORE xmc-bridge reconciles the
+          # ingestion-gateway Component installed by xmc-profile (it validates topic
+          # topology on startup).
           if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
             gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
             ./deploy/addons/metrics/setup_metrics_addons.sh

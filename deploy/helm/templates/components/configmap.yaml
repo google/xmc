@@ -23,6 +23,11 @@
 {{- $rawIG := .Values.ingestionGatewayDeployment -}}
 {{- if and (kindIs "map" $rawIG) (eq (include "xmanager-cloud.authFlagEnabled" $rawIG.enabled) "true") -}}
 {{- fail "ingestionGatewayDeployment.enabled=true is removed in XMC 1.0.0+: deploy ingestion-gateway via the stable-2026a xmc-profile release (or migrate existing workloads via ./tools/migrations/components/migrate.py)." -}}
+{{- end -}}
+{{- $legacyGw := lookup "apps/v1" "Deployment" .Release.Namespace "ingestion-gateway-deployment" -}}
+{{- $gwAnn := default (dict) (dig "metadata" "annotations" (dict) (default (dict) $legacyGw)) -}}
+{{- if and (eq (get $gwAnn "meta.helm.sh/release-name") .Release.Name) (ne (get $gwAnn "helm.sh/resource-policy") "keep") -}}
+{{- fail "Release still owns legacy Deployment/ingestion-gateway-deployment; upgrading to XMC 1.0.0+ would delete live gateway pods. Run ./tools/migrations/components/migrate.py prepare/handoff first." -}}
 {{- end }}
 apiVersion: v1
 kind: ConfigMap

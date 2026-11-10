@@ -31,6 +31,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.common.tool_utils import (  # noqa: E402
     ensure_venv,
     log_error,
+    reject_disabled_components_flag,
 )
 from tools.dev_env import config, deploy_dev_env, upgrade_dev_env  # noqa: E402
 
@@ -645,11 +646,7 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args(argv)
-    if getattr(args, "enable_components", None) is False:
-        log_error(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-        )
-        sys.exit(1)
+    reject_disabled_components_flag(args)
     if getattr(args, "verbose", False):
         logging.basicConfig(
             level=logging.DEBUG,

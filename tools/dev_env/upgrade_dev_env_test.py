@@ -46,14 +46,12 @@ class TestParseArgs(unittest.TestCase):
         self.assertTrue(args.run_migrations)
         self.assertTrue(args.enable_components)
 
-    @mock.patch("tools.dev_env.upgrade_dev_env.log_error")
-    def test_no_enable_components_rejected(self, mock_log_error):
-        with self.assertRaises(SystemExit) as cm:
+    def test_no_enable_components_rejected(self):
+        err_stream = io.StringIO()
+        with mock.patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.parse_args(["--no-enable-components"])
         self.assertEqual(cm.exception.code, 1)
-        self.assertIn(
-            "--no-enable-components is no longer supported", mock_log_error.call_args[0][0]
-        )
+        self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:

@@ -29,6 +29,7 @@ from types import MappingProxyType
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
+    DISABLED_COMPONENTS_FLAG_ERROR,
     DeploymentConfig,
     HandledError,
     _bootstrap_venv,
@@ -43,6 +44,7 @@ from tools.common.tool_utils import (
     parse_semver_prefix,
     parse_yaml_vars,
     positive_int_arg,
+    reject_disabled_components_flag,
     run_command,
     run_tool,
     verify_helm_min_version,
@@ -787,6 +789,19 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         mock_run.return_value = MagicMock(stdout="v3.13.3\n")
         with self.assertRaises(RuntimeError):
             verify_helm_min_version()
+
+    def test_reject_disabled_components_flag(self):
+        for allowed in (
+            argparse.Namespace(),
+            argparse.Namespace(enable_components=None),
+            argparse.Namespace(enable_components=True),
+        ):
+            reject_disabled_components_flag(allowed)
+        err_stream = io.StringIO()
+        with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+            reject_disabled_components_flag(argparse.Namespace(enable_components=False))
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn(DISABLED_COMPONENTS_FLAG_ERROR, err_stream.getvalue())
 
 
 if __name__ == "__main__":

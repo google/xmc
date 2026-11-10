@@ -46,6 +46,7 @@ from tools.common.tool_utils import (  # noqa: E402
     log_error,
     log_info,
     log_success,
+    reject_disabled_components_flag,
     run_command,
     verify_helm_min_version,
 )
@@ -114,11 +115,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
     )
     parsed_args = p.parse_args(args)
-    if parsed_args.enable_components is False:
-        log_error(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-        )
-        sys.exit(1)
+    reject_disabled_components_flag(parsed_args)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
     return parsed_args
@@ -897,10 +894,6 @@ def _print_deployment_summary(config: DeploymentConfig) -> None:
 
 def run_deployment(args: argparse.Namespace) -> None:
     """Executes the GKE deployment pipeline."""
-    if getattr(args, "enable_components", None) is False:
-        error_exit(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-        )
     config = load_and_validate_config(args.config)
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)

@@ -28,6 +28,11 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -819,6 +824,7 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 	}); err != nil {
 		t.Errorf("renderChartWithValues with deprecated no-op string flags failed: %v", err)
 	}
+	verifyUmbrellaLegacyGatewayLookupGuard(t, helmDir, rendered["xmanager-cloud/templates/components/deployment.yaml"])
 }
 
 // verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the
@@ -1038,6 +1044,10 @@ func renderChartWithValues(chartRoot, releaseName string, overrides map[string]a
 }
 
 func renderChartWithNamespace(chartRoot, releaseName, namespace string, overrides map[string]any) (map[string]string, error) {
+	return renderChartWithClient(chartRoot, releaseName, namespace, overrides, nil)
+}
+
+func renderChartWithClient(chartRoot, releaseName, namespace string, overrides map[string]any, provider engine.ClientProvider) (map[string]string, error) {
 	ch, err := loader.LoadDir(chartRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
@@ -1045,22 +1055,71 @@ func renderChartWithNamespace(chartRoot, releaseName, namespace string, override
 	if releaseName == "" {
 		releaseName = ch.Name()
 	}
-	releaseOpts := chartutil.ReleaseOptions{
-		Name:      releaseName,
-		Namespace: namespace,
-		Revision:  1,
-		IsInstall: true,
-	}
-	mergedVals := chartutil.CoalesceTables(overrides, ch.Values)
-	renderValues, err := chartutil.ToRenderValues(ch, mergedVals, releaseOpts, nil)
+	releaseOpts := chartutil.ReleaseOptions{Name: releaseName, Namespace: namespace, Revision: 1, IsInstall: true}
+	renderValues, err := chartutil.ToRenderValues(ch, chartutil.CoalesceTables(overrides, ch.Values), releaseOpts, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", chartRoot, err)
 	}
-	rendered, err := engine.Render(ch, renderValues)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render Helm chart in %s: %w", chartRoot, err)
+	if provider != nil {
+		return engine.RenderWithClientProvider(ch, renderValues, provider)
 	}
-	return rendered, nil
+	return engine.Render(ch, renderValues)
+}
+
+type fakeLookupProvider struct{ client dynamic.Interface }
+
+func (p fakeLookupProvider) GetClientFor(apiVersion, kind string) (dynamic.NamespaceableResourceInterface, bool, error) {
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return nil, false, err
+	}
+	return p.client.Resource(gv.WithResource(strings.ToLower(kind) + "s")), true, nil
+}
+
+func newGatewayDeploymentObj(annotations map[string]string) runtime.Object {
+	u := &unstructured.Unstructured{}
+	u.SetAPIVersion("apps/v1")
+	u.SetKind("Deployment")
+	u.SetNamespace("xmc")
+	u.SetName("ingestion-gateway-deployment")
+	u.SetAnnotations(annotations)
+	return u
+}
+
+func verifyUmbrellaLegacyGatewayLookupGuard(t *testing.T, helmDir, wantDeployManifest string) {
+	t.Helper()
+	cases := []struct {
+		name        string
+		annotations map[string]string
+		wantErr     string
+	}{
+		{name: "absent gateway deployment renders cleanly"},
+		{name: "component-owned gateway renders cleanly", annotations: map[string]string{"meta.helm.sh/release-name": "xmc-cmp-ingestion-gateway"}},
+		{name: "umbrella-owned gateway with keep policy renders cleanly", annotations: map[string]string{"meta.helm.sh/release-name": "xmanager-cloud", "helm.sh/resource-policy": "keep"}},
+		{name: "unmigrated umbrella-owned gateway fails closed", annotations: map[string]string{"meta.helm.sh/release-name": "xmanager-cloud"}, wantErr: "Release still owns legacy Deployment/ingestion-gateway-deployment"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var objs []runtime.Object
+			if tc.annotations != nil {
+				objs = append(objs, newGatewayDeploymentObj(tc.annotations))
+			}
+			provider := fakeLookupProvider{client: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), objs...)}
+			got, err := renderChartWithClient(helmDir, "xmanager-cloud", "xmc", map[string]any{}, provider)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "migrate.py") {
+					t.Fatalf("render error = %v, want substrings %q and %q", err, tc.wantErr, "migrate.py")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected render error: %v", err)
+			}
+			if diff := cmp.Diff(wantDeployManifest, got["xmanager-cloud/templates/components/deployment.yaml"]); diff != "" {
+				t.Errorf("components/deployment.yaml mismatch under lookup (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {
