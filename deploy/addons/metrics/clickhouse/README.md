@@ -140,7 +140,7 @@ curl "http://localhost:8123/?query=SELECT%20version()"
 
 ### 3. Connect from XMC Backend
 
-The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables.
+In-cluster `dashboard-service` resolves ClickHouse connection settings dynamically from `Component/clickhouse` ([pkg/clickhouse/componentconfig](../../../../pkg/clickhouse/componentconfig/resolver.go)), while local CLI tools and port-forwarded sessions connect via [pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go) environment variables.
 
 #### In-Cluster Deployments (`Component/clickhouse` & Helm Credentials)
 
