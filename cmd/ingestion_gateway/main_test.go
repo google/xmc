@@ -16,7 +16,7 @@ package main
 
 import (
 	"context"
-	"os"
+	"errors"
 	"testing"
 
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
@@ -54,17 +54,6 @@ func TestStartHTTPServerWithProducer(t *testing.T) {
 	}
 }
 
-func isolateInvalidKubeconfig(t *testing.T) {
-	t.Helper()
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
-}
-
 func TestResolveComponentConfig(t *testing.T) {
 	ctx := context.Background()
 
@@ -73,7 +62,13 @@ func TestResolveComponentConfig(t *testing.T) {
 
 	// 2. Pub/Sub mode skips getter initialization and Component CR lookup completely.
 	t.Run("pubsub skips getter initialization", func(t *testing.T) {
-		isolateInvalidKubeconfig(t)
+		origFactory := newComponentGetter
+		getterInits := 0
+		newComponentGetter = func() (ingestiongateway.ComponentGetter, error) {
+			getterInits++
+			return nil, errors.New("unexpected getter initialization in Pub/Sub mode")
+		}
+		t.Cleanup(func() { newComponentGetter = origFactory })
 
 		pubsubCfg := &ingestiongateway.Config{
 			Port:       "8080",
@@ -82,6 +77,9 @@ func TestResolveComponentConfig(t *testing.T) {
 			TopicName:  "pubsub-topic",
 		}
 		resolveComponentConfig(ctx, pubsubCfg)
+		if getterInits != 0 {
+			t.Fatalf("newComponentGetter() calls in Pub/Sub mode = %d, want 0", getterInits)
+		}
 		if pubsubCfg.TopicName != "pubsub-topic" {
 			t.Fatalf("TopicName changed in Pub/Sub mode: %q", pubsubCfg.TopicName)
 		}
@@ -152,7 +150,15 @@ func TestResolveComponentConfig(t *testing.T) {
 	}
 
 	t.Run("redpanda falls back to static config when kubeconfig is unavailable", func(t *testing.T) {
-		isolateInvalidKubeconfig(t)
+		crreadertest.IsolateInvalidKubeconfig(t)
+		origFactory := newComponentGetter
+		getterInits := 0
+		newComponentGetter = func() (ingestiongateway.ComponentGetter, error) {
+			getterInits++
+			return origFactory()
+		}
+		t.Cleanup(func() { newComponentGetter = origFactory })
+
 		noKubeCfg := &ingestiongateway.Config{
 			Port:            "8080",
 			MessageBus:      ingestiongateway.MessageBusRedpanda,
@@ -163,6 +169,9 @@ func TestResolveComponentConfig(t *testing.T) {
 		}
 
 		resolveComponentConfig(ctx, noKubeCfg)
+		if getterInits != 1 {
+			t.Errorf("newComponentGetter() calls in Redpanda mode = %d, want 1", getterInits)
+		}
 		if len(noKubeCfg.RedpandaBrokers) != 1 || noKubeCfg.RedpandaBrokers[0] != "static:9092" {
 			t.Errorf("RedpandaBrokers = %v, want [static:9092] when kubeconfig is unavailable", noKubeCfg.RedpandaBrokers)
 		}

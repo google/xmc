@@ -256,7 +256,7 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
-	if s.cfg == nil || s.lazyDB == nil {
+	if s.lazyDB == nil {
 		return nil, nil
 	}
 	provider, err := s.lazyDB.ComponentsProvider(ctx)

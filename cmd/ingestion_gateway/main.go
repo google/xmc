@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -65,12 +64,10 @@ func main() {
 
 const componentResolveTimeout = 5 * time.Second
 
+var newComponentGetter = ingestiongateway.NewK8sComponentGetter
+
 func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
-	if cfg == nil {
-		return
-	}
-	bus := strings.TrimSpace(cfg.MessageBus)
-	if bus != "" && !strings.EqualFold(bus, ingestiongateway.MessageBusRedpanda) {
+	if !cfg.UsesRedpanda() {
 		return
 	}
 	var getter ingestiongateway.ComponentGetter
@@ -78,7 +75,7 @@ func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, o
 		getter = optionalGetter[0]
 	} else {
 		var err error
-		getter, err = ingestiongateway.NewK8sComponentGetter()
+		getter, err = newComponentGetter()
 		if err != nil {
 			logging.Warn(ctx, "Failed to initialize Kubernetes client for component resolution; falling back to static flags",
 				"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)

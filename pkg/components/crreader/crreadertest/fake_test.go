@@ -22,6 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"xmanager_cloud/pkg/components/crreader"
 )
 
 func baselineTestComponent() *unstructured.Unstructured {
@@ -147,5 +148,16 @@ func TestFakeSecretReader(t *testing.T) {
 	}
 	if _, err := (&FakeSecretReader{}).GetSecretValue(ctx, "xmc", "s", "k"); err == nil {
 		t.Errorf("empty FakeSecretReader.GetSecretValue() succeeded, want error")
+	}
+}
+
+func TestIsolateInvalidKubeconfig(t *testing.T) {
+	IsolateInvalidKubeconfig(t)
+
+	if _, err := crreader.NewK8sGetter(); err == nil {
+		t.Error("NewK8sGetter() with isolated invalid kubeconfig succeeded, want error")
+	}
+	if _, err := crreader.NewK8sSecretReader(); err == nil {
+		t.Error("NewK8sSecretReader() with isolated invalid kubeconfig succeeded, want error")
 	}
 }

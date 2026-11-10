@@ -48,25 +48,24 @@ type Config struct {
 
 // Flags holds the CLI flag value bindings for FlagSet registration.
 type Flags struct {
-	Port                       string
-	MessageBus                 string
-	RedpandaBrokers            string
-	TopicName                  string
-	MinPartitions              int
-	MinReplicas                int
-	SASLEnabled                bool
-	SASLMechanism              string
-	SASLUser                   string
-	SASLPassword               string
-	SASLCredentialsDir         string
-	TLSEnabled                 bool
-	TLSCertFile                string
-	TLSKeyFile                 string
-	TLSCaFile                  string
-	TLSInsecureSkipVerify      bool
-	ProjectID                  string
-	DeprecatedEnableComponents bool
-	ComponentsNamespace        string
+	Port                  string
+	MessageBus            string
+	RedpandaBrokers       string
+	TopicName             string
+	MinPartitions         int
+	MinReplicas           int
+	SASLEnabled           bool
+	SASLMechanism         string
+	SASLUser              string
+	SASLPassword          string
+	SASLCredentialsDir    string
+	TLSEnabled            bool
+	TLSCertFile           string
+	TLSKeyFile            string
+	TLSCaFile             string
+	TLSInsecureSkipVerify bool
+	ProjectID             string
+	ComponentsNamespace   string
 }
 
 // RegisterFlags registers the ingestion gateway CLI flags on the given FlagSet and returns a Flags struct binding.
@@ -92,11 +91,11 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
-	// Components are always enabled across Go services; ingestion_gateway alone retains an unread
-	// -enable_components CLI flag sink because deploy/profiles/stable-2026a/components/ingestion-gateway/templates/deployment.yaml
-	// (and deploy/helm/templates/ingestion-gateway/deployment.yaml during rolling upgrades) passes
-	// -enable_components=true in container args, and Go's flag.Parse() exits 2 on unknown flags.
-	fs.BoolVar(&f.DeprecatedEnableComponents, "enable_components", true, "Deprecated: components are always enabled.")
+	// Components are always enabled. ingestion_gateway keeps -enable_components as an ignored flag
+	// because deploy/helm/templates/ingestion-gateway/deployment.yaml (rendered only when
+	// componentsDeployment.enabled is false) passes -enable_components=false and the stable-2026a
+	// component chart passes -enable_components=true; Go's flag.Parse() exits 2 on unknown flags.
+	fs.Bool("enable_components", true, "Deprecated: ignored; components are always enabled.")
 	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
 	return f
 }
@@ -226,6 +225,11 @@ func (c *Config) Validate() error {
 		return c.validateRedpanda()
 	}
 	return errUnsupportedMessageBus(c.MessageBus)
+}
+
+// UsesRedpanda reports whether the effective message bus is Redpanda (including when MessageBus is unset or blank).
+func (c *Config) UsesRedpanda() bool {
+	return c != nil && c.messageBusOrDefault() == MessageBusRedpanda
 }
 
 // messageBusOrDefault resolves the selected backend, treating an unset value as the default.

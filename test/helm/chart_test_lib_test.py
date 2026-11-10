@@ -84,6 +84,15 @@ class RenderTemplateTest(unittest.TestCase):
 
         self.assertIn("kind: Deployment", manifest)
 
+    def test_render_passes_release_namespace_when_requested(self) -> None:
+        manifest = render_template(
+            "templates/dashboard-service/configmap.yaml",
+            {"dashboardServiceDeployment.enabled": "true"},
+            namespace="custom-ns",
+        )
+
+        self.assertIn('components_namespace: "custom-ns"', manifest)
+
     def test_render_chart_returns_every_manifest(self) -> None:
         """Suites whose subject is the set of rendered resources render without --show-only."""
         manifests = render_chart({"dashboardServiceDeployment.enabled": "true"})

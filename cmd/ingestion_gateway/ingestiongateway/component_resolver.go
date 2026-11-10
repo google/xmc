@@ -83,9 +83,9 @@ func shouldResolveRedpandaComponent(ctx context.Context, cfg *Config) bool {
 		logging.Info(ctx, "Skipping Redpanda Component CR resolution: config is nil")
 		return false
 	}
-	if bus := cfg.messageBusOrDefault(); bus != MessageBusRedpanda {
+	if !cfg.UsesRedpanda() {
 		logging.Info(ctx, "Skipping Redpanda Component CR resolution: message bus is not redpanda",
-			"message_bus", bus)
+			"message_bus", cfg.messageBusOrDefault())
 		return false
 	}
 	return true

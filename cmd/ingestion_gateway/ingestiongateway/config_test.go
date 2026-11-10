@@ -462,3 +462,28 @@ func TestLoadConfig_ComponentsFlagsAndEnv(t *testing.T) {
 		}
 	})
 }
+
+func TestConfigUsesRedpanda(t *testing.T) {
+	var nilCfg *Config
+	if nilCfg.UsesRedpanda() {
+		t.Error("(*Config)(nil).UsesRedpanda() = true, want false")
+	}
+	for _, tc := range []struct {
+		name string
+		bus  string
+		want bool
+	}{
+		{"empty defaults to redpanda", "", true},
+		{"whitespace defaults to redpanda", "   ", true},
+		{"explicit redpanda case-insensitive", "  RedPanda ", true},
+		{"pubsub returns false", MessageBusPubSub, false},
+		{"unsupported bus returns false", "rabbitmq", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{MessageBus: tc.bus}
+			if got := cfg.UsesRedpanda(); got != tc.want {
+				t.Errorf("(&Config{MessageBus: %q}).UsesRedpanda() = %v, want %v", tc.bus, got, tc.want)
+			}
+		})
+	}
+}

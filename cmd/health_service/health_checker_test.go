@@ -1076,20 +1076,28 @@ func TestHealthChecker_RunChecks_CustomComponentsRunsAcrossBackends(t *testing.T
 		})
 	}
 
-	nilProviderChecker, err := NewHealthChecker(HealthCheckerParams{
-		Config: &Config{
-			XidAddr:       xidListener.Addr().String(),
-			EssURL:        httpServer.URL,
-			ActuatorURL:   httpServer.URL,
-			ReconcilerURL: httpServer.URL,
-		},
-		LazyDB: &mockLazyDB{componentsProvider: nil},
+	t.Run("nil components provider adds no custom entries", func(t *testing.T) {
+		nilProviderChecker, err := NewHealthChecker(HealthCheckerParams{
+			Config: &Config{
+				XidAddr:       xidListener.Addr().String(),
+				EssURL:        httpServer.URL,
+				ActuatorURL:   httpServer.URL,
+				ReconcilerURL: httpServer.URL,
+			},
+			LazyDB: &mockLazyDB{componentsProvider: nil},
+		})
+		if err != nil {
+			t.Fatalf("failed to create nil-provider health checker: %v", err)
+		}
+		defer nilProviderChecker.Close()
+		nilRes := nilProviderChecker.RunChecks(context.Background())
+		if len(nilRes.Components) == 0 {
+			t.Fatal("RunChecks(nil components provider) returned 0 core components")
+		}
+		for _, comp := range nilRes.Components {
+			if comp != nil && comp.Type == spb.ComponentType_COMPONENT_TYPE_CUSTOM_COMPONENT {
+				t.Errorf("RunChecks(nil components provider) returned custom component %q, want none", comp.Name)
+			}
+		}
 	})
-	if err != nil {
-		t.Fatalf("failed to create nil-provider health checker: %v", err)
-	}
-	defer nilProviderChecker.Close()
-	if nilRes := nilProviderChecker.RunChecks(context.Background()); len(nilRes.Components) == 0 {
-		t.Fatal("RunChecks(nil components provider) returned 0 core components")
-	}
 }
