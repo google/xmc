@@ -390,20 +390,39 @@ class HandoffAndFinalizeTests(unittest.TestCase):
             )
         )
 
-        def undo_active_1_0_run(cmd: list[str], **_: object) -> subprocess.CompletedProcess[str]:
-            if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
-                return _done(cmd, rc=1, stderr="NotFound")
-            if cmd[:3] == ["helm", "get", "values"]:
-                return _done(
-                    cmd, stdout=json.dumps({"componentsDeployment": {"cmsAddress": "grpc:50051"}})
-                )
-            return _done(cmd)
+        # From a 1.0.0+ checkout, undo must refuse an active-components release regardless of how
+        # activity is detected (componentsDeployment present, or SemVer imageTag >= 1.0.0), even
+        # when the live gateway workloads carry valid Helm ownership metadata.
+        active_values_cases: tuple[dict[str, object], ...] = (
+            {"componentsDeployment": {"cmsAddress": "grpc:50051"}},
+            {"imageTag": "1.0.0"},
+        )
+        for active_values in active_values_cases:
+            with self.subTest(active_values=active_values):
 
-        with (
-            mock.patch("tools.common.tool_utils.run_command", side_effect=undo_active_1_0_run),
-            self.assertRaises(HandledError),
-        ):
-            migrate.run_handoff(args)
+                def undo_active_1_0_run(
+                    cmd: list[str], *, _values: dict[str, object] = active_values, **_: object
+                ) -> subprocess.CompletedProcess[str]:
+                    if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
+                        return _done(cmd, rc=1, stderr="NotFound")
+                    if cmd[:2] == ["kubectl", "get"]:
+                        return _done(
+                            cmd,
+                            stdout=json.dumps(_helm_obj("ig", release=migrate.COMPONENT_RELEASE)),
+                        )
+                    if cmd[:3] == ["helm", "get", "values"]:
+                        return _done(cmd, stdout=json.dumps(_values))
+                    return _done(cmd)
+
+                with (
+                    mock.patch(
+                        "tools.common.tool_utils.run_command", side_effect=undo_active_1_0_run
+                    ),
+                    self.assertRaisesRegex(
+                        HandledError, "Cannot undo handoff onto an active-components release"
+                    ),
+                ):
+                    migrate.run_handoff(args)
 
     def test_finalize_waits_prunes_or_keeps_hpa_and_guards_disabled_component(self) -> None:
         args = migrate.build_parser().parse_args(["finalize", "--timeout-seconds", "60"])

@@ -92,9 +92,9 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
 	// Components are always enabled. ingestion_gateway keeps -enable_components as an ignored flag
-	// because deploy/helm/templates/ingestion-gateway/deployment.yaml (rendered only when
-	// componentsDeployment.enabled is false) passes -enable_components=false and the stable-2026a
-	// component chart passes -enable_components=true; Go's flag.Parse() exits 2 on unknown flags.
+	// because the stable-2026a component chart passes -enable_components=true and pre-1.0.0 umbrella
+	// charts passed -enable_components=false; Go's flag.Parse() exits 2 on unknown flags, which would
+	// crash pods during a rolling upgrade between those chart generations.
 	fs.Bool("enable_components", true, "Deprecated: ignored; components are always enabled.")
 	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
 	return f

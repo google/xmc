@@ -706,21 +706,24 @@ func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
 
 // assertWellFormedManifests fails if any rendered YAML document lacks apiVersion or kind, which
 // Kubernetes rejects at install time (e.g. a template chomping the newline before apiVersion).
-func assertWellFormedManifests(t *testing.T, manifest string) {
+// It returns the number of non-empty documents so callers can assert that something rendered.
+func assertWellFormedManifests(t *testing.T, manifest string) int {
 	t.Helper()
 	dec := yaml.NewDecoder(strings.NewReader(manifest))
+	objects := 0
 	for i := 0; ; i++ {
 		var doc map[string]any
 		err := dec.Decode(&doc)
 		if err == io.EOF {
-			return
+			return objects
 		}
 		if err != nil {
 			t.Fatalf("yaml document %d failed to decode: %v", i, err)
 		}
-		if doc == nil {
+		if len(doc) == 0 {
 			continue
 		}
+		objects++
 		if doc["apiVersion"] == nil || doc["kind"] == nil {
 			t.Errorf("yaml document %d missing apiVersion or kind: apiVersion=%v kind=%v", i, doc["apiVersion"], doc["kind"])
 		}
@@ -744,29 +747,7 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 		"components/rbac.yaml",
 		"components/serviceaccount.yaml",
 	} {
-		dec := yaml.NewDecoder(strings.NewReader(rendered["xmanager-cloud/templates/"+f]))
-		docCount := 0
-		for {
-			var doc map[string]any
-			err := dec.Decode(&doc)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				t.Fatalf("umbrella %s YAML decode failed: %v", f, err)
-			}
-			if len(doc) == 0 {
-				continue
-			}
-			docCount++
-			if apiVer, _ := doc["apiVersion"].(string); apiVer == "" {
-				t.Errorf("umbrella %s doc[%d] missing apiVersion: %v", f, docCount-1, doc)
-			}
-			if kind, _ := doc["kind"].(string); kind == "" {
-				t.Errorf("umbrella %s doc[%d] missing kind: %v", f, docCount-1, doc)
-			}
-		}
-		if docCount == 0 {
+		if assertWellFormedManifests(t, rendered["xmanager-cloud/templates/"+f]) == 0 {
 			t.Errorf("umbrella %s did not render any Kubernetes object by default", f)
 		}
 	}
@@ -780,8 +761,15 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 			t.Errorf("legacy umbrella template %s still present in rendered map", legacy)
 		}
 	}
-	verifyUmbrellaKeptResources(t, "default", rendered)
+	verifyUmbrellaKeptResources(t, rendered)
+	verifyUmbrellaFailClosedGuards(t, helmDir)
+	verifyUmbrellaLegacyGatewayLookupGuard(t, helmDir, rendered["xmanager-cloud/templates/components/deployment.yaml"])
+}
 
+// verifyUmbrellaFailClosedGuards asserts the umbrella chart refuses the retired legacy values
+// (bool, string, and scalar forms) while still rendering the deprecated no-op string flags.
+func verifyUmbrellaFailClosedGuards(t *testing.T, helmDir string) {
+	t.Helper()
 	failClosedCases := []struct {
 		name    string
 		values  map[string]any
@@ -824,12 +812,11 @@ func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 	}); err != nil {
 		t.Errorf("renderChartWithValues with deprecated no-op string flags failed: %v", err)
 	}
-	verifyUmbrellaLegacyGatewayLookupGuard(t, helmDir, rendered["xmanager-cloud/templates/components/deployment.yaml"])
 }
 
 // verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the
 // deletion admission policy with their keep policy.
-func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]string) {
+func verifyUmbrellaKeptResources(t *testing.T, rendered map[string]string) {
 	t.Helper()
 	wantByFile := map[string][]string{
 		"components/crd.yaml":          {"kind: CustomResourceDefinition"},
@@ -839,7 +826,7 @@ func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]
 		manifest := rendered["xmanager-cloud/templates/"+f]
 		for _, want := range append(kinds, "helm.sh/resource-policy: keep") {
 			if !strings.Contains(manifest, want) {
-				t.Errorf("%s: umbrella %s missing %q", name, f, want)
+				t.Errorf("default render: umbrella %s missing %q", f, want)
 			}
 		}
 	}
