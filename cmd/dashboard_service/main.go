@@ -279,6 +279,12 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, lazy)))
 	}
 	if !chExpected {
+		if store == storeClickHouse {
+			// The data engine is chosen once at startup. Enabling Component/clickhouse later
+			// requires a dashboard-service restart to pick it up.
+			logging.Info(ctx, "ClickHouse is not configured or enabled (metrics_store=clickhouse); starting without a chart data engine. Enabling Component/clickhouse later requires a dashboard-service restart (kubectl rollout restart deployment/dashboard-service-deployment)")
+			return nil
+		}
 		// The data engine is chosen once at startup. Enabling Component/clickhouse or
 		// Component/bigquery later requires a dashboard-service restart to pick it up.
 		logging.Info(ctx, "No ClickHouse or BigQuery component is enabled; starting without a chart data engine. Enabling Component/clickhouse or Component/bigquery later requires a dashboard-service restart (kubectl rollout restart deployment/dashboard-service-deployment)")

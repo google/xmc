@@ -892,14 +892,14 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 			t.Fatal("initDataEngineWithGetter(Forbidden, no static env) = nil, want fail-closed provider")
 		}
 		defer noStaticProvider.Close()
-		if err := newReadinessCheck(nil, noStaticProvider)(ctx); err == nil || !apierrors.IsForbidden(errors.Unwrap(err)) && !strings.Contains(err.Error(), "denied") {
+		if err := newReadinessCheck(nil, noStaticProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
 			t.Errorf("newReadinessCheck(Forbidden, no static env) = %v, want Forbidden error", err)
 		}
 
 		// With static ClickHouse env: Forbidden surfaces RBAC error rather than silently using stale static options.
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 		t.Setenv("CLICKHOUSE_PORT", "9000")
-		if _, _, err := buildClickHouseResolver("xmc", lazyForbidden)(ctx); err == nil || !strings.Contains(err.Error(), "denied") {
+		if _, _, err := buildClickHouseResolver("xmc", lazyForbidden)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
 			t.Errorf("buildClickHouseResolver(Forbidden, static env) err = %v, want Forbidden error", err)
 		}
 		staticCHProvider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc"}, forbiddenGetter)
@@ -907,7 +907,7 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 			t.Fatal("initDataEngineWithGetter(Forbidden, static ClickHouse env) = nil, want provider")
 		}
 		defer staticCHProvider.Close()
-		if err := newReadinessCheck(nil, staticCHProvider)(ctx); err == nil || !strings.Contains(err.Error(), "denied") {
+		if err := newReadinessCheck(nil, staticCHProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
 			t.Errorf("newReadinessCheck(Forbidden, static ClickHouse env) = %v, want Forbidden error", err)
 		}
 
@@ -915,7 +915,7 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
 		t.Setenv("METRICS_STORE", "bigquery")
-		if _, _, err := buildBigQueryResolver("xmc", "proj-1", lazyForbidden)(ctx); err == nil || !strings.Contains(err.Error(), "denied") {
+		if _, _, err := buildBigQueryResolver("xmc", "proj-1", lazyForbidden)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
 			t.Errorf("buildBigQueryResolver(Forbidden, static env) err = %v, want Forbidden error", err)
 		}
 		staticBQProvider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", ProjectID: "proj-1", MetricsStore: "bigquery"}, forbiddenGetter)
@@ -923,7 +923,7 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 			t.Fatal("initDataEngineWithGetter(Forbidden, static BigQuery env) = nil, want provider")
 		}
 		defer staticBQProvider.Close()
-		if err := newReadinessCheck(nil, staticBQProvider)(ctx); err == nil || !strings.Contains(err.Error(), "denied") {
+		if err := newReadinessCheck(nil, staticBQProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
 			t.Errorf("newReadinessCheck(Forbidden, static BigQuery env) = %v, want Forbidden error", err)
 		}
 	})
@@ -948,6 +948,23 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
 		if _, build, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx); err != nil || build == nil {
 			t.Errorf("buildBigQueryResolver(nil) static fallback = (%v, %v), want non-nil builder", build, err)
+		}
+	})
+
+	t.Run("explicit clickhouse store disabled returns nil without probing bigquery", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		t.Setenv("BIGQUERY_DATASET", "")
+		t.Setenv("METRICS_STORE", "clickhouse")
+		chNotFound := &countingComponentGetter{
+			inner: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")},
+		}
+		if provider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", MetricsStore: "clickhouse"}, chNotFound); provider != nil {
+			provider.Close()
+			t.Fatalf("initDataEngineWithGetter(clickhouse unconfigured) = %v, want nil", provider)
+		}
+		if diff := cmp.Diff(map[string]int{"clickhouse": 1}, chNotFound.Calls()); diff != "" {
+			t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 		}
 	})
 }
