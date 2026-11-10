@@ -16,6 +16,7 @@ package executionenvironments
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -522,22 +523,7 @@ const (
 )
 
 func annotateGCSVolumes(replicatedJob *jobsetv1alpha2.ReplicatedJob, job *epb.KubernetesJob) {
-	hasGCS := false
-	for _, v := range job.GetVolumes() {
-		if v.GetGcs() != nil {
-			hasGCS = true
-			break
-		}
-	}
-	if !hasGCS {
-		for _, vol := range replicatedJob.Template.Spec.Template.Spec.Volumes {
-			if vol.CSI != nil && vol.CSI.Driver == "gcs.csi.storage.gke.io" {
-				hasGCS = true
-				break
-			}
-		}
-	}
-	if !hasGCS {
+	if !slices.ContainsFunc(job.GetVolumes(), func(v *epb.Volume) bool { return v.GetGcs() != nil }) {
 		return
 	}
 	if replicatedJob.Template.Spec.Template.ObjectMeta.Annotations == nil {
