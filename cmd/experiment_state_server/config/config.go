@@ -55,10 +55,7 @@ type Config struct {
 	FeatureFlags                featureflags.Flags
 }
 
-var (
-	cfg                        Config
-	deprecatedEnableComponents bool
-)
+var cfg Config
 
 // init runs when the package is imported. It defines the command-line flags and loads ConfigMaps.
 func init() {
@@ -70,7 +67,6 @@ func init() {
 	flag.StringVar(&cfg.TLSKeyFile, "ess_tls_key_file", "/etc/tls/tls.key", "Path to the TLS key file")
 	flag.StringVar(&cfg.DefaultExecutionEnvironment, "ess_default_execution_environment", "gke", "The default execution environment to use if not specified in the request.")
 	flag.StringVar(&cfg.SigningKeyFile, "ess_signing_key_file", "/etc/signing-key/tls.key", "Path to the messages signing key.")
-	flag.BoolVar(&deprecatedEnableComponents, "enable_components", true, "Deprecated: components are always enabled.")
 	cfg.registerConfigs()
 }
 

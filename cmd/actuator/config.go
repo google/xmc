@@ -65,7 +65,6 @@ var (
 	metricsEnabled              bool
 	allowPrivilegedContainers   bool
 	allowHostNetwork            bool
-	deprecatedEnableComponents  bool
 	featureFlags                featureflags.Flags
 )
 
@@ -87,7 +86,6 @@ func init() {
 	flag.BoolVar(&metricsEnabled, "metrics_enabled", false, "Whether to enable XMC metrics in jobs.")
 	flag.BoolVar(&allowPrivilegedContainers, "allow_privileged_containers", false, "Whether to allow containers to run in privileged mode when requested.")
 	flag.BoolVar(&allowHostNetwork, "allow_host_network", false, "Whether to allow pods to run with host networking when requested.")
-	flag.BoolVar(&deprecatedEnableComponents, "enable_components", true, "Deprecated: components are always enabled.")
 	flag.StringVar(&jwksURL, "jwks_url", "", "The JWKS endpoint URL for verifying OIDC tokens.")
 	flag.StringVar(&oidcIssuerURL, "oidc_issuer_url", "", "The OIDC issuer URL.")
 	registerConfigs()

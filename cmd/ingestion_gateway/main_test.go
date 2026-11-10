@@ -54,6 +54,17 @@ func TestStartHTTPServerWithProducer(t *testing.T) {
 	}
 }
 
+func isolateInvalidKubeconfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
+}
+
 func TestResolveComponentConfig(t *testing.T) {
 	ctx := context.Background()
 
@@ -62,13 +73,7 @@ func TestResolveComponentConfig(t *testing.T) {
 
 	// 2. Pub/Sub mode skips getter initialization and Component CR lookup completely.
 	t.Run("pubsub skips getter initialization", func(t *testing.T) {
-		t.Setenv("KUBERNETES_SERVICE_HOST", "")
-		t.Setenv("KUBERNETES_SERVICE_PORT", "")
-		badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-		if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-			t.Fatalf("failed to write invalid kubeconfig: %v", err)
-		}
-		t.Setenv("KUBECONFIG", badKubeconfig)
+		isolateInvalidKubeconfig(t)
 
 		pubsubCfg := &ingestiongateway.Config{
 			Port:       "8080",
@@ -145,4 +150,24 @@ func TestResolveComponentConfig(t *testing.T) {
 	if fallbackCfg.TopicName != "static-topic" {
 		t.Errorf("TopicName = %q, want static-topic on fallback", fallbackCfg.TopicName)
 	}
+
+	t.Run("redpanda falls back to static config when kubeconfig is unavailable", func(t *testing.T) {
+		isolateInvalidKubeconfig(t)
+		noKubeCfg := &ingestiongateway.Config{
+			Port:            "8080",
+			MessageBus:      ingestiongateway.MessageBusRedpanda,
+			RedpandaBrokers: []string{"static:9092"},
+			TopicName:       "static-topic",
+			MinPartitions:   1,
+			MinReplicas:     1,
+		}
+
+		resolveComponentConfig(ctx, noKubeCfg)
+		if len(noKubeCfg.RedpandaBrokers) != 1 || noKubeCfg.RedpandaBrokers[0] != "static:9092" {
+			t.Errorf("RedpandaBrokers = %v, want [static:9092] when kubeconfig is unavailable", noKubeCfg.RedpandaBrokers)
+		}
+		if noKubeCfg.TopicName != "static-topic" {
+			t.Errorf("TopicName = %q, want static-topic when kubeconfig is unavailable", noKubeCfg.TopicName)
+		}
+	})
 }

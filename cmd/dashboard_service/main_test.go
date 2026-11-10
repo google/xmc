@@ -597,13 +597,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 	t.Run("returns false when static env unset and kubeconfig unavailable", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
-		t.Setenv("KUBERNETES_SERVICE_HOST", "")
-		t.Setenv("KUBERNETES_SERVICE_PORT", "")
-		badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-		if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-			t.Fatalf("failed to write invalid kubeconfig: %v", err)
-		}
-		t.Setenv("KUBECONFIG", badKubeconfig)
+		isolateInvalidKubeconfig(t)
 		if isClickHouseExpected(ctx, "xmc", nil) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
@@ -694,7 +688,6 @@ func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
 	t.Setenv("BIGQUERY_DATASET", "")
 	t.Setenv("METRICS_STORE", "")
 	serverCfg := &server.Config{
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 	bqCR := &unstructured.Unstructured{
@@ -861,13 +854,7 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 
 func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	isolateInvalidKubeconfig(t)
 
 	t.Run("clickhouse static fallback", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
@@ -875,6 +862,14 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 		fp, connect, err := buildClickHouseResolver("xmc", nil)(ctx)
 		if err != nil || fp == "" || connect == nil {
 			t.Fatalf("buildClickHouseResolver() = (%q, %v, %v), want static fallback", fp, connect, err)
+		}
+		if fp, connect, err := buildClickHouseResolverWithLazy("xmc", nil)(ctx); err != nil || fp == "" || connect == nil {
+			t.Fatalf("buildClickHouseResolverWithLazy(nil) = (%q, %v, %v), want static fallback", fp, connect, err)
+		}
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		if _, _, err := buildClickHouseResolverWithLazy("xmc", nil)(ctx); err == nil {
+			t.Error("buildClickHouseResolverWithLazy(nil) without static env succeeded, want error")
 		}
 	})
 
@@ -884,6 +879,16 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 		fp, build, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx)
 		if err != nil || fp == "" || build == nil {
 			t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want static fallback", fp, build, err)
+		}
+		if fp, build, err := buildBigQueryResolverWithLazy("xmc", "proj-1", nil)(ctx); err != nil || fp == "" || build == nil {
+			t.Fatalf("buildBigQueryResolverWithLazy(nil) = (%q, %v, %v), want static fallback", fp, build, err)
+		}
+		if isComponentExpectedWithLazy(ctx, "xmc", "bigquery", nil) {
+			t.Errorf("isComponentExpectedWithLazy(nil) = true, want false")
+		}
+		t.Setenv("BIGQUERY_DATASET", "")
+		if _, _, err := buildBigQueryResolverWithLazy("xmc", "proj-1", nil)(ctx); err == nil {
+			t.Error("buildBigQueryResolverWithLazy(nil) without static env succeeded, want error")
 		}
 	})
 
