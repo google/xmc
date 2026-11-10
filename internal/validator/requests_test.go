@@ -330,6 +330,11 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
 	}
+	withMaskPaths := func(paths ...string) *essmsgpb.UpdateExperimentRequest {
+		return prototest.Modify(validReq, func(r *essmsgpb.UpdateExperimentRequest) {
+			r.UpdateMask = &fmpb.FieldMask{Paths: paths}
+		})
+	}
 
 	tests := []struct {
 		name    string
@@ -363,6 +368,10 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 			}),
 			wantErr: nil,
 		},
+		{name: "immutable_experiment_type", req: withMaskPaths("title", "experiment_type"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "immutable_study_config", req: withMaskPaths("study_config"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "immutable_study_config_subfield", req: withMaskPaths("study_config.max_trial_budget"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "path_sharing_an_immutable_prefix", req: withMaskPaths("study_configs"), wantErr: nil},
 	}
 
 	for _, tc := range tests {

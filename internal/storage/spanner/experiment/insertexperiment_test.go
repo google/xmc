@@ -22,6 +22,8 @@ import (
 
 	gcspanner "cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -207,6 +209,10 @@ func TestInsertExperiment_StudyConfigRoundTripAndImmutable(t *testing.T) {
 	}
 	if diff := cmp.Diff([]*essmsgpb.StudyConfig{nil, study.GetStudyConfig()}, gotStudyConfigs, protocmp.Transform()); diff != "" {
 		t.Errorf("ListExperiments() study configs diff (-want +got):\n%s", diff)
+	}
+	// study_config is selectable but holds an opaque proto, so it cannot be filtered on.
+	if _, _, err := storageClient.ListExperiments(ctx, 10, "", `study_config = "x"`, "xid", 0); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ListExperiments(study_config filter) error = %v, want code %v", err, codes.InvalidArgument)
 	}
 
 	_, err = storageClient.UpdateExperiment(ctx, &storage.ExperimentUpdate{

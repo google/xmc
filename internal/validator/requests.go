@@ -186,9 +186,15 @@ func validateMetadataLimits(resource string, tags []string, notes string, urls [
 	return nil
 }
 
+// immutableExperimentPaths are the Experiment fields that only CreateExperiment sets.
+var immutableExperimentPaths = []string{"experiment_type", "study_config"}
+
 // ValidateUpdateExperimentRequest validates updates in UpdateExperimentRequest.
 func ValidateUpdateExperimentRequest(req *essmsgpb.UpdateExperimentRequest) error {
 	for _, path := range req.GetUpdateMask().GetPaths() {
+		if isImmutableExperimentPath(path) {
+			return fmt.Errorf("experiment field %q cannot be updated after creation: %w", path, grpcerr.ErrInvalidArgument)
+		}
 		if path == "title" {
 			if strings.TrimSpace(req.GetExperiment().GetTitle()) == "" {
 				return fmt.Errorf("experiment title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
@@ -196,6 +202,17 @@ func ValidateUpdateExperimentRequest(req *essmsgpb.UpdateExperimentRequest) erro
 		}
 	}
 	return nil
+}
+
+// isImmutableExperimentPath reports whether the update mask path names an immutable Experiment
+// field or one of its subfields.
+func isImmutableExperimentPath(path string) bool {
+	for _, field := range immutableExperimentPaths {
+		if path == field || strings.HasPrefix(path, field+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // FillExperimentNullValues fills in any null values in the Experiment proto with default values.

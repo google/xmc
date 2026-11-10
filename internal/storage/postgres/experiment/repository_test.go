@@ -342,6 +342,10 @@ func TestStudyConfig_RoundTripAndImmutable(t *testing.T) {
 	if diff := cmp.Diff(wantStudyConfigs, gotStudyConfigs, protocmp.Transform()); diff != "" {
 		t.Errorf("ListExperiments() study configs diff (-want +got):\n%s", diff)
 	}
+	// study_config is selectable but holds an opaque proto, so it cannot be filtered on.
+	if _, _, err := repo.ListExperiments(ctx, 10, "", `study_config = "x"`, "xid", 0); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ListExperiments(study_config filter) error = %v, want code %v", err, codes.InvalidArgument)
+	}
 
 	_, err = repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
 		XID:        301,

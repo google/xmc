@@ -209,12 +209,11 @@ var (
 				Type:            filtervisitor.String,
 				Selectable:      true,
 			},
+			// Selectable only: the column holds an opaque proto, so it is not filterable.
 			studyConfigTableField: {
 				Name:         studyConfigTableField,
 				QueryLiteral: safesql.New("e.StudyConfig"),
-				Type:         filtervisitor.Bytes,
 				Selectable:   true,
-				Nullable:     true,
 			},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{

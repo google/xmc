@@ -94,7 +94,8 @@ var (
 			updatedTableField:        {Name: updatedTableField, QueryLiteral: safesql.New("e.UpdateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			completedTableField:      {Name: completedTableField, QueryLiteral: safesql.New("e.CompleteTime"), Type: filtervisitor.Timestamp, Selectable: true, Nullable: true},
 			experimentTypeTableField: {Name: experimentTypeTableField, QueryLiteral: safesql.New("e.ExperimentType"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.Experiment_ExperimentType_value},
-			studyConfigTableField:    {Name: studyConfigTableField, QueryLiteral: safesql.New("e.StudyConfig"), Type: filtervisitor.Bytes, Selectable: true, Nullable: true},
+			// Selectable only: the column holds an opaque proto, so it is not filterable.
+			studyConfigTableField: {Name: studyConfigTableField, QueryLiteral: safesql.New("e.StudyConfig"), Selectable: true},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: xidTableField, SortOrder: querytools.Asc},
