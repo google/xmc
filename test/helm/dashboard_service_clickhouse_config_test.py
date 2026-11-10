@@ -239,31 +239,40 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         self.assertIn("components_namespace:", manifest)
         self.assertNotIn("enable_components", manifest)
 
-    def test_components_rbac_omitted_without_components(self) -> None:
-        """The reader Role is only rendered when dashboard and components are both on."""
-        for values in (
-            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "false"},
-            {"dashboardServiceDeployment.enabled": "true"},
-        ):
-            self.assertNotIn(
-                "dashboard-service-components-reader",
-                render_template(DASHBOARD_SERVICEACCOUNT, values),
-            )
-
-    def test_components_rbac_rendered_when_components_enabled_even_without_metrics(self) -> None:
-        """The reader Role renders when components are on, even if metrics.enabled is false."""
-        manifest = render_template(
-            DASHBOARD_SERVICEACCOUNT,
-            {
-                "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
-                "metrics.enabled": "false",
-            },
+    def test_components_rbac_rendered_whenever_dashboard_enabled(self) -> None:
+        """The reader Role renders whenever dashboard is enabled, and omits when disabled."""
+        self.assertNotIn(
+            "dashboard-service-components-reader",
+            render_template(
+                DASHBOARD_SERVICEACCOUNT, {"dashboardServiceDeployment.enabled": "false"}
+            ),
         )
-        self.assertIn("name: dashboard-service-components-reader", manifest)
-        self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
-        self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+        for extra in ({}, {"componentsDeployment": "null"}):
+            manifest = render_template(
+                DASHBOARD_SERVICEACCOUNT,
+                {"dashboardServiceDeployment.enabled": "true", "metrics.enabled": "false", **extra},
+            )
+            self.assertIn("name: dashboard-service-components-reader", manifest)
+            self.assertIn("name: dashboard-service-components-reader-binding", manifest)
+            self.assertIn(
+                '  - apiGroups: ["xmc.dev"]\n'
+                '    resources: ["components"]\n'
+                '    resourceNames: ["clickhouse", "bigquery"]\n'
+                '    verbs: ["get"]',
+                manifest,
+            )
+            self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+
+    def test_actuator_clusterrole_unconditionally_grants_components_read(self) -> None:
+        """Actuator ClusterRole always grants get/list/watch on xmc.dev components."""
+        for values in ({}, {"componentsDeployment": "null"}):
+            manifest = render_template("templates/actuator/clusterrole.yaml", values)
+            self.assertIn(
+                '- apiGroups: ["xmc.dev"]\n'
+                '  resources: ["components"]\n'
+                '  verbs: ["get", "list", "watch"]',
+                manifest,
+            )
 
     def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
         """Without CSI, the Role grants get on clickhouse/bigquery Component CRs and password Secret."""
@@ -271,7 +280,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_SERVICEACCOUNT,
             {
                 "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
                 "metrics.enabled": "true",
             },
         )
@@ -285,7 +293,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
                 DASHBOARD_SERVICEACCOUNT,
                 {
                     "dashboardServiceDeployment.enabled": "true",
-                    "componentsDeployment.enabled": "true",
                     "metrics.enabled": "true",
                     "metrics.clickhouse.secretName": "custom-ch-secret",
                 },
@@ -298,7 +305,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_SERVICEACCOUNT,
             {
                 "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
                 "metrics.enabled": "true",
                 "secrets.csi.enabled": "true",
             },

@@ -395,6 +395,13 @@ vars:
                 self.assertFalse(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
         mock_sleep.assert_not_called()
 
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_wait_for_xmc_deployments(self, mock_run):
+        verify_xmc._wait_for_xmc_deployments()
+        mock_run.assert_called_once_with(
+            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"]
+        )
+
     @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
@@ -441,7 +448,7 @@ vars:
         mock_wait_deployments.assert_called_once_with()
 
     @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
-    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_components", return_value=False)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
     @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=False)
@@ -465,6 +472,7 @@ vars:
         with mock.patch.object(sys, "stdout", captured):
             exit_code = verify_xmc.main()
         self.assertEqual(exit_code, 1)
+        mock_wait_deployments.assert_not_called()
 
 
 if __name__ == "__main__":
