@@ -139,8 +139,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly jobs = computed(() => this.jobsResponse()?.jobs ?? []);
   protected readonly userAllocations = computed(() => {
-    const resp: GetRunningAndPendingJobsResponse | undefined = this.jobsResponse();
-    return resp?.userAllocations ?? [];
+    const resp: GetRunningAndPendingJobsResponse = this.jobsResponse();
+    return resp.userAllocations ?? [];
   });
 
   protected readonly pageSizeOptions = [5, 10, 20, 50] as const;

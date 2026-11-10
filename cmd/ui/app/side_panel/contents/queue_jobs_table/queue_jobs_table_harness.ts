@@ -87,10 +87,10 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
   private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
   private readonly headerActions = this.locatorForAll('.title-row > [headerActions]');
-  private readonly userAllocationBar = this.locatorFor(QueueUserAllocationBarHarness);
+  private readonly userAllocationBar = this.locatorForOptional(QueueUserAllocationBarHarness);
 
-  /** Gets the per-user allocation bar rendered above the jobs table. */
-  async getUserAllocationBar(): Promise<QueueUserAllocationBarHarness> {
+  /** Gets the per-user allocation bar rendered above the jobs table, or null while jobs load. */
+  async getUserAllocationBar(): Promise<QueueUserAllocationBarHarness | null> {
     return this.userAllocationBar();
   }
 

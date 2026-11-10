@@ -243,7 +243,7 @@ describe('ResourceDashboard Container', () => {
     await flush();
 
     const dashboard = await getHarness(ResourceDashboardHarness);
-    const bar = await (await dashboard.getQueueJobsTable())!.getUserAllocationBar();
+    const bar = (await (await dashboard.getQueueJobsTable())!.getUserAllocationBar())!;
     expect(await bar.getHintText()).toContain('Pick a resource in "I need"');
 
     const finderHarness = (await dashboard.getSmartResourceFinder())!;

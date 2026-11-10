@@ -12,23 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { XMC_SERIES_PALETTE } from 'app/common/components/dashboard/echarts_theme';
 import { ResourceType } from 'app/common/components/resource_chip/resource_chip';
 import { UserResourceAllocation } from 'app/protos/rod';
 import { matchesResourceFilter } from 'app/resource_dashboard/resource_filter';
 import { formatRate } from 'app/resource_dashboard/resource_velocity';
 import { classifyResourceType } from 'app/side_panel/contents/queue_jobs_table/queue_jobs_pipes';
-
-/** Colors assigned to users in the stacked bar, in descending order of allocation. */
-const USER_COLORS: readonly string[] = [
-  '#1a73e8',
-  '#e8710a',
-  '#188038',
-  '#d93025',
-  '#9334e6',
-  '#12b5cb',
-  '#f9ab00',
-  '#5f6368',
-];
 
 const UNKNOWN_USER = 'unknown';
 
@@ -53,7 +42,7 @@ interface UserTotals {
   readonly pending: number;
 }
 
-/** Display units of each resource type, matching the backend's normalization. */
+/** Display units of the CPU, memory, GPU and TPU allocations the backend reports. */
 const RESOURCE_UNIT_LABELS: Readonly<Record<ResourceType, string>> = {
   [ResourceType.CPU]: 'cores',
   [ResourceType.MEMORY]: 'GiB',
@@ -107,7 +96,7 @@ export function summarizeUserAllocations(
     totalsLabel: formatUnitsLabel(totalRunning, totalPending, unit),
     segments: users.map((u, i) => ({
       user: u.user,
-      color: USER_COLORS[i % USER_COLORS.length],
+      color: XMC_SERIES_PALETTE[i % XMC_SERIES_PALETTE.length],
       runningPercent: (u.running / grandTotal) * 100,
       pendingPercent: (u.pending / grandTotal) * 100,
       label: formatUnitsLabel(u.running, u.pending, unit),

@@ -38,14 +38,12 @@ const ALLOCATIONS: UserResourceAllocation[] = [
     <xmc-queue-user-allocation-bar
       [allocations]="allocations()"
       [dominantResource]="dominantResource()"
-      [isLoading]="isLoading()"
     />
   `,
 })
 class TestHostComponent {
   readonly allocations = signal<UserResourceAllocation[]>(ALLOCATIONS);
   readonly dominantResource = signal<string | null>(null);
-  readonly isLoading = signal(false);
 }
 
 describe('QueueUserAllocationBar', () => {
@@ -82,15 +80,5 @@ describe('QueueUserAllocationBar', () => {
     const bar = await render('google.com/tpu');
     expect(await bar.hasBar()).toBeFalse();
     expect(await bar.getEmptyText()).toBe('No active jobs request google.com/tpu in this queue.');
-  });
-
-  it('hides the empty message while loading', async () => {
-    const host: TestHostComponent = bootstrap(TestHostComponent);
-    host.dominantResource.set('google.com/tpu');
-    host.isLoading.set(true);
-    await flush();
-    const bar = await getHarness(QueueUserAllocationBarHarness);
-    expect(await bar.getEmptyText()).toBeNull();
-    expect(await bar.getHintText()).toBeNull();
   });
 });

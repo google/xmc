@@ -19,8 +19,7 @@
       Pick a resource in "I need" to see how much of it each user holds in this queue.
     </p>
   } @else {
-    @let s = summary();
-    @if (s) {
+    @if (summary(); as s) {
       <div class="allocation-header">
         <h4 class="allocation-title">Who holds {{ dominantResource() }}?</h4>
         <span class="allocation-totals">{{ s.totalsLabel }}</span>
@@ -50,7 +49,7 @@
           </li>
         }
       </ul>
-    } @else if (!isLoading()) {
+    } @else {
       <p class="allocation-empty">No active jobs request {{ dominantResource() }} in this queue.</p>
     }
   }

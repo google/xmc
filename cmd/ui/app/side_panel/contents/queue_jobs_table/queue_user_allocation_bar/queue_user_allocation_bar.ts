@@ -32,7 +32,6 @@ import { summarizeUserAllocations } from './user_allocation_summary';
 export class QueueUserAllocationBar {
   readonly allocations = input<readonly UserResourceAllocation[]>([]);
   readonly dominantResource = input<string | null>(null);
-  readonly isLoading = input<boolean>(false);
 
   protected readonly summary = computed(() =>
     summarizeUserAllocations(this.allocations(), this.dominantResource()),
