@@ -22,7 +22,7 @@ import { classifyResourceType } from 'app/side_panel/contents/queue_jobs_table/q
 const UNKNOWN_USER = 'unknown';
 
 /** One user's share of the dominant resource in the selected queue. */
-export interface UserAllocationSegment {
+interface UserAllocationSegment {
   readonly user: string;
   readonly color: string;
   readonly runningPercent: number;
@@ -31,7 +31,7 @@ export interface UserAllocationSegment {
 }
 
 /** Per-user breakdown of the dominant resource across all active jobs in a queue. */
-export interface UserAllocationSummary {
+interface UserAllocationSummary {
   readonly totalsLabel: string;
   readonly segments: readonly UserAllocationSegment[];
 }
