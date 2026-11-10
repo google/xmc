@@ -226,14 +226,14 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         dest="enable_metrics",
         action="store_true",
         default=None,
-        help="Enable metrics ingestion service.",
+        help="Deprecated no-op: metrics deployment is controlled by xmc-profile.",
     )
     p.add_argument(
         "--no-enable-metrics",
         dest="enable_metrics",
         action="store_false",
         default=None,
-        help="Disable metrics ingestion service.",
+        help="Deprecated no-op: metrics deployment is controlled by xmc-profile.",
     )
     p.add_argument(
         "--enable-components",

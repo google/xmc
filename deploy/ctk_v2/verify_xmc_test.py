@@ -382,10 +382,17 @@ vars:
             captured.getvalue(),
         )
 
-        # 4. Unreconciled disabled CR (empty status: {}), malformed JSON, missing items, and kubectl error ("") fail on max_attempts=1 without sleeping
+        # 4. Unreconciled disabled CR (empty status: {}), stale observedGeneration (spec updated but
+        #    status still from generation 1), malformed JSON, missing items, and kubectl error ("")
+        #    fail on max_attempts=1 without sleeping
         mock_sleep.reset_mock()
         for bad_payload in (
             '{"items": [{"metadata": {"name": "comp-b"}, "spec": {"enabled": false}, "status": {}}]}',
+            (
+                '{"items": [{"metadata": {"name": "comp-a", "generation": 2}, "spec": {"enabled": true}, '
+                '"status": {"observedGeneration": 1, "state": "COMPONENT_STATE_ENABLED", '
+                '"conditions": [{"type": "Ready", "status": "True"}]}}]}'
+            ),
             "{bad",
             "{}",
             "",
@@ -394,6 +401,16 @@ vars:
             with mock.patch.object(sys, "stdout", io.StringIO()):
                 self.assertFalse(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
         mock_sleep.assert_not_called()
+
+        # 5. Matching observedGeneration passes
+        converged = (
+            '{"items": [{"metadata": {"name": "comp-a", "generation": 2}, "spec": {"enabled": true}, '
+            '"status": {"observedGeneration": 2, "state": "COMPONENT_STATE_ENABLED", '
+            '"conditions": [{"type": "Ready", "status": "True"}]}}]}'
+        )
+        mock_run.side_effect = [crd_name, running_pod, converged]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertTrue(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
 
     @mock.patch.object(verify_xmc.subprocess, "run")
     def test_wait_for_xmc_deployments(self, mock_run):

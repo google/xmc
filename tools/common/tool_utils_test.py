@@ -619,6 +619,7 @@ class TestConfigLoader(unittest.TestCase):
         )
         self.assertEqual(config, expected)
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_load_and_validate_config_rejects_disabled_components_yaml_and_env(self):
         self.config_path.write_text(
             self.valid_yaml + "\n  enable_components: false\n", encoding="utf-8"

@@ -332,6 +332,7 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int, str]:
         return False, 0, ""
     items = [i for i in data["items"] if isinstance(i, dict)]
     for item in items:
+        meta = item.get("metadata") or {}
         enabled = (item.get("spec") or {}).get("enabled", True)
         status = item.get("status") or {}
         conds = {
@@ -340,13 +341,16 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int, str]:
             if isinstance(c, dict)
         }
         st, sfx = status.get("state"), ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED")
+        generation = meta.get("generation")
         if (
-            conds.get("Stalled") == "True"
+            # Status from a previous spec generation must not count as converged.
+            (generation is not None and status.get("observedGeneration") != generation)
+            or conds.get("Stalled") == "True"
             or conds.get("Synced") == "False"
             or conds.get("Ready") != str(enabled)
             or (st and st not in (f"COMPONENT_STATE_{sfx[0]}", f"STATE_{sfx[1]}"))
         ):
-            return False, len(items), str((item.get("metadata") or {}).get("name", "unknown"))
+            return False, len(items), str(meta.get("name", "unknown"))
     return True, len(items), ""
 
 
@@ -373,6 +377,13 @@ def _wait_for_xmc_deployments(*, timeout_s: int = 180) -> bool:
 
 def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) -> bool:
     """Checks readiness of foundational component controllers and installed Component CRs.
+
+    Precondition: like the pod check in `_check_k8s_resources`, the xmc-bridge pod check is a
+    single point-in-time snapshot. Callers (`dev_env.py gke-deploy`/`gke-upgrade` `verify` step,
+    `deploy-gke.yml`) wait for Deployment rollouts before invoking this script, so a standalone
+    run immediately after `helm upgrade` may observe xmc-bridge mid-restart (`strategy: Recreate`).
+    TODO: fold the xmc-bridge pod check into the Component CR polling loop so standalone runs
+    tolerate that restart window.
 
     Args:
       max_attempts: Maximum polling attempts for Component CR reconciliation.

@@ -30,7 +30,10 @@ actuator_custom_image: "actuator_image:latest"
 reconciler_custom_image: "reconciler_image:latest"
 ess_custom_image: "experiment_state_server_image:latest"
 xmc_bridge_custom_image: "xmc_bridge_image:latest"
-ingestion_gateway_custom_image: "ingestion_gateway_image:latest"
+
+# ingestion-gateway is actuated via the embedded stable-2026a Component chart (not built in KinD);
+# empty clears values.yaml's YOUR_GCP_PROJECT_ID placeholder so xmc-bridge falls back to the chart default.
+ingestion_gateway_custom_image: ""
 
 xidService:
   hpa:

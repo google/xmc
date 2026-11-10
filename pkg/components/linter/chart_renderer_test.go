@@ -812,6 +812,14 @@ func verifyUmbrellaFailClosedGuards(t *testing.T, helmDir string) {
 	}); err != nil {
 		t.Errorf("renderChartWithValues with deprecated no-op string flags failed: %v", err)
 	}
+	// Scalar overrides of the retired block (e.g. --set ingestionGatewayDeployment=false) are
+	// ignored rather than crashing the render: Helm >= 3.14 (Go >= 1.18) short-circuits `and`,
+	// so `$rawIG.enabled` is never evaluated when `$rawIG` is not a map.
+	for _, scalar := range []any{false, true, "yes"} {
+		if _, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{"ingestionGatewayDeployment": scalar}); err != nil {
+			t.Errorf("renderChartWithValues with scalar ingestionGatewayDeployment=%v failed: %v", scalar, err)
+		}
+	}
 }
 
 // verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the

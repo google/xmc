@@ -170,7 +170,7 @@ class HelmDeployer:
         for s in cfg.enabled_services:
             img_key = service_to_image_key(s)
             img_service = "xmc_bridge" if s == "components" else s.lower()
-            if s not in ("components", "xmc_bridge", "xmc-bridge", "ingestion_gateway"):
+            if s not in ("components", "xmc_bridge", "xmc-bridge"):
                 values[service_to_deployment_key(s)] = {"enabled": True}
             values[img_key] = f"{img_service}_image:latest"
 
