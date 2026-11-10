@@ -413,8 +413,6 @@ func TestCreateExperiment_StudyConfig(t *testing.T) {
 		{name: "study with config is persisted", expType: msgpb.Experiment_STUDY, studyConfig: experimenttest.StudyConfig(), wantCode: codes.OK},
 		{name: "study without config", expType: msgpb.Experiment_STUDY, wantCode: codes.InvalidArgument},
 		{name: "multi-objective study", expType: msgpb.Experiment_STUDY, studyConfig: multiObjective, wantCode: codes.InvalidArgument},
-		{name: "standard with config", expType: msgpb.Experiment_STANDARD, studyConfig: experimenttest.StudyConfig(), wantCode: codes.InvalidArgument},
-		{name: "unspecified type with config", studyConfig: experimenttest.StudyConfig(), wantCode: codes.InvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

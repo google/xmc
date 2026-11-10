@@ -46,16 +46,13 @@ var (
 	studyParameterIDRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]*$`)
 )
 
-// validateExperimentStudyConfig requires a study_config on STUDY experiments, rejects it on any
-// other experiment type (including UNSPECIFIED, which is stored as STANDARD), and validates it.
+// validateExperimentStudyConfig requires a study_config on STUDY experiments and validates it.
+// ValidateCreateExperimentRequest rejects a study_config on every other experiment type.
 func validateExperimentStudyConfig(exp *essmsgpb.Experiment) error {
-	cfg := exp.GetStudyConfig()
 	if exp.GetExperimentType() != essmsgpb.Experiment_STUDY {
-		if cfg != nil {
-			return fmt.Errorf("experiment.study_config must be unset unless experiment.experiment_type is STUDY: %w", grpcerr.ErrInvalidArgument)
-		}
 		return nil
 	}
+	cfg := exp.GetStudyConfig()
 	if cfg == nil {
 		return fmt.Errorf("experiment.study_config is required when experiment.experiment_type is STUDY: %w", grpcerr.ErrInvalidArgument)
 	}

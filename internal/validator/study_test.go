@@ -133,28 +133,7 @@ func TestValidateCreateExperimentRequest_StudyConfig(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name: "standard_with_config",
-			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
-				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
-			}),
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "unspecified_type_with_config",
-			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
-				r.Experiment.ExperimentType = essmsgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED
-			}),
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "standard_with_empty_config",
-			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
-				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
-				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
-			}),
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
+			// Non-STUDY experiments with a study_config are covered by TestValidateCreateExperimentRequest.
 			name: "standard_without_config",
 			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
