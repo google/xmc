@@ -191,6 +191,11 @@ type WorkUnitStore interface {
 
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+
+	// FetchActiveWorkUnitResources returns the creator, executable and state of every active work
+	// unit (SCHEDULING, INITIALIZING, STARTING or RUNNING) in the requested queues. The result is
+	// unordered and not paginated; empty queueNames returns an empty slice.
+	FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error)
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -220,6 +225,14 @@ type ActiveWorkUnitsResult struct {
 	WorkUnits      []ActiveWorkUnit
 	NextPageToken  string
 	TotalQueueSize int64
+}
+
+// ActiveWorkUnitResources is the data needed to attribute an active work unit's requested
+// resources to its experiment creator: the raw Executable and the current execution state.
+type ActiveWorkUnitResources struct {
+	Creator        string
+	Executable     *essmsgpb.Executable
+	ExecutionState essmsgpb.WorkUnitStatus_WorkUnitState
 }
 
 // QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.

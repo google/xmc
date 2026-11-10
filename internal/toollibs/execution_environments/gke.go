@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	epb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 const (
@@ -48,7 +49,7 @@ const (
 	gkeWorkloadLogs  = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0A%20%20%20%20resource.labels.location%3D%22" + locationPlaceholder + "%22%0A%20%20%20%20resource.labels.namespace_name%3D%22" + namespacePlaceholder + "%22%0A%20%20%20%20resource.labels.cluster_name%3D%22" + clusterPlaceholder + "%22%0A%20%20%20%20labels.k8s-pod%2Fjobset_sigs_k8s_io%2Fjobset-name%3D%22" + resourcePlaceholder + "%22%20severity%3E%3DDEFAULT;storageScope=project;cursorTimestamp=;duration=PT30M?project=" + projectPlaceholder
 	gkeWorkloadDebug = baseURL + "/logs/query;query=resource.type%3D%22k8s_container%22%0Aresource.labels.namespace_name%3D%22xmc%22%0Alabels.xid%3D%22" + xidPlaceholder + "%22%0Alabels.wid%3D%22" + widPlaceholder + "%22;summaryFields=labels%252Fxid,labels%252Fwid,labels%252Feid,labels%252Fjobset:false:32:beginning;startTime=" + createdPlaceholder + "?project=" + mgmtProjectPlaceholder
 
-	nvidiaGPUKey          = "nvidia.com/gpu"
+	nvidiaGPUKey          = constants.NvidiaGPUResourceName
 	nvidiaNodeSelectorKey = "cloud.google.com/gke-accelerator"
 
 	// Host resources a GPU job is given per card. `ResourceSet` holds its
@@ -59,7 +60,7 @@ const (
 	defaultCPUMillicoresPerGPU = 1000
 	defaultMemoryBytesPerGPU   = 4 << 30
 
-	tpuResourceKey            = "google.com/tpu"
+	tpuResourceKey            = constants.TPUResourceName
 	tpuTolerationValue        = "present"
 	tpuAcceleratorSelectorKey = "cloud.google.com/gke-tpu-accelerator"
 	tpuTopologySelectorKey    = "cloud.google.com/gke-tpu-topology"
@@ -102,32 +103,6 @@ var (
 			DisplayName: "Debug Work Unit",
 			Priority:    debugPriority,
 		},
-	}
-
-	gpuTypeToGKEAccelerator = map[string]string{
-		"P4":         "nvidia-tesla-p4",
-		"T4":         "nvidia-tesla-t4",
-		"L4_24TH":    "nvidia-l4",
-		"P100":       "nvidia-tesla-p100",
-		"V100":       "nvidia-tesla-v100",
-		"A100":       "nvidia-a100-40gb",
-		"A100_80GIB": "nvidia-a100-80gb",
-		"H100":       "nvidia-h100-80gb",
-		// The NVIDIA H100 80GB Mega GPU, which backs GCP's A3 Mega (a3-megagpu-8g)
-		// machine types. Because XManager's client enum only defines H100 (mapped
-		// to nvidia-h100-80gb for a3-highgpu-8g), callers targeting A3 Mega pass
-		// either the symbolic H100_MEGA key or the GKE accelerator label directly.
-		"H100_MEGA":             "nvidia-h100-mega-80gb",
-		"nvidia-h100-mega-80gb": "nvidia-h100-mega-80gb",
-		"H200":                  "nvidia-h200-141gb",
-		"B200":                  "nvidia-b200",
-		"GB200":                 "nvidia-gb200",
-		// The NVIDIA RTX PRO 6000 Blackwell Server Edition, which backs GCP's G4
-		// machine types. XManager's client enum already carries this card as
-		// B40_48TH and special-cases it in JobRequirements topology handling, but
-		// no entry was ever added here, so requesting one is rejected outright by
-		// updateNodeSelector.
-		"B40_48TH": "nvidia-rtx-pro-6000",
 	}
 )
 
@@ -290,7 +265,7 @@ func updateNodeSelector(resourceSet *epb.ResourceSet, podSpec *corev1.PodSpec) e
 		podSpec.NodeSelector = make(map[string]string)
 	}
 
-	accelerator, ok := gpuTypeToGKEAccelerator[gpuRes.GetType()]
+	accelerator, ok := constants.GKEAcceleratorForGPUType(gpuRes.GetType())
 	if !ok {
 		return fmt.Errorf("unsupported GPU type: %q", gpuRes.GetType())
 	}

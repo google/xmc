@@ -670,6 +670,11 @@ func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNam
 	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
 }
 
+// FetchActiveWorkUnitResources mocks fetching the resources of active work units.
+func (s *MockStorage) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error) {
+	return nil, nil
+}
+
 // FetchBatchQueueVelocity mocks fetching batch queue velocity metrics.
 func (s *MockStorage) FetchBatchQueueVelocity(ctx context.Context, queueNames []string, window time.Duration) ([]QueueMetricRow, error) {
 	return s.BatchQueueVelocityResp, s.FetchBatchQueueVelocityErr

@@ -16,6 +16,8 @@ package resourceaccumulator
 
 import (
 	"strings"
+
+	"xmanager_cloud/internal/kubernetes/common/constants"
 )
 
 var (
@@ -30,7 +32,7 @@ var (
 		"spot", "ondemand", "default", "standard", "fallback", "generic", "shared", "custom", "flavor",
 	}
 	genericResourceNames = []string{
-		"gpu", "nvidia.com/gpu", "tpu", "google.com/tpu", "accelerator",
+		ResourceTypeGPU, constants.NvidiaGPUResourceName, ResourceTypeTPU, constants.TPUResourceName, "accelerator",
 		"cpu", "memory", "storage",
 	}
 
@@ -157,11 +159,11 @@ func IsMemoryOrStorageResource(resourceType string) bool {
 // IsGenericGPU returns true if resType is a generic GPU identifier.
 func IsGenericGPU(resType string) bool {
 	lower := strings.ToLower(resType)
-	return lower == "gpu" || lower == "nvidia.com/gpu"
+	return lower == ResourceTypeGPU || lower == constants.NvidiaGPUResourceName
 }
 
 // IsGenericTPU returns true if resType is a generic TPU identifier.
 func IsGenericTPU(resType string) bool {
 	lower := strings.ToLower(resType)
-	return lower == "tpu" || lower == "google.com/tpu"
+	return lower == ResourceTypeTPU || lower == constants.TPUResourceName
 }

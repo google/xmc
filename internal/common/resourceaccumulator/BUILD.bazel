@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "resourceaccumulator",
     srcs = [
+        "canonical.go",
         "classifier.go",
         "resourceaccumulator.go",
     ],
@@ -33,6 +34,7 @@ go_library(
 go_test(
     name = "resourceaccumulator_test",
     srcs = [
+        "canonical_test.go",
         "classifier_test.go",
         "resourceaccumulator_test.go",
     ],

@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -45,9 +46,9 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 	pageSize = min(pageSize, 100)
 
-	result, err := s.workUnitStore.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, req.GetPageToken())
+	result, activeResources, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken())
 	if err != nil {
-		logging.Error(ctx, "failed to fetch active work units from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
+		logging.Error(ctx, "failed to fetch active jobs from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		if errors.Is(err, storage.ErrInvalidPageToken) {
 			return nil, status.Error(codes.InvalidArgument, "invalid page_token")
 		}
@@ -62,11 +63,25 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		totalQueueSize = result.TotalQueueSize
 	}
 
+	uniqueAccelerators := buildUniqueQueueAcceleratorMap(s.cache, clusterQueueName)
 	return &spb.GetRunningAndPendingJobsResponse{
-		Jobs:           jobs,
-		NextPageToken:  nextPageToken,
-		TotalQueueSize: totalQueueSize,
+		Jobs:            jobs,
+		NextPageToken:   nextPageToken,
+		TotalQueueSize:  totalQueueSize,
+		UserAllocations: aggregateUserAllocations(activeResources, uniqueAccelerators),
 	}, nil
+}
+
+func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
+	result, err := store.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, pageToken)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch active work units: %w", err)
+	}
+	activeResources, err := store.FetchActiveWorkUnitResources(ctx, targetQueues)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch active work unit resources: %w", err)
+	}
+	return result, activeResources, nil
 }
 
 func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {
