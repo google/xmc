@@ -350,9 +350,25 @@ def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int, str]:
     return True, len(items), ""
 
 
-def _wait_for_xmc_deployments() -> None:
-    """Waits for all Deployments in namespace xmc (including 1P component workloads) to roll out."""
-    _run_command(["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"])
+def _wait_for_xmc_deployments(*, timeout_s: int = 180) -> bool:
+    """Waits for all Deployments in namespace xmc (including 1P component workloads) to roll out.
+
+    Args:
+      timeout_s: Upper bound passed to `kubectl rollout status --timeout`.
+
+    Returns:
+      True when every Deployment rolled out, False on a rollout timeout, a
+      ProgressDeadlineExceeded condition, or a kubectl failure (so a stalled rollout
+      whose old pods are still Running cannot pass verification silently).
+    """
+    res = subprocess.run(
+        ["kubectl", "rollout", "status", "deployment", "-n", "xmc", f"--timeout={timeout_s}s"],
+        check=False,
+    )
+    if res.returncode != 0:
+        print(f"❌ Deployments in namespace xmc did not roll out within {timeout_s}s.")
+        return False
+    return True
 
 
 def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) -> bool:
@@ -410,10 +426,10 @@ def main() -> int:
     env, region, project_id = _resolve_config()
     log_monitor_deployment_enabled = _resolve_log_monitor_deployment_enabled()
     components_ok = _check_components()
-    if components_ok:
-        _wait_for_xmc_deployments()
+    deployments_ok = _wait_for_xmc_deployments() if components_ok else False
     checks = [
         components_ok,
+        deployments_ok,
         _check_k8s_resources(),
         _check_connectivity(),
         _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled),

@@ -55,25 +55,36 @@ def _verify_target_codebase(chart: Path = DEFAULT_PROFILE_CHART, desc: str | Non
             )
 
 
+def _parse_semver(tag: str) -> tuple[int, int, int] | None:
+    """Parses an umbrella imageTag such as `1.0.0`, `v0.18.2`, or `1.0.0-rc.1` into a version tuple.
+
+    Returns None for non-SemVer tags (e.g. `latest`) and for date-like tags whose major part is
+    >= 2000, which must not be compared against XMC release versions.
+    """
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\Z", tag)
+    if not m or int(m[1]) >= 2000:
+        return None
+    return int(m[1]), int(m[2]), int(m[3])
+
+
 def _is_components_active(vals: Mapping[str, Any]) -> bool:
     """Returns True when merged umbrella Helm values come from an active-components release."""
     comp = _mapping(vals, "componentsDeployment")
     if comp and tu.parse_bool_flag(comp.get("enabled", True)):
         return True
-    tag = _opt_str(vals.get("imageTag"), "imageTag")
-    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\Z", tag)
-    return bool(m and int(m[1]) < 2000 and (int(m[1]), int(m[2]), int(m[3])) >= (1, 0, 0))
+    ver = _parse_semver(_opt_str(vals.get("imageTag"), "imageTag"))
+    return ver is not None and ver >= (1, 0, 0)
 
 
 def _verify_source_env(vals: Mapping[str, Any], *, require_legacy: bool) -> None:
     """Verifies live cluster Helm release state and SemVer imageTag match a valid source."""
     if require_legacy and _is_components_active(vals):
-        raise tu.HandledError("Components are already active on release.", "Use legacy chart.")
+        raise tu.HandledError(
+            "Components are already active on release.",
+            "Skip prepare/handoff; run finalize if a cutover is already in progress.",
+        )
     tag = _opt_str(vals.get("imageTag"), "imageTag")
-    if (m := re.match(r"^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?\Z", tag)) and int(
-        m[1]
-    ) < 2000:
-        ver = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    if (ver := _parse_semver(tag)) is not None:
         ig_on = tu.parse_bool_flag(_mapping(vals, "ingestionGatewayDeployment").get("enabled"))
         min_v = (0, 4, 0) if ig_on else (0, 0, 0)
         max_v = (1, 0, 0) if require_legacy else (2, 0, 0)

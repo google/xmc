@@ -395,12 +395,26 @@ vars:
                 self.assertFalse(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
         mock_sleep.assert_not_called()
 
-    @mock.patch.object(verify_xmc, "_run_command")
+    @mock.patch.object(verify_xmc.subprocess, "run")
     def test_wait_for_xmc_deployments(self, mock_run):
-        verify_xmc._wait_for_xmc_deployments()
+        mock_run.return_value = mock.Mock(returncode=0)
+        self.assertTrue(verify_xmc._wait_for_xmc_deployments())
         mock_run.assert_called_once_with(
-            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"]
+            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"],
+            check=False,
         )
+
+    @mock.patch.object(verify_xmc.subprocess, "run")
+    def test_wait_for_xmc_deployments_fails_closed_on_rollout_error(self, mock_run):
+        mock_run.return_value = mock.Mock(returncode=1)
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            self.assertFalse(verify_xmc._wait_for_xmc_deployments(timeout_s=30))
+        mock_run.assert_called_once_with(
+            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=30s"],
+            check=False,
+        )
+        self.assertIn("did not roll out within 30s", captured.getvalue())
 
     @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
@@ -428,7 +442,7 @@ vars:
             return True
 
         mock_components.side_effect = lambda: record_true("components")
-        mock_wait_deployments.side_effect = lambda: call_order.append("wait_deployments")
+        mock_wait_deployments.side_effect = lambda: record_true("wait_deployments")
         mock_k8s.side_effect = lambda: record_true("k8s")
         mock_resolve_config.return_value = ("dev", "us-central1", "test-proj")
         mock_resolve_lm_enabled.return_value = False
@@ -473,6 +487,23 @@ vars:
             exit_code = verify_xmc.main()
         self.assertEqual(exit_code, 1)
         mock_wait_deployments.assert_not_called()
+
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments", return_value=False)
+    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=True)
+    @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled", return_value=False)
+    @mock.patch.object(
+        verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj")
+    )
+    @mock.patch.object(verify_xmc, "ensure_venv")
+    def test_main_returns_1_when_deployments_do_not_roll_out(self, *_mocks):
+        """A stalled rollout fails verification even when the existing pods look healthy."""
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            exit_code = verify_xmc.main()
+        self.assertEqual(exit_code, 1)
 
 
 if __name__ == "__main__":
