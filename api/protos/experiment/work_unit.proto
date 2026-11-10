@@ -286,6 +286,16 @@ message PersistentVolumeClaimVolumeSource {
 }
 
 // GCS volume source backed by GKE GCS FUSE CSI driver (gcsfuse.csi.storage.gke.io).
+//
+// Prerequisites:
+//   - The Cloud Storage FUSE CSI driver add-on must be enabled on the GKE
+//     cluster.
+//   - The job's Kubernetes service account must have a Workload Identity
+//     binding to a GCP service account that can access the bucket. For
+//     example, grant roles/storage.objectViewer for read-only mounts or
+//     roles/storage.objectUser for read-write mounts.
+//
+// See https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/cloud-storage-fuse-csi-driver-setup#authentication
 message GcsVolumeSource {
   // The GCS bucket name (e.g., "my-bucket" or "gs://my-bucket").
   string bucket = 1;
