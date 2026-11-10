@@ -135,9 +135,11 @@ func ExperimentRowToProto(row ExperimentRow) (*essmsgpb.Experiment, error) {
 	}
 	// StudyConfig is NULL for experiments that are not studies.
 	if row.StudyConfig != nil {
-		if exp.StudyConfig, err = UnmarshalProto[essmsgpb.StudyConfig](row.StudyConfig); err != nil {
+		studyConfig, err := UnmarshalProto[essmsgpb.StudyConfig](row.StudyConfig)
+		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal StudyConfig: %w", err)
 		}
+		exp.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: studyConfig}
 	}
 	return exp, nil
 }

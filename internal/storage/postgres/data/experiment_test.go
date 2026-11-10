@@ -62,7 +62,7 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 		UpdateTime:     timestamppb.New(testExpTime),
 		CompleteTime:   timestamppb.New(testExpCompleteTime),
 		ExperimentType: essmsgpb.Experiment_STUDY,
-		StudyConfig:    experimenttest.StudyConfig(),
+		TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()},
 	}
 
 	// An empty study config is stored as empty bytes, not NULL, and reads back as set.
@@ -71,7 +71,7 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 		CreateTime:     timestamppb.New(testExpTime),
 		UpdateTime:     timestamppb.New(testExpTime),
 		ExperimentType: essmsgpb.Experiment_STUDY,
-		StudyConfig:    &essmsgpb.StudyConfig{},
+		TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}},
 	}
 
 	minimalExp := &essmsgpb.Experiment{
@@ -143,7 +143,7 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 				CreateTime:     timestamppb.New(testExpTime),
 				UpdateTime:     timestamppb.New(testExpTime),
 				ExperimentType: essmsgpb.Experiment_STUDY,
-				StudyConfig:    &essmsgpb.StudyConfig{},
+				TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}},
 			},
 		},
 	}

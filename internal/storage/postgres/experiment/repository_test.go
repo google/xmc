@@ -313,7 +313,7 @@ func TestStudyConfig_RoundTripAndImmutable(t *testing.T) {
 	study := seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
 		e.Name = validator.ConstructExperimentName(301)
 		e.ExperimentType = essmsgpb.Experiment_STUDY
-		e.StudyConfig = experimenttest.StudyConfig()
+		e.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
 	}))
 
 	legacy, err := repo.FetchExperiment(ctx, 300)
@@ -349,7 +349,7 @@ func TestStudyConfig_RoundTripAndImmutable(t *testing.T) {
 
 	_, err = repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
 		XID:        301,
-		Experiment: &essmsgpb.Experiment{StudyConfig: &essmsgpb.StudyConfig{}},
+		Experiment: &essmsgpb.Experiment{TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"study_config"}},
 	})
 	if !errors.Is(err, grpcerr.ErrInvalidArgument) {

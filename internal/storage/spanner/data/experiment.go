@@ -58,7 +58,9 @@ func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
 	if err != nil {
 		return nil, err
 	}
-	experiment.StudyConfig = studyConfig
+	if studyConfig != nil {
+		experiment.TypeConfig = &pb.Experiment_StudyConfig{StudyConfig: studyConfig}
+	}
 
 	if err := row.ColumnByName("Urls", &experiment.Urls); err != nil {
 		return nil, fmt.Errorf("failed to read column Urls: %w", err)
@@ -155,7 +157,7 @@ func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, err
 			exp.UpdateTime.AsTime(), // UpdateTime
 			completeTime,            // CompleteTime
 			exp.ExperimentType,      // ExperimentType
-			exp.StudyConfig,         // StudyConfig
+			exp.GetStudyConfig(),    // StudyConfig
 		},
 	), nil
 }

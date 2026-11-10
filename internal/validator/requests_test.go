@@ -215,7 +215,7 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			name: "study_with_study_config",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
-				r.Experiment.StudyConfig = &essmsgpb.StudyConfig{}
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
 			}),
 			wantErr: nil,
 		},
@@ -223,14 +223,14 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			name: "standard_with_study_config",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
-				r.Experiment.StudyConfig = &essmsgpb.StudyConfig{}
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "unspecified_type_with_study_config",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
-				r.Experiment.StudyConfig = &essmsgpb.StudyConfig{}
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},

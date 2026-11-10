@@ -181,7 +181,7 @@ func TestInsertExperiment_StudyConfigRoundTripAndImmutable(t *testing.T) {
 	studyXID := int64(301)
 	study := spanner.BlankExperimentProto(studyXID)
 	study.ExperimentType = essmsgpb.Experiment_STUDY
-	study.StudyConfig = experimenttest.StudyConfig()
+	study.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
 	study.CreateTime, study.UpdateTime = timestamppb.New(now), timestamppb.New(now)
 	// Insert through the repository: experiment.CreateExperiment would also require the study's components.
 	if err := storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
@@ -217,7 +217,7 @@ func TestInsertExperiment_StudyConfigRoundTripAndImmutable(t *testing.T) {
 
 	_, err = storageClient.UpdateExperiment(ctx, &storage.ExperimentUpdate{
 		XID:        studyXID,
-		Experiment: &essmsgpb.Experiment{StudyConfig: &essmsgpb.StudyConfig{}},
+		Experiment: &essmsgpb.Experiment{TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"study_config"}},
 	})
 	if !errors.Is(err, grpcerr.ErrInvalidArgument) {

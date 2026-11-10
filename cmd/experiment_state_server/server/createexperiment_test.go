@@ -414,7 +414,10 @@ func TestCreateExperiment_PersistsStudyConfig(t *testing.T) {
 				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
 				withStorage(st),
 			)
-			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType, StudyConfig: tc.studyConfig}}
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
+			if tc.studyConfig != nil {
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: tc.studyConfig}
+			}
 
 			got, err := server.CreateExperiment(ctx, req)
 			if err != nil {
@@ -440,7 +443,9 @@ func TestCreateExperiment_RejectsStudyConfigOnNonStudy(t *testing.T) {
 				withXidClient(xidClient),
 				withStorage(&storage.MockStorage{}),
 			)
-			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: expType, StudyConfig: experimenttest.StudyConfig()}}
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{
+				Title: "exp", ExperimentType: expType, TypeConfig: &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()},
+			}}
 
 			_, err := server.CreateExperiment(ctx, req)
 

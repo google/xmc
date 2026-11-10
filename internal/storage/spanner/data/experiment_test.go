@@ -59,7 +59,7 @@ var (
 		UpdateTime:     timestamppb.New(testExpTime),
 		CompleteTime:   timestamppb.New(testExpCompleteTime),
 		ExperimentType: pb.Experiment_STUDY,
-		StudyConfig:    experimenttest.StudyConfig(),
+		TypeConfig:     &pb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()},
 	}
 )
 
@@ -79,7 +79,7 @@ func TestExperimentRowToProto(t *testing.T) {
 		testExpTime,
 		testExpCompleteTime,
 		testExperiment.ExperimentType,
-		testExperiment.StudyConfig,
+		testExperiment.GetStudyConfig(),
 	}
 
 	row, err := spanner.NewRow(keys, values)
@@ -172,7 +172,7 @@ func TestExperimentProtoToInsertMutation(t *testing.T) {
 			name: "standard_nil_study_config",
 			exp: prototest.Modify(&testExperiment, func(e *pb.Experiment) {
 				e.ExperimentType = pb.Experiment_STANDARD
-				e.StudyConfig = nil
+				e.TypeConfig = nil
 			}),
 		},
 	}
@@ -196,7 +196,7 @@ func TestExperimentProtoToInsertMutation(t *testing.T) {
 					exp.UpdateTime.AsTime(),
 					spanner.NullTime{Time: exp.CompleteTime.AsTime(), Valid: true},
 					exp.ExperimentType,
-					exp.StudyConfig,
+					exp.GetStudyConfig(),
 				},
 			)
 			got, err := ExperimentProtoToInsertMutation(exp)
