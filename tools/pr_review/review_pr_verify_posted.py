@@ -45,6 +45,8 @@ _APPROVED_STATUS = re.compile(r"\b(approved|confirmed|posted)\b|\[x\]", re.IGNOR
 _TELEMETRY_MARKER = re.compile(r"<!--\s*xmc-telemetry:.*?-->", re.DOTALL)
 # Line breaks written as <br> inside markdown table cells.
 _TABLE_CELL_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# A markdown table cell delimiter: a pipe not escaped as `\|`.
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,19 @@ def _parse_table_column_indices(headers: list[str]) -> dict[str, int]:
     }
 
 
+def _split_table_row(line: str) -> list[str]:
+    """Splits a markdown table row into stripped cells.
+
+    Only the single outer pipe on each side is dropped, and cells are split on
+    unescaped pipes, so a `\\|` inside a cell (including at its end) stays part
+    of the cell text for `_normalize_body` to unescape.
+    """
+    inner = line[1:] if line.startswith("|") else line
+    if inner.endswith("|") and not inner.endswith("\\|"):
+        inner = inner[:-1]
+    return [cell.strip() for cell in _UNESCAPED_PIPE.split(inner)]
+
+
 def _parse_markdown_table_items(lines: list[str]) -> list[dict[str, Any]]:
     """Extracts approved review items from dynamic markdown tables."""
     items: list[dict[str, Any]] = []
@@ -98,11 +113,11 @@ def _parse_markdown_table_items(lines: list[str]) -> list[dict[str, Any]]:
             and re.match(r"^\|[\s\-:|]+\|$", lines[i + 1])
         )
         if is_table_header:
-            headers = [col.strip().lower() for col in line.strip("|").split("|")]
+            headers = [col.lower() for col in _split_table_row(line)]
             cols = _parse_table_column_indices(headers)
             i += 2
             while i < len(lines) and lines[i].startswith("|") and lines[i].endswith("|"):
-                row = [c.strip() for c in lines[i].strip("|").split("|")]
+                row = _split_table_row(lines[i])
                 if cols["status"] != -1 and cols["status"] < len(row):
                     raw_status = row[cols["status"]]
                     if _APPROVED_STATUS.search(raw_status):
@@ -181,8 +196,10 @@ def parse_checklist_approved_items(content: str) -> list[dict[str, Any]]:
 
     # Fallback to simple regex if dynamic table parsing did not find any items
     if not items:
+        # The rule and proposed cells may contain escaped pipes (`\|`).
         table_pattern = re.compile(
-            r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed|Posted)\s*\|\s*`?([^`|]+)`?\s*\|\s*`?(\d+)`?\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|",
+            r"\|\s*([^\s|]+)\s*\|\s*(Approved|Confirmed|Posted)\s*\|\s*`?([^`|]+)`?\s*\|\s*`?(\d+)`?\s*\|"
+            r"\s*((?:\\.|[^\\|])+?)\s*\|\s*((?:\\.|[^\\|])+?)\s*\|",
             re.IGNORECASE,
         )
         for match in table_pattern.finditer(content):

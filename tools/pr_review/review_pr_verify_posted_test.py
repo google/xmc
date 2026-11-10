@@ -28,6 +28,7 @@ from tools.pr_review.review_pr_verify_posted import (
     _is_re_review_thread_posted,
     _LiveState,
     _normalize_body,
+    _split_table_row,
     approved_sidecar_items,
     load_sidecar,
     parse_checklist_approved_items,
@@ -544,6 +545,50 @@ class TestNormalizeBody(unittest.TestCase):
     def test_table_cell_escapes_match_rendered_body(self):
         cell = _normalize_body(r"Use `a \| b`<br>then <BR/>guard")
         self.assertEqual(cell, _normalize_body("Use `a | b`\nthen\nguard"))
+
+
+_ESCAPED_PIPE_PROPOSED = r"Use `a \| b` instead"
+_HEADER = "| Item | Status | File Path | Line | Rule Reference | Proposed Inline Comment |"
+_ESCAPED_PIPE_ROW = (
+    f"| #1 | Approved | `pkg/a.go` | 15 | `core_engineering.md` | {_ESCAPED_PIPE_PROPOSED} |"
+)
+
+
+class TestEscapedPipeTableCells(unittest.TestCase):
+    """Escaped pipes in checklist table cells survive parsing and match posted comments."""
+
+    def test_split_table_row_keeps_escaped_pipes(self):
+        self.assertEqual(_split_table_row(r"| a | b \| c | d |"), ["a", r"b \| c", "d"])
+        self.assertEqual(_split_table_row(r"| a | ends with \| |"), ["a", r"ends with \|"])
+        self.assertEqual(_split_table_row(r"| a | b \|"), ["a", r"b \|"])
+        self.assertEqual(_split_table_row("| a | b |"), ["a", "b"])
+
+    def test_dynamic_table_keeps_full_proposed_cell(self):
+        content = f"{_HEADER}\n| :--- | :--- | :--- | :--- | :--- | :--- |\n{_ESCAPED_PIPE_ROW}\n"
+        items = parse_checklist_approved_items(content)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["proposed"], _ESCAPED_PIPE_PROPOSED)
+
+    def test_fallback_regex_keeps_full_proposed_cell(self):
+        # No separator row, so the dynamic parser finds nothing and the regex fallback runs.
+        items = parse_checklist_approved_items(f"{_HEADER}\n{_ESCAPED_PIPE_ROW}\n")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["proposed"], _ESCAPED_PIPE_PROPOSED)
+        self.assertEqual(items[0]["rule"], "`core_engineering.md`")
+
+    @patch(_LOGIN, return_value="me")
+    @patch(_GH_API)
+    def test_escaped_pipe_item_matches_rendered_comment_end_to_end(self, mock_api, _):
+        content = f"{_HEADER}\n| :--- | :--- | :--- | :--- | :--- | :--- |\n{_ESCAPED_PIPE_ROW}\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            checklist = Path(tmp) / "pr_review_audit_checklist.md"
+            checklist.write_text(content, encoding="utf-8")
+            mock_api.return_value = [_live_comment(body="Use `a | b` instead")]
+            args = argparse.Namespace(
+                owner="google", repo="xmc", pr_number=10, checklist_file=str(checklist)
+            )
+            res = verify_review_comments_posted(args)
+        self.assertEqual((res["status"], res["posted_items"]), ("success", 1))
 
 
 class TestVerifyPostedLiveState(unittest.TestCase):
