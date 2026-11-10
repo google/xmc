@@ -144,9 +144,10 @@ In-cluster `dashboard-service` resolves ClickHouse connection settings dynamical
 
 #### In-Cluster Deployments (`Component/clickhouse` & Helm Credentials)
 
-When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`) at pod startup, `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on subsequent CR or Secret changes without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, restart the deployment once so it initializes the dynamic chart data engine:
+When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`) at pod startup, `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on subsequent CR or Secret changes without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, wait for `xmc-bridge` to reconcile it (a CR still in `COMPONENT_STATE_DISABLED` counts as disabled at startup) and then restart the deployment once so it initializes the dynamic chart data engine:
 
 ```bash
+kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s
 kubectl rollout restart deployment/dashboard-service-deployment -n xmc
 ```
 

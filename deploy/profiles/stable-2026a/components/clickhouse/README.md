@@ -78,7 +78,10 @@ To point XMC at a custom ClickHouse endpoint, login user, password Secret, and h
 
 ```yaml
 enabled: true
-namespace: xmc-metrics
+# Keep the Component CR in the XMC release namespace: dashboard-service only reads
+# Component/clickhouse from its own namespace. The ClickHouse server itself can live anywhere
+# (see parameters.host below).
+namespace: xmc
 deletionProtection: true
 deletionPolicy: Delete
 parameters:
@@ -147,7 +150,7 @@ spec:
 ### 4.1 Dynamic Reconfiguration & Hot-Swapping (Zero Pod Restarts)
 
 > [!NOTE]
-> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled; if you enable the component after the service is already running, restart it once: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled (a CR whose `status.state` is still `COMPONENT_STATE_DISABLED` counts as disabled); if you enable the component after the service is already running, wait for `xmc-bridge` to reconcile it and then restart the service once: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 When ClickHouse parameters or credentials change in Kubernetes, `dashboard-service` dynamically detects the changes and reconfigures its data engine without requiring pod restarts or manual rollouts:
 
