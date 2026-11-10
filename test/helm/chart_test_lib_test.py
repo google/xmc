@@ -72,6 +72,8 @@ class BlueprintParsingTest(unittest.TestCase):
             "      - name: 'key.one'\n"
             "        # inline comment with multibyte — ✓\n"
             '        value: "val one" # trailing comment\n'
+            "      - name: 'key.two'\n"
+            "        value: 'val #two' # trailing comment\n"
             "  - id: mod_b\n"
             "    settings:\n"
             "      set_values:\n"
@@ -83,7 +85,7 @@ class BlueprintParsingTest(unittest.TestCase):
         )
         block_a = extract_module_block(sample, "mod_a")
         block_b = extract_module_block(sample, "mod_b")
-        self.assertEqual({"key.one": "val one"}, parse_set_values(block_a))
+        self.assertEqual({"key.one": "val one", "key.two": "val #two"}, parse_set_values(block_a))
         self.assertEqual({"other.key": "other-val"}, parse_set_values(block_b))
         self.assertEqual({}, parse_set_values(""))
         self.assertTrue(BLUEPRINT_PATH.endswith("xmanager-cloud.yaml"))

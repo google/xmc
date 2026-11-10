@@ -91,8 +91,16 @@ def parse_set_values(module_block: str) -> dict[str, str]:
     """Extracts name/value pairs from a direct-helm-install module's set_values block."""
     res: dict[str, str] = {}
     for name, value in _SET_VALUE_PAIR.findall(module_block):
-        val = value.split("#")[0].strip()
-        res[name.strip("\"'")] = val.strip("\"'")
+        value = value.strip()
+        if (value.startswith('"') and value.count('"') >= 2) or (
+            value.startswith("'") and value.count("'") >= 2
+        ):
+            quote_char = value[0]
+            end_quote_idx = value.find(quote_char, 1)
+            val = value[1:end_quote_idx] if end_quote_idx != -1 else value.strip("\"'")
+        else:
+            val = value.split("#")[0].strip()
+        res[name.strip("\"'")] = val
     return res
 
 
