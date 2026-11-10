@@ -107,18 +107,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     p.add_argument("--only", choices=STEPS, help="Execute ONLY this step and exit.")
     p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
     p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
-    p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     p.add_argument(
         "--profile-values",
         default=None,
         help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
     )
     parsed_args = p.parse_args(args)
-    if parsed_args.enable_components is False:
-        log_error(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-        )
-        sys.exit(1)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
     return parsed_args
@@ -897,10 +891,6 @@ def _print_deployment_summary(config: DeploymentConfig) -> None:
 
 def run_deployment(args: argparse.Namespace) -> None:
     """Executes the GKE deployment pipeline."""
-    if getattr(args, "enable_components", None) is False:
-        error_exit(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-        )
     config = load_and_validate_config(args.config)
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)

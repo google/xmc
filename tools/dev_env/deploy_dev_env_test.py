@@ -14,7 +14,6 @@
 
 """Unit tests for deploy_dev_env.py."""
 
-import argparse
 import io
 import pathlib
 import subprocess
@@ -1382,7 +1381,7 @@ image_tag: latest
             "Profile values file '/tmp/nonexistent-profile-values-1429.yaml' does not exist or is not a file."
         )
 
-    def test_build_resume_cmd_quotes_profile_values_and_rejects_no_enable_components(self):
+    def test_build_resume_cmd_quotes_profile_values_and_rejects_removed_components_flags(self):
         parsed = deploy_dev_env.parse_args(
             [
                 "--config",
@@ -1391,36 +1390,30 @@ image_tag: latest
                 "dns-proj",
                 "--dns-zone",
                 "dns-zone",
-                "--enable-components",
                 "--profile-values",
                 "/tmp/my dir/profile values.yaml",
             ]
         )
         cmd = deploy_dev_env._build_resume_cmd(parsed, "app")
-        self.assertNotIn("--enable-components", cmd)
         self.assertIn("--profile-values '/tmp/my dir/profile values.yaml' ", cmd)
         self.assertTrue(cmd.endswith("--start-from app"))
 
-        err_stream = io.StringIO()
-        with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
-            deploy_dev_env.parse_args(
-                [
-                    "--config",
-                    "cfg.yaml",
-                    "--dns-project",
-                    "dns-proj",
-                    "--dns-zone",
-                    "dns-zone",
-                    "--no-enable-components",
-                ]
-            )
-        self.assertEqual(cm.exception.code, 1)
-        self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
-
-        err_run = io.StringIO()
-        with patch("sys.stderr", err_run), self.assertRaises(SystemExit) as cm_run:
-            deploy_dev_env.run_deployment(argparse.Namespace(enable_components=False))
-        self.assertEqual(cm_run.exception.code, 1)
+        for flag in ("--enable-components", "--no-enable-components"):
+            err_stream = io.StringIO()
+            with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+                deploy_dev_env.parse_args(
+                    [
+                        "--config",
+                        "cfg.yaml",
+                        "--dns-project",
+                        "dns-proj",
+                        "--dns-zone",
+                        "dns-zone",
+                        flag,
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("unrecognized arguments", err_stream.getvalue())
 
 
 if __name__ == "__main__":

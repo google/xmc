@@ -39,7 +39,6 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
 ### Feature Switches
-*   **`enable_metrics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable ClickHouse chart data configuration (`metrics.enabled`) for `dashboard-service`. Note that `xmc-bridge` is always deployed by the umbrella chart, and `ingestion-gateway`, `clickhouse`, and `redpanda` are managed via [`stable-2026a` `Component` CRs](../profiles/stable-2026a/README.md) (`xmc-bridge` installs the Ingestion Gateway workload from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md) when `Component/ingestion-gateway` is enabled).
 *   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
@@ -49,9 +48,10 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
 
 > [!IMPORTANT]
-> **Metrics Dashboards Requirement**: For end-to-end "Metrics dashboards" and chart visualization functionality, set **both** `enable_metrics: true` and `dashboard_service_deployment_enabled: true`, and enable `redpanda`, `clickhouse`, and `ingestion-gateway` in the [`stable-2026a` profile](../profiles/stable-2026a/README.md):
-> * `enable_metrics` enables ClickHouse chart data wiring and credentials for `dashboard-service`, while `Component/ingestion-gateway` (actuated by `xmc-bridge`) runs the metrics ingestion pipeline.
-> * `dashboard_service_deployment_enabled` controls whether the backend service and UI visualization components for metrics are deployed.
+> **Metrics Dashboards Requirement**: `xmc-bridge` is always deployed by the umbrella chart. For end-to-end "Metrics dashboards" and chart visualization functionality:
+> 1. Set `dashboard_service_deployment_enabled: true` (and `clickhouse_password` if your ClickHouse instance uses a password).
+> 2. Provision the Redpanda and ClickHouse backing infrastructure (see [`deploy/addons/metrics`](../addons/metrics/clickhouse/README.md)).
+> 3. Enable `redpanda`, `clickhouse`, and `ingestion-gateway` in the [`stable-2026a` Component profile (`xmc-profile`)](../profiles/stable-2026a/README.md) (`xmc-bridge` installs the Ingestion Gateway workload from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md) and `dashboard-service` dynamically resolves ClickHouse coordinates from `Component/clickhouse`).
 
 ### Managed ML Diagnostics (Managed XProf)
 Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
@@ -76,13 +76,9 @@ gcloud container clusters update <CLUSTER_NAME> \
 
 > **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
 
-### ClickHouse Connection (Metrics Pipeline)
-ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). These variables are applied only when `enable_metrics` is `true`, and the dashboard service requires them to serve chart data. Enabling metrics also makes ClickHouse a readiness dependency: dashboard service pods stay out of service until they can reach it, so point these at an instance that is actually up. When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) is enabled, `dashboard-service` resolves its ClickHouse connection and password Secret from the `Component` CR, while `metrics.clickhouse.*` provides the `clickhouse-secret` credentials Secret and static environment fallback when `Component/clickhouse` is absent or disabled. Updates to the `Component` CR or its password Secret are detected on the readiness check and hot-swapped dynamically without requiring pod restarts.
-*   **`clickhouse_host`**: ClickHouse hostname reachable from the cluster (default: `clickhouse.xmc-metrics.svc.cluster.local`).
-*   **`clickhouse_port`**: ClickHouse native protocol port (default: `9000`).
-*   **`clickhouse_database`**: Database holding the metrics tables (default: `default`).
-*   **`clickhouse_user`**: ClickHouse username (default: `default`).
-*   **`clickhouse_password`**: ClickHouse password. Rendered into the `clickhouse-secret` Kubernetes Secret rather than a ConfigMap. The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that do enable it should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
+### ClickHouse Connection & Credentials (Metrics Pipeline)
+ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on CR or Secret updates without pod restarts. Enabling `Component/clickhouse` also makes ClickHouse a readiness dependency of `dashboard-service`, so keep `components.clickhouse.enabled: false` on clusters without a reachable ClickHouse instance.
+*   **`clickhouse_password`**: ClickHouse password rendered into the `clickhouse-secret` Kubernetes Secret in the release namespace (never a ConfigMap). The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that enable CSI should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
 
 ### Database Backend (Spanner or PostgreSQL)
 **`database_backend`** selects the storage backend: `spanner` (default) or `postgres`.

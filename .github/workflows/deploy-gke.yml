@@ -329,7 +329,6 @@ jobs:
             health_service_deployment_enabled: ${HEALTH_SERVICE_ENABLED}
             dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
-            enable_metrics: ${ENABLE_METRICS}
           EOF_YAML
 
           cat << EOF_PROFILE > "${RUNNER_TEMP}/xmc-profile-values.yaml"

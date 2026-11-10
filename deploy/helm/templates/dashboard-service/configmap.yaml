@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if .Values.dashboardServiceDeployment.enabled }}
+{{- if eq (include "xmanager-cloud.dashboardServiceEnabled" .) "true" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

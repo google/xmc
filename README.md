@@ -62,7 +62,7 @@ You can deploy XMC to GKE or evaluate it locally on KinD in three steps:
    - [`examples/managed_xprof_artifact_job`](examples/managed_xprof_artifact_job/README.md): Managed XProf hardware profiling attached to a work unit.
    - [`examples/xmc_lite_job`](examples/xmc_lite_job/README.md): standalone `xm_local.Kubernetes` launch without the XMC server.
 
-Metrics streaming and Managed XProf are optional and off by default. Enable metrics with `enable_metrics` and the Redpanda and ClickHouse add-ons in `deploy/addons/metrics`, and Managed XProf with `managed_xprof_gcs_bucket` (see the [Cluster Toolkit v2 README](deploy/ctk_v2/README.md); Helm installs use `metrics.enabled` and `managedXprofGcsBucket`).
+Metrics streaming and Managed XProf are optional and off by default. Enable metrics by deploying the Redpanda and ClickHouse add-ons in [`deploy/addons/metrics`](deploy/addons/metrics/clickhouse/README.md) and enabling `redpanda`, `clickhouse`, and `ingestion-gateway` in the [`stable-2026a` Component profile (`xmc-profile`)](deploy/profiles/stable-2026a/README.md); enable Managed XProf with `managed_xprof_gcs_bucket` (`managedXprofGcsBucket` in Helm; see the [Cluster Toolkit v2 README](deploy/ctk_v2/README.md)).
 
 ## Documentation
 

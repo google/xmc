@@ -35,9 +35,6 @@ vars:
   # Whether to automatically apply database schema migrations on startup (default: true).
   auto_migrate: true
 
-  # Feature flag: Enable metrics Configuration (ClickHouse chart data wiring).
-  enable_metrics: false
-
   # Feature flag: Enable ROD data provider service (rod_data_provider).
   rod_deployment_enabled: false
 

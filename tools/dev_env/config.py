@@ -41,6 +41,7 @@ BASE_SERVICES: list[str] = [
     "reconciler",
     "ui",
     "components",
+    "ingestion_gateway",
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
@@ -232,30 +233,15 @@ def _resolve_enabled_services(
 ) -> list[str]:
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
-    ig_deployment_flag = yaml_vars.get("ingestion_gateway_deployment_enabled")
-    effective_yaml_metrics: Any
-    if ig_deployment_flag is not None and not _parse_bool(ig_deployment_flag):
-        effective_yaml_metrics = False
-    else:
-        effective_yaml_metrics = yaml_vars.get("enable_metrics")
-
-    enable_metrics = _resolve_bool_flag(
-        getattr(args, "enable_metrics", None) if args else None,
-        os.environ.get("ENABLE_METRICS"),
-        effective_yaml_metrics,
-        default=False,
-    )
-    if enable_metrics and "ingestion_gateway" not in services:
-        services.append("ingestion_gateway")
 
     if not _resolve_bool_flag(
-        getattr(args, "enable_components", None) if args else None,
+        None,
         os.environ.get("ENABLE_COMPONENTS"),
         yaml_vars.get("enable_components"),
         default=True,
     ):
         raise ValueError(
-            "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: Components are mandatory."
+            "enable_components=false is no longer supported in XMC 1.0.0+: Components are mandatory."
         )
 
     rod_enabled = _resolve_bool_flag(

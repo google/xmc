@@ -104,7 +104,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
-    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
         "--profile-values",
         default=None,
@@ -112,12 +111,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parsed = parser.parse_args(args)
-
-    if parsed.enable_components is False:
-        error_exit(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory.",
-            exit_code=1,
-        )
 
     if parsed.start_from and parsed.only:
         error_exit(
@@ -613,11 +606,6 @@ def run_upgrade(args: argparse.Namespace) -> None:
     Args:
         args: Parsed command-line arguments.
     """
-    if getattr(args, "enable_components", None) is False:
-        error_exit(
-            "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory.",
-            exit_code=1,
-        )
     config = load_config(args.config, run_migrations=args.run_migrations)
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)

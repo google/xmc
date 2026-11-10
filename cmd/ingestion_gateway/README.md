@@ -142,6 +142,7 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 | Flag | Type | Default Value | Description |
 | :--- | :--- | :--- | :--- |
 | `-port` | `string` | `8080` | HTTP server listening port. |
+| `-components_namespace` | `string` | `xmc` (or `COMPONENTS_NAMESPACE`) | Kubernetes namespace searched for `Component/redpanda` (`xmc.dev/v1alpha1`) when running in-cluster in Redpanda mode; falls back to `-redpanda_brokers` / `-topic_name` only when the CR is absent or disabled. |
 | `-message_bus` | `string` | `redpanda` (applied after `MESSAGE_BUS`) | Message bus backend: `redpanda` or `pubsub`. |
 | `-topic_name` | `string` | `xmc-metrics` | Destination topic: a Redpanda topic, or a Pub/Sub topic ID when `-message_bus=pubsub`. |
 | `-project_id` | `string` | `""` | GCP project ID for logging. **Required** when `-message_bus=pubsub`, where it is also the Pub/Sub project. |

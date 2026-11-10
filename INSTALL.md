@@ -539,7 +539,7 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 #### Step 4: Upgrade Application Workloads
 
 > [!WARNING]
-> **Pre-Upgrade Requirement for `< 1.0.0` Legacy Metrics Deployments**: Deployments upgrading from `< 1.0.0` (`<= 0.18.x`) with umbrella-managed `ingestion-gateway` **MUST** follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) (`prepare` + `handoff` **before** running Step 4, and `finalize` after) rather than upgrading directly. XMC `1.0.0+` removes legacy non-component gateway templates and fails closed on `componentsDeployment.enabled: false` or `ingestionGatewayDeployment.enabled: true`, so also remove those legacy keys from your `xmanager-cloud-deployment.yaml` / `my-values.yaml` before upgrading.
+> **Pre-Upgrade Requirement for `< 1.0.0` Legacy Metrics Deployments**: Deployments upgrading from `< 1.0.0` (`<= 0.18.x`) with umbrella-managed `ingestion-gateway` **MUST** follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) (`prepare` + `handoff` **before** running Step 4, and `finalize` after) rather than upgrading directly. XMC `1.0.0+` removes legacy non-component gateway templates and static ClickHouse env injection (`enable_metrics` / `metrics.enabled`), and fails closed on `componentsDeployment.enabled: false` or `ingestionGatewayDeployment.enabled: true` — remove those legacy keys from your `xmanager-cloud-deployment.yaml` / `my-values.yaml` before upgrading (retaining `clickhouse_password` / `metrics.clickhouse.{secretName,password}` for ClickHouse credentials).
 
 Once database schemas and container images are updated, upgrade the Kubernetes workloads in your GKE cluster.
 

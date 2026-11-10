@@ -129,7 +129,7 @@ Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice
 | `ess` | `experiment_state_server` |
 | `xid` | `xid_service` |
 | `ui`, `frontend`, `web` | `ui` |
-| `gw`, `gateway` | `ingestion_gateway` (`gateway-proxy`) |
+| `gw`, `gateway`, `ingestion` | `ingestion_gateway` (`ingestion-gateway-deployment`) |
 | `actuator` | `actuator` |
 | `reconciler` | `reconciler` |
 | `dash`, `dashboard` | `dashboard_service` |
@@ -340,7 +340,7 @@ To adapt the production XMC Helm chart for local development, `values-local.yaml
 1. **Base Values**: Loaded from `deploy/helm/values-local.yaml`.
 2. **Spanner Configuration**: Local Spanner instance, databases (`ess_database`, `xid_database`), and emulator endpoints.
 3. **Container Images**: Local image repositories and image tags (`local-dev`) side-loaded via KinD.
-4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
+4. **Feature Flags**: Dynamic activation of optional microservices (`rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
 
 ### Deployment & Rollout Monitoring
 `HelmDeployer.deploy()` applies the Helm release (`xmc`) and invokes `wait_for_rollouts()`:
@@ -385,12 +385,11 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 
 | Feature Flag in YAML | Enabled Microservice Target | Default |
 | :--- | :--- | :--- |
-| `enable_metrics: true` | `ingestion_gateway` | `false` |
 | `rod_deployment_enabled: true` | `rod_data_provider` | `true` |
 | `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
 | `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |
 
-*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`) are always enabled.
+*Core base images* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`, `ingestion_gateway`) are always built and staged so `xmc-bridge` can actuate `Component/ingestion-gateway` immediately when enabled in `xmc-profile`.
 
 ### Dynamic Resource Naming Rules
 
