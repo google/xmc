@@ -142,19 +142,16 @@ curl "http://localhost:8123/?query=SELECT%20version()"
 
 The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables.
 
-#### In-Cluster Deployments (Helm & `Component/clickhouse`)
+#### In-Cluster Deployments (`Component/clickhouse` & Helm Credentials)
 
-When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile is enabled (`components.clickhouse.enabled=true`), `dashboard-service` dynamically resolves ClickHouse connection coordinates and its password Secret reference from `Component/clickhouse` (hot-swapping on changes without pod restarts). Set `metrics.enabled` to `true` and configure `metrics.clickhouse` in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to render the `clickhouse-secret` Secret (when `secrets.csi.enabled` is `false`) and provide static `CLICKHOUSE_*` fallback coordinates when `Component/clickhouse` is absent or disabled:
+When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`), `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on CR or Secret changes without pod restarts.
+
+Configure `metrics.clickhouse` in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to populate the release-namespace `clickhouse-secret` `Secret` when ClickHouse CSI mode is inactive (`secrets.csi.enabled` is `false` or `secrets.csi.clickhousePasswordSecretName` is empty):
 
 ```yaml
 metrics:
-  enabled: true
   clickhouse:
-    host: "clickhouse.xmc-metrics.svc.cluster.local"
-    port: "9000"
-    database: "default"
-    user: "default"
-    secretName: "clickhouse-secret" # Kubernetes Secret name when secrets.csi.enabled is false
+    secretName: "clickhouse-secret" # Kubernetes Secret name when ClickHouse CSI mode is inactive
     password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
 ```
 
@@ -166,7 +163,7 @@ kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-pass
 
 ##### Sourcing the password from Secret Manager
 
-`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and leave the value empty:
+`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and set `secrets.csi.clickhousePasswordSecretName`:
 
 ```bash
 printf '%s' "$CLICKHOUSE_PASSWORD" | gcloud secrets create clickhouse-password --data-file=-
@@ -180,12 +177,12 @@ secrets:
     clickhousePasswordSecretName: "clickhouse-password"
 ```
 
-The Secret Manager entry named there must exist, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing. The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
+The Secret Manager entry named there must exist when `clickhousePasswordSecretName` is non-empty, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing (leave `clickhousePasswordSecretName: ""` on releases without ClickHouse). The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
 
-Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
+Cluster Toolkit deployments configure the release-namespace password Secret via `clickhouse_password` (documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection--credentials-metrics-pipeline)) and ClickHouse endpoints via `xmc-profile`.
 
 > [!IMPORTANT]
-> Setting these variables declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Leave `metrics.enabled` set to `false` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
+> Enabling `Component/clickhouse` in `xmc-profile` declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Keep `components.clickhouse.enabled: false` in `xmc-profile` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
 
 #### Local Tooling & Port-Forwarded Sessions
 

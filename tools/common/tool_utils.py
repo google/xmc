@@ -407,13 +407,6 @@ def log_error(msg: str) -> None:
     print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
 
 
-def reject_disabled_components_flag(args: argparse.Namespace) -> None:
-    """Logs an error to stderr and exits with code 1 if --no-enable-components was passed."""
-    if getattr(args, "enable_components", None) is False:
-        log_error(DISABLED_COMPONENTS_FLAG_ERROR)
-        sys.exit(1)
-
-
 def run_command(
     cmd: list[str],
     env: dict[str, str] | None = None,

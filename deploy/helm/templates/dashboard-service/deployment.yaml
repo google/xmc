@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-{{- if .Values.dashboardServiceDeployment.enabled }}
+{{- if eq (include "xmanager-cloud.dashboardServiceEnabled" .) "true" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -64,9 +64,7 @@ spec:
         - name: GOOGLE_CLOUD_PROJECT
           value: {{ .Values.projectId | quote }}
         {{- include "xmanager-cloud.oauthEnv" . | nindent 8 }}
-        {{- if (default (dict) .Values.metrics).enabled }}
-        {{- include "xmanager-cloud.clickhouseEnv" . | nindent 8 }}
-        {{- end }}
+        {{- include "xmanager-cloud.clickhouseCsiEnv" . | nindent 8 }}
         {{- include "xmanager-cloud.postgresEnv" . | nindent 8 }}
         envFrom:
         - configMapRef:
@@ -74,9 +72,9 @@ spec:
         - configMapRef:
             name: db-config
         # /readyz checks that the ESS database is reachable and at the expected schema version and,
-        # when the metrics pipeline is enabled, that the chart data engine has a ClickHouse
-        # connection. The handler spends at most 5s on that, which the default 1s probe timeout
-        # would cut short and report as an unexplained failure.
+        # when Component/clickhouse (or Component/bigquery) is enabled, that the chart data engine
+        # has a working connection. The handler spends at most 5s on that, which the default 1s probe
+        # timeout would cut short and report as an unexplained failure.
         readinessProbe:
           httpGet:
             path: /readyz

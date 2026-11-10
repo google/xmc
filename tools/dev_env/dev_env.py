@@ -31,7 +31,6 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.common.tool_utils import (  # noqa: E402
     ensure_venv,
     log_error,
-    reject_disabled_components_flag,
 )
 from tools.dev_env import config, deploy_dev_env, upgrade_dev_env  # noqa: E402
 
@@ -220,34 +219,6 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         action="store_false",
         default=None,
         help="Disable automatic database migrations.",
-    )
-    p.add_argument(
-        "--enable-metrics",
-        dest="enable_metrics",
-        action="store_true",
-        default=None,
-        help="Deprecated no-op: metrics deployment is controlled by xmc-profile.",
-    )
-    p.add_argument(
-        "--no-enable-metrics",
-        dest="enable_metrics",
-        action="store_false",
-        default=None,
-        help="Deprecated no-op: metrics deployment is controlled by xmc-profile.",
-    )
-    p.add_argument(
-        "--enable-components",
-        dest="enable_components",
-        action="store_true",
-        default=None,
-        help="Deprecated no-op: Components are always enabled.",
-    )
-    p.add_argument(
-        "--no-enable-components",
-        dest="enable_components",
-        action="store_false",
-        default=None,
-        help="Removed in XMC 1.0.0+ (rejected).",
     )
     p.add_argument(
         "--rod-deployment-enabled",
@@ -646,7 +617,6 @@ def main(argv: list[str] | None = None) -> None:
         parser.print_help()
         sys.exit(0)
     args = parser.parse_args(argv)
-    reject_disabled_components_flag(args)
     if getattr(args, "verbose", False):
         logging.basicConfig(
             level=logging.DEBUG,

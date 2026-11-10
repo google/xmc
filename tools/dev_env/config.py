@@ -41,6 +41,7 @@ BASE_SERVICES: list[str] = [
     "reconciler",
     "ui",
     "components",
+    "ingestion_gateway",
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
@@ -234,7 +235,7 @@ def _resolve_enabled_services(
     services = list(BASE_SERVICES)
 
     if not _resolve_bool_flag(
-        getattr(args, "enable_components", None) if args else None,
+        None,
         os.environ.get("ENABLE_COMPONENTS"),
         yaml_vars.get("enable_components"),
         default=True,

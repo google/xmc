@@ -76,21 +76,16 @@ healthServiceDeployment:
   enabled: true
 
 metrics:
-  enabled: false
-  # ClickHouse is Bring-Your-Own (BYO) infrastructure deployed out-of-band via
-  # deploy/addons/metrics/clickhouse. The dashboard service chart data engine reads these
-  # settings to serve GetChartData. Enabling metrics also makes ClickHouse a readiness
-  # dependency of the dashboard service: its pods stay out of the Service endpoints while the
-  # data engine cannot be built, so leave this disabled on releases without a ClickHouse.
+  # ClickHouse connection coordinates (host, port, database, user) are resolved dynamically by
+  # dashboard-service from Component/clickhouse in the stable-2026a profile. The settings below
+  # configure the release-namespace Secret holding clickhouse-password when ClickHouse CSI mode is
+  # inactive (secrets.csi.enabled is false or secrets.csi.clickhousePasswordSecretName is empty).
   clickhouse:
-    host: "clickhouse.xmc-metrics.svc.cluster.local"
-    port: "9000"
-    database: "default"
-    user: "default"
-    # Name of the Kubernetes Secret holding clickhouse-password when secrets.csi.enabled is false.
+    # Name of the Kubernetes Secret holding clickhouse-password when ClickHouse CSI mode is inactive.
     secretName: "clickhouse-secret"
-    # Ignored when secrets.csi.enabled is true: the password is then read from Secret Manager
-    # through the CSI mount rather than travelling through the release as a Helm value.
+    # Ignored when ClickHouse CSI mode is active (both secrets.csi.enabled and
+    # secrets.csi.clickhousePasswordSecretName are set), in which case the password is read from
+    # Secret Manager through the CSI mount rather than travelling through the release as a Helm value.
     password: ""
 
 rodDeployment:
@@ -213,9 +208,10 @@ secrets:
     projectNumber: "YOUR_GCP_PROJECT_NUMBER"
     jwtSecretName: "backend-jwt-secret"
     oauthClientSecretName: "gcp-oauth-client-secret"
-    # Only read when metrics are enabled; the Secret Manager entry must exist in that case,
-    # because a missing entry fails the CSI mount for every service sharing this provider class.
-    clickhousePasswordSecretName: "clickhouse-password"
+    # Optional Secret Manager secret holding the ClickHouse password (e.g. "clickhouse-password").
+    # Leave empty on releases without ClickHouse: a missing Secret Manager entry fails the CSI mount
+    # for every service sharing gcp-secrets-provider.
+    clickhousePasswordSecretName: ""
   development:
     # A placeholder for default JWT secret key for development environments.
     jwtSecret: "YOUR_JWT_SECRET"
