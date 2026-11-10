@@ -233,15 +233,15 @@ def _resolve_enabled_services(
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
 
-    reject_retired_component_config(
-        _resolve_bool_flag(
-            None,
-            os.environ.get("ENABLE_COMPONENTS"),
-            yaml_vars.get("enable_components"),
-            default=True,
-        ),
-        yaml_vars,
+    # Pass the raw ENABLE_COMPONENTS / enable_components value (not a pre-resolved bool) so
+    # typos such as "disabled" fail closed here exactly as they do in load_and_validate_config.
+    env_comp = os.environ.get("ENABLE_COMPONENTS")
+    raw_comp = (
+        env_comp
+        if env_comp is not None and env_comp.strip() != ""
+        else yaml_vars.get("enable_components")
     )
+    reject_retired_component_config(raw_comp, yaml_vars)
 
     rod_enabled = _resolve_bool_flag(
         getattr(args, "rod_deployment_enabled", None) if args else None,

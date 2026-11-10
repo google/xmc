@@ -235,6 +235,24 @@ class ConfigResolutionTest(unittest.TestCase):
                 argparse.Namespace(config=str(retired_cfg)),
                 repo_root=self.root,
             )
+        # Typos and non-boolean strings fail closed like the GKE loader (no silent default=True).
+        for typo in ("disabled", "flase"):
+            with (
+                self.subTest(typo=typo),
+                patch.dict("os.environ", {"ENABLE_COMPONENTS": typo}),
+                self.assertRaisesRegex(
+                    ValueError, "enable_components=false is no longer supported"
+                ),
+            ):
+                config.load_config(argparse.Namespace(project_id="my-proj"), repo_root=self.root)
+        # An empty ENABLE_COMPONENTS is "unset", not "false".
+        with patch.dict("os.environ", {"ENABLE_COMPONENTS": ""}):
+            self.assertIn(
+                "components",
+                config.load_config(
+                    argparse.Namespace(project_id="my-proj"), repo_root=self.root
+                ).enabled_services,
+            )
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_yaml_and_env_mappings(self) -> None:
