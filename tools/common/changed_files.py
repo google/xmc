@@ -18,7 +18,7 @@ from pathlib import Path
 
 from tools.common.tool_utils import HandledError, run_command
 
-__all__ = ["ChangedFilesError", "list_changed_files"]
+__all__ = ["ChangedFilesError", "list_changed_files", "list_untracked_files"]
 
 _GIT_INSTRUCTION = (
     "Run inside the XMC git checkout with a base ref that exists locally (run `git fetch origin` "
@@ -55,6 +55,22 @@ def _split_nul_separated(output: str) -> set[str]:
     return {path for path in output.split("\0") if path}
 
 
+def list_untracked_files(repo_root: Path) -> list[str]:
+    """Returns the sorted repository-relative paths of untracked files that git does not ignore.
+
+    Args:
+        repo_root: Top-level directory of the git checkout.
+
+    Returns:
+        Sorted list of untracked, non-ignored paths relative to repo_root.
+
+    Raises:
+        ChangedFilesError: If git fails.
+    """
+    untracked = _run_git(["ls-files", "--others", "--exclude-standard", "-z"], repo_root)
+    return sorted(_split_nul_separated(untracked))
+
+
 def list_changed_files(base_ref: str | None, repo_root: Path) -> list[str]:
     """Returns the sorted repository-relative paths changed since base_ref.
 
@@ -75,5 +91,4 @@ def list_changed_files(base_ref: str | None, repo_root: Path) -> list[str]:
     """
     since = _run_git(["merge-base", base_ref, "HEAD"], repo_root).strip() if base_ref else "HEAD"
     tracked = _run_git(["diff", "--name-only", "--no-renames", "-z", since, "--"], repo_root)
-    untracked = _run_git(["ls-files", "--others", "--exclude-standard", "-z"], repo_root)
-    return sorted(_split_nul_separated(tracked) | _split_nul_separated(untracked))
+    return sorted(_split_nul_separated(tracked) | set(list_untracked_files(repo_root)))

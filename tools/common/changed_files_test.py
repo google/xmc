@@ -20,7 +20,11 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from unittest import mock
 
-from tools.common.changed_files import ChangedFilesError, list_changed_files
+from tools.common.changed_files import (
+    ChangedFilesError,
+    list_changed_files,
+    list_untracked_files,
+)
 from tools.common.tool_utils import HandledError
 
 _REPO_ROOT = Path("/fake/repo")
@@ -141,6 +145,30 @@ class ListChangedFilesTest(unittest.TestCase):
 
         self.assertTrue(ctx.exception.message.startswith("Cannot run git: "))
         self.assertIs(ctx.exception.__cause__, missing_git)
+
+
+@mock.patch("tools.common.changed_files.run_command")
+class ListUntrackedFilesTest(unittest.TestCase):
+    """Tests list_untracked_files against canned git output."""
+
+    def test_lists_sorted_nul_separated_paths(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = _fake_git({"ls-files": "pkg/b c.go\0docs/ñew.md\0pkg/a.go\0"})
+
+        files = list_untracked_files(_REPO_ROOT)
+
+        self.assertEqual(files, ["docs/ñew.md", "pkg/a.go", "pkg/b c.go"])
+        self.assertEqual(mock_run.call_args_list, [_git_call(_UNTRACKED_CMD)])
+
+    def test_git_failure_raises_changed_files_error(self, mock_run: mock.MagicMock) -> None:
+        mock_run.side_effect = _fake_git({}, returncode=128, stderr="fatal: not a git repository\n")
+
+        with self.assertRaises(ChangedFilesError) as ctx:
+            list_untracked_files(_REPO_ROOT)
+
+        self.assertEqual(
+            ctx.exception.message,
+            f"`{' '.join(_UNTRACKED_CMD)}` failed: fatal: not a git repository",
+        )
 
 
 if __name__ == "__main__":
