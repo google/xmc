@@ -14,9 +14,9 @@
 
 """Verifies that the blueprint keeps cert-manager leader election leases out of kube-system.
 
-By default, cert-manager-cainjector creates its leader election lease in kube-system. On GKE
-Autopilot, GKE Warden enforces managed-namespaces-limitation and blocks lease creation in
-kube-system, preventing cainjector from injecting caBundle into webhook configurations.
+By default, cert-manager (controller and cainjector) creates its leader election leases in
+kube-system. GKE Warden's managed-namespaces-limitation policy can deny Lease writes in
+kube-system, blocking cainjector from injecting caBundle into webhook configurations.
 """
 
 import os
@@ -62,7 +62,7 @@ class CertManagerLeaderElectionTest(unittest.TestCase):
     """Checks that install_cert_manager pins global.leaderElection.namespace to cert-manager."""
 
     def test_leader_election_namespace_matches_release_namespace(self) -> None:
-        """Prevents GKE Autopilot Warden from rejecting cainjector leases in kube-system."""
+        """Prevents GKE Warden from rejecting cert-manager leader election leases in kube-system."""
         with open(find_repo_file(BLUEPRINT_PATH), encoding="utf-8") as blueprint_file:
             block = extract_module_block(blueprint_file.read(), "install_cert_manager")
         ns_match = _NAMESPACE_LINE.search(block)

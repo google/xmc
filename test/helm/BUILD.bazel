@@ -71,10 +71,6 @@ py_test(
         "../..",
     ],
     main = "cert_manager_leader_election_test.py",
-    tags = [
-        "local",
-        "manual",
-    ],
     deps = [":chart_test_lib"],
 )
 

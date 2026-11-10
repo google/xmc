@@ -376,9 +376,9 @@ deployment_groups:
       - name: extraArgs[0]
         value: "--enable-gateway-api"
         type: string
-      # cert-manager-cainjector defaults to kube-system for leader election leases, which GKE
-      # Autopilot Warden rejects under managed-namespaces-limitation. Keep leader election leases in
-      # the cert-manager namespace so cainjector can inject caBundle into webhook configurations.
+      # cert-manager (controller and cainjector) defaults its leader election leases to kube-system.
+      # GKE Warden's managed-namespaces-limitation policy can deny Lease writes there, which blocks
+      # cainjector from injecting caBundle into webhook configurations. Keep the leases in the release namespace.
       - name: global.leaderElection.namespace
         value: "cert-manager"
         type: string
