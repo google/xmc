@@ -472,6 +472,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":tool_utils",
+        "//tools/common:changed_files",
     ],
 )
 
@@ -482,6 +483,7 @@ py_test(
     deps = [
         ":analyze_diff_size_lib",
         ":tool_utils",
+        "//tools/common:changed_files",
     ],
 )
 

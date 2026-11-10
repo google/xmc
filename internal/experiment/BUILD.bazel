@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "experiment",
     srcs = [
+        "componentrequirements.go",
         "createexperiment.go",
         "driftdetection.go",
         "updateexperimentlaunchstate.go",
@@ -32,7 +33,12 @@ go_library(
         "//internal/storage/state",
         "//internal/validator",
         "//internal/workunit",
+        "//pkg/components/store",
+        "//pkg/components/store/dependency",
+        "//pkg/components/store/lifecycle",
         "@com_github_kylelemons_godebug//diff",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/prototext",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -42,6 +48,7 @@ go_library(
 go_test(
     name = "experiment_test",
     srcs = [
+        "componentrequirements_test.go",
         "createexperiment_test.go",
         "driftdetection_test.go",
         "updateexperimentlaunchstate_test.go",
@@ -55,8 +62,31 @@ go_test(
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
         "//internal/validator",
+        "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+# The cross-backend test starts its PostgreSQL databases in Docker, which needs the "local" tag.
+go_test(
+    name = "experiment_integration_test",
+    srcs = ["componentrequirements_integration_test.go"],
+    embed = [":experiment"],
+    tags = ["local"],
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "//api/protos/experiment:messages_go_proto",
+        "//internal/storage",
+        "//pkg/components/store",
+        "//pkg/components/store/dbstore/testing",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )

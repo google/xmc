@@ -57,9 +57,10 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 			LaunchState: essmsgpb.ExperimentStatus_LAUNCHING,
 			UpdateTime:  timestamppb.New(testExpTime),
 		},
-		CreateTime:   timestamppb.New(testExpTime),
-		UpdateTime:   timestamppb.New(testExpTime),
-		CompleteTime: timestamppb.New(testExpCompleteTime),
+		CreateTime:     timestamppb.New(testExpTime),
+		UpdateTime:     timestamppb.New(testExpTime),
+		CompleteTime:   timestamppb.New(testExpCompleteTime),
+		ExperimentType: essmsgpb.Experiment_STUDY,
 	}
 
 	minimalExp := &essmsgpb.Experiment{
@@ -80,17 +81,18 @@ func TestExperimentProtoAndRowRoundTrip(t *testing.T) {
 			name: "experiment with all fields",
 			exp:  fullExp,
 			wantRow: ExperimentRow{
-				Xid:          123,
-				Title:        "Test Experiment",
-				Creator:      "test-user",
-				Priority:     100,
-				Tags:         []string{"tag1", "tag2"},
-				Notes:        "Test notes",
-				ActiveState:  int64(essmsgpb.ExperimentStatus_ACTIVE),
-				LaunchState:  int64(essmsgpb.ExperimentStatus_LAUNCHING),
-				CreateTime:   testExpTime,
-				UpdateTime:   testExpTime,
-				CompleteTime: pgtype.Timestamptz{Time: testExpCompleteTime, Valid: true},
+				Xid:            123,
+				Title:          "Test Experiment",
+				Creator:        "test-user",
+				Priority:       100,
+				Tags:           []string{"tag1", "tag2"},
+				Notes:          "Test notes",
+				ActiveState:    int64(essmsgpb.ExperimentStatus_ACTIVE),
+				LaunchState:    int64(essmsgpb.ExperimentStatus_LAUNCHING),
+				CreateTime:     testExpTime,
+				UpdateTime:     testExpTime,
+				CompleteTime:   pgtype.Timestamptz{Time: testExpCompleteTime, Valid: true},
+				ExperimentType: int64(essmsgpb.Experiment_STUDY),
 			},
 			wantProto: fullExp,
 		},
@@ -152,8 +154,8 @@ func TestExperimentRowNamedArgs(t *testing.T) {
 	if !row.UpdateTime.Equal(testExpTime) {
 		t.Errorf("row.UpdateTime = %v, want %v", row.UpdateTime, testExpTime)
 	}
-	if args := row.GetInsertArgs(); len(args) != 14 || args["xid"] != int64(123) {
-		t.Errorf("GetInsertArgs() = %v, want 14 entries with xid=123", args)
+	if args := row.GetInsertArgs(); len(args) != 15 || args["xid"] != int64(123) {
+		t.Errorf("GetInsertArgs() = %v, want 15 entries with xid=123", args)
 	}
 	if args := row.GetUpdateArgs(); len(args) != 7 || args["title"] != "Title" {
 		t.Errorf("GetUpdateArgs() = %v, want 7 entries with title=Title", args)

@@ -305,6 +305,7 @@ describe('QueueJobsTable Component', () => {
 
     const harness = await getHarness(QueueJobsTableHarness);
     expect(await harness.getPaginator()).toBeNull();
+    expect(await harness.getUserAllocationBar()).toBeNull();
 
     jobsSubject.next(TEST_QUEUE_JOBS_RESP);
     await flush();

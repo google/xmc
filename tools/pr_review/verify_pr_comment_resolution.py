@@ -29,12 +29,56 @@ from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import (  # noqa: E402
     GithubAPIError,
     GithubAuthError,
-    call_github_api,
+    get_authenticated_login,
+    list_all_pages,
 )
+
+_USER_AGENT = "XMC-Comment-Verifier-Agent"
+
+
+def _fetch_my_replied_to_ids(owner: str, repo: str, pull_number: int) -> set[int]:
+    """Returns the IDs of PR review comments the authenticated user replied to.
+
+    Reads every page of the PR's review comments, so replies beyond the first
+    100 comments are found, and ignores replies authored by anyone else.
+
+    Raises:
+        HandledError: If GitHub authentication or an API call fails.
+    """
+    endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}/comments"
+    try:
+        # An unauthenticated /user call fails with a 401 surfaced as
+        # GithubAPIError, so every login failure gets the authentication hint.
+        login = get_authenticated_login(user_agent=_USER_AGENT)
+    except (GithubAuthError, GithubAPIError) as e:
+        raise HandledError(
+            str(e),
+            "Please authenticate using 'gh auth login' or set GITHUB_TOKEN.",
+        ) from e
+    try:
+        comments = list_all_pages(endpoint, user_agent=_USER_AGENT)
+    except GithubAuthError as e:
+        raise HandledError(
+            str(e),
+            "Please authenticate using 'gh auth login' or set GITHUB_TOKEN.",
+        ) from e
+    except GithubAPIError as e:
+        raise HandledError(
+            str(e),
+            "Ensure repository and PR number exist and credentials have read permissions.",
+        ) from e
+
+    return {
+        c["in_reply_to_id"]
+        for c in comments
+        if isinstance(c, dict)
+        and c.get("in_reply_to_id")
+        and (c.get("user") or {}).get("login") == login
+    }
 
 
 def verify_resolution(args):
-    """Verifies that all comment IDs in a checklist have received inline replies."""
+    """Verifies that all checklist comment IDs have inline replies from the authenticated user."""
     owner = args.owner
     repo = args.repo
     pull_number = args.pull_number
@@ -62,26 +106,7 @@ def verify_resolution(args):
             "Verify the checklist contains formatted items like 'Comment ID `12345`'.",
         )
 
-    endpoint = f"/repos/{owner}/{repo}/pulls/{pull_number}/comments?per_page=100"
-    try:
-        comments = call_github_api(endpoint, user_agent="XMC-Comment-Verifier-Agent")
-    except GithubAuthError as e:
-        raise HandledError(
-            str(e),
-            "Please authenticate using 'gh auth login' or set GITHUB_TOKEN.",
-        )
-    except GithubAPIError as e:
-        raise HandledError(
-            str(e),
-            "Ensure repository and PR number exist and credentials have read permissions.",
-        )
-
-    if not isinstance(comments, list):
-        comments = []
-
-    replied_to_ids = {
-        c.get("in_reply_to_id") for c in comments if isinstance(c, dict) and c.get("in_reply_to_id")
-    }
+    replied_to_ids = _fetch_my_replied_to_ids(owner, repo, pull_number)
 
     unresolved_ids = [cid for cid in checklist_ids if cid not in replied_to_ids]
     resolved_ids = [cid for cid in checklist_ids if cid in replied_to_ids]
@@ -89,8 +114,8 @@ def verify_resolution(args):
     if unresolved_ids:
         raise HandledError(
             f"1-to-1 Resolution Verification Failed: {len(unresolved_ids)} of"
-            f" {len(checklist_ids)} comment threads lack inline replies."
-            f" Unresolved comment IDs: {unresolved_ids}",
+            f" {len(checklist_ids)} comment threads lack inline replies from the"
+            f" authenticated user. Unresolved comment IDs: {unresolved_ids}",
             "Post inline replies for all unresolved comment IDs using"
             " 'tools/pr_review/reply_pr_comment.py <comment_url> <message>' before marking task complete.",
         )

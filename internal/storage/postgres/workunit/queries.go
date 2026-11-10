@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
@@ -114,34 +113,36 @@ func ExtractWorkUnitCursor(wu *essmsgpb.WorkUnit) (map[string]any, error) {
 
 // FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 func (r *Repository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+	var res *storage.ActiveWorkUnitsResult
+	err := r.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var innerErr error
+		res, innerErr = repo.FetchActiveWorkUnitsByQueues(txCtx, queueNames, pageSize, pageToken)
+		return innerErr
+	})
+	return res, err
+}
+
+func fetchActiveWorkUnitsFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if r == nil || r.pool == nil {
-		return nil, pgdb.WrapStatusError("postgres pool must not be nil", grpcerr.ErrFailedPrecondition, nil)
-	}
 	if len(queueNames) == 0 {
-		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.ActiveWorkUnit{}, NextPageToken: ""}, nil
+		return &storage.ActiveWorkUnitsResult{WorkUnits: []storage.ActiveWorkUnit{}}, nil
 	}
 	pageSizeVal := offsetpagetoken.ClampPageSize(pageSize)
 	offset, err := offsetpagetoken.Decode(pageToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
-	return r.queryActiveWorkUnitsInReadOnlyTx(ctx, queueNames, pageSizeVal, offset)
+	return fetchActiveWorkUnitsPageFromDB(ctx, db, queueNames, pageSizeVal, offset)
 }
 
-func (r *Repository) queryActiveWorkUnitsInReadOnlyTx(ctx context.Context, queueNames []string, pageSize int32, offset int64) (*storage.ActiveWorkUnitsResult, error) {
+func fetchActiveWorkUnitsPageFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string, pageSize int32, offset int64) (*storage.ActiveWorkUnitsResult, error) {
 	var totalQueueSize int64
-	var rawRows []activeWorkUnitRow
-	err := pgdb.RunInReadOnlyTx(ctx, r.pool, func(ctx context.Context, tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, countActiveWorkUnitsSQL.String(), queueNames).Scan(&totalQueueSize); err != nil {
-			return pgdb.TranslateError(err, entityName)
-		}
-		var err error
-		rawRows, err = pgdb.QueryRows[activeWorkUnitRow](ctx, tx, fetchActiveWorkUnitsSQL.String(), entityName, queueNames, int64(pageSize)+1, offset)
-		return err
-	})
+	if err := db.QueryRow(ctx, countActiveWorkUnitsSQL.String(), queueNames).Scan(&totalQueueSize); err != nil {
+		return nil, pgdb.TranslateError(err, entityName)
+	}
+	rawRows, err := pgdb.QueryRows[activeWorkUnitRow](ctx, db, fetchActiveWorkUnitsSQL.String(), entityName, queueNames, int64(pageSize)+1, offset)
 	if err != nil {
 		return nil, err
 	}

@@ -13,9 +13,10 @@
 // limitations under the License.
 
 const fs = require('fs');
+const { parseAbsenceFile } = require('./absence-schedule');
 
 /**
- * Parses a flat text file (like OWNERS or ABSENCE.md) containing usernames.
+ * Parses a flat text file (like OWNERS) containing usernames.
  * Strips inline comments, markdown bullets/prefixes, and trims whitespace.
  * @param {string} content - Raw file content.
  * @returns {string[]} Array of parsed usernames.
@@ -45,16 +46,23 @@ function filterActiveOwners(owners = [], absences = []) {
  * @param {string} ownersPath
  * @param {string} absencePath
  * @param {any} core
+ * @param {Date} [currentDate=new Date()]
  * @returns {string[]} Active owner usernames.
  */
-function resolveActiveOwners(ownersPath, absencePath, core) {
+function resolveActiveOwners(ownersPath, absencePath, core, currentDate = new Date()) {
   if (!fs.existsSync(ownersPath) && core) {
     core.warning(`Owners file not found at '${ownersPath}'.`);
   }
   const ownersContent = fs.existsSync(ownersPath) ? fs.readFileSync(ownersPath, 'utf8') : '';
   const absenceContent = fs.existsSync(absencePath) ? fs.readFileSync(absencePath, 'utf8') : '';
 
-  const activeOwners = filterActiveOwners(parseUsernames(ownersContent), parseUsernames(absenceContent));
+  const { absentUsers, errors } = parseAbsenceFile(absenceContent, currentDate);
+  if (core) {
+    for (const err of errors) {
+      core.warning(`Invalid ABSENCE.md entry ignored: ${err}`);
+    }
+  }
+  const activeOwners = filterActiveOwners(parseUsernames(ownersContent), absentUsers);
   if (core) {
     core.info(`Active OWNERS to notify (${activeOwners.length}): ${activeOwners.join(', ') || 'none'}`);
   }

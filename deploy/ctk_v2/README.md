@@ -28,7 +28,7 @@ Open `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and configure the deployment
 ### App-level Authentication Configuration
 *   **`iap_client_id`** & **`iap_client_secret`**: OAuth Web Client credentials used by the application backend for Google OAuth2 flow. For step-by-step instructions on creating these, see [OAuth2 Client Setup in INSTALL.md](../../INSTALL.md#4-oauth2-client-iap-credentials-setup).
 *   **`jwt_secret`**: A unique JWT secret key used by the backend to sign and verify cookies.
-*   **`allowed_emails`**: A comma-separated list of email addresses permitted to sign in to XManager.
+*   **`allowed_emails`**: A comma-separated list of email addresses permitted to sign in to XManager (e.g. `"user1@example.com,user2@example.com"`). Write the plain list: the blueprint escapes the commas for Helm itself, so do not add backslashes.
 *   **`authorized_iam_role`**: The GCP IAM Role for user workload access (e.g., `projects/YOUR_GCP_PROJECT/roles/YOUR_IAM_ROLE`).
 *   **`admin_iam_role`**: The GCP IAM Role required for administrative access (e.g., `roles/owner` or a custom admin role). Default is `roles/owner`.
 

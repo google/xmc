@@ -97,3 +97,15 @@ func (r *TxRepository) WriteComponentOwner(_ context.Context, componentID int64,
 	}
 	return r.tx.BufferWrite([]*spanner.Mutation{m})
 }
+
+// InsertExperimentComponentSnapshot buffers a mutation pinning rec at rec.Generation to experiment xid.
+func (r *TxRepository) InsertExperimentComponentSnapshot(_ context.Context, xid int64, rec *store.ComponentRecord) error {
+	if r.tx == nil {
+		return fmt.Errorf("cannot insert experiment component snapshot without a read-write transaction: %w", grpcerr.ErrFailedPrecondition)
+	}
+	m, err := spannerdata.ExperimentComponentSnapshotInsertMutation(xid, rec)
+	if err != nil {
+		return err
+	}
+	return r.tx.BufferWrite([]*spanner.Mutation{m})
+}

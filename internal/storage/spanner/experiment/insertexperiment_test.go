@@ -16,11 +16,16 @@ package experiment_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	gcspanner "cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
@@ -74,5 +79,84 @@ func TestInsertExperiment_Nil(t *testing.T) {
 	})
 	if err == nil {
 		t.Errorf("InsertExperiment(nil) succeeded, want error")
+	}
+}
+
+func TestInsertExperiment_ExperimentTypeRoundTripAndImmutable(t *testing.T) {
+	ctx := context.Background()
+	_, essClient := emulator.Setup(ctx, t)
+	storageClient, _ := spanner.NewStorage(essClient)
+
+	// experiments/200 is a legacy row written without the ExperimentType column (NULL).
+	now := time.Now()
+	legacy := gcspanner.Insert("Experiments",
+		[]string{"Xid", "Title", "Creator", "Priority", "Urls", "Tags", "Notes", "Resources", "Status", "CreateTime", "UpdateTime"},
+		[]any{int64(200), "legacy", "test@example.com", int64(1), []*essmsgpb.Url{}, []string{}, "", []*essmsgpb.ResourceSet{}, &essmsgpb.ExperimentStatus{}, now, now})
+	if _, err := essClient.Apply(ctx, []*gcspanner.Mutation{legacy}); err != nil {
+		t.Fatalf("Apply(legacy experiment) failed: %v", err)
+	}
+	for xid, expType := range map[int64]essmsgpb.Experiment_ExperimentType{201: essmsgpb.Experiment_STANDARD, 202: essmsgpb.Experiment_STUDY} {
+		exp := spanner.BlankExperimentProto(xid)
+		exp.ExperimentType = expType
+		exp.CreateTime, exp.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+		// Insert through the repository: experiment.CreateExperiment would also require a STUDY's components.
+		if err := storageClient.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+			return tx.Experiments.InsertExperiment(ctx, exp)
+		}); err != nil {
+			t.Fatalf("InsertExperiment(%d) failed: %v", xid, err)
+		}
+	}
+
+	for xid, want := range map[int64]essmsgpb.Experiment_ExperimentType{200: essmsgpb.Experiment_STANDARD, 201: essmsgpb.Experiment_STANDARD, 202: essmsgpb.Experiment_STUDY} {
+		got, err := storageClient.FetchExperiment(ctx, xid)
+		if err != nil {
+			t.Fatalf("FetchExperiment(%d) failed: %v", xid, err)
+		}
+		if got.GetExperimentType() != want {
+			t.Errorf("FetchExperiment(%d).ExperimentType = %v, want %v", xid, got.GetExperimentType(), want)
+		}
+	}
+
+	for filter, want := range map[string][]string{
+		`experiment_type = "STANDARD"`: {"experiments/200", "experiments/201"},
+		`experiment_type != "STUDY"`:   {"experiments/200", "experiments/201"},
+		`experiment_type = "STUDY"`:    {"experiments/202"},
+	} {
+		gotList, _, err := storageClient.ListExperiments(ctx, 10, "", filter, "xid", 0)
+		if err != nil {
+			t.Fatalf("ListExperiments(%s) failed: %v", filter, err)
+		}
+		var gotNames []string
+		for _, exp := range gotList {
+			gotNames = append(gotNames, exp.GetName())
+		}
+		if diff := cmp.Diff(want, gotNames); diff != "" {
+			t.Errorf("ListExperiments(%s) names diff (-want +got):\n%s", filter, diff)
+		}
+	}
+
+	studyXID := int64(202)
+	_, err := storageClient.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        studyXID,
+		Experiment: &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STANDARD},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"experiment_type"}},
+	})
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateExperiment(experiment_type) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+
+	if _, err := storageClient.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        studyXID,
+		Experiment: &essmsgpb.Experiment{Title: "renamed", ExperimentType: essmsgpb.Experiment_STANDARD},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+	}); err != nil {
+		t.Fatalf("UpdateExperiment(title) failed: %v", err)
+	}
+	got, err := storageClient.FetchExperiment(ctx, studyXID)
+	if err != nil {
+		t.Fatalf("FetchExperiment(%d) failed: %v", studyXID, err)
+	}
+	if got.GetExperimentType() != essmsgpb.Experiment_STUDY {
+		t.Errorf("experiment_type after UpdateExperiment(title) = %v, want %v", got.GetExperimentType(), essmsgpb.Experiment_STUDY)
 	}
 }

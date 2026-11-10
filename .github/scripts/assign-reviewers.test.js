@@ -14,12 +14,17 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { parseAbsenceFile } = require('./absence-schedule');
 const {
   parseReviewersFromOwners,
   filterEligibleReviewers,
   selectRandomReviewers,
   isPullRequestOpen,
-  shouldSkipAssignment
+  shouldSkipAssignment,
+  run
 } = require('./assign-reviewers');
 
 test('parseReviewersFromOwners parses flat text reviewers correctly and strips comments', () => {
@@ -72,10 +77,64 @@ test('filterEligibleReviewers excludes absent reviewers case-insensitively', () 
 
 test('absent reviewers mapping handles markdown formatted lists (- , * , @)', () => {
   const candidates = ['alice', 'bob', 'charlie', 'dave', 'eve'];
-  const rawAbsent = ['- alice', '* @dave', '+ eve'];
-  const absent = rawAbsent.map(u => u.replace(/^[-*+@\s]+/, '').trim()).filter(Boolean);
-  const result = filterEligibleReviewers(candidates, 'bob', absent);
+  const rawAbsent = ['- alice', '* @dave', '+ eve'].join('\n');
+  const { absentUsers } = parseAbsenceFile(rawAbsent);
+  const result = filterEligibleReviewers(candidates, 'bob', absentUsers);
   assert.deepStrictEqual(result, ['charlie']);
+});
+
+test('run skips absent reviewers and logs warnings for malformed ABSENCE.md entries', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xmc-assign-reviewers-'));
+  const origCwd = process.cwd();
+  const warnings = [];
+  let requestedReviewers = null;
+
+  try {
+    process.chdir(tempDir);
+    fs.writeFileSync('OWNERS', 'alice\nbob\ncharlie\n');
+    fs.writeFileSync(
+      'ABSENCE.md',
+      'bob\ncharlie 16.11.2026-15.11.2026\n'
+    );
+
+    await run({
+      github: {
+        rest: {
+          pulls: {
+            requestReviewers: async ({ reviewers }) => {
+              requestedReviewers = reviewers;
+            }
+          }
+        }
+      },
+      context: {
+        repo: { owner: 'google', repo: 'xmc' },
+        eventName: 'pull_request',
+        payload: {
+          pull_request: {
+            number: 1,
+            state: 'open',
+            user: { login: 'alice' },
+            requested_reviewers: [],
+            requested_teams: []
+          }
+        }
+      },
+      core: {
+        info: () => {},
+        warning: msg => warnings.push(msg),
+        setFailed: msg => assert.fail(`Unexpected setFailed: ${msg}`)
+      }
+    });
+
+    // alice is author, bob is absent, charlie has an invalid line (warned and treated as eligible)
+    assert.deepStrictEqual(requestedReviewers, ['charlie']);
+    assert.strictEqual(warnings.length, 1);
+    assert.ok(warnings[0].includes('after end date'));
+  } finally {
+    process.chdir(origCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('selectRandomReviewers returns up to count elements and preserves candidate pool elements', () => {

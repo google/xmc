@@ -20,18 +20,25 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from tools.common.changed_files import list_untracked_files  # noqa: E402
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
 # Mandatory sizing thresholds (lines added / modified)
 PROD_THRESHOLD = 400
 TOTAL_CODE_THRESHOLD = 1000
 DOC_THRESHOLD = 1000
+
+# Prefix git inspects for NUL bytes when deciding whether a file is binary.
+_BINARY_SNIFF_BYTES = 8000
+
+# Read size used when streaming a file to count its lines.
+_LINE_COUNT_CHUNK_BYTES = 64 * 1024
 
 GENERATED_PATTERNS = (
     r".*\.pb(\.gw)?\.go$",
@@ -64,28 +71,113 @@ def classify_file(file_path: str) -> str:
     return "prod"
 
 
-def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
-    """Extracts added line counts and filepaths from git diff."""
-    cmd = ["git", "diff", "--numstat"]
+def count_added_lines(file_path: Path) -> int:
+    """Returns the lines git numstat would report as added for a new file.
+
+    Mirrors git's binary heuristic (a NUL byte in the first 8000 bytes): binary or
+    unreadable files count 0, like numstat's '-'. A final line without a newline counts.
+    The file is streamed in fixed-size chunks, so memory use stays bounded. A symlink
+    counts 1 (git diffs its target string), and other non-regular files (FIFOs,
+    devices) count 0 so reading them can never block.
+    """
+    if file_path.is_symlink():
+        return 1
+    if not file_path.is_file():
+        return 0
+    try:
+        with file_path.open("rb") as stream:
+            return _count_stream_lines(stream)
+    except OSError:
+        return 0
+
+
+def _count_stream_lines(stream: BinaryIO) -> int:
+    """Returns the newline-terminated (plus trailing partial) lines in a binary stream.
+
+    Returns 0 when a NUL byte appears within the first _BINARY_SNIFF_BYTES bytes.
+    """
+    head = stream.read(_BINARY_SNIFF_BYTES)
+    if b"\0" in head:
+        return 0
+    lines = head.count(b"\n")
+    last_byte = head[-1:]
+    while chunk := stream.read(_LINE_COUNT_CHUNK_BYTES):
+        lines += chunk.count(b"\n")
+        last_byte = chunk[-1:]
+    if last_byte and last_byte != b"\n":
+        lines += 1
+    return lines
+
+
+def get_untracked_entries(excluded_paths: set[str], repo_root: Path) -> list[tuple[int, str]]:
+    """Returns (added lines, path) for untracked, non-ignored files not in excluded_paths.
+
+    Raises:
+        HandledError: If git cannot list the untracked files.
+    """
+    return [
+        (count_added_lines(repo_root / path), path)
+        for path in list_untracked_files(repo_root)
+        if path not in excluded_paths
+    ]
+
+
+def _find_repo_root() -> Path:
+    """Returns the top-level directory of the git checkout containing the working directory.
+
+    Raises:
+        HandledError: If the working directory is not inside a git checkout.
+    """
+    cmd = ["git", "rev-parse", "--show-toplevel"]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        raise HandledError(
+            f"Failed to find the git repository root: {e.stderr.strip()}",
+            "Verify that you are inside a valid git workspace.",
+        ) from e
+    return Path(res.stdout.strip())
+
+
+def _run_numstat(diff_spec: str | None, repo_root: Path) -> str:
+    """Returns the stdout of `git diff --numstat [diff_spec]` run in repo_root.
+
+    core.quotePath=false keeps non-ASCII paths unescaped, matching `git ls-files -z`.
+    """
+    cmd = ["git", "-c", "core.quotePath=false", "diff", "--numstat"]
     if diff_spec:
         cmd.append(diff_spec)
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=repo_root)
     except subprocess.CalledProcessError as e:
         raise HandledError(
             f"Failed to execute git diff: {e.stderr.strip()}",
             "Verify that you are inside a valid git workspace and base ref exists.",
         ) from e
+    return res.stdout
 
+
+def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
+    """Extracts added line counts and filepaths from git diff plus untracked files.
+
+    Untracked files that git does not ignore count every line as added, so the size gate
+    holds before new files are committed. Paths already in the diff are not counted twice.
+    Both listings run from the root of the checkout containing the working directory, so
+    their repository-relative paths match.
+    """
+    repo_root = _find_repo_root()
     entries: list[tuple[int, str]] = []
-    for line in res.stdout.splitlines():
+    diff_paths: set[str] = set()
+    for line in _run_numstat(diff_spec, repo_root).splitlines():
         parts = line.strip().split("\t")
-        if len(parts) >= 3 and parts[0].isdigit():
-            added, path = int(parts[0]), parts[2]
-            entries.append((added, path))
+        if len(parts) < 3:
+            continue
+        diff_paths.add(parts[2])
+        if parts[0].isdigit():
+            entries.append((int(parts[0]), parts[2]))
 
-    return entries
+    return entries + get_untracked_entries(diff_paths, repo_root)
 
 
 def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:

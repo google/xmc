@@ -23,7 +23,16 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOW_REL = pathlib.Path(".github/workflows/nightly-examples-e2e.yml")
 DEFAULT_WORKFLOW = REPO_ROOT / WORKFLOW_REL
 
-_MATRIX_KEYS = ("id", "name", "example_path", "entrypoint", "args", "verify_module")
+_MATRIX_KEYS = (
+    "id",
+    "name",
+    "example_path",
+    "entrypoint",
+    "args",
+    "verify_module",
+    "expected_work_units",
+    "expected_duration_sec",
+)
 _KEY_RE = re.compile(rf"^\s*(?:-\s+)?(?P<key>{'|'.join(_MATRIX_KEYS)}):(?P<value>.*)$")
 _ITEM_START_RE = re.compile(r"^\s*-\s")
 

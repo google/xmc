@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -69,6 +70,13 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 		return nil, err
 	}
 
+	// 2.4. Check the components that the experiment requires before provisioning an XID, so that a
+	// rejected request does not leave an orphaned XIDEntry behind. Step 5 repeats the check
+	// authoritatively in the transaction that inserts the experiment.
+	if err := h.precheckComponentRequirements(ctx, exp); err != nil {
+		return nil, err
+	}
+
 	// 3. Provision an XIDEntry for the experiment.
 	logging.Info(ctx, "Calling XID service to provision ID", "creator", creator)
 	xidEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, exp.Acls, "")
@@ -92,15 +100,16 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 4. Assemble the experiment object.
 	logging.Info(ctx, "Assembling experiment object")
 	newExp := &msgpb.Experiment{
-		Name:      name,
-		Title:     exp.Title,
-		Creator:   creator,
-		Status:    newExperimentStatus(name),
-		Priority:  exp.Priority,
-		Urls:      exp.GetUrls(),
-		Tags:      exp.GetTags(),
-		Notes:     exp.GetNotes(),
-		Resources: []*msgpb.ResourceSet{},
+		Name:           name,
+		Title:          exp.Title,
+		Creator:        creator,
+		Status:         newExperimentStatus(name),
+		Priority:       exp.Priority,
+		Urls:           exp.GetUrls(),
+		Tags:           exp.GetTags(),
+		Notes:          exp.GetNotes(),
+		Resources:      []*msgpb.ResourceSet{},
+		ExperimentType: normalizeExperimentType(exp.GetExperimentType()),
 	}
 
 	// 5. Persist the experiment to the storage layer.
@@ -108,7 +117,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	retExp, err := experiment.CreateExperiment(ctx, h.storage, newExp)
 	if err != nil {
 		logging.Error(ctx, "Failed to save experiment", "experiment_name", newExp.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to save experiment %s: %v: %w", newExp.GetName(), err, grpcerr.ErrInternal)
+		return nil, componentRequirementError(fmt.Sprintf("failed to save experiment %s", newExp.GetName()), err)
 	}
 
 	// 5.1. Set the experiment's ACLs to the XIDEntry's ACLs.
@@ -117,6 +126,42 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 6. Return the successful response.
 	logging.Info(ctx, "Successfully created experiment", "experiment_name", retExp.GetName())
 	return retExp, nil
+}
+
+// normalizeExperimentType maps UNSPECIFIED to STANDARD so that the server never stores UNSPECIFIED.
+func normalizeExperimentType(t msgpb.Experiment_ExperimentType) msgpb.Experiment_ExperimentType {
+	if t == msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED {
+		return msgpb.Experiment_STANDARD
+	}
+	return t
+}
+
+// precheckComponentRequirements returns a FailedPrecondition error when exp requires components and
+// the Components feature is disabled or a required component is missing or not ready in a read-only
+// catalog snapshot. Experiments that require no components read nothing.
+func (h *ExperimentHandler) precheckComponentRequirements(ctx context.Context, exp *msgpb.Experiment) error {
+	if err := experiment.CheckComponentsFeature(exp, h.enableComponents); err != nil {
+		logging.Warn(ctx, "CreateExperiment requires the disabled Components feature", "error", err)
+		return err
+	}
+	reqs := experiment.RequirementsFor(exp)
+	if len(reqs) == 0 {
+		return nil
+	}
+	if err := experiment.ValidateComponentRequirements(ctx, h.storage.Components(), reqs); err != nil {
+		logging.Warn(ctx, "CreateExperiment component requirements are not met", "error", err)
+		return componentRequirementError("failed to check component requirements", err)
+	}
+	return nil
+}
+
+// componentRequirementError prefixes err with msg. An unmet component requirement keeps its
+// FailedPrecondition code; any other error is reported as Internal.
+func componentRequirementError(msg string, err error) error {
+	if errors.Is(err, experiment.ErrComponentRequirementNotMet) {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+	return fmt.Errorf("%s: %v: %w", msg, err, grpcerr.ErrInternal)
 }
 
 // authorizeCreator returns a PermissionDenied error unless the creator holds WRITER (directly or

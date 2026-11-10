@@ -37,6 +37,7 @@ from tools.nightly_tests.verification import (
 # Domain assertion constants for simple_job workload
 EXPECTED_TITLE_PATTERN: str = "Demo Workload"
 DEFAULT_WORK_UNITS: int = 3
+DEFAULT_DURATION_SEC: int = 60
 DEFAULT_QUEUE: str = "cpu-queue"
 EXPECTED_CPU_MILLICORES: int = 500
 EXPECTED_MEMORY_BYTES: int = 512 * 1024 * 1024  # 512 MiB
@@ -49,9 +50,11 @@ def _assert_work_unit_spec(
 ) -> None:
     """Validates Priority, Scheduling Constraints, JobSet, Resources, and Metadata for a WorkUnit."""
     xmc_entities_validator.validate_work_unit_priority(raw_wu, expected_priority="HIGH")
+    # examples/simple_job/launch.py tags each WorkUnit with f"{duration_sec}s-workload".
+    duration_sec = verifier_cli.resolve_expected_duration_sec(DEFAULT_DURATION_SEC)
     xmc_entities_validator.validate_work_unit_metadata(
         work_unit=raw_wu,
-        expected_tags=["60s-workload", expected_queue, worker_name],
+        expected_tags=[f"{duration_sec}s-workload", expected_queue, worker_name],
         expected_notes_substring="Demo workload",
     )
     xmc_entities_validator.validate_jobsets(

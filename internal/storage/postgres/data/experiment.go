@@ -28,39 +28,41 @@ import (
 
 // ExperimentRow represents a row in the PostgreSQL Experiments table.
 type ExperimentRow struct {
-	Xid          int64              `db:"xid"`
-	Title        string             `db:"title"`
-	Creator      string             `db:"creator"`
-	Priority     int64              `db:"priority"`
-	Urls         [][]byte           `db:"urls"`
-	Tags         []string           `db:"tags"`
-	Notes        string             `db:"notes"`
-	Resources    [][]byte           `db:"resources"`
-	Status       []byte             `db:"status"`
-	ActiveState  int64              `db:"activestate"`
-	LaunchState  int64              `db:"launchstate"`
-	CreateTime   time.Time          `db:"createtime"`
-	UpdateTime   time.Time          `db:"updatetime"`
-	CompleteTime pgtype.Timestamptz `db:"completetime"`
+	Xid            int64              `db:"xid"`
+	Title          string             `db:"title"`
+	Creator        string             `db:"creator"`
+	Priority       int64              `db:"priority"`
+	Urls           [][]byte           `db:"urls"`
+	Tags           []string           `db:"tags"`
+	Notes          string             `db:"notes"`
+	Resources      [][]byte           `db:"resources"`
+	Status         []byte             `db:"status"`
+	ActiveState    int64              `db:"activestate"`
+	LaunchState    int64              `db:"launchstate"`
+	CreateTime     time.Time          `db:"createtime"`
+	UpdateTime     time.Time          `db:"updatetime"`
+	CompleteTime   pgtype.Timestamptz `db:"completetime"`
+	ExperimentType int64              `db:"experimenttype"`
 }
 
 // GetInsertArgs returns the strict named arguments required by the Experiments INSERT statement.
 func (r ExperimentRow) GetInsertArgs() pgx.StrictNamedArgs {
 	return pgx.StrictNamedArgs{
-		"xid":          r.Xid,
-		"title":        r.Title,
-		"creator":      r.Creator,
-		"priority":     r.Priority,
-		"urls":         r.Urls,
-		"tags":         r.Tags,
-		"notes":        r.Notes,
-		"resources":    r.Resources,
-		"status":       r.Status,
-		"activestate":  r.ActiveState,
-		"launchstate":  r.LaunchState,
-		"createtime":   r.CreateTime,
-		"updatetime":   r.UpdateTime,
-		"completetime": r.CompleteTime,
+		"xid":            r.Xid,
+		"title":          r.Title,
+		"creator":        r.Creator,
+		"priority":       r.Priority,
+		"urls":           r.Urls,
+		"tags":           r.Tags,
+		"notes":          r.Notes,
+		"resources":      r.Resources,
+		"status":         r.Status,
+		"activestate":    r.ActiveState,
+		"launchstate":    r.LaunchState,
+		"createtime":     r.CreateTime,
+		"updatetime":     r.UpdateTime,
+		"completetime":   r.CompleteTime,
+		"experimenttype": r.ExperimentType,
 	}
 }
 
@@ -113,17 +115,18 @@ func ExperimentRowToProto(row ExperimentRow) (*essmsgpb.Experiment, error) {
 		return nil, fmt.Errorf("failed to unmarshal Status: %w", err)
 	}
 	exp := &essmsgpb.Experiment{
-		Name:       validator.ConstructExperimentName(row.Xid),
-		Title:      row.Title,
-		Creator:    row.Creator,
-		Priority:   essmsgpb.Priority(row.Priority),
-		Urls:       urls,
-		Tags:       slices.Clone(row.Tags),
-		Notes:      row.Notes,
-		Resources:  resources,
-		Status:     status,
-		CreateTime: timestamppb.New(row.CreateTime),
-		UpdateTime: timestamppb.New(row.UpdateTime),
+		Name:           validator.ConstructExperimentName(row.Xid),
+		Title:          row.Title,
+		Creator:        row.Creator,
+		Priority:       essmsgpb.Priority(row.Priority),
+		Urls:           urls,
+		Tags:           slices.Clone(row.Tags),
+		Notes:          row.Notes,
+		Resources:      resources,
+		Status:         status,
+		CreateTime:     timestamppb.New(row.CreateTime),
+		UpdateTime:     timestamppb.New(row.UpdateTime),
+		ExperimentType: essmsgpb.Experiment_ExperimentType(row.ExperimentType),
 	}
 	if row.CompleteTime.Valid {
 		exp.CompleteTime = timestamppb.New(row.CompleteTime.Time)
@@ -158,20 +161,21 @@ func ExperimentProtoToRow(exp *essmsgpb.Experiment) (ExperimentRow, error) {
 		completeTime = pgtype.Timestamptz{Time: exp.GetCompleteTime().AsTime(), Valid: true}
 	}
 	return ExperimentRow{
-		Xid:          xid,
-		Title:        exp.GetTitle(),
-		Creator:      exp.GetCreator(),
-		Priority:     int64(exp.GetPriority()),
-		Urls:         urls,
-		Tags:         tags,
-		Notes:        exp.GetNotes(),
-		Resources:    resources,
-		Status:       statusBytes,
-		ActiveState:  int64(exp.GetStatus().GetActiveState()),
-		LaunchState:  int64(exp.GetStatus().GetLaunchState()),
-		CreateTime:   exp.GetCreateTime().AsTime(),
-		UpdateTime:   exp.GetUpdateTime().AsTime(),
-		CompleteTime: completeTime,
+		Xid:            xid,
+		Title:          exp.GetTitle(),
+		Creator:        exp.GetCreator(),
+		Priority:       int64(exp.GetPriority()),
+		Urls:           urls,
+		Tags:           tags,
+		Notes:          exp.GetNotes(),
+		Resources:      resources,
+		Status:         statusBytes,
+		ActiveState:    int64(exp.GetStatus().GetActiveState()),
+		LaunchState:    int64(exp.GetStatus().GetLaunchState()),
+		CreateTime:     exp.GetCreateTime().AsTime(),
+		UpdateTime:     exp.GetUpdateTime().AsTime(),
+		CompleteTime:   completeTime,
+		ExperimentType: int64(exp.GetExperimentType()),
 	}, nil
 }
 

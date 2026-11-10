@@ -146,11 +146,32 @@ message DashboardJob {
   int64 running_duration_seconds = 12;
 }
 
+// UserResourceAllocation is the total resources requested by one user's running
+// and pending work units in a cluster queue, for a single resource type.
+message UserResourceAllocation {
+  // Experiment author; same value as DashboardJob.user.
+  string user = 1;
+  // Resource type in the same key space as QueueResourceCapacity.resource_type
+  // (e.g. "cpu", "memory", "nvidia.com/gpu: nvidia-tesla-h100").
+  string resource_type = 2;
+  // Units requested by running work units, i.e. those admitted by Kueue (STARTING or RUNNING)
+  // (CPU: cores, memory: GiB, GPU: devices, TPU: chips).
+  double running_units = 3;
+  // Units requested by pending work units (SCHEDULING or INITIALIZING), in the same units as
+  // running_units. INITIALIZING counts as pending because it precedes Kueue admission, even though
+  // the jobs list orders it with running jobs.
+  double pending_units = 4;
+}
+
 // GetRunningAndPendingJobsResponse represents the paginated list of running and pending jobs.
 message GetRunningAndPendingJobsResponse {
   repeated DashboardJob jobs = 1;
   string next_page_token = 2;
   int64 total_queue_size = 3;
+  // Queue-wide, one entry per (user, resource_type). Aggregated over all running
+  // and pending work units in the queue, not limited to the jobs in this page,
+  // and populated on every page.
+  repeated UserResourceAllocation user_allocations = 4;
 }
 
 // GetSubmitQueueRequest represents query parameters for fetching the target submission queue.

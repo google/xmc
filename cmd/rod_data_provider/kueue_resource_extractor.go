@@ -15,14 +15,10 @@
 package main
 
 import (
-	"strings"
-
 	"k8s.io/apimachinery/pkg/api/resource"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 )
-
-const bytesPerGiB = 1024 * 1024 * 1024
 
 var acceleratorLabelKeys = []string{
 	"cloud.google.com/gke-accelerator",
@@ -30,17 +26,6 @@ var acceleratorLabelKeys = []string{
 	"cloud.google.com/gke-tpu-accelerator",
 	"kueue.x-k8s.io/gpack-gpu",
 	"gpu.nvidia.com/class",
-}
-
-// formatCompoundAccelerator combines the base resource name with the specific accelerator model.
-func formatCompoundAccelerator(resourceName, model string) string {
-	if model == "" || model == resourceName {
-		return resourceName
-	}
-	if strings.HasPrefix(model, resourceName+": ") || strings.HasPrefix(model, resourceName+"/") {
-		return model
-	}
-	return resourceName + ": " + model
 }
 
 // resolveResourceType resolves generic resource names like "nvidia.com/gpu" to compound accelerator names
@@ -53,12 +38,12 @@ func resolveResourceType(resourceName, flavorName string, rfMap map[string]*kueu
 	if rf := rfMap[flavorName]; rf != nil {
 		for _, labelKey := range acceleratorLabelKeys {
 			if acc := rf.Spec.NodeLabels[labelKey]; acc != "" {
-				return formatCompoundAccelerator(resourceName, acc)
+				return resourceaccumulator.FormatCompoundAccelerator(resourceName, acc)
 			}
 		}
 	}
 	if resourceaccumulator.IsSpecificAcceleratorName(flavorName) {
-		return formatCompoundAccelerator(resourceName, flavorName)
+		return resourceaccumulator.FormatCompoundAccelerator(resourceName, flavorName)
 	}
 	return resourceName
 }
@@ -90,9 +75,5 @@ func extractTotalResourceUsageByResourceType(status kueuev1beta1.ClusterQueueSta
 // parseK8sResourceQuantity normalizes a resource.Quantity into a float64 value.
 // Memory and storage quantities are normalized to GiB, while CPU, GPU, and count quantities are normalized to Cores/Units.
 func parseK8sResourceQuantity(resourceType string, q resource.Quantity) float64 {
-	val := q.AsApproximateFloat64()
-	if resourceaccumulator.IsMemoryOrStorageResource(resourceType) {
-		return val / bytesPerGiB
-	}
-	return val
+	return resourceaccumulator.NormalizeUnits(resourceType, q.AsApproximateFloat64())
 }

@@ -55,6 +55,9 @@ func TestTxRepository_WritePreconditionsAndValidation(t *testing.T) {
 				"SoftDeleteComponent":        func() error { return repo.SoftDeleteComponent(ctx, validRec, nil) },
 				"WriteComponentOwner(nil)":   func() error { return repo.WriteComponentOwner(ctx, 1, nil) },
 				"WriteComponentOwner(owner)": func() error { return repo.WriteComponentOwner(ctx, 1, owner) },
+				"InsertExperimentComponentSnapshot": func() error {
+					return repo.InsertExperimentComponentSnapshot(ctx, 1, validRec)
+				},
 			}
 			for name, call := range calls {
 				if err := call(); !errors.Is(err, grpcerr.ErrFailedPrecondition) || status.Code(err) != codes.FailedPrecondition {
@@ -70,6 +73,9 @@ func TestTxRepository_WritePreconditionsAndValidation(t *testing.T) {
 			"UpdateComponentIntent":      func() error { return rwRepo.UpdateComponentIntent(ctx, nil, nil) },
 			"UpdateComponentObservation": func() error { return rwRepo.UpdateComponentObservation(ctx, nil, false) },
 			"SoftDeleteComponent":        func() error { return rwRepo.SoftDeleteComponent(ctx, nil, nil) },
+			"InsertExperimentComponentSnapshot": func() error {
+				return rwRepo.InsertExperimentComponentSnapshot(ctx, 1, nil)
+			},
 		}
 		for name, call := range calls {
 			if err := call(); !errors.Is(err, grpcerr.ErrInvalidArgument) || status.Code(err) != codes.InvalidArgument {

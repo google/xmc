@@ -1,0 +1,56 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<section class="user-allocation" aria-label="Requested resources per user">
+  @if (!dominantResource()) {
+    <p class="allocation-hint">
+      Pick a resource in "I need" to see how much of it each user holds in this queue.
+    </p>
+  } @else {
+    @if (summary(); as s) {
+      <div class="allocation-header">
+        <h4 class="allocation-title">Who holds {{ dominantResource() }}?</h4>
+        <span class="allocation-totals">{{ s.totalsLabel }}</span>
+      </div>
+      <div class="allocation-bar" role="img" [attr.aria-label]="'Total: ' + s.totalsLabel">
+        @for (seg of s.segments; track seg.user) {
+          <span
+            class="allocation-segment running"
+            [style.width.%]="seg.runningPercent"
+            [style.background-color]="seg.color"
+            [attr.title]="seg.user + ': ' + seg.label"
+          ></span>
+          <span
+            class="allocation-segment pending"
+            [style.width.%]="seg.pendingPercent"
+            [style.background-color]="seg.color"
+            [attr.title]="seg.user + ': ' + seg.label"
+          ></span>
+        }
+      </div>
+      <ul class="allocation-chips">
+        @for (seg of s.segments; track seg.user) {
+          <li class="allocation-chip">
+            <span class="chip-dot" aria-hidden="true" [style.background-color]="seg.color"></span>
+            <span class="chip-user">{{ seg.user }}</span>
+            <span class="chip-units">{{ seg.label }}</span>
+          </li>
+        }
+      </ul>
+    } @else {
+      <p class="allocation-empty">No active jobs request {{ dominantResource() }} in this queue.</p>
+    }
+  }
+</section>
