@@ -310,24 +310,6 @@ class LocalRunner:
         images = self.image_builder.build_images(services=sorted_targets)
         self.image_builder.load_images_into_kind(images)
 
-    def _is_component_deployment_absent(self, ctx: str, deploy: str) -> bool:
-        """Returns True iff a component-managed Deployment is NotFound in namespace 'xmc'."""
-        if deploy not in ("ingestion-gateway-deployment", "xmc-study-controller"):
-            return False
-        try:
-            probe_res = run_command(
-                ["kubectl", "--context", ctx, "get", f"deployment/{deploy}", "-n", "xmc"],
-                check=False,
-                capture_output=True,
-                log_cmd=False,
-            )
-        except OSError:
-            return False
-        if probe_res.returncode == 0:
-            return False
-        raw_err = f"{probe_res.stderr or ''} {probe_res.stdout or ''}".lower()
-        return "not found" in raw_err or "notfound" in raw_err
-
     def _restart_deployments(
         self, ctx: str, sorted_targets: list[str]
     ) -> tuple[list[str], list[str]]:
@@ -336,11 +318,6 @@ class LocalRunner:
         failed: list[str] = []
         for svc in sorted_targets:
             deploy = service_to_k8s_deployment_name(svc)
-            if self._is_component_deployment_absent(ctx, deploy):
-                log_info(
-                    f"Skipping restart of '{deploy}' (component workload not deployed in 'xmc')."
-                )
-                continue
             log_info(f"Restarting deployment '{deploy}' in namespace 'xmc'...")
             try:
                 run_command(

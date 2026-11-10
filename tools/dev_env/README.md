@@ -129,7 +129,6 @@ Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice
 | `ess` | `experiment_state_server` |
 | `xid` | `xid_service` |
 | `ui`, `frontend`, `web` | `ui` |
-| `gw`, `gateway`, `ingestion` | `ingestion_gateway` (`ingestion-gateway-deployment`) |
 | `actuator` | `actuator` |
 | `reconciler` | `reconciler` |
 | `dash`, `dashboard` | `dashboard_service` |
@@ -306,6 +305,7 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 - `--project-id`, `-p`: Google Cloud project ID.
 - `--environment`, `-e`: Deployment environment name.
 - `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
+<!-- TODO: sync --start-from / --only step list with tools/dev_env/upgrade_dev_env.STEPS (check, migrate, images, app, restart, verify). -->
 - `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
 - `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
 - `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
@@ -448,7 +448,6 @@ The `ChangeDetector` module lists modified files with the shared `tools/common/c
 - `cmd/actuator/**` $\rightarrow$ `actuator`
 - `cmd/reconciler/**` $\rightarrow$ `reconciler`
 - `cmd/ui/**` $\rightarrow$ `ui`
-- `cmd/ingestion_gateway/**`, `api/protos/metrics/**` $\rightarrow$ `ingestion_gateway`
 - `cmd/dashboard_service/**`, `internal/dashboard/**`, `api/protos/dashboard/**` $\rightarrow$ `dashboard_service`
 - `cmd/health_service/**`, `api/protos/health/**` $\rightarrow$ `health_service`
 - `cmd/rod_data_provider/**`, `internal/rod/**` $\rightarrow$ `rod_data_provider`

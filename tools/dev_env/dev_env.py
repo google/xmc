@@ -157,6 +157,7 @@ def handle_build_images(args: argparse.Namespace) -> None:
 
     cfg = config.load_config(args)
     builder = ImageBuilder(cfg)
+    # TODO: normalize empty args.services ([] from nargs="*") to None like handle_reload.
     services = getattr(args, "services", None)
     skip_build = getattr(args, "skip_build", False)
     image_tags = builder.build_images(services=services, skip_build=skip_build)

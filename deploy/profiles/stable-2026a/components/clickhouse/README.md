@@ -101,6 +101,7 @@ parameters:
 
 Running `helm template clickhouse deploy/profiles/stable-2026a/components/clickhouse --set enabled=true` produces the following `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`):
 
+<!-- TODO: include default stability: "STABLE" in Example 3 rendered Component YAML. -->
 ```yaml
 apiVersion: xmc.dev/v1alpha1
 kind: Component

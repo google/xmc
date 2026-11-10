@@ -318,7 +318,7 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
-   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the component and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -341,7 +341,7 @@ For direct control over your infrastructure:
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
-   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the component and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 

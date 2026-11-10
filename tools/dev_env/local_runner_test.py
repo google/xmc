@@ -655,37 +655,6 @@ class TestLocalRunner(unittest.TestCase):
                 base_ref=None,
             )
 
-    @patch("tools.dev_env.local_runner.run_command")
-    def test_restart_deployments_component_managed_presence_check(
-        self, mock_run: MagicMock
-    ) -> None:
-        """Skips NotFound component deployments cleanly, fails on API errors, and restarts present ones."""
-        not_found_probe = MagicMock(
-            returncode=1,
-            stderr='Error from server (NotFound): deployments.apps "ingestion-gateway-deployment" not found',
-            stdout="",
-        )
-        mock_run.return_value = not_found_probe
-        triggered, failed = self.runner._restart_deployments("kind-ctx", ["ingestion_gateway"])
-        self.assertEqual(triggered, [])
-        self.assertEqual(failed, [])
-
-        api_err_probe = MagicMock(returncode=1, stderr="connection refused", stdout="")
-        mock_run.side_effect = [api_err_probe, RuntimeError("connection refused")]
-        triggered_err, failed_err = self.runner._restart_deployments(
-            "kind-ctx", ["ingestion_gateway"]
-        )
-        self.assertEqual(triggered_err, [])
-        self.assertEqual(failed_err, ["ingestion-gateway-deployment"])
-
-        present_probe = MagicMock(returncode=0, stderr="", stdout="")
-        mock_run.side_effect = [present_probe, MagicMock(returncode=0)]
-        triggered_ok, failed_ok = self.runner._restart_deployments(
-            "kind-ctx", ["ingestion_gateway"]
-        )
-        self.assertEqual(triggered_ok, ["ingestion-gateway-deployment"])
-        self.assertEqual(failed_ok, [])
-
 
 if __name__ == "__main__":
     unittest.main()

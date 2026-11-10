@@ -200,7 +200,7 @@ class ConfigResolutionTest(unittest.TestCase):
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_service_mappings(self) -> None:
-        """Verifies feature flags conditionally expand enabled services and components/gateway stay in base."""
+        """Verifies feature flags conditionally expand enabled services and components stays in base."""
         args = argparse.Namespace(
             project_id="my-proj",
             rod_deployment_enabled=True,
