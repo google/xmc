@@ -30,7 +30,7 @@ _MODULE_HEADER = re.compile(r"^\s*-\s+id:\s*([^\s#]+)", re.MULTILINE)
 _GROUP_HEADER = re.compile(r"^-\s+group:\s*([^\s#]+)", re.MULTILINE)
 _NAMESPACE_LINE = re.compile(r"^\s+namespace:\s*([^\s#]+)", re.MULTILINE)
 _SET_VALUE_PAIR = re.compile(
-    r"^\s*-\s+name:\s*([^\s#]+)\s*\n(?:\s*#.*\n)*\s+value:\s*([^\s#]+)",
+    r"^\s*-\s+name:\s*([^\s#]+)\s*\n(?:\s*#.*\n)*\s+value:\s*(.+)",
     re.MULTILINE,
 )
 
@@ -51,10 +51,11 @@ def extract_module_block(blueprint: str, module_id: str) -> str:
 
 def parse_set_values(module_block: str) -> dict[str, str]:
     """Extracts name/value pairs from a direct-helm-install module's set_values block."""
-    return {
-        name.strip("\"'"): value.strip("\"'")
-        for name, value in _SET_VALUE_PAIR.findall(module_block)
-    }
+    res: dict[str, str] = {}
+    for name, value in _SET_VALUE_PAIR.findall(module_block):
+        val = value.split("#")[0].strip()
+        res[name.strip("\"'")] = val.strip("\"'")
+    return res
 
 
 class CertManagerLeaderElectionTest(unittest.TestCase):
@@ -76,7 +77,7 @@ class CertManagerLeaderElectionTest(unittest.TestCase):
         )
 
     def test_extract_module_block_and_parse_set_values_edge_cases(self) -> None:
-        """Covers comments, quotes, multibyte values, and missing modules."""
+        """Covers comments, quotes, spaces, multibyte values, and missing modules."""
         sample = (
             "- group: prereqs\n"
             "  modules:\n"
@@ -85,7 +86,7 @@ class CertManagerLeaderElectionTest(unittest.TestCase):
             "      set_values:\n"
             "      - name: 'key.one'\n"
             "        # inline comment with multibyte — ✓\n"
-            '        value: "val-one"\n'
+            '        value: "val one" # trailing comment\n'
             "  - id: mod_b\n"
             "    settings:\n"
             "      set_values:\n"
@@ -93,7 +94,7 @@ class CertManagerLeaderElectionTest(unittest.TestCase):
             "        value: other-val\n"
         )
         block_a = extract_module_block(sample, "mod_a")
-        self.assertEqual({"key.one": "val-one"}, parse_set_values(block_a))
+        self.assertEqual({"key.one": "val one"}, parse_set_values(block_a))
         self.assertEqual({}, parse_set_values(""))
         with self.assertRaises(AssertionError):
             extract_module_block(sample, "missing_mod")
