@@ -430,6 +430,30 @@ func TestCreateExperiment_PersistsStudyConfig(t *testing.T) {
 	}
 }
 
+func TestCreateExperiment_RejectsStudyConfigOnNonStudy(t *testing.T) {
+	ctx := context.Background()
+	for _, expType := range []msgpb.Experiment_ExperimentType{msgpb.Experiment_STANDARD, msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED} {
+		t.Run(expType.String(), func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(xidClient),
+				withStorage(&storage.MockStorage{}),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: expType, StudyConfig: experimenttest.StudyConfig()}}
+
+			_, err := server.CreateExperiment(ctx, req)
+
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("CreateExperiment(%v with study_config) error = %v, want code %v", expType, err, codes.InvalidArgument)
+			}
+			if xidClient.createXidEntryCalls != 0 {
+				t.Errorf("CreateExperiment(%v with study_config) made %d CreateXidEntry calls, want 0", expType, xidClient.createXidEntryCalls)
+			}
+		})
+	}
+}
+
 func TestCreateExperiment_CreatorAuthorization(t *testing.T) {
 	ctx := context.Background()
 	creatorOwner := &xidmsgpb.XidAcls{Owners: []*xidmsgpb.XidAcls_Role{userRole("test@example.com")}}

@@ -138,6 +138,10 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 	if expType := exp.GetExperimentType(); expType.Descriptor().Values().ByNumber(expType.Number()) == nil {
 		return fmt.Errorf("experiment.experiment_type %d is not a known type: %w", expType, grpcerr.ErrInvalidArgument)
 	}
+	// Only studies carry a study config; UNSPECIFIED is stored as STANDARD.
+	if exp.GetExperimentType() != essmsgpb.Experiment_STUDY && exp.GetStudyConfig() != nil {
+		return fmt.Errorf("experiment.study_config must be unset unless experiment.experiment_type is STUDY: %w", grpcerr.ErrInvalidArgument)
+	}
 	if err := validateExperimentACLs(exp.GetAcls()); err != nil {
 		return err
 	}
