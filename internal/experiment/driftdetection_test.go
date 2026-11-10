@@ -159,15 +159,18 @@ func TestDriftEvaluator_Evaluate_SkipsWithoutLookups(t *testing.T) {
 	compName := "comp-a"
 	tests := []struct {
 		name      string
+		buildEval func(DriftStore) *DriftEvaluator
 		expStatus *essmsgpb.ExperimentStatus
 	}{
-		{name: "nil status", expStatus: nil},
-		{name: "inactive experiment", expStatus: &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_INACTIVE}},
+		{name: "nil evaluator", buildEval: func(DriftStore) *DriftEvaluator { return nil }, expStatus: activeStatus()},
+		{name: "nil store", buildEval: func(DriftStore) *DriftEvaluator { return NewDriftEvaluator(nil) }, expStatus: activeStatus()},
+		{name: "nil status", buildEval: NewDriftEvaluator, expStatus: nil},
+		{name: "inactive experiment", buildEval: NewDriftEvaluator, expStatus: &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_INACTIVE}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			src := &fakeDriftStore{diffs: []storage.ComponentDiff{{ComponentID: 1, Name: &compName, LockedGeneration: 1}}}
-			e := NewDriftEvaluator(src)
+			e := tt.buildEval(src)
 
 			if err := e.Evaluate(context.Background(), testXID, tt.expStatus); err != nil {
 				t.Fatalf("Evaluate() error = %v, want nil", err)

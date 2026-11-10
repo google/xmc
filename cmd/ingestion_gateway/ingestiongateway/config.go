@@ -92,6 +92,10 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
+	// Components are always enabled across Go services; ingestion_gateway alone retains an unread
+	// -enable_components CLI flag sink because deploy/profiles/stable-2026a/components/ingestion-gateway/templates/deployment.yaml
+	// (and deploy/helm/templates/ingestion-gateway/deployment.yaml during rolling upgrades) passes
+	// -enable_components=true in container args, and Go's flag.Parse() exits 2 on unknown flags.
 	fs.BoolVar(&f.DeprecatedEnableComponents, "enable_components", true, "Deprecated: components are always enabled.")
 	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
 	return f

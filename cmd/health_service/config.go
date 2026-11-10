@@ -53,10 +53,7 @@ type Config struct {
 
 var buildVersion string
 
-var (
-	cfg                        Config
-	deprecatedEnableComponents bool
-)
+var cfg Config
 
 func getBuildVersion() string {
 	if buildVersion == "" || buildVersion == "redacted" || buildVersion == "{STABLE_APP_VERSION}" {
@@ -102,7 +99,6 @@ func init() {
 	flag.StringVar(&cfg.TLSCertFile, "tls_cert_file", "", "The TLS certificate file path.")
 	flag.StringVar(&cfg.TLSKeyFile, "tls_key_file", "", "The TLS private key file path.")
 	flag.StringVar(&cfg.ConfigDir, "config_dir", "/config", "The directory where ConfigMaps are mounted.")
-	flag.BoolVar(&deprecatedEnableComponents, "enable_components", true, "Deprecated: components are always enabled.")
 }
 
 // LoadConfig loads and returns the configuration.
