@@ -39,13 +39,13 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `parameters.host` | `string` | `"clickhouse.xmc-metrics.svc.cluster.local"` | ClickHouse hostname or Kubernetes service FQDN (maps to `CLICKHOUSE_HOST`). |
+| `parameters.host` | `string` | `"clickhouse.xmc-metrics.svc.cluster.local"` | ClickHouse hostname or Kubernetes service FQDN (Component-resolved equivalent of `CLICKHOUSE_HOST`). |
 | `parameters.clusterEndpoints` | `string` | `""` (renders as `"<host>:<nativePort>"`) | Internal Kubernetes DNS endpoint(s) for ClickHouse native protocol clients. Dynamically constructed from `host` and `nativePort` when empty. |
-| `parameters.nativePort` | `int` / `string` | `9000` (rendered as `"9000"`) | ClickHouse native TCP protocol port (maps to `CLICKHOUSE_PORT`; coerced to string `"9000"` via `toString | quote`). |
+| `parameters.nativePort` | `int` / `string` | `9000` (rendered as `"9000"`) | ClickHouse native TCP protocol port (Component-resolved equivalent of `CLICKHOUSE_PORT`; coerced to string `"9000"` via `toString | quote`). |
 | `parameters.httpPort` | `int` / `string` | `8123` (rendered as `"8123"`) | ClickHouse HTTP interface port (used for HTTP queries and `/ping` health probes; coerced to string `"8123"` via `toString | quote`). |
-| `parameters.defaultDatabase` | `string` | `"default"` | Default ClickHouse database for XMC metrics ingestion and analytical queries (maps to `CLICKHOUSE_DATABASE`). |
-| `parameters.user` | `string` | `"default"` | ClickHouse login username (maps to `CLICKHOUSE_USER`). |
-| `parameters.secretName` | `string` | `"clickhouse-secret"` | Kubernetes `Secret` name holding the ClickHouse password (maps to `CLICKHOUSE_PASSWORD` `secretKeyRef`—never plaintext credentials). |
+| `parameters.defaultDatabase` | `string` | `"default"` | Default ClickHouse database for XMC metrics ingestion and analytical queries (Component-resolved equivalent of `CLICKHOUSE_DATABASE`). |
+| `parameters.user` | `string` | `"default"` | ClickHouse login username (Component-resolved equivalent of `CLICKHOUSE_USER`). |
+| `parameters.secretName` | `string` | `"clickhouse-secret"` | Kubernetes `Secret` name holding the ClickHouse password, read via the Kubernetes API by `pkg/clickhouse/componentconfig` (never plaintext credentials; must match `metrics.clickhouse.secretName` in the umbrella release). |
 | `parameters.secretPasswordKey` | `string` | `"clickhouse-password"` | Key inside `parameters.secretName` holding the ClickHouse password. |
 | `parameters.healthCheckEndpoint` | `string` | `""` (renders as `"http://<host>:<httpPort>/ping"`) | HTTP health check endpoint probed by `xmc-bridge` to verify ClickHouse readiness. Dynamically constructed from `host` and `httpPort` when empty. |
 | `parameters.storageSize` | `string` | `"10Gi"` | Persistent volume claim size per ClickHouse replica pod. |

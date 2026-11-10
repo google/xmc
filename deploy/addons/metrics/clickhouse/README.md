@@ -144,7 +144,11 @@ In-cluster `dashboard-service` resolves ClickHouse connection settings dynamical
 
 #### In-Cluster Deployments (`Component/clickhouse` & Helm Credentials)
 
-When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`), `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on CR or Secret changes without pod restarts.
+When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`) at pod startup, `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on subsequent CR or Secret changes without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, restart the deployment once so it initializes the dynamic chart data engine:
+
+```bash
+kubectl rollout restart deployment/dashboard-service-deployment -n xmc
+```
 
 Configure `metrics.clickhouse` in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to populate the release-namespace `clickhouse-secret` `Secret` when ClickHouse CSI mode is inactive (`secrets.csi.enabled` is `false` or `secrets.csi.clickhousePasswordSecretName` is empty):
 
@@ -154,6 +158,8 @@ metrics:
     secretName: "clickhouse-secret" # Kubernetes Secret name when ClickHouse CSI mode is inactive
     password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
 ```
+
+`metrics.clickhouse.secretName` must match `components.clickhouse.parameters.secretName` in `xmc-profile` (both default to `clickhouse-secret`): the `dashboard-service` Role only grants `get` on the umbrella-configured name.
 
 Read the addon-generated password to populate `metrics.clickhouse.password`:
 
@@ -182,7 +188,7 @@ The Secret Manager entry named there must exist when `clickhousePasswordSecretNa
 Cluster Toolkit deployments configure the release-namespace password Secret via `clickhouse_password` (documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection--credentials-metrics-pipeline)) and ClickHouse endpoints via `xmc-profile`.
 
 > [!IMPORTANT]
-> Enabling `Component/clickhouse` in `xmc-profile` declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Keep `components.clickhouse.enabled: false` in `xmc-profile` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
+> Enabling `Component/clickhouse` in `xmc-profile` declares that ClickHouse is expected to be reachable, and once `dashboard-service` starts with `Component/clickhouse` enabled, its readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Keep `components.clickhouse.enabled: false` in `xmc-profile` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured` (run `kubectl rollout restart deployment/dashboard-service-deployment -n xmc` once after first enabling `Component/clickhouse`).
 
 #### Local Tooling & Port-Forwarded Sessions
 

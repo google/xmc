@@ -92,6 +92,41 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
 
         self.assertEqual(rendered_clickhouse_env_vars(manifest), set())
 
+    def test_clickhouse_csi_inactive_when_csi_disabled_or_secret_name_whitespace(self) -> None:
+        """clickhouseUsesCsi requires both secrets.csi.enabled and a trimmed non-empty secret name."""
+        cases = (
+            (
+                "csi_disabled_with_secret_name",
+                {
+                    "secrets.csi.enabled": "false",
+                    "secrets.csi.clickhousePasswordSecretName": "xmc-ch",
+                },
+            ),
+            (
+                "csi_enabled_with_whitespace_secret_name",
+                {"secrets.csi.enabled": "true", "secrets.csi.clickhousePasswordSecretName": "  "},
+            ),
+        )
+        for name, csi_overrides in cases:
+            with self.subTest(name):
+                values = {
+                    "dashboardServiceDeployment.enabled": "true",
+                    "metrics.clickhouse.password": "s3cret",
+                    **csi_overrides,
+                }
+                deployment = render_template(DASHBOARD_DEPLOYMENT, values)
+                spc = render_template(SECRET_PROVIDER_CLASS, values)
+                secret = render_template(CLICKHOUSE_SECRET, values)
+                rbac = render_template(DASHBOARD_SERVICEACCOUNT, values)
+
+                self.assertEqual(rendered_clickhouse_env_vars(deployment), set())
+                self.assertNotIn("CLICKHOUSE_PASSWORD_FILE", deployment)
+                self.assertNotIn("clickhouse-password", spc)
+                self.assertIn("name: clickhouse-secret", secret)
+                self.assertIn('clickhouse-password: "s3cret"', secret)
+                self.assertIn('resources: ["secrets"]', rbac)
+                self.assertIn('resourceNames: ["clickhouse-secret"]', rbac)
+
     def test_secret_provider_class_supplies_clickhouse_password(self) -> None:
         """The file the deployment reads must be one the provider class actually mounts."""
         manifest = render_template(

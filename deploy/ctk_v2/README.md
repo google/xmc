@@ -52,6 +52,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 > 1. Set `dashboard_service_deployment_enabled: true` (and `clickhouse_password` if your ClickHouse instance uses a password).
 > 2. Provision the Redpanda and ClickHouse backing infrastructure (see [`deploy/addons/metrics`](../addons/metrics/clickhouse/README.md)).
 > 3. Enable `redpanda`, `clickhouse`, and `ingestion-gateway` in the [`stable-2026a` Component profile (`xmc-profile`)](../profiles/stable-2026a/README.md) (`xmc-bridge` installs the Ingestion Gateway workload from [its component chart](../profiles/stable-2026a/components/ingestion-gateway/README.md) and `dashboard-service` dynamically resolves ClickHouse coordinates from `Component/clickhouse`).
+> 4. If `dashboard-service` was already running before `Component/clickhouse` was first enabled, restart it once so it initializes its dynamic chart data engine (`kubectl rollout restart deployment/dashboard-service-deployment -n xmc`).
 
 ### Managed ML Diagnostics (Managed XProf)
 Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
@@ -77,7 +78,13 @@ gcloud container clusters update <CLUSTER_NAME> \
 > **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
 
 ### ClickHouse Connection & Credentials (Metrics Pipeline)
-ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on CR or Secret updates without pod restarts. Enabling `Component/clickhouse` also makes ClickHouse a readiness dependency of `dashboard-service`, so keep `components.clickhouse.enabled: false` on clusters without a reachable ClickHouse instance.
+ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled at pod startup, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on subsequent CR or Secret updates without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, restart it once so it initializes its dynamic chart data engine:
+
+```bash
+kubectl rollout restart deployment/dashboard-service-deployment -n xmc
+```
+
+Enabling `Component/clickhouse` also makes ClickHouse a readiness dependency of `dashboard-service`, so keep `components.clickhouse.enabled: false` on clusters without a reachable ClickHouse instance.
 *   **`clickhouse_password`**: ClickHouse password rendered into the `clickhouse-secret` Kubernetes Secret in the release namespace (never a ConfigMap). The blueprint does not enable the Secret Manager CSI driver, so this is the path it uses; chart releases that enable CSI should leave this empty and follow [Sourcing the password from Secret Manager](../addons/metrics/clickhouse/README.md#sourcing-the-password-from-secret-manager) instead.
 
 ### Database Backend (Spanner or PostgreSQL)
