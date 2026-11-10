@@ -194,7 +194,7 @@ Delegate the end-to-end release documentation, interactive user review, and publ
    python3 ./tools/release/extract_release_metadata.py \
        --base-ref <base_tag> \
        --target-ref "${TARGET_SHA}" \
-       --approved-flags rod_deployment_enabled rodDeployment.enabled dashboard_service_deployment_enabled dashboardServiceDeployment.enabled \
+       --approved-flags rod_deployment_enabled rodDeployment.enabled \
        --output "${ARTIFACT_DIR:-/tmp}/release_metadata.json"
    ```
    Follow [Semantic Commit Classification](../xmc_generate_release_notes/SKILL.md#3-semantic-commit-classification--section-routing-agent-reasoning) and [Semantic Synthesis & Narrative Formatting](../xmc_generate_release_notes/SKILL.md#4-semantic-synthesis--narrative-formatting) to draft the release notes at `"${ARTIFACT_DIR:-/tmp}/release_notes_v<version>.md"`.
