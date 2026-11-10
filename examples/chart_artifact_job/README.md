@@ -176,8 +176,8 @@ Sampler Seed       : 484217
 ### 1. Verify Ingested Data in ClickHouse
 
 ```bash
-kubectl exec -n xmc deployment/clickhouse -- clickhouse-client --query \
-  "SELECT metric_name, count() FROM default.xmc_metrics WHERE xid = [XID] GROUP BY metric_name"
+kubectl exec -n xmc-metrics statefulset/clickhouse -- clickhouse-client --query \
+  "SELECT metric_name, count() FROM xmc_metrics WHERE xid = [XID] GROUP BY metric_name"
 ```
 
 You should see one row per `chart_demo/*` metric.

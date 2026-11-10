@@ -307,7 +307,7 @@ Not everything runs on a laptop — XMC depends on Spanner, GKE, and Kueue. The 
 developer test cluster with port-forwarding for the pieces you are working on:
 
 ```bash
-kubectl port-forward svc/ingestion-gateway 8080:8080
+kubectl port-forward svc/ingestion-gateway-service 8080:8080 -n xmc
 ```
 
 [`deploy/local/README.md`](../../deploy/local/README.md) covers cluster setup, the `xmc-diag`
