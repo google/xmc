@@ -19,7 +19,7 @@ flowchart TD
 
     subgraph "GKE Developer Cluster (Namespaces: xmc & xmc-metrics)"
         GW["svc/ingestion-gateway-service (8080, xmc)"]
-        RP["pod/redpanda-0 (9092, xmc)"]
+        RP["svc/redpanda (9092, xmc)"]
         CH["svc/clickhouse (9000 / 8123, xmc-metrics)"]
     end
 
@@ -51,6 +51,10 @@ helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/s
     --set components.clickhouse.enabled=true \
     --set components.ingestion-gateway.enabled=true \
     --wait
+
+# 3b. Wait for xmc-bridge to actuate the ingestion-gateway component release
+kubectl wait --for=condition=Ready components.xmc.dev/ingestion-gateway -n xmc --timeout=5m
+kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=180s
 
 # 4. Port-forward ClickHouse native TCP port (9000 in xmc-metrics)
 kubectl port-forward svc/clickhouse 9000:9000 -n xmc-metrics &
@@ -99,8 +103,10 @@ Timestamp: ...
   Healthy: true
   Namespace: xmc
   Component clickhouse: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
+  Component hpo: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
   Component ingestion-gateway: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
   Component redpanda: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
+  Component vizier: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
 ```
 
 ---
@@ -167,10 +173,12 @@ kubectl exec -it statefulset/clickhouse -n xmc-metrics -- clickhouse-client --qu
   "SELECT xid, work_unit_id, metric_name, metric_value, step, timestamp, created_at FROM xmc_metrics ORDER BY timestamp ASC;"
 ```
 
-#### 2. Query Deduplicated Metrics (`argMax(metric_value, (created_at, timestamp))`)
+#### 2. Query Deduplicated Metrics (`argMax(metric_value, (timestamp, created_at))`)
+
+Selects the value with the latest client event `timestamp` per step (matching `internal/dashboard/dataengine/summary_box.go`), breaking identical-`timestamp` ties by `created_at`:
 ```bash
 kubectl exec -it statefulset/clickhouse -n xmc-metrics -- clickhouse-client --query \
-  "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, (created_at, timestamp)) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
+  "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, (timestamp, created_at)) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
 ```
 ---
 
