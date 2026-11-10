@@ -1414,7 +1414,10 @@ image_tag: latest
                 ]
             )
         self.assertEqual(cm.exception.code, 1)
-        self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
+        self.assertIn(
+            "--no-enable-components / enable_components=false is no longer supported",
+            err_stream.getvalue(),
+        )
 
 
 if __name__ == "__main__":

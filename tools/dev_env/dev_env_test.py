@@ -765,7 +765,8 @@ class DevEnvCliTest(unittest.TestCase):
                     dev_env.main(argv)
                 self.assertEqual(cm.exception.code, 1)
                 self.assertIn(
-                    "--no-enable-components is no longer supported", err_stream.getvalue()
+                    "--no-enable-components / enable_components=false is no longer supported",
+                    err_stream.getvalue(),
                 )
 
 

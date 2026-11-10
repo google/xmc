@@ -385,8 +385,8 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 
 | Feature Flag in YAML | Enabled Microservice Target | Default |
 | :--- | :--- | :--- |
-| `enable_metrics: true` | `ingestion_gateway` | `false` |
-| `enable_components: true` | `components` | `false` |
+| `enable_metrics: true` | *(none in KinD — `ingestion-gateway` is a `stable-2026a` Component actuated by `xmc-bridge`, not an umbrella service)* | `false` |
+| `enable_components: true` | `components` (always on in `1.0.0+`; `false` is rejected) | `true` |
 | `rod_deployment_enabled: true` | `rod_data_provider` | `true` |
 | `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
 | `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |

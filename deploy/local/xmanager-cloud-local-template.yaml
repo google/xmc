@@ -35,9 +35,10 @@ vars:
   # Whether to automatically apply database schema migrations on startup (default: true).
   auto_migrate: true
 
-  # Feature flag: Wires ClickHouse chart config and stages ingestion_gateway_image:latest
-  # in KinD for xmc-bridge; ingestion-gateway is no longer deployed by the umbrella chart
-  # and requires setup_metrics_addons.sh + xmc-profile activation.
+  # Feature flag (GKE only): wires static ClickHouse chart config for dashboard-service. It has no
+  # effect in KinD: ingestion-gateway is no longer deployed by the umbrella chart; it is a
+  # stable-2026a Component actuated by xmc-bridge after setup_metrics_addons.sh + xmc-profile
+  # activation (see deploy/local/README.md), which is exercised on a GKE dev cluster.
   enable_metrics: false
 
   # Feature flag: Enable ROD data provider service (rod_data_provider).

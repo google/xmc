@@ -51,7 +51,10 @@ class TestParseArgs(unittest.TestCase):
         with mock.patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
             upgrade_dev_env.parse_args(["--no-enable-components"])
         self.assertEqual(cm.exception.code, 1)
-        self.assertIn("--no-enable-components is no longer supported", err_stream.getvalue())
+        self.assertIn(
+            "--no-enable-components / enable_components=false is no longer supported",
+            err_stream.getvalue(),
+        )
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:

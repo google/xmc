@@ -234,6 +234,15 @@ def _resolve_database_backend(raw: Any) -> str:
     return backend
 
 
+# Single source of truth for every "components can't be disabled" error (CLI flag, deployment YAML,
+# ENABLE_COMPONENTS env, and the KinD loader) so operators always get the migration hint.
+DISABLED_COMPONENTS_FLAG_ERROR = (
+    "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: "
+    "Components are mandatory. Migrate legacy workloads via "
+    "./tools/migrations/components/migrate.py and remove enable_components."
+)
+
+
 def parse_bool_flag(val: Any) -> bool:
     """Parses a boolean configuration flag from a boolean or string."""
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
@@ -358,10 +367,7 @@ def load_and_validate_config(
         else config.get("enable_components")
     )
     if raw_comp is not None and not parse_bool_flag(raw_comp):
-        raise ValueError(
-            "enable_components=false is no longer supported in XMC 1.0.0+: Components are mandatory. "
-            "Migrate legacy workloads via ./tools/migrations/components/migrate.py and remove enable_components."
-        )
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
 
     return DeploymentConfig(
         project_id=config["project_id"],
@@ -399,11 +405,6 @@ def log_success(msg: str) -> None:
 def log_error(msg: str) -> None:
     """Logs error messages in red text to stderr."""
     print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
-
-
-DISABLED_COMPONENTS_FLAG_ERROR = (
-    "--no-enable-components is no longer supported in XMC 1.0.0+: Components are mandatory."
-)
 
 
 def reject_disabled_components_flag(args: argparse.Namespace) -> None:
