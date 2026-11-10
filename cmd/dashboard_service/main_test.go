@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -665,6 +666,12 @@ func (c *countingComponentGetter) GetComponent(ctx context.Context, namespace, n
 	return c.inner.GetComponent(ctx, namespace, name)
 }
 
+func (c *countingComponentGetter) Calls() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return maps.Clone(c.calls)
+}
+
 func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("CLICKHOUSE_HOST", "")
@@ -683,7 +690,7 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	if provider != nil {
 		t.Errorf("initDataEngineWithGetter() = %v, want nil", provider)
 	}
-	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 1}, getter.calls); diff != "" {
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 1}, getter.Calls()); diff != "" {
 		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -693,6 +700,8 @@ func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
 	t.Setenv("CLICKHOUSE_HOST", "")
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("BIGQUERY_DATASET", "")
+	t.Setenv("BIGQUERY_PROJECT_ID", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
 	t.Setenv("METRICS_STORE", "")
 	serverCfg := &server.Config{
 		EnableComponents:    true,
@@ -713,7 +722,7 @@ func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
 		t.Fatal("initDataEngineWithGetter() = nil, want non-nil BigQuery provider")
 	}
 	defer provider.Close()
-	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 2}, getter.calls); diff != "" {
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 2}, getter.Calls()); diff != "" {
 		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 	}
 }
