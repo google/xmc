@@ -41,8 +41,9 @@ featureFlags:
 
 ### 2. Microservice Deployment Settings
 
-Each microservice (including `actuator`, `reconciler`, `ess`, `xid`, `ui`, `healthService`, `logMonitor`, `dashboardServiceDeployment`, `rodDeployment`, and `componentsDeployment`—which configures mandatory `xmc_bridge` runtime settings without an `enabled` toggle) can be configured via deployment, scaling, and container image settings in `values.yaml`:
+Each microservice is toggled by a `*Deployment` key (for example `essDeployment`, `healthServiceDeployment`, `logMonitorDeployment`, `dashboardServiceDeployment`, `rodDeployment`), tuned through a matching runtime block (for example `healthService`, `logMonitor`, `dashboardService`, `reconciler`), and assigned its container image through a top-level `*_custom_image` key; `componentsDeployment` holds the mandatory `xmc_bridge` runtime settings and has no `enabled` toggle:
 
+<!-- TODO: replace pre-existing actuator YAML example below with actual deploy/helm/values.yaml keys. -->
 ```yaml
 actuator:
   enabled: true
