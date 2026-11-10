@@ -337,11 +337,17 @@ func applySchema(ctx context.Context, t *testing.T, pool *pgxpool.Pool, s schema
 // SeedExperiment inserts a minimal Experiment row for foreign-key-dependent repository tests.
 func SeedExperiment(ctx context.Context, t testing.TB, pool *pgxpool.Pool, xid int64) {
 	t.Helper()
+	SeedExperimentWithCreator(ctx, t, pool, xid, "user")
+}
+
+// SeedExperimentWithCreator inserts a minimal Experiments row created by creator.
+func SeedExperimentWithCreator(ctx context.Context, t testing.TB, pool *pgxpool.Pool, xid int64, creator string) {
+	t.Helper()
 	const seedExpSQL = `INSERT INTO Experiments (
 		Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, ActiveState, LaunchState, CreateTime, UpdateTime
-	) VALUES ($1, 'test', 'user', 0, '{}', '{}', '', '{}', '\x', 0, 0, now(), now())
+	) VALUES ($1, 'test', $2, 0, '{}', '{}', '', '{}', '\x', 0, 0, now(), now())
 	ON CONFLICT (Xid) DO NOTHING`
-	if _, err := pool.Exec(ctx, seedExpSQL, xid); err != nil {
+	if _, err := pool.Exec(ctx, seedExpSQL, xid, creator); err != nil {
 		t.Fatalf("seed Experiments(%d) failed: %v", xid, err)
 	}
 }

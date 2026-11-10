@@ -286,6 +286,18 @@ translate into API server load proportional to the number of viewers. Watch once
 Unlike the Reconciler, ROD persists nothing — its cache is derived state, rebuilt from a full
 re-list on restart.
 
+`GetRunningAndPendingJobs` also returns `user_allocations` on every page: the requested units (not
+measured utilization) of each resource type, summed per experiment creator across *all* active jobs
+in the queue, not just the current page.
+
+- Storage returns each active work unit's creator, executable and state; ROD canonicalizes the
+  resource types (CPU in cores, memory in GiB, GPU devices, TPU chips) and sums them.
+- `RUNNING` and `STARTING` count as running (admitted by Kueue); `SCHEDULING` and `INITIALIZING`
+  count as pending. `INITIALIZING` precedes admission, even though the jobs table orders it with
+  running jobs.
+- A generic accelerator request (e.g. `nvidia.com/gpu`) is attributed to a model only when the
+  queue's flavors resolve that accelerator to exactly one model.
+
 ---
 
 ## 6. Related Reading

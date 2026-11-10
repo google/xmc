@@ -49,6 +49,7 @@ go_library(
 go_test(
     name = "workunit_test",
     srcs = [
+        "active_work_unit_resources_test.go",
         "queries_test.go",
         "repository_test.go",
     ],
@@ -60,6 +61,7 @@ go_test(
         "//internal/storage",
         "//internal/storage/postgres/pgdb",
         "//internal/storage/postgres/testing",
+        "//internal/storage/testing",
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@com_github_jackc_pgx_v5//:pgx",
