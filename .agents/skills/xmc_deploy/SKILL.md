@@ -212,8 +212,6 @@ bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 bazel run //cmd/xmc_bridge:xmc_bridge_image_push
-# Workload of the hpo component (xmc-study-controller)
-bazel run //cmd/study_controller:study_controller_image_push
 ```
 
 ### Step 9: Deploy XMC Application (`xmc_app` group)

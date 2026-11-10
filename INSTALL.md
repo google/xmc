@@ -89,8 +89,6 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
    bazel run //cmd/xmc_bridge:xmc_bridge_image_push
-   # Workload of the hpo component (xmc-study-controller)
-   bazel run //cmd/study_controller:study_controller_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -306,7 +304,7 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
 
 1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
-3. **Install Optional Catalog Components (`stable-2026a` Profile)**: To enable optional platform components (`ingestion-gateway`, `clickhouse`, `redpanda`, `vizier`, `hpo`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: To enable optional platform components (`ingestion-gateway`, `clickhouse`, `redpanda`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
@@ -327,8 +325,7 @@ For direct control over your infrastructure:
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
-   If you plan to enable the `hpo` component, also set `hpo_custom_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/study-controller-<ENVIRONMENT>:<IMAGE_TAG>"` so that `xmc-bridge` deploys your `xmc-study-controller` image.
-3. **Install Optional Catalog Components (`stable-2026a` Profile)**: When enabling optional components (`ingestion-gateway`, `clickhouse`, `redpanda`, `vizier`, `hpo`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: When enabling optional components (`ingestion-gateway`, `clickhouse`, `redpanda`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc --wait
    ```
@@ -409,8 +406,6 @@ bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 bazel run //cmd/xmc_bridge:xmc_bridge_image_push
-# Workload of the hpo component (xmc-study-controller)
-bazel run //cmd/study_controller:study_controller_image_push
 ```
 
 #### Step 3: Run Database Schema Migrations
