@@ -16,9 +16,13 @@ package storagetest
 
 import (
 	"cmp"
+	"context"
 	"slices"
+	"testing"
 
+	gocmp "github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/common/resourceaccumulator"
 	"xmanager_cloud/internal/storage"
@@ -106,3 +110,50 @@ func WantActiveWorkUnitResources(specs []ActiveResourceSpec, creators map[int64]
 var ActiveWorkUnitResourcesOrder = cmpopts.SortSlices(func(a, b storage.ActiveWorkUnitResources) bool {
 	return cmp.Or(cmp.Compare(a.Creator, b.Creator), cmp.Compare(a.ExecutionState, b.ExecutionState)) < 0
 })
+
+// WorkUnitSnapshotter opens read-only work unit snapshots (implemented by the Spanner and
+// Postgres work unit stores).
+type WorkUnitSnapshotter interface {
+	WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error
+}
+
+// readActiveResourcesSnapshot reads the first jobs page of pageSize and the active work unit
+// resources of queues from one snapshot.
+func readActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, queues []string, pageSize int32) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
+	var page *storage.ActiveWorkUnitsResult
+	var resources []storage.ActiveWorkUnitResources
+	err := s.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var err error
+		if page, err = repo.FetchActiveWorkUnitsByQueues(txCtx, queues, pageSize, ""); err != nil {
+			return err
+		}
+		resources, err = repo.FetchActiveWorkUnitResources(txCtx, queues)
+		return err
+	})
+	return page, resources, err
+}
+
+// VerifyActiveResourcesSnapshot checks that one snapshot of ActiveResourceQueue returns a two-job
+// first page of all len(want) active jobs and exactly the want resources.
+func VerifyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter, want []storage.ActiveWorkUnitResources) {
+	t.Helper()
+	page, resources, err := readActiveResourcesSnapshot(ctx, s, []string{ActiveResourceQueue}, 2)
+	if err != nil {
+		t.Fatalf("readActiveResourcesSnapshot failed: %v", err)
+	}
+	if len(page.WorkUnits) != 2 || page.TotalQueueSize != int64(len(want)) || page.NextPageToken == "" {
+		t.Fatalf("page = (len=%d, total=%d, next=%q), want (2, %d, non-empty)", len(page.WorkUnits), page.TotalQueueSize, page.NextPageToken, len(want))
+	}
+	if diff := gocmp.Diff(want, resources, ActiveWorkUnitResourcesOrder, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchActiveWorkUnitResources() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// VerifyEmptyActiveResourcesSnapshot checks that a snapshot read without queues returns no rows.
+func VerifyEmptyActiveResourcesSnapshot(ctx context.Context, t testing.TB, s WorkUnitSnapshotter) {
+	t.Helper()
+	page, resources, err := readActiveResourcesSnapshot(ctx, s, nil, 10)
+	if err != nil || len(page.WorkUnits) != 0 || len(resources) != 0 {
+		t.Errorf("readActiveResourcesSnapshot(nil queues) = (%v, %v, %v), want empty", page, resources, err)
+	}
+}

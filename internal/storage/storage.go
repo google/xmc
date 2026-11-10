@@ -192,10 +192,9 @@ type WorkUnitStore interface {
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
 	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
 
-	// FetchActiveWorkUnitResources returns the creator, executable and state of every active work
-	// unit (SCHEDULING, INITIALIZING, STARTING or RUNNING) in the requested queues. The result is
-	// unordered and not paginated; empty queueNames returns an empty slice.
-	FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error)
+	// WithReadOnlyWorkUnitSnapshot runs fn with a repository whose active work unit reads all come
+	// from one consistent read-only snapshot.
+	WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo WorkUnitSnapshotRepository) error) error
 }
 
 // UpdatedWorkUnits contains the original and updated work unit protos.
@@ -233,6 +232,15 @@ type ActiveWorkUnitResources struct {
 	Creator        string
 	Executable     *essmsgpb.Executable
 	ExecutionState essmsgpb.WorkUnitStatus_WorkUnitState
+}
+
+// WorkUnitSnapshotRepository defines active work unit reads bound to a single read-only snapshot.
+type WorkUnitSnapshotRepository interface {
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+	// FetchActiveWorkUnitResources returns the creator, executable and state of every active work
+	// unit (SCHEDULING, INITIALIZING, STARTING or RUNNING) in the requested queues. The result is
+	// unordered and not paginated; empty queueNames returns an empty slice.
+	FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]ActiveWorkUnitResources, error)
 }
 
 // QueueMetricRow represents a single raw row returned by the velocity or pending queue metrics query.

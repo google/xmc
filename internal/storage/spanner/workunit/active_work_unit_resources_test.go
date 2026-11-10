@@ -16,14 +16,10 @@ package workunit_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/testing/protocmp"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	storagetest "xmanager_cloud/internal/storage/testing"
@@ -58,33 +54,18 @@ func seedActiveResourceWorkUnits(ctx context.Context, t *testing.T, store *spann
 	insertWorkUnitsAt(ctx, t, store, time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC), wus)
 }
 
-func TestFetchActiveWorkUnitResources_GuardsAndEmpty(t *testing.T) {
-	if _, err := (&spanner.Storage{}).FetchActiveWorkUnitResources(t.Context(), []string{"q"}); !errors.Is(err, grpcerr.ErrFailedPrecondition) {
-		t.Errorf("FetchActiveWorkUnitResources(nil client) = %v, want ErrFailedPrecondition", err)
-	}
-
+func TestFetchActiveWorkUnitResources_EmptyQueues(t *testing.T) {
 	ctx := t.Context()
-	store := newEmulatorStorage(ctx, t)
-	got, err := store.FetchActiveWorkUnitResources(ctx, nil)
-	if err != nil || len(got) != 0 {
-		t.Errorf("FetchActiveWorkUnitResources(nil queues) = (%v, %v), want (empty, nil)", got, err)
-	}
+	storagetest.VerifyEmptyActiveResourcesSnapshot(ctx, t, newEmulatorStorage(ctx, t))
 }
 
-func TestFetchActiveWorkUnitResources_AllActiveWorkUnits(t *testing.T) {
+func TestFetchActiveWorkUnitResources_MultiPageSnapshot(t *testing.T) {
 	ctx := t.Context()
 	store := newEmulatorStorage(ctx, t)
 	seedExperimentWithCreator(ctx, t, store, 201, "alice@example.com")
 	seedExperimentWithCreator(ctx, t, store, 202, "bob@example.com")
 	specs := storagetest.ActiveResourceSpecs(201, 202)
 	seedActiveResourceWorkUnits(ctx, t, store, specs)
-
-	got, err := store.FetchActiveWorkUnitResources(ctx, []string{storagetest.ActiveResourceQueue})
-	if err != nil {
-		t.Fatalf("FetchActiveWorkUnitResources failed: %v", err)
-	}
 	want := storagetest.WantActiveWorkUnitResources(specs, map[int64]string{201: "alice@example.com", 202: "bob@example.com"})
-	if diff := cmp.Diff(want, got, storagetest.ActiveWorkUnitResourcesOrder, protocmp.Transform()); diff != "" {
-		t.Errorf("FetchActiveWorkUnitResources() mismatch (-want +got):\n%s", diff)
-	}
+	storagetest.VerifyActiveResourcesSnapshot(ctx, t, store, want)
 }

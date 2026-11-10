@@ -73,15 +73,19 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 }
 
 func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
-	result, err := store.FetchActiveWorkUnitsByQueues(ctx, targetQueues, pageSize, pageToken)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fetch active work units: %w", err)
-	}
-	activeResources, err := store.FetchActiveWorkUnitResources(ctx, targetQueues)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fetch active work unit resources: %w", err)
-	}
-	return result, activeResources, nil
+	var result *storage.ActiveWorkUnitsResult
+	var activeResources []storage.ActiveWorkUnitResources
+	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
+		var err error
+		if result, err = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken); err != nil {
+			return fmt.Errorf("fetch active work units: %w", err)
+		}
+		if activeResources, err = repo.FetchActiveWorkUnitResources(txCtx, targetQueues); err != nil {
+			return fmt.Errorf("fetch active work unit resources: %w", err)
+		}
+		return nil
+	})
+	return result, activeResources, err
 }
 
 func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {

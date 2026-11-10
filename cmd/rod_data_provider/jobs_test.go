@@ -110,6 +110,7 @@ type mockWorkUnitFetcher struct {
 	totalQueueSize  int64
 	err             error
 	resourcesErr    error
+	snapshotCalls   int
 	lastQueueNames  []string
 	lastPageSize    int32
 	lastPageToken   string
@@ -139,6 +140,11 @@ func (m *mockWorkUnitFetcher) FetchActiveWorkUnitResources(ctx context.Context, 
 		return nil, m.resourcesErr
 	}
 	return m.activeResources, nil
+}
+
+func (m *mockWorkUnitFetcher) WithReadOnlyWorkUnitSnapshot(ctx context.Context, fn func(ctx context.Context, repo storage.WorkUnitSnapshotRepository) error) error {
+	m.snapshotCalls++
+	return fn(ctx, m)
 }
 
 func TestGetRunningAndPendingJobs(t *testing.T) {
@@ -340,6 +346,9 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			fetcherImpl, ok := tt.fetcher.(*mockWorkUnitFetcher)
 			if !ok {
 				return
+			}
+			if fetcherImpl.snapshotCalls != 1 {
+				t.Errorf("snapshotCalls = %d, want 1 (jobs and allocations must share one snapshot)", fetcherImpl.snapshotCalls)
 			}
 			type paginationExpectation struct {
 				LastPageSize   int32
