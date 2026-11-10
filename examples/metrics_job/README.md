@@ -62,5 +62,5 @@ python3 launch.py
 
 Verify that metrics arrive in ClickHouse for all three frameworks:
 ```bash
-kubectl exec -n xmc-metrics statefulset/clickhouse -- clickhouse-client --query "SELECT metric_name, count() FROM default.xmc_metrics WHERE xid = <xid> GROUP BY metric_name"
+kubectl exec -n xmc deployment/clickhouse -- clickhouse-client --query "SELECT metric_name, count() FROM default.xmc_metrics WHERE xid = <xid> GROUP BY metric_name"
 ```

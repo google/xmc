@@ -15,9 +15,6 @@ The chart orchestrates the following backend and frontend microservices:
 | **`reconciler`** | Workload status watcher observing Kubernetes `JobSet` pod events and synchronizing state back to the database. | Cloud Spanner, Kubernetes API (In-Cluster or Remote) |
 | **`xid_service`** | Unique distributed identifier generator for experiments and work units. | Cloud Spanner (`xids-db`) |
 | **`ui`** | Angular-based web management console. | ESS, Dex / OAuth2 Gateway |
-| **`xmc_bridge`** | Mandatory Component controller reconciling `components.xmc.dev` CRs (`xmc-profile`), probing 3P backing services, and actuating 1P component charts (`ingestion-gateway`, `hpo`). | ESS (Component Management Service), Kubernetes API |
-| **`dashboard_service`** | Optional dashboard & chart data service (`dashboardServiceDeployment.enabled`) resolving ClickHouse/BigQuery coordinates dynamically from `Component` CRs. | Cloud Spanner / PostgreSQL, XID, ClickHouse / BigQuery (`Component` CRs) |
-| **`rod`** | Resource Optimization & Diagnostics (ROD) data provider (`rodDeployment.enabled`). | Cloud Monitoring, GKE API |
 | **`health_service`** | Platform health diagnostics, runtime configuration inspection, and global workload scheduling pause/resume controls. | Cloud Spanner (`experiment-db`, `xids-db`), Redis, ESS, XID, Cloud Run, Cloud Identity |
 | **`log_monitor`** | Pub/Sub subscriber turning filtered workload log entries into work unit status messages. Needs the subscription from `deploy/ctk_v2/modules/log_monitor`. | Pub/Sub, Cloud Spanner (`experiment-db`) |
 
