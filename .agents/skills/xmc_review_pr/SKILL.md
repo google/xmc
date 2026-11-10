@@ -193,7 +193,7 @@ When asking for Phase 4 confirmation, the agent MUST present both tables separat
 Comments MUST always be posted inline on specific PR diff lines. Never post generic PR-level spam unless explicitly requested.
 
 For each user-approved item:
-1. Write the proposed inline markdown comment to a temporary file (`comment_body.md`).
+1. Write the proposed inline markdown comment to a temporary file (`comment_body.md`). Include the item's sidecar `proposed` text verbatim (e.g. as the first sentence); Phase 6 matches on it.
 2. Run the posting script:
    ```bash
    python3 <trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> \
@@ -218,7 +218,7 @@ Before completing the review session:
    python3 <trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> \
        -c <session_scratch_dir>/pr_review_audit_checklist.md
    ```
-2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff. A non-zero exit with `No approved items found` means the sidecar was never populated; fix the sidecar instead of editing the markdown.
+2. Verify that 100% of approved initial inline review comments appear on the live GitHub PR diff. An item counts only when a comment on its file and line is authored by the authenticated `gh` / `GITHUB_TOKEN` user and contains the item's `proposed` text (whitespace, case, backticks, and asterisks are ignored). A non-zero exit with `No approved items found` means the sidecar was never populated; fix the sidecar instead of editing the markdown.
 3. The tool sets verified items to `Posted` in the sidecar and markdown itself; do not edit statuses by hand.
 
 ---
@@ -298,4 +298,4 @@ Because the re-review analysis is saved as a markdown document in `<session_scra
   * If `[RESPOND]`: Invoke `<trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --in-reply-to <thread_id> -f counter_reply.md`.
   * If `[RESOLVE]`: Invoke `<trusted_repo>/tools/pr_review/review_pr_post_inline_comment.py <owner> <repo> <pr_number> --resolve-thread <thread_id>` to resolve verified threads programmatically via GitHub GraphQL. To inspect current thread state (thread IDs, `path:line`, resolution, whether you replied), run `<trusted_repo>/tools/pr_review/review_threads.py list <owner> <repo> <pr_number>`; never hand-write `gh api graphql` calls.
 * After resolving a thread, record it with `<trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md --mark-posted <thread_id>`.
-* Run programmatic verification check (`<trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md`).
+* Run programmatic verification check (`<trusted_repo>/tools/pr_review/review_pr_verify_posted.py <owner> <repo> <pr_number> -c <session_scratch_dir>/pr_rereview_audit_report.md`). A `RESPOND` thread passes only when the authenticated user replied to it. A `RESOLVE` thread passes only when GitHub reports it resolved; a reply, a `Posted` status, or a `[x]` marker alone is not sufficient.
