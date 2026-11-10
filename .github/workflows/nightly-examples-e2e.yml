@@ -171,6 +171,8 @@ jobs:
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=60 --gpus=0'
             verify_module: 'tools.nightly_tests.examples_verification.simple_job_test'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            expected_work_units: '3'
+            expected_duration_sec: '60'
           - id: 'init_container_job'
             name: 'Init Container Job'
             example_path: 'examples/init_container_job'
@@ -268,6 +270,8 @@ jobs:
             args: '--queue=${QUEUE_NAME} --num_work_units=3 --duration=180 --gpus=0'
             verify_module: 'tools.nightly_tests.examples_verification.resource_observability_dashboard_ui_test'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            expected_work_units: '3'
+            expected_duration_sec: '180'
             verify_ui: true
           - id: 'admin_panel_ui'
             name: 'Admin Panel (Playwright UI)'
@@ -284,6 +288,8 @@ jobs:
             args: '--queue=multikueue-cpu-queue --num_work_units=3 --duration=60 --gpus=0'
             verify_module: 'tools.nightly_tests.examples_verification.multikueue_job_test'
             expected_queue: 'multikueue-cpu-queue'
+            expected_work_units: '3'
+            expected_duration_sec: '60'
 
     env:
       PROJECT_ID: '${{ secrets.GCP_PROJECT_ID }}'
@@ -470,6 +476,8 @@ jobs:
           EXPECTED_QUEUE: '${{ matrix.example.expected_queue }}'
           REQUIRES_CLICKHOUSE: '${{ matrix.example.requires_clickhouse }}'
           VERIFY_UI: '${{ matrix.example.verify_ui }}'
+          EXPECTED_WORK_UNITS: '${{ matrix.example.expected_work_units }}'
+          EXPECTED_DURATION_SEC: '${{ matrix.example.expected_duration_sec }}'
           XID: '${{ steps.launch-example.outputs.xid }}'
         run: |
           set -euo pipefail
@@ -486,6 +494,13 @@ jobs:
           EXTRA_VERIFY_ARGS=()
           if [ "${REQUIRES_CLICKHOUSE:-}" = "true" ]; then
             EXTRA_VERIFY_ARGS+=("--require_clickhouse_metrics=true")
+          fi
+          # These must equal --num_work_units/--duration in args; enforced by tools/nightly_tests/check_matrix_contract.py.
+          if [ -n "${EXPECTED_WORK_UNITS:-}" ]; then
+            EXTRA_VERIFY_ARGS+=("--expected_work_units=${EXPECTED_WORK_UNITS}")
+          fi
+          if [ -n "${EXPECTED_DURATION_SEC:-}" ]; then
+            EXTRA_VERIFY_ARGS+=("--expected_duration_sec=${EXPECTED_DURATION_SEC}")
           fi
           if [ "${VERIFY_UI:-}" = "true" ]; then
             export XMC_SCREENSHOTS_DIR="/tmp/xmc_screenshots"

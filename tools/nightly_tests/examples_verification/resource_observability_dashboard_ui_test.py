@@ -32,9 +32,14 @@ from tools.nightly_tests.verification import (
 FLAGS = cli.FLAGS
 
 EXPECTED_FIRST_CARD_FLAVOR = "cpu"
-EXPECTED_WORK_UNITS, VELOCITY_TIMEFRAMES = ("1", "2", "3"), ("1h", "24h", "7d")
+DEFAULT_WORK_UNITS, VELOCITY_TIMEFRAMES = 3, ("1h", "24h", "7d")
 Session: TypeAlias = ui_entities_validator.XMCUIBrowserSession
 UIError: TypeAlias = ui_entities_validator.UIVerificationError
+
+
+def expected_work_unit_ids() -> tuple[str, ...]:
+    """Returns WorkUnit IDs "1".."N" for the resolved --expected_work_units count."""
+    return tuple(str(i) for i in range(1, cli.resolve_expected_work_units(DEFAULT_WORK_UNITS) + 1))
 
 
 def _extract_and_verify_queue_titles(session: Session, expected_q: str | None) -> list[str]:
@@ -75,7 +80,9 @@ def _select_queue_card_by_name(session: Session, queue_name: str, timeout_ms: in
     return actual_name
 
 
-def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, str]:
+def _collect_xid_work_unit_positions(
+    session: Session, xid: str, expected_ids: tuple[str, ...]
+) -> dict[str, str]:
     """Returns workUnitId -> position text for XID <xid> across paginator pages."""
     positions: dict[str, str] = {}
     link_sel = sel.JOB_EXPERIMENT_LINK_SEL_TMPL.format(xid=xid)
@@ -90,7 +97,7 @@ def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, st
             if wid:
                 positions[wid] = pos
         next_btn = session.page.locator(sel.JOBS_NEXT_PAGE_BTN_SEL)
-        if all(w in positions for w in EXPECTED_WORK_UNITS) or next_btn.count() == 0:
+        if all(w in positions for w in expected_ids) or next_btn.count() == 0:
             break
         next_btn.first.click()
         session.settle_and_wait_fonts()
@@ -99,20 +106,21 @@ def _collect_xid_work_unit_positions(session: Session, xid: str) -> dict[str, st
 
 
 def _verify_work_units_in_jobs_table(session: Session, cq: str, alt: str, xid: str | None) -> None:
-    """Polls the Jobs in the Queue table until all 3 work units appear with valid positions."""
+    """Polls the Jobs in the Queue table until all expected work units have valid positions."""
     if not xid:
         return
     norm_xid = ui_entities_validator.parse_numeric_xid(xid)
+    expected_ids = expected_work_unit_ids()
     for attempt in range(12):
-        pos = _collect_xid_work_unit_positions(session, norm_xid)
-        if all(rod_parsing.is_valid_queue_position(pos.get(w, "")) for w in EXPECTED_WORK_UNITS):
+        pos = _collect_xid_work_unit_positions(session, norm_xid, expected_ids)
+        if all(rod_parsing.is_valid_queue_position(pos.get(w, "")) for w in expected_ids):
             print(f"  [✓] Verified '{cq}' Jobs table has XID {norm_xid} work units: {pos}")
             return
         if attempt < 11:
             _select_queue_card_by_name(session, alt)
             session.settle_and_wait_fonts(1500)
             _select_queue_card_by_name(session, cq)
-    raise UIError(f"Missing XID {norm_xid} work units {EXPECTED_WORK_UNITS} in '{cq}': {pos}")
+    raise UIError(f"Missing XID {norm_xid} work units {expected_ids} in '{cq}': {pos}")
 
 
 def assert_queue_selection_and_jobs_pane(

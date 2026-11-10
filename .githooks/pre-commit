@@ -162,6 +162,14 @@ check_examples_coverage() {
   fi
 }
 
+check_matrix_contract() {
+  echo "--> Checking Nightly Matrix Launch Args vs Verifier Expectations..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/nightly_tests/check_matrix_contract.py >/dev/null; then
+    echo "❌ Nightly matrix contract check failed (see JSON error above)."
+    FAILED=1
+  fi
+}
+
 check_agent_doc_paths() {
   # In fix mode, only run when agent docs are staged, or when staged deletes or
   # renames could orphan a path an agent doc references, to keep the hook fast.
@@ -554,6 +562,7 @@ main() {
   check_go
   check_legacy_imports
   check_examples_coverage
+  check_matrix_contract
   check_agent_doc_paths
   check_file_naming
   check_ui
