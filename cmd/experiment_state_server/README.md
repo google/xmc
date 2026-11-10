@@ -59,14 +59,26 @@ For comprehensive details on the Components subsystem, see [pkg/components/READM
 
 ---
 
-## STUDY Experiments
+## Experiment Types
+
+`Experiment.experiment_type` is set by `CreateExperiment` and cannot be changed afterwards; a missing
+or `UNSPECIFIED` `experiment_type` is normalized to `STANDARD` before the experiment is stored.
+Configuration that only one type uses lives in the `type_config` oneof, and `CreateExperiment`
+rejects it with `INVALID_ARGUMENT` when it does not match `experiment_type`.
+
+- `STANDARD`: a regular experiment whose work units are created by the client. It has no
+  `type_config`.
+- `STUDY`: a hyperparameter optimization study (see [STUDY Experiments](#study-experiments)).
+
+### STUDY Experiments
 
 An experiment with `experiment_type: STUDY` is a hyperparameter optimization study. Its
-`study_config` ([`study.proto`](../../api/protos/experiment/study.proto)) carries the search space
-(`parameters`), the objective (`metrics`), the search `algorithm`, `max_trial_budget`, and
-`max_parallel_trials`. Like `experiment_type`, `study_config` is immutable: it is set only by
-`CreateExperiment`, returned by `GetExperiment` and `ListExperiments`, and an `UpdateExperiment`
-mask that names it fails with `INVALID_ARGUMENT`.
+`study_config` ([`study.proto`](../../api/protos/experiment/study.proto)), the `type_config` member
+for studies, carries the search space (`parameters`), the objective (`metrics`), the search
+`algorithm`, `max_trial_budget`, and `max_parallel_trials`. Like `experiment_type`, `study_config`
+is immutable: it is set only by `CreateExperiment`, returned by `GetExperiment` and
+`ListExperiments`, and an `UpdateExperiment` mask that names it fails with `INVALID_ARGUMENT`. It
+cannot be used in list filters.
 
 A study requires the `hpo` component, which depends on `vizier` and `clickhouse`. `CreateExperiment`
 checks that all three are ready before allocating an XID and again in the transaction that inserts

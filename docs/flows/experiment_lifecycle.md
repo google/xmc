@@ -40,8 +40,9 @@ that can reject the request therefore runs before `CreateXidEntry`, so that a re
 not leave an orphaned XID entry behind.
 
 **Validation (step 2).** Malformed requests fail with `INVALID_ARGUMENT`. Besides the general field
-rules, `experiment_type` must be a known value (`EXPERIMENT_TYPE_UNSPECIFIED` is stored as
-`STANDARD`).
+rules, `experiment_type` must be a known value, and a missing or `UNSPECIFIED` `experiment_type` is
+normalized to `STANDARD` before the experiment is stored. `study_config` is rejected unless the type
+is `STUDY`.
 
 **Authorization (step 3).** Because there is no XID entry to check against yet, ESS authorizes the
 creator directly against the requested ACLs, using the same `internal/auth` evaluation the XID
