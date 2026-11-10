@@ -99,7 +99,7 @@ func TestClampStudyTrialBudget(t *testing.T) {
 	study := func(budget int32, status *essmsgpb.ExperimentStatus) *essmsgpb.Experiment {
 		cfg := experimenttest.StudyConfig()
 		cfg.MaxTrialBudget = budget
-		return &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STUDY, StudyConfig: cfg, Status: status}
+		return &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STUDY, TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg}, Status: status}
 	}
 	withMessage := func(severity essmsgpb.StructuredMessage_Severity, text string) *essmsgpb.ExperimentStatus {
 		return &essmsgpb.ExperimentStatus{StructuredStatusMessage: &essmsgpb.StructuredMessage{Severity: severity, UserFacingText: text}}
@@ -141,7 +141,8 @@ func TestClampStudyTrialBudget_SkipsNonStudies(t *testing.T) {
 		name string
 		exp  *essmsgpb.Experiment
 	}{
-		{name: "standard with a study config", exp: &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STANDARD, StudyConfig: experimenttest.StudyConfig(), Status: &essmsgpb.ExperimentStatus{}}},
+		{name: "standard with a study config", exp: &essmsgpb.Experiment{
+			ExperimentType: essmsgpb.Experiment_STANDARD, TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}, Status: &essmsgpb.ExperimentStatus{}}},
 		{name: "study without a study config", exp: &essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STUDY, Status: &essmsgpb.ExperimentStatus{}}},
 	}
 	for _, tc := range tests {

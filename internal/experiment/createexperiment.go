@@ -58,13 +58,14 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 	requestedStudyConfig := proto.Clone(exp.GetStudyConfig()).(*essmsgpb.StudyConfig)
 	err = runCreateTransaction(ctx, txRunner, len(reqs) > 0, func(ctx context.Context, tx *storage.Transaction) error {
 		exp.Status = proto.Clone(requestedStatus).(*essmsgpb.ExperimentStatus)
-		exp.StudyConfig = proto.Clone(requestedStudyConfig).(*essmsgpb.StudyConfig)
+		setStudyConfig(exp, proto.Clone(requestedStudyConfig).(*essmsgpb.StudyConfig))
 		return insertExperiment(ctx, tx, xid, exp, reqs)
 	})
 	if err != nil {
 		// Leave the caller's status and study config as requested, not as the failed attempt changed
 		// them. Creation timestamps stay set, as before.
-		exp.Status, exp.StudyConfig = requestedStatus, requestedStudyConfig
+		exp.Status = requestedStatus
+		setStudyConfig(exp, requestedStudyConfig)
 		logging.Error(ctx, "failed to create experiment", "error", err)
 		return nil, err
 	}
@@ -95,6 +96,15 @@ func insertExperiment(ctx context.Context, tx *storage.Transaction, xid int64, e
 		return fmt.Errorf("failed to save status message history for experiment: %w", err)
 	}
 	return nil
+}
+
+// setStudyConfig sets the type_config of exp to cfg, or clears it when cfg is nil.
+func setStudyConfig(exp *essmsgpb.Experiment, cfg *essmsgpb.StudyConfig) {
+	if cfg == nil {
+		exp.TypeConfig = nil
+		return
+	}
+	exp.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg}
 }
 
 // initCreationTimestamps sets the creation timestamps of exp and its status to the current time.

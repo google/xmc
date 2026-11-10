@@ -196,7 +196,7 @@ func TestCreateExperiment_StudyTrialBudgetIsClampedOnEveryBackend(t *testing.T) 
 			seedHPOCatalog(ctx, t, st)
 			const xid = 601
 			study := newStudy(xid)
-			study.StudyConfig = experimenttest.StudyConfig() // max_trial_budget 10.
+			study.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()} // max_trial_budget 10.
 			if _, err := experiment.CreateExperiment(ctx, st, study); err != nil {
 				t.Fatalf("CreateExperiment(STUDY) failed: %v", err)
 			}

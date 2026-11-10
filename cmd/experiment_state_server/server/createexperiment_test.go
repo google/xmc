@@ -493,7 +493,9 @@ func TestCreateExperiment_StudyTrialBudgetLimit(t *testing.T) {
 				withStorage(st),
 			)
 			cfg := prototest.Modify(experimenttest.StudyConfig(), func(cfg *msgpb.StudyConfig) { cfg.MaxTrialBudget = tc.budget })
-			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "study", ExperimentType: msgpb.Experiment_STUDY, StudyConfig: cfg}}
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{
+				Title: "study", ExperimentType: msgpb.Experiment_STUDY, TypeConfig: &msgpb.Experiment_StudyConfig{StudyConfig: cfg},
+			}}
 
 			got, err := server.CreateExperiment(ctx, req)
 			if err != nil {

@@ -204,7 +204,7 @@ func studyRequest(budget int32) *essmsgpb.Experiment {
 	return &essmsgpb.Experiment{
 		Name:           "experiments/321",
 		ExperimentType: essmsgpb.Experiment_STUDY,
-		StudyConfig:    cfg,
+		TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg},
 		Status:         &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_ACTIVE},
 	}
 }
