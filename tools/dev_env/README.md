@@ -389,7 +389,7 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 | `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
 | `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |
 
-*Core base images* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`, `ingestion_gateway`) are always built and staged so `xmc-bridge` can actuate `Component/ingestion-gateway` immediately when enabled in `xmc-profile`.
+*Core base images* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`) are always built and staged. `ingestion_gateway` is not: it is a `stable-2026a` Component actuated by `xmc-bridge` from the embedded component chart, which pins `imagePullPolicy: Always`, so a locally staged image could not be used in KinD anyway — run the metrics pipeline on a GKE dev cluster (see [deploy/local/README.md](../../deploy/local/README.md)).
 
 ### Dynamic Resource Naming Rules
 

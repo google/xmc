@@ -41,7 +41,6 @@ BASE_SERVICES: list[str] = [
     "reconciler",
     "ui",
     "components",
-    "ingestion_gateway",
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
