@@ -37,7 +37,7 @@ classifiers = [
 ]
 dependencies = [
     "grpcio>=1.50.0",
-    "protobuf>=4.21.0",
+    "protobuf>=5.29.6",
     "googleapis-common-protos>=1.50.0,<1.75.4",
 ]
 

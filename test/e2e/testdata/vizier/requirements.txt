@@ -2,7 +2,7 @@
 google-vizier==0.1.24
 # The stubs generated for google-vizier 0.1.24 need grpcio >= 1.70.0 and protobuf 5.x.
 grpcio==1.70.0
-protobuf==5.29.3
+protobuf==5.29.6
 SQLAlchemy==2.0.36
 # google-vizier imports these unconditionally, even for RANDOM_SEARCH.
 jax==0.4.38
