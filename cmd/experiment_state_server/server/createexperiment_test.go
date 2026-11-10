@@ -377,7 +377,7 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 			)
 			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
 			if tc.expType == msgpb.Experiment_STUDY {
-				req.Experiment.StudyConfig = experimenttest.StudyConfig()
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
 			}
 
 			_, err := server.CreateExperiment(ctx, req)

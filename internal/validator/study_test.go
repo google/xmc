@@ -36,7 +36,7 @@ func studyConfigCase(fn func(cfg *essmsgpb.StudyConfig)) *essmsgpb.CreateExperim
 			Title:          "study",
 			Acls:           &xidmessagespb.XidAcls{},
 			ExperimentType: essmsgpb.Experiment_STUDY,
-			StudyConfig:    cfg,
+			TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg},
 		},
 	}
 }
@@ -128,7 +128,7 @@ func TestValidateCreateExperimentRequest_StudyConfig(t *testing.T) {
 		{
 			name: "study_without_config",
 			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
-				r.Experiment.StudyConfig = nil
+				r.Experiment.TypeConfig = nil
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -150,7 +150,7 @@ func TestValidateCreateExperimentRequest_StudyConfig(t *testing.T) {
 			name: "standard_with_empty_config",
 			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
-				r.Experiment.StudyConfig = &essmsgpb.StudyConfig{}
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
 			}),
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -158,7 +158,7 @@ func TestValidateCreateExperimentRequest_StudyConfig(t *testing.T) {
 			name: "standard_without_config",
 			req: prototest.Modify(studyConfigCase(nil), func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
-				r.Experiment.StudyConfig = nil
+				r.Experiment.TypeConfig = nil
 			}),
 		},
 		{name: "algorithm_empty", req: studyConfigCase(func(cfg *essmsgpb.StudyConfig) { cfg.Algorithm = "" }), wantErr: grpcerr.ErrInvalidArgument},

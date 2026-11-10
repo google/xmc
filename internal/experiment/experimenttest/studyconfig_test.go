@@ -27,7 +27,7 @@ func TestStudyConfig_IsValid(t *testing.T) {
 		Title:          "study",
 		Acls:           &xidmessagespb.XidAcls{},
 		ExperimentType: essmsgpb.Experiment_STUDY,
-		StudyConfig:    StudyConfig(),
+		TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: StudyConfig()},
 	}}
 	if err := validator.ValidateCreateExperimentRequest(req); err != nil {
 		t.Errorf("ValidateCreateExperimentRequest(StudyConfig()) = %v, want nil", err)

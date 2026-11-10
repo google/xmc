@@ -210,17 +210,18 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			name: "experiment_type_study",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
-				r.Experiment.StudyConfig = experimenttest.StudyConfig()
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
 			}),
 			wantErr: nil,
 		},
 		{
-			name: "study_with_study_config",
+			// An empty study config fails the study config rules.
+			name: "study_with_empty_study_config",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
 				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
 			}),
-			wantErr: nil,
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "standard_with_study_config",
