@@ -110,6 +110,28 @@ export interface GetRunningAndPendingJobsResponse {
   userAllocations?: UserResourceAllocation[];
 }
 
+/** One user's share of the dominant resource in the selected queue. */
+export interface UserAllocationSegment {
+  readonly user: string;
+  readonly color: string;
+  readonly runningPercent: number;
+  readonly pendingPercent: number;
+  readonly label: string;
+}
+
+/** Per-user breakdown of the dominant resource across all active jobs in a queue. */
+export interface UserAllocationSummary {
+  readonly totalsLabel: string;
+  readonly segments: readonly UserAllocationSegment[];
+}
+
+/** One user's running and pending units of the dominant resource, summed over matching types. */
+export interface UserTotals {
+  readonly user: string;
+  readonly running: number;
+  readonly pending: number;
+}
+
 export interface GetSubmitQueueRequest {
   queueName?: string;
 }

@@ -14,33 +14,12 @@
 
 import { XMC_SERIES_PALETTE } from 'app/common/components/dashboard/echarts_theme';
 import { ResourceType } from 'app/common/components/resource_chip/resource_chip';
-import { UserResourceAllocation } from 'app/protos/rod';
+import { UserAllocationSummary, UserResourceAllocation, UserTotals } from 'app/protos/rod';
 import { matchesResourceFilter } from 'app/resource_dashboard/resource_filter';
 import { formatRate } from 'app/resource_dashboard/resource_velocity';
 import { classifyResourceType } from 'app/side_panel/contents/queue_jobs_table/queue_jobs_pipes';
 
 const UNKNOWN_USER = 'unknown';
-
-/** One user's share of the dominant resource in the selected queue. */
-export interface UserAllocationSegment {
-  readonly user: string;
-  readonly color: string;
-  readonly runningPercent: number;
-  readonly pendingPercent: number;
-  readonly label: string;
-}
-
-/** Per-user breakdown of the dominant resource across all active jobs in a queue. */
-export interface UserAllocationSummary {
-  readonly totalsLabel: string;
-  readonly segments: readonly UserAllocationSegment[];
-}
-
-interface UserTotals {
-  readonly user: string;
-  readonly running: number;
-  readonly pending: number;
-}
 
 /** Display units of the CPU, memory, GPU and TPU allocations the backend reports. */
 const RESOURCE_UNIT_LABELS: Readonly<Record<ResourceType, string>> = {
