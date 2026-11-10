@@ -636,6 +636,23 @@ class TestConfigLoader(unittest.TestCase):
             ):
                 load_and_validate_config(str(self.config_path))
 
+    def test_load_and_validate_config_rejects_retired_metrics_keys(self):
+        """Retired 1.0.0 keys fail closed instead of being silently dropped by the blueprint."""
+        for retired_key in (
+            "enable_metrics: true",
+            "ingestion_gateway_deployment_enabled: true",
+            "clickhouse_host: ch",
+        ):
+            with self.subTest(retired_key=retired_key):
+                self.config_path.write_text(
+                    self.valid_yaml + f"\n  {retired_key}\n", encoding="utf-8"
+                )
+                with self.assertRaisesRegex(ValueError, "retired in XMC 1.0.0"):
+                    load_and_validate_config(str(self.config_path))
+
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        self.assertEqual(load_and_validate_config(str(self.config_path)).project_id, "my-project")
+
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""

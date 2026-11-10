@@ -228,6 +228,13 @@ class ConfigResolutionTest(unittest.TestCase):
                 argparse.Namespace(config=str(disabled_cfg)),
                 repo_root=self.root,
             )
+        retired_cfg = self.root / "retired_metrics.yaml"
+        retired_cfg.write_text("vars:\n  project_id: my-proj\n  enable_metrics: true\n")
+        with self.assertRaisesRegex(ValueError, "retired in XMC 1.0.0"):
+            config.load_config(
+                argparse.Namespace(config=str(retired_cfg)),
+                repo_root=self.root,
+            )
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_yaml_and_env_mappings(self) -> None:

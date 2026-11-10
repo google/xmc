@@ -248,6 +248,42 @@ def parse_bool_flag(val: Any) -> bool:
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
 
 
+# Deployment YAML keys retired in XMC 1.0.0. The Cluster Toolkit blueprint no longer maps them, and
+# `gcluster create -l WARNING` only warns about unused variables, so without this check a lagging
+# config would deploy successfully with metrics Components silently left disabled.
+RETIRED_CONFIG_KEYS: tuple[str, ...] = (
+    "enable_metrics",
+    "ingestion_gateway_deployment_enabled",
+    "clickhouse_host",
+    "clickhouse_port",
+    "clickhouse_database",
+    "clickhouse_user",
+)
+
+
+def reject_retired_component_config(raw_enable_components: Any, config: Mapping[str, Any]) -> None:
+    """Fails closed on pre-1.0.0 component/metrics configuration.
+
+    Args:
+        raw_enable_components: The resolved `enable_components` value (env or YAML), or None.
+        config: The deployment YAML `vars` mapping.
+
+    Raises:
+        ValueError: When `enable_components` resolves to false or a retired key is present.
+    """
+    if raw_enable_components is not None and not parse_bool_flag(raw_enable_components):
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    retired = [key for key in RETIRED_CONFIG_KEYS if key in config]
+    if retired:
+        raise ValueError(
+            f"Configuration keys {retired} were retired in XMC 1.0.0 and are ignored by the blueprint: "
+            "metrics are enabled per Component via --profile-values "
+            "(components.{redpanda,clickhouse,ingestion-gateway}.enabled) and ClickHouse coordinates "
+            "come from Component/clickhouse. Remove them from the deployment YAML "
+            "(see docs/migrations/components.md)."
+        )
+
+
 def parse_positive_int(value: Any) -> int | None:
     """Returns `value` as an int >= 1, or None when it is not a positive integer.
 
@@ -366,8 +402,7 @@ def load_and_validate_config(
         if env_comp is not None and env_comp.strip() != ""
         else config.get("enable_components")
     )
-    if raw_comp is not None and not parse_bool_flag(raw_comp):
-        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    reject_retired_component_config(raw_comp, config)
 
     return DeploymentConfig(
         project_id=config["project_id"],

@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import DISABLED_COMPONENTS_FLAG_ERROR, parse_yaml_vars
+from tools.common.tool_utils import parse_yaml_vars, reject_retired_component_config
 
 _LOGGER = logging.getLogger("xmc.dev_env.config")
 
@@ -234,13 +234,15 @@ def _resolve_enabled_services(
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
 
-    if not _resolve_bool_flag(
-        None,
-        os.environ.get("ENABLE_COMPONENTS"),
-        yaml_vars.get("enable_components"),
-        default=True,
-    ):
-        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    reject_retired_component_config(
+        _resolve_bool_flag(
+            None,
+            os.environ.get("ENABLE_COMPONENTS"),
+            yaml_vars.get("enable_components"),
+            default=True,
+        ),
+        yaml_vars,
+    )
 
     rod_enabled = _resolve_bool_flag(
         getattr(args, "rod_deployment_enabled", None) if args else None,
