@@ -49,7 +49,7 @@ Install the profile as a single release:
 ```bash
 # 1. Render the Component CRs with your overrides.
 mkdir -p rendered
-helm template xmc-profile deploy/profiles/stable-2026a -n xmc -f my-values.yaml > rendered/profile.yaml
+helm template xmc-profile deploy/profiles/stable-2026a -n xmc -f profile-values.yaml > rendered/profile.yaml
 
 # 2. Validate dependencies, schema, and the compatibility matrix offline.
 go run ./cmd/component-linter \
@@ -57,14 +57,14 @@ go run ./cmd/component-linter \
   --rules-config=deploy/profiles/stable-2026a/rules.yaml
 
 # 3. Install the same values, or commit rendered/ to your GitOps repository instead.
-helm install xmc-profile deploy/profiles/stable-2026a -n xmc -f my-values.yaml
+helm install xmc-profile deploy/profiles/stable-2026a -n xmc -f profile-values.yaml
 ```
 
 The release name must not start with `xmc-cmp-`, which is reserved for `xmc-bridge` component releases; rendering fails if it does.
 
 To isolate a template error in one component, render that component chart on its own, for example `helm template redpanda deploy/profiles/stable-2026a/components/redpanda`.
 
-Example `my-values.yaml` enabling the metrics pipeline:
+Example `profile-values.yaml` enabling the metrics pipeline (all components are disabled by default; `--reset-then-reuse-values` carries the previous release's values forward, so a component stays enabled until you set `components.<name>.enabled: false` explicitly):
 
 ```yaml
 components:

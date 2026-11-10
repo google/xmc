@@ -304,10 +304,21 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
 
 1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
-3. **Install Optional Catalog Components (`stable-2026a` Profile)**: To enable optional platform components (`ingestion-gateway`, `clickhouse`, `redpanda`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: Every optional catalog component (`redpanda`, `clickhouse`, `ingestion-gateway`) is **disabled by default**. Create a `profile-values.yaml` that enables the ones you need (`redpanda`/`clickhouse` expect the BYO add-ons from [`deploy/addons/metrics`](deploy/addons/metrics/clickhouse/README.md) to be reachable), then install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+   ```yaml
+   # profile-values.yaml — enable the metrics pipeline
+   components:
+     redpanda:
+       enabled: true
+     clickhouse:
+       enabled: true
+     ingestion-gateway:
+       enabled: true
+   ```
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), restart it once so it picks up the new data engine: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -325,11 +336,12 @@ For direct control over your infrastructure:
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
-3. **Install Optional Catalog Components (`stable-2026a` Profile)**: When enabling optional components (`ingestion-gateway`, `clickhouse`, `redpanda`), install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+   `xmc-bridge` is a mandatory controller in `1.0.0+`: set `xmc_bridge_custom_image` (and `ingestion_gateway_custom_image`, which `xmc-bridge` uses as the default Ingestion Gateway image) like the other `*_custom_image` values. When `xmc_bridge_custom_image` is empty the chart derives `us-docker.pkg.dev/<projectId>/xmc/xmc-bridge-<environment>:<imageTag>`, which only matches the push commands above if `<LOCATION>` is `us` and `imageTag` equals `BUILD_TAG`.
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: Every optional catalog component (`redpanda`, `clickhouse`, `ingestion-gateway`) is **disabled by default**. Create a `profile-values.yaml` that enables the ones you need (see the example in Approach 2, step 3), then install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
    ```bash
-   helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc --wait
+   helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
-   *(Pass `-f profile-values.yaml` with your component overrides; see [deploy/profiles/stable-2026a/README.md](deploy/profiles/stable-2026a/README.md).)*
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), restart it once so it picks up the new data engine: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 

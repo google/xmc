@@ -146,6 +146,9 @@ spec:
 
 ### 4.1 Dynamic Reconfiguration & Hot-Swapping (Zero Pod Restarts)
 
+> [!NOTE]
+> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled; if you enable the component after the service is already running, restart it once: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+
 When ClickHouse parameters or credentials change in Kubernetes, `dashboard-service` dynamically detects the changes and reconfigures its data engine without requiring pod restarts or manual rollouts:
 
 1. **Deterministic Fingerprinting**: `dashboard-service` computes a deterministic SHA-256 fingerprint over the resolved options (`OptionsFingerprint(opts)`), hashing endpoints, database, username, and password.
