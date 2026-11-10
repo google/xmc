@@ -20,10 +20,19 @@ CI declared the prerequisites are supposed to be present.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import unittest
 from typing import NoReturn
+
+BLUEPRINT_PATH = os.path.join("deploy", "ctk_v2", "xmanager-cloud.yaml")
+_MODULE_HEADER = re.compile(r"^\s*-\s+id:\s*([^\s#]+)", re.MULTILINE)
+_GROUP_HEADER = re.compile(r"^-\s+group:\s*([^\s#]+)", re.MULTILINE)
+_SET_VALUE_PAIR = re.compile(
+    r"^\s*-\s+name:\s*([^\s#]+)\s*\n(?:\s*#.*\n)*\s+value:\s*(.+)",
+    re.MULTILINE,
+)
 
 
 def skip_unless_required(reason: str) -> NoReturn:
@@ -62,6 +71,29 @@ def find_repo_file(relative_path: str) -> str:
 def find_chart_dir() -> str:
     """Locates deploy/helm from the working directory, supporting bazel runfiles and repo root."""
     return os.path.dirname(find_repo_file(os.path.join("deploy", "helm", "Chart.yaml")))
+
+
+def extract_module_block(blueprint: str, module_id: str) -> str:
+    """Returns the raw YAML slice for the given blueprint module id."""
+    for match in _MODULE_HEADER.finditer(blueprint):
+        if match.group(1).strip("\"'") != module_id:
+            continue
+        start = match.end()
+        next_mod = _MODULE_HEADER.search(blueprint, start)
+        next_grp = _GROUP_HEADER.search(blueprint, start)
+        candidates = [m.start() for m in (next_mod, next_grp) if m is not None]
+        end = min(candidates) if candidates else len(blueprint)
+        return blueprint[match.start() : end]
+    raise AssertionError(f"module {module_id!r} not found in {BLUEPRINT_PATH}")
+
+
+def parse_set_values(module_block: str) -> dict[str, str]:
+    """Extracts name/value pairs from a direct-helm-install module's set_values block."""
+    res: dict[str, str] = {}
+    for name, value in _SET_VALUE_PAIR.findall(module_block):
+        val = value.split("#")[0].strip()
+        res[name.strip("\"'")] = val.strip("\"'")
+    return res
 
 
 def render_template(show_only: str, values: dict[str, str]) -> str:

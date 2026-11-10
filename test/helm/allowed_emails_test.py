@@ -20,17 +20,19 @@ the xmc_app deployment with `key "com" has no value`. The blueprint now escapes 
 Helm strips the escapes again, so the chart must still render the plain list.
 """
 
-import os
 import re
 import unittest
 
-from chart_test_lib import find_repo_file, render_template, require_helm
+from chart_test_lib import (
+    BLUEPRINT_PATH,
+    extract_module_block,
+    find_repo_file,
+    parse_set_values,
+    render_template,
+    require_helm,
+)
 
-BLUEPRINT_PATH = os.path.join("deploy", "ctk_v2", "xmanager-cloud.yaml")
 ESS_DEPLOYMENT = "templates/ess/deployment.yaml"
-
-# Matches the `value:` line of the auth.allowedEmails entry in the xmc_app set_values list.
-_ALLOWED_EMAILS_VALUE = re.compile(r"- name: auth\.allowedEmails\n\s+value: (.+)\n")
 _ESCAPING_EXPRESSION = r"""$(replace(vars.allowed_emails, ",", "\\,"))"""
 
 
@@ -55,10 +57,9 @@ class BlueprintEscapingTest(unittest.TestCase):
 
     def test_blueprint_escapes_commas_in_allowed_emails(self) -> None:
         with open(find_repo_file(BLUEPRINT_PATH), encoding="utf-8") as blueprint:
-            match = _ALLOWED_EMAILS_VALUE.search(blueprint.read())
-        if match is None:
-            self.fail(f"auth.allowedEmails set value not found in {BLUEPRINT_PATH}")
-        self.assertEqual(_ESCAPING_EXPRESSION, match.group(1).strip("'"))
+            block = extract_module_block(blueprint.read(), "xmc_app_helm")
+        set_values = parse_set_values(block)
+        self.assertEqual(_ESCAPING_EXPRESSION, set_values.get("auth.allowedEmails"))
 
 
 class AllowedEmailsRenderingTest(unittest.TestCase):

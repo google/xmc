@@ -85,6 +85,23 @@ class TestToolUtils(unittest.TestCase):
         ensure_venv()
         mock_execv.assert_not_called()
 
+    @patch("tools.common.tool_utils._bootstrap_venv")
+    @patch("os.execv")
+    def test_ensure_venv_bypasses_on_help_flag(self, mock_execv, mock_bootstrap):
+        env = dict(os.environ)
+        env.pop("TEST_SRCDIR", None)
+        env.pop("BAZEL_TEST", None)
+        env.pop("XMC_BYPASS_VENV", None)
+        for flag in ("-h", "--help"):
+            with (
+                self.subTest(flag=flag),
+                patch.dict(os.environ, env, clear=True),
+                patch.object(sys, "argv", ["tool.py", flag]),
+            ):
+                ensure_venv()
+        mock_bootstrap.assert_not_called()
+        mock_execv.assert_not_called()
+
     @patch.dict(os.environ, {"XMC_BYPASS_VENV": "1"}, clear=False)
     @patch("os.execv")
     def test_ensure_venv_bypass(self, mock_execv):

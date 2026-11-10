@@ -22,13 +22,10 @@ calls reached Google with no identity attached and came back PermissionDenied at
 in either file makes that omission visible, which is what this suite is for.
 """
 
-import os
 import re
 import unittest
 
-from chart_test_lib import find_repo_file, render_chart, require_helm
-
-BLUEPRINT_PATH = os.path.join("deploy", "ctk_v2", "xmanager-cloud.yaml")
+from chart_test_lib import BLUEPRINT_PATH, find_repo_file, render_chart, require_helm
 
 # Every deployment the chart gates behind a toggle, turned on together: a service account that only
 # renders for one release still needs its binding, so the suite has to see all of them at once. The

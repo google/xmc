@@ -23,10 +23,13 @@ py_library(
     imports = ["."],
 )
 
-# Tagged manual/local because rendering the chart shells out to a host-installed helm binary,
-# matching the convention used by //test/metrics/infra:infra_test for its container dependency.
-# The manual tag keeps `bazel test //...` from failing on machines without helm; CI installs helm
-# and runs these suites directly via the run-chart-tests job in .github/workflows/unit-tests.yml.
+# Suites that shell out to a host-installed helm binary (via render_template or render_chart) are
+# tagged manual/local, matching the convention used by //test/metrics/infra:infra_test for its
+# container dependency. The manual tag keeps `bazel test //...` from failing on machines without
+# helm; CI installs helm and runs these suites directly via the run-chart-tests job in
+# .github/workflows/unit-tests.yml. Pure-Python tests that only read runfiles (such as
+# //deploy/ctk_v2:blueprint) without invoking helm should omit manual/local so `bazel test //...`
+# executes them hermetically.
 py_test(
     name = "chart_test_lib_test",
     srcs = ["chart_test_lib_test.py"],

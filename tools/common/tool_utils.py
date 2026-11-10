@@ -61,6 +61,8 @@ class DeploymentConfig:
 
 def _should_bypass_venv() -> bool:
     """Checks if virtual environment activation should be skipped."""
+    if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+        return True
     if "TEST_SRCDIR" in os.environ or "BAZEL_TEST" in os.environ:
         return True
     if sys.prefix != sys.base_prefix or os.environ.get("XMC_BYPASS_VENV") == "1":

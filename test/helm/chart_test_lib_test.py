@@ -19,8 +19,11 @@ import unittest
 from unittest import mock
 
 from chart_test_lib import (
+    BLUEPRINT_PATH,
+    extract_module_block,
     find_chart_dir,
     find_repo_file,
+    parse_set_values,
     render_chart,
     render_template,
     require_helm,
@@ -53,6 +56,39 @@ class SkipUnlessRequiredTest(unittest.TestCase):
                 with mock.patch.dict(os.environ, {"XMC_REQUIRE_HELM": value}):
                     with self.assertRaises(unittest.SkipTest):
                         skip_unless_required("helm binary not available")
+
+
+class BlueprintParsingTest(unittest.TestCase):
+    """Covers blueprint module extraction and set_values parsing without requiring helm."""
+
+    def test_extract_module_block_and_parse_set_values_edge_cases(self) -> None:
+        """Covers comments, quotes, spaces, multibyte values, and missing modules."""
+        sample = (
+            "- group: prereqs\n"
+            "  modules:\n"
+            "  - id: mod_a # comment\n"
+            "    settings:\n"
+            "      set_values:\n"
+            "      - name: 'key.one'\n"
+            "        # inline comment with multibyte — ✓\n"
+            '        value: "val one" # trailing comment\n'
+            "  - id: mod_b\n"
+            "    settings:\n"
+            "      set_values:\n"
+            "      - name: other.key\n"
+            "        value: other-val\n"
+            "- group: next_group\n"
+            "  modules:\n"
+            "  - id: mod_c\n"
+        )
+        block_a = extract_module_block(sample, "mod_a")
+        block_b = extract_module_block(sample, "mod_b")
+        self.assertEqual({"key.one": "val one"}, parse_set_values(block_a))
+        self.assertEqual({"other.key": "other-val"}, parse_set_values(block_b))
+        self.assertEqual({}, parse_set_values(""))
+        self.assertTrue(BLUEPRINT_PATH.endswith("xmanager-cloud.yaml"))
+        with self.assertRaises(AssertionError):
+            extract_module_block(sample, "missing_mod")
 
 
 class RenderTemplateTest(unittest.TestCase):
