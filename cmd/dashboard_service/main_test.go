@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ import (
 	bqconfig "xmanager_cloud/pkg/bigquery/componentconfig"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
+	"xmanager_cloud/pkg/components/crreader"
 	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
@@ -647,6 +649,22 @@ func TestIsClickHouseExpected(t *testing.T) {
 	})
 }
 
+type countingComponentGetter struct {
+	mu    sync.Mutex
+	inner crreader.Getter
+	calls map[string]int
+}
+
+func (c *countingComponentGetter) GetComponent(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
+	c.mu.Lock()
+	if c.calls == nil {
+		c.calls = make(map[string]int)
+	}
+	c.calls[name]++
+	c.mu.Unlock()
+	return c.inner.GetComponent(ctx, namespace, name)
+}
+
 func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("CLICKHOUSE_HOST", "")
@@ -657,11 +675,46 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
-	getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
+	getter := &countingComponentGetter{
+		inner: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")},
+	}
 
 	provider := initDataEngineWithGetter(ctx, serverCfg, getter)
 	if provider != nil {
 		t.Errorf("initDataEngineWithGetter() = %v, want nil", provider)
+	}
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 1}, getter.calls); diff != "" {
+		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("CLICKHOUSE_HOST", "")
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("BIGQUERY_DATASET", "")
+	t.Setenv("METRICS_STORE", "")
+	serverCfg := &server.Config{
+		EnableComponents:    true,
+		ComponentsNamespace: "xmc",
+	}
+	bqCR := &unstructured.Unstructured{
+		Object: map[string]any{
+			"spec":   map[string]any{"enabled": true},
+			"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
+		},
+	}
+	getter := &countingComponentGetter{
+		inner: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"bigquery": bqCR}},
+	}
+
+	provider := initDataEngineWithGetter(ctx, serverCfg, getter)
+	if provider == nil {
+		t.Fatal("initDataEngineWithGetter() = nil, want non-nil BigQuery provider")
+	}
+	defer provider.Close()
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 2}, getter.calls); diff != "" {
+		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 	}
 }
 

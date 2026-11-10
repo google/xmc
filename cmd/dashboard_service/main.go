@@ -277,10 +277,14 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 	if cfg != nil {
 		enableComponents, componentsNamespace, projectID = cfg.EnableComponents, cfg.ComponentsNamespace, cfg.ProjectID
 	}
-	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter)) {
+	if store == storeBigQuery {
 		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
 	}
-	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
+	clickHouseExpected := isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter)
+	if store == "" && !clickHouseExpected && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
+	}
+	if !clickHouseExpected {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
