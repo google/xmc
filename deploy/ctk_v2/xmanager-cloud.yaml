@@ -405,16 +405,6 @@ deployment_groups:
 
 - group: xmc_app
   modules:
-
-  - id: xmc_iap_secret
-    source: modules/security/kubernetes-secret
-    use: [compute_cluster]
-    settings:
-      secret_name: iap-oauth-secret
-      data:
-        client_id: $(vars.iap_client_id)
-        client_secret: $(vars.iap_client_secret)
-
   # Provisions the Cloud Logging sink, Pub/Sub topics and subscription the Log Monitor consumes,
   # plus the Cloud Run service when log_monitor_deployment_enabled is false.
   - id: log_monitor
