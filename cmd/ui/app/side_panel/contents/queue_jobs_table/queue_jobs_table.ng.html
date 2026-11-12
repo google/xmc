@@ -22,7 +22,31 @@
       <ng-content select="[headerActions]" />
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
-    <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
+    <p class="jobs-card-subtitle">{{ tableControls.totalCount() }} matching jobs.</p>
+    <div class="job-filters">
+      <mat-form-field>
+        <mat-label>Author</mat-label>
+        <input
+          #authorInput
+          matInput
+          placeholder="Exact author email"
+          [value]="author()"
+          (change)="onAuthorChange(authorInput.value)"
+        />
+      </mat-form-field>
+      <mat-form-field>
+        <mat-label>Status</mat-label>
+        <mat-select [value]="status()" (selectionChange)="onStatusChange($event.value)">
+          <mat-option value="">All active statuses</mat-option>
+          @for (state of statuses; track state) {
+            <mat-option [value]="state">{{ state }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <button type="button" mat-button [disabled]="!filter()" (click)="clearFilters()">
+        Clear filters
+      </button>
+    </div>
   </div>
 
   @if (!isLoading()) {
@@ -47,7 +71,7 @@
           height="120"
         />
       </div>
-      <div class="empty-caption">No job ahead of you!</div>
+      <div class="empty-caption">No matching jobs.</div>
     </div>
   } @else {
     @if (isRefreshing()) {

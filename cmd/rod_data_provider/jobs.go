@@ -39,6 +39,11 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid order_by: %v", err)
 	}
+	filter, err := parseJobsFilter(req.GetFilter())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid filter: %v", err)
+	}
+	query.Filter = filter
 
 	clusterQueueName := req.GetQueueName()
 

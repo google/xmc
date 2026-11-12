@@ -230,10 +230,18 @@ const (
 	ActiveWorkUnitSortPriority
 )
 
+// ActiveWorkUnitFilter holds typed predicates applied before pagination.
+type ActiveWorkUnitFilter struct {
+	AuthorSubstring string
+	HasAuthor       bool
+	Status          essmsgpb.WorkUnitStatus_WorkUnitState
+}
+
 // ActiveWorkUnitQuery holds typed display options applied before pagination.
 type ActiveWorkUnitQuery struct {
 	SortField  ActiveWorkUnitSortField
 	Descending bool
+	Filter     ActiveWorkUnitFilter
 }
 
 // ActiveWorkUnitsResult holds the result of querying active work units.

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 )
 
@@ -41,6 +42,31 @@ func TestActiveWorkUnitOrder(t *testing.T) {
 			want := " ORDER BY " + tt.want + ", wu.WorkUnitId ASC, wu.Xid ASC"
 			if diff := cmp.Diff(want, got.String()); diff != "" {
 				t.Errorf("ordering (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestActiveWorkUnitPredicates(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   storage.ActiveWorkUnitFilter
+		wantSQL  string
+		wantArgs []any
+	}{
+		{"empty", storage.ActiveWorkUnitFilter{}, "", nil},
+		{"author substring", storage.ActiveWorkUnitFilter{AuthorSubstring: "alice", HasAuthor: true}, " AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER($4)) > 0", []any{"alice"}},
+		{"status", storage.ActiveWorkUnitFilter{Status: essmsgpb.WorkUnitStatus_RUNNING}, " AND wu.ExecutionState = $4", []any{int32(4)}},
+		{"author and status", storage.ActiveWorkUnitFilter{AuthorSubstring: "alice", HasAuthor: true, Status: essmsgpb.WorkUnitStatus_SCHEDULING}, " AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER($4)) > 0 AND wu.ExecutionState = $5", []any{"alice", int32(2)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSQL, gotArgs := activeWorkUnitPredicates(tt.filter, 4)
+			if diff := cmp.Diff(tt.wantSQL, gotSQL.String()); diff != "" {
+				t.Errorf("SQL (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tt.wantArgs, gotArgs); diff != "" {
+				t.Errorf("args (-want +got):\n%s", diff)
 			}
 		})
 	}

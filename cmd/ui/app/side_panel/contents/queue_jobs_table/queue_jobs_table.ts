@@ -24,8 +24,11 @@ import {
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSelectModule } from '@angular/material/select';
 import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -35,6 +38,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { buildActiveJobsFilter } from 'app/common/filter/aip_filter';
 import { AipSort, toOrderBy } from 'app/common/sort/aip_sort';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
@@ -42,6 +46,7 @@ import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
 import {
+  JOB_STATUS_STRINGS,
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
   QueueJobRunningTimePipe,
@@ -65,6 +70,9 @@ export class QueueJobsTableData implements BaseSidePanelData {
     RouterModule,
     MatTableModule,
     MatSortModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
     MatPaginatorModule,
     MatIconModule,
     MatButtonModule,
@@ -94,6 +102,16 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly sort = signal<AipSort>({ active: '', direction: '' });
   protected readonly orderBy = computed(() => toOrderBy(this.sort()) ?? '');
 
+  protected readonly author = signal('');
+  protected readonly status = signal('');
+  protected readonly statuses = [
+    JOB_STATUS_STRINGS.RUNNING,
+    JOB_STATUS_STRINGS.STARTING,
+    JOB_STATUS_STRINGS.INITIALIZING,
+    JOB_STATUS_STRINGS.SCHEDULING,
+  ];
+  protected readonly filter = computed(() => buildActiveJobsFilter(this.author(), this.status()));
+
   protected readonly isFetching = signal<boolean>(false);
   protected readonly loadedQueueName = signal<string | undefined>(undefined);
   protected readonly isLoading = computed(
@@ -114,6 +132,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly requestParams = computed(() => ({
     queueName: this.activeQueueName(),
     orderBy: this.orderBy(),
+    filter: this.filter(),
     pageSize: this.tableControls.pageSize(),
     pageToken: this.tableControls.pageToken(),
   }));
@@ -125,11 +144,12 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
           prev.queueName === curr.queueName &&
           prev.pageSize === curr.pageSize &&
           prev.pageToken === curr.pageToken &&
-          prev.orderBy === curr.orderBy,
+          prev.orderBy === curr.orderBy &&
+          prev.filter === curr.filter,
       ),
       tap(() => this.isFetching.set(true)),
-      switchMap(({ queueName, pageSize, pageToken, orderBy }) =>
-        this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy).pipe(
+      switchMap(({ queueName, pageSize, pageToken, orderBy, filter }) =>
+        this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy, filter).pipe(
           tap((resp) => {
             this.isFetching.set(false);
             this.loadedQueueName.set(queueName);
@@ -192,6 +212,22 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     this.tableControls.pageIndex.set(0);
     this.tableControls.pageToken.set('');
     this.tableControls.pageTokens.set(['']);
+  }
+
+  protected onAuthorChange(author: string): void {
+    this.author.set(author.trim());
+    this.resetPage();
+  }
+
+  protected onStatusChange(status: string): void {
+    this.status.set(status);
+    this.resetPage();
+  }
+
+  protected clearFilters(): void {
+    this.author.set('');
+    this.status.set('');
+    this.resetPage();
   }
 
   protected onPageChange(event: PageEvent): void {

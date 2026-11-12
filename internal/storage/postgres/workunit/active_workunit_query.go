@@ -15,6 +15,9 @@
 package workunit
 
 import (
+	"strconv"
+
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 )
@@ -37,19 +40,47 @@ var (
 )
 
 func activeWorkUnitStatements(queueNames []string, limit, offset int64, query storage.ActiveWorkUnitQuery) (activeWorkUnitStatement, activeWorkUnitStatement) {
-	where := safesql.New(" WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL")
-	count := activeWorkUnitStatement{
-		sql:  safesql.Concat(safesql.New("SELECT COUNT(*) FROM WorkUnits wu"), where),
-		args: []any{queueNames},
+	baseWhere := safesql.New(" WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL")
+
+	countFilterSQL, countFilterArgs := activeWorkUnitPredicates(query.Filter, 2)
+	countFrom := safesql.New("SELECT COUNT(*) FROM WorkUnits wu")
+	if query.Filter.HasAuthor {
+		countFrom = safesql.Concat(countFrom, safesql.New(" JOIN Experiments e ON wu.Xid = e.Xid"))
 	}
+	count := activeWorkUnitStatement{
+		sql:  safesql.Concat(countFrom, baseWhere, countFilterSQL),
+		args: append([]any{queueNames}, countFilterArgs...),
+	}
+
+	fetchFilterSQL, fetchFilterArgs := activeWorkUnitPredicates(query.Filter, 4)
 	fetchSQL := safesql.Concat(
 		safesql.New(`SELECT wu.Xid, wu.WorkUnitId, wu.WorkUnitType, wu.Priority, wu.Urls, wu.Tags, wu.Notes, wu.Executable, wu.ExecutionCreateTime, wu.ExecutionUpdateTime, wu.ExecutionCompleteTime, wu.ExecutionId, wu.ExecutionMetadata, wu.WorkUnitStatus, wu.CreateTime, wu.UpdateTime, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS experiment_title FROM WorkUnits wu JOIN Experiments e ON wu.Xid = e.Xid`),
-		where,
+		baseWhere,
+		fetchFilterSQL,
 		activeWorkUnitOrder(query),
 		safesql.New(" LIMIT $2 OFFSET $3"),
 	)
-	fetch := activeWorkUnitStatement{sql: fetchSQL, args: []any{queueNames, limit, offset}}
+	fetch := activeWorkUnitStatement{
+		sql:  fetchSQL,
+		args: append([]any{queueNames, limit, offset}, fetchFilterArgs...),
+	}
 	return count, fetch
+}
+
+func activeWorkUnitPredicates(filter storage.ActiveWorkUnitFilter, argOffset int) (safesql.TrustedSQLString, []any) {
+	var parts []safesql.TrustedSQLString
+	var args []any
+	nextArg := argOffset
+	if filter.HasAuthor {
+		parts = append(parts, safesql.New(" AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER($"+strconv.Itoa(nextArg)+")) > 0"))
+		args = append(args, filter.AuthorSubstring)
+		nextArg++
+	}
+	if filter.Status != essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED {
+		parts = append(parts, safesql.New(" AND wu.ExecutionState = $"+strconv.Itoa(nextArg)))
+		args = append(args, int32(filter.Status))
+	}
+	return safesql.Concat(parts...), args
 }
 
 func activeWorkUnitOrder(q storage.ActiveWorkUnitQuery) safesql.TrustedSQLString {

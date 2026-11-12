@@ -68,15 +68,31 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
     },
   ],
   totalQueueSize: 3,
+  userAllocations: [
+    {
+      user: 'example@example.com',
+      resourceType: 'nvidia.com/gpu: H100',
+      runningUnits: 4,
+    },
+    {
+      user: 'example-admin@example.com',
+      resourceType: 'nvidia.com/gpu: H100',
+      runningUnits: 2,
+    },
+  ],
 };
 
 @Component({
   standalone: true,
   imports: [QueueJobsTable],
-  template: `<xmc-queue-jobs-table [queueName]="queueName()" />`,
+  template: `<xmc-queue-jobs-table
+    [queueName]="queueName()"
+    [dominantResource]="dominantResource()"
+  />`,
 })
 class TestHostComponent {
   readonly queueName = signal<string>('gpu-cluster-queue');
+  readonly dominantResource = signal<string | null>(null);
 }
 
 @Component({
@@ -118,6 +134,7 @@ describe('QueueJobsTable Component', () => {
       10,
       '',
       '',
+      '',
     );
   });
 
@@ -139,6 +156,7 @@ describe('QueueJobsTable Component', () => {
           10,
           '',
           direction ? `${field} ${direction}` : '',
+          '',
         );
       }
     }
@@ -167,8 +185,69 @@ describe('QueueJobsTable Component', () => {
       10,
       '',
       'author asc',
+      '',
     );
     expect(await paginator!.getRangeLabel()).toMatch(/^1\s/);
+  });
+
+  it('combines author and status filters and clears both', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    await harness.filterAuthor('alice@example.com');
+    await harness.filterStatus('RUNNING');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com" AND status = RUNNING',
+    );
+    state.resourceService.getQueueJobs.calls.reset();
+    await harness.clearFilters();
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
+  });
+
+  it('resets pagination when author or status changes', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({
+        ...TEST_QUEUE_JOBS_RESP,
+        totalQueueSize: 30,
+        nextPageToken: 'second-page',
+      }),
+    );
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    await paginator!.goToNextPage();
+    await harness.filterAuthor('alice@example.com');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com"',
+    );
+    await paginator!.goToNextPage();
+    await harness.filterStatus('RUNNING');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com" AND status = RUNNING',
+    );
   });
 
   it('should properly render all table column headers using harness', async () => {
@@ -297,6 +376,7 @@ describe('QueueJobsTable Component', () => {
         10,
         'token-2',
         '',
+        '',
       );
 
       // Backward
@@ -308,6 +388,7 @@ describe('QueueJobsTable Component', () => {
         10,
         '',
         '',
+        '',
       );
 
       // Page size change
@@ -317,6 +398,7 @@ describe('QueueJobsTable Component', () => {
       expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
         'gpu-cluster-queue',
         20,
+        '',
         '',
         '',
       );
@@ -333,6 +415,7 @@ describe('QueueJobsTable Component', () => {
     expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
       'tpu-cluster-queue',
       10,
+      '',
       '',
       '',
     );
@@ -365,7 +448,7 @@ describe('QueueJobsTable Component', () => {
     expect(paginator).toBeNull();
 
     expect(document.querySelector(EMPTY_STATE_SELECTOR)).not.toBeNull();
-    expect(document.body.textContent).toContain('No job ahead of you!');
+    expect(document.body.textContent).toContain('No matching jobs.');
   });
 
   it('should display loading state while fetching jobs', async () => {

@@ -686,3 +686,73 @@ func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
 		})
 	}
 }
+
+
+func TestGetRunningAndPendingJobs_Filter(t *testing.T) {
+	tests := []struct {
+		name      string
+		filter    string
+		wantQuery storage.ActiveWorkUnitQuery
+		wantCode  codes.Code
+	}{
+		{
+			name:      "empty",
+			filter:    "",
+			wantQuery: storage.ActiveWorkUnitQuery{},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "author substring and status",
+			filter:    `author = "alice" AND status = RUNNING`,
+			wantQuery: storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{AuthorSubstring: "alice", HasAuthor: true, Status: essmsgpb.WorkUnitStatus_RUNNING}},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "author has operator",
+			filter:    `author : "bob"`,
+			wantQuery: storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{AuthorSubstring: "bob", HasAuthor: true}},
+			wantCode:  codes.OK,
+		},
+		{
+			name:     "unquoted author rejected",
+			filter:   `author = alice`,
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "unsupported status rejected",
+			filter:   `status = COMPLETED`,
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "or rejected",
+			filter:   `status = RUNNING OR status = STARTING`,
+			wantCode: codes.InvalidArgument,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+			req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+				r.Filter = tt.filter
+			})
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), req)
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("GetRunningAndPendingJobs(filter=%q) code = %v, want %v (err=%v)", tt.filter, status.Code(err), tt.wantCode, err)
+			}
+			if tt.wantCode != codes.OK {
+				if fetcher.snapshotCalls != 0 {
+					t.Errorf("fetcher called %d times on invalid filter, want 0", fetcher.snapshotCalls)
+				}
+				return
+			}
+			if fetcher.snapshotCalls != 1 {
+				t.Errorf("fetcher called %d times on valid filter, want 1", fetcher.snapshotCalls)
+			}
+			if diff := cmp.Diff(tt.wantQuery, fetcher.lastQuery); diff != "" {
+				t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

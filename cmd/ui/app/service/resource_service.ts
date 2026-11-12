@@ -60,10 +60,14 @@ export class ResourceService {
     pageSize?: number,
     pageToken?: string,
     orderBy?: string,
+    filter?: string,
   ): Observable<GetRunningAndPendingJobsResponse> {
     let params = new HttpParams();
     if (pageSize !== undefined && pageSize > 0) {
       params = params.set('pageSize', pageSize.toString());
+    }
+    if (filter) {
+      params = params.set('filter', filter);
     }
     if (orderBy) {
       params = params.set('orderBy', orderBy);

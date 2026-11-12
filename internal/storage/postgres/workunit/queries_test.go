@@ -407,3 +407,61 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 		})
 	}
 }
+
+
+func TestActiveQueueFilteringAcrossPages(t *testing.T) {
+	ctx := t.Context()
+	_, pool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(pool)
+	for _, xid := range []int64{100, 200} {
+		postgrestest.SeedExperiment(ctx, t, pool, xid)
+		author := "alice@example.com"
+		if xid == 200 {
+			author = "Bob@example.com"
+		}
+		if _, err := pool.Exec(ctx, "UPDATE Experiments SET Creator=$1 WHERE Xid=$2", author, xid); err != nil {
+			t.Fatal(err)
+		}
+		for i, state := range []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_SCHEDULING, essmsgpb.WorkUnitStatus_RUNNING, essmsgpb.WorkUnitStatus_INITIALIZING} {
+			wu := blankWorkUnitProto(xid, int64(i+1), baseTestTime)
+			wu.Priority = essmsgpb.Priority(i + 1)
+			wu.CurrentWorkUnitExecution.Status.State = state
+			mustInsertWorkUnit(t, pool, repo, wu)
+		}
+	}
+
+	cases := []struct {
+		name  string
+		query storage.ActiveWorkUnitQuery
+		want  []string
+	}{
+		{"author substring case-insensitive", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority, Filter: storage.ActiveWorkUnitFilter{AuthorSubstring: "ALICE", HasAuthor: true}}, []string{"experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3"}},
+		{"status running", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority, Filter: storage.ActiveWorkUnitFilter{Status: essmsgpb.WorkUnitStatus_RUNNING}}, []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2"}},
+		{"author substring and status", storage.ActiveWorkUnitQuery{Filter: storage.ActiveWorkUnitFilter{AuthorSubstring: "bob", HasAuthor: true, Status: essmsgpb.WorkUnitStatus_INITIALIZING}}, []string{"experiments/200/workUnits/3"}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var names []string
+			token := ""
+			for {
+				result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, tt.query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.TotalQueueSize != int64(len(tt.want)) {
+					t.Fatalf("total = %d, want %d", result.TotalQueueSize, len(tt.want))
+				}
+				for _, item := range result.WorkUnits {
+					names = append(names, item.WorkUnit.GetName())
+				}
+				token = result.NextPageToken
+				if token == "" {
+					break
+				}
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("filtered = %v, want %v", names, tt.want)
+			}
+		})
+	}
+}

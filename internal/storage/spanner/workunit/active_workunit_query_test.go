@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 )
 
@@ -41,6 +42,31 @@ func TestActiveWorkUnitOrder(t *testing.T) {
 			want := " ORDER BY " + tt.want + ", wu.WorkUnitId ASC, wu.Xid ASC"
 			if diff := cmp.Diff(want, got.String()); diff != "" {
 				t.Errorf("ordering (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestActiveWorkUnitPredicates(t *testing.T) {
+	tests := []struct {
+		name       string
+		filter     storage.ActiveWorkUnitFilter
+		wantSQL    string
+		wantParams map[string]any
+	}{
+		{"empty", storage.ActiveWorkUnitFilter{}, "", map[string]any{}},
+		{"author substring", storage.ActiveWorkUnitFilter{AuthorSubstring: "alice", HasAuthor: true}, " AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER(@author)) > 0", map[string]any{"author": "alice"}},
+		{"status", storage.ActiveWorkUnitFilter{Status: essmsgpb.WorkUnitStatus_RUNNING}, " AND wu.ExecutionState = @status", map[string]any{"status": "RUNNING"}},
+		{"author and status", storage.ActiveWorkUnitFilter{AuthorSubstring: "alice", HasAuthor: true, Status: essmsgpb.WorkUnitStatus_SCHEDULING}, " AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER(@author)) > 0 AND wu.ExecutionState = @status", map[string]any{"author": "alice", "status": "SCHEDULING"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotSQL, gotParams := activeWorkUnitPredicates(tt.filter)
+			if diff := cmp.Diff(tt.wantSQL, gotSQL.String()); diff != "" {
+				t.Errorf("SQL (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tt.wantParams, gotParams); diff != "" {
+				t.Errorf("params (-want +got):\n%s", diff)
 			}
 		})
 	}

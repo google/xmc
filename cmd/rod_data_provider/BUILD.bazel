@@ -22,6 +22,7 @@ go_library(
     srcs = [
         "config.go",
         "jobs.go",
+        "jobs_filter.go",
         "jobs_order.go",
         "kueue_resource_extractor.go",
         "main.go",
@@ -35,6 +36,8 @@ go_library(
     importpath = "xmanager_cloud/cmd/rod_data_provider/main",
     visibility = ["//visibility:private"],
     deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
@@ -86,6 +89,7 @@ go_test(
     name = "server_test",
     srcs = [
         "config_test.go",
+        "jobs_filter_test.go",
         "jobs_order_test.go",
         "jobs_test.go",
         "main_test.go",
@@ -96,6 +100,8 @@ go_test(
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
@@ -138,6 +144,8 @@ go_test(
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
+        "//api/filter:filter_expression_go_proto",
+        "//api/filter/go/filter",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/rod",
         "//cmd/rod_data_provider/cache",
