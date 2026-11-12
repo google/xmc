@@ -53,6 +53,8 @@
     <xmc-queue-user-allocation-bar
       [allocations]="userAllocations()"
       [dominantResource]="dominantResource()"
+      [selectedAuthor]="author()"
+      (authorSelect)="onAuthorChipClick($event)"
     />
   }
 

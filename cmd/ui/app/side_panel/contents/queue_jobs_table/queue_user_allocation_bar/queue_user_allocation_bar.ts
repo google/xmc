@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 
 import { UserResourceAllocation } from 'app/protos/rod';
 
 import { summarizeUserAllocations } from './user_allocation_summary';
 
 /**
- * Display-only stacked bar showing how much of the dominant resource each user requests
+ * Stacked bar and clickable user chips showing how much of the dominant resource each user requests
  * (running and pending) across all active jobs in the selected queue.
  */
 @Component({
@@ -32,6 +32,8 @@ import { summarizeUserAllocations } from './user_allocation_summary';
 export class QueueUserAllocationBar {
   readonly allocations = input<readonly UserResourceAllocation[]>([]);
   readonly dominantResource = input<string | null>(null);
+  readonly selectedAuthor = input<string>('');
+  readonly authorSelect = output<string>();
 
   protected readonly summary = computed(() =>
     summarizeUserAllocations(this.allocations(), this.dominantResource()),
