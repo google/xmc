@@ -265,7 +265,12 @@ waiting, and what is available.
 | `GetSubmitQueue`             | What is the ordered admission queue?                                                           |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched.                                                             |
 
-Sorting the jobs table by author, status, or priority applies to the full queue before pagination and resets the displayed page. An empty `order_by` preserves the scheduling-oriented default display order. Display sorting does not change scheduling priority or the reported queue position. Ascending status order is running, starting, initializing, then scheduling.
+Sorting the jobs table by `author`, `status`, or `priority` applies to the full queue before
+pagination and resets the displayed page. An empty `order_by` preserves the scheduling-oriented
+default display order. Display sorting does not change scheduling priority or the reported queue
+position. Author ordering uses case-sensitive byte order, ascending status order is `RUNNING`,
+`STARTING`, `INITIALIZING`, then `SCHEDULING`, and ties break by work-unit ID then experiment ID
+(ascending).
 
 The ROD Data Provider's design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
