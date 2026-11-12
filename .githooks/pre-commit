@@ -202,50 +202,99 @@ check_ui_selector_contract() {
 
 
 check_ui() {
-  local ui_files
-  if [ "$MODE" = "check" ]; then
-    ui_files=$(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" || true)
+  local ui_files=()
+  local file
+  if [ "${MODE}" = "check" ]; then
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then ui_files+=("${file}"); fi
+    done < <(find cmd/ui -type f \( -name "*.ts" -o -name "*.html" -o -name "*.scss" \) -not -path "*/node_modules/*" -not -path "*/.angular/*" -not -path "*/dist/*" -not -path "*/coverage/*" -not -path "*/out-tsc/*" | sort || true)
   else
-    ui_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then ui_files+=("${file}"); fi
+    done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR | grep -E '^cmd/ui/.*\.(ts|html|scss)$' || true)
   fi
 
-  if [ -z "$ui_files" ]; then
+  local run_all_eslint=0
+  if [ "${MODE}" = "check" ] || staged_paths_match AM '^cmd/ui/eslint\.config\.js$'; then
+    run_all_eslint=1
+  fi
+
+  local run_typecheck=0
+  if [ "${MODE}" = "check" ] || staged_paths_match AMD '^cmd/ui/(.*\.ts|([^/]+/)*tsconfig[^/]*\.json|([^/]+/)*package(-lock)?\.json)$'; then
+    run_typecheck=1
+  fi
+
+  if [ "${#ui_files[@]}" -eq 0 ] && [ "${run_all_eslint}" -eq 0 ] && [ "${run_typecheck}" -eq 0 ]; then
     return
   fi
 
   local prettier_bin="cmd/ui/node_modules/.bin/prettier"
   local eslint_bin="cmd/ui/node_modules/.bin/eslint"
+  local tsc_bin="cmd/ui/node_modules/.bin/tsc"
 
-  if [ -f "$prettier_bin" ]; then
-    echo "--> Running UI Formatter (Prettier)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $prettier_bin --config cmd/ui/.prettierrc --check $ui_files; then
-        echo "❌ Prettier check failed."
-        FAILED=1
+  if [ "${#ui_files[@]}" -gt 0 ]; then
+    if [ -x "${prettier_bin}" ]; then
+      echo "--> Running UI Formatter (Prettier)..."
+      if [ "${MODE}" = "check" ]; then
+        if ! "${prettier_bin}" --config cmd/ui/.prettierrc --check "${ui_files[@]}"; then
+          echo "❌ Prettier check failed."
+          FAILED=1
+        fi
+      else
+        "${prettier_bin}" --config cmd/ui/.prettierrc --write "${ui_files[@]}"
       fi
     else
-      $prettier_bin --config cmd/ui/.prettierrc --write $ui_files
+      echo "❌ ERROR: Local Prettier not found at ${prettier_bin}."
+      echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
     fi
-  else
-    echo "❌ ERROR: Local Prettier not found at $prettier_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
   fi
 
-  if [ -f "$eslint_bin" ]; then
-    echo "--> Running UI Linter (ESLint)..."
-    if [ "$MODE" = "check" ]; then
-      if ! $eslint_bin --config cmd/ui/eslint.config.js $ui_files; then
+  local ui_lint_files=()
+  if [ "${#ui_files[@]}" -gt 0 ]; then
+    for file in "${ui_files[@]}"; do
+      case "${file}" in
+        cmd/ui/index.html) ;;
+        *.ts|*.html) ui_lint_files+=("${file#cmd/ui/}") ;;
+      esac
+    done
+  fi
+
+  if [ "${run_all_eslint}" -eq 1 ] || [ "${#ui_lint_files[@]}" -gt 0 ]; then
+    if [ -x "${eslint_bin}" ]; then
+      echo "--> Running UI Linter (ESLint)..."
+      local eslint_args=()
+      if [ "${MODE}" != "check" ]; then
+        eslint_args+=(--fix)
+      fi
+      if [ "${run_all_eslint}" -eq 1 ]; then
+        eslint_args+=(.)
+      else
+        eslint_args+=("${ui_lint_files[@]}")
+      fi
+      if ! (cd cmd/ui && ./node_modules/.bin/eslint "${eslint_args[@]}"); then
         echo "❌ ESLint check failed."
         FAILED=1
       fi
     else
-      $eslint_bin --config cmd/ui/eslint.config.js --fix $ui_files
+      echo "❌ ERROR: Local ESLint not found at ${eslint_bin}."
+      echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
     fi
-  else
-    echo "❌ ERROR: Local ESLint not found at $eslint_bin."
-    echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+
+  if [ "${run_typecheck}" -eq 1 ]; then
+    if [ -x "${tsc_bin}" ]; then
+      echo "--> Running UI Typechecker (tsc)..."
+      if ! (cd cmd/ui && npm run --silent typecheck); then
+        echo "❌ UI TypeScript typecheck failed."
+        FAILED=1
+      fi
+    else
+      echo "❌ ERROR: Local tsc not found at ${tsc_bin}."
+      echo "   Please install dependencies: cd cmd/ui && npm ci --legacy-peer-deps"
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
+    fi
   fi
 }
 
