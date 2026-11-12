@@ -138,29 +138,42 @@ func (l *lazySecretReader) GetSecretValue(ctx context.Context, namespace, name, 
 	return reader.GetSecretValue(ctx, namespace, name, key)
 }
 
+// lazyComponentGetter caches an on-demand Kubernetes Component CR getter across readiness checks.
+type lazyComponentGetter struct {
+	mu     sync.Mutex
+	getter crreader.Getter
+}
+
+func (l *lazyComponentGetter) get() (crreader.Getter, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.getter != nil {
+		return l.getter, nil
+	}
+	g, err := crreader.NewK8sGetter()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+	}
+	l.getter = g
+	return g, nil
+}
+
 // buildClickHouseResolver constructs the dynamic resolver the dataengine Provider uses on dial and readiness checks.
 func buildClickHouseResolver(enableComponents bool, namespace string, customGetter crreader.Getter) dataengine.Resolver {
 	if !enableComponents {
 		return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)
 	}
-	var (
-		mu      sync.Mutex
-		getter  = customGetter
-		secrets = &lazySecretReader{}
-	)
+	getter := &lazyComponentGetter{getter: customGetter}
+	secrets := &lazySecretReader{}
 	return func(ctx context.Context) (string, dataengine.Connector, error) {
-		mu.Lock()
-		if getter == nil {
-			g, err := crreader.NewK8sGetter()
-			if err != nil {
-				mu.Unlock()
-				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+		g, err := getter.get()
+		if err != nil {
+			if clickhouse.Configured() {
+				logging.Warn(ctx, "Kubernetes component client unavailable; falling back to static ClickHouse configuration", "error", err)
+				return resolveClickHouseWithSource(componentconfig.Source{Enabled: false}, nil)(ctx)
 			}
-			getter = g
+			return "", nil, err
 		}
-		g := getter
-		mu.Unlock()
-
 		src := componentconfig.Source{Enabled: true, Namespace: namespace, Getter: g, Secrets: secrets}
 		return resolveClickHouseWithSource(src, nil)(ctx)
 	}
@@ -209,22 +222,16 @@ func buildBigQueryResolver(enableComponents bool, namespace, projectID string, c
 	if !enableComponents {
 		return resolveBigQueryWithSource(bqconfig.Source{Enabled: false, FallbackProjectID: projectID})
 	}
-	var (
-		mu     sync.Mutex
-		getter = customGetter
-	)
+	getter := &lazyComponentGetter{getter: customGetter}
 	return func(ctx context.Context) (string, dataengine.EngineBuilder, error) {
-		mu.Lock()
-		if getter == nil {
-			g, err := crreader.NewK8sGetter()
-			if err != nil {
-				mu.Unlock()
-				return "", nil, fmt.Errorf("failed to initialize component CR getter: %w", err)
+		g, err := getter.get()
+		if err != nil {
+			if xmcbigquery.Configured() {
+				logging.Warn(ctx, "Kubernetes component client unavailable; falling back to static BigQuery configuration", "error", err)
+				return resolveBigQueryWithSource(bqconfig.Source{Enabled: false, FallbackProjectID: projectID})(ctx)
 			}
-			getter = g
+			return "", nil, err
 		}
-		g := getter
-		mu.Unlock()
 		src := bqconfig.Source{Enabled: true, Namespace: namespace, FallbackProjectID: projectID, Getter: g}
 		return resolveBigQueryWithSource(src)(ctx)
 	}
@@ -270,10 +277,14 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 	if cfg != nil {
 		enableComponents, componentsNamespace, projectID = cfg.EnableComponents, cfg.ComponentsNamespace, cfg.ProjectID
 	}
-	if store == storeBigQuery || (store == "" && !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter)) {
+	if store == storeBigQuery {
 		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
 	}
-	if !isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter) {
+	clickHouseExpected := isClickHouseExpected(ctx, enableComponents, componentsNamespace, customGetter)
+	if store == "" && !clickHouseExpected && isBigQueryExpected(ctx, enableComponents, componentsNamespace, customGetter) {
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(enableComponents, componentsNamespace, projectID, customGetter)))
+	}
+	if !clickHouseExpected {
 		logging.Info(ctx, "ClickHouse is not configured, starting without a chart data engine")
 		return nil
 	}
@@ -307,9 +318,14 @@ func isComponentExpected(ctx context.Context, namespace, componentName string, c
 		getter = g
 	}
 	ns := crreader.ResolveNamespace(namespace)
-	comp, err := getter.GetComponent(ctx, ns, componentName)
+	probeCtx, cancel := context.WithTimeout(ctx, readinessTimeout)
+	defer cancel()
+	comp, err := getter.GetComponent(probeCtx, ns, componentName)
 	if apierrors.IsNotFound(err) || (err == nil && (comp == nil || crreader.IsDisabled(comp))) {
 		return false
+	}
+	if err != nil {
+		logging.Warn(ctx, "Failed to inspect Component CR at startup; assuming component is expected", "namespace", ns, "component", componentName, "error", err)
 	}
 	return true
 }

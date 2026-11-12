@@ -270,11 +270,11 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
         self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
 
     def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
-        """Without CSI, the Role grants get on the clickhouse Component CR and password Secret."""
+        """Without CSI, the Role grants get on clickhouse/bigquery Component CRs and password Secret."""
         manifest = render_template(
             DASHBOARD_SERVICEACCOUNT,
             {
@@ -285,7 +285,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
         self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
         self.assertIn(
             'resourceNames: ["custom-ch-secret"]',
@@ -312,7 +312,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             },
         )
         self.assertIn("name: dashboard-service-components-reader", manifest)
-        self.assertIn('resourceNames: ["clickhouse"]', manifest)
+        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
         self.assertNotIn('resources: ["secrets"]', manifest)
 
     def test_custom_clickhouse_secret_name_wired_across_deployment_secret_and_rbac(self) -> None:

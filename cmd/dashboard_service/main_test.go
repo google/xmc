@@ -17,10 +17,12 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -41,6 +43,7 @@ import (
 	bqconfig "xmanager_cloud/pkg/bigquery/componentconfig"
 	"xmanager_cloud/pkg/clickhouse"
 	"xmanager_cloud/pkg/clickhouse/componentconfig"
+	"xmanager_cloud/pkg/components/crreader"
 	"xmanager_cloud/pkg/components/crreader/crreadertest"
 )
 
@@ -647,6 +650,28 @@ func TestIsClickHouseExpected(t *testing.T) {
 	})
 }
 
+type countingComponentGetter struct {
+	mu    sync.Mutex
+	inner crreader.Getter
+	calls map[string]int
+}
+
+func (c *countingComponentGetter) GetComponent(ctx context.Context, namespace, name string) (*unstructured.Unstructured, error) {
+	c.mu.Lock()
+	if c.calls == nil {
+		c.calls = make(map[string]int)
+	}
+	c.calls[name]++
+	c.mu.Unlock()
+	return c.inner.GetComponent(ctx, namespace, name)
+}
+
+func (c *countingComponentGetter) Calls() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return maps.Clone(c.calls)
+}
+
 func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("CLICKHOUSE_HOST", "")
@@ -657,11 +682,48 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
-	getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
+	getter := &countingComponentGetter{
+		inner: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")},
+	}
 
 	provider := initDataEngineWithGetter(ctx, serverCfg, getter)
 	if provider != nil {
 		t.Errorf("initDataEngineWithGetter() = %v, want nil", provider)
+	}
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 1}, getter.Calls()); diff != "" {
+		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("CLICKHOUSE_HOST", "")
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("BIGQUERY_DATASET", "")
+	t.Setenv("BIGQUERY_PROJECT_ID", "")
+	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
+	t.Setenv("METRICS_STORE", "")
+	serverCfg := &server.Config{
+		EnableComponents:    true,
+		ComponentsNamespace: "xmc",
+	}
+	bqCR := &unstructured.Unstructured{
+		Object: map[string]any{
+			"spec":   map[string]any{"enabled": true},
+			"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
+		},
+	}
+	getter := &countingComponentGetter{
+		inner: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"bigquery": bqCR}},
+	}
+
+	provider := initDataEngineWithGetter(ctx, serverCfg, getter)
+	if provider == nil {
+		t.Fatal("initDataEngineWithGetter() = nil, want non-nil BigQuery provider")
+	}
+	defer provider.Close()
+	if diff := cmp.Diff(map[string]int{"clickhouse": 1, "bigquery": 2}, getter.Calls()); diff != "" {
+		t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -808,4 +870,42 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	if diff := cmp.Diff(wantRefs, dialedRefs); diff != "" {
 		t.Errorf("dialedRefs mismatch (-want +got):\n%s", diff)
 	}
+}
+
+func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("KUBERNETES_SERVICE_HOST", "")
+	t.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		t.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	t.Setenv("KUBECONFIG", badKubeconfig)
+
+	t.Run("clickhouse static fallback", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+		t.Setenv("CLICKHOUSE_PORT", "9000")
+		fp, connect, err := buildClickHouseResolver(true, "xmc", nil)(ctx)
+		if err != nil || fp == "" || connect == nil {
+			t.Fatalf("buildClickHouseResolver() = (%q, %v, %v), want static fallback", fp, connect, err)
+		}
+	})
+
+	t.Run("bigquery static fallback", func(t *testing.T) {
+		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
+		t.Setenv("BIGQUERY_TABLE", "xmc_metrics")
+		fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx)
+		if err != nil || fp == "" || build == nil {
+			t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want static fallback", fp, build, err)
+		}
+	})
+
+	t.Run("isComponentExpected logs and returns true on non-NotFound error", func(t *testing.T) {
+		forbiddenGetter := &crreadertest.FakeGetter{
+			Err: apierrors.NewForbidden(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "bigquery", errors.New("denied")),
+		}
+		if !isComponentExpected(ctx, "xmc", "bigquery", forbiddenGetter) {
+			t.Error("isComponentExpected() on Forbidden = false, want true")
+		}
+	})
 }
