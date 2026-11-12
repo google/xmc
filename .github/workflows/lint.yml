@@ -213,6 +213,27 @@ jobs:
             .
 
       # 2a. GitHub Actions Workflow & Shell Linting
+      - name: 'Install & Run ShellCheck on Shell Scripts'
+        run: |
+          SHELLCHECK_BIN="shellcheck"
+          if ! command -v shellcheck &>/dev/null; then
+            echo "--> Downloading shellcheck (v0.10.0)..."
+            SC_BASE="${RUNNER_TEMP:-$(mktemp -d)}"
+            SC_DIR="${SC_BASE}/shellcheck-v0.10.0"
+            SC_TAR="${SC_BASE}/shellcheck.tar.xz"
+            curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz" -o "${SC_TAR}"
+            echo "6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87  ${SC_TAR}" | sha256sum -c -
+            tar -xJf "${SC_TAR}" -C "${SC_BASE}" shellcheck-v0.10.0/shellcheck
+            rm -f "${SC_TAR}"
+            chmod +x "${SC_DIR}/shellcheck"
+            echo "${SC_DIR}" >> "${GITHUB_PATH}"
+            SHELLCHECK_BIN="${SC_DIR}/shellcheck"
+          fi
+          mapfile -t SHELL_FILES < <(git ls-files '*.sh' '*.bash' | sort)
+          if [ "${#SHELL_FILES[@]}" -gt 0 ]; then
+            "${SHELLCHECK_BIN}" -S style -e SC1091 "${SHELL_FILES[@]}"
+          fi
+
       - name: 'Install & Run actionlint'
         run: |
           if ! command -v actionlint &>/dev/null; then
@@ -224,17 +245,6 @@ jobs:
             ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
           fi
           "${ACTIONLINT_BIN}" -config-file .github/actionlint.yaml
-
-      - name: 'Run ShellCheck on Shell Scripts'
-        run: |
-          if ! command -v shellcheck &>/dev/null; then
-            echo "::error::shellcheck is required on the runner."
-            exit 1
-          fi
-          mapfile -t SHELL_FILES < <(git ls-files '*.sh' '*.bash' | sort)
-          if [ "${#SHELL_FILES[@]}" -gt 0 ]; then
-            shellcheck -S style -e SC1091 "${SHELL_FILES[@]}"
-          fi
 
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'

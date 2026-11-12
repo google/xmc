@@ -511,43 +511,58 @@ check_security() {
 check_workflows() {
   if [ "${MODE}" = "check" ]; then
     if [ -z "$(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml' '.github/actionlint.yaml')" ]; then return; fi
-  elif ! staged_paths_match ACMR '^\.github/(workflows/|actions/|actionlint\.yaml$)'; then
+  elif ! staged_paths_match AMD '^\.github/(workflows/|actions/|actionlint\.yaml$)'; then
     return
   fi
 
-  if command -v actionlint >/dev/null 2>&1; then
-    echo "--> Running GitHub Actions Workflow Linter (actionlint)..."
-    if ! actionlint -config-file .github/actionlint.yaml; then
-      echo "❌ actionlint failed."
-      FAILED=1
+  local actionlint_bin="actionlint"
+  if ! command -v actionlint >/dev/null 2>&1; then
+    local gopath_bin
+    gopath_bin="$(go env GOPATH 2>/dev/null || echo "${HOME}/go")/bin/actionlint"
+    if [ -x "${gopath_bin}" ]; then
+      actionlint_bin="${gopath_bin}"
+    elif [ -x "${HOME}/go/bin/actionlint" ]; then
+      actionlint_bin="${HOME}/go/bin/actionlint"
+    else
+      echo "--> WARNING: actionlint not found. Workflow linting skipped."
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
+      return
     fi
-  else
-    echo "--> WARNING: actionlint not found. Workflow linting skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+
+  echo "--> Running GitHub Actions Workflow Linter (actionlint)..."
+  if ! "${actionlint_bin}" -config-file .github/actionlint.yaml; then
+    echo "❌ actionlint failed."
+    FAILED=1
   fi
 }
 
 check_shell() {
-  local shell_files
+  local shell_files=()
+  local file
   if [ "${MODE}" = "check" ]; then
-    shell_files=$(git ls-files '*.sh' '*.bash' || true)
+    while IFS= read -r file; do
+      [ -n "${file}" ] && shell_files+=("${file}")
+    done < <(git -c core.quotePath=false ls-files '*.sh' '*.bash' 2>/dev/null || true)
   else
-    shell_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(sh|bash)$' || true)
+    while IFS= read -r file; do
+      [ -n "${file}" ] && shell_files+=("${file}")
+    done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|bash)$' || true)
   fi
 
-  if [ -z "${shell_files}" ]; then
+  if [ "${#shell_files[@]}" -eq 0 ]; then
     return
   fi
 
   if command -v shellcheck >/dev/null 2>&1; then
     echo "--> Running Shell Script Linter (shellcheck)..."
-    if ! shellcheck -S style -e SC1091 ${shell_files}; then
+    if ! shellcheck -S style -e SC1091 "${shell_files[@]}"; then
       echo "❌ shellcheck failed."
       FAILED=1
     fi
   else
     echo "--> WARNING: shellcheck not found. Shell script linting skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    if [ "${MODE}" = "check" ]; then FAILED=1; fi
   fi
 }
 
