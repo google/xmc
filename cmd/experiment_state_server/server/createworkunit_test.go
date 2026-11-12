@@ -500,7 +500,8 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 func TestCreateWorkUnit_StudyExperimentRejected(t *testing.T) {
 	ctx := context.Background()
 	st := &storage.MockStorage{
-		Experiment: &msgpb.Experiment{Name: "experiments/123", ExperimentType: msgpb.Experiment_STUDY},
+		Experiment:              &msgpb.Experiment{Name: "experiments/123", ExperimentType: msgpb.Experiment_STUDY},
+		AddWorkUnitOperationErr: errors.New("AddWorkUnitOperation must not be called"),
 	}
 	taskQueueClient := &tq.FakeClient{}
 	server := newTestServer(t,

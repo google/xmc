@@ -88,14 +88,15 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateW
 
 	// 5. Persist the new work unit to the storage layer.
 	newWorkUnit, err := workunit.CreateWorkUnit(ctx, h.storage, wu)
+	if errors.Is(err, workunit.ErrStudyWorkUnitCreation) {
+		logging.Warn(ctx, "CreateWorkUnit rejected on a study experiment", "error", err)
+		return nil, fmt.Errorf("CreateWorkUnit rejected: %w", err)
+	}
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 
 		if status.Code(err) == codes.AlreadyExists {
 			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), grpcerr.ErrAlreadyExists)
-		}
-		if errors.Is(err, workunit.ErrStudyWorkUnitCreation) {
-			return nil, fmt.Errorf("CreateWorkUnit rejected: %w", err)
 		}
 		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, grpcerr.ErrInternal)
 	}
