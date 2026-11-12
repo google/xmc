@@ -130,6 +130,10 @@ class PrepareTests(unittest.TestCase):
             {"componentsDeployment": {"enabled": True}}, require_legacy=False
         )
         migrate._verify_source_env({"imageTag": "1.0.0"}, require_legacy=False)
+        migrate._verify_source_env({"imageTag": "1.9.9"}, require_legacy=False)
+        for bad_non_legacy in ({"imageTag": "2.0.0"}, {"imageTag": "v2.0.0"}):
+            with self.assertRaises(HandledError):
+                migrate._verify_source_env(bad_non_legacy, require_legacy=False)
         for bad_src in (
             {"componentsDeployment": {"enabled": True}},
             {"componentsDeployment": {"cmsAddress": "grpc-service:50051"}},
