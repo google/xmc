@@ -155,6 +155,10 @@ class FindCopyViolationsTest(unittest.TestCase):
                 "page.locator(\n    # ui-contract: tab label\n    f'.tab:has-text(\"{n}\")'\n)\n",
                 0,
             ),
+            "parenthesized_assign": (
+                "# ui-contract: wrapped\nA_SEL = (\n    '.t:has-text(\"Go\")'\n)\n",
+                0,
+            ),
             "trailing_comment_above_does_not_cover_next_line": (
                 "A_SEL = ':has-text(\"ok\")'  # ui-contract: covers A_SEL only\n"
                 "B_SEL = ':has-text(\"unannotated\")'\n",

@@ -236,6 +236,7 @@ def find_dom_violations(
 def has_annotation(lines: list[str], first: int, last: int) -> bool:
     """Return whether a `# ui-contract:` comment covers 1-based lines [first-1, last]."""
     above = lines[first - 2] if first >= 2 else ""
+    above = lines[first - 3] if above.rstrip().endswith("(") and first >= 3 else above
     if above.lstrip().startswith("#") and _ANNOTATION_RE.search(above):
         return True
     return any(_ANNOTATION_RE.search(line) for line in lines[first - 1 : last])
