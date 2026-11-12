@@ -28,11 +28,13 @@
   <div class="admin-panel-container">
     <div class="page-header">
       <div>
-        <h1 class="page-title">XMC Admin Panel</h1>
+        <h1 class="page-title" data-testid="admin-page-title">XMC Admin Panel</h1>
         <p class="page-subtitle">Consolidated control plane for Platform Admins</p>
       </div>
       @if (lastUpdated()) {
-        <div class="timestamp-badge">Last updated: {{ lastUpdated() }}</div>
+        <div class="timestamp-badge" data-testid="admin-timestamp-badge">
+          Last updated: {{ lastUpdated() }}
+        </div>
       }
     </div>
 
@@ -61,7 +63,7 @@
     />
 
     @if (healthStatus()?.systemInfo; as systemInfo) {
-      <footer class="admin-panel-footer">
+      <footer class="admin-panel-footer" data-testid="admin-panel-footer">
         <span>Build Version: {{ systemInfo.buildVersion || 'N/A' }}</span>
       </footer>
     }

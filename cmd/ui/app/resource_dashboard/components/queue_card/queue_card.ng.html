@@ -15,6 +15,7 @@
 -->
 <div
   class="queue-card"
+  data-testid="queue-card"
   tabindex="0"
   role="button"
   [class.selected]="isSelected()"
@@ -26,7 +27,7 @@
 >
   <div class="card-top-bar">
     <div class="queue-name-group">
-      <h3 class="queue-name queue-title">{{ queue().queueName }}</h3>
+      <h3 class="queue-name queue-title" data-testid="queue-title">{{ queue().queueName }}</h3>
       @let badgeInfo = queue() | queueStatusBadge;
       @if (badgeInfo) {
         <span
@@ -75,7 +76,9 @@
           >
             <div class="capacity-box-header">
               <div class="flavor-header-group">
-                <span class="flavor-main-name">{{ cap.resourceType }}</span>
+                <span class="flavor-main-name" data-testid="flavor-main-name">{{
+                  cap.resourceType
+                }}</span>
                 @if (cohortInfo.state === cohortStateSqueezed) {
                   <span
                     class="cohort-badge squeezed-badge"
@@ -163,26 +166,26 @@
       </div>
 
       @if (!dominantResource()) {
-        <div class="predictability-empty-state">
+        <div class="predictability-empty-state" data-testid="predictability-empty-state">
           <mat-icon class="empty-icon">info_outline</mat-icon>
           <span class="empty-text">
             Select a resource type in the top picker to display velocity metrics.
           </span>
         </div>
       } @else if (isSecondaryLoading()) {
-        <div class="predictability-spinner-container">
+        <div class="predictability-spinner-container" data-testid="predictability-spinner">
           <mat-spinner diameter="24" />
           <span class="spinner-text">Fetching predictability metrics...</span>
         </div>
       } @else if (!predictabilityVm()) {
-        <div class="predictability-spinner-container">
+        <div class="predictability-spinner-container" data-testid="predictability-spinner">
           <span class="spinner-text"
             >No predictability data available for {{ dominantResource() }}.</span
           >
         </div>
       } @else {
         @let vm = predictabilityVm()!;
-        <div class="predictability-stats-grid">
+        <div class="predictability-stats-grid" data-testid="predictability-stats-grid">
           <div class="stat-cell">
             <div class="cell-label">
               Job velocity
@@ -193,7 +196,7 @@
                 >help_outline</mat-icon
               >
             </div>
-            <div class="cell-value bold-metric dark-text">
+            <div class="cell-value bold-metric dark-text" data-testid="predictability-metric-value">
               {{ vm.jobVelocityDisplay }}
             </div>
           </div>
@@ -207,19 +210,19 @@
                 >help_outline</mat-icon
               >
             </div>
-            <div class="cell-value bold-metric dark-text">
+            <div class="cell-value bold-metric dark-text" data-testid="predictability-metric-value">
               {{ vm.resourceVelocityDisplay }}
             </div>
           </div>
           <div class="stat-cell">
             <div class="cell-label">Pending jobs</div>
-            <div class="cell-value bold-metric dark-text">
+            <div class="cell-value bold-metric dark-text" data-testid="predictability-metric-value">
               {{ vm.pendingJobs }}
             </div>
           </div>
           <div class="stat-cell">
             <div class="cell-label">Requested resources</div>
-            <div class="cell-value bold-metric dark-text">
+            <div class="cell-value bold-metric dark-text" data-testid="predictability-metric-value">
               {{ vm.requestedResourcesDisplay }}
             </div>
           </div>

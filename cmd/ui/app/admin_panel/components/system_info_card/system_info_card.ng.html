@@ -14,7 +14,7 @@
  limitations under the License.
 -->
 
-<div class="system-info-card">
+<div class="system-info-card" data-testid="system-info-card">
   <div class="card-grid">
     <!-- Left Column: Version Info -->
     <div class="version-section">
@@ -25,19 +25,27 @@
       <div class="version-grid">
         <div class="info-group">
           <span class="info-label">App Version</span>
-          <span class="info-value app-version-value">{{ systemInfo().appVersion }}</span>
+          <span class="info-value app-version-value" data-testid="app-version-value">{{
+            systemInfo().appVersion
+          }}</span>
         </div>
         <div class="info-group">
           <span class="info-label">ESS DB Schema</span>
-          <span class="info-value ess-schema-value" [class.is-placeholder]="isEssUnavailable()">{{
-            essDbSchemaVersion()
-          }}</span>
+          <span
+            class="info-value ess-schema-value"
+            data-testid="ess-schema-value"
+            [class.is-placeholder]="isEssUnavailable()"
+            >{{ essDbSchemaVersion() }}</span
+          >
         </div>
         <div class="info-group">
           <span class="info-label">XID DB Schema</span>
-          <span class="info-value xid-schema-value" [class.is-placeholder]="isXidUnavailable()">{{
-            xidDbSchemaVersion()
-          }}</span>
+          <span
+            class="info-value xid-schema-value"
+            data-testid="xid-schema-value"
+            [class.is-placeholder]="isXidUnavailable()"
+            >{{ xidDbSchemaVersion() }}</span
+          >
         </div>
       </div>
     </div>
