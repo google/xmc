@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { TestBed } from '@angular/core/testing';
 import { MatChipHarness } from '@angular/material/chips/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
@@ -37,7 +38,9 @@ describe('ResourceChip Component', () => {
   const testCases = [
     { name: 'CPU', type: ResourceType.CPU, expectedClass: 'grey' },
     { name: 'MEMORY', type: ResourceType.MEMORY, expectedClass: 'grey' },
+    { name: 'UNKNOWN', type: ResourceType.UNKNOWN, expectedClass: 'grey' },
     { name: 'GPU', type: ResourceType.GPU, expectedClass: 'green' },
+    { name: 'TPU', type: ResourceType.TPU, expectedClass: 'green' },
   ];
 
   for (const tc of testCases) {
@@ -47,9 +50,30 @@ describe('ResourceChip Component', () => {
       const chipHarness = await getHarness(MatChipHarness);
       const host = await chipHarness.host();
 
+      expect(await host.hasClass('mat-mdc-chip'))
+        .withContext('Expected host Material chip class to be preserved')
+        .toBeTrue();
       expect(await host.hasClass(tc.expectedClass))
         .withContext(`Expected to have class "${tc.expectedClass}"`)
         .toBeTrue();
     });
   }
+
+  it('updates chip class cleanly when resourceType changes without dropping host classes', () => {
+    const fixture = TestBed.createComponent(ResourceChip);
+    fixture.componentRef.setInput('resourceType', ResourceType.CPU);
+    fixture.componentRef.setInput('text', 'CPU');
+    fixture.detectChanges();
+
+    const chipEl = fixture.nativeElement.querySelector('mat-chip') as HTMLElement;
+    expect(chipEl.classList.contains('mat-mdc-chip')).toBeTrue();
+    expect(chipEl.classList.contains('grey')).toBeTrue();
+
+    fixture.componentRef.setInput('resourceType', ResourceType.GPU);
+    fixture.detectChanges();
+
+    expect(chipEl.classList.contains('mat-mdc-chip')).toBeTrue();
+    expect(chipEl.classList.contains('grey')).toBeFalse();
+    expect(chipEl.classList.contains('green')).toBeTrue();
+  });
 });

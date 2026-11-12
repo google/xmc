@@ -73,7 +73,7 @@
             type="button"
             mat-icon-button
             class="remove-resource-btn"
-            [attr.aria-label]="getRemoveRowAriaLabel(row.resourceType, $index)"
+            [attr.aria-label]="removeRowAriaLabels()[$index]"
             (click)="removeRow($index)"
           >
             <mat-icon class="remove-icon">close</mat-icon>

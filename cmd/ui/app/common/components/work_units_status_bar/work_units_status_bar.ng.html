@@ -25,7 +25,10 @@ limitations under the License.
     <div class="states">
       @for (stateCount of sortedStateCounts(); track stateCount.state) {
         @if (stateCount.count && stateCount.count !== '0') {
-          <span [class]="'state ' + stateCount.state" [style.width]="getWidth(stateCount.count)">
+          <span
+            [class]="'state ' + (stateCount.state ?? '')"
+            [style.width]="getWidth(stateCount.count)"
+          >
             {{ stateCount.count }}
           </span>
         }

@@ -38,6 +38,7 @@ export enum StatusOption {
 const STATUS_COLOR_MAP: Readonly<Record<StatusOption, string>> = {
   [StatusOption.SUCCESS]: 'green',
   [StatusOption.COMPLETED]: 'green',
+  // TODO: Add .light-green and .grey CSS rules in status_chip.scss so STARTING/DESCHEDULING/SCHEDULING chips render distinct colors.
   [StatusOption.STARTING]: 'light-green',
   [StatusOption.FAILED]: 'red',
   [StatusOption.RUNNING]: 'blue',
@@ -70,8 +71,6 @@ export class StatusChip {
   // Optional number of replicas to display in the chip. Used for replicated
   // jobs in a work unit.
   readonly replicas = input<number | undefined>(undefined);
-
-  readonly StatusOption = StatusOption;
 
   protected readonly statusColor = computed(() => STATUS_COLOR_MAP[this.status()]);
 }

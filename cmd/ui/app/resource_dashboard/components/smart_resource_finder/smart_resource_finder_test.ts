@@ -177,4 +177,17 @@ describe('SmartResourceFinderComponent', () => {
       'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
     );
   });
+
+  it('should compute remove button aria-labels from row resource types', async () => {
+    await harness.clickAddButton();
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    fixture.detectChanges();
+
+    const buttons = fixture.nativeElement.querySelectorAll(
+      '.remove-resource-btn',
+    ) as NodeListOf<HTMLButtonElement>;
+    expect(buttons.length).toBe(2);
+    expect(buttons[0].getAttribute('aria-label')).toBe('Remove nvidia.com/gpu (row 1)');
+    expect(buttons[1].getAttribute('aria-label')).toBe('Remove resource filter (row 2)');
+  });
 });

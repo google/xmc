@@ -23,6 +23,14 @@ export enum ResourceType {
   UNKNOWN = 'UNKNOWN',
 }
 
+const RESOURCE_COLOR_MAP: Readonly<Record<ResourceType, string>> = {
+  [ResourceType.CPU]: 'grey',
+  [ResourceType.MEMORY]: 'grey',
+  [ResourceType.UNKNOWN]: 'grey',
+  [ResourceType.GPU]: 'green',
+  [ResourceType.TPU]: 'green',
+};
+
 /** The resource chip component. */
 @Component({
   selector: 'xmc-resource-chip',
@@ -36,17 +44,5 @@ export class ResourceChip {
   readonly resourceType = input.required<ResourceType>();
   readonly text = input.required<string>();
 
-  readonly ResourceType = ResourceType;
-
-  protected readonly isGreyChip = computed(() => {
-    const type = this.resourceType();
-    return (
-      type === ResourceType.CPU || type === ResourceType.MEMORY || type === ResourceType.UNKNOWN
-    );
-  });
-
-  protected readonly isGreenChip = computed(() => {
-    const type = this.resourceType();
-    return type === ResourceType.GPU || type === ResourceType.TPU;
-  });
+  protected readonly chipColor = computed(() => RESOURCE_COLOR_MAP[this.resourceType()]);
 }
