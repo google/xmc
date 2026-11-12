@@ -517,4 +517,58 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getHeaderActionTexts()).toEqual(['Custom header action']);
     expect(document.body.textContent).not.toContain('Unmatched content');
   });
+
+  it('filters by author when clicking a user allocation chip and toggles off on second click', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.dominantResource.set('nvidia.com/gpu: H100');
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    const bar = (await harness.getUserAllocationBar())!;
+    state.resourceService.getQueueJobs.calls.reset();
+
+    await bar.clickUserChip('example@example.com');
+    await flush();
+
+    expect(await bar.isUserChipSelected('example@example.com')).toBeTrue();
+    expect(await harness.getAuthorFilterValue()).toBe('example@example.com');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "example@example.com"',
+    );
+
+    // Clicking a different chip switches the author filter and updates the Author input
+    state.resourceService.getQueueJobs.calls.reset();
+    await bar.clickUserChip('example-admin@example.com');
+    await flush();
+
+    expect(await bar.isUserChipSelected('example-admin@example.com')).toBeTrue();
+    expect(await bar.isUserChipSelected('example@example.com')).toBeFalse();
+    expect(await harness.getAuthorFilterValue()).toBe('example-admin@example.com');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "example-admin@example.com"',
+    );
+
+    // Clicking the same chip again toggles/clears the author filter
+    state.resourceService.getQueueJobs.calls.reset();
+    await bar.clickUserChip('example-admin@example.com');
+    await flush();
+
+    expect(await bar.isUserChipSelected('example-admin@example.com')).toBeFalse();
+    expect(await harness.getAuthorFilterValue()).toBe('');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
+  });
 });

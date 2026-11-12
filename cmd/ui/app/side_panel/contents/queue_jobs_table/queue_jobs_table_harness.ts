@@ -93,6 +93,10 @@ export class QueueJobsTableHarness extends ComponentHarness {
     await (await input.host()).dispatchEvent('change');
   }
 
+  async getAuthorFilterValue(): Promise<string> {
+    return (await this.locatorFor(MatInputHarness)()).getValue();
+  }
+
   async filterStatus(status: string): Promise<void> {
     const select = await this.locatorFor(MatSelectHarness.with({ ancestor: '.job-filters' }))();
     await select.open();
