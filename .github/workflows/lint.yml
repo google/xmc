@@ -156,6 +156,12 @@ jobs:
         run: |
           python3 tools/lint/check_file_naming.py
 
+      - name: 'Check Nightly UI Selector Contract'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_ui_selector_contract.py
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff

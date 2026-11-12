@@ -191,6 +191,15 @@ check_file_naming() {
   fi
 }
 
+check_ui_selector_contract() {
+  # Runs unconditionally (~0.2s): sources are discovered by content, so no path gate.
+  echo "--> Checking Nightly UI Selector Contract..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_ui_selector_contract.py >/dev/null; then
+    echo "❌ Nightly UI selectors reference missing DOM or unannotated copy (see JSON error above)."
+    FAILED=1
+  fi
+}
+
 
 check_ui() {
   local ui_files
@@ -565,6 +574,7 @@ main() {
   check_matrix_contract
   check_agent_doc_paths
   check_file_naming
+  check_ui_selector_contract
   check_ui
   check_license
   check_python
