@@ -39,13 +39,13 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `parameters.host` | `string` | `"clickhouse.xmc-metrics.svc.cluster.local"` | ClickHouse hostname or Kubernetes service FQDN (maps to `CLICKHOUSE_HOST`). |
+| `parameters.host` | `string` | `"clickhouse.xmc-metrics.svc.cluster.local"` | ClickHouse hostname or Kubernetes service FQDN (Component-resolved equivalent of `CLICKHOUSE_HOST`). |
 | `parameters.clusterEndpoints` | `string` | `""` (renders as `"<host>:<nativePort>"`) | Internal Kubernetes DNS endpoint(s) for ClickHouse native protocol clients. Dynamically constructed from `host` and `nativePort` when empty. |
-| `parameters.nativePort` | `int` / `string` | `9000` (rendered as `"9000"`) | ClickHouse native TCP protocol port (maps to `CLICKHOUSE_PORT`; coerced to string `"9000"` via `toString | quote`). |
+| `parameters.nativePort` | `int` / `string` | `9000` (rendered as `"9000"`) | ClickHouse native TCP protocol port (Component-resolved equivalent of `CLICKHOUSE_PORT`; coerced to string `"9000"` via `toString | quote`). |
 | `parameters.httpPort` | `int` / `string` | `8123` (rendered as `"8123"`) | ClickHouse HTTP interface port (used for HTTP queries and `/ping` health probes; coerced to string `"8123"` via `toString | quote`). |
-| `parameters.defaultDatabase` | `string` | `"default"` | Default ClickHouse database for XMC metrics ingestion and analytical queries (maps to `CLICKHOUSE_DATABASE`). |
-| `parameters.user` | `string` | `"default"` | ClickHouse login username (maps to `CLICKHOUSE_USER`). |
-| `parameters.secretName` | `string` | `"clickhouse-secret"` | Kubernetes `Secret` name holding the ClickHouse password (maps to `CLICKHOUSE_PASSWORD` `secretKeyRef`—never plaintext credentials). |
+| `parameters.defaultDatabase` | `string` | `"default"` | Default ClickHouse database for XMC metrics ingestion and analytical queries (Component-resolved equivalent of `CLICKHOUSE_DATABASE`). |
+| `parameters.user` | `string` | `"default"` | ClickHouse login username (Component-resolved equivalent of `CLICKHOUSE_USER`). |
+| `parameters.secretName` | `string` | `"clickhouse-secret"` | Kubernetes `Secret` name holding the ClickHouse password, read via the Kubernetes API by `pkg/clickhouse/componentconfig` (never plaintext credentials; must match `metrics.clickhouse.secretName` in the umbrella release). |
 | `parameters.secretPasswordKey` | `string` | `"clickhouse-password"` | Key inside `parameters.secretName` holding the ClickHouse password. |
 | `parameters.healthCheckEndpoint` | `string` | `""` (renders as `"http://<host>:<httpPort>/ping"`) | HTTP health check endpoint probed by `xmc-bridge` to verify ClickHouse readiness. Dynamically constructed from `host` and `httpPort` when empty. |
 | `parameters.storageSize` | `string` | `"10Gi"` | Persistent volume claim size per ClickHouse replica pod. |
@@ -78,7 +78,10 @@ To point XMC at a custom ClickHouse endpoint, login user, password Secret, and h
 
 ```yaml
 enabled: true
-namespace: xmc-metrics
+# Keep the Component CR in the XMC release namespace: dashboard-service only reads
+# Component/clickhouse from its own namespace. The ClickHouse server itself can live anywhere
+# (see parameters.host below).
+namespace: xmc
 deletionProtection: true
 deletionPolicy: Delete
 parameters:
@@ -116,6 +119,7 @@ spec:
   componentClass: "analytical-db"
   version: "0.1.0"
   chartVersion: "0.1.0"
+  stability: "STABLE"
   deletionProtection: true
   deletionPolicy: "Delete"
   parameters:
@@ -147,7 +151,7 @@ spec:
 ### 4.1 Dynamic Reconfiguration & Hot-Swapping (Zero Pod Restarts)
 
 > [!NOTE]
-> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled; if you enable the component after the service is already running, restart it once: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled (a CR whose `status.state` is still `COMPONENT_STATE_DISABLED` counts as disabled); if you enable the component after the service is already running, wait for `xmc-bridge` to reconcile it and then restart the service once: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 When ClickHouse parameters or credentials change in Kubernetes, `dashboard-service` dynamically detects the changes and reconfigures its data engine without requiring pod restarts or manual rollouts:
 

@@ -93,7 +93,7 @@ python3 tools/dev_env/dev_env.py reload
 
 # Continuous watch mode (debounced hot reload on file save)
 python3 tools/dev_env/dev_env.py reload -w
-python3 tools/dev_env/dev_env.py reload --watch --watch-interval 2.0
+python3 tools/dev_env/dev_env.py reload --watch --interval 2.0
 
 # Force incremental Helm chart update
 python3 tools/dev_env/dev_env.py reload --helm
@@ -119,7 +119,6 @@ python3 tools/dev_env/dev_env.py reload ess --helm
 - `--base-ref`: Optional git reference or commit to compare against for change detection (e.g. `origin/main`).
 - `--helm`: Force an incremental Helm chart upgrade.
 - `--cluster-name`: KinD cluster name (defaults to dynamic `xmc-<environment>`).
-- `--tag`: Docker image tag (default: `local-dev`).
 
 ##### Supported Service Aliases & Canonical Names
 Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice target (`snake_case` or `kebab-case`) can always be specified directly even if it does not have a dedicated alias in `SERVICE_ALIASES`:
@@ -129,7 +128,6 @@ Aliases are convenience shortcuts for CLI ergonomics. Any canonical microservice
 | `ess` | `experiment_state_server` |
 | `xid` | `xid_service` |
 | `ui`, `frontend`, `web` | `ui` |
-| `gw`, `gateway` | `ingestion_gateway` (`gateway-proxy`) |
 | `actuator` | `actuator` |
 | `reconciler` | `reconciler` |
 | `dash`, `dashboard` | `dashboard_service` |
@@ -162,7 +160,7 @@ Streams or tails container stdout/stderr logs from a specific microservice runni
 
 ```bash
 # Tail last 50 lines of logs for experiment_state_server
-python3 tools/dev_env/dev_env.py logs experiment_state_server --lines 50
+python3 tools/dev_env/dev_env.py logs experiment_state_server --tail 50
 
 # Follow continuous logs in real-time
 python3 tools/dev_env/dev_env.py logs ui -f
@@ -181,9 +179,7 @@ python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local
 python3 tools/dev_env/dev_env.py build-images all --cluster-name xmc-local
 
 # Build and load specific microservices
-python3 tools/dev_env/dev_env.py build-images \
-  --services experiment_state_server ui \
-  --cluster-name xmc-local
+python3 tools/dev_env/dev_env.py build-images experiment_state_server ui --cluster-name xmc-local
 ```
 
 ##### Dynamic Service Discovery & OCI Conventions
@@ -197,11 +193,10 @@ python3 tools/dev_env/dev_env.py build-images \
 - **Extensibility**: Adding a new Go or UI microservice under `cmd/<service>` with an OCI target works immediately with `dev_env.py build-images` without requiring tooling modifications.
 
 ##### Options
-- `--services`, `-s`: Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
+- `services` (positional, optional): Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
 - `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
-- `--tag`: Image tag applied to local container images (defaults to `local-dev`).
-- `--push`: Push built container images to remote Artifact Registry (used for GKE deployments).
-- `--no-load-kind`: Skip loading built container images into KinD nodes.
+- `--load-kind`: Also load compiled container images into the local KinD cluster.
+- `--skip-build`: Skip Bazel builds and reuse existing `.tar` image archives.
 
 ---
 
@@ -277,8 +272,6 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--dns-zone`: Cloud DNS managed zone name (required).
 - `--start-from`: Start execution from a specific step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
 - `--only`: Execute only a single step (`check`, `compile`, `images`, `apis`, `primary`, `compute`, `gateway-api`, `prereqs`, `migrate`, `app`, `verify`).
-- `--auto-approve`, `-y`: Automatically approve Terraform and Cluster Toolkit prompts.
-- `--skip-terraform-init`: Skip `terraform init` during deployment.
 - `--skip-migrations`: Skip automatic Cloud Spanner database schema migrations.
 - `--skip-verification`: Skip environment health verification step.
 - `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
@@ -305,9 +298,9 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 - `--config`, `-c`: Path to deployment YAML configuration file.
 - `--project-id`, `-p`: Google Cloud project ID.
 - `--environment`, `-e`: Deployment environment name.
-- `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
-- `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
-- `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
+- `--run-migrations`: Run Cloud Spanner database schema migrations during upgrade.
+- `--start-from`: Start upgrade from a specific step (`check`, `migrate`, `images`, `app`, `restart`, `verify`).
+- `--only`: Execute only a single upgrade step (`check`, `migrate`, `images`, `app`, `restart`, `verify`).
 - `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
 
 ---
@@ -340,7 +333,7 @@ To adapt the production XMC Helm chart for local development, `values-local.yaml
 1. **Base Values**: Loaded from `deploy/helm/values-local.yaml`.
 2. **Spanner Configuration**: Local Spanner instance, databases (`ess_database`, `xid_database`), and emulator endpoints.
 3. **Container Images**: Local image repositories and image tags (`local-dev`) side-loaded via KinD.
-4. **Feature Flags**: Dynamic activation of optional microservices (`enable_metrics`, `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
+4. **Feature Flags**: Dynamic activation of optional microservices (`rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`).
 
 ### Deployment & Rollout Monitoring
 `HelmDeployer.deploy()` applies the Helm release (`xmc`) and invokes `wait_for_rollouts()`:
@@ -385,12 +378,11 @@ cp deploy/local/xmanager-cloud-local-template.yaml deploy/local/xmanager-cloud-l
 
 | Feature Flag in YAML | Enabled Microservice Target | Default |
 | :--- | :--- | :--- |
-| `enable_metrics: true` | *(none in KinD — `ingestion-gateway` is a `stable-2026a` Component actuated by `xmc-bridge`, not an umbrella service)* | `false` |
 | `rod_deployment_enabled: true` | `rod_data_provider` | `true` |
 | `health_service_deployment_enabled: true` | `health_service` (Admin Panel) | `true` |
 | `dashboard_service_deployment_enabled: true` | `dashboard_service` | `false` |
 
-*Core base services* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`) are always enabled.
+*Core base images* (`experiment_state_server`, `xid_service`, `actuator`, `reconciler`, `ui`, `components` / `xmc_bridge`) are always built and staged. `ingestion_gateway` is not: it is a `stable-2026a` Component actuated by `xmc-bridge` from the embedded component chart, which pins `imagePullPolicy: Always`, so a locally staged image could not be used in KinD anyway — run the metrics pipeline on a GKE dev cluster (see [deploy/local/README.md](../../deploy/local/README.md)).
 
 ### Dynamic Resource Naming Rules
 
@@ -407,7 +399,7 @@ Override configuration settings for local development directly from the command 
 
 ```bash
 # Override Spanner instance, databases, and cluster name
-python3 tools/dev_env/dev_env.py \
+python3 tools/dev_env/dev_env.py up \
   --spanner-instance custom-instance \
   --ess-db custom-ess-db \
   --xid-db custom-xid-db \
@@ -444,17 +436,16 @@ If a deployment fails or times out during `dev_env up` or Helm upgrade:
 The `ChangeDetector` module lists modified files with the shared `tools/common/changed_files.py` module (committed, staged, and unstaged changes relative to the merge base of `--base-ref` and `HEAD`, or relative to `HEAD` when `--base-ref` is unset, plus untracked files that git does not ignore) and maps modified paths to affected microservices:
 
 ### Path Mapping Rules
-- `cmd/experiment_state_server/**`, `internal/storage/spanner/**`, `api/protos/experiment/**` $\rightarrow$ `experiment_state_server`
-- `cmd/xid_service/**`, `api/protos/xid/**` $\rightarrow$ `xid_service`
+- `cmd/experiment_state_server/**` $\rightarrow$ `experiment_state_server`
+- `cmd/xid_service/**` $\rightarrow$ `xid_service`
 - `cmd/actuator/**` $\rightarrow$ `actuator`
 - `cmd/reconciler/**` $\rightarrow$ `reconciler`
 - `cmd/ui/**` $\rightarrow$ `ui`
-- `cmd/ingestion_gateway/**`, `api/protos/metrics/**` $\rightarrow$ `ingestion_gateway`
-- `cmd/dashboard_service/**`, `internal/dashboard/**`, `api/protos/dashboard/**` $\rightarrow$ `dashboard_service`
-- `cmd/health_service/**`, `api/protos/health/**` $\rightarrow$ `health_service`
-- `cmd/rod_data_provider/**`, `internal/rod/**` $\rightarrow$ `rod_data_provider`
-- **Shared Code** (`internal/common/**`, `internal/auth/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
-- **Helm Templates / Manifests** (`deploy/helm/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
+- `cmd/dashboard_service/**` $\rightarrow$ `dashboard_service`
+- `cmd/health_service/**` $\rightarrow$ `health_service`
+- `cmd/rod_data_provider/**` $\rightarrow$ `rod_data_provider`
+- **Shared Code** (`internal/**`, `api/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
+- **Helm Templates / Manifests** (`deploy/helm/**`, `deploy/local/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
 
 ### Iteration Speed Benchmarks
 
@@ -476,7 +467,7 @@ The development tooling supports two distinct deployment tiers tailored for diff
 |                              XMC Development Tiers                                |
 +-------------------------------------------------+---------------------------------+
 |              Local KinD Environment             |       Remote GKE Deployment     |
-|             (tools/dev_env/dev_env.py)          |      (tools/upgrade_dev_env.py) |
+|             (tools/dev_env/dev_env.py)          |  (tools/dev_env/upgrade_dev_env.py) |
 +-------------------------------------------------+---------------------------------+
 |  • Sub-second Inner-Loop Fast Reload            |  • Real Multi-Slice TPU Topologies |
 |  • Web UI & API Gateway Routing                 |  • NVIDIA GPU Accelerators      |

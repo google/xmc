@@ -51,11 +51,11 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    The release generator checks current disabled feature flags in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `deploy/helm/values.yaml`.
 2. **Interactive Check for Approved / Production-Ready Flags**:
    Before or during metadata extraction, prompt the user in chat:
-   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`, `enable_metrics`."*
+   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`."*
    > *"Are any of these flags approved / production-ready for this release (safe to be enabled)?"*
    
    > [!TIP]
-   > When specifying `--approved-flags`, provide both the CTK variable (e.g. `enable_metrics`, `health_service_deployment_enabled`) and the Helm manifest path (e.g. `metrics.enabled`, `healthServiceDeployment.enabled`) to ensure commits across both deployment layers are recognized as approved preview features.
+   > When specifying `--approved-flags`, provide both the CTK variable (e.g. `health_service_deployment_enabled`) and the Helm manifest path (e.g. `healthServiceDeployment.enabled`) to ensure commits across both deployment layers are recognized as approved preview features.
 
 3. **Execute Release Metadata Extraction Tool**:
    Run the extraction helper tool with `--approved-flags` and pin to the canonical `--target-ref` (`origin/main`):
@@ -67,7 +67,7 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    python3 ./tools/release/extract_release_metadata.py \
        --base-ref "${BASE_TAG}" \
        --target-ref "${TARGET_REF}" \
-       --approved-flags rod_deployment_enabled rodDeployment.enabled enable_metrics metrics.enabled \
+       --approved-flags rod_deployment_enabled rodDeployment.enabled \
        --output "${METADATA_FILE}"
    ```
 4. **Inspect Structured Output**:

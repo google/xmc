@@ -318,7 +318,7 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
-   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), restart it once so it picks up the new data engine: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -342,7 +342,7 @@ For direct control over your infrastructure:
    ```bash
    helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
    ```
-   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), restart it once so it picks up the new data engine: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -552,7 +552,9 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 #### Step 4: Upgrade Application Workloads
 
 > [!WARNING]
-> **Pre-Upgrade Requirement for `< 1.0.0` Legacy Metrics Deployments**: Deployments upgrading from `< 1.0.0` (`<= 0.18.x`) with umbrella-managed `ingestion-gateway` **MUST** follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) (`prepare` + `handoff` **before** running Step 4, and `finalize` after) rather than upgrading directly. XMC `1.0.0+` removes legacy non-component gateway templates and fails closed on `componentsDeployment.enabled: false` or `ingestionGatewayDeployment.enabled: true`, so also remove those legacy keys from your `xmanager-cloud-deployment.yaml` / `my-values.yaml` before upgrading.
+> **Pre-Upgrade Requirement for `< 1.0.0` Legacy Metrics Deployments**: Deployments upgrading from `< 1.0.0` (`<= 0.18.x`) with umbrella-managed `ingestion-gateway` **MUST** follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) (`prepare` + `handoff` **before** running Step 4, and `finalize` after) rather than upgrading directly. XMC `1.0.0+` removes legacy non-component gateway templates and static ClickHouse env injection (`enable_metrics` / `metrics.enabled`). Direct Helm upgrades fail closed on `componentsDeployment.enabled: false` or `ingestionGatewayDeployment.enabled: true`, and `tools/dev_env` rejects `enable_components: false` and the retired `enable_metrics` / `ingestion_gateway_deployment_enabled` / `clickhouse_{host,port,database,user}` keys; a standalone `gcluster create` only *warns* about unused variables, so CTK operators must remove those legacy keys from `xmanager-cloud-deployment.yaml` / `my-values.yaml` before upgrading (retaining `clickhouse_password` / `metrics.clickhouse.{secretName,password}` for ClickHouse credentials).
+> - `secrets.csi.clickhousePasswordSecretName` now defaults to `""`. CSI releases (`secrets.csi.enabled: true`) that read the ClickHouse password from Secret Manager **must** set `secrets.csi.clickhousePasswordSecretName` explicitly (previously implied `"clickhouse-password"`) before upgrading; otherwise `dashboard-service` falls back to `Secret/clickhouse-secret`.
+> - Operators on `0.18.x` who already run Components (`xmc-bridge` active, where `migrate.py prepare` refuses to run) with `Component/clickhouse` disabled while relying on custom `metrics.clickhouse.{host,port,database,user}` values must move those settings into `components.clickhouse.parameters` (`host`, `nativePort`, `defaultDatabase`, `user`, `secretName`) in `xmc-profile` and set `components.clickhouse.enabled: true` (waiting until `xmc-bridge` reconciles it and restarting once if `xmc-profile` is applied after `dashboard-service` starts: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`); otherwise `GetChartData` returns `FailedPrecondition: data engine is not configured` after the upgrade.
 
 Once database schemas and container images are updated, upgrade the Kubernetes workloads in your GKE cluster.
 

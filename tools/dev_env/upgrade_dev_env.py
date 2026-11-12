@@ -44,7 +44,6 @@ from tools.common.tool_utils import (  # noqa: E402
     log_error,
     log_info,
     log_success,
-    reject_disabled_components_flag,
     run_command,
     verify_helm_min_version,
 )
@@ -105,7 +104,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
-    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
         "--profile-values",
         default=None,
@@ -113,8 +111,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
 
     parsed = parser.parse_args(args)
-
-    reject_disabled_components_flag(parsed)
 
     if parsed.start_from and parsed.only:
         error_exit(

@@ -46,7 +46,6 @@ from tools.common.tool_utils import (  # noqa: E402
     log_error,
     log_info,
     log_success,
-    reject_disabled_components_flag,
     run_command,
     verify_helm_min_version,
 )
@@ -108,14 +107,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     p.add_argument("--only", choices=STEPS, help="Execute ONLY this step and exit.")
     p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
     p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
-    p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     p.add_argument(
         "--profile-values",
         default=None,
         help="Optional values YAML file passed to helm -f when deploying xmc-profile.",
     )
     parsed_args = p.parse_args(args)
-    reject_disabled_components_flag(parsed_args)
     if parsed_args.start_from and parsed_args.only:
         p.error("Cannot specify both --start-from and --only.")
     return parsed_args

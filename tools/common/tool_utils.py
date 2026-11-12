@@ -234,7 +234,7 @@ def _resolve_database_backend(raw: Any) -> str:
     return backend
 
 
-# Single source of truth for every "components can't be disabled" error (CLI flag, deployment YAML,
+# Single source of truth for every "components can't be disabled" error (deployment YAML,
 # ENABLE_COMPONENTS env, and the KinD loader) so operators always get the migration hint.
 DISABLED_COMPONENTS_FLAG_ERROR = (
     "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: "
@@ -246,6 +246,42 @@ DISABLED_COMPONENTS_FLAG_ERROR = (
 def parse_bool_flag(val: Any) -> bool:
     """Parses a boolean configuration flag from a boolean or string."""
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
+
+
+# Deployment YAML keys retired in XMC 1.0.0. The Cluster Toolkit blueprint no longer maps them, and
+# `gcluster create -l WARNING` only warns about unused variables, so without this check a lagging
+# config would deploy successfully with metrics Components silently left disabled.
+RETIRED_CONFIG_KEYS: tuple[str, ...] = (
+    "enable_metrics",
+    "ingestion_gateway_deployment_enabled",
+    "clickhouse_host",
+    "clickhouse_port",
+    "clickhouse_database",
+    "clickhouse_user",
+)
+
+
+def reject_retired_component_config(raw_enable_components: Any, config: Mapping[str, Any]) -> None:
+    """Fails closed on pre-1.0.0 component/metrics configuration.
+
+    Args:
+        raw_enable_components: The resolved `enable_components` value (env or YAML), or None.
+        config: The deployment YAML `vars` mapping.
+
+    Raises:
+        ValueError: When `enable_components` resolves to false or a retired key is present.
+    """
+    if raw_enable_components is not None and not parse_bool_flag(raw_enable_components):
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    retired = [key for key in RETIRED_CONFIG_KEYS if key in config]
+    if retired:
+        raise ValueError(
+            f"Configuration keys {retired} were retired in XMC 1.0.0 and are ignored by the blueprint: "
+            "metrics are enabled per Component via --profile-values "
+            "(components.{redpanda,clickhouse,ingestion-gateway}.enabled) and ClickHouse coordinates "
+            "come from Component/clickhouse. Remove them from the deployment YAML "
+            "(see docs/migrations/components.md)."
+        )
 
 
 def parse_positive_int(value: Any) -> int | None:
@@ -366,8 +402,7 @@ def load_and_validate_config(
         if env_comp is not None and env_comp.strip() != ""
         else config.get("enable_components")
     )
-    if raw_comp is not None and not parse_bool_flag(raw_comp):
-        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    reject_retired_component_config(raw_comp, config)
 
     return DeploymentConfig(
         project_id=config["project_id"],
@@ -405,13 +440,6 @@ def log_success(msg: str) -> None:
 def log_error(msg: str) -> None:
     """Logs error messages in red text to stderr."""
     print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
-
-
-def reject_disabled_components_flag(args: argparse.Namespace) -> None:
-    """Logs an error to stderr and exits with code 1 if --no-enable-components was passed."""
-    if getattr(args, "enable_components", None) is False:
-        log_error(DISABLED_COMPONENTS_FLAG_ERROR)
-        sys.exit(1)
 
 
 def run_command(

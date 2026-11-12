@@ -66,8 +66,15 @@ class ServiceResolverTest(unittest.TestCase):
         )
         self.assertEqual(service_to_k8s_deployment_name("actuator"), "actuator-deployment")
         self.assertEqual(service_to_k8s_deployment_name("ui"), "ui-deployment")
-        self.assertEqual(service_to_k8s_deployment_name("gw"), "gateway-proxy")
-        self.assertEqual(service_to_k8s_deployment_name("ingestion_gateway"), "gateway-proxy")
+        self.assertEqual(service_to_k8s_deployment_name("gw"), "ingestion-gateway-deployment")
+        self.assertEqual(
+            service_to_k8s_deployment_name("ingestion_gateway"), "ingestion-gateway-deployment"
+        )
+        self.assertEqual(service_to_k8s_deployment_name("gateway_proxy"), "gateway-proxy")
+        self.assertEqual(service_to_k8s_deployment_name("study_controller"), "xmc-study-controller")
+        self.assertEqual(
+            service_to_k8s_deployment_name("xmc-study-controller"), "xmc-study-controller"
+        )
         self.assertEqual(service_to_k8s_deployment_name("components"), "xmc-bridge-deployment")
         self.assertEqual(service_to_k8s_deployment_name("xmc_bridge"), "xmc-bridge-deployment")
         self.assertEqual(

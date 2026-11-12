@@ -38,23 +38,18 @@ class TestParseArgs(unittest.TestCase):
         self.assertFalse(args.run_migrations)
 
     def test_custom_flags(self):
-        args = upgrade_dev_env.parse_args(
-            ["-c", "custom.yaml", "-s", "images", "--run-migrations", "--enable-components"]
-        )
+        args = upgrade_dev_env.parse_args(["-c", "custom.yaml", "-s", "images", "--run-migrations"])
         self.assertEqual(args.config, "custom.yaml")
         self.assertEqual(args.start_from, "images")
         self.assertTrue(args.run_migrations)
-        self.assertTrue(args.enable_components)
 
-    def test_no_enable_components_rejected(self):
-        err_stream = io.StringIO()
-        with mock.patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
-            upgrade_dev_env.parse_args(["--no-enable-components"])
-        self.assertEqual(cm.exception.code, 1)
-        self.assertIn(
-            "--no-enable-components / enable_components=false is no longer supported",
-            err_stream.getvalue(),
-        )
+    def test_removed_enable_components_flags_rejected(self):
+        for flag in ("--enable-components", "--no-enable-components"):
+            err_stream = io.StringIO()
+            with mock.patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+                upgrade_dev_env.parse_args([flag])
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("unrecognized arguments", err_stream.getvalue())
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:
@@ -516,7 +511,6 @@ class TestStepSubprocesses(unittest.TestCase):
         parsed = upgrade_dev_env.parse_args(
             [
                 "--run-migrations",
-                "--enable-components",
                 "--profile-values",
                 "/tmp/my dir/profile values.yaml",
                 "--start-from",
@@ -534,7 +528,6 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         out = buf.getvalue()
         self.assertIn("--run-migrations", out)
-        self.assertNotIn("--enable-components", out)
         self.assertIn("--profile-values '/tmp/my dir/profile values.yaml'", out)
         self.assertIn("--start-from app", out)
 

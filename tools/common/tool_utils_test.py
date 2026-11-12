@@ -29,7 +29,6 @@ from types import MappingProxyType
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
-    DISABLED_COMPONENTS_FLAG_ERROR,
     DeploymentConfig,
     HandledError,
     _bootstrap_venv,
@@ -44,7 +43,6 @@ from tools.common.tool_utils import (
     parse_semver_prefix,
     parse_yaml_vars,
     positive_int_arg,
-    reject_disabled_components_flag,
     run_command,
     run_tool,
     verify_helm_min_version,
@@ -638,6 +636,28 @@ class TestConfigLoader(unittest.TestCase):
             ):
                 load_and_validate_config(str(self.config_path))
 
+    @patch.dict(os.environ, {}, clear=True)
+    def test_load_and_validate_config_rejects_retired_metrics_keys(self):
+        """Retired 1.0.0 keys fail closed instead of being silently dropped by the blueprint."""
+        for retired_key in (
+            "enable_metrics: true",
+            "enable_metrics: false",
+            "ingestion_gateway_deployment_enabled: true",
+            "clickhouse_host: ch",
+            'clickhouse_port: "9000"',
+            "clickhouse_database: default",
+            "clickhouse_user: default",
+        ):
+            with self.subTest(retired_key=retired_key):
+                self.config_path.write_text(
+                    self.valid_yaml + f"\n  {retired_key}\n", encoding="utf-8"
+                )
+                with self.assertRaisesRegex(ValueError, "retired in XMC 1.0.0"):
+                    load_and_validate_config(str(self.config_path))
+
+        self.config_path.write_text(self.valid_yaml, encoding="utf-8")
+        self.assertEqual(load_and_validate_config(str(self.config_path)).project_id, "my-project")
+
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""
@@ -790,19 +810,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         mock_run.return_value = MagicMock(stdout="v3.13.3\n")
         with self.assertRaises(RuntimeError):
             verify_helm_min_version()
-
-    def test_reject_disabled_components_flag(self):
-        for allowed in (
-            argparse.Namespace(),
-            argparse.Namespace(enable_components=None),
-            argparse.Namespace(enable_components=True),
-        ):
-            reject_disabled_components_flag(allowed)
-        err_stream = io.StringIO()
-        with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
-            reject_disabled_components_flag(argparse.Namespace(enable_components=False))
-        self.assertEqual(cm.exception.code, 1)
-        self.assertIn(DISABLED_COMPONENTS_FLAG_ERROR, err_stream.getvalue())
 
 
 if __name__ == "__main__":

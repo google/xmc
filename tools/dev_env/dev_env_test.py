@@ -93,7 +93,6 @@ class DevEnvCliTest(unittest.TestCase):
             "--cluster-name",
             "test-cluster",
             "--auto-migrate",
-            "--enable-metrics",
             "--dns-project",
             "test-dns-proj",
             "--dns-zone",
@@ -113,7 +112,6 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(called_args.xid_database, "test-xid")
         self.assertEqual(called_args.cluster_name, "test-cluster")
         self.assertTrue(called_args.auto_migrate)
-        self.assertTrue(called_args.enable_metrics)
         self.assertEqual(called_args.dns_project, "test-dns-proj")
         self.assertEqual(called_args.dns_zone, "test-dns-zone")
         self.assertEqual(called_args.start_from, "compile")
@@ -549,6 +547,11 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config.assert_called_once_with(args)
         mock_build.assert_called_once_with(services=["reconciler", "ui"], skip_build=True)
 
+        mock_build.reset_mock()
+        no_svc_args = self.parser.parse_args(["build-images"])
+        no_svc_args.func(no_svc_args)
+        mock_build.assert_called_once_with(services=None, skip_build=False)
+
     @patch("tools.dev_env.image_builder.ImageBuilder.load_images_into_kind")
     @patch("tools.dev_env.image_builder.ImageBuilder.build_images")
     @patch("tools.dev_env.config.load_config")
@@ -741,9 +744,12 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertEqual(parsed_deploy.profile_values, "/tmp/pv.yaml")
 
     @patch("tools.dev_env.dev_env.ensure_venv")
-    def test_no_enable_components_rejected(self, _mock_venv: MagicMock) -> None:
-        """Verifies --no-enable-components fails closed with exit code 1 across subcommands."""
+    def test_removed_metrics_and_components_cli_flags_rejected(self, _mock_venv: MagicMock) -> None:
+        """Verifies removed --enable-metrics and --enable-components CLI flags exit 2 via argparse."""
         for argv in (
+            ["up", "--enable-metrics"],
+            ["up", "--no-enable-metrics"],
+            ["up", "--enable-components"],
             ["up", "--no-enable-components"],
             [
                 "gke-deploy",
@@ -753,21 +759,17 @@ class DevEnvCliTest(unittest.TestCase):
                 "p",
                 "--dns-zone",
                 "z",
-                "--no-enable-components",
+                "--enable-components",
             ],
+            ["gke-upgrade", "--enable-components"],
             ["gke-upgrade", "--no-enable-components"],
-            ["deploy", "--no-enable-components"],
-            ["upgrade", "--no-enable-components"],
         ):
             with self.subTest(argv=argv):
                 err_stream = io.StringIO()
                 with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
                     dev_env.main(argv)
-                self.assertEqual(cm.exception.code, 1)
-                self.assertIn(
-                    "--no-enable-components / enable_components=false is no longer supported",
-                    err_stream.getvalue(),
-                )
+                self.assertEqual(cm.exception.code, 2)
+                self.assertIn("unrecognized arguments", err_stream.getvalue())
 
 
 if __name__ == "__main__":
