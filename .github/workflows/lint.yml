@@ -187,9 +187,9 @@ jobs:
             curl -sSfL https://github.com/bazelbuild/buildtools/releases/download/v8.0.3/buildifier-linux-amd64 -o "$GOPATH_BIN/buildifier"
             chmod +x "$GOPATH_BIN/buildifier"
           fi
-          BAZEL_FILES=$(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*")
-          if [ -n "$BAZEL_FILES" ]; then
-            buildifier -lint=warn -warnings=unused-variable -mode=check $BAZEL_FILES
+          mapfile -t BAZEL_FILES < <(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*" | sort)
+          if [ "${#BAZEL_FILES[@]}" -gt 0 ]; then
+            buildifier -lint=warn -warnings=unused-variable -mode=check "${BAZEL_FILES[@]}"
           fi
 
       - name: 'Install & Run addlicense'
@@ -211,6 +211,30 @@ jobs:
             -ignore "go.mod" \
             -ignore "go.sum" \
             .
+
+      # 2a. GitHub Actions Workflow & Shell Linting
+      - name: 'Install & Run actionlint'
+        run: |
+          if ! command -v actionlint &>/dev/null; then
+            go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+            echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+          fi
+          ACTIONLINT_BIN="actionlint"
+          if ! command -v actionlint &>/dev/null; then
+            ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
+          fi
+          "${ACTIONLINT_BIN}" -config-file .github/actionlint.yaml
+
+      - name: 'Run ShellCheck on Shell Scripts'
+        run: |
+          if ! command -v shellcheck &>/dev/null; then
+            echo "::error::shellcheck is required on the runner."
+            exit 1
+          fi
+          mapfile -t SHELL_FILES < <(git ls-files '*.sh' '*.bash' | sort)
+          if [ "${#SHELL_FILES[@]}" -gt 0 ]; then
+            shellcheck -S style -e SC1091 "${SHELL_FILES[@]}"
+          fi
 
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'
@@ -236,16 +260,20 @@ jobs:
         run: npm run lint
         working-directory: 'cmd/ui'
 
-      # 3a. GitHub Actions Script Tests (node:test, no dependencies)
-      - name: 'Set up Node.js for GitHub Actions scripts'
-        if: steps.changes.outputs.github_scripts == 'true'
+      # 3a. GitHub Actions & Nightly JS Script Tests (node:test, no dependencies)
+      - name: 'Set up Node.js for JS Script Tests'
+        if: steps.changes.outputs.github_scripts == 'true' || steps.changes.outputs.examples_coverage == 'true'
         uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
 
-      - name: 'Run GitHub Actions script tests'
+      - name: 'Run GitHub Actions Script Tests'
         if: steps.changes.outputs.github_scripts == 'true'
         run: node --test .github/scripts/*.test.js
+
+      - name: 'Run Nightly JS Script Tests'
+        if: steps.changes.outputs.examples_coverage == 'true'
+        run: node --test tools/nightly_tests/*_test.js
 
       # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
       - name: 'Set up Terraform'

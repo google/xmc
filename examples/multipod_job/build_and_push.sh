@@ -22,7 +22,7 @@ if [ -f "../../.env" ]; then
   source "../../.env"
 fi
 
-PROJECT_ID="${PROJECT_ID}"
+: "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
 REGISTRY="${XMC_ACR_TARGET:-us-docker.pkg.dev/${PROJECT_ID}/xmc}"
 IMAGE_TAG="${REGISTRY}/multipod-counter:latest"
 
