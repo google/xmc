@@ -150,7 +150,11 @@ limitations under the License.
     </ng-container>
 
     <tr mat-header-row *matHeaderRowDef="columnsToDisplay"></tr>
-    <tr mat-row *matRowDef="let workUnit; columns: columnsToDisplay" data-testid="work-unit-row"></tr>
+    <tr
+      mat-row
+      *matRowDef="let workUnit; columns: columnsToDisplay"
+      data-testid="work-unit-row"
+    ></tr>
     <tr
       mat-row
       *matRowDef="let workUnit; columns: ['status-message-detail']"
