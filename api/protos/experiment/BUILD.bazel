@@ -20,6 +20,8 @@ load("@rules_proto//proto:defs.bzl", "proto_descriptor_set", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["status.proto"])
+
 proto_descriptor_set(
     name = "experiment_messages_descriptor",
     visibility = ["//visibility:public"],

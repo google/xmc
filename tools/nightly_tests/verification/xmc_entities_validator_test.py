@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import io
 import json
+import pathlib
+import re
 import unittest
 import urllib.error
 import urllib.request
@@ -32,19 +34,88 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     """Test suite for xmc_entities_validator library."""
 
     def test_state_enum_to_name(self) -> None:
-        self.assertEqual(
-            xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_COMPLETED),
-            "COMPLETED",
+        with mock.patch.object(xmc_entities_validator, "status_pb2", None):
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_UNSPECIFIED),
+                "UNSPECIFIED",
+            )
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_COMPLETED),
+                "COMPLETED",
+            )
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_RUNNING),
+                "RUNNING",
+            )
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_FAILED),
+                "FAILED",
+            )
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(
+                    xmc_entities_validator.STATE_SCHEDULING_PAUSED
+                ),
+                "SCHEDULING_PAUSED",
+            )
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(-1), "UNKNOWN(-1)")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(9999), "UNKNOWN(9999)")
+
+    def test_state_enum_to_name_with_proto_enum(self) -> None:
+        proto_names = {
+            0: "WORK_UNIT_STATE_UNSPECIFIED",
+            12: "SCHEDULING_PAUSED",
+            99: "FUTURE_PROTO_STATE",
+        }
+
+        def _name_lookup(val: int) -> str:
+            if val not in proto_names:
+                raise ValueError(f"Enum WorkUnitState has no name defined for value {val}")
+            return proto_names[val]
+
+        mock_status_pb2 = SimpleNamespace(
+            WorkUnitStatus=SimpleNamespace(
+                WorkUnitState=SimpleNamespace(Name=_name_lookup),
+            )
         )
-        self.assertEqual(
-            xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_RUNNING),
-            "RUNNING",
+        with mock.patch.object(xmc_entities_validator, "status_pb2", mock_status_pb2):
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(0), "UNSPECIFIED")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(12), "SCHEDULING_PAUSED")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(99), "FUTURE_PROTO_STATE")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(4), "RUNNING")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(9999), "UNKNOWN(9999)")
+        with mock.patch.object(xmc_entities_validator, "status_pb2", SimpleNamespace()):
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(
+                    xmc_entities_validator.STATE_SCHEDULING_PAUSED
+                ),
+                "SCHEDULING_PAUSED",
+            )
+
+    def test_state_names_fallback_matches_status_proto(self) -> None:
+        rel = pathlib.Path("api/protos/experiment/status.proto")
+        proto_path = rel if rel.is_file() else pathlib.Path(__file__).resolve().parents[3] / rel
+        block = re.search(
+            r"enum\s+WorkUnitState\s*\{(?P<body>[^}]*)\}",
+            proto_path.read_text(encoding="utf-8"),
+            re.DOTALL,
         )
-        self.assertEqual(
-            xmc_entities_validator.state_enum_to_name(xmc_entities_validator.STATE_FAILED),
-            "FAILED",
+        self.assertIsNotNone(block)
+        assert block is not None
+        entries = sorted(
+            (
+                (m.group(1).removeprefix("WORK_UNIT_STATE_"), int(m.group(2)))
+                for m in re.finditer(
+                    r"^\s*([A-Z][A-Z0-9_]*)\s*=\s*(\d+)\s*;",
+                    block.group("body"),
+                    re.MULTILINE,
+                )
+            ),
+            key=lambda item: item[1],
         )
-        self.assertEqual(xmc_entities_validator.state_enum_to_name(9999), "UNKNOWN(9999)")
+        self.assertEqual([num for _, num in entries], list(range(len(entries))))
+        self.assertEqual(xmc_entities_validator.STATE_NAMES, [name for name, _ in entries])
+        for name, num in entries:
+            self.assertEqual(getattr(xmc_entities_validator, f"STATE_{name}"), num)
 
     def test_extract_worker_name(self) -> None:
         # From JobSet job

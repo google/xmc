@@ -117,6 +117,7 @@ py_library(
 py_test(
     name = "xmc_entities_validator_test",
     srcs = ["xmc_entities_validator_test.py"],
+    data = ["//api/protos/experiment:status.proto"],
     imports = ["../../.."],
     deps = [
         ":xmc_entities_validator_lib",
