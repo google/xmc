@@ -234,7 +234,7 @@ def _resolve_database_backend(raw: Any) -> str:
     return backend
 
 
-# Single source of truth for every "components can't be disabled" error (CLI flag, deployment YAML,
+# Single source of truth for every "components can't be disabled" error (deployment YAML,
 # ENABLE_COMPONENTS env, and the KinD loader) so operators always get the migration hint.
 DISABLED_COMPONENTS_FLAG_ERROR = (
     "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: "

@@ -636,6 +636,7 @@ class TestConfigLoader(unittest.TestCase):
             ):
                 load_and_validate_config(str(self.config_path))
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_load_and_validate_config_rejects_retired_metrics_keys(self):
         """Retired 1.0.0 keys fail closed instead of being silently dropped by the blueprint."""
         for retired_key in (
