@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/** Builds an AIP-160 filter string from optional author substring and active status fields. */
-export function buildActiveJobsFilter(author: string, status: string): string {
-  return [author ? `author = ${JSON.stringify(author)}` : '', status ? `status = ${status}` : '']
-    .filter(Boolean)
+/** A single field = value predicate in an AIP-160 filter; empty values are omitted. */
+export interface AipFilterPredicate {
+  readonly field: string;
+  readonly value: string;
+  readonly quoted?: boolean;
+}
+
+/** Joins non-empty equality predicates into an AIP-160 AND filter string. */
+export function toAndFilter(predicates: readonly AipFilterPredicate[]): string {
+  return predicates
+    .filter((p) => p.value)
+    .map((p) => `${p.field} = ${p.quoted ? JSON.stringify(p.value) : p.value}`)
     .join(' AND ');
 }

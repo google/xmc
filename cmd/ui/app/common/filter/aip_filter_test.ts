@@ -12,24 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { buildActiveJobsFilter } from './aip_filter';
+import { toAndFilter } from './aip_filter';
 
-describe('buildActiveJobsFilter', () => {
-  it('returns empty string when both author and status are empty', () => {
-    expect(buildActiveJobsFilter('', '')).toBe('');
+describe('toAndFilter', () => {
+  it('returns empty string when all predicate values are empty', () => {
+    expect(
+      toAndFilter([
+        { field: 'author', value: '', quoted: true },
+        { field: 'status', value: '' },
+      ]),
+    ).toBe('');
   });
 
-  it('formats author predicate with JSON escaping', () => {
-    expect(buildActiveJobsFilter('alice', '')).toBe('author = "alice"');
-  });
-
-  it('formats status predicate', () => {
-    expect(buildActiveJobsFilter('', 'RUNNING')).toBe('status = RUNNING');
-  });
-
-  it('joins author and status predicates with AND', () => {
-    expect(buildActiveJobsFilter('alice', 'SCHEDULING')).toBe(
-      'author = "alice" AND status = SCHEDULING',
+  it('formats a quoted string predicate with JSON escaping', () => {
+    expect(toAndFilter([{ field: 'author', value: 'alice', quoted: true }])).toBe(
+      'author = "alice"',
     );
+  });
+
+  it('formats an unquoted enum/identifier predicate', () => {
+    expect(toAndFilter([{ field: 'status', value: 'RUNNING' }])).toBe('status = RUNNING');
+  });
+
+  it('joins multiple non-empty predicates with AND', () => {
+    expect(
+      toAndFilter([
+        { field: 'author', value: 'alice', quoted: true },
+        { field: 'status', value: 'SCHEDULING' },
+      ]),
+    ).toBe('author = "alice" AND status = SCHEDULING');
   });
 });

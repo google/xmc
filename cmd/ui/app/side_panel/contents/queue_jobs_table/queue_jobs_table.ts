@@ -38,7 +38,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
-import { buildActiveJobsFilter } from 'app/common/filter/aip_filter';
+import { toAndFilter } from 'app/common/filter/aip_filter';
 import { AipSort, toOrderBy } from 'app/common/sort/aip_sort';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
@@ -110,7 +110,12 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     JOB_STATUS_STRINGS.INITIALIZING,
     JOB_STATUS_STRINGS.SCHEDULING,
   ];
-  protected readonly filter = computed(() => buildActiveJobsFilter(this.author(), this.status()));
+  protected readonly filter = computed(() =>
+    toAndFilter([
+      { field: 'author', value: this.author(), quoted: true },
+      { field: 'status', value: this.status() },
+    ]),
+  );
 
   protected readonly isFetching = signal<boolean>(false);
   protected readonly loadedQueueName = signal<string | undefined>(undefined);
