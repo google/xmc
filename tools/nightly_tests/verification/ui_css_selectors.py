@@ -27,7 +27,7 @@ FLAVOR_NAME_SEL, JOB_WORKUNIT_CELL_SEL = (
 JOBS_PANE_QUEUE_NAME_SEL = '[data-testid="target-queue-name"]'
 SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
 JOBS_CONTENT_SEL = '[data-testid="jobs-empty-state"], [data-testid="jobs-table"]'
-JOBS_TABLE_ROW_SEL = 'xmc-queue-jobs-table [data-testid="jobs-table"] tr.mat-mdc-row'
+JOBS_TABLE_ROW_SEL = 'xmc-queue-jobs-table [data-testid="job-row"]'
 JOB_EXPERIMENT_LINK_SEL_TMPL = 'a[data-testid="job-link"][href="/experiments/{xid}"]'
 JOBS_NEXT_PAGE_BTN_SEL = (
     "button.mat-mdc-paginator-navigation-next:not([disabled])"
