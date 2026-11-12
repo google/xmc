@@ -51,7 +51,7 @@
             >
               <mat-option value="" data-testid="resource-type-option">-</mat-option>
               @for (resType of availableResourceTypes(); track resType) {
-                <mat-option [value]="resType" data-testid="resource-type-option">{{
+                <mat-option data-testid="resource-type-option" [value]="resType">{{
                   resType
                 }}</mat-option>
               }
