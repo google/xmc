@@ -215,7 +215,7 @@ func TestCreateExperiment_StudyTrialBudgetIsClampedOnEveryBackend(t *testing.T) 
 			assertRecordedStatusMessages(ctx, t, st, xid, []string{clampWarning})
 
 			// The read-time experimental components warning is merged into the stored warning.
-			if err := experiment.NewDriftEvaluator(st, true).Evaluate(ctx, xid, got.GetStatus()); err != nil {
+			if err := experiment.NewDriftEvaluator(st).Evaluate(ctx, xid, got.GetStatus()); err != nil {
 				t.Fatalf("Evaluate(%d) failed: %v", xid, err)
 			}
 			text := got.GetStatus().GetStructuredStatusMessage().GetUserFacingText()

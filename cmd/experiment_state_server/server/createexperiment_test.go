@@ -488,7 +488,7 @@ func TestCreateExperiment_StudyTrialBudgetLimit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: experimenttest.HPOCatalog(tc.parameters)}}
 			server := newTestServer(t,
-				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: true}),
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
 				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
 				withStorage(st),
 			)
