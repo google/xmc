@@ -58,21 +58,34 @@
     "typescript-eslint": "^8.0.0"
   },
   "overrides": {
-    "esbuild": "0.28.1",
-    "ws": "8.21.0",
+    "esbuild": "0.28.2",
+    "ws": "8.22.2",
     "uuid": "11.1.1",
     "piscina": "5.3.2",
-    "http-proxy-middleware": "3.0.7",
+    "http-proxy-middleware": "3.0.10",
     "js-yaml": "4.3.2",
-    "nanoid": "3.3.18",
-    "postcss": "8.5.25",
-    "vite": "8.1.6",
+    "nanoid": "3.3.20",
+    "postcss": "8.5.32",
+    "postcss-selector-parser": "7.1.8",
+    "vite": "8.1.7",
     "launch-editor": "2.14.2",
     "@hono/node-server": "2.0.12",
-    "webpack-dev-server": "5.2.6",
-    "webpack-dev-middleware": "8.3.0",
+    "webpack-dev-server": "5.2.7",
+    "webpack-dev-middleware": "8.6.0",
     "less": "^4.8.1",
-    "qs": "6.16.0",
-    "compression": "1.8.2"
+    "qs": "6.17.1",
+    "compression": "1.8.2",
+    "follow-redirects": "1.16.3",
+    "bundle-name": "4.1.1",
+    "@angular-devkit/build-angular": {
+      "semver": "7.8.6"
+    },
+    "@angular/build": {
+      "rolldown": "1.2.18",
+      "semver": "7.8.6"
+    },
+    "@angular/cli": {
+      "semver": "7.8.6"
+    }
   }
 }
