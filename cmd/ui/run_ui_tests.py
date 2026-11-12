@@ -63,7 +63,7 @@ def main():
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
     if os.path.exists(nvm_sh):
         cmd_args = [
-            "/bin/bash",
+            "bash",
             "-c",
             f"source {shlex.quote(nvm_sh)} && npx ng test --watch=false",
         ]
