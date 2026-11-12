@@ -17,19 +17,33 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "experimenttest",
     testonly = True,
-    srcs = ["studyconfig.go"],
+    srcs = [
+        "catalog.go",
+        "studyconfig.go",
+    ],
     importpath = "xmanager_cloud/internal/experiment/experimenttest",
     visibility = ["//:__subpackages__"],
-    deps = ["//api/protos/experiment:messages_go_proto"],
+    deps = [
+        "//api/protos/components/v1alpha1",
+        "//api/protos/experiment:messages_go_proto",
+        "//pkg/components/store",
+        "@org_golang_google_protobuf//proto",
+    ],
 )
 
 go_test(
     name = "experimenttest_test",
-    srcs = ["studyconfig_test.go"],
+    srcs = [
+        "catalog_test.go",
+        "studyconfig_test.go",
+    ],
     embed = [":experimenttest"],
     deps = [
+        "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/xid:messages_go_proto",
         "//internal/validator",
+        "//pkg/components/store/lifecycle",
+        "@com_github_google_go_cmp//cmp",
     ],
 )

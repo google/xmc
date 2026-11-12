@@ -113,6 +113,9 @@ kill "${PF_PID}"
 2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to match the new `<IMAGE_TAG>` (the same tag used for the umbrella upgrade).
 3. Re-run the Step 4 `helm upgrade --install --reset-then-reuse-values xmc-profile ...` command from the new release checkout (`dev_env.py gke-upgrade --profile-values` does this automatically).
 
+> [!NOTE]
+> `--reset-then-reuse-values` keeps the values supplied to the previous `xmc-profile` release, so deleting an override from `profile-values.yaml` does not revert it on upgrade. To return a value to its chart default, set the default explicitly (for example `components.hpo.parameters.maxTrialBudget: "1000"`).
+
 ---
 
 ## Rollback Procedure

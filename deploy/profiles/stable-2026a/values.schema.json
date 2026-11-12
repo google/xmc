@@ -88,6 +88,15 @@
             "imageTag": { "type": "string" },
             "parameters": {
               "type": "object",
+              "properties": {
+                "maxTrialBudget": {
+                  "description": "Positive integer, at most 2147483647. Strings are limited to 9 digits to stay within int32.",
+                  "oneOf": [
+                    { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
+                    { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+                  ]
+                }
+              },
               "additionalProperties": false
             }
           },

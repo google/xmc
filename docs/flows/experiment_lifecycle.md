@@ -28,7 +28,7 @@ sequenceDiagram
     ESS->>XID: 5. CreateXidEntry
     XID-->>ESS: 6. XidEntry (XID)
     ESS->>ESS: 7. Assemble Experiment
-    ESS->>Storage: 8. One transaction: insert experiment, pin components, record status history
+    ESS->>Storage: 8. One transaction: resolve components, clamp study budget, insert experiment, pin components, record status history
     Storage-->>ESS: 9. Success
     ESS-->>Client: 10. Experiment
 ```
@@ -62,13 +62,23 @@ missing, not `ENABLED`, of the wrong type, or has not observed its current gener
 `STANDARD` experiments require no components and skip it.
 
 **Persistence (step 8).** [`experiment.CreateExperiment`](../../internal/experiment/createexperiment.go)
-inserts the experiment and records its initial status message history in one storage transaction.
-For experiment types with component requirements, the transaction is serializable and, after the
-insert, repeats the requirement check authoritatively and pins each resolved component as an
-`ExperimentComponentSnapshots` row at its current generation. The repeated check closes the window
-between the pre-check and the transaction: an unmet requirement found there still returns
-`FAILED_PRECONDITION` and rolls back the experiment row, while other storage errors return
-`INTERNAL`.
+runs one storage transaction, serializable for experiment types with component requirements:
+
+1. **Resolve components**: repeat the requirement check authoritatively and read the records of the
+   required components and their transitive dependencies.
+2. **Clamp the study budget**: for a `STUDY`, cap `study_config.max_trial_budget` at the resolved
+   `hpo` component's `parameters.maxTrialBudget` (`1000` when missing or invalid) and attach a
+   persisted `WARNING` status message when the budget is lowered
+   ([`internal/experiment/studybudget.go`](../../internal/experiment/studybudget.go)).
+3. **Insert the experiment** with the effective budget.
+4. **Pin components**: write each resolved component as an `ExperimentComponentSnapshots` row at its
+   current generation, after the experiment row it references.
+5. **Record the initial status message history**, including the clamp warning.
+
+The repeated check closes the window between the pre-check and the transaction: an unmet requirement
+found there still returns `FAILED_PRECONDITION` and leaves no experiment row, while other storage
+errors return `INTERNAL`. A retried transaction starts again from the requested status and study
+config, so the budget is never clamped twice.
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.

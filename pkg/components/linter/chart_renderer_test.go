@@ -397,6 +397,9 @@ parameters:
 					Stability:          "EXPERIMENTAL",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"maxTrialBudget": "1000",
+					},
 					Dependencies: []linter.ComponentDependencyRef{
 						{Name: "vizier"},
 						{Name: "clickhouse"},

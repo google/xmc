@@ -32,7 +32,9 @@ message StudyConfig {
   // The metrics to optimize. Exactly one metric (a single objective) is
   // supported.
   repeated MetricSpec metrics = 2 [(google.api.field_behavior) = REQUIRED];
-  // The maximum number of trials that the study runs. Must be positive.
+  // The maximum number of trials that the study runs. Must be positive. It may
+  // be capped by the operator's hpo component limit; the effective value is
+  // stored and a WARNING status message is recorded.
   int32 max_trial_budget = 3 [(google.api.field_behavior) = REQUIRED];
   // The search algorithm, named as in the OSS Vizier StudySpec. Supported
   // values: "RANDOM_SEARCH", "QUASI_RANDOM_SEARCH" and "GRID_SEARCH". The
