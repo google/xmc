@@ -41,7 +41,7 @@ func (s *stubImporter) Import(path string) (*types.Package, error) {
 func buildStubPackages() map[string]*types.Package {
 	jobsetPkg := types.NewPackage(jobSetPkgPath, "jobsetv1alpha2")
 	fpObj := types.NewTypeName(token.NoPos, jobsetPkg, "FailurePolicy", nil)
-	fpNamed := types.NewNamed(fpObj, types.NewStruct([]*types.Var{
+	types.NewNamed(fpObj, types.NewStruct([]*types.Var{
 		types.NewField(token.NoPos, jobsetPkg, "MaxRestarts", types.Typ[types.Int32], false),
 	}, nil), nil)
 	jobsetPkg.Scope().Insert(fpObj)
@@ -74,7 +74,6 @@ func buildStubPackages() map[string]*types.Package {
 	corePkg.Scope().Insert(cObj)
 	corePkg.MarkComplete()
 
-	_ = fpNamed
 	return map[string]*types.Package{
 		jobSetPkgPath: jobsetPkg,
 		coreV1PkgPath: corePkg,
@@ -173,6 +172,42 @@ func build() {
 	ps.RestartPolicy = "Always"
 }`,
 			wantMsgs: []string{"PodSpec.RestartPolicy must not be Always", "PodSpec.RestartPolicy must not be Always"},
+		},
+		{
+			name:     "parenthesized_expressions_compound_incdec_and_type_aliases",
+			filename: "builder.go",
+			src: `package sample
+import (
+	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	corev1 "k8s.io/api/core/v1"
+)
+type fpAlias = jobsetv1alpha2.FailurePolicy
+type psAlias = corev1.PodSpec
+const badMax = 2
+func build() {
+	fp := &fpAlias{MaxRestarts: (1)}
+	fp.MaxRestarts++
+	fp.MaxRestarts--
+	fp.MaxRestarts += 1
+	(fp.MaxRestarts) = 2
+	(*fp).MaxRestarts = badMax
+	_ = []*jobsetv1alpha2.FailurePolicy{{MaxRestarts: 4}}
+	ps := &psAlias{RestartPolicy: (corev1.RestartPolicyAlways)}
+	ps.RestartPolicy = corev1.RestartPolicy("Always")
+	ps.RestartPolicy += ""
+}`,
+			wantMsgs: []string{
+				"MaxRestarts must be 0, got 1",
+				"MaxRestarts must be 0, got ++",
+				"MaxRestarts must be 0, got --",
+				"MaxRestarts must be 0, got +=",
+				"MaxRestarts must be 0, got 2",
+				"MaxRestarts must be 0, got 2",
+				"MaxRestarts must be 0, got 4",
+				"PodSpec.RestartPolicy must not be Always",
+				"PodSpec.RestartPolicy must not be Always",
+				"PodSpec.RestartPolicy must not be Always",
+			},
 		},
 		{
 			name:     "test_files_are_exempt",

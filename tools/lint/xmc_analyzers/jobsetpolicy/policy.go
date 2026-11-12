@@ -51,6 +51,7 @@ func run(pass *analysis.Pass) (any, error) {
 	nodeFilter := []ast.Node{
 		(*ast.CompositeLit)(nil),
 		(*ast.AssignStmt)(nil),
+		(*ast.IncDecStmt)(nil),
 	}
 	insp.Preorder(nodeFilter, func(n ast.Node) {
 		filename := pass.Fset.Position(n.Pos()).Filename
@@ -62,6 +63,8 @@ func run(pass *analysis.Pass) (any, error) {
 			checkCompositeLit(pass, node)
 		case *ast.AssignStmt:
 			checkAssignStmt(pass, node)
+		case *ast.IncDecStmt:
+			checkIncDecStmt(pass, node)
 		}
 	})
 	return nil, nil
@@ -81,29 +84,56 @@ func checkCompositeLit(pass *analysis.Pass, lit *ast.CompositeLit) {
 	}
 }
 
-func checkAssignStmt(pass *analysis.Pass, stmt *ast.AssignStmt) {
-	if stmt.Tok != token.ASSIGN {
+func checkIncDecStmt(pass *analysis.Pass, stmt *ast.IncDecStmt) {
+	sel, ok := ast.Unparen(stmt.X).(*ast.SelectorExpr)
+	if !ok {
 		return
 	}
-	for i, lhs := range stmt.Lhs {
-		if i >= len(stmt.Rhs) {
-			continue
+	recvType := derefType(pass.TypesInfo.TypeOf(sel.X))
+	if sel.Sel.Name == "MaxRestarts" && isNamedType(recvType, jobSetPkgPath, "FailurePolicy") {
+		pass.Reportf(stmt.Pos(), maxRestartsErr, stmt.Tok.String())
+	}
+}
+
+func checkAssignTarget(pass *analysis.Pass, tok token.Token, pos token.Pos, lhs, rhs ast.Expr) {
+	sel, ok := ast.Unparen(lhs).(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	recvType := derefType(pass.TypesInfo.TypeOf(sel.X))
+	if sel.Sel.Name == "MaxRestarts" && isNamedType(recvType, jobSetPkgPath, "FailurePolicy") {
+		if tok != token.ASSIGN {
+			pass.Reportf(pos, maxRestartsErr, tok.String())
+			return
 		}
-		sel, ok := lhs.(*ast.SelectorExpr)
-		if !ok {
-			continue
+		if rhs != nil {
+			checkMaxRestartsExpr(pass, rhs)
 		}
-		recvType := derefType(pass.TypesInfo.TypeOf(sel.X))
-		switch {
-		case sel.Sel.Name == "MaxRestarts" && isNamedType(recvType, jobSetPkgPath, "FailurePolicy"):
-			checkMaxRestartsExpr(pass, stmt.Rhs[i])
-		case sel.Sel.Name == "RestartPolicy" && isNamedType(recvType, coreV1PkgPath, "PodSpec"):
-			checkPodRestartPolicyExpr(pass, stmt.Rhs[i])
+		return
+	}
+	if sel.Sel.Name == "RestartPolicy" && isNamedType(recvType, coreV1PkgPath, "PodSpec") {
+		if tok != token.ASSIGN {
+			pass.Reportf(pos, "%s", podRestartErr)
+			return
+		}
+		if rhs != nil {
+			checkPodRestartPolicyExpr(pass, rhs)
 		}
 	}
 }
 
+func checkAssignStmt(pass *analysis.Pass, stmt *ast.AssignStmt) {
+	for i, lhs := range stmt.Lhs {
+		var rhs ast.Expr
+		if i < len(stmt.Rhs) {
+			rhs = stmt.Rhs[i]
+		}
+		checkAssignTarget(pass, stmt.Tok, stmt.Pos(), lhs, rhs)
+	}
+}
+
 func checkMaxRestartsExpr(pass *analysis.Pass, expr ast.Expr) {
+	expr = ast.Unparen(expr)
 	tv, ok := pass.TypesInfo.Types[expr]
 	if !ok || tv.Value == nil || tv.Value.Kind() != constant.Int {
 		return
@@ -115,12 +145,14 @@ func checkMaxRestartsExpr(pass *analysis.Pass, expr ast.Expr) {
 }
 
 func checkPodRestartPolicyExpr(pass *analysis.Pass, expr ast.Expr) {
+	expr = ast.Unparen(expr)
 	if isAlwaysRestartConstant(pass.TypesInfo, expr) {
 		pass.Reportf(expr.Pos(), "%s", podRestartErr)
 	}
 }
 
 func isAlwaysRestartConstant(info *types.Info, expr ast.Expr) bool {
+	expr = ast.Unparen(expr)
 	if tv, ok := info.Types[expr]; ok && tv.Value != nil && tv.Value.Kind() == constant.String {
 		return constant.StringVal(tv.Value) == "Always"
 	}
@@ -148,6 +180,10 @@ func keyedFieldExpr(lit *ast.CompositeLit, fieldName string) (ast.Expr, bool) {
 
 func derefType(t types.Type) types.Type {
 	for {
+		if t == nil {
+			return nil
+		}
+		t = types.Unalias(t)
 		ptr, ok := t.(*types.Pointer)
 		if !ok {
 			return t
@@ -157,7 +193,10 @@ func derefType(t types.Type) types.Type {
 }
 
 func isNamedType(t types.Type, pkgPath, typeName string) bool {
-	named, ok := t.(*types.Named)
+	if t == nil {
+		return false
+	}
+	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
 		return false
 	}
