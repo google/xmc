@@ -78,8 +78,9 @@ sequenceDiagram
 ```
 
 Any RPC that must change the cluster takes this shape: `CreateWorkUnit`, `StopWorkUnit`,
-`RestartWorkUnit`, `UpdateWorkUnit`, and the two batch variants `BatchStopWorkUnits` and
-`BatchRestartWorkUnits`. The client's response arrives before the cluster has changed; convergence
+`RestartWorkUnit`, `UpdateWorkUnit`, the two batch variants `BatchStopWorkUnits` and
+`BatchRestartWorkUnits`, and `BatchCreateWorkUnits`, which creates the trials of a study. The
+client's response arrives before the cluster has changed; convergence
 is observed either by polling the returned `google.longrunning.Operation` or by watching the work
 unit's state.
 
@@ -87,7 +88,9 @@ unit's state.
 an `Operation`, because the metadata change is committed synchronously and only the consequence —
 re-labelling the JobSet's priority class — is queued. The asynchrony is real, but there is no
 operation to poll. See
-[Work Unit Lifecycle §5](work_unit_lifecycle.md#5-update-work-unit).
+[Work Unit Lifecycle §5](work_unit_lifecycle.md#5-update-work-unit). `BatchCreateWorkUnits` also
+answers with the created `WorkUnit`s; each still gets an operation that the Actuator completes. See
+[Batch create for studies](work_unit_lifecycle.md#batch-create-for-studies).
 
 ---
 

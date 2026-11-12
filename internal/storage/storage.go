@@ -525,6 +525,9 @@ type WorkUnitTxRepository interface {
 	FetchNextWorkUnitID(ctx context.Context, xid int64) (int64, error)
 	// InsertWorkUnit inserts a new work unit and its initial execution within the transaction.
 	InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error
+	// InsertWorkUnits inserts new work units of one experiment and their initial executions within
+	// the transaction, in a single write.
+	InsertWorkUnits(ctx context.Context, wus []*essmsgpb.WorkUnit) error
 	// FetchWorkUnit retrieves a work unit by its unique ID within the transaction.
 	FetchWorkUnit(ctx context.Context, xid, wid int64) (*essmsgpb.WorkUnit, error)
 	// FetchUpdatingWorkUnits retrieves a batch of work units for update by their unique IDs within the transaction.

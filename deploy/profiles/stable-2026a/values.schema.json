@@ -95,6 +95,11 @@
                     { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
                     { "type": "integer", "minimum": 1, "maximum": 2147483647 }
                   ]
+                },
+                "studyControllerServiceAccount": {
+                  "description": "Email of the xmc-study-controller Google service account, or empty.",
+                  "type": "string",
+                  "pattern": "^([A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+)?$"
                 }
               },
               "additionalProperties": false

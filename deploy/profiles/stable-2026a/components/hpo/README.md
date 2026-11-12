@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026a/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It serves health and metrics endpoints and does not yet run Study reconciliation. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
+> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It serves health and metrics endpoints and does not yet run Study reconciliation. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation only when `parameters.studyControllerServiceAccount` is set.
 
 ---
 
@@ -37,6 +37,7 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `["vizier", "clickhouse"]` | `spec.dependencies` | Upstream XMC Component names required before `hpo` is actuated. |
 | `parameters.maxTrialBudget` | `"1000"` | `spec.parameters.maxTrialBudget` | Largest `max_trial_budget` a study may use: a positive decimal integer, at most `2147483647`. The Experiment State Server reads it when a study is created, clamps larger budgets to it, and records a WARNING status message on the experiment; a missing or invalid value falls back to `1000`. A change applies to studies created afterwards; existing studies keep their stored budget. `xmc-bridge` also passes the value into the `xmc-cmp-hpo` release values, where it is unused, so changing it triggers a no-op upgrade during which study creation may briefly return `FAILED_PRECONDITION`. The profile release is upgraded with `--reset-then-reuse-values`, so removing an override does not revert it; set `"1000"` explicitly instead. |
+| `parameters.studyControllerServiceAccount` | `""` | `spec.parameters.studyControllerServiceAccount` (omitted when empty) | Email of the Google service account that `xmc-study-controller` runs as through Workload Identity, for example `xmc-study-controller@<project>.iam.gserviceaccount.com`. The Experiment State Server lets only this identity create the work units (trials) of studies with `BatchCreateWorkUnits`, comparing emails case-insensitively; while it is empty every caller gets `PERMISSION_DENIED`. `xmc-bridge` passes it to the `xmc-cmp-hpo` release as `hpoDeployment.studyControllerServiceAccount`, which renders it as the `iam.gke.io/gcp-service-account` annotation of the `xmc-study-controller` ServiceAccount. Creating the Google service account and its Workload Identity binding is up to the operator. |
 
 ---
 
@@ -55,7 +56,7 @@ Rendered only for the `xmc-cmp-hpo` release:
 | Object | Name | Notes |
 | :--- | :--- | :--- |
 | `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
-| `ServiceAccount` | `xmc-study-controller` | Pod identity, without a Workload Identity annotation. |
+| `ServiceAccount` | `xmc-study-controller` | Pod identity. Carries the Workload Identity annotation `iam.gke.io/gcp-service-account` when `parameters.studyControllerServiceAccount` is set. |
 
 The pod carries the label `xmc.google.com/vizier-client: "true"`. XMC ships no NetworkPolicy for Vizier, which is bring-your-own; operators who restrict access to their Vizier server can admit pods with this label.
 

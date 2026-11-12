@@ -261,3 +261,38 @@ func TestHPOChart_ComponentMaxTrialBudget(t *testing.T) {
 		})
 	}
 }
+
+// TestHPOChart_StudyControllerServiceAccount checks that parameters.studyControllerServiceAccount
+// reaches the Component CR, and that the hpoDeployment value xmc-bridge passes to the xmc-cmp-hpo
+// release becomes the Workload Identity annotation of the ServiceAccount. Both are omitted when empty.
+func TestHPOChart_StudyControllerServiceAccount(t *testing.T) {
+	t.Parallel()
+	const gsa = "xmc-study-controller@my-project.iam.gserviceaccount.com"
+	const annotation = `iam.gke.io/gcp-service-account: "` + gsa + `"`
+	tests := []struct {
+		name    string
+		release string
+		values  map[string]any
+		file    string
+		want    string
+		wantOut bool
+	}{
+		{name: "component parameter", release: "hpo", values: map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": gsa}}, file: hpoComponentFile, want: `studyControllerServiceAccount: "` + gsa + `"`, wantOut: true},
+		{name: "empty component parameter omitted", release: "hpo", values: map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": ""}}, file: hpoComponentFile, want: "studyControllerServiceAccount", wantOut: false},
+		{name: "workload identity annotation", release: "xmc-cmp-hpo", values: map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": gsa}}, file: hpoServiceAccountFile, want: annotation, wantOut: true},
+		{name: "empty bridge value omits annotation", release: "xmc-cmp-hpo", values: map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": ""}}, file: hpoServiceAccountFile, want: "iam.gke.io/gcp-service-account", wantOut: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rendered, err := renderChartWithValues(hpoChartDir(t), tc.release, tc.values)
+			if err != nil {
+				t.Fatalf("renderChartWithValues(%s) failed: %v", tc.release, err)
+			}
+			if got := strings.Contains(rendered[tc.file], tc.want); got != tc.wantOut {
+				t.Errorf("%s contains %q = %v, want %v:\n%s", tc.file, tc.want, got, tc.wantOut, rendered[tc.file])
+			}
+			assertWellFormedManifests(t, rendered[tc.file])
+		})
+	}
+}

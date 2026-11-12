@@ -42,6 +42,8 @@ const (
 	maxURLs = 1000
 	// maxURLLen defines the maximum character length of a URL string.
 	maxURLLen = 51200 // 50 KiB
+	// maxBatchCreateWorkUnits is the maximum number of requests in a BatchCreateWorkUnitsRequest.
+	maxBatchCreateWorkUnits = 500
 )
 
 var (
@@ -374,6 +376,36 @@ func ValidateCreateWorkUnitRequest(in *essmsgpb.CreateWorkUnitRequest) error {
 		return fmt.Errorf("work_unit.work_unit_type cannot be empty: %w", grpcerr.ErrInvalidArgument)
 	}
 	return validateJobSetExecutable(wu.GetExecutable())
+}
+
+// ValidateBatchCreateWorkUnitsRequest validates the given BatchCreateWorkUnitsRequest and each of
+// its requests, and returns the XID of its parent. The parent of each request must be empty or the
+// batch parent, and work_unit_id must be unset because the server assigns the IDs.
+func ValidateBatchCreateWorkUnitsRequest(in *essmsgpb.BatchCreateWorkUnitsRequest) (int64, error) {
+	xid, err := ValidateExperimentName(in.GetParent())
+	if err != nil {
+		return 0, fmt.Errorf("parent must be in the format experiments/{xid}: %v: %w", err, grpcerr.ErrInvalidArgument)
+	}
+	if n := len(in.GetRequests()); n == 0 || n > maxBatchCreateWorkUnits {
+		return 0, fmt.Errorf("requests must contain between 1 and %d requests, got %d: %w", maxBatchCreateWorkUnits, n, grpcerr.ErrInvalidArgument)
+	}
+	for i, req := range in.GetRequests() {
+		if err := validateBatchedCreateWorkUnitRequest(in.GetParent(), req); err != nil {
+			return 0, fmt.Errorf("requests[%d]: %w", i, err)
+		}
+	}
+	return xid, nil
+}
+
+// validateBatchedCreateWorkUnitRequest validates one request of a batch with parent.
+func validateBatchedCreateWorkUnitRequest(parent string, req *essmsgpb.CreateWorkUnitRequest) error {
+	if req.GetParent() != "" && req.GetParent() != parent {
+		return fmt.Errorf("parent must be empty or %q: %w", parent, grpcerr.ErrInvalidArgument)
+	}
+	if req.GetWorkUnitId() != 0 {
+		return fmt.Errorf("work_unit_id must be unset, the server assigns work unit IDs: %w", grpcerr.ErrInvalidArgument)
+	}
+	return ValidateCreateWorkUnitRequest(&essmsgpb.CreateWorkUnitRequest{Parent: parent, WorkUnit: req.GetWorkUnit()})
 }
 
 func validateWorkUnitMetadata(wu *essmsgpb.WorkUnit) error {

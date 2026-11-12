@@ -117,6 +117,34 @@ A study's work units are its trials, which only the study controller creates. `C
 `STUDY` experiment returns `FAILED_PRECONDITION` without writing anything
 ([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)).
 
+#### Creating Trials: `BatchCreateWorkUnits`
+
+The study controller creates trials with `BatchCreateWorkUnits` (AIP-233, `POST
+/v1/{parent=experiments/*}/workUnits:batchCreate`). The request holds 1 to 500 `CreateWorkUnitRequest`s
+whose `parent` is empty or the batch `parent` and whose `work_unit_id` is unset. The response is
+synchronous: the created work units, in request order, with contiguous IDs that follow the
+experiment's largest work unit ID. ESS checks, in order
+([`server/batchcreateworkunits.go`](server/batchcreateworkunits.go)):
+
+| Check | Error |
+| :--- | :--- |
+| The caller is authenticated. | `UNAUTHENTICATED` |
+| `parent` is an experiment name. | `INVALID_ARGUMENT` |
+| The caller's verified email equals the `hpo` component parameter `studyControllerServiceAccount` (ASCII case-insensitive). XID ACLs are not consulted. A missing `hpo` component or an empty parameter rejects every caller. This check runs before the experiment is read or the payload is validated. | `PERMISSION_DENIED` |
+| The experiment exists. | `NOT_FOUND` |
+| The experiment is a `STUDY`; other types are not supported yet. | `UNIMPLEMENTED` |
+| The request holds 1 to 500 requests, and each work unit is valid, as for `CreateWorkUnit`. | `INVALID_ARGUMENT` |
+
+ESS then writes all work units in one transaction
+([`internal/workunit/batchcreateworkunits.go`](../../internal/workunit/batchcreateworkunits.go)): it
+checks the caller against the `hpo` component again, reads the experiment once, allocates the IDs with a
+single next-ID read, inserts the work units in one write, and updates the experiment's denormalized
+status and resources once. After the commit it records one creation operation per work unit and
+enqueues each creation task. A work unit whose operation or task cannot be created gets the same
+`FATAL` status message as in `CreateWorkUnit`, and the RPC returns `INTERNAL` naming those work units;
+the other work units are scheduled. The work units are already stored, so the study controller must
+not create them again when it retries.
+
 ---
 
 ## Testing & Verification
