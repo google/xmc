@@ -337,7 +337,7 @@ class XMCUIBrowserSession:
         self, context_label: str, ignored_http_substrings: Sequence[str] = ()
     ) -> None:
         """Asserts zero uncaught page errors, same-origin HTTP >= 400 responses, or error banners."""
-        b_loc = self.page.locator('xmc-error-banner, [data-testid="error-banner"]')
+        b_loc = self.page.locator('[data-testid="error-banner"]')
         banner = (b_loc.first.text_content() or "").strip() if b_loc.count() > 0 else ""
         errs = [e for e in self.http_errors if not any(s in e for s in ignored_http_substrings)]
         if self.page_errors or errs or banner:
