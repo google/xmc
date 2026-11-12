@@ -635,21 +635,7 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 	return table, nil
 }
 
-// GenerateQuery generates a spanner SQL query with the following contents:
-// SELECT: returns the selectFields, plus any fields needed for a page token
-// Note that it's possible for a query to SELECT a field more than once, because of a lack of
-// deduping between explicitly selected fields and fields needed for pagination.
-// FROM: a base table selected as the one that can satisfy the query with the
-// lowest cost, and possibly some joins to fulfill additional select fields
-// WHERE: applies the baseFilterExp condition, the userFilterExp condition,
-// and if ptFields is non-empty the conditions to continue from those page token
-// values
-// GROUP BY, ORDER BY: as implied by the metadata of the fields used
-// LIMIT, OFFSET: according to pageSize and offset, respectively
-//
-// It returns a map of TableField to index so that the caller can
-// build the page token, an Unnester that can patch up any repeated fields that
-// were selected, and any error that occurred.
+// whereClauseInputs bundles inputs for constructing the SQL WHERE clause.
 type whereClauseInputs struct {
 	fromTable       TableView
 	filters         map[string]Member
@@ -805,7 +791,7 @@ func buildFilterMapAndUnnester(fromTable TableView, baseFilters []TableField, ba
 			return nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy filter %+v", fromTable.Name, f)
 		}
 		filters[string(f)] = m
-		if !emptyExpression(baseFilterExp) {
+		if !emptyExpression(baseFilterExp) && m.UnnestClause != nil {
 			unr.seen[m.UnnestClause] = true
 		}
 	}
@@ -815,7 +801,9 @@ func buildFilterMapAndUnnester(fromTable TableView, baseFilters []TableField, ba
 			return nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy user filter %+v", fromTable.Name, f)
 		}
 		filters[n] = m
-		unr.seen[m.UnnestClause] = true
+		if m.UnnestClause != nil {
+			unr.seen[m.UnnestClause] = true
+		}
 	}
 	return filters, unr, nil
 }
@@ -855,6 +843,8 @@ func buildOrderByAndPageTokenFields(fromTable TableView, userOrderBy []UserOrder
 		orderByFields = append(orderByFields, ob)
 		obs[ob.TableField] = true
 	}
+	// If this table has specified an order by override, use that instead of the default that orders
+	// by the fields that are indexed.
 	tableOrderFields := fromTable.OrderedIndicesWithSortDirection
 	if len(fromTable.OrderByFieldsWithSortDirection) > 0 {
 		tableOrderFields = fromTable.OrderByFieldsWithSortDirection
@@ -915,7 +905,27 @@ func appendFromAndUnnestClauses(stmt queryfilter.Statement, fromTable TableView,
 	return unnestWheres, nil
 }
 
-func (q *queryGen) appendWhereClauses(stmt queryfilter.Statement, in whereClauseInputs) error {
+func appendWhereFilters(qf *queryfilter.Visitor, stmt queryfilter.Statement, hasBaseFilter, hasUserFilter bool, baseFilterExp, userFilterExp *fpb.Expression) error {
+	if hasBaseFilter {
+		if err := qf.AppendFilters(baseFilterExp); err != nil {
+			return status.Errorf(codes.InvalidArgument, "error processing base filter expression: %v", err)
+		}
+	}
+	if hasUserFilter {
+		if hasBaseFilter {
+			stmt.AppendSQL(safesql.New(" AND "))
+		}
+		if err := qf.AppendFilters(userFilterExp); err != nil {
+			return status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
+		}
+	}
+	return nil
+}
+
+func (q *queryGen) appendWhereClauses(stmt queryfilter.Statement, in *whereClauseInputs) error {
+	if in == nil {
+		return nil
+	}
 	hasBaseFilter := !emptyExpression(in.baseFilterExp)
 	hasUserFilter := !emptyExpression(in.userFilterExp)
 	if !hasBaseFilter && !hasUserFilter && len(in.orderedPtFields) == 0 && len(in.unnestWheres) == 0 {
@@ -934,18 +944,8 @@ func (q *queryGen) appendWhereClauses(stmt queryfilter.Statement, in whereClause
 		FilterBaseOptions:    []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
 	}
 
-	if hasBaseFilter {
-		if err := qf.AppendFilters(in.baseFilterExp); err != nil {
-			return status.Errorf(codes.InvalidArgument, "error processing base filter expression: %v", err)
-		}
-	}
-	if hasUserFilter {
-		if hasBaseFilter {
-			stmt.AppendSQL(safesql.New(" AND "))
-		}
-		if err := qf.AppendFilters(in.userFilterExp); err != nil {
-			return status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
-		}
+	if err := appendWhereFilters(&qf, stmt, hasBaseFilter, hasUserFilter, in.baseFilterExp, in.userFilterExp); err != nil {
+		return err
 	}
 	if len(in.orderedPtFields) != 0 {
 		if hasBaseFilter || hasUserFilter {
@@ -976,9 +976,28 @@ func appendClausesAfterWhere(stmt queryfilter.Statement, selectMembers []Member,
 	}
 }
 
+// GenerateQuery generates a spanner SQL query with the following contents:
+// SELECT: returns the selectFields, plus any fields needed for a page token
+// Note that it's possible for a query to SELECT a field more than once, because of a lack of
+// deduping between explicitly selected fields and fields needed for pagination.
+// FROM: a base table selected as the one that can satisfy the query with the
+// lowest cost, and possibly some joins to fulfill additional select fields
+// WHERE: applies the baseFilterExp condition, the userFilterExp condition,
+// and if ptFields is non-empty the conditions to continue from those page token
+// values
+// GROUP BY, ORDER BY: as implied by the metadata of the fields used
+// LIMIT, OFFSET: according to pageSize and offset, respectively
+//
+// It returns a map of TableField to index so that the caller can
+// build the page token, an Unnester that can patch up any repeated fields that
+// were selected, and any error that occurred.
 func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (selectFieldIndexes map[TableField]int, u Unnester, err error) {
+	// Captures the names referenced in userFilterExp and the fields that we're mapping them to.
 	userFilters := map[string]TableField{}
+	// equalityFilters contains fields used in equality statements plus fixed base filters,
+	// allowing pagination tokens to omit constrained primary-key columns.
 	equalityFilters := map[TableField]bool{}
+	// Walk userFilterExp with a nil Statement to collect referenced Members without emitting SQL.
 	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
 		return nil, nil, err
 	}
@@ -1014,7 +1033,16 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 	if err != nil {
 		return nil, nil, err
 	}
-	whereIn := whereClauseInputs{fromTable, filters, fullTextFields, baseFilterExp, userFilterExp, ptFields, orderedPtFields, unnestWheres}
+	whereIn := &whereClauseInputs{
+		fromTable:       fromTable,
+		filters:         filters,
+		fullTextFields:  fullTextFields,
+		baseFilterExp:   baseFilterExp,
+		userFilterExp:   userFilterExp,
+		ptFields:        ptFields,
+		orderedPtFields: orderedPtFields,
+		unnestWheres:    unnestWheres,
+	}
 	if err := q.appendWhereClauses(stmt, whereIn); err != nil {
 		return nil, nil, err
 	}
