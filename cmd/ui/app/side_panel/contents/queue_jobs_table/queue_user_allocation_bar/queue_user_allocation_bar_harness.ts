@@ -75,9 +75,10 @@ export class QueueUserAllocationBarHarness extends ComponentHarness {
   }
 
   private async findUserChip(user: string): Promise<TestElement> {
-    for (const btn of await this.chipButtons()) {
-      if ((await btn.text()).trim().startsWith(user)) {
-        return btn;
+    const [users, buttons] = await Promise.all([this.chipUsers(), this.chipButtons()]);
+    for (let i = 0; i < users.length; i++) {
+      if ((await users[i].text()).trim() === user) {
+        return buttons[i];
       }
     }
     throw new Error(`User chip for ${user} not found`);
