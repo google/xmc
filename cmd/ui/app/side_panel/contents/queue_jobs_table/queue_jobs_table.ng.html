@@ -22,10 +22,7 @@
       <ng-content select="[headerActions]" />
     </div>
     <div class="target-queue-name">{{ activeQueueName() }}</div>
-    <p class="jobs-card-subtitle">
-      There are {{ tableControls.totalCount() }} jobs ahead of you. Sorting changes display order
-      only.
-    </p>
+    <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
   </div>
 
   @if (!isLoading()) {
