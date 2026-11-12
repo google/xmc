@@ -88,19 +88,26 @@ class TestToolUtils(unittest.TestCase):
     @patch("tools.common.tool_utils._bootstrap_venv")
     @patch("os.execv")
     def test_ensure_venv_bypasses_on_help_flag(self, mock_execv, mock_bootstrap):
-        env = dict(os.environ)
-        env.pop("TEST_SRCDIR", None)
-        env.pop("BAZEL_TEST", None)
-        env.pop("XMC_BYPASS_VENV", None)
-        for flag in ("-h", "--help"):
-            with (
-                self.subTest(flag=flag),
-                patch.dict(os.environ, env, clear=True),
-                patch.object(sys, "argv", ["tool.py", flag]),
-            ):
-                ensure_venv()
-        mock_bootstrap.assert_not_called()
-        mock_execv.assert_not_called()
+        modules = {k: v for k, v in sys.modules.items() if k not in ("unittest", "pytest")}
+        with (
+            tempfile.TemporaryDirectory() as tmp_dir,
+            patch.dict(os.environ, {}, clear=True),
+            patch.dict(sys.modules, modules, clear=True),
+            patch("sys.prefix", "/usr"),
+            patch("sys.base_prefix", "/usr"),
+            patch("tools.common.tool_utils.__file__", "/repo/tools/common/tool_utils.py"),
+            patch("pathlib.Path.cwd", return_value=Path("/repo")),
+        ):
+            venv_dir = Path(tmp_dir) / "venv"
+            for flag in ("-h", "--help"):
+                with self.subTest(flag=flag), patch.object(sys, "argv", ["tool.py", flag]):
+                    ensure_venv(venv_dir)
+            mock_bootstrap.assert_not_called()
+            mock_execv.assert_not_called()
+
+            with patch.object(sys, "argv", ["tool.py"]):
+                ensure_venv(venv_dir)
+            mock_bootstrap.assert_called_once_with(venv_dir.resolve())
 
     @patch.dict(os.environ, {"XMC_BYPASS_VENV": "1"}, clear=False)
     @patch("os.execv")

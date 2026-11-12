@@ -51,8 +51,12 @@ class BlueprintParsingTest(unittest.TestCase):
         )
         block_a = extract_module_block(sample, "mod_a")
         block_b = extract_module_block(sample, "mod_b")
+        block_c = extract_module_block(sample, "mod_c")
         self.assertEqual({"key.one": "val one", "key.two": "val #two"}, parse_set_values(block_a))
         self.assertEqual({"other.key": "other-val"}, parse_set_values(block_b))
+        self.assertNotIn("next_group", block_b)
+        self.assertEqual("  - id: mod_c\n", block_c)
+        self.assertEqual({}, parse_set_values(block_c))
         self.assertEqual({}, parse_set_values(""))
         with self.assertRaises(AssertionError):
             extract_module_block(sample, "missing_mod")
