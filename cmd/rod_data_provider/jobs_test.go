@@ -114,12 +114,14 @@ type mockWorkUnitFetcher struct {
 	lastQueueNames  []string
 	lastPageSize    int32
 	lastPageToken   string
+	lastQuery       storage.ActiveWorkUnitQuery
 }
 
-func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
 	m.lastQueueNames = queueNames
 	m.lastPageSize = pageSize
 	m.lastPageToken = pageToken
+	m.lastQuery = query
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -613,5 +615,51 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestJobsOrderBy(t *testing.T) {
+	for _, orderBy := range []string{"author", "priority desc", "status asc"} {
+		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", OrderBy: orderBy}, &mockWorkUnitFetcher{}); err != nil {
+			t.Errorf("valid order %q: %v", orderBy, err)
+		}
+	}
+	for _, orderBy := range []string{"title", "author sideways", "priority desc; DROP TABLE WorkUnits"} {
+		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", OrderBy: orderBy}, &mockWorkUnitFetcher{}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("invalid order %q: %v", orderBy, err)
+		}
+	}
+}
+
+func TestJobsFilterValidation(t *testing.T) {
+	for _, filter := range []string{`author = "alice@example.com"`, `status = RUNNING`, `author = "alice@example.com" AND status = INITIALIZING`} {
+		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", Filter: filter}, &mockWorkUnitFetcher{}); err != nil {
+			t.Errorf("valid filter %q: %v", filter, err)
+		}
+	}
+	for _, filter := range []string{`priority = 2`, `status = COMPLETED`, `author : "alice"`} {
+		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", Filter: filter}, &mockWorkUnitFetcher{}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("invalid filter %q: %v", filter, err)
+		}
+	}
+}
+
+func TestJobsQueryForwarding(t *testing.T) {
+	fetcher := &mockWorkUnitFetcher{}
+	srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+	req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+		r.OrderBy = "priority"
+		r.Filter = `author = "alice@example.com" AND status = RUNNING`
+	})
+	if _, err := srv.GetRunningAndPendingJobs(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	got := fetcher.lastQuery
+	want := storage.ActiveWorkUnitQuery{
+		OrderBy: "priority asc",
+		Filter:  storage.ActiveWorkUnitFilter{Author: "alice@example.com", HasAuthor: true, Status: "RUNNING"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -68,15 +68,31 @@ const TEST_QUEUE_JOBS_RESP: GetRunningAndPendingJobsResponse = {
     },
   ],
   totalQueueSize: 3,
+  userAllocations: [
+    {
+      user: 'example@example.com',
+      resourceType: 'nvidia.com/gpu: H100',
+      runningUnits: 4,
+    },
+    {
+      user: 'example-admin@example.com',
+      resourceType: 'nvidia.com/gpu: H100',
+      runningUnits: 2,
+    },
+  ],
 };
 
 @Component({
   standalone: true,
   imports: [QueueJobsTable],
-  template: `<xmc-queue-jobs-table [queueName]="queueName()" />`,
+  template: `<xmc-queue-jobs-table
+    [queueName]="queueName()"
+    [dominantResource]="dominantResource()"
+  />`,
 })
 class TestHostComponent {
   readonly queueName = signal<string>('gpu-cluster-queue');
+  readonly dominantResource = signal<string | null>(null);
 }
 
 @Component({
@@ -113,7 +129,125 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     expect(host).toBeTruthy();
-    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 10, '');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
+  });
+
+  it('requests ascending, descending, and default ordering through the headers', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    for (const [label, field] of [
+      ['Author', 'author'],
+      ['Status', 'status'],
+      ['Priority', 'priority'],
+    ]) {
+      for (const direction of ['asc', 'desc', '']) {
+        state.resourceService.getQueueJobs.calls.reset();
+        await harness.sortBy(label);
+        await flush();
+        expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+          'gpu-cluster-queue',
+          10,
+          '',
+          direction ? `${field} ${direction}` : '',
+          '',
+        );
+      }
+    }
+  });
+
+  it('resets pagination when the sort changes', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({
+        ...TEST_QUEUE_JOBS_RESP,
+        totalQueueSize: 30,
+        nextPageToken: 'second-page',
+      }),
+    );
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    await paginator!.goToNextPage();
+    await flush();
+    expect(await paginator!.getRangeLabel()).toMatch(/^11\s/);
+    state.resourceService.getQueueJobs.calls.reset();
+    await harness.sortBy('Author');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      'author asc',
+      '',
+    );
+    expect(await paginator!.getRangeLabel()).toMatch(/^1\s/);
+  });
+
+  it('combines author and status filters and clears both', async () => {
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    await harness.filterAuthor('alice@example.com');
+    await harness.filterStatus('RUNNING');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com" AND status = RUNNING',
+    );
+    state.resourceService.getQueueJobs.calls.reset();
+    await harness.clearFilters();
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
+  });
+
+  it('resets pagination when author or status changes', async () => {
+    state.resourceService.getQueueJobs.and.returnValue(
+      of({
+        ...TEST_QUEUE_JOBS_RESP,
+        totalQueueSize: 30,
+        nextPageToken: 'second-page',
+      }),
+    );
+    bootstrap(TestHostComponent);
+    await flush();
+    const harness = await getHarness(QueueJobsTableHarness);
+    const paginator = await harness.getPaginator();
+    await paginator!.goToNextPage();
+    await harness.filterAuthor('alice@example.com');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com"',
+    );
+    await paginator!.goToNextPage();
+    await harness.filterStatus('RUNNING');
+    await flush();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "alice@example.com" AND status = RUNNING',
+    );
   });
 
   it('should properly render all table column headers using harness', async () => {
@@ -234,23 +368,40 @@ describe('QueueJobsTable Component', () => {
     expect(paginator).not.toBeNull();
     if (paginator) {
       // Forward
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.goToNextPage();
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
         'gpu-cluster-queue',
         10,
         'token-2',
+        '',
+        '',
       );
 
       // Backward
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.goToPreviousPage();
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 10, '');
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+        'gpu-cluster-queue',
+        10,
+        '',
+        '',
+        '',
+      );
 
       // Page size change
+      state.resourceService.getQueueJobs.calls.reset();
       await paginator.setPageSize(20);
       await flush();
-      expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('gpu-cluster-queue', 20, '');
+      expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+        'gpu-cluster-queue',
+        20,
+        '',
+        '',
+        '',
+      );
     }
   });
 
@@ -261,7 +412,13 @@ describe('QueueJobsTable Component', () => {
     hostComponent.queueName.set('tpu-cluster-queue');
     await flush();
 
-    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith('tpu-cluster-queue', 10, '');
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledWith(
+      'tpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
   });
 
   it('should handle API errors gracefully', async () => {
@@ -291,7 +448,7 @@ describe('QueueJobsTable Component', () => {
     expect(paginator).toBeNull();
 
     expect(document.querySelector(EMPTY_STATE_SELECTOR)).not.toBeNull();
-    expect(document.body.textContent).toContain('No job ahead of you!');
+    expect(document.body.textContent).toContain('No matching jobs.');
   });
 
   it('should display loading state while fetching jobs', async () => {
@@ -339,5 +496,40 @@ describe('QueueJobsTable Component', () => {
     const harness = await getHarness(QueueJobsTableHarness);
     expect(await harness.getHeaderActionTexts()).toEqual(['Custom header action']);
     expect(document.body.textContent).not.toContain('Unmatched content');
+  });
+
+  it('filters by author when clicking a user allocation chip and toggles off on second click', async () => {
+    const host = bootstrap(TestHostComponent);
+    host.dominantResource.set('nvidia.com/gpu: H100');
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    state.resourceService.getQueueJobs.calls.reset();
+
+    await harness.clickUserAllocationChip('example@example.com');
+    await flush();
+
+    expect(await harness.isUserAllocationChipSelected('example@example.com')).toBeTrue();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      'author = "example@example.com"',
+    );
+
+    // Clicking the same chip again toggles/clears the author filter
+    state.resourceService.getQueueJobs.calls.reset();
+    await harness.clickUserAllocationChip('example@example.com');
+    await flush();
+
+    expect(await harness.isUserAllocationChipSelected('example@example.com')).toBeFalse();
+    expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
+      'gpu-cluster-queue',
+      10,
+      '',
+      '',
+      '',
+    );
   });
 });

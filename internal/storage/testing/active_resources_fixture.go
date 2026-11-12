@@ -124,7 +124,7 @@ func readActiveResourcesSnapshot(ctx context.Context, s WorkUnitSnapshotter, que
 	var resources []storage.ActiveWorkUnitResources
 	err := s.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
 		var err error
-		if page, err = repo.FetchActiveWorkUnitsByQueues(txCtx, queues, pageSize, ""); err != nil {
+		if page, err = repo.FetchActiveWorkUnitsByQueues(txCtx, queues, pageSize, "", storage.ActiveWorkUnitQuery{}); err != nil {
 			return err
 		}
 		resources, err = repo.FetchActiveWorkUnitResources(txCtx, queues)

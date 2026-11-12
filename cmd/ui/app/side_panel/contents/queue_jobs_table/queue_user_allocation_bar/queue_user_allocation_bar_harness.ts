@@ -27,6 +27,8 @@ export class QueueUserAllocationBarHarness extends ComponentHarness {
   private readonly chipUnits = this.locatorForAll('.allocation-chip .chip-units');
   private readonly runningSegments = this.locatorForAll('.allocation-segment.running');
 
+  private readonly chipButtons = this.locatorForAll('button.allocation-chip');
+
   private async optionalText(locator: () => Promise<{ text(): Promise<string> } | null>) {
     const el = await locator();
     return el ? (await el.text()).trim() : null;
@@ -70,5 +72,30 @@ export class QueueUserAllocationBarHarness extends ComponentHarness {
     const segments = await this.runningSegments();
     const styles = await Promise.all(segments.map((s) => s.getAttribute('style')));
     return styles.map((style) => /width:\s*([\d.]+%)/.exec(style ?? '')?.[1] ?? '');
+  }
+
+  /** Clicks the chip for the given user. */
+  async clickUserChip(user: string): Promise<void> {
+    const buttons = await this.chipButtons();
+    for (const btn of buttons) {
+      const text = (await btn.text()).trim();
+      if (text.startsWith(user)) {
+        await btn.click();
+        return;
+      }
+    }
+    throw new Error(`User chip for ${user} not found`);
+  }
+
+  /** Whether the given user's chip is currently selected. */
+  async isUserChipSelected(user: string): Promise<boolean> {
+    const buttons = await this.chipButtons();
+    for (const btn of buttons) {
+      const text = (await btn.text()).trim();
+      if (text.startsWith(user)) {
+        return btn.hasClass('selected');
+      }
+    }
+    throw new Error(`User chip for ${user} not found`);
   }
 }

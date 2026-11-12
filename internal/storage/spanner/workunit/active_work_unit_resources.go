@@ -36,8 +36,8 @@ type snapshotRepository struct {
 	txn *spanner.ReadOnlyTransaction
 }
 
-func (s *snapshotRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
-	return fetchActiveWorkUnitsInTxn(ctx, s.txn, queueNames, pageSize, pageToken)
+func (s *snapshotRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsInTxn(ctx, s.txn, queueNames, pageSize, pageToken, query)
 }
 
 func (s *snapshotRepository) FetchActiveWorkUnitResources(ctx context.Context, queueNames []string) ([]storage.ActiveWorkUnitResources, error) {

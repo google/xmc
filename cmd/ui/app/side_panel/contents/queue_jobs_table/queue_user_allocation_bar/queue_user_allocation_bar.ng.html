@@ -42,10 +42,18 @@
       </div>
       <ul class="allocation-chips">
         @for (seg of s.segments; track seg.user) {
-          <li class="allocation-chip">
-            <span class="chip-dot" aria-hidden="true" [style.background-color]="seg.color"></span>
-            <span class="chip-user">{{ seg.user }}</span>
-            <span class="chip-units">{{ seg.label }}</span>
+          <li>
+            <button
+              type="button"
+              class="allocation-chip"
+              [class.selected]="selectedAuthor() === seg.user"
+              [attr.aria-pressed]="selectedAuthor() === seg.user"
+              (click)="onChipClick(seg.user)"
+            >
+              <span class="chip-dot" aria-hidden="true" [style.background-color]="seg.color"></span>
+              <span class="chip-user">{{ seg.user }}</span>
+              <span class="chip-units">{{ seg.label }}</span>
+            </button>
           </li>
         }
       </ul>

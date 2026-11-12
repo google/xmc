@@ -24,8 +24,12 @@ import {
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatIconModule } from '@angular/material/icon';
+import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSelectModule } from '@angular/material/select';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
@@ -39,6 +43,7 @@ import { ResourceService } from 'app/service/resource_service';
 import { BaseSidePanelContent, BaseSidePanelData } from 'app/side_panel/base_side_panel';
 
 import {
+  JOB_STATUS_STRINGS,
   QueueJobPositionPipe,
   QueueJobResourcesPipe,
   QueueJobRunningTimePipe,
@@ -61,6 +66,10 @@ export class QueueJobsTableData implements BaseSidePanelData {
   imports: [
     RouterModule,
     MatTableModule,
+    MatSortModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
     MatPaginatorModule,
     MatIconModule,
     MatButtonModule,
@@ -86,6 +95,28 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   private readonly resourceService = inject(ResourceService);
 
+  protected readonly author = signal('');
+  protected readonly status = signal('');
+  protected readonly statuses = [
+    JOB_STATUS_STRINGS.RUNNING,
+    JOB_STATUS_STRINGS.STARTING,
+    JOB_STATUS_STRINGS.INITIALIZING,
+    JOB_STATUS_STRINGS.SCHEDULING,
+  ];
+  protected readonly filter = computed(() =>
+    [
+      this.author() ? `author = ${JSON.stringify(this.author())}` : '',
+      this.status() ? `status = ${this.status()}` : '',
+    ]
+      .filter(Boolean)
+      .join(' AND '),
+  );
+  protected readonly sort = signal<Sort>({ active: '', direction: '' });
+  protected readonly orderBy = computed(() => {
+    const sort = this.sort();
+    return sort.direction ? `${sort.active} ${sort.direction}` : '';
+  });
+
   protected readonly isLoading = signal<boolean>(false);
   protected readonly tableControls = {
     pageSize: signal<number>(10),
@@ -98,6 +129,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly requestParams = computed(() => ({
     queueName: this.activeQueueName(),
+    orderBy: this.orderBy(),
+    filter: this.filter(),
     pageSize: this.tableControls.pageSize(),
     pageToken: this.tableControls.pageToken(),
   }));
@@ -108,11 +141,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
         (prev, curr) =>
           prev.queueName === curr.queueName &&
           prev.pageSize === curr.pageSize &&
-          prev.pageToken === curr.pageToken,
+          prev.pageToken === curr.pageToken &&
+          prev.orderBy === curr.orderBy &&
+          prev.filter === curr.filter,
       ),
       tap(() => this.isLoading.set(true)),
-      switchMap(({ queueName, pageSize, pageToken }) =>
-        this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
+      switchMap(({ queueName, pageSize, pageToken, orderBy, filter }) =>
+        this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy, filter).pipe(
           tap((resp) => {
             this.isLoading.set(false);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
@@ -160,20 +195,49 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   constructor() {
     effect(() => {
       this.activeQueueName();
-      untracked(() => {
-        this.tableControls.pageIndex.set(0);
-        this.tableControls.pageToken.set('');
-        this.tableControls.pageTokens.set(['']);
-      });
+      untracked(() => this.resetPage());
     });
+  }
+
+  protected onSortChange(sort: Sort): void {
+    this.sort.set(sort);
+    this.resetPage();
+  }
+
+  private resetPage(): void {
+    this.tableControls.pageIndex.set(0);
+    this.tableControls.pageToken.set('');
+    this.tableControls.pageTokens.set(['']);
+  }
+
+  protected onAuthorChange(author: string): void {
+    this.author.set(author.trim());
+    this.resetPage();
+  }
+
+  protected onAuthorChipClick(author: string): void {
+    if (this.author() === author) {
+      this.onAuthorChange('');
+    } else {
+      this.onAuthorChange(author);
+    }
+  }
+
+  protected onStatusChange(status: string): void {
+    this.status.set(status);
+    this.resetPage();
+  }
+
+  protected clearFilters(): void {
+    this.author.set('');
+    this.status.set('');
+    this.resetPage();
   }
 
   protected onPageChange(event: PageEvent): void {
     if (event.pageSize !== this.tableControls.pageSize()) {
       this.tableControls.pageSize.set(event.pageSize);
-      this.tableControls.pageIndex.set(0);
-      this.tableControls.pageToken.set('');
-      this.tableControls.pageTokens.set(['']);
+      this.resetPage();
       return;
     }
 
