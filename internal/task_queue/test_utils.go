@@ -46,6 +46,11 @@ type FakeClient struct {
 	EnqueueErr error
 	// EnqueueFunc is an optional function that will be called by EnqueueWorkUnitTask.
 	EnqueueFunc func(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+
+	// EnqueueBatchCalls counts EnqueueWorkUnitTasks calls.
+	EnqueueBatchCalls int
+	// EnqueueBatchErrs are the per-task errors returned by EnqueueWorkUnitTasks.
+	EnqueueBatchErrs []error
 }
 
 // EnqueueWorkUnitTask captures the input and returns the configured error.
@@ -72,4 +77,20 @@ func (c *FakeClient) EnqueueWorkUnitTask(ctx context.Context, target string, wor
 // Close is a no-op for the mock client.
 func (c *FakeClient) Close() error {
 	return nil
+}
+
+// EnqueueWorkUnitTasks records one batch call and each task, and returns EnqueueBatchErrs[i] (or
+// nil) as the error of task i.
+func (c *FakeClient) EnqueueWorkUnitTasks(ctx context.Context, tasks []WorkUnitTask) []error {
+	c.EnqueueBatchCalls++
+	errs := make([]error, len(tasks))
+	for i, t := range tasks {
+		c.EnqueuedTasks = append(c.EnqueuedTasks, EnqueuedTask{
+			Action: t.Action, Target: t.Target, WorkUnit: t.WorkUnit, OperationName: t.OperationName,
+		})
+		if i < len(c.EnqueueBatchErrs) {
+			errs[i] = c.EnqueueBatchErrs[i]
+		}
+	}
+	return errs
 }

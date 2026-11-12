@@ -25,6 +25,10 @@ type FakeClient struct {
 	taskHandler     func(context.Context, string, string) TaskResult
 	PingError       error
 	AddMessageError error
+	// AddMessagesErrors are the per-message errors returned by AddMessages; AddMessagesCalls counts
+	// its invocations.
+	AddMessagesErrors []error
+	AddMessagesCalls  int
 	// Backlog and BacklogError are returned by BacklogLength.
 	Backlog      int64
 	BacklogError error
@@ -52,6 +56,24 @@ func (c *FakeClient) AddMessage(ctx context.Context, data string, failedAttempts
 	}
 	c.Messages = append(c.Messages, data)
 	return nil
+}
+
+// AddMessages records one call and adds data to the fake client. AddMessagesErrors, when set,
+// supplies the per-message errors; messages with a nil error are added.
+func (c *FakeClient) AddMessages(ctx context.Context, data []string) []error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.AddMessagesCalls++
+	errs := make([]error, len(data))
+	for i, d := range data {
+		if i < len(c.AddMessagesErrors) {
+			errs[i] = c.AddMessagesErrors[i]
+		}
+		if errs[i] == nil {
+			c.Messages = append(c.Messages, d)
+		}
+	}
+	return errs
 }
 
 // BacklogLength records its arguments and returns the configured Backlog and BacklogError.

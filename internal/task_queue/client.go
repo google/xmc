@@ -349,6 +349,73 @@ func (c *Client) EnqueueResumedWorkUnitTask(ctx context.Context, target string, 
 }
 
 func (c *Client) enqueueTask(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, resumptionRunID string, resumptionTime time.Time) error {
+	body, signature, err := c.signedPayload(ctx, target, workUnit, action, operationName, resumptionRunID, resumptionTime)
+	if err != nil {
+		return err
+	}
+	oidcTokenString, err := c.generateOIDCToken(ctx)
+	if err != nil {
+		return err
+	}
+	redisMsg, err := redisTaskMessage(ctx, body, signature, oidcTokenString)
+	if err != nil {
+		return err
+	}
+	if err := c.redisClient.AddMessage(ctx, redisMsg, "0"); err != nil {
+		return fmt.Errorf("failed to add message to redis: %w", err)
+	}
+	return nil
+}
+
+// WorkUnitTask is one work unit actuation task of a batch passed to EnqueueWorkUnitTasks.
+type WorkUnitTask struct {
+	Target        string
+	WorkUnit      *essmsgpb.WorkUnit
+	Action        *actuatortaskpb.Action
+	OperationName string
+}
+
+// EnqueueWorkUnitTasks signs each task, attaches one OIDC token shared by the batch, and enqueues
+// all tasks in a single pipelined round trip. It returns one error per task, nil for the tasks that
+// were enqueued.
+func (c *Client) EnqueueWorkUnitTasks(ctx context.Context, tasks []WorkUnitTask) []error {
+	errs := make([]error, len(tasks))
+	oidcTokenString, err := c.generateOIDCToken(ctx)
+	if err != nil {
+		for i := range errs {
+			errs[i] = err
+		}
+		return errs
+	}
+	msgs := make([]string, 0, len(tasks))
+	msgTasks := make([]int, 0, len(tasks))
+	for i, t := range tasks {
+		msg, err := c.batchTaskMessage(ctx, t, oidcTokenString)
+		if err != nil {
+			errs[i] = err
+			continue
+		}
+		msgs = append(msgs, msg)
+		msgTasks = append(msgTasks, i)
+	}
+	for j, err := range c.redisClient.AddMessages(ctx, msgs) {
+		if err != nil {
+			errs[msgTasks[j]] = fmt.Errorf("failed to add message to redis: %w", err)
+		}
+	}
+	return errs
+}
+
+func (c *Client) batchTaskMessage(ctx context.Context, t WorkUnitTask, oidcTokenString string) (string, error) {
+	body, signature, err := c.signedPayload(ctx, t.Target, t.WorkUnit, t.Action, t.OperationName, "", time.Time{})
+	if err != nil {
+		return "", err
+	}
+	return redisTaskMessage(ctx, body, signature, oidcTokenString)
+}
+
+// signedPayload returns the protojson actuator payload of a task and its signature.
+func (c *Client) signedPayload(ctx context.Context, target string, workUnit *essmsgpb.WorkUnit, action *actuatortaskpb.Action, operationName string, resumptionRunID string, resumptionTime time.Time) ([]byte, string, error) {
 	now := timestamppb.Now()
 
 	traceID, ok := logging.OperationID(ctx)
@@ -380,36 +447,40 @@ func (c *Client) enqueueTask(ctx context.Context, target string, workUnit *essms
 	body, err := protojson.Marshal(payload)
 	if err != nil {
 		logging.Warn(ctx, "Failed to marshal actuator payload", "error", err)
-		return fmt.Errorf("failed to marshal actuator payload: %w", err)
+		return nil, "", fmt.Errorf("failed to marshal actuator payload: %w", err)
 	}
 
 	bodyHash := calculateSHA256(body)
 	jwtToken, err := c.createJwtToken(bodyHash)
 	if err != nil {
 		logging.Warn(ctx, "Failed to create message signature", "error", err)
-		return fmt.Errorf("failed to create message signature: %w", err)
+		return nil, "", fmt.Errorf("failed to create message signature: %w", err)
 	}
+	return body, jwtToken, nil
+}
 
+func (c *Client) generateOIDCToken(ctx context.Context) (string, error) {
 	oidcTokenString, err := c.tokenProvider.GenerateToken(ctx, c.invokerSA, c.actuatorAudience)
 	if err != nil {
 		logging.Warn(ctx, "Failed to generate OIDC token for redis task", "error", err)
-		return fmt.Errorf("failed to generate OIDC token for redis task: %w", err)
+		return "", fmt.Errorf("failed to generate OIDC token for redis task: %w", err)
 	}
+	return oidcTokenString, nil
+}
 
+// redisTaskMessage wraps a signed payload and an OIDC token into a JSON RedisTask message.
+func redisTaskMessage(ctx context.Context, body []byte, signature, oidcTokenString string) (string, error) {
 	msg := interfaces.RedisTask{
 		Payload:   body,
-		Signature: jwtToken,
+		Signature: signature,
 		OidcToken: oidcTokenString,
 	}
 	redisMsg, err := json.Marshal(msg)
 	if err != nil {
 		logging.Warn(ctx, "Failed to marshal redis message", "error", err)
-		return fmt.Errorf("failed to marshal redis message: %w", err)
+		return "", fmt.Errorf("failed to marshal redis message: %w", err)
 	}
-	if err := c.redisClient.AddMessage(ctx, string(redisMsg), "0"); err != nil {
-		return fmt.Errorf("failed to add message to redis: %w", err)
-	}
-	return nil
+	return string(redisMsg), nil
 }
 
 // Close cleans up the underlying client resources.

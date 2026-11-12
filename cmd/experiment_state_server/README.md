@@ -142,11 +142,12 @@ ESS then writes all work units in one transaction
 checks the caller against the `hpo` component again, reads the experiment once, allocates the IDs with a
 single next-ID read, inserts the work units in one write, and updates the experiment's denormalized
 status and resources once. After the commit it records one creation operation per work unit and
-enqueues each creation task. A work unit whose operation or task cannot be created gets the same
-`FATAL` status message as in `CreateWorkUnit`, and the RPC returns `INTERNAL` naming those work
-units; the other work units are scheduled. Because the trials are already stored, the study
-controller must not create them again when it retries; ESS does not deduplicate `trial_id` across
-batches. `parameters` and `trial_id` are immutable and returned by `GetWorkUnit` and `ListWorkUnits`.
+enqueues all creation tasks in one pipelined Redis round trip. A work unit whose operation or task
+cannot be created gets the same `FATAL` status message as in `CreateWorkUnit`, and the RPC returns
+`INTERNAL` naming those work units; the other work units are scheduled. Because the trials are
+already stored, the study controller must not create them again when it retries; ESS does not
+deduplicate `trial_id` across batches. `parameters` and `trial_id` are immutable and returned by
+`GetWorkUnit` and `ListWorkUnits`.
 
 ---
 

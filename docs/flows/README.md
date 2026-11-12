@@ -79,8 +79,9 @@ sequenceDiagram
 
 Any RPC that must change the cluster takes this shape: `CreateWorkUnit`, `StopWorkUnit`,
 `RestartWorkUnit`, `UpdateWorkUnit`, the two batch variants `BatchStopWorkUnits` and
-`BatchRestartWorkUnits`, and `BatchCreateWorkUnits`, which creates the trials of a study. The
-client's response arrives before the cluster has changed; convergence
+`BatchRestartWorkUnits`, and `BatchCreateWorkUnits`, which creates the trials of a study and enqueues
+their tasks in one pipelined round trip. The client's response arrives before the cluster has
+changed; convergence
 is observed either by polling the returned `google.longrunning.Operation` or by watching the work
 unit's state.
 

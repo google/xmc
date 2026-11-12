@@ -26,7 +26,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	msgpb "xmanager_cloud/api/protos/experiment"
-	tpb "xmanager_cloud/api/protos/task_queue"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
@@ -99,7 +98,7 @@ func newBatchServer(t *testing.T, st storage.Storage, actuator *tq.FakeClient, o
 	}, opts...)...)
 }
 
-func TestBatchCreateWorkUnits_CreatesTrialsInOneTransaction(t *testing.T) {
+func TestBatchCreateWorkUnits_CreatesTrialsInOneTransactionAndOneEnqueue(t *testing.T) {
 	// The configured principal differs in case from the authenticated test@example.com.
 	st := newBatchStorage("TEST@example.com")
 	actuator := &tq.FakeClient{}
@@ -137,8 +136,8 @@ func TestBatchCreateWorkUnits_CreatesTrialsInOneTransaction(t *testing.T) {
 	if diff := cmp.Diff(wantOps, gotOps); diff != "" {
 		t.Errorf("operations mismatch (-want +got):\n%s", diff)
 	}
-	if len(actuator.EnqueuedTasks) != 3 {
-		t.Fatalf("enqueued tasks = %d, want 3", len(actuator.EnqueuedTasks))
+	if actuator.EnqueueBatchCalls != 1 || len(actuator.EnqueuedTasks) != 3 {
+		t.Fatalf("enqueue batch calls = %d, tasks = %d; want 1, 3", actuator.EnqueueBatchCalls, len(actuator.EnqueuedTasks))
 	}
 	for i, task := range actuator.EnqueuedTasks {
 		wid := int64(4 + i)
@@ -237,8 +236,8 @@ func TestBatchCreateWorkUnits_Rejections(t *testing.T) {
 			if !strings.Contains(err.Error(), tt.wantErrSub) {
 				t.Errorf("BatchCreateWorkUnits() = %v, want it to contain %q", err, tt.wantErrSub)
 			}
-			if len(st.InsertedWorkUnits) != 0 || len(actuator.EnqueuedTasks) != 0 {
-				t.Errorf("rejected request inserted %d work units and enqueued %d tasks, want none", len(st.InsertedWorkUnits), len(actuator.EnqueuedTasks))
+			if len(st.InsertedWorkUnits) != 0 || actuator.EnqueueBatchCalls != 0 {
+				t.Errorf("rejected request inserted %d work units and made %d enqueue calls, want none", len(st.InsertedWorkUnits), actuator.EnqueueBatchCalls)
 			}
 		})
 	}
@@ -266,12 +265,7 @@ func TestBatchCreateWorkUnits_PartialSchedulingFailure(t *testing.T) {
 		{
 			name: "enqueue fails for one work unit",
 			mutate: func(_ *batchStorage, actuator *tq.FakeClient) {
-				actuator.EnqueueFunc = func(_ context.Context, target string, _ *msgpb.WorkUnit, _ *tpb.Action, _ string) error {
-					if target == validator.ConstructWorkUnitExecutionName(123, 5, 1) {
-						return errors.New("redis down")
-					}
-					return nil
-				}
+				actuator.EnqueueBatchErrs = []error{nil, errors.New("redis down"), nil}
 			},
 			wantTasks: 3, wantFailed: "1 of 3 work units", wantStopped: 1,
 		},
@@ -302,8 +296,8 @@ func TestBatchCreateWorkUnits_PartialSchedulingFailure(t *testing.T) {
 			if !errors.Is(err, grpcerr.ErrInternal) || !strings.Contains(err.Error(), tt.wantFailed) {
 				t.Errorf("BatchCreateWorkUnits() = %v, want Internal naming %q", err, tt.wantFailed)
 			}
-			if len(actuator.EnqueuedTasks) != tt.wantTasks {
-				t.Errorf("enqueued tasks = %d, want %d", len(actuator.EnqueuedTasks), tt.wantTasks)
+			if actuator.EnqueueBatchCalls != 1 || len(actuator.EnqueuedTasks) != tt.wantTasks {
+				t.Errorf("enqueue batch calls = %d, tasks = %d; want 1, %d", actuator.EnqueueBatchCalls, len(actuator.EnqueuedTasks), tt.wantTasks)
 			}
 			if st.UpdateWorkUnitOperationCalls != tt.wantStopped {
 				t.Errorf("stopped operations = %d, want %d", st.UpdateWorkUnitOperationCalls, tt.wantStopped)
