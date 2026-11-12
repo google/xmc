@@ -35,6 +35,7 @@ import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { AipSort, toOrderBy } from 'app/common/sort/aip_sort';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 import { ResourceService } from 'app/service/resource_service';
@@ -90,11 +91,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   private readonly resourceService = inject(ResourceService);
 
-  protected readonly sort = signal<Sort>({ active: '', direction: '' });
-  protected readonly orderBy = computed(() => {
-    const sort = this.sort();
-    return sort.direction ? `${sort.active} ${sort.direction}` : '';
-  });
+  protected readonly sort = signal<AipSort>({ active: '', direction: '' });
+  protected readonly orderBy = computed(() => toOrderBy(this.sort()) ?? '');
 
   protected readonly isFetching = signal<boolean>(false);
   protected readonly hasLoaded = signal<boolean>(false);

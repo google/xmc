@@ -21,11 +21,12 @@ import {
   PaginationState,
   setPageSize,
 } from 'app/common/pagination/pagination';
+import { AipSort, toOrderBy } from 'app/common/sort/aip_sort';
 import { ListWorkUnitsRequest, WorkUnit } from 'app/protos/experiment_state_server';
 import { SnackbarService } from 'app/service/snackbar_service';
 import { WorkUnitsService } from 'app/service/work_units_service';
 
-import { AipSort, buildAnyOfFilter, toOrderBy } from './work_units_query';
+import { buildAnyOfFilter } from './work_units_query';
 
 /** Interface for the state of the WorkUnitsTable. */
 interface WorkUnitsTableState {

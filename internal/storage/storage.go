@@ -230,7 +230,7 @@ const (
 	ActiveWorkUnitSortPriority
 )
 
-// ActiveWorkUnitQuery holds validated display options applied before pagination.
+// ActiveWorkUnitQuery holds typed display options applied before pagination.
 type ActiveWorkUnitQuery struct {
 	SortField  ActiveWorkUnitSortField
 	Descending bool

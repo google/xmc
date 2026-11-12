@@ -677,6 +677,9 @@ func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
 				}
 				return
 			}
+			if fetcher.snapshotCalls != 1 {
+				t.Errorf("fetcher called %d times on valid order_by, want 1", fetcher.snapshotCalls)
+			}
 			if diff := cmp.Diff(tt.wantQuery, fetcher.lastQuery); diff != "" {
 				t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
 			}
