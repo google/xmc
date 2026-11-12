@@ -21,6 +21,7 @@ import { of, throwError } from 'rxjs';
 
 import { AddExperimentDialogComponent } from 'app/common/components/dashboard/add_experiment_dialog/add_experiment_dialog';
 import { DashboardGridComponent } from 'app/common/components/dashboard/dashboard_grid/dashboard_grid';
+import { PlotSpec } from 'app/service/dashboard_models';
 import { DashboardService } from 'app/service/dashboard_service';
 import { SnackbarService } from 'app/service/snackbar_service';
 import {
@@ -105,7 +106,7 @@ describe('DashboardsPage', () => {
   it('should open AddExperimentDialog when clicking add experiment and deep-copy template plots', async () => {
     const pageComponent = bootstrap(DashboardsPage);
     const harness = await getHarness(DashboardsPageHarness);
-    const initialPlot = { plotId: 'val_loss_kpi', title: 'Test Plot' } as any;
+    const initialPlot = { plotId: 'val_loss_kpi', title: 'Test Plot' } as PlotSpec;
     pageComponent.charts.set([
       {
         name: 'experiments/1/charts/1',

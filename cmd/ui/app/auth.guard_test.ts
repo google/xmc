@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { ActivatedRouteSnapshot, Router, RouterStateSnapshot } from '@angular/router';
+import { Observable, of, throwError } from 'rxjs';
 
 import { authGuard } from './auth.guard';
-import { AuthService } from './service/auth.service';
+import { AuthService, UserResponse } from './service/auth.service';
 import { cleanState, setupModule } from './testing/test';
 
 function setup() {
@@ -42,11 +42,13 @@ describe('authGuard', () => {
   const state = setup();
 
   it('should return true if user is logged in', (done) => {
-    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as any));
+    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as UserResponse));
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
+    const result = TestBed.runInInjectionContext(() =>
+      authGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
+    );
 
-    (result as any).subscribe((res: boolean) => {
+    (result as Observable<boolean>).subscribe((res: boolean) => {
       expect(res).toBeTrue();
       expect(state.routerSpy.navigate).not.toHaveBeenCalled();
       done();
@@ -56,9 +58,11 @@ describe('authGuard', () => {
   it('should redirect to / and return false if user is not logged in', (done) => {
     state.authServiceSpy.getUser.and.returnValue(of(null));
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
+    const result = TestBed.runInInjectionContext(() =>
+      authGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
+    );
 
-    (result as any).subscribe((res: boolean) => {
+    (result as Observable<boolean>).subscribe((res: boolean) => {
       expect(res).toBeFalse();
       expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
       done();
@@ -68,9 +72,11 @@ describe('authGuard', () => {
   it('should redirect to / and return false if auth service throws an error', (done) => {
     state.authServiceSpy.getUser.and.returnValue(throwError(() => new Error('Auth error')));
 
-    const result = TestBed.runInInjectionContext(() => authGuard({} as any, {} as any));
+    const result = TestBed.runInInjectionContext(() =>
+      authGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
+    );
 
-    (result as any).subscribe((res: boolean) => {
+    (result as Observable<boolean>).subscribe((res: boolean) => {
       expect(res).toBeFalse();
       expect(state.routerSpy.navigate).toHaveBeenCalledWith(['/']);
       done();

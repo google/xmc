@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { LineSeriesOption, YAXisComponentOption } from 'echarts';
+
 import { GeomType, PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { XMC_BASELINE_COLOR } from './echarts_theme';
@@ -48,7 +50,7 @@ describe('scatter_options_builder', () => {
     it('should build line curve with coordinate data from golden points', () => {
       const option = buildScatterOption(mockSpec, mockPlotData);
       expect(option.series).toBeDefined();
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].name).toBe('eval/loss');
       expect(seriesArr[0].data).toEqual([
@@ -59,8 +61,8 @@ describe('scatter_options_builder', () => {
         [400, 0.2789],
         [500, 0.1631],
       ]);
-      expect((option.yAxis as any)?.min).toBe(0);
-      expect((option.yAxis as any)?.max).toBe(2.0);
+      expect((option.yAxis as YAXisComponentOption)?.min).toBe(0);
+      expect((option.yAxis as YAXisComponentOption)?.max).toBe(2.0);
     });
   });
 
@@ -90,7 +92,7 @@ describe('scatter_options_builder', () => {
 
     it('should correctly map downsampled bucket step numbers', () => {
       const option = buildScatterOption(mockSpec, mockPlotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].data).toEqual([
         [0, 0.9998],
@@ -147,23 +149,27 @@ describe('scatter_options_builder', () => {
 
     it('should generate multiple series with distinct colors and dotted baseline', () => {
       const option = buildScatterOption(mockSpec, mockPlotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(4); // 3 data series + 1 markLine baseline geom
 
       expect(seriesArr[0].name).toBe('Run 1');
       expect(seriesArr[1].name).toBe('Run 2');
       expect(seriesArr[2].name).toBe('Baseline');
-      expect(seriesArr[2].lineStyle.type).toBe('dotted');
-      expect(seriesArr[2].lineStyle.color).toBe(XMC_BASELINE_COLOR);
+      expect(seriesArr[2].lineStyle?.type).toBe('dotted');
+      expect(seriesArr[2].lineStyle?.color).toBe(XMC_BASELINE_COLOR);
 
       // Verify markLine baseline
-      expect(seriesArr[3].markLine.data[0].yAxis).toBe(0.7);
+      const markLineData = seriesArr[3].markLine?.data as Array<{ yAxis: number }>;
+      expect(markLineData[0].yAxis).toBe(0.7);
     });
 
     it('should extract valid HLINE series via extractHlineSeries helper', () => {
       const hlines = extractHlineSeries(mockSpec.geoms);
       expect(hlines.length).toBe(1);
-      expect((hlines[0] as any).markLine.data[0].yAxis).toBe(0.7);
+      const markLineData = (hlines[0] as LineSeriesOption).markLine?.data as Array<{
+        yAxis: number;
+      }>;
+      expect(markLineData[0].yAxis).toBe(0.7);
     });
 
     it('should ignore geoms with null or undefined yintercept', () => {
@@ -175,7 +181,7 @@ describe('scatter_options_builder', () => {
         ],
       };
       const option = buildScatterOption(specWithNullGeom, mockPlotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(3); // Only 3 data series, no markLine series
     });
   });
@@ -207,7 +213,7 @@ describe('scatter_options_builder', () => {
       };
 
       const option = buildScatterOption(baseSpec, plotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].data).toEqual([
         [parsedTime1, 85.5],
@@ -229,7 +235,7 @@ describe('scatter_options_builder', () => {
       };
 
       const option = buildScatterOption(baseSpec, plotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].data).toEqual([
         [1, 0.75],
@@ -253,7 +259,7 @@ describe('scatter_options_builder', () => {
       };
 
       const option = buildScatterOption(baseSpec, plotData);
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as LineSeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].data).toEqual([
         [0, 10],
