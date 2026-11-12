@@ -258,7 +258,6 @@ func NegationExp(qfv QueryFilterVisitor, e *fpb.Expression) (filtervisitor.PrimT
 }
 
 func handleGlobalRestriction(qfv QueryFilterVisitor, rhs *fpb.Expression) (filtervisitor.PrimType, error) {
-	// TODO: guard against nil qfv.GetExpOptions() before dereferencing.
 	if qfv.GetExpOptions().UseFullTextSearch {
 		return handleTextSearch(qfv, rhs)
 	}
@@ -335,7 +334,6 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 	if !lhsType.Equals(filtervisitor.String) && !lhsType.Equals(filtervisitor.Bytes) {
 		return filtervisitor.Invalid, fmt.Errorf("HAS operator is not supported for type %v", lhsType.Name)
 	}
-	// TODO: guard against nil qfv.GetExpOptions() before dereferencing.
 	if !qfv.GetExpOptions().UseHasOperatorAsContains {
 		return filtervisitor.Invalid, fmt.Errorf("HAS operator is not supported for string/bytes fields unless has contains option is enabled")
 	}
