@@ -163,16 +163,17 @@ function evaluateSameShaDecision(isDismissed) {
 function evaluateOwnerGrace(deltaLines, testDeltaLines, maxGraceLines) {
   const nonTestDelta = deltaLines - testDeltaLines;
   const testSuffix = testDeltaLines > 0 ? `, excluding ${testDeltaLines} test file line${testDeltaLines === 1 ? '' : 's'}` : '';
+  const nonTestDeltaSuffix = nonTestDelta === 1 ? '' : 's';
   if (nonTestDelta <= maxGraceLines) {
     return {
       shouldReapprove: true,
-      reason: `PR author is a code owner and changes since last approval (${nonTestDelta} line${nonTestDelta === 1 ? '' : 's'}${testSuffix}) are within the ${maxGraceLines}-line grace delta.`,
+      reason: `PR author is a code owner and changes since last approval (${nonTestDelta} line${nonTestDeltaSuffix}${testSuffix}) are within the ${maxGraceLines}-line grace delta.`,
       trigger: 'OWNER_GRACE_DELTA'
     };
   }
   return {
     shouldReapprove: false,
-    reason: `Changes since last approval (${nonTestDelta} lines${testSuffix}) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
+    reason: `Changes since last approval (${nonTestDelta} line${nonTestDeltaSuffix}${testSuffix}) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
     trigger: 'EXCEEDS_OWNER_GRACE'
   };
 }

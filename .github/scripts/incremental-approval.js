@@ -57,7 +57,7 @@ function computeDeltaSummary(core, prNumber, baseRef, approvedSha, currentSha, p
     core.warning(`Failed to verify git references (${describeError(error)}). Requiring manual review.`);
     return null;
   }
-  if (!refStatus.success) {
+  if (!refStatus || !refStatus.success) {
     core.warning(`Previously approved commit ${approvedSha.slice(0, 7)} is no longer reachable on remote (likely pruned by Git GC after force-push). Requiring manual review.`);
     return null;
   }
