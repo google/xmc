@@ -95,9 +95,13 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   protected readonly orderBy = computed(() => toOrderBy(this.sort()) ?? '');
 
   protected readonly isFetching = signal<boolean>(false);
-  protected readonly hasLoaded = signal<boolean>(false);
-  protected readonly isLoading = computed(() => this.isFetching() && !this.hasLoaded());
-  protected readonly isRefreshing = computed(() => this.isFetching() && this.hasLoaded());
+  protected readonly loadedQueueName = signal<string | undefined>(undefined);
+  protected readonly isLoading = computed(
+    () => this.isFetching() && this.loadedQueueName() !== this.activeQueueName(),
+  );
+  protected readonly isRefreshing = computed(
+    () => this.isFetching() && this.loadedQueueName() === this.activeQueueName(),
+  );
   protected readonly tableControls = {
     pageSize: signal<number>(10),
     pageIndex: signal<number>(0),
@@ -128,7 +132,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
         this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy).pipe(
           tap((resp) => {
             this.isFetching.set(false);
-            this.hasLoaded.set(true);
+            this.loadedQueueName.set(queueName);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
             this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
             for (const job of resp?.jobs ?? []) {
@@ -141,7 +145,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
           }),
           catchError(() => {
             this.isFetching.set(false);
-            this.hasLoaded.set(true);
+            this.loadedQueueName.set(queueName);
             this.tableControls.totalCount.set(0);
             this.tableControls.nextPageToken.set('');
             return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
@@ -175,10 +179,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   constructor() {
     effect(() => {
       this.activeQueueName();
-      untracked(() => {
-        this.hasLoaded.set(false);
-        this.resetPage();
-      });
+      untracked(() => this.resetPage());
     });
   }
 
