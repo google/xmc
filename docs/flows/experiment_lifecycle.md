@@ -35,9 +35,10 @@ sequenceDiagram
 
 The ordering here is worth noting: the `xid` is allocated by the XID Service **before** the
 experiment row exists. The XID entry is what carries ownership and access control, which keeps a
-single source of truth for "who may touch experiment N" across every subsequent call. Every check
-that can reject the request therefore runs before `CreateXidEntry`, so that a rejected request does
-not leave an orphaned XID entry behind.
+single source of truth for "who may touch experiment N" across every subsequent call. Request
+validation, authorization, and the component pre-check run before `CreateXidEntry`, so these
+rejections leave no XID entry behind; a failure in the creation transaction (step 8) happens after it
+and leaves its XID entry in place.
 
 **Validation (step 2).** Malformed requests fail with `INVALID_ARGUMENT`. Besides the general field
 rules, `experiment_type` must be a known value, and a missing or `UNSPECIFIED` `experiment_type` is

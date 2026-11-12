@@ -85,8 +85,8 @@ checks that all three are ready before allocating an XID and again in the transa
 the experiment, then pins them as `ExperimentComponentSnapshots` at their current generation (see
 [Create Experiment](../../docs/flows/experiment_lifecycle.md#1-create-experiment)). Because `hpo` and
 `vizier` are `EXPERIMENTAL`, [Dynamic Drift Detection](#dynamic-drift-detection) attaches a
-"uses experimental components" `WARNING` to the study's status when it is read; the warning is
-computed at read time and never stored.
+"uses experimental components" `WARNING` to the status returned by `GetExperiment` and
+`GetExperimentStatus` while the study is `ACTIVE`; the warning is computed at read time and never stored.
 
 ---
 
