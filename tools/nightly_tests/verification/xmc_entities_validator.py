@@ -123,12 +123,12 @@ def _make_req(cls_name: str, **kwargs: Any) -> Any:
 
 def state_enum_to_name(state_enum: int) -> str:
     """Maps WorkUnitState enum value to a human-readable string."""
-    if status_pb2 is not None and hasattr(status_pb2, "WorkUnitStatus"):
+    if status_pb2 is not None:
         try:
             name = str(status_pb2.WorkUnitStatus.WorkUnitState.Name(state_enum))
-        except ValueError:
-            return f"UNKNOWN({state_enum})"
-        return name.removeprefix("WORK_UNIT_STATE_")
+            return name.removeprefix("WORK_UNIT_STATE_")
+        except (AttributeError, ValueError):
+            pass
     if 0 <= state_enum < len(STATE_NAMES):
         return STATE_NAMES[state_enum]
     return f"UNKNOWN({state_enum})"

@@ -81,7 +81,15 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             self.assertEqual(xmc_entities_validator.state_enum_to_name(0), "UNSPECIFIED")
             self.assertEqual(xmc_entities_validator.state_enum_to_name(12), "SCHEDULING_PAUSED")
             self.assertEqual(xmc_entities_validator.state_enum_to_name(99), "FUTURE_PROTO_STATE")
-            self.assertEqual(xmc_entities_validator.state_enum_to_name(4), "UNKNOWN(4)")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(4), "RUNNING")
+            self.assertEqual(xmc_entities_validator.state_enum_to_name(9999), "UNKNOWN(9999)")
+        with mock.patch.object(xmc_entities_validator, "status_pb2", SimpleNamespace()):
+            self.assertEqual(
+                xmc_entities_validator.state_enum_to_name(
+                    xmc_entities_validator.STATE_SCHEDULING_PAUSED
+                ),
+                "SCHEDULING_PAUSED",
+            )
 
     def test_state_names_fallback_matches_status_proto(self) -> None:
         rel = pathlib.Path("api/protos/experiment/status.proto")
