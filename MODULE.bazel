@@ -173,6 +173,7 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_text",
     "org_golang_x_time",
+    "org_golang_x_tools",
     "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )
