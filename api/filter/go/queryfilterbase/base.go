@@ -134,11 +134,7 @@ func extractPathAndValue(expr *fpb.Expression) ([]string, string) {
 	if rhs.WhichExpression() == fpb.Expression_Phrase_case {
 		literalVal = strings.Join(rhs.GetPhrase().GetValues(), " ")
 	} else if rhs.WhichExpression() == fpb.Expression_Value_case {
-		val := rhs.GetValue()
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			val = val[1 : len(val)-1]
-		}
-		literalVal = val
+		literalVal, _ = stripQuotes(rhs.GetValue())
 	}
 	return path, literalVal
 }
@@ -262,6 +258,7 @@ func NegationExp(qfv QueryFilterVisitor, e *fpb.Expression) (filtervisitor.PrimT
 }
 
 func handleGlobalRestriction(qfv QueryFilterVisitor, rhs *fpb.Expression) (filtervisitor.PrimType, error) {
+	// TODO: guard against nil qfv.GetExpOptions() before dereferencing.
 	if qfv.GetExpOptions().UseFullTextSearch {
 		return handleTextSearch(qfv, rhs)
 	}
@@ -291,7 +288,7 @@ func isStringyType(name string) bool {
 }
 
 func stripQuotes(val string) (string, bool) {
-	if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
+	if len(val) >= 2 && ((strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'"))) {
 		return val[1 : len(val)-1], true
 	}
 	return val, false
@@ -338,6 +335,7 @@ func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsT
 	if !lhsType.Equals(filtervisitor.String) && !lhsType.Equals(filtervisitor.Bytes) {
 		return filtervisitor.Invalid, fmt.Errorf("HAS operator is not supported for type %v", lhsType.Name)
 	}
+	// TODO: guard against nil qfv.GetExpOptions() before dereferencing.
 	if !qfv.GetExpOptions().UseHasOperatorAsContains {
 		return filtervisitor.Invalid, fmt.Errorf("HAS operator is not supported for string/bytes fields unless has contains option is enabled")
 	}
@@ -511,8 +509,7 @@ func FunctionExp(qfv QueryFilterVisitor, f *fpb.Function) (filtervisitor.PrimTyp
 	return filtervisitor.Invalid, fmt.Errorf("unsupported function call %q", funcName)
 }
 
-func parseTimestampVal(val string) (time.Time, bool) {
-	cleanVal, _ := stripQuotes(val)
+func parseTimestampVal(cleanVal string) (time.Time, bool) {
 	if t, err := time.Parse(time.RFC3339, cleanVal); err == nil {
 		return t, true
 	}
@@ -569,9 +566,9 @@ func checkStringyLiteralTypeMismatch(val string, isHAS bool, lastType filtervisi
 	return filtervisitor.Invalid, false
 }
 
-func bindTemporalValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val, cleanVal string) (filtervisitor.PrimType, bool) {
+func bindTemporalValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, cleanVal string) (filtervisitor.PrimType, bool) {
 	if lastType.Equals(filtervisitor.Timestamp) || lastType.Equals(filtervisitor.ProtoTimestamp) {
-		t, ok := parseTimestampVal(val)
+		t, ok := parseTimestampVal(cleanVal)
 		if !ok {
 			return filtervisitor.Invalid, false
 		}
@@ -607,7 +604,7 @@ func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val
 		qfv.AppendBindingBool(b)
 		return filtervisitor.Boolean, true, nil
 	case lastType.Equals(filtervisitor.Timestamp) || lastType.Equals(filtervisitor.ProtoTimestamp) || lastType.Equals(filtervisitor.Date):
-		t, ok := bindTemporalValue(qfv, lastType, val, cleanVal)
+		t, ok := bindTemporalValue(qfv, lastType, cleanVal)
 		return t, ok, nil
 	case lastType.Equals(filtervisitor.Bytes):
 		qfv.AppendBindingByteArray([]byte(cleanVal))
