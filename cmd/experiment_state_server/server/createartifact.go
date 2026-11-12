@@ -27,111 +27,98 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
+type createArtifactContext struct {
+	creator   string
+	parentXID int64
+	parentWID int64
+}
+
+func (h *ArtifactHandler) validateAndPrepareArtifactCreation(ctx context.Context, req *msgpb.CreateArtifactRequest) (createArtifactContext, *msgpb.Artifact, error) {
+	creator, _, err := h.auth.AuthenticateUserFromContext(ctx)
+	if err != nil {
+		return createArtifactContext{}, nil, err
+	}
+	parentXID, parentWID, err := validator.ValidateArtifactParent(req.GetParent())
+	if err != nil {
+		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
+		return createArtifactContext{}, nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), grpcerr.ErrInvalidArgument, err)
+	}
+	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
+	if err != nil {
+		return createArtifactContext{}, nil, err
+	}
+	if !authorized {
+		logging.Warn(ctx, "User not authorized to create artifacts for XID", "user", creator, "xid", parentXID)
+		return createArtifactContext{}, nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, grpcerr.ErrPermissionDenied)
+	}
+	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
+		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
+		return createArtifactContext{}, nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
+	}
+
+	artifact := validator.FillArtifactNullValues(req.GetArtifact())
+	if err := h.fillManagedXprofDefaults(ctx, artifact, parentXID, parentWID); err != nil {
+		return createArtifactContext{}, nil, err
+	}
+	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
+		return createArtifactContext{}, nil, err
+	}
+	return createArtifactContext{creator: creator, parentXID: parentXID, parentWID: parentWID}, artifact, nil
+}
+
+func (h *ArtifactHandler) notifyArtifactObservers(ctx context.Context, artifact *msgpb.Artifact) error {
+	for _, obs := range h.artifactObservers {
+		artifactCopy, ok := proto.Clone(artifact).(*msgpb.Artifact)
+		if !ok {
+			logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
+			return fmt.Errorf("failed to clone artifact: %w", grpcerr.ErrInternal)
+		}
+		obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
+	}
+	return nil
+}
+
 func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateArtifactRequest) (*msgpb.Artifact, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Create artifact", "request", req)
 
-	// 1. Authenticate the user.
-	creator, _, err := h.auth.AuthenticateUserFromContext(ctx)
+	idCtx, artifact, err := h.validateAndPrepareArtifactCreation(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-
-	// 2. Validate the parent experiment or work unit format and enrich logging context.
-	parentXID, parentWID, err := validator.ValidateArtifactParent(req.GetParent())
-	if err != nil {
-		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
-		return nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), grpcerr.ErrInvalidArgument, err)
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 
-	// 3. Authorize the user to create artifacts for the parent experiment or work unit.
-	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
-	if err != nil {
-		return nil, err
-	}
-	if !authorized {
-		logging.Warn(ctx, "User not authorized to create artifacts for XID", "user", creator, "xid", parentXID)
-		return nil, fmt.Errorf("user %s is not authorized to create artifacts for XID %d: %w", creator, parentXID, grpcerr.ErrPermissionDenied)
-	}
-
-	// 4. Validate the request payload.
-	if err := validator.ValidateCreateArtifactRequest(req); err != nil {
-		logging.Warn(ctx, "CreateArtifact validation failed", "error", err)
-		return nil, fmt.Errorf("CreateArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
-	}
-
-	// 4.1. Fill in any null values in the request payload.
-	artifact := validator.FillArtifactNullValues(req.GetArtifact())
-
-	// 4.2. Populate default metadata for ManagedXprof artifacts if unset.
-	if err := h.fillManagedXprofDefaults(ctx, artifact, parentXID, parentWID); err != nil {
-		return nil, err
-	}
-
-	// 4.3. Validate ChartArtifact payload.
-	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
-		return nil, err
-	}
-
-	// 5. Provision an XIDEntry for the artifact.
-	logging.Debug(ctx, "Calling XID service to provision ID", "creator", creator)
-	artifactXIDEntry, err := h.createXid(ctx, creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(parentXID))
+	logging.Debug(ctx, "Calling XID service to provision ID", "creator", idCtx.creator)
+	artifactXIDEntry, err := h.createXid(ctx, idCtx.creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(idCtx.parentXID))
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
 		return nil, fmt.Errorf("failed to provision XID: %w", err)
 	}
-	logging.Debug(ctx, "Successfully provisioned XID")
-
-	// 4.1. Get the XID from the XIDEntry.
 	artifactXID, err := validator.ValidateXIDName(artifactXIDEntry.GetName())
 	if err != nil {
 		logging.Error(ctx, "Failed to validate XID name", "xid_name", artifactXIDEntry.GetName(), "error", err)
 		return nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", artifactXIDEntry.GetName(), grpcerr.ErrInternal, err)
 	}
 
-	// 5. Assemble the artifact object.
-	logging.Debug(ctx, "Assembling artifact object")
 	name := validator.ConstructArtifactName(artifactXID)
 	ctx = logging.WithArtifactName(ctx, name)
 	newArtifact := &msgpb.Artifact{
-		Name:           name,
-		Parent:         req.GetParent(),
-		Url:            artifact.Url,
-		Priority:       artifact.Priority,
-		Tags:           artifact.Tags,
-		Notes:          artifact.Notes,
-		LifecyclePhase: artifact.LifecyclePhase,
-		DataType:       artifact.DataType,
-		MimeType:       artifact.MimeType,
-		AdditionalInfo: artifact.AdditionalInfo,
-		Payload:        artifact.Payload,
+		Name: name, Parent: req.GetParent(), Url: artifact.Url, Priority: artifact.Priority,
+		Tags: artifact.Tags, Notes: artifact.Notes, LifecyclePhase: artifact.LifecyclePhase,
+		DataType: artifact.DataType, MimeType: artifact.MimeType, AdditionalInfo: artifact.AdditionalInfo, Payload: artifact.Payload,
 	}
 
-	// 6. Persist the artifact to the storage layer.
 	logging.Debug(ctx, "Persisting artifact")
 	retArtifact, err := h.storage.CreateArtifact(ctx, newArtifact)
 	if err != nil {
-		logging.Error(ctx, "Failed to save artifact", "artifact_name", newArtifact.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", newArtifact.GetName(), grpcerr.ErrInternal, err)
+		logging.Error(ctx, "Failed to save artifact", "artifact_name", name, "error", err)
+		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
-
-	// 6.1. Set the artifact's ACLs to the XIDEntry's ACLs.
 	retArtifact.Acls = artifactXIDEntry.Acls
 
-	// 6.2. Trigger post-creation hooks asynchronously (Observers).
-	if len(h.artifactObservers) > 0 {
-		for _, obs := range h.artifactObservers {
-			artifactCopy, ok := proto.Clone(retArtifact).(*msgpb.Artifact)
-			if !ok {
-				logging.Error(ctx, "Failed to clone retArtifact for async provisioning")
-				return nil, fmt.Errorf("failed to clone artifact: %w", grpcerr.ErrInternal)
-			}
-			obs.OnArtifactCreated(context.WithoutCancel(ctx), artifactCopy)
-		}
+	if err := h.notifyArtifactObservers(ctx, retArtifact); err != nil {
+		return nil, err
 	}
-
-	// 7. Return the successful response.
 	logging.Info(ctx, "Created artifact")
 	return retArtifact, nil
 }

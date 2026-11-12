@@ -57,11 +57,70 @@ import (
 //go:embed static/*
 var embedFS embed.FS
 
+func startGRPCServer(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, oauthAuth *oauth.Authenticator, prodServer *server.ProdServer) (*grpc.Server, func()) {
+	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
+	}
+	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
+	if err != nil {
+		logging.Fatal(ctx, "failed to listen", "error", err)
+	}
+
+	s := grpc.NewServer(grpc.Creds(transportCreds))
+	healthServer := health.NewServer()
+	healthpb.RegisterHealthServer(s, healthServer)
+	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
+
+	spb.RegisterExperimentStateServiceServer(s, prodServer)
+	cmsAuth, err := newCMSAuthorizer(ctx, cfg, oauthCfg, oauthAuth)
+	if err != nil {
+		logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
+	}
+	stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
+	reflection.Register(s)
+
+	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
+	go func() {
+		if err := s.Serve(lis); err != nil {
+			logging.Fatal(ctx, "failed to serve", "error", err)
+		}
+	}()
+	return s, stopCMS
+}
+
+func startHTTPGateway(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, oauthAuth *oauth.Authenticator, prodServer *server.ProdServer) {
+	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
+	if err != nil {
+		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
+	}
+
+	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth.IncomingHeaderMatcher))
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(httpTransportCreds)}
+	if err := spb.RegisterExperimentStateServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts); err != nil {
+		logging.Fatal(ctx, "failed to register gateway", "error", err)
+	}
+
+	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
+	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
+	registerCLILogin(ctx, httpMux, oauthAuth, oauthCfg, prodServer.Storage())
+
+	gwServer := &http.Server{
+		Addr:    ":" + cfg.HTTPPort,
+		Handler: oauthAuth.SecurityMiddlewares(httpMux),
+	}
+	go func() {
+		logging.Info(ctx, "Starting gRPC gateway", "addr", gwServer.Addr)
+		if err := gwServer.ListenAndServe(); err != nil {
+			logging.Fatal(ctx, "failed to serve gRPC gateway", "error", err)
+		}
+	}()
+}
+
 // main starts the gRPC server and handles graceful shutdown.
 func main() {
 	flag.Parse()
 
-	// 1. Load configuration
 	cfg := config.Load()
 	logger := logging.NewGCPLogger(slog.LevelInfo, cfg.ProjectID)
 	ctx := logging.WithLogger(context.Background(), logger)
@@ -77,8 +136,6 @@ func main() {
 		logging.Fatal(ctx, "failed to load configuration, invoker service account is empty")
 	}
 
-	// 2. Initialize the OAuth authenticator and production server. The gRPC authorizer reuses this
-	// authenticator for admission, so gRPC admits the same principals as HTTP.
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
 	defer oauthAuth.Close()
 
@@ -88,84 +145,13 @@ func main() {
 	}
 	defer prodServer.Close()
 
-	// 3. Initialize TLS credentials.
-	transportCreds, err := tlsutil.NewServerCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "failed to configure server credentials", "error", err)
-	}
-
-	opts := []grpc.ServerOption{
-		grpc.Creds(transportCreds),
-	}
-
-	// 4. Set up the gRPC server.
-	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
-	if err != nil {
-		logging.Fatal(ctx, "failed to listen", "error", err)
-	}
-
-	s := grpc.NewServer(opts...)
-
-	healthServer := health.NewServer()
-	healthpb.RegisterHealthServer(s, healthServer)
-	healthServer.SetServingStatus("xmc.ExperimentStateService", healthpb.HealthCheckResponse_SERVING)
-
-	spb.RegisterExperimentStateServiceServer(s, prodServer)
-	cmsAuth, err := newCMSAuthorizer(ctx, &cfg, oauthCfg, oauthAuth)
-	if err != nil {
-		logging.Fatal(ctx, "failed to initialize CMS authorizer", "error", err)
-	}
-	stopCMS := initCMS(ctx, s, healthServer, prodServer.Storage(), cmsAuth)
+	s, stopCMS := startGRPCServer(ctx, &cfg, oauthCfg, oauthAuth, prodServer)
 	// Deferred after prodServer.Close, so it runs after s.GracefulStop and before the
 	// database handle is closed.
 	defer stopCMS()
 
-	reflection.Register(s)
+	startHTTPGateway(ctx, &cfg, oauthCfg, oauthAuth, prodServer)
 
-	logging.Info(ctx, "gRPC server listening", "addr", lis.Addr())
-
-	go func() {
-		if err := s.Serve(lis); err != nil {
-			logging.Fatal(ctx, "failed to serve", "error", err)
-		}
-	}()
-
-	// 5. Initialize the gRPC gateway mux.
-	httpTransportCreds, err := tlsutil.NewClientCredentials(ctx, cfg.TLSCertFile, cfg.TLSKeyFile)
-	if err != nil {
-		logging.Fatal(ctx, "failed to configure client credentials", "error", err)
-	}
-
-	gwmux := runtime.NewServeMux(runtime.WithIncomingHeaderMatcher(oauth.IncomingHeaderMatcher))
-	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(httpTransportCreds),
-	}
-	err = spb.RegisterExperimentStateServiceHandlerFromEndpoint(ctx, gwmux, "localhost:"+cfg.GRPCPort, dialOpts)
-	if err != nil {
-		logging.Fatal(ctx, "failed to register gateway", "error", err)
-	}
-
-	// 6. Create a master HTTP mux for the gRPC gateway + health checks.
-	spHealth, xidHealth, tqHealth := prodServer.HealthCheckers()
-	httpMux := setupHTTPMux(ctx, oauthAuth, oauthAuth.Authenticate(gwmux), activeHealthCheck(spHealth, xidHealth, tqHealth), livenessCheck())
-	registerCLILogin(ctx, httpMux, oauthAuth, oauthCfg, prodServer.Storage())
-
-	// 7. Apply security middlewares
-	handler := oauthAuth.SecurityMiddlewares(httpMux)
-
-	// 8. Start the HTTP server.
-	gwServer := &http.Server{
-		Addr:    ":" + cfg.HTTPPort,
-		Handler: handler,
-	}
-	go func() {
-		logging.Info(ctx, "Starting gRPC gateway", "addr", gwServer.Addr)
-		if err := gwServer.ListenAndServe(); err != nil {
-			logging.Fatal(ctx, "failed to serve gRPC gateway", "error", err)
-		}
-	}()
-
-	// 9. Gracefully shut down the server when a signal is received.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit // Block until a signal is received
