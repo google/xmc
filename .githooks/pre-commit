@@ -582,16 +582,19 @@ check_shell() {
 }
 
 check_nonui_js() {
-  local js_files
-  if [ "${MODE}" = "check" ]; then
-    js_files=$(git ls-files '.github/scripts/*.js' 'tools/nightly_tests/*.js' 'cmd/experiment_state_server/static/*.js' || true)
-  elif git diff --cached --name-only --diff-filter=ACM | grep -qx 'tools/lint/eslint\.nonui\.config\.mjs'; then
-    js_files=$(git ls-files '.github/scripts/*.js' 'tools/nightly_tests/*.js' 'cmd/experiment_state_server/static/*.js' || true)
+  local js_files=()
+  local file
+  if [ "${MODE}" = "check" ] || git diff --cached --name-only --diff-filter=ACMR | grep -qx 'tools/lint/eslint\.nonui\.config\.mjs'; then
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then js_files+=("${file}"); fi
+    done < <(git -c core.quotePath=false ls-files ':(glob).github/scripts/**/*.js' ':(glob)tools/nightly_tests/**/*.js' ':(glob)cmd/experiment_state_server/static/**/*.js' 2>/dev/null || true)
   else
-    js_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^(\.github/scripts|tools/nightly_tests|cmd/experiment_state_server/static)/[^/]+\.js$' || true)
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then js_files+=("${file}"); fi
+    done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR | grep -E '^(\.github/scripts|tools/nightly_tests|cmd/experiment_state_server/static)/.*\.js$' || true)
   fi
 
-  if [ -z "${js_files}" ]; then
+  if [ "${#js_files[@]}" -eq 0 ]; then
     return
   fi
 
@@ -603,9 +606,7 @@ check_nonui_js() {
   fi
 
   echo "--> Running Non-UI JS Linter (ESLint)..."
-  # Intentional word-splitting of newline-delimited git paths.
-  # shellcheck disable=SC2086
-  if ! "${eslint_bin}" --no-config-lookup -c tools/lint/eslint.nonui.config.mjs ${js_files}; then
+  if ! "${eslint_bin}" --no-config-lookup -c tools/lint/eslint.nonui.config.mjs "${js_files[@]}"; then
     echo "❌ Non-UI JS ESLint check failed."
     FAILED=1
   fi
