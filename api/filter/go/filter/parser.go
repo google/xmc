@@ -499,7 +499,7 @@ func (p *parser) comparatorFromToken(comp tokenKind) (fpb.Restriction_Comparator
 		}
 		return fpb.Restriction_REGEXP_NOT_MATCH, nil
 	default:
-		return fpb.Restriction_COMPARATOR_UNSPECIFIED, nil
+		return fpb.Restriction_COMPARATOR_UNSPECIFIED, fmt.Errorf("unsupported comparator token %v", comp)
 	}
 }
 
