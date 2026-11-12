@@ -12,7 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ComponentHarness } from '@angular/cdk/testing';
+import { BaseHarnessFilters, ComponentHarness, HarnessPredicate } from '@angular/cdk/testing';
+
+/** Harness for a single clickable user chip in <xmc-queue-user-allocation-bar>. */
+export class QueueUserAllocationChipHarness extends ComponentHarness {
+  static hostSelector = 'button.allocation-chip';
+
+  private readonly user = this.locatorFor('.chip-user');
+
+  static with(
+    options: BaseHarnessFilters & { user?: string } = {},
+  ): HarnessPredicate<QueueUserAllocationChipHarness> {
+    return new HarnessPredicate(QueueUserAllocationChipHarness, options).addOption(
+      'user',
+      options.user,
+      (h, user) => HarnessPredicate.stringMatches(h.getUser(), user),
+    );
+  }
+
+  /** Gets the chip's user text. */
+  async getUser(): Promise<string> {
+    return (await (await this.user()).text()).trim();
+  }
+
+  /** Whether this chip is currently selected. */
+  async isSelected(): Promise<boolean> {
+    return (await this.host()).hasClass('selected');
+  }
+
+  /** Clicks this chip. */
+  async click(): Promise<void> {
+    return (await this.host()).click();
+  }
+}
 
 /** Harness for interacting with <xmc-queue-user-allocation-bar> in tests. */
 export class QueueUserAllocationBarHarness extends ComponentHarness {
@@ -70,5 +102,26 @@ export class QueueUserAllocationBarHarness extends ComponentHarness {
     const segments = await this.runningSegments();
     const styles = await Promise.all(segments.map((s) => s.getAttribute('style')));
     return styles.map((style) => /width:\s*([\d.]+%)/.exec(style ?? '')?.[1] ?? '');
+  }
+
+  private chip(user: string): Promise<QueueUserAllocationChipHarness> {
+    return this.locatorFor(QueueUserAllocationChipHarness.with({ user }))();
+  }
+
+  /** Whether a clickable button chip exists for the given user. */
+  async hasClickableUserChip(user: string): Promise<boolean> {
+    return (
+      (await this.locatorForOptional(QueueUserAllocationChipHarness.with({ user }))()) !== null
+    );
+  }
+
+  /** Clicks the chip for the given user. */
+  async clickUserChip(user: string): Promise<void> {
+    await (await this.chip(user)).click();
+  }
+
+  /** Whether the given user's chip is currently selected. */
+  async isUserChipSelected(user: string): Promise<boolean> {
+    return (await this.chip(user)).isSelected();
   }
 }
