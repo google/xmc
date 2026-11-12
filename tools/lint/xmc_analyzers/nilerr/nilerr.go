@@ -272,33 +272,46 @@ func errorResultIndices(info *types.Info, results *ast.FieldList) []int {
 	return indices
 }
 
-func nonNilErrorVar(info *types.Info, cond ast.Expr) types.Object {
-	bin, ok := cond.(*ast.BinaryExpr)
-	if !ok || bin.Op != token.NEQ {
+func errorIdentObj(info *types.Info, expr ast.Expr) types.Object {
+	ident, ok := ast.Unparen(expr).(*ast.Ident)
+	if !ok {
 		return nil
 	}
-	errorIdent := func(expr ast.Expr) types.Object {
-		ident, ok := expr.(*ast.Ident)
-		if !ok {
-			return nil
+	obj := info.ObjectOf(ident)
+	if obj == nil || obj.Type() == nil || !types.Implements(obj.Type(), errorInterfaceType) {
+		return nil
+	}
+	return obj
+}
+
+func nonNilErrorVar(info *types.Info, cond ast.Expr) types.Object {
+	bin, ok := ast.Unparen(cond).(*ast.BinaryExpr)
+	if !ok {
+		return nil
+	}
+	if bin.Op == token.LAND {
+		if obj := nonNilErrorVar(info, bin.X); obj != nil && !nodeReferencesObj(info, bin.Y, obj) {
+			return obj
 		}
-		obj := info.ObjectOf(ident)
-		if obj == nil || obj.Type() == nil || !types.Implements(obj.Type(), errorInterfaceType) {
-			return nil
+		if obj := nonNilErrorVar(info, bin.Y); obj != nil && !nodeReferencesObj(info, bin.X, obj) {
+			return obj
 		}
+		return nil
+	}
+	if bin.Op != token.NEQ {
+		return nil
+	}
+	if obj := errorIdentObj(info, bin.X); obj != nil && isNilIdent(info, bin.Y) {
 		return obj
 	}
-	if obj := errorIdent(bin.X); obj != nil && isNilIdent(info, bin.Y) {
-		return obj
-	}
-	if obj := errorIdent(bin.Y); obj != nil && isNilIdent(info, bin.X) {
+	if obj := errorIdentObj(info, bin.Y); obj != nil && isNilIdent(info, bin.X) {
 		return obj
 	}
 	return nil
 }
 
 func isNilIdent(info *types.Info, expr ast.Expr) bool {
-	ident, ok := expr.(*ast.Ident)
+	ident, ok := ast.Unparen(expr).(*ast.Ident)
 	return ok && ident.Name == "nil" && (info.ObjectOf(ident) == nil || info.ObjectOf(ident) == types.Universe.Lookup("nil"))
 }
 

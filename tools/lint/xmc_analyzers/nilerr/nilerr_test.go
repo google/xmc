@@ -146,6 +146,22 @@ func f() (bool, error) {
 			wantHits: 1,
 		},
 		{
+			name: "flags_unhandled_nil_error_return_with_and_and_parens",
+			src: `package sample
+import "errors"
+func f(cond bool) (int, error) {
+	err := errors.New("boom")
+	if (err != nil) && cond {
+		return 0, nil
+	}
+	if (err) != (nil) {
+		return 0, nil
+	}
+	return 1, nil
+}`,
+			wantHits: 2,
+		},
+		{
 			name: "flags_nil_return_after_unlogged_err_error_call",
 			src: `package sample
 import "errors"
@@ -176,6 +192,9 @@ func f(ctx ctxAlias, cond bool) (string, bool, error) {
 			return "", false, nil
 		}
 		return "", false, err
+	}
+	if err := errors.New("compound_is_not_found"); err != nil && errors.Is(err, errNotFound) {
+		return "", false, nil
 	}
 	if err := errors.New("ctx_canceled"); err != nil {
 		if (ctx).Err() != nil {
