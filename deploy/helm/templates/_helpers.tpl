@@ -213,39 +213,54 @@ binaries built with gotags = ["mockauth"]; published images refuse to start when
 {{- end -}}
 
 {{/*
-Kubernetes Secret name holding the ClickHouse password when CSI is disabled.
+Returns "true" when dashboardServiceDeployment.enabled is truthy, safely handling nil/scalar overrides.
 */}}
-{{- define "xmanager-cloud.clickhouseSecretName" -}}
-{{- $clickhouse := default (dict) (default (dict) .Values.metrics).clickhouse -}}
-{{- $clickhouse.secretName | default "clickhouse-secret" -}}
+{{- define "xmanager-cloud.dashboardServiceEnabled" -}}
+{{- $dash := ternary .Values.dashboardServiceDeployment (dict) (kindIs "map" .Values.dashboardServiceDeployment) -}}
+{{- include "xmanager-cloud.authFlagEnabled" $dash.enabled -}}
 {{- end -}}
 
 {{/*
-ClickHouse connection environment variables for XMC services backed by the metrics pipeline.
-Consumed by pkg/clickhouse.GetOptions. The password follows the same two paths as the JWT and
-OAuth client secrets above: with the CSI driver enabled it is read from the file Secret Manager
-mounts, and otherwise from the ClickHouse Secret (metrics.clickhouse.secretName, default
-clickhouse-secret) rendered by templates/metrics/clickhouse-secret.yaml out of a Helm value.
+Kubernetes Secret name holding the ClickHouse password when ClickHouse CSI mode is inactive.
 */}}
-{{- define "xmanager-cloud.clickhouseEnv" -}}
-{{- $clickhouse := default (dict) (default (dict) .Values.metrics).clickhouse -}}
-- name: CLICKHOUSE_HOST
-  value: {{ $clickhouse.host | default "clickhouse.xmc-metrics.svc.cluster.local" | quote }}
-- name: CLICKHOUSE_PORT
-  value: {{ $clickhouse.port | default "9000" | quote }}
-- name: CLICKHOUSE_DATABASE
-  value: {{ $clickhouse.database | default "default" | quote }}
-- name: CLICKHOUSE_USER
-  value: {{ $clickhouse.user | default "default" | quote }}
-{{- if (default (dict) (default (dict) .Values.secrets).csi).enabled }}
+{{- define "xmanager-cloud.clickhouseSecretName" -}}
+{{- $metrics := ternary .Values.metrics (dict) (kindIs "map" .Values.metrics) -}}
+{{- $clickhouse := ternary $metrics.clickhouse (dict) (kindIs "map" $metrics.clickhouse) -}}
+{{- (($clickhouse.secretName | default "") | toString | trim) | default "clickhouse-secret" -}}
+{{- end -}}
+
+{{/*
+Trimmed GCP Secret Manager secret name for ClickHouse when CSI is configured, or empty string.
+*/}}
+{{- define "xmanager-cloud.clickhouseCsiSecretName" -}}
+{{- $secrets := ternary .Values.secrets (dict) (kindIs "map" .Values.secrets) -}}
+{{- $csi := ternary $secrets.csi (dict) (kindIs "map" $secrets.csi) -}}
+{{- ($csi.clickhousePasswordSecretName | default "") | toString | trim -}}
+{{- end -}}
+
+{{/*
+Returns "true" when ClickHouse credentials come from Secret Manager CSI (both secrets.csi.enabled
+and a non-empty secrets.csi.clickhousePasswordSecretName are set), and "false" otherwise.
+*/}}
+{{- define "xmanager-cloud.clickhouseUsesCsi" -}}
+{{- $secrets := ternary .Values.secrets (dict) (kindIs "map" .Values.secrets) -}}
+{{- $csi := ternary $secrets.csi (dict) (kindIs "map" $secrets.csi) -}}
+{{- if and (eq (include "xmanager-cloud.authFlagEnabled" $csi.enabled) "true") (ne (include "xmanager-cloud.clickhouseCsiSecretName" .) "") -}}
+true
+{{- else -}}
+false
+{{- end -}}
+{{- end -}}
+
+{{/*
+ClickHouse CSI password file environment variable for dashboard-service.
+ClickHouse endpoints, database, user, and Kubernetes Secret name (when ClickHouse CSI mode is
+inactive) are resolved dynamically from Component/clickhouse by pkg/clickhouse/componentconfig.
+*/}}
+{{- define "xmanager-cloud.clickhouseCsiEnv" -}}
+{{- if eq (include "xmanager-cloud.clickhouseUsesCsi" .) "true" }}
 - name: CLICKHOUSE_PASSWORD_FILE
   value: "/etc/gcp-secrets/clickhouse-password"
-{{- else }}
-- name: CLICKHOUSE_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "xmanager-cloud.clickhouseSecretName" . }}
-      key: clickhouse-password
 {{- end }}
 {{- end -}}
 

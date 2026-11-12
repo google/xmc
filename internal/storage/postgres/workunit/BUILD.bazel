@@ -18,6 +18,7 @@ go_library(
     name = "workunit",
     srcs = [
         "active_work_unit_resources.go",
+        "active_workunit_query.go",
         "queries.go",
         "repository.go",
     ],
@@ -50,6 +51,7 @@ go_test(
     name = "workunit_test",
     srcs = [
         "active_work_unit_resources_test.go",
+        "active_workunit_query_test.go",
         "queries_test.go",
         "repository_test.go",
     ],

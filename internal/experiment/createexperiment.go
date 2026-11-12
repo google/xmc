@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
@@ -28,9 +29,11 @@ import (
 )
 
 // CreateExperiment orchestrates the creation of a new experiment using the provided transaction runner.
-// In the same transaction, it checks the components that the experiment requires and pins them to it,
-// returning an error wrapping ErrComponentRequirementNotMet when one is missing or not ready.
-// It returns the experiment proto with initial commit timestamps populated.
+// In the same transaction, it checks the components that the experiment requires, caps a study's
+// trial budget at the limit of the resolved hpo component, inserts the experiment, and pins the
+// components to it. It returns an error wrapping ErrComponentRequirementNotMet when a required
+// component is missing or not ready, and otherwise the created experiment proto with initial commit
+// timestamps populated.
 func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, exp *essmsgpb.Experiment) (*essmsgpb.Experiment, error) {
 	if exp == nil {
 		return nil, fmt.Errorf("experiment must not be nil")
@@ -45,42 +48,75 @@ func CreateExperiment(ctx context.Context, txRunner storage.TransactionRunner, e
 	}
 
 	reqs := RequirementsFor(exp)
+	// Each attempt restarts from the requested status and study config, so that a retried
+	// transaction neither clamps twice nor keeps a warning computed from a stale component record.
+	// Only these fields are restored instead of cloning the whole experiment, because proto.Clone
+	// turns empty lists into nil and the Spanner converter writes nil lists of NOT NULL columns
+	// (such as Experiments.Tags) as NULL.
+	// TODO: normalize nil lists to empty ones in the Spanner experiment converter, then clone exp.
+	requestedStatus := proto.Clone(exp.GetStatus()).(*essmsgpb.ExperimentStatus)
+	requestedStudyConfig := proto.Clone(exp.GetStudyConfig()).(*essmsgpb.StudyConfig)
 	err = runCreateTransaction(ctx, txRunner, len(reqs) > 0, func(ctx context.Context, tx *storage.Transaction) error {
-		if exp.Status == nil {
-			exp.Status = &essmsgpb.ExperimentStatus{}
-		}
-		// 2. Set the timestamps to the current time.
-		now := timestamppb.New(time.Now())
-		exp.CreateTime = now
-		exp.UpdateTime = now
-		exp.Status.LastChildStatusUpdateTime = now
-		exp.Status.UpdateTime = now
-
-		// 3. Insert the experiment via the transaction-scoped repository.
-		if err := tx.Experiments.InsertExperiment(ctx, exp); err != nil {
-			logging.Error(ctx, "failed to insert experiment", "experiment", exp, "error", err)
-			return err
-		}
-
-		// 3.1. Check and pin the required components, after the experiment row they reference.
-		if err := PinComponentRequirements(ctx, tx.Components, xid, reqs); err != nil {
-			return err
-		}
-
-		// 4. Record the initial status message history.
-		if err := workunit.RecordStatusMessageHistory(ctx, tx.StatusMessages, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
-			return fmt.Errorf("failed to save status message history for experiment: %w", err)
-		}
-
-		return nil
+		exp.Status = proto.Clone(requestedStatus).(*essmsgpb.ExperimentStatus)
+		setStudyConfig(exp, proto.Clone(requestedStudyConfig).(*essmsgpb.StudyConfig))
+		return insertExperiment(ctx, tx, xid, exp, reqs)
 	})
 	if err != nil {
+		// Leave the caller's status and study config as requested, not as the failed attempt changed
+		// them. Creation timestamps stay set, as before.
+		exp.Status = requestedStatus
+		setStudyConfig(exp, requestedStudyConfig)
 		logging.Error(ctx, "failed to create experiment", "error", err)
 		return nil, err
 	}
+	logStudyTrialBudgetClamp(ctx, requestedStudyConfig, exp.GetStudyConfig())
 
 	logging.Info(ctx, "Written experiment to storage")
 	return exp, nil
+}
+
+// insertExperiment resolves reqs, applies the study trial budget limit, inserts exp, pins the
+// resolved components, and records the initial status message history, all through tx. The
+// components are pinned after the experiment row that their snapshots reference.
+func insertExperiment(ctx context.Context, tx *storage.Transaction, xid int64, exp *essmsgpb.Experiment, reqs []Requirement) error {
+	recs, err := ResolveComponentRequirements(ctx, tx.Components, reqs)
+	if err != nil {
+		return err
+	}
+	initCreationTimestamps(exp)
+	clampStudyTrialBudget(ctx, exp, recs)
+	if err := tx.Experiments.InsertExperiment(ctx, exp); err != nil {
+		logging.Error(ctx, "failed to insert experiment", "experiment", exp, "error", err)
+		return err
+	}
+	if err := PinComponentRecords(ctx, tx.Components, xid, recs); err != nil {
+		return err
+	}
+	if err := workunit.RecordStatusMessageHistory(ctx, tx.StatusMessages, xid, nil, nil, nil, exp.GetStatus().GetStructuredStatusMessage()); err != nil {
+		return fmt.Errorf("failed to save status message history for experiment: %w", err)
+	}
+	return nil
+}
+
+// setStudyConfig sets the type_config of exp to cfg, or clears it when cfg is nil.
+func setStudyConfig(exp *essmsgpb.Experiment, cfg *essmsgpb.StudyConfig) {
+	if cfg == nil {
+		exp.TypeConfig = nil
+		return
+	}
+	exp.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg}
+}
+
+// initCreationTimestamps sets the creation timestamps of exp and its status to the current time.
+func initCreationTimestamps(exp *essmsgpb.Experiment) {
+	if exp.Status == nil {
+		exp.Status = &essmsgpb.ExperimentStatus{}
+	}
+	now := timestamppb.New(time.Now())
+	exp.CreateTime = now
+	exp.UpdateTime = now
+	exp.Status.LastChildStatusUpdateTime = now
+	exp.Status.UpdateTime = now
 }
 
 // runCreateTransaction runs fn in a read-write transaction, a serializable one when the experiment

@@ -35,6 +35,15 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	if err := validateJobsRequest(ctx, req, s.workUnitStore); err != nil {
 		return nil, err
 	}
+	query, err := parseJobsOrderBy(req.GetOrderBy())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid order_by: %v", err)
+	}
+	filter, err := parseJobsFilter(req.GetFilter())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid filter: %v", err)
+	}
+	query.Filter = filter
 
 	clusterQueueName := req.GetQueueName()
 
@@ -46,7 +55,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 	pageSize = min(pageSize, 100)
 
-	result, activeResources, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken())
+	result, activeResources, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken(), query)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active jobs from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		if errors.Is(err, storage.ErrInvalidPageToken) {
@@ -72,12 +81,12 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}, nil
 }
 
-func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
+func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
 	var result *storage.ActiveWorkUnitsResult
 	var activeResources []storage.ActiveWorkUnitResources
 	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
 		var err error
-		if result, err = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken); err != nil {
+		if result, err = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken, query); err != nil {
 			return fmt.Errorf("fetch active work units: %w", err)
 		}
 		if activeResources, err = repo.FetchActiveWorkUnitResources(txCtx, targetQueues); err != nil {

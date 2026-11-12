@@ -29,7 +29,7 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `ingestion-gateway` Component CR in the catalog. |
 | `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace`, `-components_namespace`, & `RoleBinding.subjects` | Target Kubernetes namespace for the `Component` CR and component reader RBAC subject. |
-| `deployWorkload` | `false` | Template guard | When `true` (or when `ingestionGatewayDeployment.enabled=true` via `xmc-bridge`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`). |
+| `deployWorkload` | `false` | Template guard | Standalone template/linter guard; when `true` (or when `xmc-bridge` sets sub-chart `ingestionGatewayDeployment.enabled=true` on `xmc-cmp-ingestion-gateway`), renders Kubernetes workload resources (`Deployment`, `Service`, `HPA`, `RBAC`, `NetworkPolicy`). |
 | `global.imageTag` | `""` | `spec.imageTag` & Container `image` | Overrides the container image tag across both the `Component` CR (`spec.imageTag`) and the `Deployment` container spec (`{{ repository }}:{{ global.imageTag }}`). |
 | `imageTag` | `""` | `spec.imageTag` & Container `image` | Per-component fallback image tag used when `global.imageTag` is empty. |
 | `parameters.port` | `8080` (`"8080"`) | `-port`, `containerPort`, `Service.spec.ports` | HTTP/gRPC port exposed by the Ingestion Gateway container and ClusterIP Service. |
@@ -53,18 +53,13 @@ All entries in `spec.parameters` are serialized as quoted strings (`| toString |
 ## 3. Actuation Lifecycle
 
 1. **Declare intent**: install the [`stable-2026a` profile](../../README.md) with `components.ingestion-gateway.enabled=true`. The profile renders only the `Component/ingestion-gateway` CR from [`templates/component.yaml`](templates/component.yaml); this chart's workload templates are never rendered by the profile.
-2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart with `ingestionGatewayDeployment.enabled=true`. The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`. The policy's rules mirror the umbrella policy used when `enable_components=false`.
+2. **Actuate**: `xmc-bridge` reconciles the CR and installs the `xmc-cmp-ingestion-gateway` release from this chart (setting sub-chart `ingestionGatewayDeployment.enabled=true`). The release renders the `Deployment`, `Service`, `HPA`, the `ingestion-gateway-components-reader` `Role`/`RoleBinding`, and the `ingestion-gateway-network-policy` `NetworkPolicy`.
 3. **Deactivate**: setting `enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-ingestion-gateway`. This removes the workload together with its RBAC and NetworkPolicy.
 
 The `xmc-cmp-ingestion-gateway` release self-provisions its reader RBAC so that the `RoleBinding` subject always matches the `Deployment` `serviceAccountName`. [`templates/component.yaml`](templates/component.yaml) is skipped for `xmc-cmp-*` releases because the `Component` CR is owned by the user's release, not by `xmc-bridge`.
 
 ---
 
-## 4. Coexistence with the Umbrella Chart (`deploy/helm/`)
+## 4. Relationship to the Umbrella Chart (`deploy/helm/`)
 
-| `enable_components` (`componentsDeployment.enabled`) | Gateway workload owner |
-| :---: | :--- |
-| `false` | Umbrella chart, when `enable_metrics` (`ingestionGatewayDeployment.enabled`) is `true` (unchanged legacy behavior). |
-| `true` | Only this chart: the gateway is optional and runs once the profile is installed with `components.ingestion-gateway.enabled=true` and `redpanda` and `clickhouse` are Ready. The umbrella renders no gateway Deployment/Service/HPA/RBAC/NetworkPolicy. |
-
-The gateway `NetworkPolicy` follows the same ownership. With `enable_components=true`, it ships in the `xmc-cmp-ingestion-gateway` release regardless of `enable_metrics`. A test keeps its rules identical to the umbrella policy.
+In XMC `1.0.0+`, the umbrella chart (`deploy/helm/`) renders no `ingestion-gateway` `Deployment`, `Service`, `HPA`, `Role`/`RoleBinding`, or `NetworkPolicy`. Instead, the gateway is an optional catalog component owned exclusively by this chart: `xmc-bridge` installs and manages the `xmc-cmp-ingestion-gateway` release (including `ingestion-gateway-network-policy`) once the [`stable-2026a` profile](../../README.md) is installed with `components.ingestion-gateway.enabled=true` and `redpanda` and `clickhouse` report `Ready`. For migrating pre-`1.0.0` legacy umbrella deployments without downtime, see [`docs/migrations/components.md`](../../../../../docs/migrations/components.md).

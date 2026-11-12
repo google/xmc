@@ -13,14 +13,8 @@
 // limitations under the License.
 
 /**
- * Builders for the AIP-160 filter and AIP-132 order-by strings sent by the work units table.
+ * Builder for the AIP-160 filter strings sent by the work units table.
  */
-
-/** A sort on one field; direction '' means no explicit order (server default). */
-export interface AipSort {
-  readonly active: string;
-  readonly direction: 'asc' | 'desc' | '';
-}
 
 /**
  * Builds an AIP-160 filter matching any of `values` on `field`, or undefined for none. The
@@ -31,9 +25,4 @@ export function buildAnyOfFilter(field: string, values: readonly string[]): stri
     return undefined;
   }
   return `(${values.map((value) => `${field} = "${value}"`).join(' OR ')})`;
-}
-
-/** Converts a sort into an AIP-132 orderBy, or undefined when the sort is cleared. */
-export function toOrderBy(sort: AipSort): string | undefined {
-  return sort.direction ? `${sort.active} ${sort.direction}` : undefined;
 }

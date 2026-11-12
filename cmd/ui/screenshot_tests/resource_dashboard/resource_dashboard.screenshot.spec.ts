@@ -45,6 +45,9 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   }) => {
     const dashboard = page.locator('xmc-resource-dashboard');
     await expect(dashboard).toBeVisible();
+    await expect(dashboard.getByLabel('Author', { exact: true })).toBeVisible();
+    await expect(dashboard.getByLabel('Status', { exact: true })).toBeVisible();
+    await expect(dashboard.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
     await expect(dashboard).toHaveScreenshot('resource-dashboard-initial.png');
   });
 
@@ -65,15 +68,15 @@ test.describe('Resource Dashboard (ROD) Container - Screenshot Tests', () => {
   });
 
   test('should match baseline screenshot in full-width jobs mode', async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 1300 });
+    await page.setViewportSize({ width: 2400, height: 1420 });
     // Ensure fixed container height for deterministic cross-environment visual bounding box capture
     await page.addStyleTag({
       content: `
         xmc-resource-dashboard {
           display: block !important;
           box-sizing: border-box !important;
-          height: 1160px !important;
-          min-height: 1160px !important;
+          height: 1280px !important;
+          min-height: 1280px !important;
           overflow: hidden !important;
         }
       `,

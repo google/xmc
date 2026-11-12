@@ -21,6 +21,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 # Ensure repo root is in sys.path to allow importing tools
 _repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -65,41 +66,37 @@ def _parse_bool(val: str | bool | None) -> bool:
 
 def _resolve_config(
     config_path: pathlib.Path | None = None,
-) -> tuple[str | None, str | None, str | None, bool]:
-    """Resolves environment, region, project_id, and enable_components flag.
+) -> tuple[str | None, str | None, str | None]:
+    """Resolves environment, region, and project_id from environment or YAML config.
 
     Args:
       config_path: Optional explicit Path to xmanager-cloud-deployment.yaml.
 
     Returns:
-      Tuple of (environment, region, project_id, enable_components).
+      Tuple of (environment, region, project_id).
     """
     env_val = os.environ.get("ENVIRONMENT")
     region_val = os.environ.get("REGION")
     project_val = os.environ.get("PROJECT_ID")
-    enable_components_env = os.environ.get("ENABLE_COMPONENTS")
 
-    if env_val and region_val and project_val and enable_components_env is not None:
-        return env_val, region_val, project_val, _parse_bool(enable_components_env)
+    if env_val and region_val and project_val:
+        return env_val, region_val, project_val
 
     if config_path is None:
         config_path = pathlib.Path(__file__).parent / "xmanager-cloud-deployment.yaml"
 
     if not config_path.is_file():
-        return env_val, region_val, project_val, _parse_bool(enable_components_env)
+        return env_val, region_val, project_val
 
     try:
         content = config_path.read_text(encoding="utf-8")
     except OSError:
-        return env_val, region_val, project_val, _parse_bool(enable_components_env)
+        return env_val, region_val, project_val
 
     env_val = env_val or _extract_yaml_val(content, "environment")
     region_val = region_val or _extract_yaml_val(content, "region")
     project_val = project_val or _extract_yaml_val(content, "project_id")
-    comp_raw = enable_components_env
-    if comp_raw is None:
-        comp_raw = _extract_yaml_val(content, "enable_components")
-    return env_val, region_val, project_val, _parse_bool(comp_raw)
+    return env_val, region_val, project_val
 
 
 def _run_command(cmd: list[str]) -> str:
@@ -323,44 +320,79 @@ def _is_pod_ready(pod_json_str: str) -> bool:
     )
 
 
-def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int]:
-    """Returns (all_ready, count) for Component CRs in the kubectl JSON list."""
-    items = _parse_k8s_items(crs_json_str)
+def _are_component_crs_ready(crs_json_str: str) -> tuple[bool, int, str]:
+    """Returns (all_ready, count, unready_name) for Component CRs in kubectl JSON."""
+    if not crs_json_str.strip():
+        return False, 0, ""
+    try:
+        data = json.loads(crs_json_str)
+    except json.JSONDecodeError:
+        return False, 0, ""
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return False, 0, ""
+    items = [i for i in data["items"] if isinstance(i, dict)]
     for item in items:
+        meta = item.get("metadata") or {}
         enabled = (item.get("spec") or {}).get("enabled", True)
         status = item.get("status") or {}
-        cs = status.get("conditions") or []
-        conds = {c.get("type"): c.get("status") for c in cs if isinstance(c, dict)}
-        st, suffix = (
-            status.get("state"),
-            ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED"),
-        )
-        exp = (f"COMPONENT_STATE_{suffix[0]}", f"STATE_{suffix[1]}")
+        conds = {
+            c.get("type"): c.get("status")
+            for c in (status.get("conditions") or [])
+            if isinstance(c, dict)
+        }
+        st, sfx = status.get("state"), ("ENABLED", "READY") if enabled else ("DISABLED", "DISABLED")
+        generation = meta.get("generation")
         if (
-            conds.get("Stalled") == "True"
+            # Status from a previous spec generation must not count as converged.
+            (generation is not None and status.get("observedGeneration") != generation)
+            or conds.get("Stalled") == "True"
             or conds.get("Synced") == "False"
             or conds.get("Ready") != str(enabled)
-            or (st and st not in exp)
+            or (st and st not in (f"COMPONENT_STATE_{sfx[0]}", f"STATE_{sfx[1]}"))
         ):
-            name = (item.get("metadata") or {}).get("name", "unknown")
-            print(f"❌ Component CR '{name}' not Ready.")
-            return False, len(items)
-    return bool(items), len(items)
+            return False, len(items), str(meta.get("name", "unknown"))
+    return True, len(items), ""
 
 
-def _check_components(enable_components: bool) -> bool:
-    """Checks status of foundational component controllers if enabled.
+def _wait_for_xmc_deployments(*, timeout_s: int = 180) -> bool:
+    """Waits for all Deployments in namespace xmc (including 1P component workloads) to roll out.
 
     Args:
-      enable_components: Whether foundational component controllers are enabled.
+      timeout_s: Upper bound passed to `kubectl rollout status --timeout`.
 
     Returns:
-      bool: True if components are healthy or disabled, False otherwise.
+      True when every Deployment rolled out, False on a rollout timeout, a
+      ProgressDeadlineExceeded condition, or a kubectl failure (so a stalled rollout
+      whose old pods are still Running cannot pass verification silently).
+    """
+    res = subprocess.run(
+        ["kubectl", "rollout", "status", "deployment", "-n", "xmc", f"--timeout={timeout_s}s"],
+        check=False,
+    )
+    if res.returncode != 0:
+        print(f"❌ Deployments in namespace xmc did not roll out within {timeout_s}s.")
+        return False
+    return True
+
+
+def _check_components(*, max_attempts: int = 18, retry_interval_s: float = 5.0) -> bool:
+    """Checks readiness of foundational component controllers and installed Component CRs.
+
+    Precondition: like the pod check in `_check_k8s_resources`, the xmc-bridge pod check is a
+    single point-in-time snapshot. Callers (`dev_env.py gke-deploy`/`gke-upgrade` `verify` step,
+    `deploy-gke.yml`) wait for Deployment rollouts before invoking this script, so a standalone
+    run immediately after `helm upgrade` may observe xmc-bridge mid-restart (`strategy: Recreate`).
+    TODO: fold the xmc-bridge pod check into the Component CR polling loop so standalone runs
+    tolerate that restart window.
+
+    Args:
+      max_attempts: Maximum polling attempts for Component CR reconciliation.
+      retry_interval_s: Sleep interval in seconds between polling attempts.
+
+    Returns:
+      True if CRD, xmc-bridge pod, and all installed Component CRs are healthy, False otherwise.
     """
     print("\n--- 8. Component Controllers Status ---")
-    if not enable_components:
-        print("ℹ️ Skipping Component Controllers check: enable_components is false.")
-        return True
     crd_out = _run_command(["kubectl", "get", "crd", "components.xmc.dev", "-o", "name"]).strip()
     if not crd_out:
         print("❌ Component CRD (components.xmc.dev) not found in cluster.")
@@ -372,12 +404,23 @@ def _check_components(enable_components: bool) -> bool:
         return False
     print("✅ xmc-bridge pod is Running and Ready.")
     crs_cmd = ["kubectl", "get", "components.xmc.dev", "-n", "xmc", "-o", "json"]
-    ready, count = _are_component_crs_ready(_run_command(crs_cmd))
-    if not ready:
-        print("❌ Component CRs verification failed or no Component CRs found.")
-        return False
-    print(f"✅ All {count} Component CRs verified in expected state.")
-    return True
+    attempts, last_unready = max(1, max_attempts), ""
+    for attempt in range(attempts):
+        ready, count, last_unready = _are_component_crs_ready(_run_command(crs_cmd))
+        if ready:
+            if count == 0:
+                print(
+                    "ℹ️ No Component CRs installed yet (xmc-profile optional); xmc-bridge and CRD are healthy."
+                )
+            else:
+                print(f"✅ All {count} Component CRs verified in expected state.")
+            return True
+        if attempt + 1 < attempts:
+            time.sleep(retry_interval_s)
+    if last_unready:
+        print(f"❌ Component CR '{last_unready}' not Ready.")
+    print("❌ Component CRs verification failed after waiting for reconciliation.")
+    return False
 
 
 def main() -> int:
@@ -391,13 +434,16 @@ def main() -> int:
     print("XManager on Cloud (XMC) v2 Verification")
     print("=========================================")
 
-    env, region, project_id, enable_components = _resolve_config()
+    env, region, project_id = _resolve_config()
     log_monitor_deployment_enabled = _resolve_log_monitor_deployment_enabled()
+    components_ok = _check_components()
+    deployments_ok = _wait_for_xmc_deployments() if components_ok else False
     checks = [
+        components_ok,
+        deployments_ok,
         _check_k8s_resources(),
         _check_connectivity(),
         _check_log_monitor(env, region, project_id, log_monitor_deployment_enabled),
-        _check_components(enable_components),
     ]
 
     print("=========================================")

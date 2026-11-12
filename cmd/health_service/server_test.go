@@ -395,12 +395,11 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	checker := &mockHealthChecker{}
 	mockProvider := &mockComponentsInfoProvider{
@@ -436,6 +435,13 @@ func TestListConfigEntries_WithCustomComponents(t *testing.T) {
 	if len(customGroup.Configs) != 2 {
 		t.Fatalf("expected 2 configs in custom group, got %d", len(customGroup.Configs))
 	}
+
+	sNilProvider := newServer(cfg, checker, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsProvider: nil}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
+	defer sNilProvider.Close()
+	respNil, err := sNilProvider.ListConfigEntries(context.Background(), &spb.ListConfigEntriesRequest{})
+	if err != nil || len(respNil.ConfigGroups) != 1 {
+		t.Fatalf("ListConfigEntries(nil provider) = (%d groups, %v), want (1 group, nil)", len(respNil.GetConfigGroups()), err)
+	}
 }
 
 func TestListConfigEntries_CustomComponentsError(t *testing.T) {
@@ -449,12 +455,11 @@ func TestListConfigEntries_CustomComponentsError(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	mockProvider := &mockComponentsInfoProvider{
 		configErr: errors.New("spanner failure"),
@@ -484,12 +489,11 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 	}
 
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	s := newServer(cfg, &mockHealthChecker{}, &mockAdminRoleGuard{hasRole: true}, &mockLazyDB{componentsErr: errors.New("lazy init failed")}, newFakePauseScheduler(storagetest.NewFakePauseStateRepository()))
 	defer s.Close()
@@ -508,12 +512,11 @@ func TestListConfigEntries_CustomComponentsLazyInitError(t *testing.T) {
 func TestListConfigEntries_CustomComponentsContextCancelled(t *testing.T) {
 	tempDir := t.TempDir()
 	cfg := &Config{
-		Port:             "8080",
-		GRPCPort:         "50051",
-		ProjectID:        "test-project",
-		XidAddr:          "localhost:50051",
-		ConfigDir:        tempDir,
-		EnableComponents: true,
+		Port:      "8080",
+		GRPCPort:  "50051",
+		ProjectID: "test-project",
+		XidAddr:   "localhost:50051",
+		ConfigDir: tempDir,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel context immediately

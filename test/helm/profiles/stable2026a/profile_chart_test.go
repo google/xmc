@@ -67,6 +67,8 @@ func TestStable2026a_OverridesMatchStandalone(t *testing.T) {
 			"parameters": map[string]any{"endpoint": "vizier-custom.xmc.svc.cluster.local:8088"}}},
 		{name: "hpo overrides", component: "hpo", overrides: map[string]any{"enabled": true, "namespace": "hpo-ns", "imageTag": "v9",
 			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "dependencies": []any{"vizier"}}},
+		{name: "hpo maxTrialBudget override", component: "hpo", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
+			"parameters": map[string]any{"maxTrialBudget": "250"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -97,6 +99,7 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 		{name: "untouched vizier omits acknowledgeExperimental", component: "vizier", field: "acknowledgeExperimental", want: nil},
 		{name: "untouched hpo renders catalog EXPERIMENTAL stability", component: "hpo", field: "stability", want: "EXPERIMENTAL"},
 		{name: "untouched hpo omits acknowledgeExperimental", component: "hpo", field: "acknowledgeExperimental", want: nil},
+		{name: "untouched hpo renders default maxTrialBudget", component: "hpo", field: "parameters", want: map[string]any{"maxTrialBudget": "1000"}},
 		{name: "empty dependencies list replaces defaults", component: "ingestion-gateway", field: "dependencies", want: nil},
 		{name: "global imageTag reaches component", component: "ingestion-gateway", field: "imageTag", want: "v2"},
 		{name: "global imageTag reaches hpo", component: "hpo", field: "imageTag", want: "v2"},
@@ -109,6 +112,10 @@ func TestStable2026a_HonorsExplicitFalsyOverrides(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hpoMaxTrialBudget(value any) map[string]any {
+	return profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"maxTrialBudget": value}})
 }
 
 func TestStable2026a_RejectsInvalidValues(t *testing.T) {
@@ -126,6 +133,12 @@ func TestStable2026a_RejectsInvalidValues(t *testing.T) {
 		{name: "unknown parameter on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
 		{name: "stability override on vizier", overrides: profilecontract.ComponentOverrides("vizier", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
 		{name: "stability override on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
+		{name: "boolean maxTrialBudget on hpo", overrides: hpoMaxTrialBudget(true), wantErr: "maxTrialBudget"},
+		{name: "zero maxTrialBudget on hpo", overrides: hpoMaxTrialBudget(0), wantErr: "maxTrialBudget"},
+		{name: "negative maxTrialBudget on hpo", overrides: hpoMaxTrialBudget(-1), wantErr: "maxTrialBudget"},
+		{name: "exponent maxTrialBudget on hpo", overrides: hpoMaxTrialBudget("1e6"), wantErr: "maxTrialBudget"},
+		{name: "ten-digit string maxTrialBudget on hpo", overrides: hpoMaxTrialBudget("2147483648"), wantErr: "maxTrialBudget"},
+		{name: "int32 overflow maxTrialBudget on hpo", overrides: hpoMaxTrialBudget(2147483648), wantErr: "maxTrialBudget"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

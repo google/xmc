@@ -35,12 +35,6 @@ vars:
   # Whether to automatically apply database schema migrations on startup (default: true).
   auto_migrate: true
 
-  # Feature flag: Enable metrics ingestion pipeline (ingestion_gateway).
-  enable_metrics: false
-
-  # Feature flag: Enable foundational component controllers (components).
-  enable_components: false
-
   # Feature flag: Enable ROD data provider service (rod_data_provider).
   rod_deployment_enabled: false
 

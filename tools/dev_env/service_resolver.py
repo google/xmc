@@ -78,7 +78,9 @@ def service_to_k8s_deployment_name(service: str) -> str:
     Examples:
         'dashboard_service' -> 'dashboard-service-deployment'
         'experiment_state_server' -> 'experiment-state-server-deployment'
-        'ingestion_gateway' -> 'gateway-proxy'
+        'ingestion_gateway' -> 'ingestion-gateway-deployment'
+        'study_controller' -> 'xmc-study-controller'
+        'gateway_proxy' -> 'gateway-proxy'
         'components' -> 'xmc-bridge-deployment'
         'ui' -> 'ui-deployment'
 
@@ -90,8 +92,10 @@ def service_to_k8s_deployment_name(service: str) -> str:
     """
     canonical = resolve_service_name(service)
     svc_lower = canonical.lower().replace("_", "-")
-    if svc_lower in ("ingestion-gateway", "gateway-proxy"):
+    if svc_lower == "gateway-proxy":
         return "gateway-proxy"
+    if svc_lower in ("study-controller", "xmc-study-controller"):
+        return "xmc-study-controller"
     if svc_lower in ("components", "xmc-bridge"):
         return "xmc-bridge-deployment"
     if svc_lower.endswith("-deployment"):

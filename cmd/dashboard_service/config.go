@@ -29,7 +29,6 @@ type Config struct {
 	ProjectID           string
 	XidServiceAddr      string
 	MetricsStore        string
-	EnableComponents    bool
 	ComponentsNamespace string
 }
 
@@ -54,7 +53,6 @@ func init() {
 func loadEnvConfig() {
 	configutil.StringEnv(&cfg.XidServiceAddr, "dashboard_xid_service_addr", "xid-svc:50051")
 	configutil.StringEnv(&cfg.MetricsStore, "METRICS_STORE", "")
-	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 	configutil.StringEnv(&cfg.ComponentsNamespace, "components_namespace", "xmc")
 }
 
@@ -66,7 +64,6 @@ func LoadConfig() *server.Config {
 		ProjectID:           cfg.ProjectID,
 		XidServiceAddr:      cfg.XidServiceAddr,
 		MetricsStore:        cfg.MetricsStore,
-		EnableComponents:    cfg.EnableComponents,
 		ComponentsNamespace: cfg.ComponentsNamespace,
 	}
 }

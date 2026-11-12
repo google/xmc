@@ -23,10 +23,10 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
@@ -36,25 +36,10 @@ const pending = componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATI
 
 var studyRequirements = experiment.RequirementsFor(&essmsgpb.Experiment{ExperimentType: essmsgpb.Experiment_STUDY})
 
-// readyRecord returns an ENABLED record at generation 2 that has observed that generation.
-func readyRecord(id int64, name string, componentType componentspb.ComponentType, deps ...string) *store.ComponentRecord {
-	return &store.ComponentRecord{
-		ComponentID:        id,
-		Name:               name,
-		Spec:               &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Dependencies: deps},
-		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Generation:         2,
-		ObservedGeneration: proto.Int64(2),
-	}
-}
-
-// hpoCatalog returns a ready hpo component that depends on ready vizier and clickhouse components.
+// hpoCatalog returns a ready hpo component without parameters that depends on ready vizier and
+// clickhouse components.
 func hpoCatalog() map[string]*store.ComponentRecord {
-	return map[string]*store.ComponentRecord{
-		"hpo":        readyRecord(1, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "vizier", "clickhouse"),
-		"vizier":     readyRecord(2, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-		"clickhouse": readyRecord(3, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-	}
+	return experimenttest.HPOCatalog(nil)
 }
 
 func pinnedNames(recs []*store.ComponentRecord) []string {
@@ -70,7 +55,16 @@ func isRequirementNotMet(err error) bool {
 	return errors.Is(err, experiment.ErrComponentRequirementNotMet) && status.Code(err) == codes.FailedPrecondition
 }
 
-func TestPinComponentRequirements(t *testing.T) {
+// resolveAndPin resolves reqs and pins the resolved records to xid, as the creation transaction does.
+func resolveAndPin(ctx context.Context, repo storage.ComponentTxRepository, xid int64, reqs []experiment.Requirement) error {
+	recs, err := experiment.ResolveComponentRequirements(ctx, repo, reqs)
+	if err != nil {
+		return err
+	}
+	return experiment.PinComponentRecords(ctx, repo, xid, recs)
+}
+
+func TestResolveAndPinComponentRecords(t *testing.T) {
 	const xid = 7
 	allPinned := []string{"clickhouse", "hpo", "vizier"}
 	tests := []struct {
@@ -89,7 +83,7 @@ func TestPinComponentRequirements(t *testing.T) {
 		}},
 		{name: "pending vizier while hpo is enabled", modify: func(c map[string]*store.ComponentRecord) { c["vizier"].State = pending }},
 		{name: "missing clickhouse", modify: func(c map[string]*store.ComponentRecord) { delete(c, "clickhouse") }},
-		{name: "hpo observation lags its generation", modify: func(c map[string]*store.ComponentRecord) { c["hpo"].ObservedGeneration = proto.Int64(1) }},
+		{name: "hpo observation lags its generation", modify: func(c map[string]*store.ComponentRecord) { c["hpo"].Generation++ }},
 		{name: "vizier never observed", modify: func(c map[string]*store.ComponentRecord) { c["vizier"].ObservedGeneration = nil }},
 		{name: "version below the minimum", reqs: []experiment.Requirement{{Name: "hpo", MinVersion: "v2.0.0"}}},
 	}
@@ -105,28 +99,28 @@ func TestPinComponentRequirements(t *testing.T) {
 			}
 			repo := &storage.MockComponentRepository{Records: catalog}
 
-			err := experiment.PinComponentRequirements(context.Background(), repo, xid, reqs)
+			err := resolveAndPin(context.Background(), repo, xid, reqs)
 
 			if tt.wantPinned == nil {
 				if !isRequirementNotMet(err) {
-					t.Errorf("PinComponentRequirements() error = %v, want %v", err, experiment.ErrComponentRequirementNotMet)
+					t.Errorf("resolveAndPin() error = %v, want %v", err, experiment.ErrComponentRequirementNotMet)
 				}
 				if len(repo.Snapshots) != 0 {
-					t.Errorf("PinComponentRequirements() pinned %v, want nothing", repo.Snapshots)
+					t.Errorf("resolveAndPin() pinned %v, want nothing", repo.Snapshots)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("PinComponentRequirements() unexpected error: %v", err)
+				t.Fatalf("resolveAndPin() unexpected error: %v", err)
 			}
 			if diff := cmp.Diff(tt.wantPinned, pinnedNames(repo.Snapshots[xid])); diff != "" {
-				t.Errorf("PinComponentRequirements() pinned components mismatch (-want +got):\n%s", diff)
+				t.Errorf("resolveAndPin() pinned components mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func TestPinComponentRequirements_StorageErrorsAreNotRequirementErrors(t *testing.T) {
+func TestResolveAndPinComponentRecords_StorageErrorsAreNotRequirementErrors(t *testing.T) {
 	tests := []struct {
 		name string
 		repo *storage.MockComponentRepository
@@ -136,12 +130,19 @@ func TestPinComponentRequirements_StorageErrorsAreNotRequirementErrors(t *testin
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := experiment.PinComponentRequirements(context.Background(), tt.repo, 7, studyRequirements)
+			err := resolveAndPin(context.Background(), tt.repo, 7, studyRequirements)
 
 			if !errors.Is(err, grpcerr.ErrAborted) || errors.Is(err, experiment.ErrComponentRequirementNotMet) {
-				t.Errorf("PinComponentRequirements() error = %v, want %v and not %v", err, grpcerr.ErrAborted, experiment.ErrComponentRequirementNotMet)
+				t.Errorf("resolveAndPin() error = %v, want %v and not %v", err, grpcerr.ErrAborted, experiment.ErrComponentRequirementNotMet)
 			}
 		})
+	}
+}
+
+func TestResolveComponentRequirements_Empty(t *testing.T) {
+	recs, err := experiment.ResolveComponentRequirements(context.Background(), nil, nil)
+	if err != nil || recs != nil {
+		t.Errorf("ResolveComponentRequirements(empty) = %v, %v, want nil, nil", recs, err)
 	}
 }
 
@@ -156,24 +157,6 @@ func TestValidateComponentRequirements_PinsNothing(t *testing.T) {
 	}
 	if err := experiment.ValidateComponentRequirements(context.Background(), nil, nil); err != nil {
 		t.Errorf("ValidateComponentRequirements(empty) unexpected error: %v", err)
-	}
-}
-
-func TestCheckComponentsFeature(t *testing.T) {
-	tests := []struct {
-		expType          essmsgpb.Experiment_ExperimentType
-		enableComponents bool
-		wantCode         codes.Code
-	}{
-		{essmsgpb.Experiment_STUDY, false, codes.FailedPrecondition},
-		{essmsgpb.Experiment_STUDY, true, codes.OK},
-		{essmsgpb.Experiment_STANDARD, false, codes.OK},
-	}
-	for _, tc := range tests {
-		exp := &essmsgpb.Experiment{ExperimentType: tc.expType}
-		if got := status.Code(experiment.CheckComponentsFeature(exp, tc.enableComponents)); got != tc.wantCode {
-			t.Errorf("CheckComponentsFeature(%v, %t) code = %v, want %v", tc.expType, tc.enableComponents, got, tc.wantCode)
-		}
 	}
 }
 

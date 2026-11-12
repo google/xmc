@@ -223,3 +223,41 @@ func TestHPOChart_ProfileReleaseRendersOnlyComponent(t *testing.T) {
 		t.Errorf("expected Component CR with imageTag v4, got:\n%s", comp)
 	}
 }
+
+// TestHPOChart_ComponentMaxTrialBudget checks that spec.parameters.maxTrialBudget defaults to "1000"
+// and renders overrides as strings, which the Experiment State Server parses.
+func TestHPOChart_ComponentMaxTrialBudget(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		values map[string]any
+		want   string
+	}{
+		{name: "default", values: map[string]any{"enabled": true}, want: "1000"},
+		{name: "empty parameters", values: map[string]any{"parameters": map[string]any{}}, want: "1000"},
+		{name: "string override", values: map[string]any{"parameters": map[string]any{"maxTrialBudget": "250"}}, want: "250"},
+		{name: "integer override", values: map[string]any{"parameters": map[string]any{"maxTrialBudget": 5000}}, want: "5000"},
+		// Helm parses YAML integers as float64, which toString would render as "1e+06".
+		{name: "large float override", values: map[string]any{"parameters": map[string]any{"maxTrialBudget": float64(1000000)}}, want: "1000000"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rendered, err := renderChartWithValues(hpoChartDir(t), "hpo", tc.values)
+			if err != nil {
+				t.Fatalf("renderChartWithValues(hpo) failed: %v", err)
+			}
+			var comp struct {
+				Spec struct {
+					Parameters map[string]any `yaml:"parameters"`
+				} `yaml:"spec"`
+			}
+			if err := yaml.Unmarshal([]byte(rendered[hpoComponentFile]), &comp); err != nil {
+				t.Fatalf("failed to unmarshal rendered Component: %v", err)
+			}
+			if diff := cmp.Diff(map[string]any{"maxTrialBudget": tc.want}, comp.Spec.Parameters); diff != "" {
+				t.Errorf("spec.parameters mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

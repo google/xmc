@@ -84,16 +84,24 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(non_tty.returncode, 1)
         self.assertIn("Interactive TTY confirmation required", non_tty.stdout + non_tty.stderr)
 
-        for ok_desc in ("", "0.17.0-4-gfc398e3af", "0.18.0", "0.18.2", "0.18.2-3-gabcdef0"):
+        for ok_desc in (
+            "",
+            "0.17.0-4-gfc398e3af",
+            "0.18.0",
+            "0.18.2",
+            "0.18.2-3-gabcdef0",
+            "0.19.0",
+            "1.0.0",
+            "1.0.2-3-gabcdef0",
+        ):
             migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=ok_desc)
         for bad_desc in (
             "0.15.0",
             "0.16.0",
             "0.16.0-36-g726f0edb5",
             "0.17.0",
-            "0.19.0",
-            "0.19.0-2-gabcdef0",
-            "1.0.0",
+            "2.0.0",
+            "2.0.0-2-gabcdef0",
         ):
             with self.assertRaises(HandledError):
                 migrate._verify_target_codebase(migrate.DEFAULT_PROFILE_CHART, desc=bad_desc)
@@ -109,6 +117,7 @@ class PrepareTests(unittest.TestCase):
 
         migrate._verify_source_env({"imageTag": "0.17.0"}, require_legacy=True)
         migrate._verify_source_env({"imageTag": "0.18.0"}, require_legacy=True)
+        migrate._verify_source_env({"imageTag": "0.19.0"}, require_legacy=True)
         migrate._verify_source_env(
             {"imageTag": "v0.4.0", "ingestionGatewayDeployment": {"enabled": True}},
             require_legacy=True,
@@ -120,9 +129,15 @@ class PrepareTests(unittest.TestCase):
         migrate._verify_source_env(
             {"componentsDeployment": {"enabled": True}}, require_legacy=False
         )
+        migrate._verify_source_env({"imageTag": "1.0.0"}, require_legacy=False)
+        migrate._verify_source_env({"imageTag": "1.9.9"}, require_legacy=False)
+        for bad_non_legacy in ({"imageTag": "2.0.0"}, {"imageTag": "v2.0.0"}):
+            with self.assertRaises(HandledError):
+                migrate._verify_source_env(bad_non_legacy, require_legacy=False)
         for bad_src in (
             {"componentsDeployment": {"enabled": True}},
-            {"imageTag": "0.19.0"},
+            {"componentsDeployment": {"cmsAddress": "grpc-service:50051"}},
+            {"imageTag": "1.0.0"},
             {"imageTag": "v1.0.0"},
             {"imageTag": "0.3.0", "ingestionGatewayDeployment": {"enabled": True}},
         ):
@@ -378,6 +393,40 @@ class HandoffAndFinalizeTests(unittest.TestCase):
                 for c in recorded
             )
         )
+
+        # From a 1.0.0+ checkout, undo must refuse an active-components release regardless of how
+        # activity is detected (componentsDeployment present, or SemVer imageTag >= 1.0.0), even
+        # when the live gateway workloads carry valid Helm ownership metadata.
+        active_values_cases: tuple[dict[str, object], ...] = (
+            {"componentsDeployment": {"cmsAddress": "grpc:50051"}},
+            {"imageTag": "1.0.0"},
+        )
+        for active_values in active_values_cases:
+            with self.subTest(active_values=active_values):
+
+                def undo_active_1_0_run(
+                    cmd: list[str], *, _values: dict[str, object] = active_values, **_: object
+                ) -> subprocess.CompletedProcess[str]:
+                    if cmd[:2] == ["kubectl", "get"] and cmd[-1] == migrate.COMPONENT_RESOURCE:
+                        return _done(cmd, rc=1, stderr="NotFound")
+                    if cmd[:2] == ["kubectl", "get"]:
+                        return _done(
+                            cmd,
+                            stdout=json.dumps(_helm_obj("ig", release=migrate.COMPONENT_RELEASE)),
+                        )
+                    if cmd[:3] == ["helm", "get", "values"]:
+                        return _done(cmd, stdout=json.dumps(_values))
+                    return _done(cmd)
+
+                with (
+                    mock.patch(
+                        "tools.common.tool_utils.run_command", side_effect=undo_active_1_0_run
+                    ),
+                    self.assertRaisesRegex(
+                        HandledError, "Cannot undo handoff onto an active-components release"
+                    ),
+                ):
+                    migrate.run_handoff(args)
 
     def test_finalize_waits_prunes_or_keeps_hpa_and_guards_disabled_component(self) -> None:
         args = migrate.build_parser().parse_args(["finalize", "--timeout-seconds", "60"])

@@ -70,15 +70,9 @@ vars:
   # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
   # Empty (default) leaves managed-xprof GCS wiring disabled on the actuator.
   managed_xprof_gcs_bucket: ""
-  enable_metrics: false
-  # ClickHouse connection used by the dashboard service to serve chart data. Applied only when
-  # enable_metrics is true. ClickHouse is Bring-Your-Own infrastructure (deploy/addons/metrics).
-  clickhouse_host: "clickhouse.xmc-metrics.svc.cluster.local"
-  clickhouse_port: "9000"
-  clickhouse_database: "default"
-  clickhouse_user: "default"
+  # ClickHouse password rendered into the release-namespace clickhouse-secret Secret (connection
+  # endpoints, database, and user are resolved dynamically from Component/clickhouse in xmc-profile).
   clickhouse_password: ""
-  enable_components: false
   health_service_deployment_enabled: true
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
@@ -554,22 +548,9 @@ deployment_groups:
       - name: dashboardServiceDeployment.enabled
         value: $(vars.dashboard_service_deployment_enabled)
         type: auto
-      - name: metrics.enabled
-        value: $(vars.enable_metrics)
-        type: auto
-      - name: metrics.clickhouse.host
-        value: $(vars.clickhouse_host)
-      - name: metrics.clickhouse.port
-        value: $(vars.clickhouse_port)
-      - name: metrics.clickhouse.database
-        value: $(vars.clickhouse_database)
-      - name: metrics.clickhouse.user
-        value: $(vars.clickhouse_user)
       - name: metrics.clickhouse.password
         value: $(vars.clickhouse_password)
-      - name: ingestionGatewayDeployment.enabled
-        value: $(vars.enable_metrics)
-        type: auto
+        type: string
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
         type: auto
@@ -597,9 +578,6 @@ deployment_groups:
         value: $(vars.postgres_xid_database)
       - name: database.postgres.sslMode
         value: $(vars.postgres_ssl_mode)
-      - name: componentsDeployment.enabled
-        value: $(vars.enable_components)
-        type: auto
       - name: xmc_bridge_custom_image
         value: $(vars.xmc_bridge_image)
 

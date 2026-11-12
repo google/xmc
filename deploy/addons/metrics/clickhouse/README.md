@@ -140,23 +140,27 @@ curl "http://localhost:8123/?query=SELECT%20version()"
 
 ### 3. Connect from XMC Backend
 
-The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables.
+In-cluster `dashboard-service` resolves ClickHouse connection settings dynamically from `Component/clickhouse` ([pkg/clickhouse/componentconfig](../../../../pkg/clickhouse/componentconfig/resolver.go)), while local CLI tools and port-forwarded sessions connect via [pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go) environment variables.
 
-#### In-Cluster Deployments (Helm)
+#### In-Cluster Deployments (`Component/clickhouse` & Helm Credentials)
 
-In-cluster services get these variables from the chart. Set `metrics.enabled` to `true` and override the `metrics.clickhouse` block in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to match this addon:
+When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile (`xmc-profile`) is enabled (`components.clickhouse.enabled=true`) at pod startup, `dashboard-service` dynamically resolves ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`) and its password Secret reference (`secretName`) directly from `Component/clickhouse`, hot-swapping on subsequent CR or Secret changes without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, wait for `xmc-bridge` to reconcile it (a CR still in `COMPONENT_STATE_DISABLED` counts as disabled at startup) and then restart the deployment once so it initializes the dynamic chart data engine:
+
+```bash
+kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s
+kubectl rollout restart deployment/dashboard-service-deployment -n xmc
+```
+
+Configure `metrics.clickhouse` in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to populate the release-namespace `clickhouse-secret` `Secret` when ClickHouse CSI mode is inactive (`secrets.csi.enabled` is `false` or `secrets.csi.clickhousePasswordSecretName` is empty):
 
 ```yaml
 metrics:
-  enabled: true
   clickhouse:
-    host: "clickhouse.xmc-metrics.svc.cluster.local"
-    port: "9000"
-    database: "default"
-    user: "default"
-    secretName: "clickhouse-secret" # Kubernetes Secret name when secrets.csi.enabled is false
+    secretName: "clickhouse-secret" # Kubernetes Secret name when ClickHouse CSI mode is inactive
     password: "" # rendered into the clickhouse-secret Secret, not a ConfigMap
 ```
+
+`metrics.clickhouse.secretName` must match `components.clickhouse.parameters.secretName` in `xmc-profile` (both default to `clickhouse-secret`): the `dashboard-service` Role only grants `get` on the umbrella-configured name.
 
 Read the addon-generated password to populate `metrics.clickhouse.password`:
 
@@ -166,7 +170,7 @@ kubectl get secret clickhouse -n xmc-metrics -o jsonpath="{.data.clickhouse-pass
 
 ##### Sourcing the password from Secret Manager
 
-`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and leave the value empty:
+`metrics.clickhouse.password` puts the credential in the release itself, where it is readable by anyone who can run `helm get values`. Releases with `secrets.csi.enabled` set to `true` should instead store it in Secret Manager and set `secrets.csi.clickhousePasswordSecretName`:
 
 ```bash
 printf '%s' "$CLICKHOUSE_PASSWORD" | gcloud secrets create clickhouse-password --data-file=-
@@ -180,12 +184,12 @@ secrets:
     clickhousePasswordSecretName: "clickhouse-password"
 ```
 
-The Secret Manager entry named there must exist, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing. The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
+The Secret Manager entry named there must exist when `clickhousePasswordSecretName` is non-empty, because the CSI mount fails for every service sharing the provider class when one of its secrets is missing (leave `clickhousePasswordSecretName: ""` on releases without ClickHouse). The chart then mounts the password at `/etc/gcp-secrets/clickhouse-password` and passes its path as `CLICKHOUSE_PASSWORD_FILE`, the same way the JWT and OAuth client secrets are handled; the `clickhouse-secret` Secret is not rendered at all.
 
-Cluster Toolkit deployments set the same values through the `clickhouse_*` blueprint variables documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection-metrics-pipeline).
+Cluster Toolkit deployments configure the release-namespace password Secret via `clickhouse_password` (documented in the [CTK v2 Guide](../../../ctk_v2/README.md#clickhouse-connection--credentials-metrics-pipeline)) and ClickHouse endpoints via `xmc-profile`.
 
 > [!IMPORTANT]
-> Setting these variables declares that ClickHouse is expected to be reachable, and the dashboard service readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Leave `metrics.enabled` set to `false` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured`.
+> Enabling `Component/clickhouse` in `xmc-profile` declares that ClickHouse is expected to be reachable, and once `dashboard-service` starts with `Component/clickhouse` enabled, its readiness probe enforces it: while the chart data engine cannot be built, `/readyz` fails and the pod leaves the `dashboard-service` endpoints, which stops dashboard CRUD too and not only chart data. The engine is rebuilt on demand, so pods recover on their own once ClickHouse returns, but a rollout started during a ClickHouse outage will not complete. Keep `components.clickhouse.enabled: false` in `xmc-profile` on releases that have no ClickHouse; those pods start without a data engine and answer `GetChartData` with `FailedPrecondition: data engine is not configured` (wait for `Component/clickhouse` to become `Ready` as shown above, then run `kubectl rollout restart deployment/dashboard-service-deployment -n xmc` once after first enabling it).
 
 #### Local Tooling & Port-Forwarded Sessions
 

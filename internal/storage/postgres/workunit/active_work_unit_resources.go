@@ -39,8 +39,8 @@ JOIN Experiments e ON wu.Xid = e.Xid
 WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL`)
 
 // FetchActiveWorkUnitsByQueues retrieves one page of active work units within the bound transaction.
-func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
-	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken)
+func (r *TxRepository) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
+	return fetchActiveWorkUnitsFromDB(ctx, r.tx, queueNames, pageSize, pageToken, query)
 }
 
 // FetchActiveWorkUnitResources reads the resources of active work units within the bound transaction.

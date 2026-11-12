@@ -49,10 +49,6 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 		return err
 	}
 
-	if !c.RuntimeConfig.EnableComponents {
-		return fmt.Errorf("components feature is disabled on this cluster (enable_components=false), cannot satisfy component-snapshots annotation")
-	}
-
 	compNames := make([]string, 0, len(snapshots))
 	for name := range snapshots {
 		compNames = append(compNames, name)

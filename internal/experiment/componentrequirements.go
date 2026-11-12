@@ -24,7 +24,6 @@ import (
 	"google.golang.org/grpc/status"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
 	"xmanager_cloud/pkg/components/store/dependency"
@@ -47,40 +46,22 @@ type Requirement struct {
 	MinVersion string
 }
 
-// typeRequirements lists the components that an experiment type requires and the feature that
-// needs them.
-type typeRequirements struct {
-	feature    string
-	components []Requirement
-}
-
 // requirementsByType maps each experiment type that requires components to its requirements. It is
 // the single place where experiment types map to components: add new experiment types here.
-var requirementsByType = map[essmsgpb.Experiment_ExperimentType]typeRequirements{
+var requirementsByType = map[essmsgpb.Experiment_ExperimentType][]Requirement{
 	essmsgpb.Experiment_STUDY: {
-		feature:    "HPO",
-		components: []Requirement{{Name: hpoComponentName, Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT}},
+		{Name: hpoComponentName, Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT},
 	},
 }
 
 // RequirementsFor returns the components that exp requires, or nil when it requires none.
 func RequirementsFor(exp *essmsgpb.Experiment) []Requirement {
-	return slices.Clone(requirementsByType[exp.GetExperimentType()].components)
-}
-
-// CheckComponentsFeature returns a FailedPrecondition error when exp requires components and the
-// Components feature is disabled.
-func CheckComponentsFeature(exp *essmsgpb.Experiment, enableComponents bool) error {
-	reqs, ok := requirementsByType[exp.GetExperimentType()]
-	if !ok || enableComponents {
-		return nil
-	}
-	return fmt.Errorf("%s requires the Components feature: %w", reqs.feature, grpcerr.ErrFailedPrecondition)
+	return slices.Clone(requirementsByType[exp.GetExperimentType()])
 }
 
 // ValidateComponentRequirements checks reqs and their transitive dependencies against one read-only
-// snapshot of catalog without writing. It is a cheap pre-check: PinComponentRequirements repeats the
-// check authoritatively in the transaction that pins the components.
+// snapshot of catalog without writing. It is a cheap pre-check: ResolveComponentRequirements repeats
+// the check authoritatively in the transaction that pins the components.
 func ValidateComponentRequirements(ctx context.Context, catalog storage.ComponentRepository, reqs []Requirement) error {
 	if len(reqs) == 0 {
 		return nil
@@ -91,17 +72,19 @@ func ValidateComponentRequirements(ctx context.Context, catalog storage.Componen
 	})
 }
 
-// PinComponentRequirements checks reqs and their transitive dependencies through the caller's
-// read-write transaction repo, and pins each resolved component to experiment xid at its current
-// generation.
-func PinComponentRequirements(ctx context.Context, repo storage.ComponentTxRepository, xid int64, reqs []Requirement) error {
+// ResolveComponentRequirements checks reqs and their transitive dependencies through the caller's
+// read-write transaction repo and returns the records that satisfy them, requirements first. It
+// returns nil when reqs is empty.
+func ResolveComponentRequirements(ctx context.Context, repo storage.ComponentTxRepository, reqs []Requirement) ([]*store.ComponentRecord, error) {
 	if len(reqs) == 0 {
-		return nil
+		return nil, nil
 	}
-	recs, err := resolveRequirements(ctx, repo, reqs)
-	if err != nil {
-		return err
-	}
+	return resolveRequirements(ctx, repo, reqs)
+}
+
+// PinComponentRecords pins each of recs to experiment xid at its current generation through the
+// caller's read-write transaction repo. The experiment row must already exist.
+func PinComponentRecords(ctx context.Context, repo storage.ComponentTxRepository, xid int64, recs []*store.ComponentRecord) error {
 	for _, rec := range recs {
 		if err := repo.InsertExperimentComponentSnapshot(ctx, xid, rec); err != nil {
 			return fmt.Errorf("failed to pin component %q to experiment %d: %w", rec.Name, xid, err)

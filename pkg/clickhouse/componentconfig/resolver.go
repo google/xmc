@@ -75,7 +75,7 @@ func ResolveOptions(ctx context.Context, src Source) (*clickhouse.Options, error
 		return xmcclickhouse.GetOptions()
 	}
 	if src.Getter == nil {
-		return nil, fmt.Errorf("component getter cannot be nil when enable_components is true")
+		return nil, fmt.Errorf("component getter cannot be nil")
 	}
 	ns := crreader.ResolveNamespace(src.Namespace)
 	comp, err := src.Getter.GetComponent(ctx, ns, ClickHouseComponentName)

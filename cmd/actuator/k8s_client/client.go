@@ -56,9 +56,6 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether pods can run with host networking when requested.
 	AllowHostNetwork bool
-
-	// Decides whether the components feature is enabled.
-	EnableComponents bool
 }
 
 // Priorities holds experiment and work unit priorities.

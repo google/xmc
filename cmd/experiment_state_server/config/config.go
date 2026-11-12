@@ -51,7 +51,6 @@ type Config struct {
 	AllowedOrigins              string
 	RedisAddr                   string
 	DashboardServiceAddr        string
-	EnableComponents            bool
 	JWKSURL                     string
 	FeatureFlags                featureflags.Flags
 }
@@ -68,7 +67,6 @@ func init() {
 	flag.StringVar(&cfg.TLSKeyFile, "ess_tls_key_file", "/etc/tls/tls.key", "Path to the TLS key file")
 	flag.StringVar(&cfg.DefaultExecutionEnvironment, "ess_default_execution_environment", "gke", "The default execution environment to use if not specified in the request.")
 	flag.StringVar(&cfg.SigningKeyFile, "ess_signing_key_file", "/etc/signing-key/tls.key", "Path to the messages signing key.")
-	flag.BoolVar(&cfg.EnableComponents, "enable_components", false, "Enable the Components Management Service (CMS) in Experiment State Server.")
 	cfg.registerConfigs()
 }
 
@@ -84,7 +82,6 @@ func (c *Config) registerConfigs() {
 	configutil.StringEnv(&c.AllowedOrigins, "ess_allowed_origins", "")
 	configutil.StringEnv(&c.RedisAddr, "redis_addr", "")
 	configutil.StringEnv(&c.DashboardServiceAddr, "ess_dashboard_service_addr", "")
-	configutil.BoolEnv(&c.EnableComponents, "enable_components", false)
 	configutil.StringEnv(&c.JWKSURL, "ess_jwks_url", "")
 	c.FeatureFlags = featureflags.Load()
 }

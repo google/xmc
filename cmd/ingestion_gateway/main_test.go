@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
@@ -23,6 +24,15 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
+
+type countingGetter struct {
+	calls int
+}
+
+func (g *countingGetter) GetComponent(context.Context, string, string) (*unstructured.Unstructured, error) {
+	g.calls++
+	return nil, context.DeadlineExceeded
+}
 
 type stubProducer struct{}
 
@@ -44,34 +54,51 @@ func TestStartHTTPServerWithProducer(t *testing.T) {
 	}
 }
 
-func TestResolveComponentConfigIfEnabled(t *testing.T) {
+func TestResolveComponentConfig(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. Nil or disabled config is a safe no-op.
-	resolveComponentConfigIfEnabled(ctx, nil)
-	disabledCfg := &ingestiongateway.Config{
-		Port:             "8080",
-		MessageBus:       ingestiongateway.MessageBusRedpanda,
-		RedpandaBrokers:  []string{"static:9092"},
-		TopicName:        "static-topic",
-		MinPartitions:    1,
-		MinReplicas:      1,
-		EnableComponents: false,
-	}
-	resolveComponentConfigIfEnabled(ctx, disabledCfg)
-	if disabledCfg.TopicName != "static-topic" {
-		t.Fatalf("TopicName changed when EnableComponents=false: %q", disabledCfg.TopicName)
-	}
+	// 1. Nil config is a safe no-op.
+	resolveComponentConfig(ctx, nil)
 
-	// 2. Enabled config resolves from ComponentGetter.
-	enabledCfg := &ingestiongateway.Config{
+	// 2. Pub/Sub mode skips getter initialization and Component CR lookup completely.
+	t.Run("pubsub skips getter initialization", func(t *testing.T) {
+		origFactory := newComponentGetter
+		getterInits := 0
+		newComponentGetter = func() (ingestiongateway.ComponentGetter, error) {
+			getterInits++
+			return nil, errors.New("unexpected getter initialization in Pub/Sub mode")
+		}
+		t.Cleanup(func() { newComponentGetter = origFactory })
+
+		pubsubCfg := &ingestiongateway.Config{
+			Port:       "8080",
+			MessageBus: ingestiongateway.MessageBusPubSub,
+			ProjectID:  "test-project",
+			TopicName:  "pubsub-topic",
+		}
+		resolveComponentConfig(ctx, pubsubCfg)
+		if getterInits != 0 {
+			t.Fatalf("newComponentGetter() calls in Pub/Sub mode = %d, want 0", getterInits)
+		}
+		if pubsubCfg.TopicName != "pubsub-topic" {
+			t.Fatalf("TopicName changed in Pub/Sub mode: %q", pubsubCfg.TopicName)
+		}
+
+		spy := &countingGetter{}
+		resolveComponentConfig(ctx, pubsubCfg, spy)
+		if spy.calls != 0 {
+			t.Errorf("GetComponent calls in Pub/Sub mode = %d, want 0", spy.calls)
+		}
+	})
+
+	// 3. Redpanda config resolves from ComponentGetter.
+	redpandaCfg := &ingestiongateway.Config{
 		Port:                "8080",
 		MessageBus:          ingestiongateway.MessageBusRedpanda,
 		RedpandaBrokers:     []string{"static:9092"},
 		TopicName:           "static-topic",
 		MinPartitions:       1,
 		MinReplicas:         1,
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 	comp := &unstructured.Unstructured{
@@ -85,26 +112,71 @@ func TestResolveComponentConfigIfEnabled(t *testing.T) {
 			},
 		},
 	}
-	resolveComponentConfigIfEnabled(ctx, enabledCfg, &crreadertest.FakeGetter{Component: comp})
-	if len(enabledCfg.RedpandaBrokers) != 1 || enabledCfg.RedpandaBrokers[0] != "dynamic-broker:9092" {
-		t.Errorf("RedpandaBrokers = %v, want [dynamic-broker:9092]", enabledCfg.RedpandaBrokers)
+	resolveComponentConfig(ctx, redpandaCfg, &crreadertest.FakeGetter{Component: comp})
+	if len(redpandaCfg.RedpandaBrokers) != 1 || redpandaCfg.RedpandaBrokers[0] != "dynamic-broker:9092" {
+		t.Errorf("RedpandaBrokers = %v, want [dynamic-broker:9092]", redpandaCfg.RedpandaBrokers)
 	}
-	if enabledCfg.TopicName != "dynamic-topic" {
-		t.Errorf("TopicName = %q, want dynamic-topic", enabledCfg.TopicName)
+	if redpandaCfg.TopicName != "dynamic-topic" {
+		t.Errorf("TopicName = %q, want dynamic-topic", redpandaCfg.TopicName)
 	}
 
-	// 3. Getter error logs warning and retains static config.
-	fallbackCfg := &ingestiongateway.Config{
-		Port:             "8080",
-		MessageBus:       ingestiongateway.MessageBusRedpanda,
-		RedpandaBrokers:  []string{"static:9092"},
-		TopicName:        "static-topic",
-		MinPartitions:    1,
-		MinReplicas:      1,
-		EnableComponents: true,
+	// Whitespace-only MessageBus defaults to Redpanda and resolves Component CR.
+	wsBusCfg := &ingestiongateway.Config{
+		Port:                "8080",
+		MessageBus:          "   ",
+		RedpandaBrokers:     []string{"static:9092"},
+		TopicName:           "static-topic",
+		MinPartitions:       1,
+		MinReplicas:         1,
+		ComponentsNamespace: "xmc",
 	}
-	resolveComponentConfigIfEnabled(ctx, fallbackCfg, &crreadertest.FakeGetter{Err: context.DeadlineExceeded})
+	resolveComponentConfig(ctx, wsBusCfg, &crreadertest.FakeGetter{Component: comp})
+	if wsBusCfg.TopicName != "dynamic-topic" {
+		t.Errorf("whitespace MessageBus TopicName = %q, want dynamic-topic", wsBusCfg.TopicName)
+	}
+
+	// 4. Getter error logs warning and retains static config.
+	fallbackCfg := &ingestiongateway.Config{
+		Port:            "8080",
+		MessageBus:      ingestiongateway.MessageBusRedpanda,
+		RedpandaBrokers: []string{"static:9092"},
+		TopicName:       "static-topic",
+		MinPartitions:   1,
+		MinReplicas:     1,
+	}
+	resolveComponentConfig(ctx, fallbackCfg, &crreadertest.FakeGetter{Err: context.DeadlineExceeded})
 	if fallbackCfg.TopicName != "static-topic" {
 		t.Errorf("TopicName = %q, want static-topic on fallback", fallbackCfg.TopicName)
 	}
+
+	t.Run("redpanda falls back to static config when kubeconfig is unavailable", func(t *testing.T) {
+		crreadertest.IsolateInvalidKubeconfig(t)
+		origFactory := newComponentGetter
+		getterInits := 0
+		newComponentGetter = func() (ingestiongateway.ComponentGetter, error) {
+			getterInits++
+			return origFactory()
+		}
+		t.Cleanup(func() { newComponentGetter = origFactory })
+
+		noKubeCfg := &ingestiongateway.Config{
+			Port:            "8080",
+			MessageBus:      ingestiongateway.MessageBusRedpanda,
+			RedpandaBrokers: []string{"static:9092"},
+			TopicName:       "static-topic",
+			MinPartitions:   1,
+			MinReplicas:     1,
+		}
+
+		resolveComponentConfig(ctx, noKubeCfg)
+		if getterInits != 1 {
+			t.Errorf("newComponentGetter() calls in Redpanda mode = %d, want 1", getterInits)
+		}
+		if len(noKubeCfg.RedpandaBrokers) != 1 || noKubeCfg.RedpandaBrokers[0] != "static:9092" {
+			t.Errorf("RedpandaBrokers = %v, want [static:9092] when kubeconfig is unavailable", noKubeCfg.RedpandaBrokers)
+		}
+		if noKubeCfg.TopicName != "static-topic" {
+			t.Errorf("TopicName = %q, want static-topic when kubeconfig is unavailable", noKubeCfg.TopicName)
+		}
+	})
 }

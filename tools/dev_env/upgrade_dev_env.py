@@ -104,7 +104,6 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Automatically run pending migrations if detected.",
     )
-    parser.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
         "--profile-values",
         default=None,
@@ -153,15 +152,14 @@ def step_check(config: UpgradeConfig) -> None:
     for binary in ["gcloud", "kubectl", "helm", "bazel"]:
         if not shutil.which(binary):
             error_exit(f"Required CLI tool '{binary}' is not installed or not in PATH.")
-    if config.enable_components:
-        try:
-            verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
-            error_exit(f"Failed Helm version check: {e}")
-        if config.profile_values and not Path(config.profile_values).is_file():
-            error_exit(
-                f"Profile values file '{config.profile_values}' does not exist or is not a file."
-            )
+    try:
+        verify_helm_min_version()
+    except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
+        error_exit(f"Failed Helm version check: {e}")
+    if config.profile_values and not Path(config.profile_values).is_file():
+        error_exit(
+            f"Profile values file '{config.profile_values}' does not exist or is not a file."
+        )
 
     gcluster_path = Path("./cluster-toolkit/gcluster")
     if not gcluster_path.is_file() or not os.access(gcluster_path, os.X_OK):
@@ -374,9 +372,7 @@ def step_app(config: UpgradeConfig) -> None:
         )
 
     log_info("Re-compiling XMC blueprint with latest variables and templates...")
-    compile_blueprint(
-        config.config_path, config.deployment_name, enable_components=config.enable_components
-    )
+    compile_blueprint(config.config_path, config.deployment_name)
 
     log_info("Exporting and importing Cluster Toolkit deployment group outputs...")
     if (ctk_dir / "primary").is_dir():
@@ -429,9 +425,9 @@ def resolve_deployment_name(service: str, namespace: str) -> str | None:
     return None
 
 
-# Optional deployments (e.g. xmc-bridge, ingestion-gateway, xmc-study-controller)
-# are skipped by resolve_deployment_name when their feature flag leaves them
-# undeployed.
+# Optional deployments (e.g. dashboard-service, ingestion-gateway, xmc-study-controller)
+# are skipped by resolve_deployment_name when their feature flag or Component CR leaves
+# them undeployed.
 # xmc-bridge is triggered first because it may own component releases (e.g.
 # the ingestion-gateway workload). `rollout restart` is asynchronous, so the
 # rollouts overlap; the bridge re-reconciles its releases once its new pod
@@ -524,7 +520,6 @@ def step_verify(config: UpgradeConfig) -> None:
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
-        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
         "LOG_MONITOR_DEPLOYMENT_ENABLED": (
             "true" if config.log_monitor_deployment_enabled else "false"
         ),
@@ -567,9 +562,6 @@ def _build_resume_cmd(args: argparse.Namespace, config: UpgradeConfig, step: str
     cmd = f"python3 tools/dev_env/upgrade_dev_env.py --config {shlex.quote(config.config_path)}"
     if getattr(args, "run_migrations", False):
         cmd += " --run-migrations"
-    if getattr(args, "enable_components", None) is not None:
-        flag = "--enable-components" if args.enable_components else "--no-enable-components"
-        cmd += f" {flag}"
     if getattr(args, "profile_values", None):
         cmd += f" --profile-values {shlex.quote(args.profile_values)}"
     step_flag = "--only" if args.only else "--start-from"
@@ -615,8 +607,6 @@ def run_upgrade(args: argparse.Namespace) -> None:
         args: Parsed command-line arguments.
     """
     config = load_config(args.config, run_migrations=args.run_migrations)
-    if getattr(args, "enable_components", None) is not None:
-        config = replace(config, enable_components=args.enable_components)
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)
     run_pipeline(args, config, STEPS)

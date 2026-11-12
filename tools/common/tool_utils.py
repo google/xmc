@@ -43,7 +43,6 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
-    enable_components: bool = False
     log_monitor_deployment_enabled: bool = True
     database_backend: str = DEFAULT_BACKEND
     profile_values: str | None = None
@@ -215,7 +214,6 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
-    "ENABLE_COMPONENTS": "enable_components",
     "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
     "DB_BACKEND": "database_backend",
 }
@@ -236,9 +234,54 @@ def _resolve_database_backend(raw: Any) -> str:
     return backend
 
 
+# Single source of truth for every "components can't be disabled" error (deployment YAML,
+# ENABLE_COMPONENTS env, and the KinD loader) so operators always get the migration hint.
+DISABLED_COMPONENTS_FLAG_ERROR = (
+    "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: "
+    "Components are mandatory. Migrate legacy workloads via "
+    "./tools/migrations/components/migrate.py and remove enable_components."
+)
+
+
 def parse_bool_flag(val: Any) -> bool:
     """Parses a boolean configuration flag from a boolean or string."""
     return val.strip().lower() in ("true", "1", "yes") if isinstance(val, str) else bool(val)
+
+
+# Deployment YAML keys retired in XMC 1.0.0. The Cluster Toolkit blueprint no longer maps them, and
+# `gcluster create -l WARNING` only warns about unused variables, so without this check a lagging
+# config would deploy successfully with metrics Components silently left disabled.
+RETIRED_CONFIG_KEYS: tuple[str, ...] = (
+    "enable_metrics",
+    "ingestion_gateway_deployment_enabled",
+    "clickhouse_host",
+    "clickhouse_port",
+    "clickhouse_database",
+    "clickhouse_user",
+)
+
+
+def reject_retired_component_config(raw_enable_components: Any, config: Mapping[str, Any]) -> None:
+    """Fails closed on pre-1.0.0 component/metrics configuration.
+
+    Args:
+        raw_enable_components: The resolved `enable_components` value (env or YAML), or None.
+        config: The deployment YAML `vars` mapping.
+
+    Raises:
+        ValueError: When `enable_components` resolves to false or a retired key is present.
+    """
+    if raw_enable_components is not None and not parse_bool_flag(raw_enable_components):
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+    retired = [key for key in RETIRED_CONFIG_KEYS if key in config]
+    if retired:
+        raise ValueError(
+            f"Configuration keys {retired} were retired in XMC 1.0.0 and are ignored by the blueprint: "
+            "metrics are enabled per Component via --profile-values "
+            "(components.{redpanda,clickhouse,ingestion-gateway}.enabled) and ClickHouse coordinates "
+            "come from Component/clickhouse. Remove them from the deployment YAML "
+            "(see docs/migrations/components.md)."
+        )
 
 
 def parse_positive_int(value: Any) -> int | None:
@@ -353,6 +396,14 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
+    env_comp = os.getenv("ENABLE_COMPONENTS")
+    raw_comp = (
+        env_comp
+        if env_comp is not None and env_comp.strip() != ""
+        else config.get("enable_components")
+    )
+    reject_retired_component_config(raw_comp, config)
+
     return DeploymentConfig(
         project_id=config["project_id"],
         deployment_name=config["deployment_name"],
@@ -362,7 +413,6 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        enable_components=parse_bool_flag(config.get("enable_components", False)),
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
@@ -599,7 +649,7 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
 
 
 def deploy_component_profile(config: DeploymentConfig) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+    """Deploys default XMC component profile (stable-2026a).
 
     Args:
         config: Loaded DeploymentConfig instance.
@@ -607,8 +657,6 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
     Raises:
         FileNotFoundError: If config.profile_values is specified and missing.
     """
-    if not config.enable_components:
-        return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
     cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]

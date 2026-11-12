@@ -37,15 +37,11 @@ func TestLoadConfig(t *testing.T) {
 
 	t.Run("loads component flags from environment", func(t *testing.T) {
 		t.Cleanup(loadEnvConfig)
-		t.Setenv("enable_components", "true")
 		t.Setenv("components_namespace", "custom-ns")
 		t.Setenv("METRICS_STORE", "bigquery")
 
 		loadEnvConfig()
 
-		if !cfg.EnableComponents {
-			t.Errorf("cfg.EnableComponents = false, want true")
-		}
 		if cfg.ComponentsNamespace != "custom-ns" {
 			t.Errorf("cfg.ComponentsNamespace = %q, want %q", cfg.ComponentsNamespace, "custom-ns")
 		}

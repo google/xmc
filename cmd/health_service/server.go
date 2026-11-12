@@ -256,7 +256,7 @@ func (s *server) ListConfigEntries(ctx context.Context, req *spb.ListConfigEntri
 }
 
 func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigGroup, error) {
-	if s.cfg == nil || !s.cfg.EnableComponents || s.lazyDB == nil {
+	if s.lazyDB == nil {
 		return nil, nil
 	}
 	provider, err := s.lazyDB.ComponentsProvider(ctx)
@@ -265,6 +265,9 @@ func (s *server) listCustomComponentConfigs(ctx context.Context) ([]*spb.ConfigG
 			return nil, ctx.Err()
 		}
 		logging.Warn(ctx, "Failed to initialize custom components provider", "error", err)
+		return nil, nil
+	}
+	if provider == nil {
 		return nil, nil
 	}
 	customConfigs, err := provider.GetComponentsConfig(ctx)

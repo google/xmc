@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Whether the ClickHouse 3P Wrapper Component is enabled in the cluster catalog.
-# Disabled by default to preserve existing non-component deployments (enable_components: false).
+# Disabled by default; enable explicitly in your profile values overlay when ClickHouse is provisioned.
 enabled: false
 
 # Release maturity tier declared by the catalog ("EXPERIMENTAL", "PREVIEW", or "STABLE").
@@ -32,19 +32,19 @@ deletionPolicy: Delete
 # Connection, authentication, and health parameters projected into the Component CR
 # for downstream XMC services (e.g. pkg/clickhouse, dashboard-service).
 parameters:
-  # ClickHouse server hostname or Kubernetes service FQDN (maps to CLICKHOUSE_HOST).
+  # ClickHouse server hostname or Kubernetes service FQDN (Component-resolved equivalent of CLICKHOUSE_HOST).
   host: "clickhouse.xmc-metrics.svc.cluster.local"
   # Comma-separated internal Kubernetes DNS endpoints for ClickHouse native protocol clients. If omitted, it is dynamically constructed from host and nativePort.
   clusterEndpoints: ""
-  # ClickHouse native TCP protocol port exposed by the ClickHouse service (maps to CLICKHOUSE_PORT).
+  # ClickHouse native TCP protocol port exposed by the ClickHouse service (Component-resolved equivalent of CLICKHOUSE_PORT).
   nativePort: 9000
   # ClickHouse HTTP API listener port exposed by the ClickHouse service (used for HTTP queries and /ping health probes).
   httpPort: 8123
-  # Default ClickHouse database used by XMC analytical and metrics workloads (maps to CLICKHOUSE_DATABASE).
+  # Default ClickHouse database used by XMC analytical and metrics workloads (Component-resolved equivalent of CLICKHOUSE_DATABASE).
   defaultDatabase: "default"
-  # ClickHouse login username (maps to CLICKHOUSE_USER).
+  # ClickHouse login username (Component-resolved equivalent of CLICKHOUSE_USER).
   user: "default"
-  # Kubernetes Secret name containing the ClickHouse password (maps to CLICKHOUSE_PASSWORD secretKeyRef).
+  # Kubernetes Secret name containing the ClickHouse password, read via the Kubernetes API by pkg/clickhouse/componentconfig.
   secretName: "clickhouse-secret"
   # Key within secretName containing the ClickHouse password.
   secretPasswordKey: "clickhouse-password"

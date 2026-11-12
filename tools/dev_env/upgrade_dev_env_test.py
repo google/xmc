@@ -38,13 +38,18 @@ class TestParseArgs(unittest.TestCase):
         self.assertFalse(args.run_migrations)
 
     def test_custom_flags(self):
-        args = upgrade_dev_env.parse_args(
-            ["-c", "custom.yaml", "-s", "images", "--run-migrations", "--enable-components"]
-        )
+        args = upgrade_dev_env.parse_args(["-c", "custom.yaml", "-s", "images", "--run-migrations"])
         self.assertEqual(args.config, "custom.yaml")
         self.assertEqual(args.start_from, "images")
         self.assertTrue(args.run_migrations)
-        self.assertTrue(args.enable_components)
+
+    def test_removed_enable_components_flags_rejected(self):
+        for flag in ("--enable-components", "--no-enable-components"):
+            err_stream = io.StringIO()
+            with mock.patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+                upgrade_dev_env.parse_args([flag])
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("unrecognized arguments", err_stream.getvalue())
 
     def test_mutually_exclusive_start_from_and_only(self):
         with self.assertRaises(SystemExit) as cm:
@@ -262,12 +267,15 @@ class TestStepSubprocesses(unittest.TestCase):
             image_tag="latest",
         )
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
     @mock.patch.object(Path, "is_file", return_value=True)
     @mock.patch("os.access", return_value=True)
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     @mock.patch("tools.dev_env.upgrade_dev_env.configure_docker_auth")
-    def test_step_check(self, mock_docker_auth, mock_run, _mock_access, _mock_file, _mock_which):
+    def test_step_check(
+        self, mock_docker_auth, mock_run, _mock_access, _mock_file, _mock_which, _mock_helm
+    ):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
@@ -297,16 +305,18 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 12)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.dev_env.upgrade_dev_env.deploy_component_profile")
     @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_app(self, mock_run, mock_compile, _mock_dir):
+    def test_step_app(self, mock_run, mock_compile, mock_profile, _mock_dir):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
         mock_compile.assert_called_once_with(
-            "deploy/ctk_v2/xmanager-cloud-deployment.yaml", "deploy-456", enable_components=False
+            "deploy/ctk_v2/xmanager-cloud-deployment.yaml", "deploy-456"
         )
+        mock_profile.assert_called_once_with(self.config)
         # Verify export-outputs, import-inputs, and deploy calls are present
         calls = [call_args[0][0] for call_args in mock_run.call_args_list]
         self.assertIn(
@@ -397,23 +407,6 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         mock_run.assert_not_called()
 
-    @mock.patch.object(Path, "is_dir", return_value=True)
-    @mock.patch("tools.dev_env.upgrade_dev_env.deploy_component_profile")
-    @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
-    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_app_with_components(self, mock_run, mock_compile, mock_profile, _mock_dir):
-        mock_run.return_value = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
-        cfg = replace(self.config, enable_components=True)
-        upgrade_dev_env.step_app(cfg)
-        mock_compile.assert_called_once_with(
-            "deploy/ctk_v2/xmanager-cloud-deployment.yaml",
-            "deploy-456",
-            enable_components=True,
-        )
-        mock_profile.assert_called_once_with(cfg)
-
     @mock.patch("tools.dev_env.upgrade_dev_env.wait_for_deployments_ready")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
     def test_step_verify(self, mock_run, mock_wait_rollout):
@@ -430,7 +423,6 @@ class TestStepSubprocesses(unittest.TestCase):
                 "ENVIRONMENT": "dev",
                 "REGION": "us-central1",
                 "PROJECT_ID": "proj-123",
-                "ENABLE_COMPONENTS": "false",
                 "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
             },
         )
@@ -471,12 +463,9 @@ class TestStepSubprocesses(unittest.TestCase):
         side_effect=RuntimeError("Helm version must be >= 3.14.0"),
     )
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
-    def test_step_check_fails_old_helm_when_components_enabled(
-        self, _mock_which, _mock_helm, mock_log_error
-    ):
-        cfg = replace(self.config, enable_components=True)
+    def test_step_check_fails_old_helm(self, _mock_which, _mock_helm, mock_log_error):
         with self.assertRaises(SystemExit) as cm:
-            upgrade_dev_env.step_check(cfg)
+            upgrade_dev_env.step_check(self.config)
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with(
             "Failed Helm version check: Helm version must be >= 3.14.0"
@@ -488,12 +477,9 @@ class TestStepSubprocesses(unittest.TestCase):
         side_effect=PermissionError("helm not executable"),
     )
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
-    def test_step_check_fails_helm_oserror_when_components_enabled(
-        self, _mock_which, _mock_helm, mock_log_error
-    ):
-        cfg = replace(self.config, enable_components=True)
+    def test_step_check_fails_helm_oserror(self, _mock_which, _mock_helm, mock_log_error):
         with self.assertRaises(SystemExit) as cm:
-            upgrade_dev_env.step_check(cfg)
+            upgrade_dev_env.step_check(self.config)
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with("Failed Helm version check: helm not executable")
 
@@ -501,12 +487,11 @@ class TestStepSubprocesses(unittest.TestCase):
     @mock.patch("tools.dev_env.upgrade_dev_env.Path.is_file", return_value=False)
     @mock.patch("tools.dev_env.upgrade_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @mock.patch("shutil.which", return_value="/usr/bin/tool")
-    def test_step_check_fails_missing_profile_values_when_components_enabled(
+    def test_step_check_fails_missing_profile_values(
         self, _mock_which, _mock_helm, _mock_is_file, mock_log_error
     ):
         cfg = replace(
             self.config,
-            enable_components=True,
             profile_values="/tmp/nonexistent-profile-values-1429.yaml",
         )
         with self.assertRaises(SystemExit) as cm:
@@ -526,7 +511,6 @@ class TestStepSubprocesses(unittest.TestCase):
         parsed = upgrade_dev_env.parse_args(
             [
                 "--run-migrations",
-                "--enable-components",
                 "--profile-values",
                 "/tmp/my dir/profile values.yaml",
                 "--start-from",
@@ -536,7 +520,6 @@ class TestStepSubprocesses(unittest.TestCase):
         cfg = replace(
             self.config,
             run_migrations=True,
-            enable_components=True,
             profile_values="/tmp/my dir/profile values.yaml",
         )
         buf = io.StringIO()
@@ -545,7 +528,6 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(cm.exception.code, 1)
         out = buf.getvalue()
         self.assertIn("--run-migrations", out)
-        self.assertIn("--enable-components", out)
         self.assertIn("--profile-values '/tmp/my dir/profile values.yaml'", out)
         self.assertIn("--start-from app", out)
 

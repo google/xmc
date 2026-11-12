@@ -247,7 +247,7 @@ bazel test //test/e2e:components_lifecycle_test \
   - A CMS snapshot locked before the upgrade keeps the baseline spec. Its generation now differs from `status.componentGeneration`, the predicate behind the actuator's component drift warning annotation. The suite checks only this predicate input, not the actuator or any UI.
 
 > [!NOTE]
-> The Go KinD harness always installs the Component CRD and runs an in-process bridge per test namespace, so this suite does not depend on the deployment's `enable_components` setting.
+> The Go KinD harness installs the Component CRD directly and runs an in-process bridge per test namespace rather than deploying the full XMC umbrella chart.
 
 ```bash
 bazel test //test/e2e:profile_migration_test --test_output=streamed

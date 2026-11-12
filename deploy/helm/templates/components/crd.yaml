@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Rendered regardless of componentsDeployment.enabled and never deleted by Helm or Argo CD:
+# Never deleted by Helm or Argo CD (`helm.sh/resource-policy: keep`):
 # deleting the CRD deletes every Component CR. Remove it only with an explicit
 # `kubectl delete crd components.xmc.dev`.
 apiVersion: apiextensions.k8s.io/v1

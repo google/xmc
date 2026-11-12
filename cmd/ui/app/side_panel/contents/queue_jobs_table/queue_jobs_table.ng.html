@@ -22,7 +22,31 @@
       <ng-content select="[headerActions]" />
     </div>
     <div class="target-queue-name" data-testid="target-queue-name">{{ activeQueueName() }}</div>
-    <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
+    <p class="jobs-card-subtitle">{{ tableControls.totalCount() }} matching jobs.</p>
+    <div class="job-filters">
+      <mat-form-field>
+        <mat-label>Author</mat-label>
+        <input
+          #authorInput
+          matInput
+          placeholder="Exact author email"
+          [value]="author()"
+          (change)="onAuthorChange(authorInput.value)"
+        />
+      </mat-form-field>
+      <mat-form-field>
+        <mat-label>Status</mat-label>
+        <mat-select [value]="status()" (selectionChange)="onStatusChange($event.value)">
+          <mat-option value="">All active statuses</mat-option>
+          @for (state of statuses; track state) {
+            <mat-option [value]="state">{{ state }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <button type="button" mat-button [disabled]="!filter()" (click)="clearFilters()">
+        Clear filters
+      </button>
+    </div>
   </div>
 
   @if (!isLoading()) {
@@ -47,16 +71,23 @@
           height="120"
         />
       </div>
-      <div class="empty-caption">No job ahead of you!</div>
+      <div class="empty-caption">No matching jobs.</div>
     </div>
   } @else {
+    @if (isRefreshing()) {
+      <xmc-loading-bar [isRefreshing]="true" />
+    }
     <div class="jobs-table-container">
       <table
         mat-table
+        matSort
         aria-labelledby="queue-jobs-title"
         class="jobs-mat-table"
         data-testid="jobs-table"
+        [matSortActive]="sort().active"
+        [matSortDirection]="sort().direction"
         [dataSource]="jobs()"
+        (matSortChange)="onSortChange($event)"
       >
         <!-- Position Column -->
         <ng-container matColumnDef="position">
@@ -82,7 +113,7 @@
 
         <!-- Status Column -->
         <ng-container matColumnDef="status">
-          <th mat-header-cell *matHeaderCellDef>Status</th>
+          <th mat-header-cell *matHeaderCellDef mat-sort-header="status">Status</th>
           <td mat-cell *matCellDef="let job" class="status-cell">
             <xmc-status-chip [status]="job | queueJobStatus" />
           </td>
@@ -110,7 +141,7 @@
 
         <!-- Priority Column -->
         <ng-container matColumnDef="priority">
-          <th mat-header-cell *matHeaderCellDef>Priority</th>
+          <th mat-header-cell *matHeaderCellDef mat-sort-header="priority">Priority</th>
           <td mat-cell *matCellDef="let job" class="priority-cell">
             {{ job.priority ?? '-' }}
           </td>
@@ -147,7 +178,7 @@
 
         <!-- Author Column -->
         <ng-container matColumnDef="user">
-          <th mat-header-cell *matHeaderCellDef>Author</th>
+          <th mat-header-cell *matHeaderCellDef mat-sort-header="author">Author</th>
           <td mat-cell *matCellDef="let job" class="author-cell">
             {{ job.user || '-' }}
           </td>

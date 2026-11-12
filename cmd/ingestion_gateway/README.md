@@ -142,6 +142,7 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 | Flag | Type | Default Value | Description |
 | :--- | :--- | :--- | :--- |
 | `-port` | `string` | `8080` | HTTP server listening port. |
+| `-components_namespace` | `string` | `xmc` (or `COMPONENTS_NAMESPACE`) | Kubernetes namespace searched for `Component/redpanda` (`xmc.dev/v1alpha1`) in Redpanda mode (in-cluster config, else the default kubeconfig). When the CR is enabled, its broker endpoint and `defaultTopic` override `-redpanda_brokers` / `-topic_name`; each value falls back to its flag if missing from the CR, or if the CR is absent, disabled, unreadable within 5s, or fails validation. |
 | `-message_bus` | `string` | `redpanda` (applied after `MESSAGE_BUS`) | Message bus backend: `redpanda` or `pubsub`. |
 | `-topic_name` | `string` | `xmc-metrics` | Destination topic: a Redpanda topic, or a Pub/Sub topic ID when `-message_bus=pubsub`. |
 | `-project_id` | `string` | `""` | GCP project ID for logging. **Required** when `-message_bus=pubsub`, where it is also the Pub/Sub project. |
@@ -164,6 +165,7 @@ The Ingestion Gateway exposes all operational settings via command-line flags an
 | Variable | Flag | Precedence |
 | :--- | :--- | :--- |
 | `PORT` | `-port` | Consulted whenever the flag holds its default value |
+| `COMPONENTS_NAMESPACE` | `-components_namespace` | Consulted whenever the flag holds its default value |
 | `MESSAGE_BUS` | `-message_bus` | Consulted only when the flag is not passed |
 | `REDPANDA_BROKERS`, `REDPANDA_BROKER` | `-redpanda_brokers` | Consulted whenever the flag holds its default value |
 | `TOPIC_NAME`, `REDPANDA_TOPIC` | `-topic_name` | Consulted whenever the flag holds its default value |
@@ -173,10 +175,10 @@ explicitly beats `MESSAGE_BUS=pubsub` rather than being mistaken for an unset fl
 applied after the environment is consulted.
 
 > [!NOTE]
-> The other three rows behave differently, and it is a latent footgun rather than a design choice:
+> The other four rows behave differently, and it is a latent footgun rather than a design choice:
 > they cannot distinguish a flag left alone from one explicitly set to the documented default, so
 > `-port=8080` with `PORT=9090` in the environment listens on 9090. Aligning them with
-> `-message_bus` means changing three flags' published defaults and is left to a follow-up.
+> `-message_bus` means changing four flags' published defaults and is left to a follow-up.
 
 ### Operational Health Probes
 

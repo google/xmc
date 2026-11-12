@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Whether the Redpanda 3P Wrapper Component is enabled in the cluster catalog.
-# Disabled by default to preserve existing non-component deployments (enable_components: false).
+# Disabled by default; enable explicitly in your profile values overlay when Redpanda is provisioned.
 enabled: false
 
 # Release maturity tier declared by the catalog ("EXPERIMENTAL", "PREVIEW", or "STABLE").

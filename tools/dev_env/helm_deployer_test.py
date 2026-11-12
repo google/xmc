@@ -132,7 +132,6 @@ class TestHelmDeployer(unittest.TestCase):
                 "health_service",
                 "components",
                 "rod_data_provider",
-                "ingestion_gateway",
             ],
         )
         val_path = self.deployer.generate_values_file(config=cfg)
@@ -141,11 +140,15 @@ class TestHelmDeployer(unittest.TestCase):
         self.assertIn("essDeployment", content)
         self.assertIn("dashboardServiceDeployment", content)
         self.assertIn("healthServiceDeployment", content)
-        self.assertIn("componentsDeployment", content)
         self.assertIn("rodDeployment", content)
-        self.assertIn("ingestionGatewayDeployment", content)
+        self.assertNotIn("componentsDeployment", content)
+        self.assertNotIn("ingestionGatewayDeployment", content)
         self.assertIn("ess_custom_image", content)
         self.assertIn("dashboard_service_custom_image", content)
+        self.assertIn("xmc_bridge_custom_image", content)
+        # ingestion-gateway is a Component actuated by xmc-bridge; KinD neither builds its image
+        # nor sets its image value.
+        self.assertNotIn("ingestion_gateway_custom_image", content)
 
     def test_generate_values_file_with_remote_k8s(self) -> None:
         cfg = LocalDevConfig(

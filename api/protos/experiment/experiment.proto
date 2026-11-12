@@ -21,6 +21,7 @@ import "google/protobuf/timestamp.proto";
 import "xmanager_cloud/experiment_state_server/proto/priority.proto";
 import "xmanager_cloud/experiment_state_server/proto/resources.proto";
 import "xmanager_cloud/experiment_state_server/proto/status.proto";
+import "xmanager_cloud/experiment_state_server/proto/study.proto";
 import "xmanager_cloud/experiment_state_server/proto/url.proto";
 import "xmanager_cloud/xid_service/proto/messages.proto";
 
@@ -91,4 +92,10 @@ message Experiment {
   // existed read as STANDARD.
   ExperimentType experiment_type = 14
       [(google.api.field_behavior) = IMMUTABLE];
+  // The configuration specific to experiment_type. At most one is set.
+  oneof type_config {
+    // The study definition. Required when experiment_type is STUDY and must be
+    // unset otherwise. Cannot be changed after creation.
+    StudyConfig study_config = 15 [(google.api.field_behavior) = IMMUTABLE];
+  }
 }

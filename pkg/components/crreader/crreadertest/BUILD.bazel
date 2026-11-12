@@ -33,6 +33,7 @@ go_test(
     srcs = ["fake_test.go"],
     embed = [":crreadertest"],
     deps = [
+        "//pkg/components/crreader",
         "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",

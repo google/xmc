@@ -168,10 +168,10 @@ class HelmDeployer:
         }
 
         for s in cfg.enabled_services:
-            dep_key = service_to_deployment_key(s)
             img_key = service_to_image_key(s)
             img_service = "xmc_bridge" if s == "components" else s.lower()
-            values[dep_key] = {"enabled": True}
+            if s not in ("components", "xmc_bridge", "xmc-bridge"):
+                values[service_to_deployment_key(s)] = {"enabled": True}
             values[img_key] = f"{img_service}_image:latest"
 
         if cfg.remote_k8s_context:

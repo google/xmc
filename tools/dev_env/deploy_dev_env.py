@@ -107,7 +107,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     p.add_argument("--only", choices=STEPS, help="Execute ONLY this step and exit.")
     p.add_argument("--skip-migrations", action="store_true", help="Skip Spanner migrations.")
     p.add_argument("--skip-verification", action="store_true", help="Skip health verification.")
-    p.add_argument("--enable-components", action=argparse.BooleanOptionalAction, default=None)
     p.add_argument(
         "--profile-values",
         default=None,
@@ -279,15 +278,14 @@ def run_checks(config: DeploymentConfig, dns_project: str, dns_zone: str) -> Non
     log_info("Running pre-flight dependency checks...")
     _verify_binaries()
     _check_terraform_version()
-    if config.enable_components:
-        try:
-            verify_helm_min_version()
-        except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
-            error_exit(f"Failed Helm version check: {e}")
-        if config.profile_values and not pathlib.Path(config.profile_values).is_file():
-            error_exit(
-                f"Profile values file '{config.profile_values}' does not exist or is not a file."
-            )
+    try:
+        verify_helm_min_version()
+    except (subprocess.CalledProcessError, RuntimeError, ValueError, OSError) as e:
+        error_exit(f"Failed Helm version check: {e}")
+    if config.profile_values and not pathlib.Path(config.profile_values).is_file():
+        error_exit(
+            f"Profile values file '{config.profile_values}' does not exist or is not a file."
+        )
     _check_gcp_project_alignment(config.project_id)
     _check_dns_access(dns_project, dns_zone)
     log_success("All pre-flight checks passed.")
@@ -517,9 +515,7 @@ def step_compile(
         config_path: Path to the configuration file.
     """
     log_info("Compiling XMC blueprint using gcluster...")
-    compile_blueprint(
-        config_path, config.deployment_name, enable_components=config.enable_components
-    )
+    compile_blueprint(config_path, config.deployment_name)
     log_success("Blueprint compiled successfully under 'ctk-out/'.")
 
 
@@ -797,7 +793,6 @@ def _build_verify_env(config: DeploymentConfig) -> dict[str, str]:
         "ENVIRONMENT": config.environment,
         "REGION": config.region,
         "PROJECT_ID": config.project_id,
-        "ENABLE_COMPONENTS": "true" if config.enable_components else "false",
         "LOG_MONITOR_DEPLOYMENT_ENABLED": (
             "true" if config.log_monitor_deployment_enabled else "false"
         ),
@@ -870,9 +865,6 @@ def _build_resume_cmd(args: argparse.Namespace, current_step: str) -> str:
         resume_cmd += "--skip-migrations "
     if getattr(args, "skip_verification", False):
         resume_cmd += "--skip-verification "
-    if getattr(args, "enable_components", None) is not None:
-        flag = "--enable-components" if args.enable_components else "--no-enable-components"
-        resume_cmd += f"{flag} "
     if getattr(args, "profile_values", None):
         resume_cmd += f"--profile-values {shlex.quote(args.profile_values)} "
     if args.only:
@@ -900,8 +892,6 @@ def _print_deployment_summary(config: DeploymentConfig) -> None:
 def run_deployment(args: argparse.Namespace) -> None:
     """Executes the GKE deployment pipeline."""
     config = load_and_validate_config(args.config)
-    if getattr(args, "enable_components", None) is not None:
-        config = replace(config, enable_components=bool(args.enable_components))
     if getattr(args, "profile_values", None):
         config = replace(config, profile_values=args.profile_values)
 

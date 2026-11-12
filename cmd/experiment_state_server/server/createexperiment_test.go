@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
@@ -307,20 +308,9 @@ func TestCreateExperiment_PersistsExperimentType(t *testing.T) {
 }
 
 // readyHPOCatalog returns ready hpo, vizier, and clickhouse components, with hpo depending on the
-// other two.
+// other two and setting no parameters.
 func readyHPOCatalog() map[string]*store.ComponentRecord {
-	ready := func(id int64, name string, componentType componentspb.ComponentType, deps ...string) *store.ComponentRecord {
-		return &store.ComponentRecord{
-			ComponentID: id, Name: name, State: componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-			Spec:       &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Dependencies: deps},
-			Generation: 1, ObservedGeneration: proto.Int64(1),
-		}
-	}
-	return map[string]*store.ComponentRecord{
-		"hpo":        ready(1, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, "vizier", "clickhouse"),
-		"vizier":     ready(2, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-		"clickhouse": ready(3, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER),
-	}
+	return experimenttest.HPOCatalog(nil)
 }
 
 func pendingVizierCatalog() map[string]*store.ComponentRecord {
@@ -332,10 +322,9 @@ func pendingVizierCatalog() map[string]*store.ComponentRecord {
 func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
-		name             string
-		expType          msgpb.Experiment_ExperimentType
-		enableComponents bool
-		catalog          *storage.MockComponentRepository
+		name    string
+		expType msgpb.Experiment_ExperimentType
+		catalog *storage.MockComponentRepository
 		// txCatalog, when set, is what the creation transaction reads instead of catalog.
 		txCatalog    *storage.MockComponentRepository
 		wantCode     codes.Code
@@ -343,20 +332,20 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 		wantXidCalls int
 		wantPinned   int
 	}{
-		{name: "study with components disabled", expType: msgpb.Experiment_STUDY,
-			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
-			wantCode: codes.FailedPrecondition, wantText: "HPO requires the Components feature"},
-		{name: "study rejected by the pre-check", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study without hpo component is rejected before provisioning xid", expType: msgpb.Experiment_STUDY,
+			catalog:  &storage.MockComponentRepository{},
+			wantCode: codes.FailedPrecondition, wantText: `"hpo"`},
+		{name: "study rejected by the pre-check", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{Records: pendingVizierCatalog()},
 			wantCode: codes.FailedPrecondition, wantText: `"vizier"`},
-		{name: "study rejected in the creation transaction", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study rejected in the creation transaction", expType: msgpb.Experiment_STUDY,
 			catalog:   &storage.MockComponentRepository{Records: readyHPOCatalog()},
 			txCatalog: &storage.MockComponentRepository{Records: pendingVizierCatalog()},
 			wantCode:  codes.FailedPrecondition, wantText: `"vizier"`, wantXidCalls: 1},
-		{name: "study catalog read failure is internal", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study catalog read failure is internal", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{GetActiveComponentErr: grpcerr.ErrUnavailable},
 			wantCode: codes.Internal},
-		{name: "study with ready components is pinned", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study with ready components is pinned", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
 			wantCode: codes.OK, wantXidCalls: 1, wantPinned: 3},
 		{name: "standard experiment reads no components", expType: msgpb.Experiment_STANDARD,
@@ -371,11 +360,14 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 				st.Transaction = &storage.Transaction{Components: tc.txCatalog}
 			}
 			server := newTestServer(t,
-				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: tc.enableComponents}),
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
 				withXidClient(xidClient),
 				withStorage(st),
 			)
 			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
+			if tc.expType == msgpb.Experiment_STUDY {
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
+			}
 
 			_, err := server.CreateExperiment(ctx, req)
 
@@ -391,6 +383,134 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 			}
 			if got := len(pinnedCatalog.Snapshots[123]); got != tc.wantPinned {
 				t.Errorf("CreateExperiment(%v) pinned %d components, want %d", tc.expType, got, tc.wantPinned)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_StudyConfig(t *testing.T) {
+	ctx := context.Background()
+	multiObjective := prototest.Modify(experimenttest.StudyConfig(), func(cfg *msgpb.StudyConfig) {
+		cfg.Metrics = append(cfg.Metrics, &msgpb.MetricSpec{MetricId: "loss", Goal: msgpb.MetricSpec_MINIMIZE})
+	})
+	tests := []struct {
+		name        string
+		expType     msgpb.Experiment_ExperimentType
+		studyConfig *msgpb.StudyConfig
+		wantCode    codes.Code
+	}{
+		{name: "study with config is persisted", expType: msgpb.Experiment_STUDY, studyConfig: experimenttest.StudyConfig(), wantCode: codes.OK},
+		{name: "study without config", expType: msgpb.Experiment_STUDY, wantCode: codes.InvalidArgument},
+		{name: "multi-objective study", expType: msgpb.Experiment_STUDY, studyConfig: multiObjective, wantCode: codes.InvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: readyHPOCatalog()}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(xidClient),
+				withStorage(st),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "study", ExperimentType: tc.expType}}
+			if tc.studyConfig != nil {
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: tc.studyConfig}
+			}
+
+			got, err := server.CreateExperiment(ctx, req)
+
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("CreateExperiment() error = %v, want code %v", err, tc.wantCode)
+			}
+			if tc.wantCode != codes.OK {
+				// Invalid study configs are rejected before an XID is provisioned.
+				if xidClient.createXidEntryCalls != 0 {
+					t.Errorf("CreateExperiment() made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
+				}
+				return
+			}
+			for desc, exp := range map[string]*msgpb.Experiment{"returned": got, "persisted": st.Experiment} {
+				if diff := cmp.Diff(tc.studyConfig, exp.GetStudyConfig(), protocmp.Transform()); diff != "" {
+					t.Errorf("CreateExperiment() %s study_config diff (-want +got):\n%s", desc, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_RejectsStudyConfigOnNonStudy(t *testing.T) {
+	ctx := context.Background()
+	for _, expType := range []msgpb.Experiment_ExperimentType{msgpb.Experiment_STANDARD, msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED} {
+		t.Run(expType.String(), func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(xidClient),
+				withStorage(&storage.MockStorage{}),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{
+				Title: "exp", ExperimentType: expType, TypeConfig: &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()},
+			}}
+
+			_, err := server.CreateExperiment(ctx, req)
+
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("CreateExperiment(%v with study_config) error = %v, want code %v", expType, err, codes.InvalidArgument)
+			}
+			if xidClient.createXidEntryCalls != 0 {
+				t.Errorf("CreateExperiment(%v with study_config) made %d CreateXidEntry calls, want 0", expType, xidClient.createXidEntryCalls)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_StudyTrialBudgetLimit(t *testing.T) {
+	ctx := context.Background()
+	const launchText = "Experiment is being launched."
+	tests := []struct {
+		name         string
+		parameters   map[string]string // hpo component parameters.
+		budget       int32
+		wantBudget   int32
+		wantText     string
+		wantSeverity msgpb.StructuredMessage_Severity
+	}{
+		{name: "above limit is clamped", parameters: map[string]string{"maxTrialBudget": "5"}, budget: 10, wantBudget: 5,
+			wantText: launchText + "; max_trial_budget 10 exceeds the hpo component limit; clamped to 5", wantSeverity: msgpb.StructuredMessage_WARNING},
+		{name: "within limit is kept", parameters: map[string]string{"maxTrialBudget": "10"}, budget: 10, wantBudget: 10,
+			wantText: launchText, wantSeverity: msgpb.StructuredMessage_DEBUG},
+		{name: "missing limit falls back to the default", budget: 1000, wantBudget: 1000,
+			wantText: launchText, wantSeverity: msgpb.StructuredMessage_DEBUG},
+		{name: "malformed limit falls back to the default", parameters: map[string]string{"maxTrialBudget": "many"}, budget: 2000, wantBudget: 1000,
+			wantText: launchText + "; max_trial_budget 2000 exceeds the hpo component limit; clamped to 1000", wantSeverity: msgpb.StructuredMessage_WARNING},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: experimenttest.HPOCatalog(tc.parameters)}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
+				withStorage(st),
+			)
+			cfg := prototest.Modify(experimenttest.StudyConfig(), func(cfg *msgpb.StudyConfig) { cfg.MaxTrialBudget = tc.budget })
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{
+				Title: "study", ExperimentType: msgpb.Experiment_STUDY, TypeConfig: &msgpb.Experiment_StudyConfig{StudyConfig: cfg},
+			}}
+
+			got, err := server.CreateExperiment(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateExperiment() failed: %v", err)
+			}
+
+			for desc, exp := range map[string]*msgpb.Experiment{"returned": got, "persisted": st.Experiment} {
+				if budget := exp.GetStudyConfig().GetMaxTrialBudget(); budget != tc.wantBudget {
+					t.Errorf("%s max_trial_budget = %d, want %d", desc, budget, tc.wantBudget)
+				}
+				// A clamp warning is merged into the initial launch message, which it raises to WARNING.
+				msg := exp.GetStatus().GetStructuredStatusMessage()
+				if msg.GetUserFacingText() != tc.wantText || msg.GetSeverity() != tc.wantSeverity {
+					t.Errorf("%s status message = %v, want %v %q", desc, msg, tc.wantSeverity, tc.wantText)
+				}
 			}
 		})
 	}

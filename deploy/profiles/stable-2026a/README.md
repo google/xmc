@@ -38,9 +38,9 @@ The meta-chart has no Helm `dependencies:`. It reads each co-located component c
 
 ### Prerequisites
 
-The XMC umbrella chart must be installed with `enable_components=true` (Helm value `componentsDeployment.enabled=true`). That installs `xmc-bridge`. The chart installs the `Component` CRD and the `component-deletion-protection` admission policy regardless of the flag and never deletes them (see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)).
+In XMC `1.0.0+`, the XMC umbrella chart (`deploy/helm`) installs `xmc-bridge`, the `Component` CRD (`components.xmc.dev`), and the `component-deletion-protection` `ValidatingAdmissionPolicy` out-of-the-box (the CRD and deletion-protection policy carry `helm.sh/resource-policy: keep` and are never deleted by Helm; see [CRD lifecycle](../../../cmd/xmc_bridge/README.md#crd-lifecycle)). Upgrading the profile with `--reset-then-reuse-values` requires **Helm `>= 3.14.0`**.
 
-Components are an unlaunched feature, so install the profile fresh. If you installed a component chart directly as its own Helm release during development, uninstall that release first. To migrate an existing umbrella-managed `ingestion-gateway` deployment (`enable_components=false`) to this profile without downtime, follow [`docs/migrations/components.md`](../../../docs/migrations/components.md).
+If you installed a component chart directly as its own Helm release during development, uninstall that release first. To migrate a `< 1.0.0` deployment with an umbrella-managed `ingestion-gateway` workload to this profile without downtime, follow [`docs/migrations/components.md`](../../../docs/migrations/components.md).
 
 ### Install
 
@@ -49,7 +49,7 @@ Install the profile as a single release:
 ```bash
 # 1. Render the Component CRs with your overrides.
 mkdir -p rendered
-helm template xmc-profile deploy/profiles/stable-2026a -n xmc -f my-values.yaml > rendered/profile.yaml
+helm template xmc-profile deploy/profiles/stable-2026a -n xmc -f profile-values.yaml > rendered/profile.yaml
 
 # 2. Validate dependencies, schema, and the compatibility matrix offline.
 go run ./cmd/component-linter \
@@ -57,14 +57,14 @@ go run ./cmd/component-linter \
   --rules-config=deploy/profiles/stable-2026a/rules.yaml
 
 # 3. Install the same values, or commit rendered/ to your GitOps repository instead.
-helm install xmc-profile deploy/profiles/stable-2026a -n xmc -f my-values.yaml
+helm install xmc-profile deploy/profiles/stable-2026a -n xmc -f profile-values.yaml
 ```
 
 The release name must not start with `xmc-cmp-`, which is reserved for `xmc-bridge` component releases; rendering fails if it does.
 
 To isolate a template error in one component, render that component chart on its own, for example `helm template redpanda deploy/profiles/stable-2026a/components/redpanda`.
 
-Example `my-values.yaml` enabling the metrics pipeline:
+Example `profile-values.yaml` enabling the metrics pipeline (all components are disabled by default; `--reset-then-reuse-values` carries the previous release's values forward, so a component stays enabled until you set `components.<name>.enabled: false` explicitly):
 
 ```yaml
 components:

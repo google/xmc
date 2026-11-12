@@ -106,7 +106,7 @@ func assertRedpandaComponentResolver(ctx context.Context, t *testing.T, h *kindC
 	t.Helper()
 	cfg := &ingestiongateway.Config{
 		Port: "8080", MessageBus: ingestiongateway.MessageBusRedpanda, RedpandaBrokers: []string{"localhost:9092"},
-		TopicName: "fallback-topic", MinPartitions: 1, MinReplicas: 1, EnableComponents: true, ComponentsNamespace: ns,
+		TopicName: "fallback-topic", MinPartitions: 1, MinReplicas: 1, ComponentsNamespace: ns,
 	}
 	if err := ingestiongateway.ResolveRedpandaComponentConfig(ctx, cfg, crreader.NewGetterFromDynamic(h.dynClient)); err != nil {
 		t.Fatalf("ResolveRedpandaComponentConfig failed: %v", err)

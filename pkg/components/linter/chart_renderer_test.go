@@ -28,6 +28,11 @@ import (
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/engine"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 
 	"xmanager_cloud/pkg/components/linter"
 )
@@ -392,6 +397,9 @@ parameters:
 					Stability:          "EXPERIMENTAL",
 					DeletionProtection: true,
 					DeletionPolicy:     "Delete",
+					Parameters: map[string]string{
+						"maxTrialBudget": "1000",
+					},
 					Dependencies: []linter.ComponentDependencyRef{
 						{Name: "vizier"},
 						{Name: "clickhouse"},
@@ -639,7 +647,7 @@ func TestIngestionGatewaySubChartRendering(t *testing.T) {
 
 	verifySubChartOverridesAndGuards(t, igDir)
 	verifyUmbrellaChartIntegration(t, helmDir)
-	verifyNetworkPolicyParity(t, helmDir, igDir)
+	verifyGatewayNetworkPolicy(t, igDir)
 }
 
 func verifySubChartOverridesAndGuards(t *testing.T, igDir string) {
@@ -701,60 +709,125 @@ func verifyBridgeReleaseGuards(t *testing.T, igDir string) {
 
 // assertWellFormedManifests fails if any rendered YAML document lacks apiVersion or kind, which
 // Kubernetes rejects at install time (e.g. a template chomping the newline before apiVersion).
-func assertWellFormedManifests(t *testing.T, manifest string) {
+// It returns the number of non-empty documents so callers can assert that something rendered.
+func assertWellFormedManifests(t *testing.T, manifest string) int {
 	t.Helper()
 	dec := yaml.NewDecoder(strings.NewReader(manifest))
+	objects := 0
 	for i := 0; ; i++ {
 		var doc map[string]any
 		err := dec.Decode(&doc)
 		if err == io.EOF {
-			return
+			return objects
 		}
 		if err != nil {
 			t.Fatalf("yaml document %d failed to decode: %v", i, err)
 		}
-		if doc == nil {
+		if len(doc) == 0 {
 			continue
 		}
+		objects++
 		if doc["apiVersion"] == nil || doc["kind"] == nil {
 			t.Errorf("yaml document %d missing apiVersion or kind: apiVersion=%v kind=%v", i, doc["apiVersion"], doc["kind"])
 		}
 	}
 }
 
-// verifyUmbrellaChartIntegration checks the umbrella chart renders the gateway only while
-// components are disabled; with components enabled the ingestion-gateway component chart owns it.
+// verifyUmbrellaChartIntegration checks the umbrella chart renders all xmc-bridge resources and
+// kept CRD/VAP objects by default, ships no legacy gateway or umbrella NetworkPolicy templates,
+// and fails closed when legacy flags (componentsDeployment.enabled=false or
+// ingestionGatewayDeployment.enabled=true) are passed.
 func verifyUmbrellaChartIntegration(t *testing.T, helmDir string) {
 	t.Helper()
 
-	tests := []struct {
-		name        string
-		components  bool
-		wantGateway bool
-	}{
-		{name: "components disabled keeps legacy umbrella gateway", components: false, wantGateway: true},
-		{name: "components enabled hands gateway to component chart", components: true, wantGateway: false},
+	rendered, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{})
+	if err != nil {
+		t.Fatalf("renderChartWithValues(umbrella, default) failed: %v", err)
 	}
-	for _, tt := range tests {
-		rendered, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
-			"componentsDeployment":       map[string]any{"enabled": tt.components},
-			"ingestionGatewayDeployment": map[string]any{"enabled": true},
-		})
-		if err != nil {
-			t.Fatalf("%s: renderChartWithValues(umbrella) failed: %v", tt.name, err)
+	for _, f := range []string{
+		"components/deployment.yaml",
+		"components/configmap.yaml",
+		"components/rbac.yaml",
+		"components/serviceaccount.yaml",
+	} {
+		if assertWellFormedManifests(t, rendered["xmanager-cloud/templates/"+f]) == 0 {
+			t.Errorf("umbrella %s did not render any Kubernetes object by default", f)
 		}
-		for _, f := range []string{"ingestion-gateway/deployment.yaml", "ingestion-gateway/service.yaml", "ingestion-gateway/hpa.yaml", "network-policies.yaml"} {
-			if got := strings.Contains(rendered["xmanager-cloud/templates/"+f], "kind:"); got != tt.wantGateway {
-				t.Errorf("%s: umbrella %s rendered = %v, want %v", tt.name, f, got, tt.wantGateway)
-			}
+	}
+	for _, legacy := range []string{
+		"ingestion-gateway/deployment.yaml",
+		"ingestion-gateway/service.yaml",
+		"ingestion-gateway/hpa.yaml",
+		"network-policies.yaml",
+	} {
+		if _, exists := rendered["xmanager-cloud/templates/"+legacy]; exists {
+			t.Errorf("legacy umbrella template %s still present in rendered map", legacy)
 		}
-		verifyUmbrellaKeptResources(t, tt.name, rendered)
+	}
+	verifyUmbrellaKeptResources(t, rendered)
+	verifyUmbrellaFailClosedGuards(t, helmDir)
+	verifyUmbrellaLegacyGatewayLookupGuard(t, helmDir, rendered["xmanager-cloud/templates/components/deployment.yaml"])
+}
+
+// verifyUmbrellaFailClosedGuards asserts the umbrella chart refuses the retired legacy values
+// (bool, string, and scalar forms) while still rendering the deprecated no-op string flags.
+func verifyUmbrellaFailClosedGuards(t *testing.T, helmDir string) {
+	t.Helper()
+	failClosedCases := []struct {
+		name    string
+		values  map[string]any
+		wantErr string
+	}{
+		{
+			name:    "componentsDeployment.enabled=false rejected",
+			values:  map[string]any{"componentsDeployment": map[string]any{"enabled": false}},
+			wantErr: "componentsDeployment.enabled=false",
+		},
+		{
+			name:    "componentsDeployment.enabled string false rejected",
+			values:  map[string]any{"componentsDeployment": map[string]any{"enabled": "false"}},
+			wantErr: "componentsDeployment.enabled=false",
+		},
+		{
+			name:    "componentsDeployment scalar false rejected",
+			values:  map[string]any{"componentsDeployment": false},
+			wantErr: "componentsDeployment must be a map",
+		},
+		{
+			name:    "ingestionGatewayDeployment.enabled=true rejected",
+			values:  map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": true}},
+			wantErr: "ingestionGatewayDeployment.enabled=true",
+		},
+		{
+			name:    "ingestionGatewayDeployment.enabled string true rejected",
+			values:  map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": "true"}},
+			wantErr: "ingestionGatewayDeployment.enabled=true",
+		},
+	}
+	for _, tc := range failClosedCases {
+		if _, err := renderChartWithValues(helmDir, "xmanager-cloud", tc.values); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: renderChartWithValues error = %v, want substring %q", tc.name, err, tc.wantErr)
+		}
+	}
+	if _, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
+		"componentsDeployment":       map[string]any{"enabled": "true"},
+		"ingestionGatewayDeployment": map[string]any{"enabled": "false"},
+	}); err != nil {
+		t.Errorf("renderChartWithValues with deprecated no-op string flags failed: %v", err)
+	}
+	// Scalar overrides of the retired block (e.g. --set ingestionGatewayDeployment=false) are
+	// ignored rather than crashing the render: Helm >= 3.14 (Go >= 1.18) short-circuits `and`,
+	// so `$rawIG.enabled` is never evaluated when `$rawIG` is not a map.
+	for _, scalar := range []any{false, true, "yes"} {
+		if _, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{"ingestionGatewayDeployment": scalar}); err != nil {
+			t.Errorf("renderChartWithValues with scalar ingestionGatewayDeployment=%v failed: %v", scalar, err)
+		}
 	}
 }
 
 // verifyUmbrellaKeptResources asserts the full Helm engine renders the Component CRD and the
-// deletion admission policy with their keep policy, whatever componentsDeployment.enabled is set to.
-func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]string) {
+// deletion admission policy with their keep policy.
+func verifyUmbrellaKeptResources(t *testing.T, rendered map[string]string) {
 	t.Helper()
 	wantByFile := map[string][]string{
 		"components/crd.yaml":          {"kind: CustomResourceDefinition"},
@@ -764,33 +837,62 @@ func verifyUmbrellaKeptResources(t *testing.T, name string, rendered map[string]
 		manifest := rendered["xmanager-cloud/templates/"+f]
 		for _, want := range append(kinds, "helm.sh/resource-policy: keep") {
 			if !strings.Contains(manifest, want) {
-				t.Errorf("%s: umbrella %s missing %q", name, f, want)
+				t.Errorf("default render: umbrella %s missing %q", f, want)
 			}
 		}
 	}
 }
 
-// verifyNetworkPolicyParity checks the component release ships the same gateway NetworkPolicy
-// rules as the umbrella chart, so traffic rules don't change with enable_components.
-func verifyNetworkPolicyParity(t *testing.T, helmDir, igDir string) {
+// verifyGatewayNetworkPolicy checks the xmc-cmp-ingestion-gateway release ships the expected
+// pod-level NetworkPolicy ingress and egress rules.
+func verifyGatewayNetworkPolicy(t *testing.T, igDir string) {
 	t.Helper()
 
-	umbrella, err := renderChartWithValues(helmDir, "xmanager-cloud", map[string]any{
-		"ingestionGatewayDeployment": map[string]any{"enabled": true},
-	})
-	if err != nil {
-		t.Fatalf("renderChartWithValues(umbrella) failed: %v", err)
-	}
 	component, err := renderChartWithValues(igDir, "xmc-cmp-ingestion-gateway", map[string]any{
 		"ingestionGatewayDeployment": map[string]any{"enabled": true},
 	})
 	if err != nil {
 		t.Fatalf("renderChartWithValues(xmc-cmp-ingestion-gateway) failed: %v", err)
 	}
-	want := manifestSpecByKind(t, umbrella["xmanager-cloud/templates/network-policies.yaml"], "NetworkPolicy")
+	const wantNetworkPolicyYAML = `
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              xmc.google.com/metrics-client: "true"
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9644
+`
+	want := manifestSpecByKind(t, wantNetworkPolicyYAML, "NetworkPolicy")
 	got := manifestSpecByKind(t, component["ingestion-gateway/templates/deployment.yaml"], "NetworkPolicy")
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("component NetworkPolicy spec differs from umbrella (-umbrella +component):\n%s", diff)
+		t.Errorf("xmc-cmp-ingestion-gateway NetworkPolicy spec mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -940,6 +1042,10 @@ func renderChartWithValues(chartRoot, releaseName string, overrides map[string]a
 }
 
 func renderChartWithNamespace(chartRoot, releaseName, namespace string, overrides map[string]any) (map[string]string, error) {
+	return renderChartWithClient(chartRoot, releaseName, namespace, overrides, nil)
+}
+
+func renderChartWithClient(chartRoot, releaseName, namespace string, overrides map[string]any, provider engine.ClientProvider) (map[string]string, error) {
 	ch, err := loader.LoadDir(chartRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load Helm chart in %s: %w", chartRoot, err)
@@ -947,22 +1053,71 @@ func renderChartWithNamespace(chartRoot, releaseName, namespace string, override
 	if releaseName == "" {
 		releaseName = ch.Name()
 	}
-	releaseOpts := chartutil.ReleaseOptions{
-		Name:      releaseName,
-		Namespace: namespace,
-		Revision:  1,
-		IsInstall: true,
-	}
-	mergedVals := chartutil.CoalesceTables(overrides, ch.Values)
-	renderValues, err := chartutil.ToRenderValues(ch, mergedVals, releaseOpts, nil)
+	releaseOpts := chartutil.ReleaseOptions{Name: releaseName, Namespace: namespace, Revision: 1, IsInstall: true}
+	renderValues, err := chartutil.ToRenderValues(ch, chartutil.CoalesceTables(overrides, ch.Values), releaseOpts, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Helm render values in %s: %w", chartRoot, err)
 	}
-	rendered, err := engine.Render(ch, renderValues)
-	if err != nil {
-		return nil, fmt.Errorf("failed to render Helm chart in %s: %w", chartRoot, err)
+	if provider != nil {
+		return engine.RenderWithClientProvider(ch, renderValues, provider)
 	}
-	return rendered, nil
+	return engine.Render(ch, renderValues)
+}
+
+type fakeLookupProvider struct{ client dynamic.Interface }
+
+func (p fakeLookupProvider) GetClientFor(apiVersion, kind string) (dynamic.NamespaceableResourceInterface, bool, error) {
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return nil, false, err
+	}
+	return p.client.Resource(gv.WithResource(strings.ToLower(kind) + "s")), true, nil
+}
+
+func newGatewayDeploymentObj(annotations map[string]string) runtime.Object {
+	u := &unstructured.Unstructured{}
+	u.SetAPIVersion("apps/v1")
+	u.SetKind("Deployment")
+	u.SetNamespace("xmc")
+	u.SetName("ingestion-gateway-deployment")
+	u.SetAnnotations(annotations)
+	return u
+}
+
+func verifyUmbrellaLegacyGatewayLookupGuard(t *testing.T, helmDir, wantDeployManifest string) {
+	t.Helper()
+	cases := []struct {
+		name        string
+		annotations map[string]string
+		wantErr     string
+	}{
+		{name: "absent gateway deployment renders cleanly"},
+		{name: "component-owned gateway renders cleanly", annotations: map[string]string{"meta.helm.sh/release-name": "xmc-cmp-ingestion-gateway"}},
+		{name: "umbrella-owned gateway with keep policy renders cleanly", annotations: map[string]string{"meta.helm.sh/release-name": "xmanager-cloud", "helm.sh/resource-policy": "keep"}},
+		{name: "unmigrated umbrella-owned gateway fails closed", annotations: map[string]string{"meta.helm.sh/release-name": "xmanager-cloud"}, wantErr: "Release still owns legacy Deployment/ingestion-gateway-deployment"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var objs []runtime.Object
+			if tc.annotations != nil {
+				objs = append(objs, newGatewayDeploymentObj(tc.annotations))
+			}
+			provider := fakeLookupProvider{client: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), objs...)}
+			got, err := renderChartWithClient(helmDir, "xmanager-cloud", "xmc", map[string]any{}, provider)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) || !strings.Contains(err.Error(), "migrate.py") {
+					t.Fatalf("render error = %v, want substrings %q and %q", err, tc.wantErr, "migrate.py")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected render error: %v", err)
+			}
+			if diff := cmp.Diff(wantDeployManifest, got["xmanager-cloud/templates/components/deployment.yaml"]); diff != "" {
+				t.Errorf("components/deployment.yaml mismatch under lookup (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestIngestionGatewayFlatScalarParameterParity(t *testing.T) {

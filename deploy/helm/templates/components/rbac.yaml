@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-{{- if and .Values.componentsDeployment .Values.componentsDeployment.enabled }}
 # xmc-bridge-role is namespaced to the release namespace and lists only the requests xmc-bridge and
 # its Helm client make. create cannot be limited by resourceNames; every other verb is limited to
 # fixed object names where the bridge knows them.
@@ -49,9 +48,13 @@ rules:
     verbs: ["get", "list", "create", "update", "delete"]
   # Objects that 1P component releases render (e.g. xmc-cmp-ingestion-gateway). Helm reads, patches
   # and deletes them by name; add their names here when a 1P chart adds or renames objects.
+  # xmc-bridge installs 1P Component Services (e.g. ingestion-gateway-service) in the release namespace.
+  # trivy:ignore:KSV-0056
   - apiGroups: [""]
     resources: ["services"]
     verbs: ["create"]
+  # Scoped via resourceNames to 1P Component Services managed by xmc-bridge.
+  # trivy:ignore:KSV-0056
   - apiGroups: [""]
     resources: ["services"]
     resourceNames: ["ingestion-gateway-service"]
@@ -78,27 +81,37 @@ rules:
     resources: ["horizontalpodautoscalers"]
     resourceNames: ["ingestion-gateway-hpa"]
     verbs: ["get", "update", "patch", "delete"]
-  # ...their self-provisioned reader RBAC...
+  # ...their self-provisioned reader RBAC (Kubernetes RBAC escalation checks block granting permissions xmc-bridge lacks)...
+  # trivy:ignore:KSV-0050
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     verbs: ["create"]
+  # Scoped via resourceNames to fixed 1P Component reader Roles and RoleBindings.
+  # trivy:ignore:KSV-0050
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
     resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
     verbs: ["get", "update", "patch", "delete"]
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
+  # trivy:ignore:KSV-0056
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["create"]
+  # Scoped via resourceNames to 1P Component NetworkPolicies managed by xmc-bridge.
+  # trivy:ignore:KSV-0056
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     resourceNames: ["ingestion-gateway-network-policy"]
     verbs: ["get", "update", "patch", "delete"]
   # 3P wrapper custom resources (spec.wrapperRef), read by name in the release namespace.
-  {{- range .Values.componentsDeployment.rbac.wrapperRules }}
+  {{- with .Values.componentsDeployment }}
+  {{- with .rbac }}
+  {{- range .wrapperRules }}
   - apiGroups: {{ toJson .apiGroups }}
     resources: {{ toJson .resources }}
     verbs: ["get"]
+  {{- end }}
+  {{- end }}
   {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -182,4 +195,3 @@ roleRef:
   kind: ClusterRole
   name: xmc-bridge-cluster-identity-{{ .Release.Namespace }}
   apiGroup: rbac.authorization.k8s.io
-{{- end }}

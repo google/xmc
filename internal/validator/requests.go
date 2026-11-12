@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/protobuf/reflect/protoreflect"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	xidmessagespb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
@@ -135,13 +136,26 @@ func ValidateCreateExperimentRequest(in *essmsgpb.CreateExperimentRequest) error
 		return fmt.Errorf("experiment.status must be empty for CreateExperimentRequest: %w", grpcerr.ErrInvalidArgument)
 	}
 	// experiment_type is immutable after creation, so an unknown value must not be persisted.
-	if expType := exp.GetExperimentType(); expType.Descriptor().Values().ByNumber(expType.Number()) == nil {
+	if expType := exp.GetExperimentType(); !isKnownEnumValue(expType) {
 		return fmt.Errorf("experiment.experiment_type %d is not a known type: %w", expType, grpcerr.ErrInvalidArgument)
+	}
+	// Only studies carry a study config; UNSPECIFIED is stored as STANDARD.
+	if exp.GetExperimentType() != essmsgpb.Experiment_STUDY && exp.GetStudyConfig() != nil {
+		return fmt.Errorf("experiment.study_config must be unset unless experiment.experiment_type is STUDY: %w", grpcerr.ErrInvalidArgument)
+	}
+	if err := validateExperimentStudyConfig(exp); err != nil {
+		return err
 	}
 	if err := validateExperimentACLs(exp.GetAcls()); err != nil {
 		return err
 	}
 	return validateExperimentMetadata(exp)
+}
+
+// isKnownEnumValue reports whether e is a value declared by its enum. Values unknown to this server
+// must not be persisted in fields that cannot be updated later.
+func isKnownEnumValue(e protoreflect.Enum) bool {
+	return e.Descriptor().Values().ByNumber(e.Number()) != nil
 }
 
 // validateExperimentACLs rejects malformed ACLs on experiment creation. Unset or empty ACLs are
@@ -186,9 +200,15 @@ func validateMetadataLimits(resource string, tags []string, notes string, urls [
 	return nil
 }
 
+// immutableExperimentPaths are the Experiment fields that only CreateExperiment sets.
+var immutableExperimentPaths = []string{"experiment_type", "study_config"}
+
 // ValidateUpdateExperimentRequest validates updates in UpdateExperimentRequest.
 func ValidateUpdateExperimentRequest(req *essmsgpb.UpdateExperimentRequest) error {
 	for _, path := range req.GetUpdateMask().GetPaths() {
+		if isImmutableExperimentPath(path) {
+			return fmt.Errorf("experiment field %q cannot be updated after creation: %w", path, grpcerr.ErrInvalidArgument)
+		}
 		if path == "title" {
 			if strings.TrimSpace(req.GetExperiment().GetTitle()) == "" {
 				return fmt.Errorf("experiment title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
@@ -196,6 +216,17 @@ func ValidateUpdateExperimentRequest(req *essmsgpb.UpdateExperimentRequest) erro
 		}
 	}
 	return nil
+}
+
+// isImmutableExperimentPath reports whether the update mask path names an immutable Experiment
+// field or one of its subfields.
+func isImmutableExperimentPath(path string) bool {
+	for _, field := range immutableExperimentPaths {
+		if path == field || strings.HasPrefix(path, field+".") {
+			return true
+		}
+	}
+	return false
 }
 
 // FillExperimentNullValues fills in any null values in the Experiment proto with default values.
