@@ -39,6 +39,7 @@ func (h *ExperimentHandler) validateAndAuthorizeExperimentUpdate(ctx context.Con
 		logging.Warn(ctx, "UpdateExperiment validation failed", "name", name, "error", err)
 		return 0, "", fmt.Errorf("UpdateExperiment validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
+	ctx = logging.WithExperimentName(ctx, name)
 	if req.GetUpdateMask() == nil {
 		logging.Warn(ctx, "UpdateExperiment validation failed for empty update mask", "update_mask", req.GetUpdateMask())
 		return 0, "", fmt.Errorf("UpdateExperiment validation failed: %w", grpcerr.ErrInvalidArgument)
@@ -67,6 +68,7 @@ func (h *ExperimentHandler) syncExperimentXIDACLs(ctx context.Context, xid int64
 	}
 
 	if updateMask.GetPaths() == nil {
+		// Populate the existing ACLs in the UpdateExperiment response even when ACLs are unchanged.
 		currentXidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 		if err != nil {
 			logging.Error(ctx, "XID lookup failed", "error", err)
@@ -85,6 +87,7 @@ func (h *ExperimentHandler) syncExperimentXIDACLs(ctx context.Context, xid int64
 		logging.Error(ctx, "Failed to update XID entry", "error", err)
 		return nil, fmt.Errorf("failed to update XID entry, experiment resource may have been partially updated: %w (%v)", grpcerr.ErrInternal, err)
 	}
+	// Return the ACLs as stored by the XID service, which normalizes principals.
 	return updatedXidEntry.GetAcls(), nil
 }
 

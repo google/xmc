@@ -39,6 +39,7 @@ func (h *ArtifactHandler) validateAndAuthorizeArtifactUpdate(ctx context.Context
 		logging.Warn(ctx, "UpdateArtifact validation failed", "name", name, "error", err)
 		return 0, "", fmt.Errorf("UpdateArtifact validation failed: %w (%v)", grpcerr.ErrInvalidArgument, err)
 	}
+	ctx = logging.WithArtifactName(ctx, name)
 	if req.GetUpdateMask() == nil || len(req.GetUpdateMask().GetPaths()) == 0 {
 		logging.Warn(ctx, "UpdateArtifact validation failed: update mask is nil or empty")
 		return 0, "", fmt.Errorf("UpdateArtifact validation failed: %w", grpcerr.ErrInvalidArgument)
@@ -55,6 +56,7 @@ func (h *ArtifactHandler) validateAndAuthorizeArtifactUpdate(ctx context.Context
 }
 
 func (h *ArtifactHandler) resolvePreUpdateArtifactXID(ctx context.Context, aid int64, name string) (*xidmsgpb.XidEntry, error) {
+	// Fetch the XID entry before updating the artifact to avoid partial updates.
 	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(aid))
 	if err == nil {
 		return xidEntry, nil
@@ -78,6 +80,7 @@ func (h *ArtifactHandler) applyArtifactXIDACLs(ctx context.Context, aid int64, u
 		logging.Error(ctx, "Failed to update XID entry", "error", err)
 		return nil, fmt.Errorf("failed to update XID entry: %w (%v)", grpcerr.ErrInternal, err)
 	}
+	// Return the ACLs as stored by the XID service, which normalizes principals.
 	return updatedXidEntry.GetAcls(), nil
 }
 

@@ -43,6 +43,7 @@ func (h *ArtifactHandler) validateAndPrepareArtifactCreation(ctx context.Context
 		logging.Error(ctx, "Failed to validate parent", "parent", req.GetParent(), "error", err)
 		return createArtifactContext{}, nil, fmt.Errorf("failed to validate parent %s: %w (%v)", req.GetParent(), grpcerr.ErrInvalidArgument, err)
 	}
+	ctx = logging.WithArtifactParent(ctx, req.GetParent())
 	authorized, err := h.checkUserAuthorization(ctx, validator.ConstructXIDName(parentXID), creator, xidmsgpb.XidAcls_READER.Enum())
 	if err != nil {
 		return createArtifactContext{}, nil, err

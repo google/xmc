@@ -139,6 +139,7 @@ func main() {
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
 	defer oauthAuth.Close()
 
+	// The gRPC authorizer reuses this authenticator for admission, so gRPC admits the same principals as HTTP.
 	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth))
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)

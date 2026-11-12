@@ -395,3 +395,13 @@ func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateWorkUnit_NilInputs(t *testing.T) {
+	ctx := context.Background()
+	if _, err := workunit.CreateWorkUnit(ctx, nil, nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("CreateWorkUnit(nil work unit) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if _, err := workunit.CreateWorkUnit(ctx, nil, spanner.BlankWorkUnitProto(123, 1)); !errors.Is(err, grpcerr.ErrInternal) {
+		t.Errorf("CreateWorkUnit(nil txRunner) error = %v, want %v", err, grpcerr.ErrInternal)
+	}
+}

@@ -168,12 +168,7 @@ func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, 
 	if err != nil {
 		return nil, nil, err
 	}
-	cleanup := func() error {
-		if err := dashConn.Close(); err != nil {
-			return fmt.Errorf("failed to close Dashboard gRPC connection: %w", err)
-		}
-		return nil
-	}
+	cleanup := closeWithLabel("Dashboard gRPC connection", dashConn.Close)
 	return []ArtifactObserver{NewDashboardObserver(dashboardClient, st, wg)}, cleanup, nil
 }
 

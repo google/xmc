@@ -46,10 +46,9 @@ func assignWorkUnitMetadataAndTimestamps(ctx context.Context, tx *storage.Transa
 	setParentIfNonNil(wu.CurrentWorkUnitExecution.Status.SystemMessage, wu.GetName())
 	setParentIfNonNil(wu.CurrentWorkUnitExecution.Status.UserMessage, wu.GetName())
 
-	ts := timestamppb.New(now)
-	wu.CreateTime, wu.UpdateTime = ts, ts
-	wu.CurrentWorkUnitExecution.CreateTime, wu.CurrentWorkUnitExecution.UpdateTime = ts, ts
-	wu.CurrentWorkUnitExecution.Status.UpdateTime, wu.CurrentWorkUnitExecution.Status.StateUpdateTime = ts, ts
+	wu.CreateTime, wu.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.CreateTime, wu.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.Status.UpdateTime, wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now), timestamppb.New(now)
 	return xid, wid, nil
 }
 
@@ -84,13 +83,16 @@ func insertWorkUnitAndSyncExperiment(ctx context.Context, tx *storage.Transactio
 }
 
 func copyCommittedWorkUnitTimestamps(dst, src *essmsgpb.WorkUnit) {
+	if dst == nil || src == nil {
+		return
+	}
 	dst.CreateTime, dst.UpdateTime = src.CreateTime, src.UpdateTime
-	if dst.CurrentWorkUnitExecution == nil {
+	if dst.CurrentWorkUnitExecution == nil || src.CurrentWorkUnitExecution == nil {
 		return
 	}
 	dst.CurrentWorkUnitExecution.CreateTime = src.CurrentWorkUnitExecution.CreateTime
 	dst.CurrentWorkUnitExecution.UpdateTime = src.CurrentWorkUnitExecution.UpdateTime
-	if dst.CurrentWorkUnitExecution.Status != nil {
+	if dst.CurrentWorkUnitExecution.Status != nil && src.CurrentWorkUnitExecution.Status != nil {
 		dst.CurrentWorkUnitExecution.Status.UpdateTime = src.CurrentWorkUnitExecution.Status.UpdateTime
 		dst.CurrentWorkUnitExecution.Status.StateUpdateTime = src.CurrentWorkUnitExecution.Status.StateUpdateTime
 	}
@@ -98,6 +100,12 @@ func copyCommittedWorkUnitTimestamps(dst, src *essmsgpb.WorkUnit) {
 
 // CreateWorkUnit creates a new work unit in storage.
 func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
+	if wu == nil {
+		return nil, fmt.Errorf("work unit cannot be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if txRunner == nil {
+		return nil, fmt.Errorf("transaction runner cannot be nil: %w", grpcerr.ErrInternal)
+	}
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
 
@@ -123,6 +131,7 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		return nil, err
 	}
 
+	// Populate timestamps back onto caller's proto pointer (matching CreateExperiment behavior).
 	copyCommittedWorkUnitTimestamps(wu, committedWU)
 	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
