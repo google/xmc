@@ -517,10 +517,19 @@ check_workflows() {
 
   local actionlint_bin="actionlint"
   if ! command -v actionlint >/dev/null 2>&1; then
-    local gopath_bin
-    gopath_bin="$(go env GOPATH 2>/dev/null || echo "${HOME}/go")/bin/actionlint"
-    if [ -x "${gopath_bin}" ]; then
-      actionlint_bin="${gopath_bin}"
+    local go_bin_dir
+    go_bin_dir="$(go env GOBIN 2>/dev/null || true)"
+    if [ -z "${go_bin_dir}" ]; then
+      local gopath_raw
+      gopath_raw="$(go env GOPATH 2>/dev/null || true)"
+      if [ -n "${gopath_raw}" ]; then
+        go_bin_dir="${gopath_raw%%:*}/bin"
+      else
+        go_bin_dir="${HOME}/go/bin"
+      fi
+    fi
+    if [ -x "${go_bin_dir}/actionlint" ]; then
+      actionlint_bin="${go_bin_dir}/actionlint"
     elif [ -x "${HOME}/go/bin/actionlint" ]; then
       actionlint_bin="${HOME}/go/bin/actionlint"
     else
@@ -542,11 +551,11 @@ check_shell() {
   local file
   if [ "${MODE}" = "check" ]; then
     while IFS= read -r file; do
-      [ -n "${file}" ] && shell_files+=("${file}")
+      if [ -n "${file}" ]; then shell_files+=("${file}"); fi
     done < <(git -c core.quotePath=false ls-files '*.sh' '*.bash' 2>/dev/null || true)
   else
     while IFS= read -r file; do
-      [ -n "${file}" ] && shell_files+=("${file}")
+      if [ -n "${file}" ]; then shell_files+=("${file}"); fi
     done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|bash)$' || true)
   fi
 
@@ -554,15 +563,21 @@ check_shell() {
     return
   fi
 
-  if command -v shellcheck >/dev/null 2>&1; then
-    echo "--> Running Shell Script Linter (shellcheck)..."
-    if ! shellcheck -S style -e SC1091 "${shell_files[@]}"; then
-      echo "❌ shellcheck failed."
-      FAILED=1
+  local shellcheck_bin="shellcheck"
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    if [ -x "${HOME}/.local/bin/shellcheck" ]; then
+      shellcheck_bin="${HOME}/.local/bin/shellcheck"
+    else
+      echo "--> WARNING: shellcheck not found. Shell script linting skipped."
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
+      return
     fi
-  else
-    echo "--> WARNING: shellcheck not found. Shell script linting skipped."
-    if [ "${MODE}" = "check" ]; then FAILED=1; fi
+  fi
+
+  echo "--> Running Shell Script Linter (shellcheck)..."
+  if ! "${shellcheck_bin}" -S style -e SC1091 "${shell_files[@]}"; then
+    echo "❌ shellcheck failed."
+    FAILED=1
   fi
 }
 

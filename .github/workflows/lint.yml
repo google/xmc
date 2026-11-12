@@ -221,7 +221,7 @@ jobs:
             SC_BASE="${RUNNER_TEMP:-$(mktemp -d)}"
             SC_DIR="${SC_BASE}/shellcheck-v0.10.0"
             SC_TAR="${SC_BASE}/shellcheck.tar.xz"
-            curl -sSfL "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz" -o "${SC_TAR}"
+            curl -sSfL --retry 3 "https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz" -o "${SC_TAR}"
             echo "6c881ab0698e4e6ea235245f22832860544f17ba386442fe7e9d629f8cbedf87  ${SC_TAR}" | sha256sum -c -
             tar -xJf "${SC_TAR}" -C "${SC_BASE}" shellcheck-v0.10.0/shellcheck
             rm -f "${SC_TAR}"
@@ -236,13 +236,20 @@ jobs:
 
       - name: 'Install & Run actionlint'
         run: |
+          GO_BIN_DIR="$(go env GOBIN 2>/dev/null || true)"
+          if [ -z "${GO_BIN_DIR}" ]; then
+            GOPATH_RAW="$(go env GOPATH 2>/dev/null || echo "${HOME}/go")"
+            GO_BIN_DIR="${GOPATH_RAW%%:*}/bin"
+          fi
           if ! command -v actionlint &>/dev/null; then
-            go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-            echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+            if [ ! -x "${GO_BIN_DIR}/actionlint" ]; then
+              go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+            fi
+            echo "${GO_BIN_DIR}" >> "${GITHUB_PATH}"
           fi
           ACTIONLINT_BIN="actionlint"
           if ! command -v actionlint &>/dev/null; then
-            ACTIONLINT_BIN="$(go env GOPATH)/bin/actionlint"
+            ACTIONLINT_BIN="${GO_BIN_DIR}/actionlint"
           fi
           "${ACTIONLINT_BIN}" -config-file .github/actionlint.yaml
 
@@ -272,17 +279,17 @@ jobs:
 
       # 3a. GitHub Actions & Nightly JS Script Tests (node:test, no dependencies)
       - name: 'Set up Node.js for JS Script Tests'
-        if: steps.changes.outputs.github_scripts == 'true' || steps.changes.outputs.examples_coverage == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.github_scripts == 'true' || steps.changes.outputs.examples_coverage == 'true'
         uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
 
       - name: 'Run GitHub Actions Script Tests'
-        if: steps.changes.outputs.github_scripts == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.github_scripts == 'true'
         run: node --test .github/scripts/*.test.js
 
       - name: 'Run Nightly JS Script Tests'
-        if: steps.changes.outputs.examples_coverage == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.examples_coverage == 'true'
         run: node --test tools/nightly_tests/*_test.js
 
       # 4. Terraform Formatting, Linting & Security (conditional on Terraform file changes)
