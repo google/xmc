@@ -638,179 +638,161 @@ class TestResolveTestScope(unittest.TestCase):
             "sha_m1",
         )
 
+    @staticmethod
+    def _git_in_repo(repo: Path, *args: str) -> str:
+        res = subprocess.run(
+            ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return res.stdout.strip()
+
+    def _commit_in_repo(self, repo: Path, rel_path: str, content: str, msg: str) -> str:
+        full = repo / rel_path
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(content, encoding="utf-8")
+        self._git_in_repo(repo, "add", rel_path)
+        self._git_in_repo(repo, "commit", "-m", msg)
+        return self._git_in_repo(repo, "rev-parse", "HEAD")
+
+    def _verify_rebase_shenanigans(self, repo: Path, m1: str, m2: str, a1: str, b1: str) -> None:
+        # Shenanigan 1: Synthetic merge commit (refs/pull/<num>/merge) vs PR_HEAD_SHA
+        self._git_in_repo(repo, "checkout", "-B", "pr-merge-sim", b1)
+        self._git_in_repo(repo, "merge", "--no-ff", "-m", "Merge b1 into main", m2)
+        files_pr_head = get_git_modified_files(base_ref=a1, head_ref=b1, base_branch="feat/layer-1")
+        self.assertEqual(files_pr_head, ["pkg/api/svc.go"])
+        scope_s1 = resolve_test_scope(files_pr_head, use_rdeps=False)
+        self.assertTrue(scope_s1["run_backend"])
+        self.assertFalse(scope_s1["run_ui"])
+
+        # Shenanigan 2a: gh stack sync / rebase onto M2 where webhook PR_BASE_SHA is stale (A1)
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-1", m2)
+        a1_rebased = self._commit_in_repo(
+            repo, "cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button"
+        )
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-2", a1_rebased)
+        b1_rebased = self._commit_in_repo(
+            repo, "pkg/api/svc.go", "package api\n", "feat(api): add service"
+        )
+        self._git_in_repo(repo, "update-ref", "refs/remotes/origin/feat/layer-1", a1_rebased)
+        self.assertEqual(
+            get_git_modified_files(base_ref=a1, head_ref=b1_rebased, base_branch="feat/layer-1"),
+            ["pkg/api/svc.go"],
+        )
+
+        # Shenanigan 2b: Parent amended with renamed title before child rebases
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-1-amended", m1)
+        a1_renamed = self._commit_in_repo(
+            repo,
+            "cmd/ui/src/btn.ts",
+            "export const v = 2;\n",
+            "feat(ui): completely different parent title",
+        )
+        self._git_in_repo(repo, "update-ref", "refs/remotes/origin/feat/layer-1", a1_renamed)
+        self.assertEqual(
+            get_git_modified_files(base_ref=a1, head_ref=b1, base_branch="feat/layer-1"),
+            ["pkg/api/svc.go"],
+        )
+
+        # Shenanigan 3: Non-atomic gh stack submit / parent amended before origin updates
+        self._git_in_repo(repo, "update-ref", "refs/remotes/origin/feat/layer-1", a1)
+        files_s3 = get_git_modified_files(
+            base_ref=a1, head_ref=b1_rebased, base_branch="feat/layer-1"
+        )
+        self.assertEqual(files_s3, ["pkg/api/svc.go"])
+        scope_s3 = resolve_test_scope(files_s3, use_rdeps=False)
+        self.assertTrue(scope_s3["run_backend"])
+        self.assertFalse(scope_s3["run_ui"])
+
+    def _verify_squash_and_move_shenanigans(self, repo: Path, m1: str, a1: str) -> None:
+        # Shenanigan 4a: 2-commit parent squash-merged into main, child retargeted to main
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-1-multi", a1)
+        a2_ui = self._commit_in_repo(
+            repo, "cmd/ui/src/icon.ts", "export const icon = 'x';\n", "feat(ui): add icon"
+        )
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-2-multi", a2_ui)
+        b_multi = self._commit_in_repo(
+            repo, "pkg/api/svc.go", "package api\n", "feat(api): add service"
+        )
+
+        self._git_in_repo(repo, "checkout", "main")
+        (repo / "cmd/ui/src").mkdir(parents=True, exist_ok=True)
+        (repo / "cmd/ui/src/btn.ts").write_text("export const v = 1;\n", encoding="utf-8")
+        (repo / "cmd/ui/src/icon.ts").write_text("export const icon = 'x';\n", encoding="utf-8")
+        self._git_in_repo(repo, "add", "cmd/ui/src/btn.ts", "cmd/ui/src/icon.ts")
+        self._git_in_repo(repo, "commit", "-m", "feat(ui): add button and icon (#990)")
+        m3_squash = self._git_in_repo(repo, "rev-parse", "HEAD")
+        self._git_in_repo(repo, "update-ref", "refs/remotes/origin/main", m3_squash)
+        self.assertEqual(
+            get_git_modified_files(base_ref=m3_squash, head_ref=b_multi, base_branch="main"),
+            ["pkg/api/svc.go"],
+        )
+
+        # Shenanigan 4b: Subject collision on unrelated commit keeps patch-id isolation intact
+        self._git_in_repo(repo, "checkout", "-B", "feat/standard-pr", m1)
+        c1_colliding = self._commit_in_repo(
+            repo, "cmd/ui/src/colliding.ts", "export const c = 1;\n", "feat(core): unrelated main"
+        )
+        c2_standard = self._commit_in_repo(
+            repo, "pkg/api/standard.go", "package api\n", "feat(api): standard endpoint"
+        )
+        files_s4b = get_git_modified_files(
+            base_ref=m3_squash, head_ref=c2_standard, base_branch="main"
+        )
+        self.assertEqual(sorted(files_s4b), ["cmd/ui/src/colliding.ts", "pkg/api/standard.go"])
+        self.assertNotEqual(c1_colliding, c2_standard)
+
+        # Shenanigan 5: Commit moved/rewound from parent layer down into child layer
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-1-ext", a1)
+        a2 = self._commit_in_repo(
+            repo, "pkg/moved/moved.go", "package moved\n", "feat(moved): move to layer 2"
+        )
+        self._git_in_repo(repo, "checkout", "-B", "feat/layer-2-ext", a2)
+        b_ext = self._commit_in_repo(
+            repo, "pkg/api/svc.go", "package api\n", "feat(api): add service"
+        )
+        self._git_in_repo(repo, "update-ref", "refs/remotes/origin/feat/layer-1", a1)
+        self.assertEqual(
+            sorted(get_git_modified_files(base_ref=a2, head_ref=b_ext, base_branch="feat/layer-1")),
+            ["pkg/api/svc.go", "pkg/moved/moved.go"],
+        )
+
     @patch.dict(os.environ, HERMETIC_GIT_ENV)
     def test_gh_stack_shenanigans_real_git_repo(self):
         """Verifies all gh-stack topologies and review edge cases in a real Git repository."""
         with tempfile.TemporaryDirectory() as tmpdir:
             repo = Path(tmpdir)
+            self._git_in_repo(repo, "init", "-b", "main")
+            self._git_in_repo(repo, "config", "user.email", "test@example.com")
+            self._git_in_repo(repo, "config", "user.name", "Test User")
 
-            def git(*args: str) -> str:
-                res = subprocess.run(
-                    ["git", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
-                    cwd=repo,
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                return res.stdout.strip()
+            m1 = self._commit_in_repo(repo, "README.md", "# XMC\n", "chore: initial commit")
+            self._git_in_repo(repo, "update-ref", "refs/remotes/origin/main", m1)
 
-            def commit_file(rel_path: str, content: str, msg: str) -> str:
-                full = repo / rel_path
-                full.parent.mkdir(parents=True, exist_ok=True)
-                full.write_text(content, encoding="utf-8")
-                git("add", rel_path)
-                git("commit", "-m", msg)
-                return git("rev-parse", "HEAD")
+            self._git_in_repo(repo, "checkout", "-b", "feat/layer-1", m1)
+            a1 = self._commit_in_repo(
+                repo, "cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button"
+            )
+            self._git_in_repo(repo, "update-ref", "refs/remotes/origin/feat/layer-1", a1)
 
-            git("init", "-b", "main")
-            git("config", "user.email", "test@example.com")
-            git("config", "user.name", "Test User")
+            self._git_in_repo(repo, "checkout", "-b", "feat/layer-2", a1)
+            b1 = self._commit_in_repo(
+                repo, "pkg/api/svc.go", "package api\n", "feat(api): add service"
+            )
 
-            # Base commit M1 on main
-            m1 = commit_file("README.md", "# XMC\n", "chore: initial commit")
-            git("update-ref", "refs/remotes/origin/main", m1)
-
-            # Layer 1 (UI change): feat/layer-1 -> A1
-            git("checkout", "-b", "feat/layer-1", m1)
-            a1 = commit_file("cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button")
-            git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
-
-            # Layer 2 (Backend change): feat/layer-2 -> B1 (stacked on A1)
-            git("checkout", "-b", "feat/layer-2", a1)
-            b1 = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
-
-            # Advance origin/main with an unrelated backend change M2
-            git("checkout", "main")
-            m2 = commit_file("pkg/core/other.go", "package core\n", "feat(core): unrelated main")
-            git("update-ref", "refs/remotes/origin/main", m2)
+            self._git_in_repo(repo, "checkout", "main")
+            m2 = self._commit_in_repo(
+                repo, "pkg/core/other.go", "package core\n", "feat(core): unrelated main"
+            )
+            self._git_in_repo(repo, "update-ref", "refs/remotes/origin/main", m2)
 
             old_cwd = os.getcwd()
             os.chdir(repo)
             try:
-                # Shenanigan 1: Synthetic merge commit (refs/pull/<num>/merge) vs PR_HEAD_SHA
-                git("checkout", "-B", "pr-merge-sim", b1)
-                git("merge", "--no-ff", "-m", "Merge b1 into main", m2)
-                files_pr_head = get_git_modified_files(
-                    base_ref=a1,
-                    head_ref=b1,
-                    base_branch="feat/layer-1",
-                )
-                self.assertEqual(files_pr_head, ["pkg/api/svc.go"])
-                scope_s1 = resolve_test_scope(files_pr_head, use_rdeps=False)
-                self.assertTrue(scope_s1["run_backend"])
-                self.assertFalse(scope_s1["run_ui"])
-
-                # Shenanigan 2a: gh stack sync / rebase onto M2 where webhook PR_BASE_SHA is stale (A1)
-                git("checkout", "-B", "feat/layer-1", m2)
-                a1_rebased = commit_file(
-                    "cmd/ui/src/btn.ts", "export const v = 1;\n", "feat(ui): add button"
-                )
-                git("checkout", "-B", "feat/layer-2", a1_rebased)
-                b1_rebased = commit_file(
-                    "pkg/api/svc.go", "package api\n", "feat(api): add service"
-                )
-                git("update-ref", "refs/remotes/origin/feat/layer-1", a1_rebased)
-                files_s2a = get_git_modified_files(
-                    base_ref=a1,
-                    head_ref=b1_rebased,
-                    base_branch="feat/layer-1",
-                )
-                self.assertEqual(files_s2a, ["pkg/api/svc.go"])
-
-                # Shenanigan 2b (Comment #4132468885): Parent branch amended with a renamed title
-                # BEFORE child branch (still at B1 on A1) is rebased.
-                # mb_base (A1) is preserved and chosen over mb_branch (M1)!
-                git("checkout", "-B", "feat/layer-1-amended", m1)
-                a1_renamed = commit_file(
-                    "cmd/ui/src/btn.ts",
-                    "export const v = 2;\n",
-                    "feat(ui): completely different parent title",
-                )
-                git("update-ref", "refs/remotes/origin/feat/layer-1", a1_renamed)
-                files_s2b = get_git_modified_files(
-                    base_ref=a1,
-                    head_ref=b1,
-                    base_branch="feat/layer-1",
-                )
-                self.assertEqual(files_s2b, ["pkg/api/svc.go"])
-
-                # Shenanigan 3: Non-atomic gh stack submit / parent amended before origin/feat/layer-1 updates
-                git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
-                files_s3 = get_git_modified_files(
-                    base_ref=a1,
-                    head_ref=b1_rebased,
-                    base_branch="feat/layer-1",
-                )
-                self.assertEqual(files_s3, ["pkg/api/svc.go"])
-                scope_s3 = resolve_test_scope(files_s3, use_rdeps=False)
-                self.assertTrue(scope_s3["run_backend"])
-                self.assertFalse(scope_s3["run_ui"])
-
-                # Shenanigan 4a: 2-commit parent PR (A1 -> A2_ui) squash-merged into main as a single
-                # commit M3_squash, and child PR (M1 -> A1 -> A2_ui -> B_multi) retargeted to main
-                # before child rebase! Cumulative prefix patch-id correlates M1..A2_ui with M3_squash.
-                git("checkout", "-B", "feat/layer-1-multi", a1)
-                a2_ui = commit_file(
-                    "cmd/ui/src/icon.ts", "export const icon = 'x';\n", "feat(ui): add icon"
-                )
-                git("checkout", "-B", "feat/layer-2-multi", a2_ui)
-                b_multi = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
-
-                git("checkout", "main")
-                (repo / "cmd/ui/src").mkdir(parents=True, exist_ok=True)
-                (repo / "cmd/ui/src/btn.ts").write_text("export const v = 1;\n", encoding="utf-8")
-                (repo / "cmd/ui/src/icon.ts").write_text(
-                    "export const icon = 'x';\n", encoding="utf-8"
-                )
-                git("add", "cmd/ui/src/btn.ts", "cmd/ui/src/icon.ts")
-                git("commit", "-m", "feat(ui): add button and icon (#990)")
-                m3_squash = git("rev-parse", "HEAD")
-                git("update-ref", "refs/remotes/origin/main", m3_squash)
-
-                files_s4a = get_git_modified_files(
-                    base_ref=m3_squash,
-                    head_ref=b_multi,
-                    base_branch="main",
-                )
-                self.assertEqual(files_s4a, ["pkg/api/svc.go"])
-
-                # Shenanigan 4b (Comment #4132468872): Standard multi-commit PR targeting main where
-                # commit 1 happens to have the exact same subject as M2 on main ("feat(core): unrelated main")
-                # MUST NOT drop commit 1's files because patch-id differs and allow_subject_fallback=False!
-                git("checkout", "-B", "feat/standard-pr", m1)
-                c1_colliding = commit_file(
-                    "cmd/ui/src/colliding.ts",
-                    "export const c = 1;\n",
-                    "feat(core): unrelated main",
-                )
-                c2_standard = commit_file(
-                    "pkg/api/standard.go", "package api\n", "feat(api): standard endpoint"
-                )
-                files_s4b = get_git_modified_files(
-                    base_ref=m3_squash,
-                    head_ref=c2_standard,
-                    base_branch="main",
-                )
-                self.assertEqual(
-                    sorted(files_s4b),
-                    ["cmd/ui/src/colliding.ts", "pkg/api/standard.go"],
-                )
-                self.assertNotEqual(c1_colliding, c2_standard)
-
-                # Shenanigan 5: Commit moved/rewound from parent layer down into child layer
-                git("checkout", "-B", "feat/layer-1-ext", a1)
-                a2 = commit_file(
-                    "pkg/moved/moved.go", "package moved\n", "feat(moved): move to layer 2"
-                )
-                git("checkout", "-B", "feat/layer-2-ext", a2)
-                b_ext = commit_file("pkg/api/svc.go", "package api\n", "feat(api): add service")
-                git("update-ref", "refs/remotes/origin/feat/layer-1", a1)
-                files_s5 = get_git_modified_files(
-                    base_ref=a2,
-                    head_ref=b_ext,
-                    base_branch="feat/layer-1",
-                )
-                self.assertEqual(sorted(files_s5), ["pkg/api/svc.go", "pkg/moved/moved.go"])
+                self._verify_rebase_shenanigans(repo, m1, m2, a1, b1)
+                self._verify_squash_and_move_shenanigans(repo, m1, a1)
             finally:
                 os.chdir(old_cwd)
 

@@ -169,6 +169,26 @@ def _extract_response_body(exc: Exception) -> str | None:
     return body
 
 
+_TRANSIENT_EXCEPTION_TYPES = (
+    XMCNetworkError,
+    TimeoutError,
+    socket.timeout,
+    urllib.error.URLError,
+    ConnectionError,
+    OSError,
+)
+
+
+def _classify_status_code(
+    status_code: int, response_body: str | None
+) -> tuple[str, int, str | None] | None:
+    if status_code == 429 or 500 <= status_code <= 599:
+        return "transient", status_code, response_body
+    if 400 <= status_code < 500:
+        return "terminal", status_code, response_body
+    return None
+
+
 def classify_outcome(
     result_or_exc: Any,
 ) -> tuple[str, int | None, str | None]:
@@ -179,10 +199,9 @@ def classify_outcome(
     """
     if result_or_exc == SendResult.INVALID_PAYLOAD:
         return "terminal", 400, None
-    if result_or_exc == SendResult.TRANSIENT_FAILURE:
-        return "transient", 500, None
-    if not isinstance(result_or_exc, Exception):
-        return "transient", None, None
+    if result_or_exc == SendResult.TRANSIENT_FAILURE or not isinstance(result_or_exc, Exception):
+        code = 500 if result_or_exc == SendResult.TRANSIENT_FAILURE else None
+        return "transient", code, None
 
     exc = result_or_exc
     if isinstance(exc, (TypeError, KeyError, AttributeError, ValueError)):
@@ -195,23 +214,12 @@ def classify_outcome(
     )
     response_body = _extract_response_body(exc)
 
-    if status_code is not None:
-        if status_code == 429 or 500 <= status_code <= 599:
-            return "transient", status_code, response_body
-        if 400 <= status_code < 500:
-            return "terminal", status_code, response_body
-
-    if isinstance(
-        exc,
-        (
-            XMCNetworkError,
-            TimeoutError,
-            socket.timeout,
-            urllib.error.URLError,
-            ConnectionError,
-            OSError,
-        ),
+    if status_code is not None and (
+        classified := _classify_status_code(status_code, response_body)
     ):
+        return classified
+
+    if isinstance(exc, _TRANSIENT_EXCEPTION_TYPES):
         return "transient", status_code, response_body
 
     return "transient", None, None

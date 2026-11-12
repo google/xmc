@@ -557,6 +557,32 @@ def test_unauthorized_persona_boundary(
     save_screenshot(page, screenshots_dir, "03_access_denied_unauthorized_persona")
 
 
+def _assert_viewer_forbidden(
+    page: Page,
+    method: str,
+    url: str,
+    label: str,
+    *,
+    data: dict[str, Any] | None = None,
+    blocked_statuses: tuple[int, ...] = (),
+    vuln_msg: str = "",
+) -> None:
+    """Asserts that an unauthorized viewer API call fails with HTTP 403."""
+    logger.info("Asserting negative permission: %s -> 403...", label)
+    headers = {"Origin": BASE_URL}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    kwargs: dict[str, Any] = {"headers": headers}
+    if data is not None:
+        kwargs["data"] = data
+    res = getattr(page.request, method)(url, **kwargs)
+    if res.status in blocked_statuses:
+        raise RuntimeError(vuln_msg)
+    if res.status != 403:
+        raise RuntimeError(f"Expected status 403 for {label}, got {res.status}: {res.text()}")
+    logger.info("✓ %s returned 403 as expected.", label)
+
+
 def test_viewer_permission_boundaries_and_isolation(
     page: Page,
     screenshots_dir: Path,
@@ -575,124 +601,57 @@ def test_viewer_permission_boundaries_and_isolation(
         RuntimeError: If negative boundary checks or experiment creation fail.
     """
     logger.info("=== Testing Viewer Permission Boundaries and Isolation ===")
-
-    # 1. Authenticate viewer persona
     auth.authenticate(page, VIEWER_USER, VIEWER_PASSWORD, screenshots_dir)
 
-    # 2. Assert user reaches dashboard
     search_input = page.locator("input[data-testid='search-input-field']")
     expect(search_input).to_be_visible(timeout=DEFAULT_TIMEOUT_MS)
     logger.info("✓ Viewer reached dashboard successfully.")
     save_screenshot(page, screenshots_dir, "04_viewer_dashboard_accessible")
 
     exp_path = admin_resources.experiment_name
-    # In ESS, work unit mutations (:stop, :restart) authorize against the parent experiment (xid)
-    # before attempting storage lookup. Thus, testing with a standard work unit path exercises
-    # the negative authorization gate at the experiment boundary without needing full JobSet creation.
     wu_path = f"{exp_path}/workUnits/1"
 
-    # 3. Assert GET admin experiment returns 403
-    logger.info("Asserting negative permission: GET %s -> 403...", exp_path)
-    get_res = page.request.get(f"{BASE_URL}/v1/{exp_path}")
-    if get_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for GET {exp_path}, got {get_res.status}: {get_res.text()}"
-        )
-    logger.info("✓ GET %s returned 403 as expected.", exp_path)
-
-    # 4. Assert POST work units under admin experiment returns 403
-    logger.info("Asserting negative permission: POST %s/workUnits -> 403...", exp_path)
-    post_wu_res = page.request.post(
+    _assert_viewer_forbidden(page, "get", f"{BASE_URL}/v1/{exp_path}", f"GET {exp_path}")
+    _assert_viewer_forbidden(
+        page,
+        "post",
         f"{BASE_URL}/v1/{exp_path}/workUnits",
+        f"POST work units under {exp_path}",
         data={"title": "Viewer Unauthorized Work Unit"},
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+        blocked_statuses=(200, 201),
+        vuln_msg="Security vulnerability: Viewer successfully created a work unit under admin experiment via workUnits endpoint!",
     )
-    if post_wu_res.status in (200, 201):
-        raise RuntimeError(
-            "Security vulnerability: Viewer successfully created a work unit under admin experiment via workUnits endpoint!"
-        )
-    if post_wu_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for POST work units under {exp_path}, got {post_wu_res.status}: {post_wu_res.text()}"
-        )
-    logger.info("✓ POST work units under admin exp returned 403 as expected.")
-
-    # 5. Assert PATCH admin experiment returns 403
-    logger.info("Asserting negative permission: PATCH %s -> 403...", exp_path)
-    patch_res = page.request.patch(
+    _assert_viewer_forbidden(
+        page,
+        "patch",
         f"{BASE_URL}/v1/{exp_path}",
+        f"PATCH {exp_path}",
         data={"title": "Tampered Title"},
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
     )
-    if patch_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for PATCH {exp_path}, got {patch_res.status}: {patch_res.text()}"
-        )
-    logger.info("✓ PATCH %s returned 403 as expected.", exp_path)
-
-    # 6. Assert POST work unit stop returns 403
-    logger.info("Asserting negative permission: POST %s:stop -> 403...", wu_path)
-    stop_res = page.request.post(
-        f"{BASE_URL}/v1/{wu_path}:stop",
-        data={},
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    _assert_viewer_forbidden(
+        page, "post", f"{BASE_URL}/v1/{wu_path}:stop", f"POST {wu_path}:stop", data={}
     )
-    if stop_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for POST {wu_path}:stop, got {stop_res.status}: {stop_res.text()}"
-        )
-    logger.info("✓ POST %s:stop returned 403 as expected.", wu_path)
-
-    # 7. Assert POST work unit restart returns 403
-    logger.info("Asserting negative permission: POST %s:restart -> 403...", wu_path)
-    restart_res = page.request.post(
-        f"{BASE_URL}/v1/{wu_path}:restart",
-        data={},
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+    _assert_viewer_forbidden(
+        page, "post", f"{BASE_URL}/v1/{wu_path}:restart", f"POST {wu_path}:restart", data={}
     )
-    if restart_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for POST {wu_path}:restart, got {restart_res.status}: {restart_res.text()}"
-        )
-    logger.info("✓ POST %s:restart returned 403 as expected.", wu_path)
-
-    # 8. Assert POST artifacts under admin experiment returns 403
-    logger.info("Asserting negative permission: POST %s/artifacts -> 403...", exp_path)
-    art_res = page.request.post(
+    _assert_viewer_forbidden(
+        page,
+        "post",
         f"{BASE_URL}/v1/{exp_path}/artifacts",
+        f"POST {exp_path}/artifacts",
         data={"url": {"url": "https://example.com/unauthorized-artifact"}},
-        headers={"Content-Type": "application/json", "Origin": BASE_URL},
+        blocked_statuses=(200, 201),
+        vuln_msg="Security vulnerability: Viewer successfully created an artifact under admin experiment!",
     )
-    if art_res.status in (200, 201):
-        raise RuntimeError(
-            "Security vulnerability: Viewer successfully created an artifact under admin experiment!"
-        )
-    if art_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for POST {exp_path}/artifacts, got {art_res.status}: {art_res.text()}"
-        )
-    logger.info("✓ POST %s/artifacts returned 403 as expected.", exp_path)
-
-    # 9. Assert DELETE artifacts returns 403
-    logger.info(
-        "Asserting negative permission: DELETE %s -> 403...",
-        admin_resources.artifact_name,
-    )
-    del_res = page.request.delete(
+    _assert_viewer_forbidden(
+        page,
+        "delete",
         f"{BASE_URL}/v1/{admin_resources.artifact_name}",
-        headers={"Origin": BASE_URL},
+        f"DELETE {admin_resources.artifact_name}",
+        blocked_statuses=(200, 204),
+        vuln_msg=f"Security vulnerability: Viewer successfully deleted admin artifact {admin_resources.artifact_name}!",
     )
-    if del_res.status in (200, 204):
-        raise RuntimeError(
-            f"Security vulnerability: Viewer successfully deleted admin artifact {admin_resources.artifact_name}!"
-        )
-    if del_res.status != 403:
-        raise RuntimeError(
-            f"Expected status 403 for DELETE artifact, got {del_res.status}: {del_res.text()}"
-        )
-    logger.info("✓ DELETE artifact returned 403 as expected.")
 
-    # 10. Assert viewer can create their own experiment
     viewer_title = f"Viewer Private Experiment {int(time.time())}"
     logger.info("Creating viewer's own experiment: %s...", viewer_title)
     viewer_payload: dict[str, Any] = {
