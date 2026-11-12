@@ -14,10 +14,7 @@
 
 /** Builds an AIP-160 filter string from optional author substring and active status fields. */
 export function buildActiveJobsFilter(author: string, status: string): string {
-  return [
-    author ? `author = ${JSON.stringify(author)}` : '',
-    status ? `status = ${status}` : '',
-  ]
+  return [author ? `author = ${JSON.stringify(author)}` : '', status ? `status = ${status}` : '']
     .filter(Boolean)
     .join(' AND ');
 }
