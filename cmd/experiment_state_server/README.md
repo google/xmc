@@ -113,6 +113,14 @@ components warnings, this warning is persisted with the experiment and in its st
 history. On read, drift detection appends its warnings to the stored message instead of replacing
 it, and skips a warning that is already present.
 
+After a study is committed, `CreateExperiment` publishes one protojson `StudyReconcilePayload`
+naming it to the `xmc-study-reconcile-stream` Redis stream (on `-redis_addr`), which the
+[Study Controller](../../cmd/study_controller) consumes; the tick is delivered at least once. The
+publish is bounded at 2s and survives a client cancelling the RPC. A failed publish does not fail
+the RPC: ESS logs it and increments the `xmc_ess_study_reconcile_enqueue_failures_total` counter,
+and the study stays created without a reconcile tick until a future sweeper recovers it (see
+[Create Experiment](../../docs/flows/experiment_lifecycle.md#1-create-experiment)).
+
 ---
 
 ## Testing & Verification

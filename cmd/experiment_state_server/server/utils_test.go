@@ -46,6 +46,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -132,6 +133,12 @@ func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 	}
 }
 
+func withStudyReconcilePublisher(publisher StudyReconcilePublisher) testServerOpt {
+	return func(p *Params) {
+		p.StudyReconcilePublisher = publisher
+	}
+}
+
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
 	p := Params{}
@@ -152,6 +159,9 @@ func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	}
 	if p.WorkUnitActuator == nil {
 		p.WorkUnitActuator = &tq.FakeClient{}
+	}
+	if p.StudyReconcilePublisher == nil {
+		p.StudyReconcilePublisher = redisclient.NewFakeClient()
 	}
 	s, err := New(p)
 	if err != nil {
@@ -179,11 +189,12 @@ func createExperimentStateServer(ctx context.Context, t *testing.T, opts ...test
 	}
 	xidClient := xidmsgpb.NewXidServiceClient(conn)
 	p := Params{
-		Config:           &cfg,
-		Storage:          storage,
-		Authorizer:       createTestAuthorizer(ctx, t),
-		XidClient:        xidClient,
-		WorkUnitActuator: &tq.FakeClient{},
+		Config:                  &cfg,
+		Storage:                 storage,
+		Authorizer:              createTestAuthorizer(ctx, t),
+		XidClient:               xidClient,
+		WorkUnitActuator:        &tq.FakeClient{},
+		StudyReconcilePublisher: redisclient.NewFakeClient(),
 	}
 	for _, opt := range opts {
 		opt(&p)

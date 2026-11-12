@@ -103,6 +103,21 @@ func TestInitObservers_EmptyAddr(t *testing.T) {
 	}
 }
 
+func TestInitStudyReconcilePublisher(t *testing.T) {
+	t.Parallel()
+	publisher, cleanup := initStudyReconcilePublisher(&config.Config{RedisAddr: "redis-service:6379"})
+
+	if publisher.StreamName != "xmc-study-reconcile-stream" {
+		t.Errorf("publisher stream = %q, want %q", publisher.StreamName, "xmc-study-reconcile-stream")
+	}
+	if err := cleanup(); err != nil {
+		t.Errorf("cleanup() = %v, want nil", err)
+	}
+	if err := cleanup(); err == nil {
+		t.Error("second cleanup() = nil, want the error of closing a closed publisher")
+	}
+}
+
 func TestNewProd_Validation(t *testing.T) {
 	t.Parallel()
 

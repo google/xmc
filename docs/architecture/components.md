@@ -60,6 +60,10 @@ Responsibilities beyond CRUD:
 - **Actuation dispatch.** Mutations that must reach the cluster are persisted as a
   `google.longrunning.Operation` and enqueued to the Actuator's Redis stream; the RPC returns the
   operation rather than blocking.
+- **Study reconcile ticks.** After creating a `STUDY` experiment, ESS publishes a
+  `StudyReconcilePayload` naming it to `xmc-study-reconcile-stream`, which the Study Controller
+  consumes in the `study-controller-group` consumer group. A failed publish is logged and counted
+  but does not fail the RPC.
 - **CMS host.** The Component Manager Service is registered on the same gRPC server (see
   [§5.1](#51-component-manager-service-cms)).
 - **Resumption worker.** When `XMC_PAUSE_SCHEDULING_ENABLED` is enabled, ESS runs a consumer in the

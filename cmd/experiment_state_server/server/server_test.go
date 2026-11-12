@@ -22,6 +22,7 @@ import (
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/storage"
 	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 func TestServer_New_Validation(t *testing.T) {
@@ -29,11 +30,12 @@ func TestServer_New_Validation(t *testing.T) {
 
 	validParams := func() Params {
 		return Params{
-			Config:           &config.Config{},
-			Storage:          &storage.MockStorage{},
-			Authorizer:       createTestAuthorizer(context.Background(), t),
-			XidClient:        &mockXidClient{},
-			WorkUnitActuator: &tq.FakeClient{},
+			Config:                  &config.Config{},
+			Storage:                 &storage.MockStorage{},
+			Authorizer:              createTestAuthorizer(context.Background(), t),
+			XidClient:               &mockXidClient{},
+			WorkUnitActuator:        &tq.FakeClient{},
+			StudyReconcilePublisher: redisclient.NewFakeClient(),
 		}
 	}
 
@@ -82,6 +84,13 @@ func TestServer_New_Validation(t *testing.T) {
 				p.WorkUnitActuator = nil
 			},
 			wantErrText: "WorkUnitActuator is required",
+		},
+		{
+			name: "missing study reconcile publisher",
+			modify: func(p *Params) {
+				p.StudyReconcilePublisher = nil
+			},
+			wantErrText: "StudyReconcilePublisher is required",
 		},
 	}
 

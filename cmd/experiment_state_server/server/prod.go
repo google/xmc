@@ -34,12 +34,14 @@ import (
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	authz "xmanager_cloud/internal/auth"
 	commonhealth "xmanager_cloud/internal/common/health"
+	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/security/keyreloader"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/dbconfig"
 	dbfactory "xmanager_cloud/internal/storage/factory"
 	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
@@ -177,6 +179,20 @@ func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, 
 	return []ArtifactObserver{NewDashboardObserver(dashboardClient, st, wg)}, cleanup, nil
 }
 
+// initStudyReconcilePublisher returns the publisher of study reconcile ticks on cfg.RedisAddr and
+// its cleanup, which closes it. Context deadlines bound its socket I/O, so a hung Redis fails a
+// publish at the publish timeout instead of the client's longer read timeout.
+func initStudyReconcilePublisher(cfg *config.Config) (*redisclient.PublisherClient, func() error) {
+	publisher := redisclient.NewPublisher(redisclient.Config{Addr: cfg.RedisAddr, ContextTimeoutEnabled: true}, constants.RedisStudyReconcileStream)
+	cleanup := func() error {
+		if err := publisher.Close(context.Background()); err != nil {
+			return fmt.Errorf("failed to close study reconcile publisher: %w", err)
+		}
+		return nil
+	}
+	return publisher, cleanup
+}
+
 // runCleanups executes cleanup functions in reverse (LIFO) order to tear down
 // dependencies in the reverse order of their initialization.
 func runCleanups(cleanups []func() error) error {
@@ -255,13 +271,17 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, obsCleanup)
 
+	studyReconcilePublisher, publisherCleanup := initStudyReconcilePublisher(cfg)
+	cleanups = append(cleanups, publisherCleanup)
+
 	srv, err := New(Params{
-		Config:            cfg,
-		Storage:           storage,
-		Authorizer:        auth,
-		XidClient:         xidClient,
-		WorkUnitActuator:  taskQueueClient,
-		ArtifactObservers: observers,
+		Config:                  cfg,
+		Storage:                 storage,
+		Authorizer:              auth,
+		XidClient:               xidClient,
+		WorkUnitActuator:        taskQueueClient,
+		ArtifactObservers:       observers,
+		StudyReconcilePublisher: studyReconcilePublisher,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
