@@ -43,6 +43,9 @@ type fileState struct {
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	if pass.TypesInfo == nil {
+		return nil, nil
+	}
 	insp, _ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if insp == nil {
 		return nil, nil
@@ -64,9 +67,14 @@ func run(pass *analysis.Pass) (any, error) {
 		if len(errIdx) == 0 {
 			return
 		}
+		file := pass.Fset.File(n.Pos())
+		var filename string
+		if file != nil {
+			filename = file.Name()
+		}
 		state := &fileState{
 			pass:        pass,
-			nilerrLines: suppByFile[pass.Fset.Position(n.Pos()).Filename],
+			nilerrLines: suppByFile[filename],
 			funcResults: errIdx,
 		}
 		state.scanStmts(body.List, nil)
@@ -80,13 +88,28 @@ func collectNilerrComments(pass *analysis.Pass) map[string]map[int]bool {
 		lines := make(map[int]bool)
 		for _, cg := range file.Comments {
 			for _, c := range cg.List {
-				if rest, ok := strings.CutPrefix(strings.TrimSpace(c.Text), "//nilerr:"); ok && strings.TrimSpace(rest) != "" {
-					lines[pass.Fset.Position(c.Pos()).Line] = true
+				text := c.Text
+				if strings.HasPrefix(text, "//") {
+					text = strings.TrimPrefix(text, "//")
+				} else if strings.HasPrefix(text, "/*") && strings.HasSuffix(text, "*/") {
+					text = strings.TrimSuffix(strings.TrimPrefix(text, "/*"), "*/")
+				} else {
+					continue
+				}
+				text = strings.TrimSpace(text)
+				if rest, ok := strings.CutPrefix(text, "nilerr:"); ok && strings.TrimSpace(rest) != "" {
+					startLine := pass.Fset.Position(c.Pos()).Line
+					endLine := pass.Fset.Position(c.End()).Line
+					for l := startLine; l <= endLine; l++ {
+						lines[l] = true
+					}
 				}
 			}
 		}
 		if len(lines) > 0 {
-			result[pass.Fset.Position(file.Pos()).Filename] = lines
+			if f := pass.Fset.File(file.Pos()); f != nil {
+				result[f.Name()] = lines
+			}
 		}
 	}
 	return result
@@ -104,6 +127,8 @@ func (s *fileState) scanStmts(stmts []ast.Stmt, activeErr types.Object) {
 
 func (s *fileState) scanStmt(stmt ast.Stmt, activeErr types.Object) {
 	switch node := stmt.(type) {
+	case *ast.LabeledStmt:
+		s.scanStmt(node.Stmt, activeErr)
 	case *ast.BlockStmt:
 		s.scanStmts(node.List, activeErr)
 	case *ast.IfStmt:
@@ -117,9 +142,9 @@ func (s *fileState) scanStmt(stmt ast.Stmt, activeErr types.Object) {
 	case *ast.RangeStmt:
 		s.scanBlock(node.Body, nil)
 	case *ast.SwitchStmt:
-		s.scanSwitchCases(node.Body, node.Tag, activeErr)
+		s.scanSwitchCases(node.Body, node.Init, node.Tag, activeErr)
 	case *ast.TypeSwitchStmt:
-		s.scanSwitchCases(node.Body, node.Assign, activeErr)
+		s.scanSwitchCases(node.Body, node.Init, node.Assign, activeErr)
 	case *ast.SelectStmt:
 		if node.Body != nil {
 			for _, cc := range node.Body.List {
@@ -162,12 +187,12 @@ func ifBranchInspectsErr(info *types.Info, ifStmt *ast.IfStmt, activeErr types.O
 	return nodeReferencesObj(info, ifStmt.Cond, activeErr) || isContextErrGuard(info, ifStmt.Cond)
 }
 
-func (s *fileState) scanSwitchCases(body *ast.BlockStmt, header ast.Node, activeErr types.Object) {
+func (s *fileState) scanSwitchCases(body *ast.BlockStmt, init ast.Stmt, header ast.Node, activeErr types.Object) {
 	if body == nil {
 		return
 	}
 	info := s.pass.TypesInfo
-	if header != nil && activeErr != nil && nodeReferencesObj(info, header, activeErr) {
+	if activeErr != nil && ((init != nil && (stmtReassignsErr(info, init, activeErr) || nodeReferencesObj(info, init, activeErr))) || (header != nil && nodeReferencesObj(info, header, activeErr))) {
 		activeErr = nil
 	}
 	for _, stmt := range body.List {
@@ -188,7 +213,7 @@ func (s *fileState) scanSwitchCases(body *ast.BlockStmt, header ast.Node, active
 
 func (s *fileState) checkReturnNilErr(ret *ast.ReturnStmt, activeErr types.Object) {
 	info := s.pass.TypesInfo
-	if len(ret.Results) == 0 || returnReferencesObjOrFalseOK(info, ret, activeErr) {
+	if len(ret.Results) == 0 || nodeReferencesObj(info, ret, activeErr) {
 		return
 	}
 	line := s.pass.Fset.Position(ret.Pos()).Line
@@ -203,31 +228,27 @@ func (s *fileState) checkReturnNilErr(ret *ast.ReturnStmt, activeErr types.Objec
 	}
 }
 
-func returnReferencesObjOrFalseOK(info *types.Info, ret *ast.ReturnStmt, obj types.Object) bool {
-	if nodeReferencesObj(info, ret, obj) {
-		return true
-	}
-	for _, expr := range ret.Results {
-		if ident, ok := expr.(*ast.Ident); ok && ident.Name == "false" && info.ObjectOf(ident) == types.Universe.Lookup("false") {
-			return true
-		}
-	}
-	return false
-}
-
 func isContextErrGuard(info *types.Info, expr ast.Expr) bool {
-	bin, ok := expr.(*ast.BinaryExpr)
+	bin, ok := ast.Unparen(expr).(*ast.BinaryExpr)
 	if !ok || bin.Op != token.NEQ {
 		return false
 	}
 	isCtxCall := func(e ast.Expr) bool {
-		call, ok := e.(*ast.CallExpr)
+		call, ok := ast.Unparen(e).(*ast.CallExpr)
 		if !ok || len(call.Args) != 0 {
 			return false
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		return ok && sel.Sel.Name == "Err" &&
-			info.TypeOf(sel.X) != nil && strings.Contains(info.TypeOf(sel.X).String(), "context.Context")
+		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Err" {
+			return false
+		}
+		t := info.TypeOf(ast.Unparen(sel.X))
+		if t == nil {
+			return false
+		}
+		named, ok := types.Unalias(t).(*types.Named)
+		return ok && named.Obj() != nil && named.Obj().Pkg() != nil &&
+			named.Obj().Pkg().Path() == "context" && named.Obj().Name() == "Context"
 	}
 	return (isCtxCall(bin.X) && isNilIdent(info, bin.Y)) || (isCtxCall(bin.Y) && isNilIdent(info, bin.X))
 }
@@ -303,30 +324,42 @@ func blockLogsObj(info *types.Info, block *ast.BlockStmt, obj types.Object) bool
 	if obj == nil || block == nil {
 		return false
 	}
-	for _, stmt := range block.List {
-		exprStmt, ok := stmt.(*ast.ExprStmt)
-		if !ok {
-			continue
+	logged := false
+	ast.Inspect(block, func(n ast.Node) bool {
+		if logged {
+			return false
 		}
-		call, ok := exprStmt.X.(*ast.CallExpr)
-		if !ok || !nodeReferencesObj(info, call, obj) {
-			continue
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
 		}
 		var name string
-		switch fn := call.Fun.(type) {
+		switch fn := ast.Unparen(call.Fun).(type) {
 		case *ast.SelectorExpr:
 			name = fn.Sel.Name
 		case *ast.Ident:
 			name = fn.Name
 		}
 		lower := strings.ToLower(name)
+		hasKeyword := false
 		for _, kw := range []string{"warn", "error", "info", "debug", "log", "print", "fatal", "record", "close", "abort"} {
 			if strings.Contains(lower, kw) {
-				return true
+				hasKeyword = true
+				break
 			}
 		}
-	}
-	return false
+		if !hasKeyword {
+			return true
+		}
+		for _, arg := range call.Args {
+			if nodeReferencesObj(info, arg, obj) {
+				logged = true
+				return false
+			}
+		}
+		return true
+	})
+	return logged
 }
 
 func nodeReferencesObj(info *types.Info, root ast.Node, obj types.Object) bool {

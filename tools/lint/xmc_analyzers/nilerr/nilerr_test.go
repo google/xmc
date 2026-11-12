@@ -133,6 +133,33 @@ func f() (int, error) {
 			wantHits: 1,
 		},
 		{
+			name: "flags_unhandled_false_and_nil_error_return",
+			src: `package sample
+import "errors"
+func f() (bool, error) {
+	err := errors.New("boom")
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+}`,
+			wantHits: 1,
+		},
+		{
+			name: "flags_nil_return_after_unlogged_err_error_call",
+			src: `package sample
+import "errors"
+func f() error {
+	err := errors.New("boom")
+	if err != nil {
+		_ = err.Error()
+		return nil
+	}
+	return nil
+}`,
+			wantHits: 1,
+		},
+		{
 			name: "allows_intentional_patterns_and_reasoned_suppressions",
 			src: `package sample
 import (
@@ -140,15 +167,18 @@ import (
 	"errors"
 	"logger"
 )
+type ctxAlias = context.Context
 var errNotFound = errors.New("not found")
 func handleErr(err error) error { return nil }
-func f(ctx context.Context, cond bool) (string, bool, error) {
-	err := errors.New("boom")
-	if err != nil {
+func f(ctx ctxAlias, cond bool) (string, bool, error) {
+	if err := errors.New("is_not_found"); err != nil {
 		if errors.Is(err, errNotFound) {
 			return "", false, nil
 		}
-		if ctx.Err() != nil {
+		return "", false, err
+	}
+	if err := errors.New("ctx_canceled"); err != nil {
+		if (ctx).Err() != nil {
 			return "", false, nil
 		}
 		return "", false, err
@@ -163,13 +193,22 @@ func f(ctx context.Context, cond bool) (string, bool, error) {
 		return "", true, nil
 	}
 	if err := errors.New("warn"); err != nil {
-		logger.Warn("fallback", err)
+		if cond {
+			logger.Warn("fallback", err)
+		}
 		return "", true, nil
 	}
-	if err := errors.New("suppressed"); err != nil {
-		return "literal", true, nil //nilerr: treat missing path as literal
+	if err := errors.New("suppressed_preceding_line"); err != nil {
+		// nilerr: preceding line suppression comment
+		return "literal", true, nil
 	}
-	if err := errors.New("retry"); err != nil && cond {
+	if err := errors.New("suppressed_same_line"); err != nil {
+		return "literal", true, nil // nilerr: treat missing path as literal
+	}
+	if err := errors.New("suppressed_block"); err != nil {
+		return "literal", true, nil /* nilerr: block suppression syntax */
+	}
+	if err := errors.New("retry"); err != nil {
 		err = nil
 		return "", true, nil
 	}

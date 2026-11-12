@@ -590,6 +590,7 @@ func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val
 	case lastType.Equals(filtervisitor.Float):
 		f, err := strconv.ParseFloat(val, 64)
 		if err != nil {
+			// nilerr: handled=false falls through to default string binding
 			return filtervisitor.Invalid, false, nil
 		}
 		qfv.AppendBindingFloat64(f)
@@ -597,6 +598,7 @@ func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val
 	case lastType.Equals(filtervisitor.Boolean):
 		b, err := strconv.ParseBool(val)
 		if err != nil {
+			// nilerr: handled=false falls through to default string binding
 			return filtervisitor.Invalid, false, nil
 		}
 		qfv.AppendBindingBool(b)
