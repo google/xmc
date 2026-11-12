@@ -535,6 +535,7 @@ describe('QueueJobsTable Component', () => {
       'gpu-cluster-queue',
       10,
       '',
+      '',
       'author = "example@example.com"',
     );
 
@@ -547,6 +548,7 @@ describe('QueueJobsTable Component', () => {
     expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
       'gpu-cluster-queue',
       10,
+      '',
       '',
       '',
     );
