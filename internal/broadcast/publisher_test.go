@@ -39,8 +39,7 @@ func TestNewPublisher(t *testing.T) {
 	if pub == nil {
 		t.Fatal("NewPublisher() returned nil")
 	}
-	var iface Publisher = pub
-	_ = iface
+	var _ Publisher = pub
 }
 
 func TestPublisherClientValidation(t *testing.T) {
