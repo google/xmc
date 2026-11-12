@@ -97,7 +97,7 @@ def verify_resolution(args):
         raise HandledError(
             f"Failed to read checklist file '{checklist_path}': {e}",
             "Check file permissions and ensure it is readable Markdown.",
-        )
+        ) from e
 
     checklist_ids = [int(x) for x in re.findall(r"Comment ID [`'\"]?(\d+)[`'\"]?", content)]
     if not checklist_ids:

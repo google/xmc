@@ -114,9 +114,10 @@ def patch_lightning() -> bool:
                     self._loggers = [XmcLogger()]
             else:
                 loggers = getattr(self, "loggers", None)
-                if isinstance(loggers, list):
-                    if not any(isinstance(logger_inst, XmcLogger) for logger_inst in loggers):
-                        loggers.append(XmcLogger())
+                if isinstance(loggers, list) and not any(
+                    isinstance(logger_inst, XmcLogger) for logger_inst in loggers
+                ):
+                    loggers.append(XmcLogger())
             return original_fit(self, *args, **kwargs)
 
         pl.Trainer.fit = custom_fit

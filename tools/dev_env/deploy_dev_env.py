@@ -16,6 +16,7 @@
 """XMC v2 Dev Environment Deployment Script."""
 
 import argparse
+import contextlib
 import json
 import os
 import pathlib
@@ -298,7 +299,7 @@ def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
-    try:
+    with contextlib.suppress(subprocess.CalledProcessError):
         run_command(
             [
                 "gcloud",
@@ -311,9 +312,7 @@ def _dns_transaction_abort(dns_project: str, dns_zone: str) -> None:
             ],
             capture_output=True,
             log_on_error=False,
-        )
-    except subprocess.CalledProcessError:
-        pass  # Ignore if no transaction was active
+        )  # Ignore if no transaction was active
 
 
 def _dns_transaction_start(dns_project: str, dns_zone: str) -> None:

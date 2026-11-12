@@ -58,10 +58,15 @@ select = [
     "RUF013",  # Ruff: Implicit Optional in type annotations
     "RUF015",  # Ruff: Prefer next(iter()) over list()[0]
     "RUF019",  # Ruff: Unnecessary key check before dictionary access
+    "LOG015",  # flake8-logging: Forbid calls on root logger
+    "RUF012",  # Ruff: Mutable class default values
+    "RUF100",  # Ruff: Unused noqa directives
+    "S110",    # Bandit: try-except-pass without logging
     "S506",    # Bandit: Probable use of unsafe yaml.load
+    "S602",    # Bandit: subprocess call with shell=True
     "C901",    # mccabe: Cyclomatic complexity enforcement
 ]
-ignore = ["B904", "SIM102", "SIM105", "SIM117", "E501", "PERF203"]
+ignore = ["SIM117", "E501", "PERF203"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 15

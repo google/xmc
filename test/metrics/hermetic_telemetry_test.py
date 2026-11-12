@@ -32,7 +32,7 @@ import unittest
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from xmc import MetricsFlusher
 from xmc.network import HTTPClient
@@ -243,7 +243,7 @@ class TestHermeticTelemetryFlow(unittest.TestCase):
     """Multi-language distributed Hermetic telemetry flow test suite."""
 
     runner_proc: subprocess.Popen | None = None
-    config: dict = {}
+    config: ClassVar[dict] = {}
 
     @classmethod
     def setUpClass(cls) -> None:

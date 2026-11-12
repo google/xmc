@@ -15,6 +15,7 @@
 
 import os
 import pwd
+import shlex
 import subprocess
 import sys
 
@@ -61,17 +62,19 @@ def main():
     # Check if NVM exists in the user's real home and source it
     nvm_sh = os.path.join(user_home, ".nvm", "nvm.sh")
     if os.path.exists(nvm_sh):
-        cmd = f"source {nvm_sh} && npx ng test --watch=false"
+        cmd_args = [
+            "/bin/bash",
+            "-c",
+            f"source {shlex.quote(nvm_sh)} && npx ng test --watch=false",
+        ]
     else:
-        cmd = "npx ng test --watch=false"
+        cmd_args = ["npx", "ng", "test", "--watch=false"]
 
     print(f"Executing Angular tests in physical workspace: {real_ui_dir}")
 
-    # Run the command with bash so we can source nvm
+    # Run without shell=True while sourcing nvm cleanly when present.
     res = subprocess.run(
-        cmd,
-        shell=True,
-        executable="/bin/bash",
+        cmd_args,
         cwd=real_ui_dir,
         env=env,
         check=False,

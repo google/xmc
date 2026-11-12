@@ -38,6 +38,8 @@ try:
 except ImportError:
     from xdash import auth as xdash_auth  # type: ignore[no-redef]
 
+_LOGGER = logging.getLogger(__name__)
+
 try:
     import dotenv
 
@@ -144,8 +146,8 @@ def extract_worker_name(work_unit: Any) -> str:
             and work_unit.executable.jobset.jobs[0].name
         ):
             return work_unit.executable.jobset.jobs[0].name
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.debug("Failed to extract worker name from work unit: %s", e)
     return "unknown"
 
 
@@ -158,8 +160,8 @@ def extract_queue_name(work_unit: Any) -> str:
             and work_unit.executable.scheduling_constraints.queue_name
         ):
             return work_unit.executable.scheduling_constraints.queue_name
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.debug("Failed to extract queue name from work unit: %s", e)
     return "unknown"
 
 
@@ -188,7 +190,7 @@ def _fetch_remote_wu_state(stub: Any, wu_name: str) -> int | None:
         ):
             return int(cur_exec.status.state)
     except Exception as e:
-        logging.warning("Failed to fetch state for %s: %s", wu_name, e, exc_info=True)
+        _LOGGER.warning("Failed to fetch state for %s: %s", wu_name, e, exc_info=True)
     return None
 
 
@@ -622,7 +624,7 @@ def _fetch_raw_work_units(
     except Exception as e:
         if elapsed >= timeout_sec:
             raise
-        logging.warning("Transient error fetching work units: %s. Retrying...", e)
+        _LOGGER.warning("Transient error fetching work units: %s. Retrying...", e)
         return None
 
 
@@ -800,7 +802,7 @@ def _fetch_raw_artifacts(
     except Exception as e:
         if elapsed >= timeout_sec:
             raise
-        logging.warning("Transient error fetching artifacts: %s. Retrying...", e)
+        _LOGGER.warning("Transient error fetching artifacts: %s. Retrying...", e)
         return None
 
 
@@ -1016,12 +1018,12 @@ def _poll_dashboard_iteration(
     except AssertionError as e:
         if elapsed >= timeout_sec or "data engine is not configured" in str(e).lower():
             raise
-        logging.warning("Dashboard assertions not yet satisfied: %s. Retrying...", e)
+        _LOGGER.warning("Dashboard assertions not yet satisfied: %s. Retrying...", e)
         return None
     except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError, RuntimeError) as e:
         if elapsed >= timeout_sec:
             raise TimeoutError(f"Dashboard verification failed after {int(elapsed)}s: {e}") from e
-        logging.warning("Transient error fetching dashboard: %s. Retrying...", e)
+        _LOGGER.warning("Transient error fetching dashboard: %s. Retrying...", e)
         return None
 
 

@@ -66,13 +66,13 @@ def fetch_comment(args):
             str(e),
             "Please authenticate using the 'gh' CLI (run 'gh auth login') or"
             " set the GITHUB_TOKEN environment variable.",
-        )
+        ) from e
     except GithubAPIError as e:
         raise HandledError(
             str(e),
             "Ensure the repository and comment ID exist, and that your"
             " credentials have appropriate permissions to access the comments.",
-        )
+        ) from e
 
 
 def main():

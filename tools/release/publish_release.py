@@ -39,16 +39,16 @@ def read_notes_file(notes_path: Path) -> str:
     try:
         with open(notes_path, encoding="utf-8") as f:
             notes_content = f.read().strip()
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         raise HandledError(
             f"Release notes file not found: '{notes_path}'",
             "Ensure the release notes markdown file exists before publishing.",
-        )
+        ) from e
     except (OSError, PermissionError) as e:
         raise HandledError(
             f"Release notes file is inaccessible: '{notes_path}' (Error: {e})",
             "Ensure the release notes markdown file is readable before publishing.",
-        )
+        ) from e
 
     if not notes_content:
         raise HandledError(

@@ -17,12 +17,15 @@
 import argparse
 import hashlib
 import json
+import logging
 import os
 import struct
 import sys
 import tarfile
 import tempfile
 from pathlib import Path
+
+_LOGGER = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -80,8 +83,8 @@ def detect_elf_architecture(binary_path: str):
                 return "386"
             if e_machine == 40:  # EM_ARM
                 return "arm"
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.debug("Failed to detect ELF architecture for %s: %s", binary_path, e)
     return None
 
 
@@ -147,7 +150,7 @@ def build_oci(args):
             raise HandledError(
                 f"Failed to create layer tarball: {e}",
                 "Check directory write permissions and ensure the binary path is a valid file.",
-            )
+            ) from e
 
         layer_sha = get_sha256(layer_tar_path)
 
@@ -170,7 +173,7 @@ def build_oci(args):
             raise HandledError(
                 f"Failed to write config JSON: {e}",
                 "Check disk space and write permissions in the current working directory.",
-            )
+            ) from e
 
         config_sha = get_sha256(config_json_path)
         final_config_path = os.path.join(tmpdir, f"{config_sha}.json")
@@ -192,7 +195,7 @@ def build_oci(args):
             raise HandledError(
                 f"Failed to write manifest JSON: {e}",
                 "Check disk space and write permissions in the current working directory.",
-            )
+            ) from e
 
         try:
             with tarfile.open(output_tar, "w") as tar:
@@ -204,7 +207,7 @@ def build_oci(args):
                 f"Failed to compile final OCI tarball: {e}",
                 "Check permissions and ensure the target directory for output_tar"
                 " exists and is writeable.",
-            )
+            ) from e
 
     return {
         "output_tar": output_tar,

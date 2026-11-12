@@ -29,6 +29,8 @@ import supported_algorithms
 from vizier._src.service import vizier_service, vizier_service_pb2
 from vizier.service import servers
 
+_LOGGER = logging.getLogger(__name__)
+
 # Lets in-flight RPCs finish on SIGTERM, within the default 30s pod termination grace period.
 _SHUTDOWN_GRACE_SECONDS = 10.0
 
@@ -62,7 +64,7 @@ def wait_for_termination_signal() -> None:
     stop_requested = threading.Event()
 
     def request_stop(signum: int, _frame: object) -> None:
-        logging.info("Received signal %d, shutting down", signum)
+        _LOGGER.info("Received signal %d, shutting down", signum)
         stop_requested.set()
 
     signal.signal(signal.SIGTERM, request_stop)
@@ -78,7 +80,7 @@ def main() -> None:
     server = servers.DefaultVizierServer(
         host="0.0.0.0", port=settings.port, database_url=settings.database_url
     )
-    logging.info("Vizier fixture listening on %s", server.endpoint)
+    _LOGGER.info("Vizier fixture listening on %s", server.endpoint)
     wait_for_termination_signal()
     # DefaultVizierServer exposes no stop method; _server is its started grpc.Server.
     server._server.stop(_SHUTDOWN_GRACE_SECONDS).wait()

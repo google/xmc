@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -76,21 +77,15 @@ def make_tree_writable(dir_path: Path) -> None:
     """Recursively adds write permissions to all directories and files in tree."""
     if not dir_path.exists():
         return
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(dir_path, 0o755)
-    except OSError:
-        pass
     for root, dirs, files in os.walk(dir_path):
         for d in dirs:
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(os.path.join(root, d), 0o755)
-            except OSError:
-                pass
         for f in files:
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(os.path.join(root, f), 0o644)
-            except OSError:
-                pass
 
 
 class ChartSanitizer:
@@ -127,10 +122,8 @@ class ChartSanitizer:
             for d in dirs:
                 dir_path = Path(root) / d
                 if not any(dir_path.iterdir()):
-                    try:
+                    with contextlib.suppress(OSError):
                         dir_path.rmdir()
-                    except OSError:
-                        pass
 
     def patch_image_pull_policy(self, chart_dir: Path) -> int:
         """Replaces imagePullPolicy Always with IfNotPresent in local templates."""

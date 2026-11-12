@@ -26,6 +26,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
+from typing import ClassVar
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
@@ -180,7 +181,7 @@ class TestToolUtils(unittest.TestCase):
 
     @patch("tools.common.tool_utils._should_bypass_venv", return_value=False)
     @patch("tools.common.tool_utils._bootstrap_venv", side_effect=RuntimeError("bootstrap failed"))
-    @patch("logging.exception")
+    @patch("tools.common.tool_utils._LOGGER.exception")
     @patch("os.execv")
     def test_ensure_venv_bootstrap_fails(
         self, mock_execv, mock_log_exception, mock_bootstrap, mock_bypass
@@ -407,7 +408,11 @@ class TestLogStreams(unittest.TestCase):
 class TestRunCommandHardening(unittest.TestCase):
     """Tests for run_command stdin, timeout, decoding, and HandledError options."""
 
-    _BAD_BYTES = [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'ok\\xff')"]
+    _BAD_BYTES: ClassVar[list[str]] = [
+        sys.executable,
+        "-c",
+        "import sys; sys.stdout.buffer.write(b'ok\\xff')",
+    ]
 
     def _run(self, cmd: list[str], **kwargs):
         return run_command(cmd, capture_output=True, log_cmd=False, log_on_error=False, **kwargs)

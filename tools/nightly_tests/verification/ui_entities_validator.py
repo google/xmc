@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import urllib.parse
@@ -31,6 +32,8 @@ except ImportError:
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class UIVerificationError(AssertionError):
@@ -263,8 +266,8 @@ class XMCUIBrowserSession:
         """
         try:
             self.page.evaluate("() => document.fonts.ready")
-        except Exception:
-            pass
+        except Exception as e:
+            _LOGGER.debug("Ignoring font readiness check error: %s", e)
         self.page.wait_for_timeout(timeout_ms)
 
     def wait_for_selector_with_retry(self, selector: str, timeout_ms: int = 30000) -> None:

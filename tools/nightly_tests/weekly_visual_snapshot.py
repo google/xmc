@@ -90,9 +90,10 @@ def discover_xid_from_page(page: Any) -> str:
             if match := re.search(r"/experiments/(\d+)", href):
                 return match.group(1)
         rows = page.locator("tbody tr")
-        if rows.count() > 0:
-            if match := re.search(r"\b(\d+)\b", str(rows.first.inner_text() or "")):
-                return match.group(1)
+        if rows.count() > 0 and (
+            match := re.search(r"\b(\d+)\b", str(rows.first.inner_text() or ""))
+        ):
+            return match.group(1)
     except Exception:
         return ""
     return ""

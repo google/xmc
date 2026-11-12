@@ -49,17 +49,17 @@ if TYPE_CHECKING:
     from test.e2e.lib.step_summary import append_step_summary
 else:
     try:
-        from test.e2e.lib import cancellation  # noqa: E402
-        from test.e2e.lib.config import parse_args  # noqa: E402
-        from test.e2e.lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
-        from test.e2e.lib.outcome import Outcome  # noqa: E402
-        from test.e2e.lib.step_summary import append_step_summary  # noqa: E402
+        from test.e2e.lib import cancellation
+        from test.e2e.lib.config import parse_args
+        from test.e2e.lib.infra_retry import run_attempt, run_with_infra_retry
+        from test.e2e.lib.outcome import Outcome
+        from test.e2e.lib.step_summary import append_step_summary
     except ImportError:
-        from lib import cancellation  # noqa: E402
-        from lib.config import parse_args  # noqa: E402
-        from lib.infra_retry import run_attempt, run_with_infra_retry  # noqa: E402
-        from lib.outcome import Outcome  # noqa: E402
-        from lib.step_summary import append_step_summary  # noqa: E402
+        from lib import cancellation
+        from lib.config import parse_args
+        from lib.infra_retry import run_attempt, run_with_infra_retry
+        from lib.outcome import Outcome
+        from lib.step_summary import append_step_summary
 
 logging.basicConfig(
     level=logging.INFO,

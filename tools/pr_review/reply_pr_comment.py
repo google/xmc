@@ -62,7 +62,7 @@ def reply_comment(args):
             raise HandledError(
                 f"Failed to read message file '{message_file}': {e}",
                 "Ensure the message file path exists and is readable.",
-            )
+            ) from e
     elif has_raw_message:
         message = str(raw_message)
     else:
@@ -138,13 +138,13 @@ def reply_comment(args):
             str(e),
             "Please authenticate using the 'gh' CLI (run 'gh auth login') or"
             " set the GITHUB_TOKEN environment variable.",
-        )
+        ) from e
     except GithubAPIError as e:
         raise HandledError(
             str(e),
             "Ensure the repository and comment ID exist, and that your"
             " credentials have write access permissions.",
-        )
+        ) from e
 
     if getattr(args, "resolve", False) is not True:
         return _summarize_reply(parsed, response, resolved=False)

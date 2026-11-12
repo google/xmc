@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from typing import ClassVar
 
 from test.e2e.lib.command import run_cmd
 from test.e2e.lib.config import E2EConfig
@@ -48,8 +49,8 @@ def _get_service_specs() -> list[tuple[str, str, str]]:
 class ImageBuilder:
     """Builds and tags OCI container images via Bazel and Docker."""
 
-    _SERVICES = _get_service_specs()
-    _EXTRA_BUILD_TARGETS = [
+    _SERVICES: ClassVar[list[tuple[str, str, str]]] = _get_service_specs()
+    _EXTRA_BUILD_TARGETS: ClassVar[list[str]] = [
         "//api/protos/experiment:experiment_messages_descriptor",
         "//api/protos/xid:xid_messages_descriptor",
         "//internal/storage/spanner/migrations:migrations",
