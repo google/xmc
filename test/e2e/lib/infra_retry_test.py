@@ -33,8 +33,8 @@ _PASSED = AttemptResult(outcome=Outcome.PASSED, images_built=True)
 _PRODUCT_FAILURE = AttemptResult.for_failed_phase(Phase.TESTS, images_built=True)
 _INFRA_FAILURE = AttemptResult.for_failed_phase(Phase.SPANNER_SETUP, images_built=True)
 
-# Job timeout of the E2E workflow (timeout-minutes: 20).
-_JOB_TIMEOUT_SECONDS = 20 * 60
+# Job timeout of the E2E workflow (timeout-minutes: 45).
+_JOB_TIMEOUT_SECONDS = 45 * 60
 # Smallest acceptable gap between a run stopped at the deadline and the job timeout. It
 # absorbs variance in the steps around the harness: once the job times out, the runner's
 # cancellation grace period of about 10 s is too short to drop the Spanner databases.
@@ -83,7 +83,7 @@ class TestHarnessBudget(unittest.TestCase):
             + _STEPS_AFTER_HARNESS_SECONDS
         )
 
-        self.assertEqual(worst_case, 1107)
+        self.assertEqual(worst_case, 2607)
         self.assertGreaterEqual(_JOB_TIMEOUT_SECONDS - worst_case, _MIN_JOB_TIMEOUT_MARGIN_SECONDS)
 
     def test_healthy_retry_started_within_window_ends_before_deadline(self):
@@ -91,7 +91,7 @@ class TestHarnessBudget(unittest.TestCase):
             RETRY_START_LIMIT_SECONDS + _HEALTHY_ATTEMPT_SECONDS + _TEARDOWN_WORST_CASE_SECONDS
         )
 
-        self.assertEqual(latest_retry_end, 730)
+        self.assertEqual(latest_retry_end, 2050)
         self.assertLessEqual(latest_retry_end, HARNESS_DEADLINE_SECONDS)
 
 
@@ -101,8 +101,8 @@ class TestShouldRetry(unittest.TestCase):
     def test_retries_only_early_infra_failures_with_attempts_left(self):
         cases = [
             ("early infra failure", _make_config(), _INFRA_FAILURE, 1, 100, True),
-            ("infra failure at window end", _make_config(), _INFRA_FAILURE, 1, 480, True),
-            ("infra failure after window", _make_config(), _INFRA_FAILURE, 1, 481, False),
+            ("infra failure at window end", _make_config(), _INFRA_FAILURE, 1, 1800, True),
+            ("infra failure after window", _make_config(), _INFRA_FAILURE, 1, 1801, False),
             ("no attempts left", _make_config(), _INFRA_FAILURE, 2, 100, False),
             ("keep cluster", _make_config(keep_cluster=True), _INFRA_FAILURE, 1, 100, False),
             ("product failure", _make_config(), _PRODUCT_FAILURE, 1, 100, False),
@@ -172,11 +172,11 @@ class TestRunWithInfraRetry(unittest.TestCase):
         self.assertEqual(stdout.count("::warning::"), 1)
 
     def test_does_not_retry_infra_failure_that_ended_after_window(self):
-        with patch.object(infra_retry.time, "monotonic", side_effect=[0.0, 481.0, 482.0]):
+        with patch.object(infra_retry.time, "monotonic", side_effect=[0.0, 1801.0, 1802.0]):
             result, _, stdout = self._run(_make_config(), [_INFRA_FAILURE])
 
         self.assertEqual(result.attempts, (_INFRA_FAILURE,))
-        self.assertEqual(result.duration_seconds, 482.0)
+        self.assertEqual(result.duration_seconds, 1802.0)
         self.assertEqual(stdout, "")
 
     def test_arms_harness_deadline_for_the_run_only(self):

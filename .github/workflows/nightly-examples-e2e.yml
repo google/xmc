@@ -98,7 +98,7 @@ jobs:
 
   build-example-images:
     name: 'Build Example Container Images'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: xmc-nightly
     timeout-minutes: 15
 
@@ -152,7 +152,7 @@ jobs:
   run-and-verify-examples:
     name: 'Run & Verify: ${{ matrix.example.name }}'
     needs: [build-example-images]
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: xmc-nightly
     timeout-minutes: ${{ fromJSON(format('{0}', inputs.timeout_minutes || 30)) }}
 
@@ -363,7 +363,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           if [ "${VERIFY_UI:-}" = "true" ]; then
             "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.51.0"
-            # --with-deps is omitted: arc-runner-set pre-bakes Chromium system libraries and
+            # --with-deps is omitted: ubuntu-latest pre-bakes Chrome/Chromium system libraries and
             # its unbounded apt-get update can hang until the job timeout.
             timeout --kill-after=30 300 "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium
           fi
@@ -590,7 +590,7 @@ jobs:
     name: 'Aggregate Examples Results'
     needs: [run-and-verify-examples]
     if: always() && needs.run-and-verify-examples.result != 'skipped'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     outputs:
       launched_xids: ${{ steps.aggregate.outputs.launched_xids }}
     permissions:

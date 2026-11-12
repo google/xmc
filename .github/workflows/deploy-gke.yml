@@ -181,7 +181,7 @@ permissions:
 jobs:
   deploy-to-gke:
     name: 'Deploy XMC to GKE'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: xmc-nightly
     permissions:
       contents: read
@@ -240,13 +240,34 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
+      - name: 'Reclaim Unused Runner Disk Space'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
+      - name: 'Restore Bazel Disk Cache'
+        id: 'cache-bazel-disk-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
       - name: 'Configure Bazel Cache Settings'
         run: |
-          mkdir -p "${HOME}/.cache/bazel-repo"
+          mkdir -p "${HOME}/.cache/bazel-repo" "${HOME}/.cache/bazel-disk"
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
-          common --remote_upload_local_results=true
-          common --remote_download_outputs=all
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
