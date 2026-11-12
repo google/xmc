@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { buildAnyOfFilter, toOrderBy } from './work_units_query';
+import { buildAnyOfFilter } from './work_units_query';
 
 describe('work_units_query', () => {
   describe('buildAnyOfFilter', () => {
@@ -27,22 +27,6 @@ describe('work_units_query', () => {
       expect(buildAnyOfFilter('state', ['FAILED', 'STOPPED'])).toBe(
         '(state = "FAILED" OR state = "STOPPED")',
       );
-    });
-  });
-
-  describe('toOrderBy', () => {
-    it('returns the field and ascending direction', () => {
-      expect(toOrderBy({ active: 'state', direction: 'asc' })).toBe('state asc');
-    });
-
-    it('returns the field and descending direction', () => {
-      expect(toOrderBy({ active: 'execution_completed', direction: 'desc' })).toBe(
-        'execution_completed desc',
-      );
-    });
-
-    it('returns undefined when the sort is cleared', () => {
-      expect(toOrderBy({ active: 'state', direction: '' })).toBeUndefined();
     });
   });
 });

@@ -118,6 +118,10 @@ message GetRunningAndPendingJobsRequest {
   string queue_name = 1;
   int32 page_size = 2;
   string page_token = 3;
+  // Display ordering: author, priority, or status, optionally followed by asc or desc.
+  // Status asc orders RUNNING, STARTING, INITIALIZING, then SCHEDULING.
+  // Empty preserves scheduling display order. Ties are broken by work-unit ID, then experiment ID (ascending).
+  // Field names and directions are case-insensitive. A page_token is only valid with the order_by it was issued for.
   string order_by = 4;
 }
 

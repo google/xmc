@@ -114,12 +114,14 @@ type mockWorkUnitFetcher struct {
 	lastQueueNames  []string
 	lastPageSize    int32
 	lastPageToken   string
+	lastQuery       storage.ActiveWorkUnitQuery
 }
 
-func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, error) {
+func (m *mockWorkUnitFetcher) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
 	m.lastQueueNames = queueNames
 	m.lastPageSize = pageSize
 	m.lastPageToken = pageToken
+	m.lastQuery = query
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -611,6 +613,75 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 
 			if diff := cmp.Diff(tt.wantQueues, fetcher.lastQueueNames); diff != "" {
 				t.Errorf("targetQueues mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
+	tests := []struct {
+		name      string
+		orderBy   string
+		wantQuery storage.ActiveWorkUnitQuery
+		wantCode  codes.Code
+	}{
+		{
+			name:      "empty preserves default",
+			orderBy:   "",
+			wantQuery: storage.ActiveWorkUnitQuery{},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "case-insensitive status desc",
+			orderBy:   "Status DESC",
+			wantQuery: storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus, Descending: true},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "priority defaults asc",
+			orderBy:   "priority",
+			wantQuery: storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority},
+			wantCode:  codes.OK,
+		},
+		{
+			name:     "unknown field",
+			orderBy:  "title",
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "unsupported direction",
+			orderBy:  "author sideways",
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "sql injection rejected",
+			orderBy:  "priority desc; DROP TABLE WorkUnits",
+			wantCode: codes.InvalidArgument,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+			req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+				r.OrderBy = tt.orderBy
+			})
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), req)
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("GetRunningAndPendingJobs(order_by=%q) code = %v, want %v (err=%v)", tt.orderBy, status.Code(err), tt.wantCode, err)
+			}
+			if tt.wantCode != codes.OK {
+				if fetcher.snapshotCalls != 0 {
+					t.Errorf("fetcher called %d times on invalid order_by, want 0", fetcher.snapshotCalls)
+				}
+				return
+			}
+			if fetcher.snapshotCalls != 1 {
+				t.Errorf("fetcher called %d times on valid order_by, want 1", fetcher.snapshotCalls)
+			}
+			if diff := cmp.Diff(tt.wantQuery, fetcher.lastQuery); diff != "" {
+				t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

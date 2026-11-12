@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 
 	t.Run("canceled context error", func(t *testing.T) {
 		repo := &spanner.Storage{}
-		_, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"gpu-queue"}, 10, "")
+		_, err := repo.FetchActiveWorkUnitsByQueues(canceledCtx, []string{"gpu-queue"}, 10, "", storage.ActiveWorkUnitQuery{})
 		if err == nil {
 			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for canceled context, got nil")
 		}
@@ -42,7 +43,7 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 
 	t.Run("nil client guard returns error", func(t *testing.T) {
 		repo := &spanner.Storage{}
-		_, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "")
+		_, err := repo.FetchActiveWorkUnitsByQueues(context.Background(), []string{"gpu-queue"}, 10, "", storage.ActiveWorkUnitQuery{})
 		if err == nil {
 			t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for nil spanner client, got nil")
 		}
@@ -50,8 +51,8 @@ func TestFetchActiveWorkUnitsByQueues_Uninitialized(t *testing.T) {
 
 	t.Run("empty queue names returns empty result", func(t *testing.T) {
 		ctx := context.Background()
-		storage := newEmulatorStorage(ctx, t)
-		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{}, 10, "")
+		store := newEmulatorStorage(ctx, t)
+		res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{}, 10, "", storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("FetchActiveWorkUnitsByQueues() unexpected error: %v", err)
 		}
@@ -73,7 +74,7 @@ func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 
 	for _, token := range invalidTokens {
 		t.Run("token="+token, func(t *testing.T) {
-			_, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"gpu-queue"}, 10, token)
+			_, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"gpu-queue"}, 10, token, storage.ActiveWorkUnitQuery{})
 			if err == nil {
 				t.Fatalf("FetchActiveWorkUnitsByQueues() expected error for token %q, got nil", token)
 			}
@@ -86,12 +87,12 @@ func TestFetchActiveWorkUnitsByQueues_InvalidPageToken(t *testing.T) {
 
 func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	ctx := context.Background()
-	storage := newEmulatorStorage(ctx, t)
+	store := newEmulatorStorage(ctx, t)
 
 	xid := int64(100)
-	_ = spanner.CreateBlankExperiment(ctx, t, storage, xid)
+	_ = spanner.CreateBlankExperiment(ctx, t, store, xid)
 	for i := int64(1); i <= 5; i++ {
-		_ = spanner.CreateBlankWorkUnit(ctx, t, storage, xid, i)
+		_ = spanner.CreateBlankWorkUnit(ctx, t, store, xid, i)
 	}
 
 	type pageExpectation struct {
@@ -108,7 +109,7 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 
 	token := ""
 	for i, page := range pages {
-		res, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token)
+		res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("Page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
 		}
@@ -125,7 +126,7 @@ func TestFetchActiveWorkUnitsByQueues_EmulatorIntegration(t *testing.T) {
 	}
 
 	// Test boundary conditions for pageSize (<= 0 uses default 100, > 1000 clamped to 1000)
-	pageDefault, err := storage.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 0, "")
+	pageDefault, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 0, "", storage.ActiveWorkUnitQuery{})
 	if err != nil {
 		t.Fatalf("FetchActiveWorkUnitsByQueues with pageSize 0 failed: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestFetchActiveWorkUnitsByQueues_CrossExperimentXidTieBreaker(t *testing.T)
 	var gotNames []string
 	token := ""
 	for i := range 3 {
-		res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token)
+		res, err := store.FetchActiveWorkUnitsByQueues(ctx, []string{"tie-queue"}, 1, token, storage.ActiveWorkUnitQuery{})
 		if err != nil {
 			t.Fatalf("page %d FetchActiveWorkUnitsByQueues failed: %v", i+1, err)
 		}
@@ -197,5 +198,65 @@ func insertWorkUnitsAt(ctx context.Context, t *testing.T, store *spanner.Storage
 	})
 	if err != nil {
 		t.Fatalf("insertWorkUnitsAt RunInTransaction failed: %v", err)
+	}
+}
+
+func TestActiveQueueOrderingAcrossPages(t *testing.T) {
+	ctx := context.Background()
+	repo := newEmulatorStorage(ctx, t)
+	for _, xid := range []int64{100, 200} {
+		exp := spanner.BlankExperimentProto(xid)
+		exp.Creator = "alice@example.com"
+		if xid == 200 {
+			exp.Creator = "Bob@example.com"
+		}
+		spanner.CreateAndStoreExperiment(ctx, t, repo, exp)
+		for i, state := range []essmsgpb.WorkUnitStatus_WorkUnitState{essmsgpb.WorkUnitStatus_SCHEDULING, essmsgpb.WorkUnitStatus_RUNNING, essmsgpb.WorkUnitStatus_INITIALIZING} {
+			wu := spanner.BlankWorkUnitProto(xid, int64(i+1))
+			wu.Priority = essmsgpb.Priority(i + 1)
+			wu.CurrentWorkUnitExecution.Status.State = state
+			spanner.CreateAndStoreWorkUnit(ctx, t, repo, wu)
+		}
+	}
+
+	cases := []struct {
+		name  string
+		query storage.ActiveWorkUnitQuery
+		want  []string
+	}{
+		{"author asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor}, []string{"experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3"}},
+		{"author desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor, Descending: true}, []string{"experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3"}},
+		{"priority asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority}, []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3"}},
+		{"priority desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority, Descending: true}, []string{"experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus}, []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus, Descending: true}, []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2"}},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			var names []string
+			token := ""
+			for page := 0; page < 3; page++ {
+				result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, tt.query)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.TotalQueueSize != 6 {
+					t.Fatalf("total = %d, want 6", result.TotalQueueSize)
+				}
+				for _, item := range result.WorkUnits {
+					names = append(names, item.WorkUnit.GetName())
+				}
+				token = result.NextPageToken
+				if page < 2 && token == "" {
+					t.Fatal("missing next page")
+				}
+			}
+			if token != "" {
+				t.Fatal("unexpected final page token")
+			}
+			if !slices.Equal(names, tt.want) {
+				t.Errorf("order = %v, want %v", names, tt.want)
+			}
+		})
 	}
 }

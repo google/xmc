@@ -26,13 +26,16 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
+import { MatSortModule, Sort } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
+import { AipSort, toOrderBy } from 'app/common/sort/aip_sort';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ROD_TERM_TOOLTIPS } from 'app/resource_dashboard/constants/rod_tooltips';
 import { ResourceService } from 'app/service/resource_service';
@@ -61,10 +64,12 @@ export class QueueJobsTableData implements BaseSidePanelData {
   imports: [
     RouterModule,
     MatTableModule,
+    MatSortModule,
     MatPaginatorModule,
     MatIconModule,
     MatButtonModule,
     MatTooltipModule,
+    LoadingBar,
     StatusChip,
     ResourceChip,
     QueueJobPositionPipe,
@@ -86,7 +91,17 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   private readonly resourceService = inject(ResourceService);
 
-  protected readonly isLoading = signal<boolean>(false);
+  protected readonly sort = signal<AipSort>({ active: '', direction: '' });
+  protected readonly orderBy = computed(() => toOrderBy(this.sort()) ?? '');
+
+  protected readonly isFetching = signal<boolean>(false);
+  protected readonly loadedQueueName = signal<string | undefined>(undefined);
+  protected readonly isLoading = computed(
+    () => this.isFetching() && this.loadedQueueName() !== this.activeQueueName(),
+  );
+  protected readonly isRefreshing = computed(
+    () => this.isFetching() && this.loadedQueueName() === this.activeQueueName(),
+  );
   protected readonly tableControls = {
     pageSize: signal<number>(10),
     pageIndex: signal<number>(0),
@@ -98,6 +113,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
 
   protected readonly requestParams = computed(() => ({
     queueName: this.activeQueueName(),
+    orderBy: this.orderBy(),
     pageSize: this.tableControls.pageSize(),
     pageToken: this.tableControls.pageToken(),
   }));
@@ -108,13 +124,15 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
         (prev, curr) =>
           prev.queueName === curr.queueName &&
           prev.pageSize === curr.pageSize &&
-          prev.pageToken === curr.pageToken,
+          prev.pageToken === curr.pageToken &&
+          prev.orderBy === curr.orderBy,
       ),
-      tap(() => this.isLoading.set(true)),
-      switchMap(({ queueName, pageSize, pageToken }) =>
-        this.resourceService.getQueueJobs(queueName, pageSize, pageToken).pipe(
+      tap(() => this.isFetching.set(true)),
+      switchMap(({ queueName, pageSize, pageToken, orderBy }) =>
+        this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy).pipe(
           tap((resp) => {
-            this.isLoading.set(false);
+            this.isFetching.set(false);
+            this.loadedQueueName.set(queueName);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
             this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
             for (const job of resp?.jobs ?? []) {
@@ -126,7 +144,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
             }
           }),
           catchError(() => {
-            this.isLoading.set(false);
+            this.isFetching.set(false);
+            this.loadedQueueName.set(queueName);
             this.tableControls.totalCount.set(0);
             this.tableControls.nextPageToken.set('');
             return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
@@ -160,20 +179,25 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   constructor() {
     effect(() => {
       this.activeQueueName();
-      untracked(() => {
-        this.tableControls.pageIndex.set(0);
-        this.tableControls.pageToken.set('');
-        this.tableControls.pageTokens.set(['']);
-      });
+      untracked(() => this.resetPage());
     });
+  }
+
+  protected onSortChange(sort: Sort): void {
+    this.sort.set(sort);
+    this.resetPage();
+  }
+
+  private resetPage(): void {
+    this.tableControls.pageIndex.set(0);
+    this.tableControls.pageToken.set('');
+    this.tableControls.pageTokens.set(['']);
   }
 
   protected onPageChange(event: PageEvent): void {
     if (event.pageSize !== this.tableControls.pageSize()) {
       this.tableControls.pageSize.set(event.pageSize);
-      this.tableControls.pageIndex.set(0);
-      this.tableControls.pageToken.set('');
-      this.tableControls.pageTokens.set(['']);
+      this.resetPage();
       return;
     }
 

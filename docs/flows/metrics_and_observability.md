@@ -265,7 +265,14 @@ waiting, and what is available.
 | `GetSubmitQueue`             | What is the ordered admission queue?                                                           |
 | `BatchGetQueueSecondaryData` | Derived per-queue detail, batched.                                                             |
 
-Its design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
+Sorting the jobs table by `author`, `status`, or `priority` applies to the full queue before
+pagination and resets the displayed page. An empty `order_by` preserves the scheduling-oriented
+default display order. Display sorting does not change scheduling priority or the reported queue
+position. Author ordering uses case-sensitive byte order, ascending status order is `RUNNING`,
+`STARTING`, `INITIALIZING`, then `SCHEDULING`, and ties break by work-unit ID then experiment ID
+(ascending).
+
+The ROD Data Provider's design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
 cache; they never hit the Kubernetes API. Active job rows in `GetRunningAndPendingJobs` come from
 Spanner. For a `RUNNING` job, `running_duration_seconds` is `now - WorkUnitStatus.state_update_time`:

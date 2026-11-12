@@ -666,7 +666,7 @@ func (s *MockStorage) ListStatusMessages(ctx context.Context, parent string, pag
 }
 
 // FetchActiveWorkUnitsByQueues mocks fetching active work units by queue names.
-func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error) {
+func (s *MockStorage) FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query ActiveWorkUnitQuery) (*ActiveWorkUnitsResult, error) {
 	return s.ActiveWorkUnitsResult, s.FetchActiveWorkUnitsByQueuesErr
 }
 
