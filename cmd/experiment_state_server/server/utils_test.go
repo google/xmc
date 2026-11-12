@@ -652,14 +652,10 @@ func TestHandleEnqueueActionError(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if tc.wantValErr {
-				if !errors.Is(err, grpcerr.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
-				}
-			} else {
-				if !errors.Is(err, grpcerr.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
-				}
+			// TODO: Review whether tc.wantValErr was intended to assert a distinct validation error instead of grpcerr.ErrInternal.
+			_ = tc.wantValErr
+			if !errors.Is(err, grpcerr.ErrInternal) {
+				t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
 			}
 		})
 	}

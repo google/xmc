@@ -62,15 +62,15 @@ func copyProfile(t *testing.T) Spec {
 
 // replaceInFile replaces the first occurrence of old with new in the chart file rel, failing the
 // test when old is absent so that a stale mutation cannot silently leave the chart valid.
-func replaceInFile(t *testing.T, s Spec, rel, old, new string) {
+func replaceInFile(t *testing.T, s Spec, rel, oldText, newText string) {
 	t.Helper()
 	path := filepath.Join(s.ChartRelPath, rel)
 	data, err := os.ReadFile(path)
 	fatalOnError(t, err)
-	if !strings.Contains(string(data), old) {
-		t.Fatalf("%s does not contain %q", rel, old)
+	if !strings.Contains(string(data), oldText) {
+		t.Fatalf("%s does not contain %q", rel, oldText)
 	}
-	fatalOnError(t, os.WriteFile(path, []byte(strings.Replace(string(data), old, new, 1)), 0o644))
+	fatalOnError(t, os.WriteFile(path, []byte(strings.Replace(string(data), oldText, newText, 1)), 0o644))
 }
 
 // writeFile creates the chart file rel with data.

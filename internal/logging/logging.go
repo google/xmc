@@ -88,7 +88,7 @@ func NewGCPLogger(level slog.Level, projectID string) *slog.Logger {
 		// AddSource adds the source file and line number to the log record.
 		// GCP displays this nicely in the Logs Explorer.
 		AddSource: true,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.LevelKey {
 				a.Key = keySeverity
 			}
@@ -228,5 +228,5 @@ func Debug(ctx context.Context, msg string, args ...any) {
 // Fatal logs an error message with attributes and exits.
 func Fatal(ctx context.Context, msg string, args ...any) {
 	log(ctx, slog.LevelError, msg, args...)
-	os.Exit(1)
+	os.Exit(1) //nolint:revive // Fatal is a process-terminating logger helper; callers rely on immediate exit
 }

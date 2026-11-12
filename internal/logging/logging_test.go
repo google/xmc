@@ -32,7 +32,7 @@ func testHandler(w io.Writer, level slog.Level, projectID string) slog.Handler {
 	return slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level:     level,
 		AddSource: true,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.LevelKey {
 				a.Key = keySeverity
 			}

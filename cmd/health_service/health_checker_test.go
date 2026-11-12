@@ -181,7 +181,6 @@ type mockSpannerHealthClient struct {
 	err     error
 }
 
-//nolint:revive // mock implementing interface with 3 returns
 func (m *mockSpannerHealthClient) QuerySchemaVersion(ctx context.Context) (int64, bool, error) {
 	return m.version, m.dirty, m.err
 }

@@ -356,6 +356,7 @@ func SeedExperimentWithCreator(ctx context.Context, t testing.TB, pool *pgxpool.
 func SeedWorkUnit(ctx context.Context, t testing.TB, pool *pgxpool.Pool, xid, wid int64) {
 	t.Helper()
 	SeedExperiment(ctx, t, pool, xid)
+	//nolint:dupword // SQL VALUES tuple repeats now() for distinct columns
 	const seedWUSQL = `INSERT INTO WorkUnits (
 		Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable,
 		ExecutionCreateTime, ExecutionUpdateTime, ExecutionId, ExecutionMetadata, WorkUnitStatus,

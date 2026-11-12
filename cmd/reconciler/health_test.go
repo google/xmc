@@ -69,7 +69,7 @@ type fakeHealthManager struct {
 	readyzFn   healthzpkg.Checker
 }
 
-func (f *fakeHealthManager) AddHealthzCheck(name string, check healthzpkg.Checker) error {
+func (f *fakeHealthManager) AddHealthzCheck(_ string, check healthzpkg.Checker) error {
 	if f.healthzErr != nil {
 		return f.healthzErr
 	}
@@ -77,7 +77,7 @@ func (f *fakeHealthManager) AddHealthzCheck(name string, check healthzpkg.Checke
 	return nil
 }
 
-func (f *fakeHealthManager) AddReadyzCheck(name string, check healthzpkg.Checker) error {
+func (f *fakeHealthManager) AddReadyzCheck(_ string, check healthzpkg.Checker) error {
 	if f.readyzErr != nil {
 		return f.readyzErr
 	}

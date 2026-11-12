@@ -36,7 +36,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		listener.isRunning.Store(true)
 
 		handler := activeHealthCheck(mockDB, listener)
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -52,7 +52,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		listener.isRunning.Store(false)
 
 		handler := activeHealthCheck(mockDB, listener)
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -70,7 +70,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		listener.isRunning.Store(true)
 
 		handler := activeHealthCheck(mockDB, listener)
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -85,7 +85,7 @@ func TestActiveHealthCheck(t *testing.T) {
 		listener.isRunning.Store(true)
 
 		handler := activeHealthCheck(nil, listener)
-		req := httptest.NewRequest("GET", "/readyz", nil)
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		w := httptest.NewRecorder()
 
 		handler.ServeHTTP(w, req)
@@ -113,7 +113,7 @@ func TestLivenessCheck(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			livenessCheck(tc.listener).ServeHTTP(w, httptest.NewRequest("GET", "/healthz", nil))
+			livenessCheck(tc.listener).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 			if w.Code != tc.want {
 				t.Errorf("livenessCheck() status = %v, want %v", w.Code, tc.want)
 			}

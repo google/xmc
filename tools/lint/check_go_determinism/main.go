@@ -144,8 +144,8 @@ func isLongSleepExpr(expr ast.Expr) bool {
 	return false
 }
 
-// isSuppressed returns true if any line from startLine-1 to endLine has an active
-// nolint directive recorded in nolintLines.
+// isSuppressed returns true if any line from startLine-1 to endLine has an
+// active nolint directive recorded in nolintLines.
 func isSuppressed(startLine, endLine int, nolintLines map[int]bool) bool {
 	for l := startLine - 1; l <= endLine; l++ {
 		if nolintLines[l] {

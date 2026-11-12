@@ -27,7 +27,7 @@ func TestTallyWorkloadLogs(t *testing.T) {
 		want logTally
 	}{
 		{name: "empty", logs: "", want: logTally{}},
-		{name: "complete lines", logs: "WORKLOAD_OK\nWORKLOAD_OK seq=2\nWORKLOAD_FAIL seq=3 got=\n", want: logTally{ok: 2, fail: 1}},
+		{name: "complete lines", logs: "WORKLOAD_OK\nWORKLOAD_OK seq=2\nWORKLOAD_FAIL seq=3 got=\n", want: logTally{ok: 2, fail: 1}}, //nolint:dupword // intentional consecutive log lines in test fixture
 		{name: "partial last line ignored", logs: "WORKLOAD_OK\nWORKLOAD_FA", want: logTally{ok: 1}},
 		{name: "unrelated lines ignored", logs: "curl: (6) Could not resolve host\nWORKLOAD_FAIL curl_exit=6\n  WORKLOAD_OK\n", want: logTally{fail: 1}},
 	}

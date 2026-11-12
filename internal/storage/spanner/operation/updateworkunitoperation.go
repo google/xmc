@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"github.com/kylelemons/godebug/diff"
 	"google.golang.org/protobuf/encoding/prototext"

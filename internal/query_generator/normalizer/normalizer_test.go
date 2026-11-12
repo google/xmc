@@ -280,8 +280,8 @@ func TestNormalize(t *testing.T) {
 		},
 		{
 			name:     "Keywords should not be quoted",
-			input:    "status=error and dangerous \"an unquoted and and or not\"",
-			expected: `status="error" AND "dangerous" "an unquoted and and or not"`,
+			input:    "status=error and dangerous \"an unquoted and and or not\"",   //nolint:dupword // intentional repeated keyword inside quoted phrase
+			expected: `status="error" AND "dangerous" "an unquoted and and or not"`, //nolint:dupword // intentional repeated keyword inside quoted phrase
 		},
 		{
 			name:     "Quoted keyword is treated as string",

@@ -288,7 +288,7 @@ func TestPostgresDSN(t *testing.T) {
 	}{
 		{
 			name:       "DSNs leave out an empty password and default to verify-full",
-			setup:      func(t *testing.T) {},
+			setup:      func(_ *testing.T) {},
 			wantEssDSN: "postgres://xmc@db.internal:5432/ess?sslmode=verify-full",
 			wantXidDSN: "postgres://xmc@db.internal:5432/xid?sslmode=verify-full",
 		},

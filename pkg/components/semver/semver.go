@@ -252,7 +252,7 @@ func parseCoreSegments(canonical, raw string) (coreVersion, error) {
 	if err != nil {
 		return coreVersion{}, err
 	}
-	min, err := parseSegment(parts[1], "minor", raw)
+	minor, err := parseSegment(parts[1], "minor", raw)
 	if err != nil {
 		return coreVersion{}, err
 	}
@@ -260,7 +260,7 @@ func parseCoreSegments(canonical, raw string) (coreVersion, error) {
 	if err != nil {
 		return coreVersion{}, err
 	}
-	return coreVersion{major: maj, minor: min, patch: patch}, nil
+	return coreVersion{major: maj, minor: minor, patch: patch}, nil
 }
 
 // parseSegment parses an individual non-negative numeric segment as uint64.

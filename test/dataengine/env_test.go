@@ -43,7 +43,7 @@ INVALID_LINE_WITHOUT_EQUALS
 	for _, envVar := range []string{"TEST_CLICKHOUSE_PORT", "TEST_CLICKHOUSE_USER"} {
 		envVar := envVar
 		if val, ok := os.LookupEnv(envVar); ok {
-			t.Cleanup(func() { _ = os.Setenv(envVar, val) }) // nolint:determinism // restoring original pre-existing env state
+			t.Cleanup(func() { _ = os.Setenv(envVar, val) }) //nolint:determinism // restoring original pre-existing env state
 		} else {
 			t.Cleanup(func() { _ = os.Unsetenv(envVar) })
 		}

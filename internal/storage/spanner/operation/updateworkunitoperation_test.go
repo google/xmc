@@ -22,7 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
-	anypb "google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/anypb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
