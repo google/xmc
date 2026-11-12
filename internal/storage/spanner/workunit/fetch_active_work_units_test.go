@@ -261,7 +261,6 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 	}
 }
 
-
 func TestActiveQueueFilteringAcrossPages(t *testing.T) {
 	ctx := context.Background()
 	repo := newEmulatorStorage(ctx, t)

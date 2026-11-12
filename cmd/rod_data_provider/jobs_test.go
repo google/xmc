@@ -687,7 +687,6 @@ func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
 	}
 }
 
-
 func TestGetRunningAndPendingJobs_Filter(t *testing.T) {
 	tests := []struct {
 		name      string

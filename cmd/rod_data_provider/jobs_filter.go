@@ -82,7 +82,7 @@ func applyJobsFilterPredicate(result *storage.ActiveWorkUnitFilter, field string
 	switch field {
 	case "author":
 		if op != fpb.Restriction_EQUALS && op != fpb.Restriction_HAS {
-			return fmt.Errorf("author supports only = or :")
+			return fmt.Errorf("author supports only = or : operator")
 		}
 		if result.HasAuthor {
 			return fmt.Errorf("author may appear only once")

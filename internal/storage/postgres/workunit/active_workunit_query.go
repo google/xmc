@@ -15,8 +15,6 @@
 package workunit
 
 import (
-	"strconv"
-
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
@@ -72,12 +70,19 @@ func activeWorkUnitPredicates(filter storage.ActiveWorkUnitFilter, argOffset int
 	var args []any
 	nextArg := argOffset
 	if filter.HasAuthor {
-		parts = append(parts, safesql.New(" AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER($"+strconv.Itoa(nextArg)+")) > 0"))
+		parts = append(parts, safesql.Concat(
+			safesql.New(" AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER("),
+			safesql.NewBindingParam("$", uint64(nextArg)),
+			safesql.New(")) > 0"),
+		))
 		args = append(args, filter.AuthorSubstring)
 		nextArg++
 	}
 	if filter.Status != essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED {
-		parts = append(parts, safesql.New(" AND wu.ExecutionState = $"+strconv.Itoa(nextArg)))
+		parts = append(parts, safesql.Concat(
+			safesql.New(" AND wu.ExecutionState = "),
+			safesql.NewBindingParam("$", uint64(nextArg)),
+		))
 		args = append(args, int32(filter.Status))
 	}
 	return safesql.Concat(parts...), args

@@ -408,7 +408,6 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 	}
 }
 
-
 func TestActiveQueueFilteringAcrossPages(t *testing.T) {
 	ctx := t.Context()
 	_, pool := postgrestest.Setup(ctx, t)
