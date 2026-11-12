@@ -32,7 +32,8 @@ import (
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.
 func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest) (*spb.GetRunningAndPendingJobsResponse, error) {
-	if err := validateJobsRequest(ctx, req, s.workUnitStore); err != nil {
+	query, err := validateJobsRequest(ctx, req, s.workUnitStore)
+	if err != nil {
 		return nil, err
 	}
 
@@ -46,7 +47,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}
 	pageSize = min(pageSize, 100)
 
-	result, activeResources, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken())
+	result, activeResources, err := fetchJobsAndAllocations(ctx, s.workUnitStore, targetQueues, pageSize, req.GetPageToken(), query)
 	if err != nil {
 		logging.Error(ctx, "failed to fetch active jobs from storage", "cluster_queue_name", req.GetQueueName(), "target_queues", targetQueues, "error", err)
 		if errors.Is(err, storage.ErrInvalidPageToken) {
@@ -72,12 +73,12 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 	}, nil
 }
 
-func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
+func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQueues []string, pageSize int32, pageToken string, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, []storage.ActiveWorkUnitResources, error) {
 	var result *storage.ActiveWorkUnitsResult
 	var activeResources []storage.ActiveWorkUnitResources
 	err := store.WithReadOnlyWorkUnitSnapshot(ctx, func(txCtx context.Context, repo storage.WorkUnitSnapshotRepository) error {
 		var err error
-		if result, err = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken); err != nil {
+		if result, err = repo.FetchActiveWorkUnitsByQueues(txCtx, targetQueues, pageSize, pageToken, query); err != nil {
 			return fmt.Errorf("fetch active work units: %w", err)
 		}
 		if activeResources, err = repo.FetchActiveWorkUnitResources(txCtx, targetQueues); err != nil {
@@ -88,20 +89,26 @@ func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQ
 	return result, activeResources, err
 }
 
-func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {
+func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) (storage.ActiveWorkUnitQuery, error) {
+	query := storage.ActiveWorkUnitQuery{}
 	if err := ctx.Err(); err != nil {
-		return status.FromContextError(err).Err()
+		return query, status.FromContextError(err).Err()
 	}
 	if req == nil || req.GetQueueName() == "" {
-		return status.Error(codes.InvalidArgument, "queue_name is required")
+		return query, status.Error(codes.InvalidArgument, "queue_name is required")
 	}
 	if req.GetPageSize() < 0 {
-		return status.Error(codes.InvalidArgument, "page_size cannot be negative")
+		return query, status.Error(codes.InvalidArgument, "page_size cannot be negative")
 	}
+	orderBy, err := storage.ActiveWorkUnitOrderBy(req.GetOrderBy())
+	if err != nil {
+		return query, status.Error(codes.InvalidArgument, err.Error())
+	}
+	query.OrderBy = orderBy
 	if store == nil {
-		return status.Error(codes.Unavailable, "work unit store is uninitialized")
+		return query, status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
-	return nil
+	return query, nil
 }
 
 func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []storage.ActiveWorkUnit, nextPageToken string) {

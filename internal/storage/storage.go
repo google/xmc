@@ -190,7 +190,7 @@ type WorkUnitStore interface {
 	ListWorkUnitExecutions(ctx context.Context, xid int64, wid int64) ([]*essmsgpb.WorkUnitExecution, error)
 
 	// FetchActiveWorkUnitsByQueues retrieves active work units associated with the requested queue names.
-	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query ActiveWorkUnitQuery) (*ActiveWorkUnitsResult, error)
 
 	// WithReadOnlyWorkUnitSnapshot runs fn with a repository whose active work unit reads all come
 	// from one consistent read-only snapshot.
@@ -236,7 +236,7 @@ type ActiveWorkUnitResources struct {
 
 // WorkUnitSnapshotRepository defines active work unit reads bound to a single read-only snapshot.
 type WorkUnitSnapshotRepository interface {
-	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string) (*ActiveWorkUnitsResult, error)
+	FetchActiveWorkUnitsByQueues(ctx context.Context, queueNames []string, pageSize int32, pageToken string, query ActiveWorkUnitQuery) (*ActiveWorkUnitsResult, error)
 	// FetchActiveWorkUnitResources returns the creator, executable and state of every active work
 	// unit (SCHEDULING, INITIALIZING, STARTING or RUNNING) in the requested queues. The result is
 	// unordered and not paginated; empty queueNames returns an empty slice.

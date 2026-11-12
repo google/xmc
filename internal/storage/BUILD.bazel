@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "storage",
     srcs = [
+        "active_workunit_order.go",
         "pause.go",
         "storage.go",
         "test_utils.go",
@@ -42,6 +43,7 @@ go_library(
 go_test(
     name = "storage_test",
     srcs = [
+        "active_workunit_order_test.go",
         "test_utils_test.go",
         "workunit_errors_test.go",
     ],
