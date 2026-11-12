@@ -371,8 +371,8 @@ func TestConfigureLogger_SetsDefaultForControllerRuntimeContexts(t *testing.T) {
 	}
 }
 
-func TestValidateParsedConfig_Nil(t *testing.T) {
-	if err := validateParsedConfig(nil); err == nil {
-		t.Error("validateParsedConfig(nil) = nil, want non-nil error")
+func TestFinalizeConfig_Nil(t *testing.T) {
+	if err := finalizeConfig(nil); err == nil {
+		t.Error("finalizeConfig(nil) = nil, want non-nil error")
 	}
 }

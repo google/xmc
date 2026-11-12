@@ -87,8 +87,8 @@ type ComponentAccess = bridge.ComponentAccess
 // ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
 type ComponentCondition = bridge.ComponentCondition
 
-// validateParsedConfig checks required Config fields, resolves cluster identity, and validates timings.
-func validateParsedConfig(cfg *Config) error {
+// finalizeConfig checks required Config fields, resolves cluster identity, and validates timings.
+func finalizeConfig(cfg *Config) error {
 	if cfg == nil {
 		return errors.New("config cannot be nil")
 	}
@@ -179,7 +179,7 @@ func ParseConfig(args []string) (*Config, error) {
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
 	}
-	if err := validateParsedConfig(cfg); err != nil {
+	if err := finalizeConfig(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
