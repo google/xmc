@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 @if (isVisible$ | async) {
-  <div class="{{ message().severity?.toLowerCase() || 'info' }}-message-container">
-    <div class="{{ lineClass() }}"></div>
-    <div class="{{ message().severity?.toLowerCase() || 'info' }}-message">
+  <div [class]="containerClass()">
+    <div [class]="lineClass()"></div>
+    <div [class]="messageClass()">
       <div class="text">{{ message().userFacingText }}</div>
       @if (message().auxiliaryInfo?.queueInfo; as queueInfo) {
         <div class="queue-info">

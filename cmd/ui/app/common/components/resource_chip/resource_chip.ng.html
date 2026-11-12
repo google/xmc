@@ -13,13 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<mat-chip
-  [class.grey]="
-    resourceType() === ResourceType.CPU ||
-    resourceType() === ResourceType.MEMORY ||
-    resourceType() === ResourceType.UNKNOWN
-  "
-  [class.green]="resourceType() === ResourceType.GPU || resourceType() === ResourceType.TPU"
->
+<mat-chip [class.grey]="isGreyChip()" [class.green]="isGreenChip()">
   {{ text() }}
 </mat-chip>

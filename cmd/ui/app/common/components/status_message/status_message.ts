@@ -103,6 +103,12 @@ export class StatusMessage {
     return 'blue-vertical-line';
   });
 
+  protected readonly severityPrefix = computed(
+    () => this.message().severity?.toLowerCase() || 'info',
+  );
+  protected readonly containerClass = computed(() => `${this.severityPrefix()}-message-container`);
+  protected readonly messageClass = computed(() => `${this.severityPrefix()}-message`);
+
   protected readonly urlsForWidget = computed<ProcessedUrl[]>(() => {
     const url = this.message().userFacingUrl;
     if (!url?.url) {

@@ -27,7 +27,7 @@ import { bootstrap, cleanState, setupModule } from '../testing/test';
 import { WorkUnitPage } from './work_unit_page';
 
 describe('WorkUnitPage Component', () => {
-  const state = cleanState(() => {
+  cleanState(() => {
     const workUnitsService = jasmine.createSpyObj<WorkUnitsService>('WorkUnitsService', [
       'getWorkUnit',
       'searchWorkUnits',

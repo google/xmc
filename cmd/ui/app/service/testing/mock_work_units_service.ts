@@ -33,7 +33,7 @@ import { WorkUnitsService } from '../work_units_service';
 @Injectable({ providedIn: 'root' })
 export class MockWorkUnitsService extends WorkUnitsService {
   override searchWorkUnits(
-    request: api.ListWorkUnitsRequest,
+    _request: api.ListWorkUnitsRequest,
   ): Observable<api.ListWorkUnitsResponse> {
     return of({
       workUnits: WORK_UNIT_LIST,
@@ -60,11 +60,11 @@ export class MockWorkUnitsService extends WorkUnitsService {
     return of({ name: `${name.xid}/${name.wid}`, done: true });
   }
 
-  override batchStopWorkUnits(xid: string): Observable<Operation> {
+  override batchStopWorkUnits(_xid: string): Observable<Operation> {
     return of({ done: true });
   }
 
-  override batchRestartWorkUnits(xid: string): Observable<Operation> {
+  override batchRestartWorkUnits(_xid: string): Observable<Operation> {
     return of({ done: true });
   }
 }

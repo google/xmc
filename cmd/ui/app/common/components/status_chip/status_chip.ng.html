@@ -14,19 +14,14 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 <mat-chip
-  [class.green]="status() === StatusOption.SUCCESS || status() === StatusOption.COMPLETED"
-  [class.light-green]="status() === StatusOption.STARTING"
-  [class.red]="status() === StatusOption.FAILED"
-  [class.blue]="status() === StatusOption.RUNNING || status() === StatusOption.NOT_RUNNING"
-  [class.yellow]="
-    status() === StatusOption.PENDING ||
-    status() === StatusOption.INITIALIZING ||
-    status() === StatusOption.UNKNOWN ||
-    status() === StatusOption.RESTARTING
-  "
-  [class.grey]="status() === StatusOption.DESCHEDULING || status() === StatusOption.SCHEDULING"
-  [class.orange]="status() === StatusOption.SCHEDULING_PAUSED"
-  [class.black]="status() === StatusOption.STOPPING || status() === StatusOption.STOPPED"
+  [class.green]="statusColor() === 'green'"
+  [class.light-green]="statusColor() === 'light-green'"
+  [class.red]="statusColor() === 'red'"
+  [class.blue]="statusColor() === 'blue'"
+  [class.yellow]="statusColor() === 'yellow'"
+  [class.grey]="statusColor() === 'grey'"
+  [class.orange]="statusColor() === 'orange'"
+  [class.black]="statusColor() === 'black'"
 >
   {{ replicas() }} {{ status() }}
 </mat-chip>

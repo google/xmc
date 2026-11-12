@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
 
 /** The resource type */
@@ -37,4 +37,16 @@ export class ResourceChip {
   readonly text = input.required<string>();
 
   readonly ResourceType = ResourceType;
+
+  protected readonly isGreyChip = computed(() => {
+    const type = this.resourceType();
+    return (
+      type === ResourceType.CPU || type === ResourceType.MEMORY || type === ResourceType.UNKNOWN
+    );
+  });
+
+  protected readonly isGreenChip = computed(() => {
+    const type = this.resourceType();
+    return type === ResourceType.GPU || type === ResourceType.TPU;
+  });
 }

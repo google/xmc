@@ -73,6 +73,10 @@ export class SmartResourceFinderComponent implements OnInit {
     this.emitQuery();
   }
 
+  protected getRemoveRowAriaLabel(resourceType: string, index: number): string {
+    return `Remove ${resourceType || 'resource filter'} (row ${index + 1})`;
+  }
+
   protected updateRowAmount(index: number, val: number | string | null | undefined) {
     const amountNum = typeof val === 'number' ? val : Number(val);
     const current = this.rows()[index];
