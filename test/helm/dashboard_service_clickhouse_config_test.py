@@ -230,48 +230,57 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         self.assertEqual(rendered_clickhouse_env_vars(manifest), set())
 
     def test_xid_and_component_config_remain_wired(self) -> None:
-        """Guards the pre-existing ConfigMap contract read by cmd/dashboard_service/config.go."""
+        """Guards the ConfigMap contract read by cmd/dashboard_service/config.go."""
         manifest = render_template(
             DASHBOARD_CONFIGMAP, {"dashboardServiceDeployment.enabled": "true"}
         )
 
         self.assertIn("dashboard_xid_service_addr:", manifest)
-        self.assertIn('enable_components: "false"', manifest)
         self.assertIn("components_namespace:", manifest)
+        self.assertNotIn("enable_components", manifest)
 
-    def test_configmap_wires_enable_components_when_enabled(self) -> None:
-        """Enabling componentsDeployment propagates enable_components=true to dashboard-config."""
-        manifest = render_template(
-            DASHBOARD_CONFIGMAP,
-            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "true"},
+    def test_components_rbac_rendered_whenever_dashboard_enabled(self) -> None:
+        """The reader Role renders whenever dashboard is enabled, and omits when disabled."""
+        self.assertNotIn(
+            "dashboard-service-components-reader",
+            render_template(
+                DASHBOARD_SERVICEACCOUNT, {"dashboardServiceDeployment.enabled": "false"}
+            ),
         )
-        self.assertIn('enable_components: "true"', manifest)
-
-    def test_components_rbac_omitted_without_components(self) -> None:
-        """The reader Role is only rendered when dashboard and components are both on."""
-        for values in (
-            {"dashboardServiceDeployment.enabled": "true", "componentsDeployment.enabled": "false"},
-            {"dashboardServiceDeployment.enabled": "true"},
+        for extra in (
+            {},
+            {"componentsDeployment.enabled": "false"},
+            {"componentsDeployment": "null"},
         ):
-            self.assertNotIn(
-                "dashboard-service-components-reader",
-                render_template(DASHBOARD_SERVICEACCOUNT, values),
+            manifest = render_template(
+                DASHBOARD_SERVICEACCOUNT,
+                {"dashboardServiceDeployment.enabled": "true", "metrics.enabled": "false", **extra},
             )
+            self.assertIn("name: dashboard-service-components-reader", manifest)
+            self.assertIn("name: dashboard-service-components-reader-binding", manifest)
+            self.assertIn(
+                '  - apiGroups: ["xmc.dev"]\n'
+                '    resources: ["components"]\n'
+                '    resourceNames: ["clickhouse", "bigquery"]\n'
+                '    verbs: ["get"]',
+                manifest,
+            )
+            self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
 
-    def test_components_rbac_rendered_when_components_enabled_even_without_metrics(self) -> None:
-        """The reader Role renders when components are on, even if metrics.enabled is false."""
-        manifest = render_template(
-            DASHBOARD_SERVICEACCOUNT,
-            {
-                "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
-                "metrics.enabled": "false",
-            },
-        )
-        self.assertIn("name: dashboard-service-components-reader", manifest)
-        self.assertIn("name: dashboard-service-components-reader-binding", manifest)
-        self.assertIn('resourceNames: ["clickhouse", "bigquery"]', manifest)
-        self.assertIn('resourceNames: ["clickhouse-secret"]', manifest)
+    def test_actuator_clusterrole_unconditionally_grants_components_read(self) -> None:
+        """Actuator ClusterRole always grants get/list/watch on xmc.dev components."""
+        for values in (
+            {},
+            {"componentsDeployment.enabled": "false"},
+            {"componentsDeployment": "null"},
+        ):
+            manifest = render_template("templates/actuator/clusterrole.yaml", values)
+            self.assertIn(
+                '- apiGroups: ["xmc.dev"]\n'
+                '  resources: ["components"]\n'
+                '  verbs: ["get", "list", "watch"]',
+                manifest,
+            )
 
     def test_components_rbac_grants_component_and_secret_get_when_csi_disabled(self) -> None:
         """Without CSI, the Role grants get on clickhouse/bigquery Component CRs and password Secret."""
@@ -279,7 +288,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_SERVICEACCOUNT,
             {
                 "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
                 "metrics.enabled": "true",
             },
         )
@@ -293,7 +301,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
                 DASHBOARD_SERVICEACCOUNT,
                 {
                     "dashboardServiceDeployment.enabled": "true",
-                    "componentsDeployment.enabled": "true",
                     "metrics.enabled": "true",
                     "metrics.clickhouse.secretName": "custom-ch-secret",
                 },
@@ -306,7 +313,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
             DASHBOARD_SERVICEACCOUNT,
             {
                 "dashboardServiceDeployment.enabled": "true",
-                "componentsDeployment.enabled": "true",
                 "metrics.enabled": "true",
                 "secrets.csi.enabled": "true",
             },
@@ -319,7 +325,6 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
         """Overriding metrics.clickhouse.secretName updates the Secret, env secretKeyRef, and Role."""
         values = {
             "dashboardServiceDeployment.enabled": "true",
-            "componentsDeployment.enabled": "true",
             "metrics.enabled": "true",
             "metrics.clickhouse.secretName": "custom-ch-secret",
             "metrics.clickhouse.password": "s3cret",

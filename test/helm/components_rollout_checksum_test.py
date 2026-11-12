@@ -32,6 +32,33 @@ BASE_VALUES: dict[str, str] = {
     "healthServiceDeployment.enabled": "true",
 }
 
+CONFIG_MUTATIONS: tuple[tuple[str, str, dict[str, str], str | None], ...] = (
+    (
+        "templates/ess/deployment.yaml",
+        "experiment-state-server-deployment",
+        {"projectId": "mutated-project-id"},
+        None,
+    ),
+    (
+        "templates/dashboard-service/deployment.yaml",
+        "dashboard-service-deployment",
+        {},
+        "tenant-b",
+    ),
+    (
+        "templates/actuator/deployment.yaml",
+        "actuator-deployment",
+        {"domainSuffix": "mutated.example.com"},
+        None,
+    ),
+    (
+        "templates/health-service/deployment.yaml",
+        "health-service-deployment",
+        {"healthService.cacheTTL": "45s"},
+        None,
+    ),
+)
+
 POD_CONFIG_CHECKSUM_PATTERN = re.compile(
     r"template:\s*\n\s*metadata:\s*\n\s*annotations:(?:\s*\n\s*\S+:.*)*?\n\s*checksum/config:\s*([0-9a-f]{64})\b"
 )
@@ -48,36 +75,34 @@ def pod_config_checksum(manifest: str) -> str:
 
 
 class ComponentsRolloutChecksumTest(unittest.TestCase):
-    """Verifies toggling componentsDeployment.enabled rotates pod checksum/config annotations."""
+    """Verifies ConfigMap mutations rotate pod checksum/config annotations."""
 
     @classmethod
     def setUpClass(cls) -> None:
         require_helm()
 
-    def test_toggling_components_deployment_changes_pod_config_checksum(self) -> None:
-        """Flipping componentsDeployment.enabled from false to true triggers a pod rollout."""
-        disabled_values = {**BASE_VALUES, "componentsDeployment.enabled": "false"}
-        enabled_values = {**BASE_VALUES, "componentsDeployment.enabled": "true"}
-
-        for template, deployment_name in COMPONENT_AWARE_DEPLOYMENTS:
+    def test_mutating_configmap_inputs_rotates_pod_config_checksum(self) -> None:
+        """Mutating each deployment's ConfigMap inputs rotates its pod checksum/config digest."""
+        for template, deployment_name, override, mutated_ns in CONFIG_MUTATIONS:
             with self.subTest(deployment=deployment_name, template=template):
-                disabled_manifest = render_template(template, disabled_values)
-                enabled_manifest = render_template(template, enabled_values)
+                baseline_manifest = render_template(template, BASE_VALUES)
+                mutated_manifest = render_template(
+                    template, {**BASE_VALUES, **override}, namespace=mutated_ns
+                )
 
-                self.assertIn(f"name: {deployment_name}", disabled_manifest)
-                self.assertIn(f"name: {deployment_name}", enabled_manifest)
-
-                disabled_checksum = pod_config_checksum(disabled_manifest)
-                enabled_checksum = pod_config_checksum(enabled_manifest)
-                self.assertNotEqual(disabled_checksum, enabled_checksum)
+                self.assertIn(f"name: {deployment_name}", baseline_manifest)
+                self.assertIn(f"name: {deployment_name}", mutated_manifest)
+                self.assertNotEqual(
+                    pod_config_checksum(baseline_manifest),
+                    pod_config_checksum(mutated_manifest),
+                )
 
     def test_pod_config_checksum_is_deterministic_for_identical_values(self) -> None:
         """Repeated renders with identical values produce the same checksum/config digest."""
-        values = {**BASE_VALUES, "componentsDeployment.enabled": "true"}
         for template, deployment_name in COMPONENT_AWARE_DEPLOYMENTS:
             with self.subTest(deployment=deployment_name):
-                first = pod_config_checksum(render_template(template, values))
-                second = pod_config_checksum(render_template(template, values))
+                first = pod_config_checksum(render_template(template, BASE_VALUES))
+                second = pod_config_checksum(render_template(template, BASE_VALUES))
                 self.assertEqual(first, second)
 
     def test_null_components_and_metrics_blocks_render_safely(self) -> None:

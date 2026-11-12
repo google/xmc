@@ -95,18 +95,15 @@ type DriftStore interface {
 // DriftEvaluator detects component drift and experimental component usage for active experiments
 // and caches results per experiment for a short TTL.
 type DriftEvaluator struct {
-	store            DriftStore
-	enableComponents bool
-	driftCache       *driftCache
+	store      DriftStore
+	driftCache *driftCache
 }
 
-// NewDriftEvaluator creates a DriftEvaluator backed by store. When enableComponents is false,
-// Evaluate is a no-op.
-func NewDriftEvaluator(store DriftStore, enableComponents bool) *DriftEvaluator {
+// NewDriftEvaluator creates a DriftEvaluator backed by store.
+func NewDriftEvaluator(store DriftStore) *DriftEvaluator {
 	return &DriftEvaluator{
-		store:            store,
-		enableComponents: enableComponents,
-		driftCache:       newDriftCache(),
+		store:      store,
+		driftCache: newDriftCache(),
 	}
 }
 
@@ -114,10 +111,7 @@ func NewDriftEvaluator(store DriftStore, enableComponents bool) *DriftEvaluator 
 // from live component catalog generations or reference experimental components. If drift or
 // experimental component usage is detected, warning notices are attached to the status.
 func (e *DriftEvaluator) Evaluate(ctx context.Context, xid int64, expStatus *essmsgpb.ExperimentStatus) error {
-	if !e.enableComponents {
-		return nil
-	}
-	if expStatus == nil || expStatus.GetActiveState() != essmsgpb.ExperimentStatus_ACTIVE {
+	if e == nil || e.store == nil || expStatus == nil || expStatus.GetActiveState() != essmsgpb.ExperimentStatus_ACTIVE {
 		return nil
 	}
 

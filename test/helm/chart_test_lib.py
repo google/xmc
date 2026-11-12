@@ -64,9 +64,10 @@ def find_chart_dir() -> str:
     return os.path.dirname(find_repo_file(os.path.join("deploy", "helm", "Chart.yaml")))
 
 
-def render_template(show_only: str, values: dict[str, str]) -> str:
+def render_template(show_only: str, values: dict[str, str], *, namespace: str | None = None) -> str:
     """Renders a single chart template and returns the raw manifest text."""
-    return _render(values, "--show-only", show_only)
+    extra = ("--namespace", namespace) if namespace else ()
+    return _render(values, "--show-only", show_only, *extra)
 
 
 def render_chart(values: dict[str, str]) -> str:

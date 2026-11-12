@@ -18,7 +18,6 @@ parameters:
   minReplicas: 1
 minReplicas: 2
 maxReplicas: 10
-enableComponents: true
 serviceAccountName: "default"
 projectId: ""
 sasl: { enabled: false, mechanism: "SCRAM-SHA-256", secretName: "" }

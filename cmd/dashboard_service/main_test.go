@@ -256,6 +256,7 @@ func TestInitDataEngine_SkippedWhenClickHouseIsNotConfigured(t *testing.T) {
 	// readiness would hold every one of their pods out of the service endpoints.
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("CLICKHOUSE_HOST", "")
+	crreadertest.IsolateInvalidKubeconfig(t)
 
 	if provider := initDataEngine(context.Background(), &server.Config{}); provider != nil {
 		t.Errorf("initDataEngine() = %v, want nil when ClickHouse is not configured", provider)
@@ -268,6 +269,7 @@ func TestInitDataEngine_SurvivesUnreachableClickHouse(t *testing.T) {
 	t.Setenv("CLICKHOUSE_DSN", "")
 	t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 	t.Setenv("CLICKHOUSE_PORT", "1")
+	crreadertest.IsolateInvalidKubeconfig(t)
 
 	provider := initDataEngine(context.Background(), &server.Config{})
 
@@ -288,7 +290,7 @@ func TestChartDataEngine_NilProviderStaysNilInterface(t *testing.T) {
 }
 
 func TestChartDataEngine_WrapsProvider(t *testing.T) {
-	provider := dataengine.NewDynamicProvider(buildClickHouseResolver(false, "", nil))
+	provider := dataengine.NewDynamicProvider(buildClickHouseResolver("", &lazyComponentGetter{}))
 
 	got := chartDataEngine(provider)
 
@@ -438,18 +440,11 @@ func TestResolveClickHouseWithSource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	t.Run("surfaces initialization error", func(t *testing.T) {
-		resolve := resolveClickHouseWithSource(componentconfig.Source{}, errors.New("k8s init failed"))
-		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "k8s init failed") {
-			t.Errorf("resolve() error = %v, want k8s init failed", err)
-		}
-	})
-
 	t.Run("surfaces component resolution error", func(t *testing.T) {
 		resolve := resolveClickHouseWithSource(componentconfig.Source{
 			Enabled: true,
 			Getter:  &crreadertest.FakeGetter{Err: errors.New("rbac forbidden")},
-		}, nil)
+		})
 		if _, _, err := resolve(ctx); err == nil || !strings.Contains(err.Error(), "rbac forbidden") {
 			t.Errorf("resolve() error = %v, want rbac forbidden", err)
 		}
@@ -457,28 +452,16 @@ func TestResolveClickHouseWithSource(t *testing.T) {
 }
 
 func TestBuildClickHouseResolver_InvalidKubeconfigSurfacesErrorOnResolve(t *testing.T) {
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	crreadertest.IsolateInvalidKubeconfig(t)
 
-	resolve := buildClickHouseResolver(true, "xmc", nil)
+	resolve := buildClickHouseResolver("xmc", &lazyComponentGetter{})
 	if _, _, err := resolve(context.Background()); err == nil {
 		t.Errorf("resolve() with invalid kubeconfig succeeded, want error")
 	}
 }
 
 func TestBuildClickHouseResolver_UsesCustomGetter(t *testing.T) {
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	crreadertest.IsolateInvalidKubeconfig(t)
 
 	pwFile := t.TempDir() + "/ch-pw"
 	if err := os.WriteFile(pwFile, []byte("secret-pw\n"), 0600); err != nil {
@@ -496,7 +479,7 @@ func TestBuildClickHouseResolver_UsesCustomGetter(t *testing.T) {
 	}
 	customGetter := &crreadertest.FakeGetter{Component: cr}
 
-	resolve := buildClickHouseResolver(true, "xmc", customGetter)
+	resolve := buildClickHouseResolver("xmc", &lazyComponentGetter{getter: customGetter})
 	fp, connect, err := resolve(context.Background())
 	if err != nil {
 		t.Fatalf("resolve() with customGetter error: %v", err)
@@ -559,7 +542,6 @@ func TestClickHouseProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	var dialedAddrs [][]string
 	resolve := resolveClickHouseWithDialer(
 		componentconfig.Source{Enabled: true, Namespace: "xmc", Getter: getter, Secrets: secrets},
-		nil,
 		func(ctx context.Context, opts *clickhouse.Options) (dataengine.ClickHouseConn, error) {
 			dialedAddrs = append(dialedAddrs, opts.Addr)
 			return stubClickHouseConn{}, nil
@@ -597,15 +579,16 @@ func TestIsClickHouseExpected(t *testing.T) {
 
 	t.Run("returns true when static environment is configured", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
-		if !isClickHouseExpected(ctx, false, "xmc", nil) {
+		if !isClickHouseExpected(ctx, "xmc", &lazyComponentGetter{}) {
 			t.Errorf("isClickHouseExpected() = false, want true")
 		}
 	})
 
-	t.Run("returns false when static env unset and components disabled", func(t *testing.T) {
+	t.Run("returns false when static env unset and kubeconfig unavailable", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
-		if isClickHouseExpected(ctx, false, "xmc", nil) {
+		crreadertest.IsolateInvalidKubeconfig(t)
+		if isClickHouseExpected(ctx, "xmc", &lazyComponentGetter{}) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -614,7 +597,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "")
 		t.Setenv("CLICKHOUSE_DSN", "")
 		getter := &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")}
-		if isClickHouseExpected(ctx, true, "xmc", getter) {
+		if isClickHouseExpected(ctx, "xmc", &lazyComponentGetter{getter: getter}) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -629,7 +612,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 			},
 		}
 		getter := &crreadertest.FakeGetter{Component: u}
-		if isClickHouseExpected(ctx, true, "xmc", getter) {
+		if isClickHouseExpected(ctx, "xmc", &lazyComponentGetter{getter: getter}) {
 			t.Errorf("isClickHouseExpected() = true, want false")
 		}
 	})
@@ -644,7 +627,7 @@ func TestIsClickHouseExpected(t *testing.T) {
 			},
 		}
 		getter := &crreadertest.FakeGetter{Component: u}
-		if !isClickHouseExpected(ctx, true, "xmc", getter) {
+		if !isClickHouseExpected(ctx, "xmc", &lazyComponentGetter{getter: getter}) {
 			t.Errorf("isClickHouseExpected() = false, want true")
 		}
 	})
@@ -679,7 +662,6 @@ func TestInitDataEngineWithGetter_UnconfiguredReturnsNil(t *testing.T) {
 	t.Setenv("BIGQUERY_DATASET", "")
 	t.Setenv("METRICS_STORE", "")
 	serverCfg := &server.Config{
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 	getter := &countingComponentGetter{
@@ -704,7 +686,6 @@ func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
 	t.Setenv("METRICS_STORE", "")
 	serverCfg := &server.Config{
-		EnableComponents:    true,
 		ComponentsNamespace: "xmc",
 	}
 	bqCR := &unstructured.Unstructured{
@@ -792,6 +773,7 @@ func TestBigQueryMetricsStoreSelectionAndBuilder(t *testing.T) {
 
 	t.Setenv("CLICKHOUSE_HOST", "")
 	t.Setenv("CLICKHOUSE_DSN", "")
+	crreadertest.IsolateInvalidKubeconfig(t)
 	if p := initDataEngineWithGetter(ctx, &server.Config{MetricsStore: "invalid"}, nil); p != nil {
 		t.Errorf("initDataEngineWithGetter(invalid) = %v, want nil", p)
 	}
@@ -811,16 +793,12 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 	t.Setenv("BIGQUERY_DATASET", "")
 	t.Setenv("BIGQUERY_PROJECT_ID", "")
 	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	_ = os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600)
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	crreadertest.IsolateInvalidKubeconfig(t)
 
-	if _, _, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx); err == nil {
+	if _, _, err := buildBigQueryResolver("xmc", "proj-1", &lazyComponentGetter{})(ctx); err == nil {
 		t.Error("buildBigQueryResolver() with invalid kubeconfig succeeded, want error")
 	}
-	if isBigQueryExpected(ctx, true, "xmc", nil) {
+	if isBigQueryExpected(ctx, "xmc", &lazyComponentGetter{}) {
 		t.Error("isBigQueryExpected() with invalid kubeconfig = true, want false")
 	}
 
@@ -837,10 +815,11 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 		},
 	}
 	getter := &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"bigquery": cr}}
-	if !isBigQueryExpected(ctx, true, "xmc", getter) {
+	lazyGetter := &lazyComponentGetter{getter: getter}
+	if !isBigQueryExpected(ctx, "xmc", lazyGetter) {
 		t.Error("isBigQueryExpected() with enabled Component/bigquery = false, want true")
 	}
-	if fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", getter)(ctx); err != nil || fp == "" || build == nil {
+	if fp, build, err := buildBigQueryResolver("xmc", "proj-1", lazyGetter)(ctx); err != nil || fp == "" || build == nil {
 		t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want non-empty fp and builder", fp, build, err)
 	}
 
@@ -874,18 +853,12 @@ func TestBigQueryProviderRebuildsWhenComponentCRChanges(t *testing.T) {
 
 func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("KUBERNETES_SERVICE_HOST", "")
-	t.Setenv("KUBERNETES_SERVICE_PORT", "")
-	badKubeconfig := t.TempDir() + "/bad-kubeconfig"
-	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
-		t.Fatalf("failed to write invalid kubeconfig: %v", err)
-	}
-	t.Setenv("KUBECONFIG", badKubeconfig)
+	crreadertest.IsolateInvalidKubeconfig(t)
 
 	t.Run("clickhouse static fallback", func(t *testing.T) {
 		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
 		t.Setenv("CLICKHOUSE_PORT", "9000")
-		fp, connect, err := buildClickHouseResolver(true, "xmc", nil)(ctx)
+		fp, connect, err := buildClickHouseResolver("xmc", &lazyComponentGetter{})(ctx)
 		if err != nil || fp == "" || connect == nil {
 			t.Fatalf("buildClickHouseResolver() = (%q, %v, %v), want static fallback", fp, connect, err)
 		}
@@ -894,18 +867,104 @@ func TestResolvers_FallBackToStaticEnvWhenKubeconfigUnavailable(t *testing.T) {
 	t.Run("bigquery static fallback", func(t *testing.T) {
 		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
 		t.Setenv("BIGQUERY_TABLE", "xmc_metrics")
-		fp, build, err := buildBigQueryResolver(true, "xmc", "proj-1", nil)(ctx)
+		fp, build, err := buildBigQueryResolver("xmc", "proj-1", &lazyComponentGetter{})(ctx)
 		if err != nil || fp == "" || build == nil {
 			t.Fatalf("buildBigQueryResolver() = (%q, %v, %v), want static fallback", fp, build, err)
 		}
 	})
 
-	t.Run("isComponentExpected logs and returns true on non-NotFound error", func(t *testing.T) {
+	t.Run("Forbidden fails closed both without and with static env", func(t *testing.T) {
 		forbiddenGetter := &crreadertest.FakeGetter{
-			Err: apierrors.NewForbidden(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "bigquery", errors.New("denied")),
+			Err: apierrors.NewForbidden(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse", errors.New("denied")),
 		}
-		if !isComponentExpected(ctx, "xmc", "bigquery", forbiddenGetter) {
+		lazyForbidden := &lazyComponentGetter{getter: forbiddenGetter}
+		if !isComponentExpected(ctx, "xmc", "clickhouse", lazyForbidden) {
 			t.Error("isComponentExpected() on Forbidden = false, want true")
+		}
+
+		// Without static env: RBAC Forbidden holds readiness closed rather than permanently returning nil provider.
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		t.Setenv("BIGQUERY_DATASET", "")
+		t.Setenv("METRICS_STORE", "")
+		noStaticProvider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", ProjectID: "proj-1"}, forbiddenGetter)
+		if noStaticProvider == nil {
+			t.Fatal("initDataEngineWithGetter(Forbidden, no static env) = nil, want fail-closed provider")
+		}
+		defer noStaticProvider.Close()
+		if err := newReadinessCheck(nil, noStaticProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("newReadinessCheck(Forbidden, no static env) = %v, want Forbidden error", err)
+		}
+
+		// With static ClickHouse env: Forbidden surfaces RBAC error rather than silently using stale static options.
+		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+		t.Setenv("CLICKHOUSE_PORT", "9000")
+		if _, _, err := buildClickHouseResolver("xmc", lazyForbidden)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("buildClickHouseResolver(Forbidden, static env) err = %v, want Forbidden error", err)
+		}
+		staticCHProvider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc"}, forbiddenGetter)
+		if staticCHProvider == nil {
+			t.Fatal("initDataEngineWithGetter(Forbidden, static ClickHouse env) = nil, want provider")
+		}
+		defer staticCHProvider.Close()
+		if err := newReadinessCheck(nil, staticCHProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("newReadinessCheck(Forbidden, static ClickHouse env) = %v, want Forbidden error", err)
+		}
+
+		// With static BigQuery env: Forbidden surfaces RBAC error rather than silently using stale static options.
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
+		t.Setenv("METRICS_STORE", "bigquery")
+		if _, _, err := buildBigQueryResolver("xmc", "proj-1", lazyForbidden)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("buildBigQueryResolver(Forbidden, static env) err = %v, want Forbidden error", err)
+		}
+		staticBQProvider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", ProjectID: "proj-1", MetricsStore: "bigquery"}, forbiddenGetter)
+		if staticBQProvider == nil {
+			t.Fatal("initDataEngineWithGetter(Forbidden, static BigQuery env) = nil, want provider")
+		}
+		defer staticBQProvider.Close()
+		if err := newReadinessCheck(nil, staticBQProvider)(ctx); err == nil || !apierrors.IsForbidden(err) || !strings.Contains(err.Error(), "denied") {
+			t.Errorf("newReadinessCheck(Forbidden, static BigQuery env) = %v, want Forbidden error", err)
+		}
+	})
+
+	t.Run("nil lazyComponentGetter guards do not panic", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		t.Setenv("BIGQUERY_DATASET", "")
+		if isComponentExpected(ctx, "xmc", "clickhouse", nil) {
+			t.Error("isComponentExpected(nil) = true, want false")
+		}
+		if _, _, err := buildClickHouseResolver("xmc", nil)(ctx); err == nil {
+			t.Error("buildClickHouseResolver(nil) without static env succeeded, want error")
+		}
+		if _, _, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx); err == nil {
+			t.Error("buildBigQueryResolver(nil) without static env succeeded, want error")
+		}
+		t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+		if _, connect, err := buildClickHouseResolver("xmc", nil)(ctx); err != nil || connect == nil {
+			t.Errorf("buildClickHouseResolver(nil) static fallback = (%v, %v), want non-nil connector", connect, err)
+		}
+		t.Setenv("BIGQUERY_DATASET", "xmc_metrics")
+		if _, build, err := buildBigQueryResolver("xmc", "proj-1", nil)(ctx); err != nil || build == nil {
+			t.Errorf("buildBigQueryResolver(nil) static fallback = (%v, %v), want non-nil builder", build, err)
+		}
+	})
+
+	t.Run("explicit clickhouse store disabled returns nil without probing bigquery", func(t *testing.T) {
+		t.Setenv("CLICKHOUSE_HOST", "")
+		t.Setenv("CLICKHOUSE_DSN", "")
+		t.Setenv("BIGQUERY_DATASET", "")
+		t.Setenv("METRICS_STORE", "clickhouse")
+		chNotFound := &countingComponentGetter{
+			inner: &crreadertest.FakeGetter{Err: apierrors.NewNotFound(schema.GroupResource{Group: "xmc.dev", Resource: "components"}, "clickhouse")},
+		}
+		if provider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", MetricsStore: "clickhouse"}, chNotFound); provider != nil {
+			provider.Close()
+			t.Fatalf("initDataEngineWithGetter(clickhouse unconfigured) = %v, want nil", provider)
+		}
+		if diff := cmp.Diff(map[string]int{"clickhouse": 1}, chNotFound.Calls()); diff != "" {
+			t.Errorf("startup GetComponent calls mismatch (-want +got):\n%s", diff)
 		}
 	})
 }

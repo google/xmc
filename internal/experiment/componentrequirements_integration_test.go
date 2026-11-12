@@ -160,7 +160,7 @@ func assertPinned(ctx context.Context, t *testing.T, st storage.Storage, xid int
 func assertExperimentalWarning(ctx context.Context, t *testing.T, st storage.Storage, xid int64) {
 	t.Helper()
 	expStatus := &essmsgpb.ExperimentStatus{ActiveState: essmsgpb.ExperimentStatus_ACTIVE}
-	if err := experiment.NewDriftEvaluator(st, true).Evaluate(ctx, xid, expStatus); err != nil {
+	if err := experiment.NewDriftEvaluator(st).Evaluate(ctx, xid, expStatus); err != nil {
 		t.Fatalf("Evaluate(%d) failed: %v", xid, err)
 	}
 	msg := expStatus.GetStructuredStatusMessage()

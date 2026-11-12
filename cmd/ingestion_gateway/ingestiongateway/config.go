@@ -43,7 +43,6 @@ type Config struct {
 	TLSCaFile             string
 	TLSInsecureSkipVerify bool
 	ProjectID             string
-	EnableComponents      bool
 	ComponentsNamespace   string
 }
 
@@ -66,7 +65,6 @@ type Flags struct {
 	TLSCaFile             string
 	TLSInsecureSkipVerify bool
 	ProjectID             string
-	EnableComponents      bool
 	ComponentsNamespace   string
 }
 
@@ -93,7 +91,11 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	fs.StringVar(&f.TLSCaFile, "tls_ca_file", "", "Path to TLS CA certificate file for server verification.")
 	fs.BoolVar(&f.TLSInsecureSkipVerify, "tls_insecure_skip_verify", false, "Skip TLS certificate verification (for testing only).")
 	fs.StringVar(&f.ProjectID, "project_id", "", "GCP project ID for logging, and for Pub/Sub publishing when message_bus is pubsub.")
-	fs.BoolVar(&f.EnableComponents, "enable_components", false, "Whether to resolve Redpanda connection parameters from the redpanda Component CR.")
+	// Components are always enabled. ingestion_gateway keeps -enable_components as an ignored flag
+	// because deploy/helm/templates/ingestion-gateway/deployment.yaml (rendered only when
+	// componentsDeployment.enabled is false) passes -enable_components=false and the stable-2026a
+	// component chart passes -enable_components=true; Go's flag.Parse() exits 2 on unknown flags.
+	fs.Bool("enable_components", true, "Deprecated: ignored; components are always enabled.")
 	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
 	return f
 }
@@ -114,7 +116,6 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	effectiveBrokersStr := getEnvOrDefault(f.RedpandaBrokers, "localhost:9092", "REDPANDA_BROKERS", "REDPANDA_BROKER")
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
 	effectiveComponentsNS := getEnvOrDefault(f.ComponentsNamespace, "xmc", "COMPONENTS_NAMESPACE")
-	effectiveEnableComponents := resolveBoolFlagOrEnv(f.EnableComponents, "ENABLE_COMPONENTS")
 
 	cfg := &Config{
 		Port:                  strings.TrimSpace(effectivePort),
@@ -134,7 +135,6 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		TLSCaFile:             strings.TrimSpace(f.TLSCaFile),
 		TLSInsecureSkipVerify: f.TLSInsecureSkipVerify,
 		ProjectID:             strings.TrimSpace(f.ProjectID),
-		EnableComponents:      effectiveEnableComponents,
 		ComponentsNamespace:   strings.TrimSpace(effectiveComponentsNS),
 	}
 
@@ -151,14 +151,6 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	}
 
 	return cfg, nil
-}
-
-func resolveBoolFlagOrEnv(flagVal bool, envKey string) bool {
-	if flagVal {
-		return true
-	}
-	b, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(envKey)))
-	return err == nil && b
 }
 
 // getEnvOrDefault returns flagVal if set (differs from default or non-empty), otherwise falls back to environment variables or defaultVal.
@@ -235,14 +227,19 @@ func (c *Config) Validate() error {
 	return errUnsupportedMessageBus(c.MessageBus)
 }
 
+// UsesRedpanda reports whether the effective message bus is Redpanda (including when MessageBus is unset or blank).
+func (c *Config) UsesRedpanda() bool {
+	return c != nil && c.messageBusOrDefault() == MessageBusRedpanda
+}
+
 // messageBusOrDefault resolves the selected backend, treating an unset value as the default.
 //
 // LoadConfig always populates MessageBus; this covers Config values built directly, notably in tests.
 func (c *Config) messageBusOrDefault() string {
-	if c.MessageBus == "" {
-		return MessageBusRedpanda
+	if bus := strings.ToLower(strings.TrimSpace(c.MessageBus)); bus != "" {
+		return bus
 	}
-	return c.MessageBus
+	return MessageBusRedpanda
 }
 
 // validateRedpanda checks the broker addressing, topology thresholds, and Kafka wire-protocol

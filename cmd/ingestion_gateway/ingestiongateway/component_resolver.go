@@ -40,13 +40,13 @@ func NewK8sComponentGetter() (ComponentGetter, error) {
 }
 
 // ResolveRedpandaComponentConfig updates cfg with broker endpoints and default topic from the
-// redpanda Component CR when cfg.EnableComponents is true and the component is enabled.
+// redpanda Component CR when the message bus is Redpanda and the component is enabled.
 func ResolveRedpandaComponentConfig(ctx context.Context, cfg *Config, getter ComponentGetter) error {
 	if !shouldResolveRedpandaComponent(ctx, cfg) {
 		return nil
 	}
 	if getter == nil {
-		return fmt.Errorf("component getter cannot be nil when enable_components is true")
+		return fmt.Errorf("component getter cannot be nil")
 	}
 
 	ns := crreader.ResolveNamespace(cfg.ComponentsNamespace)
@@ -83,14 +83,9 @@ func shouldResolveRedpandaComponent(ctx context.Context, cfg *Config) bool {
 		logging.Info(ctx, "Skipping Redpanda Component CR resolution: config is nil")
 		return false
 	}
-	if !cfg.EnableComponents {
-		logging.Info(ctx, "Skipping Redpanda Component CR resolution: enable_components is false",
-			"brokers", cfg.RedpandaBrokers, "topic", cfg.TopicName)
-		return false
-	}
-	if bus := cfg.messageBusOrDefault(); bus != MessageBusRedpanda {
+	if !cfg.UsesRedpanda() {
 		logging.Info(ctx, "Skipping Redpanda Component CR resolution: message bus is not redpanda",
-			"message_bus", bus)
+			"message_bus", cfg.messageBusOrDefault())
 		return false
 	}
 	return true

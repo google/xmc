@@ -18,8 +18,11 @@ package crreadertest
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -101,4 +104,17 @@ func (f *FakeSecretReader) lookupSecret(namespace, name string) map[string]strin
 		return data
 	}
 	return f.Secrets[name]
+}
+
+// IsolateInvalidKubeconfig clears in-cluster discovery env vars and points KUBECONFIG at an
+// unparseable temporary file so crreader.NewK8sGetter and NewK8sSecretReader deterministically fail.
+func IsolateInvalidKubeconfig(tb testing.TB) {
+	tb.Helper()
+	tb.Setenv("KUBERNETES_SERVICE_HOST", "")
+	tb.Setenv("KUBERNETES_SERVICE_PORT", "")
+	badKubeconfig := filepath.Join(tb.TempDir(), "bad-kubeconfig")
+	if err := os.WriteFile(badKubeconfig, []byte(":::invalid:::"), 0600); err != nil {
+		tb.Fatalf("failed to write invalid kubeconfig: %v", err)
+	}
+	tb.Setenv("KUBECONFIG", badKubeconfig)
 }

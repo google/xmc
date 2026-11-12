@@ -64,7 +64,7 @@ func ResolveOptions(ctx context.Context, src Source) (*xmcbigquery.Options, erro
 		return xmcbigquery.GetOptions(src.FallbackProjectID)
 	}
 	if src.Getter == nil {
-		return nil, fmt.Errorf("component getter cannot be nil when enable_components is true")
+		return nil, fmt.Errorf("component getter cannot be nil")
 	}
 	ns := crreader.ResolveNamespace(src.Namespace)
 	comp, err := src.Getter.GetComponent(ctx, ns, BigQueryComponentName)
