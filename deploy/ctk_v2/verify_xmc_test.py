@@ -45,25 +45,10 @@ class VerifyXmcTest(unittest.TestCase):
             "PROJECT_ID": "my-project",
         }
         with mock.patch.dict(os.environ, env_dict, clear=True):
-            env, region, proj, enable_components = verify_xmc._resolve_config()
+            env, region, proj = verify_xmc._resolve_config()
             self.assertEqual(env, "dev")
             self.assertEqual(region, "us-central1")
             self.assertEqual(proj, "my-project")
-            self.assertFalse(enable_components)
-
-    def test_resolve_config_from_env_with_enable_components(self):
-        env_dict = {
-            "ENVIRONMENT": "dev",
-            "REGION": "us-central1",
-            "PROJECT_ID": "my-project",
-            "ENABLE_COMPONENTS": "true",
-        }
-        with mock.patch.dict(os.environ, env_dict, clear=True):
-            env, region, proj, enable_components = verify_xmc._resolve_config()
-            self.assertEqual(env, "dev")
-            self.assertEqual(region, "us-central1")
-            self.assertEqual(proj, "my-project")
-            self.assertTrue(enable_components)
 
     def test_resolve_config_from_yaml(self):
         yaml_content = """
@@ -77,30 +62,10 @@ vars:
         mock_path.read_text.return_value = yaml_content
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
+            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
             self.assertEqual(env, "staging")
             self.assertEqual(region, "us-east1")
             self.assertEqual(proj, "yaml-proj-123")
-            self.assertFalse(enable_components)
-
-    def test_resolve_config_from_yaml_with_enable_components(self):
-        yaml_content = """
-vars:
-  environment: staging
-  region: us-east1
-  project_id: yaml-proj-123
-  enable_components: true
-"""
-        mock_path = mock.MagicMock(spec=pathlib.Path)
-        mock_path.is_file.return_value = True
-        mock_path.read_text.return_value = yaml_content
-
-        with mock.patch.dict(os.environ, {}, clear=True):
-            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
-            self.assertEqual(env, "staging")
-            self.assertEqual(region, "us-east1")
-            self.assertEqual(proj, "yaml-proj-123")
-            self.assertTrue(enable_components)
 
     def test_resolve_config_env_overrides_yaml(self):
         yaml_content = """
@@ -108,26 +73,26 @@ vars:
   environment: staging
   region: us-east1
   project_id: yaml-proj-123
-  enable_components: true
 """
         mock_path = mock.MagicMock(spec=pathlib.Path)
         mock_path.is_file.return_value = True
         mock_path.read_text.return_value = yaml_content
 
-        with mock.patch.dict(os.environ, {"ENABLE_COMPONENTS": "false"}, clear=True):
-            _, _, _, enable_components = verify_xmc._resolve_config(config_path=mock_path)
-            self.assertFalse(enable_components)
+        with mock.patch.dict(os.environ, {"ENVIRONMENT": "prod"}, clear=True):
+            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
+            self.assertEqual(env, "prod")
+            self.assertEqual(region, "us-east1")
+            self.assertEqual(proj, "yaml-proj-123")
 
     def test_resolve_config_missing(self):
         mock_path = mock.MagicMock(spec=pathlib.Path)
         mock_path.is_file.return_value = False
 
         with mock.patch.dict(os.environ, {}, clear=True):
-            env, region, proj, enable_components = verify_xmc._resolve_config(config_path=mock_path)
+            env, region, proj = verify_xmc._resolve_config(config_path=mock_path)
             self.assertIsNone(env)
             self.assertIsNone(region)
             self.assertIsNone(proj)
-            self.assertFalse(enable_components)
 
     def test_resolve_log_monitor_deployment_enabled_from_env(self):
         with mock.patch.dict(os.environ, {"LOG_MONITOR_DEPLOYMENT_ENABLED": "true"}, clear=True):
@@ -316,20 +281,31 @@ vars:
         output = captured.getvalue()
         self.assertIn("not found or status is unavailable", output)
 
+    @mock.patch.object(verify_xmc.time, "sleep")
     @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_disabled(self, mock_run):
+    def test_check_components_zero_crs_healthy(self, mock_run, mock_sleep):
+        mock_run.side_effect = [
+            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
+            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
+            '{"items": []}',
+        ]
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            res = verify_xmc._check_components(enable_components=False)
+            res = verify_xmc._check_components(retry_interval_s=0)
 
         self.assertTrue(res)
-        mock_run.assert_not_called()
+        self.assertEqual(mock_run.call_count, 3)
+        mock_sleep.assert_not_called()
         output = captured.getvalue()
         self.assertIn("--- 8. Component Controllers Status ---", output)
-        self.assertIn("Skipping Component Controllers check: enable_components is false.", output)
+        self.assertIn(
+            "No Component CRs installed yet (xmc-profile optional); xmc-bridge and CRD are healthy.",
+            output,
+        )
 
+    @mock.patch.object(verify_xmc.time, "sleep")
     @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_enabled_success(self, mock_run):
+    def test_check_components_success_with_crs(self, mock_run, mock_sleep):
         mock_run.side_effect = [
             "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
             '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
@@ -344,48 +320,120 @@ vars:
         ]
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
-            res = verify_xmc._check_components(enable_components=True)
+            res = verify_xmc._check_components(retry_interval_s=0)
 
         self.assertTrue(res)
         self.assertEqual(mock_run.call_count, 3)
+        mock_sleep.assert_not_called()
         output = captured.getvalue()
         self.assertIn("Component CRD found", output)
         self.assertIn("xmc-bridge pod is Running and Ready", output)
         self.assertIn("All 2 Component CRs verified in expected state", output)
 
+    @mock.patch.object(verify_xmc.time, "sleep")
     @mock.patch.object(verify_xmc, "_run_command")
-    def test_check_components_failure_cases(self, mock_run):
+    def test_check_components_polling_recovers_on_retry_and_final_attempt(
+        self, mock_run, mock_sleep
+    ):
+        unready_cr = '{"items": [{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, "status": {"conditions": [{"type": "Ready", "status": "False"}]}}]}'
+        ready_cr = '{"items": [{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}]}'
+        running_pod = '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}'
+        crd_name = "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n"
+
+        # Recovers on 2nd attempt (max_attempts=3 -> 1 sleep).
+        mock_run.side_effect = [crd_name, running_pod, unready_cr, ready_cr]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertTrue(verify_xmc._check_components(max_attempts=3, retry_interval_s=0))
+        self.assertEqual(mock_sleep.call_count, 1)
+
+        # Recovers on exact final attempt (max_attempts=3 -> 2 sleeps, no trailing sleep).
+        mock_sleep.reset_mock()
+        mock_run.side_effect = [crd_name, running_pod, unready_cr, unready_cr, ready_cr]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertTrue(verify_xmc._check_components(max_attempts=3, retry_interval_s=0))
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @mock.patch.object(verify_xmc.time, "sleep")
+    @mock.patch.object(verify_xmc, "_run_command")
+    def test_check_components_failure_cases(self, mock_run, mock_sleep):
+        crd_name = "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n"
+        running_pod = '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}'
+        unready_cr = '{"items": [{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, "status": {"conditions": [{"type": "Ready", "status": "False"}]}}]}'
+
         # 1. Missing CRD
         mock_run.return_value = ""
         with mock.patch.object(sys, "stdout", io.StringIO()):
-            self.assertFalse(verify_xmc._check_components(enable_components=True))
+            self.assertFalse(verify_xmc._check_components(max_attempts=2, retry_interval_s=0))
 
         # 2. Pod not ready
-        mock_run.side_effect = [
-            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
-            '{"items": [{"status": {"phase": "Pending"}}]}',
-        ]
+        mock_run.side_effect = [crd_name, '{"items": [{"status": {"phase": "Pending"}}]}']
         with mock.patch.object(sys, "stdout", io.StringIO()):
-            self.assertFalse(verify_xmc._check_components(enable_components=True))
+            self.assertFalse(verify_xmc._check_components(max_attempts=2, retry_interval_s=0))
 
-        # 3. Enabled CR not ready
-        mock_run.side_effect = [
-            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
-            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
-            '{"items": [{"metadata": {"name": "comp-a"}, "spec": {"enabled": true}, "status": {"conditions": [{"type": "Ready", "status": "False"}]}}]}',
-        ]
-        with mock.patch.object(sys, "stdout", io.StringIO()):
-            self.assertFalse(verify_xmc._check_components(enable_components=True))
+        # 3. Polling exhaustion after max_attempts=3 sleeps max_attempts - 1 times and fails
+        mock_sleep.reset_mock()
+        mock_run.side_effect = [crd_name, running_pod, unready_cr, unready_cr, unready_cr]
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            self.assertFalse(verify_xmc._check_components(max_attempts=3, retry_interval_s=0))
+        self.assertEqual(mock_sleep.call_count, 2)
+        self.assertIn(
+            "Component CRs verification failed after waiting for reconciliation.",
+            captured.getvalue(),
+        )
 
-        # 4. Unreconciled disabled CR (empty status: {}) fails
-        mock_run.side_effect = [
-            "customresourcedefinition.apiextensions.k8s.io/components.xmc.dev\n",
-            '{"items": [{"status": {"phase": "Running", "conditions": [{"type": "Ready", "status": "True"}]}}]}',
+        # 4. Unreconciled disabled CR (empty status: {}), stale observedGeneration (spec updated but
+        #    status still from generation 1), malformed JSON, missing items, and kubectl error ("")
+        #    fail on max_attempts=1 without sleeping
+        mock_sleep.reset_mock()
+        for bad_payload in (
             '{"items": [{"metadata": {"name": "comp-b"}, "spec": {"enabled": false}, "status": {}}]}',
-        ]
-        with mock.patch.object(sys, "stdout", io.StringIO()):
-            self.assertFalse(verify_xmc._check_components(enable_components=True))
+            (
+                '{"items": [{"metadata": {"name": "comp-a", "generation": 2}, "spec": {"enabled": true}, '
+                '"status": {"observedGeneration": 1, "state": "COMPONENT_STATE_ENABLED", '
+                '"conditions": [{"type": "Ready", "status": "True"}]}}]}'
+            ),
+            "{bad",
+            "{}",
+            "",
+        ):
+            mock_run.side_effect = [crd_name, running_pod, bad_payload]
+            with mock.patch.object(sys, "stdout", io.StringIO()):
+                self.assertFalse(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
+        mock_sleep.assert_not_called()
 
+        # 5. Matching observedGeneration passes
+        converged = (
+            '{"items": [{"metadata": {"name": "comp-a", "generation": 2}, "spec": {"enabled": true}, '
+            '"status": {"observedGeneration": 2, "state": "COMPONENT_STATE_ENABLED", '
+            '"conditions": [{"type": "Ready", "status": "True"}]}}]}'
+        )
+        mock_run.side_effect = [crd_name, running_pod, converged]
+        with mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertTrue(verify_xmc._check_components(max_attempts=1, retry_interval_s=0))
+
+    @mock.patch.object(verify_xmc.subprocess, "run")
+    def test_wait_for_xmc_deployments(self, mock_run):
+        mock_run.return_value = mock.Mock(returncode=0)
+        self.assertTrue(verify_xmc._wait_for_xmc_deployments())
+        mock_run.assert_called_once_with(
+            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=180s"],
+            check=False,
+        )
+
+    @mock.patch.object(verify_xmc.subprocess, "run")
+    def test_wait_for_xmc_deployments_fails_closed_on_rollout_error(self, mock_run):
+        mock_run.return_value = mock.Mock(returncode=1)
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            self.assertFalse(verify_xmc._wait_for_xmc_deployments(timeout_s=30))
+        mock_run.assert_called_once_with(
+            ["kubectl", "rollout", "status", "deployment", "-n", "xmc", "--timeout=30s"],
+            check=False,
+        )
+        self.assertIn("did not roll out within 30s", captured.getvalue())
+
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
     @mock.patch.object(verify_xmc, "_check_components", return_value=True)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
@@ -402,29 +450,42 @@ vars:
         mock_connectivity,
         mock_log_monitor,
         mock_components,
+        mock_wait_deployments,
     ):
-        mock_resolve_config.return_value = ("dev", "us-central1", "test-proj", True)
+        call_order: list[str] = []
+
+        def record_true(label: str) -> bool:
+            call_order.append(label)
+            return True
+
+        mock_components.side_effect = lambda: record_true("components")
+        mock_wait_deployments.side_effect = lambda: record_true("wait_deployments")
+        mock_k8s.side_effect = lambda: record_true("k8s")
+        mock_resolve_config.return_value = ("dev", "us-central1", "test-proj")
         mock_resolve_lm_enabled.return_value = False
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             exit_code = verify_xmc.main()
 
         self.assertEqual(exit_code, 0)
+        self.assertEqual(call_order, ["components", "wait_deployments", "k8s"])
         mock_ensure_venv.assert_called_once()
         mock_resolve_config.assert_called_once()
         mock_resolve_lm_enabled.assert_called_once()
         mock_k8s.assert_called_once()
         mock_connectivity.assert_called_once()
         mock_log_monitor.assert_called_once_with("dev", "us-central1", "test-proj", False)
-        mock_components.assert_called_once_with(True)
+        mock_components.assert_called_once_with()
+        mock_wait_deployments.assert_called_once_with()
 
-    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments")
+    @mock.patch.object(verify_xmc, "_check_components", return_value=False)
     @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
     @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
-    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=False)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=True)
     @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled", return_value=False)
     @mock.patch.object(
-        verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj", False)
+        verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj")
     )
     @mock.patch.object(verify_xmc, "ensure_venv")
     def test_main_returns_1_on_check_failure(
@@ -436,7 +497,26 @@ vars:
         mock_connectivity,
         mock_log_monitor,
         mock_components,
+        mock_wait_deployments,
     ):
+        captured = io.StringIO()
+        with mock.patch.object(sys, "stdout", captured):
+            exit_code = verify_xmc.main()
+        self.assertEqual(exit_code, 1)
+        mock_wait_deployments.assert_not_called()
+
+    @mock.patch.object(verify_xmc, "_wait_for_xmc_deployments", return_value=False)
+    @mock.patch.object(verify_xmc, "_check_components", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_log_monitor", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_connectivity", return_value=True)
+    @mock.patch.object(verify_xmc, "_check_k8s_resources", return_value=True)
+    @mock.patch.object(verify_xmc, "_resolve_log_monitor_deployment_enabled", return_value=False)
+    @mock.patch.object(
+        verify_xmc, "_resolve_config", return_value=("dev", "us-central1", "test-proj")
+    )
+    @mock.patch.object(verify_xmc, "ensure_venv")
+    def test_main_returns_1_when_deployments_do_not_roll_out(self, *_mocks):
+        """A stalled rollout fails verification even when the existing pods look healthy."""
         captured = io.StringIO()
         with mock.patch.object(sys, "stdout", captured):
             exit_code = verify_xmc.main()

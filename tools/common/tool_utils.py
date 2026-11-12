@@ -43,7 +43,6 @@ class DeploymentConfig:
     image_tag: str
     namespace: str = "xmc"
     domain_name: str | None = None
-    enable_components: bool = False
     log_monitor_deployment_enabled: bool = True
     database_backend: str = DEFAULT_BACKEND
     profile_values: str | None = None
@@ -215,7 +214,6 @@ ENV_VAR_MAPPING = {
     "IMAGE_REGISTRY": "image_registry",  # Primary, processed second (wins)
     "BUILD_TAG": "image_tag",
     "XMC_BASE_DOMAIN": "domain_name",
-    "ENABLE_COMPONENTS": "enable_components",
     "LOG_MONITOR_DEPLOYMENT_ENABLED": "log_monitor_deployment_enabled",
     "DB_BACKEND": "database_backend",
 }
@@ -234,6 +232,15 @@ def _resolve_database_backend(raw: Any) -> str:
             f"Must be one of: {', '.join(SUPPORTED_DATABASE_BACKENDS)}"
         )
     return backend
+
+
+# Single source of truth for every "components can't be disabled" error (CLI flag, deployment YAML,
+# ENABLE_COMPONENTS env, and the KinD loader) so operators always get the migration hint.
+DISABLED_COMPONENTS_FLAG_ERROR = (
+    "--no-enable-components / enable_components=false is no longer supported in XMC 1.0.0+: "
+    "Components are mandatory. Migrate legacy workloads via "
+    "./tools/migrations/components/migrate.py and remove enable_components."
+)
 
 
 def parse_bool_flag(val: Any) -> bool:
@@ -353,6 +360,15 @@ def load_and_validate_config(
         if pattern and not re.match(pattern, str(val)):
             raise ValueError(f"Field '{key}' value '{val}' is invalid. Must match regex: {pattern}")
 
+    env_comp = os.getenv("ENABLE_COMPONENTS")
+    raw_comp = (
+        env_comp
+        if env_comp is not None and env_comp.strip() != ""
+        else config.get("enable_components")
+    )
+    if raw_comp is not None and not parse_bool_flag(raw_comp):
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
+
     return DeploymentConfig(
         project_id=config["project_id"],
         deployment_name=config["deployment_name"],
@@ -362,7 +378,6 @@ def load_and_validate_config(
         image_tag=config["image_tag"],
         domain_name=config.get("domain_name"),
         namespace=config.get("namespace", "xmc"),
-        enable_components=parse_bool_flag(config.get("enable_components", False)),
         log_monitor_deployment_enabled=parse_bool_flag(
             config.get("log_monitor_deployment_enabled", True)
         ),
@@ -390,6 +405,13 @@ def log_success(msg: str) -> None:
 def log_error(msg: str) -> None:
     """Logs error messages in red text to stderr."""
     print(f"\n{RED}[ERROR] {msg}{NC}", file=sys.stderr)
+
+
+def reject_disabled_components_flag(args: argparse.Namespace) -> None:
+    """Logs an error to stderr and exits with code 1 if --no-enable-components was passed."""
+    if getattr(args, "enable_components", None) is False:
+        log_error(DISABLED_COMPONENTS_FLAG_ERROR)
+        sys.exit(1)
 
 
 def run_command(
@@ -599,7 +621,7 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
 
 
 def deploy_component_profile(config: DeploymentConfig) -> None:
-    """Deploys default XMC component profile (stable-2026a) when components are enabled.
+    """Deploys default XMC component profile (stable-2026a).
 
     Args:
         config: Loaded DeploymentConfig instance.
@@ -607,8 +629,6 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
     Raises:
         FileNotFoundError: If config.profile_values is specified and missing.
     """
-    if not config.enable_components:
-        return
     ns = config.namespace or "xmc"
     chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
     cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]

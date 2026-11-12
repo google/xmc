@@ -35,12 +35,10 @@ BLUEPRINT_PATH = os.path.join("deploy", "ctk_v2", "xmanager-cloud.yaml")
 # Google service account emails are placeholders; only the presence of the annotation matters here.
 ALL_SERVICES_ENABLED = {
     "gcpServiceAccount": "xmc-wl-sa@example.iam.gserviceaccount.com",
-    "componentsDeployment.enabled": "true",
     "dashboardServiceDeployment.enabled": "true",
     "dashboardService.gcpServiceAccount": "xmc-wl-sa@example.iam.gserviceaccount.com",
     "healthServiceDeployment.enabled": "true",
     "healthService.gcpServiceAccount": "xmc-hs-sa@example.iam.gserviceaccount.com",
-    "ingestionGatewayDeployment.enabled": "true",
     "logMonitorDeployment.enabled": "true",
     "logMonitor.gcpServiceAccount": "xmc-lm-sa@example.iam.gserviceaccount.com",
     "rodDeployment.enabled": "true",

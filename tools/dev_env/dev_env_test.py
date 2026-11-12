@@ -740,6 +740,35 @@ class DevEnvCliTest(unittest.TestCase):
         )
         self.assertEqual(parsed_deploy.profile_values, "/tmp/pv.yaml")
 
+    @patch("tools.dev_env.dev_env.ensure_venv")
+    def test_no_enable_components_rejected(self, _mock_venv: MagicMock) -> None:
+        """Verifies --no-enable-components fails closed with exit code 1 across subcommands."""
+        for argv in (
+            ["up", "--no-enable-components"],
+            [
+                "gke-deploy",
+                "-c",
+                "cfg.yaml",
+                "--dns-project",
+                "p",
+                "--dns-zone",
+                "z",
+                "--no-enable-components",
+            ],
+            ["gke-upgrade", "--no-enable-components"],
+            ["deploy", "--no-enable-components"],
+            ["upgrade", "--no-enable-components"],
+        ):
+            with self.subTest(argv=argv):
+                err_stream = io.StringIO()
+                with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+                    dev_env.main(argv)
+                self.assertEqual(cm.exception.code, 1)
+                self.assertIn(
+                    "--no-enable-components / enable_components=false is no longer supported",
+                    err_stream.getvalue(),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,7 @@ from types import MappingProxyType
 from unittest.mock import ANY, MagicMock, patch
 
 from tools.common.tool_utils import (
+    DISABLED_COMPONENTS_FLAG_ERROR,
     DeploymentConfig,
     HandledError,
     _bootstrap_venv,
@@ -43,6 +44,7 @@ from tools.common.tool_utils import (
     parse_semver_prefix,
     parse_yaml_vars,
     positive_int_arg,
+    reject_disabled_components_flag,
     run_command,
     run_tool,
     verify_helm_min_version,
@@ -617,6 +619,25 @@ class TestConfigLoader(unittest.TestCase):
         )
         self.assertEqual(config, expected)
 
+    @patch.dict(os.environ, {}, clear=True)
+    def test_load_and_validate_config_rejects_disabled_components_yaml_and_env(self):
+        self.config_path.write_text(
+            self.valid_yaml + "\n  enable_components: false\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"):
+            load_and_validate_config(str(self.config_path))
+
+        self.config_path.write_text(
+            self.valid_yaml + "\n  enable_components: true\n", encoding="utf-8"
+        )
+        self.assertEqual(load_and_validate_config(str(self.config_path)).project_id, "my-project")
+
+        with patch.dict(os.environ, {"ENABLE_COMPONENTS": "false"}):
+            with self.assertRaisesRegex(
+                ValueError, "enable_components=false is no longer supported"
+            ):
+                load_and_validate_config(str(self.config_path))
+
 
 class TestDockerAuthConfig(unittest.TestCase):
     """Tests for configure_docker_auth helper in tool_utils."""
@@ -717,33 +738,9 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertFalse(parse_bool_flag("0"))
         self.assertFalse(parse_bool_flag(None))
 
-    @patch.dict(os.environ, {"ENABLE_COMPONENTS": "true"})
-    def test_load_config_enable_components_env_override(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            cfg_path = Path(tmp_dir) / "cfg.yaml"
-            cfg_path.write_text(
-                "vars:\n"
-                "  deployment_name: xmc-dev\n"
-                "  project_id: my-project\n"
-                "  environment: dev\n"
-                "  region: us-central1\n"
-                "  domain_name: example.com\n"
-                "  image_registry: us-central1-docker.pkg.dev/my-project/xmc\n"
-                "  image_tag: latest\n",
-                encoding="utf-8",
-            )
-            cfg = load_and_validate_config(str(cfg_path))
-            self.assertTrue(cfg.enable_components)
-
     @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_disabled(self, mock_run):
+    def test_deploy_component_profile_default(self, mock_run):
         deploy_component_profile(self.base_config)
-        mock_run.assert_not_called()
-
-    @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_enabled(self, mock_run):
-        cfg = replace(self.base_config, enable_components=True)
-        deploy_component_profile(cfg)
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         self.assertEqual(
@@ -758,7 +755,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
         cfg = replace(
             self.base_config,
-            enable_components=True,
             namespace="tenant-a",
             profile_values="/tmp/profile-values.yaml",
         )
@@ -772,7 +768,6 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
         cfg = replace(
             self.base_config,
-            enable_components=True,
             profile_values="/tmp/missing-profile-values.yaml",
         )
         with self.assertRaises(FileNotFoundError):
@@ -795,6 +790,19 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         mock_run.return_value = MagicMock(stdout="v3.13.3\n")
         with self.assertRaises(RuntimeError):
             verify_helm_min_version()
+
+    def test_reject_disabled_components_flag(self):
+        for allowed in (
+            argparse.Namespace(),
+            argparse.Namespace(enable_components=None),
+            argparse.Namespace(enable_components=True),
+        ):
+            reject_disabled_components_flag(allowed)
+        err_stream = io.StringIO()
+        with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+            reject_disabled_components_flag(argparse.Namespace(enable_components=False))
+        self.assertEqual(cm.exception.code, 1)
+        self.assertIn(DISABLED_COMPONENTS_FLAG_ERROR, err_stream.getvalue())
 
 
 if __name__ == "__main__":

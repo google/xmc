@@ -1662,7 +1662,7 @@ func TestReconciler_EnvtestIntegration(t *testing.T) {
 func startReconcilerEnvtest(t *testing.T) (dynamic.Interface, client.Client) {
 	t.Helper()
 	crdDir := t.TempDir()
-	combined := append(renderHelmManifestTemplate(t, "crd.yaml", true), []byte("\n---\n"+rayClusterTestCRD)...)
+	combined := append(renderHelmManifestTemplate(t, "crd.yaml"), []byte("\n---\n"+rayClusterTestCRD)...)
 	if err := os.WriteFile(filepath.Join(crdDir, "crds.yaml"), combined, 0600); err != nil {
 		t.Fatalf("failed to write CRDs: %v", err)
 	}

@@ -78,16 +78,20 @@ def _has_breaking_changes(commits: list[CommitInfo]) -> bool:
 
 def _has_database_migrations(commits: list[CommitInfo]) -> bool:
     """Checks if any touched files contain database migrations or schema alterations."""
-    migration_keywords = {"migrations", "migration", "migrate"}
+    migration_keywords = {"migrations", "migration"}
     for c in commits:
         if not c or not c.files_changed:
             continue
         for f in c.files_changed:
             if not f:
                 continue
-            f_lower = f.lower()
-            parts = f_lower.replace("\\", "/").split("/")
-            if not migration_keywords.isdisjoint(parts) or f_lower.endswith((".sql", ".ddl")):
+            normalized = re.sub(r"^(?:\./|/)+", "", f.lower().replace("\\", "/"))
+            if normalized.endswith((".sql", ".ddl")):
+                return True
+            parts = normalized.split("/")
+            if normalized.startswith("internal/storage/") and not migration_keywords.isdisjoint(
+                parts
+            ):
                 return True
     return False
 

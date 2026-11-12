@@ -78,7 +78,6 @@ vars:
   clickhouse_database: "default"
   clickhouse_user: "default"
   clickhouse_password: ""
-  enable_components: false
   health_service_deployment_enabled: true
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
@@ -567,9 +566,6 @@ deployment_groups:
         value: $(vars.clickhouse_user)
       - name: metrics.clickhouse.password
         value: $(vars.clickhouse_password)
-      - name: ingestionGatewayDeployment.enabled
-        value: $(vars.enable_metrics)
-        type: auto
       - name: rodDeployment.enabled
         value: $(vars.rod_deployment_enabled)
         type: auto
@@ -597,9 +593,6 @@ deployment_groups:
         value: $(vars.postgres_xid_database)
       - name: database.postgres.sslMode
         value: $(vars.postgres_ssl_mode)
-      - name: componentsDeployment.enabled
-        value: $(vars.enable_components)
-        type: auto
       - name: xmc_bridge_custom_image
         value: $(vars.xmc_bridge_image)
 

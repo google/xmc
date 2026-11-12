@@ -247,11 +247,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
                 DASHBOARD_SERVICEACCOUNT, {"dashboardServiceDeployment.enabled": "false"}
             ),
         )
-        for extra in (
-            {},
-            {"componentsDeployment.enabled": "false"},
-            {"componentsDeployment": "null"},
-        ):
+        for extra in ({}, {"componentsDeployment": "null"}):
             manifest = render_template(
                 DASHBOARD_SERVICEACCOUNT,
                 {"dashboardServiceDeployment.enabled": "true", "metrics.enabled": "false", **extra},
@@ -269,11 +265,7 @@ class DashboardServiceClickhouseConfigTest(unittest.TestCase):
 
     def test_actuator_clusterrole_unconditionally_grants_components_read(self) -> None:
         """Actuator ClusterRole always grants get/list/watch on xmc.dev components."""
-        for values in (
-            {},
-            {"componentsDeployment.enabled": "false"},
-            {"componentsDeployment": "null"},
-        ):
+        for values in ({}, {"componentsDeployment": "null"}):
             manifest = render_template("templates/actuator/clusterrole.yaml", values)
             self.assertIn(
                 '- apiGroups: ["xmc.dev"]\n'

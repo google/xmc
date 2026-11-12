@@ -53,6 +53,8 @@ echo "--> 8. Restarting metrics-dependent deployments in '${XMC_NAMESPACE}' if p
 for deploy in ingestion-gateway-deployment dashboard-service-deployment; do
   if kubectl get deployment "${deploy}" -n "${XMC_NAMESPACE}" &>/dev/null; then
     kubectl rollout restart "deployment/${deploy}" -n "${XMC_NAMESPACE}"
+    kubectl rollout status "deployment/${deploy}" -n "${XMC_NAMESPACE}" --timeout=180s \
+      || echo "WARNING: ${deploy} not ready after 180s; deferring to post-deploy verification." >&2
   fi
 done
 

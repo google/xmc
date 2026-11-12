@@ -67,6 +67,11 @@ go_test(
     deps = [
         "@com_github_google_go_cmp//cmp",
         "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_client_go//dynamic",
+        "@io_k8s_client_go//dynamic/fake",
         "@sh_helm_helm_v3//pkg/chart/loader",
         "@sh_helm_helm_v3//pkg/chartutil",
         "@sh_helm_helm_v3//pkg/engine",

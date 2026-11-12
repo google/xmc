@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tools.common.tool_utils import parse_yaml_vars
+from tools.common.tool_utils import DISABLED_COMPONENTS_FLAG_ERROR, parse_yaml_vars
 
 _LOGGER = logging.getLogger("xmc.dev_env.config")
 
@@ -40,6 +40,7 @@ BASE_SERVICES: list[str] = [
     "actuator",
     "reconciler",
     "ui",
+    "components",
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
@@ -231,30 +232,14 @@ def _resolve_enabled_services(
 ) -> list[str]:
     """Computes enabled services from base services and conditional feature flags."""
     services = list(BASE_SERVICES)
-    ig_deployment_flag = yaml_vars.get("ingestion_gateway_deployment_enabled")
-    effective_yaml_metrics: Any
-    if ig_deployment_flag is not None and not _parse_bool(ig_deployment_flag):
-        effective_yaml_metrics = False
-    else:
-        effective_yaml_metrics = yaml_vars.get("enable_metrics")
 
-    enable_metrics = _resolve_bool_flag(
-        getattr(args, "enable_metrics", None) if args else None,
-        os.environ.get("ENABLE_METRICS"),
-        effective_yaml_metrics,
-        default=False,
-    )
-    if enable_metrics and "ingestion_gateway" not in services:
-        services.append("ingestion_gateway")
-
-    enable_components = _resolve_bool_flag(
+    if not _resolve_bool_flag(
         getattr(args, "enable_components", None) if args else None,
         os.environ.get("ENABLE_COMPONENTS"),
         yaml_vars.get("enable_components"),
-        default=False,
-    )
-    if enable_components and "components" not in services:
-        services.append("components")
+        default=True,
+    ):
+        raise ValueError(DISABLED_COMPONENTS_FLAG_ERROR)
 
     rod_enabled = _resolve_bool_flag(
         getattr(args, "rod_deployment_enabled", None) if args else None,
