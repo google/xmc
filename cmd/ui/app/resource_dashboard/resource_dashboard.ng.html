@@ -13,7 +13,7 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-<div class="rod-container">
+<div class="rod-container" data-testid="resource-dashboard">
   <xmc-rod-subnav-tabs [activeTab]="activeTab()" (activeTabChange)="onTabChange($event)" />
   @if (activeTab() === TAB_SMART_FINDER) {
     <xmc-smart-resource-finder

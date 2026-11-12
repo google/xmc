@@ -159,6 +159,7 @@
 
       @if (tableControls.totalCount() > 0) {
         <mat-paginator
+          data-testid="jobs-paginator"
           aria-label="Select page of queue jobs"
           [length]="tableControls.totalCount()"
           [pageSize]="tableControls.pageSize()"
