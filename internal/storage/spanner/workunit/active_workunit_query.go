@@ -16,6 +16,7 @@ package workunit
 
 import (
 	"fmt"
+	"strings"
 
 	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/safesql"
@@ -45,26 +46,27 @@ func activeWorkUnitStatements(queueNames []string, limit, offset int64, query st
 	return count, fetch, nil
 }
 
+var (
+	activeWorkUnitSortCols = map[string]safesql.TrustedSQLString{
+		"author":   safesql.New("COALESCE(e.Creator, '')"),
+		"priority": safesql.New("wu.Priority"),
+		"status":   safesql.New("CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END"),
+	}
+	activeWorkUnitSortDirs = map[string]safesql.TrustedSQLString{
+		"asc":  safesql.New(" ASC"),
+		"desc": safesql.New(" DESC"),
+	}
+)
+
 func activeWorkUnitOrder(orderBy string) (safesql.TrustedSQLString, error) {
-	statusRank := safesql.New("CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END")
-	var field safesql.TrustedSQLString
-	switch orderBy {
-	case "":
-		field = safesql.New("wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC")
-	case "author asc":
-		field = safesql.New("COALESCE(e.Creator, '') ASC")
-	case "author desc":
-		field = safesql.New("COALESCE(e.Creator, '') DESC")
-	case "priority asc":
-		field = safesql.New("wu.Priority ASC")
-	case "priority desc":
-		field = safesql.New("wu.Priority DESC")
-	case "status asc":
-		field = safesql.Concat(statusRank, safesql.New(" ASC"))
-	case "status desc":
-		field = safesql.Concat(statusRank, safesql.New(" DESC"))
-	default:
+	if orderBy == "" {
+		return safesql.New(" ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC"), nil
+	}
+	field, dir, ok := strings.Cut(orderBy, " ")
+	colSQL, colOK := activeWorkUnitSortCols[field]
+	dirSQL, dirOK := activeWorkUnitSortDirs[dir]
+	if !ok || !colOK || !dirOK {
 		return safesql.EmptyString(), fmt.Errorf("unsupported order_by %q", orderBy)
 	}
-	return safesql.Concat(safesql.New(" ORDER BY "), field, safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")), nil
+	return safesql.Concat(safesql.New(" ORDER BY "), colSQL, dirSQL, safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")), nil
 }
