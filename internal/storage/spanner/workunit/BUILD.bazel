@@ -102,6 +102,7 @@ go_test(
     shard_count = 4,
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/spanner",

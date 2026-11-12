@@ -43,7 +43,7 @@ import (
 const entityName = "work unit"
 
 var (
-	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
+	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime, Parameters, TrialId FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
 	lockWorkUnitSQL   = safesql.Concat(selectWorkUnitSQL, safesql.New(" FOR NO KEY UPDATE"))
 
 	selectCurrentExecutionSQL  = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionMetadata, WorkUnitStatus FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
@@ -53,8 +53,8 @@ var (
 	lockExperimentSQL = safesql.New(`SELECT 1 FROM Experiments WHERE Xid = $1 FOR NO KEY UPDATE`)
 	nextWorkUnitIDSQL = safesql.New(`SELECT COALESCE(MAX(WorkUnitId), 0) + 1 FROM WorkUnits WHERE Xid = $1`)
 
-	insertWorkUnitSQL = safesql.New(`INSERT INTO WorkUnits (Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, PositionInQueue, CreateTime, UpdateTime)
-VALUES (@xid, @workunitid, @workunittype, @priority, @urls, @tags, @notes, @executable, @executioncreatetime, @executionupdatetime, @executioncompletetime, @executionid, @executionmetadata, @workunitstatus, @queuename, @executionstate, @executionstatusmessageseverity, @positioninqueue, @createtime, @updatetime)`)
+	insertWorkUnitSQL = safesql.New(`INSERT INTO WorkUnits (Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, PositionInQueue, CreateTime, UpdateTime, Parameters, TrialId)
+VALUES (@xid, @workunitid, @workunittype, @priority, @urls, @tags, @notes, @executable, @executioncreatetime, @executionupdatetime, @executioncompletetime, @executionid, @executionmetadata, @workunitstatus, @queuename, @executionstate, @executionstatusmessageseverity, @positioninqueue, @createtime, @updatetime, @parameters, @trialid)`)
 
 	updateWorkUnitSQL = safesql.New(`UPDATE WorkUnits SET Priority = @priority, Urls = @urls, Tags = @tags, Notes = @notes, UpdateTime = @updatetime WHERE Xid = @xid AND WorkUnitId = @workunitid`)
 

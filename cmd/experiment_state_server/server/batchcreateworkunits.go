@@ -33,8 +33,8 @@ import (
 )
 
 // BatchCreateWorkUnits creates the trials of a STUDY experiment for the study controller: it
-// persists all of them in one transaction, records one creation operation per work unit, and
-// enqueues their creation tasks.
+// validates every work unit against the study config, persists all of them in one transaction,
+// records one creation operation per work unit, and enqueues their creation tasks.
 func (h *WorkUnitHandler) BatchCreateWorkUnits(ctx context.Context, req *msgpb.BatchCreateWorkUnitsRequest) (*msgpb.BatchCreateWorkUnitsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch create work units", "parent", req.GetParent(), "count", len(req.GetRequests()))
@@ -58,8 +58,8 @@ func (h *WorkUnitHandler) BatchCreateWorkUnits(ctx context.Context, req *msgpb.B
 		return nil, fmt.Errorf("BatchCreateWorkUnits validation failed: %w", err)
 	}
 
-	// 6. Assemble each work unit.
-	wus, err := h.assembleStudyTrials(ctx, xid, req.GetRequests())
+	// 6. Validate the trial fields and assemble each work unit.
+	wus, err := h.assembleStudyTrials(ctx, xid, exp.GetStudyConfig(), req.GetRequests())
 	if err != nil {
 		return nil, err
 	}
@@ -115,11 +115,15 @@ func (h *WorkUnitHandler) fetchBatchCreateParent(ctx context.Context, xid int64)
 	return exp, nil
 }
 
-// assembleStudyTrials returns copies of the requested work units assembled for creation in
-// experiment xid.
-func (h *WorkUnitHandler) assembleStudyTrials(ctx context.Context, xid int64, reqs []*msgpb.CreateWorkUnitRequest) ([]*msgpb.WorkUnit, error) {
+// assembleStudyTrials validates the trial fields of each requested work unit against cfg and
+// returns copies assembled for creation in experiment xid.
+func (h *WorkUnitHandler) assembleStudyTrials(ctx context.Context, xid int64, cfg *msgpb.StudyConfig, reqs []*msgpb.CreateWorkUnitRequest) ([]*msgpb.WorkUnit, error) {
 	wus := make([]*msgpb.WorkUnit, len(reqs))
 	for i, req := range reqs {
+		if err := validator.ValidateWorkUnitTrialFields(req.GetWorkUnit(), cfg); err != nil {
+			logging.Warn(ctx, "BatchCreateWorkUnits validation failed", "index", i, "error", err)
+			return nil, fmt.Errorf("BatchCreateWorkUnits validation failed: requests[%d]: %w", i, err)
+		}
 		wu, err := h.assembleNewWorkUnit(ctx, xid, 0, proto.Clone(req.GetWorkUnit()).(*msgpb.WorkUnit))
 		if err != nil {
 			return nil, fmt.Errorf("requests[%d]: %w", i, err)

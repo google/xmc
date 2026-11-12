@@ -34,7 +34,7 @@ func hpoCatalog(serviceAccount string) *storage.MockComponentRepository {
 }
 
 // newTrialRequest returns a study trial work unit of batchXID as the ESS handler assembles it
-// before creation, with trialID as its notes.
+// before creation.
 func newTrialRequest(trialID string) *essmsgpb.WorkUnit {
 	return &essmsgpb.WorkUnit{
 		Name:         "experiments/42/workUnits/0",
@@ -58,6 +58,7 @@ func newTrialRequest(trialID string) *essmsgpb.WorkUnit {
 				SystemMessage: &essmsgpb.StructuredMessage{Severity: essmsgpb.StructuredMessage_DEBUG, UserFacingText: "initializing", Parent: "experiments/42/workUnits/0"},
 			},
 		},
-		Notes: trialID,
+		Parameters: experimenttest.TrialParameters(),
+		TrialId:    trialID,
 	}
 }

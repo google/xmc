@@ -380,7 +380,8 @@ func ValidateCreateWorkUnitRequest(in *essmsgpb.CreateWorkUnitRequest) error {
 
 // ValidateBatchCreateWorkUnitsRequest validates the given BatchCreateWorkUnitsRequest and each of
 // its requests, and returns the XID of its parent. The parent of each request must be empty or the
-// batch parent, and work_unit_id must be unset because the server assigns the IDs.
+// batch parent, work_unit_id must be unset because the server assigns the IDs, and trial IDs must be
+// unique within the batch.
 func ValidateBatchCreateWorkUnitsRequest(in *essmsgpb.BatchCreateWorkUnitsRequest) (int64, error) {
 	xid, err := ValidateExperimentName(in.GetParent())
 	if err != nil {
@@ -389,23 +390,33 @@ func ValidateBatchCreateWorkUnitsRequest(in *essmsgpb.BatchCreateWorkUnitsReques
 	if n := len(in.GetRequests()); n == 0 || n > maxBatchCreateWorkUnits {
 		return 0, fmt.Errorf("requests must contain between 1 and %d requests, got %d: %w", maxBatchCreateWorkUnits, n, grpcerr.ErrInvalidArgument)
 	}
+	trialIDs := make(map[string]bool, len(in.GetRequests()))
 	for i, req := range in.GetRequests() {
-		if err := validateBatchedCreateWorkUnitRequest(in.GetParent(), req); err != nil {
+		if err := validateBatchedCreateWorkUnitRequest(in.GetParent(), req, trialIDs); err != nil {
 			return 0, fmt.Errorf("requests[%d]: %w", i, err)
 		}
 	}
 	return xid, nil
 }
 
-// validateBatchedCreateWorkUnitRequest validates one request of a batch with parent.
-func validateBatchedCreateWorkUnitRequest(parent string, req *essmsgpb.CreateWorkUnitRequest) error {
+// validateBatchedCreateWorkUnitRequest validates one request of a batch with parent, and records
+// its trial ID in trialIDs.
+func validateBatchedCreateWorkUnitRequest(parent string, req *essmsgpb.CreateWorkUnitRequest, trialIDs map[string]bool) error {
 	if req.GetParent() != "" && req.GetParent() != parent {
 		return fmt.Errorf("parent must be empty or %q: %w", parent, grpcerr.ErrInvalidArgument)
 	}
 	if req.GetWorkUnitId() != 0 {
 		return fmt.Errorf("work_unit_id must be unset, the server assigns work unit IDs: %w", grpcerr.ErrInvalidArgument)
 	}
-	return ValidateCreateWorkUnitRequest(&essmsgpb.CreateWorkUnitRequest{Parent: parent, WorkUnit: req.GetWorkUnit()})
+	if err := ValidateCreateWorkUnitRequest(&essmsgpb.CreateWorkUnitRequest{Parent: parent, WorkUnit: req.GetWorkUnit()}); err != nil {
+		return err
+	}
+	trialID := req.GetWorkUnit().GetTrialId()
+	if trialID != "" && trialIDs[trialID] {
+		return fmt.Errorf("work_unit.trial_id %q is not unique in the batch: %w", trialID, grpcerr.ErrInvalidArgument)
+	}
+	trialIDs[trialID] = true
+	return nil
 }
 
 func validateWorkUnitMetadata(wu *essmsgpb.WorkUnit) error {

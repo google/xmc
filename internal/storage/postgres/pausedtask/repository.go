@@ -40,7 +40,8 @@ const pendingTasksSQL = `SELECT
   p.Xid, p.WorkUnitId, p.TaskId, p.Target, p.ActionProto, p.OperationName, p.TraceId, p.Priority, p.CreateTime,
   w.WorkUnitType, w.Priority AS WorkUnitPriority, w.Urls, w.Tags, w.Notes, w.Executable,
   w.ExecutionCreateTime, w.ExecutionUpdateTime, w.ExecutionCompleteTime, w.ExecutionId,
-  w.ExecutionMetadata, w.WorkUnitStatus, w.CreateTime AS WorkUnitCreateTime, w.UpdateTime AS WorkUnitUpdateTime
+  w.ExecutionMetadata, w.WorkUnitStatus, w.CreateTime AS WorkUnitCreateTime, w.UpdateTime AS WorkUnitUpdateTime,
+  w.Parameters, w.TrialId
 FROM PausedTasks AS p
 JOIN WorkUnits AS w ON w.Xid = p.Xid AND w.WorkUnitId = p.WorkUnitId
 WHERE p.IsPending IS NOT NULL

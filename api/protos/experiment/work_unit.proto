@@ -17,6 +17,7 @@ package cloud.xmanager.v1;
 
 import "google/api/field_behavior.proto";
 import "google/api/resource.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "xmanager_cloud/experiment_state_server/proto/priority.proto";
 import "xmanager_cloud/experiment_state_server/proto/resources.proto";
@@ -63,6 +64,15 @@ message WorkUnit {
   // The current work unit execution.
   WorkUnitExecution current_work_unit_execution = 10
       [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The hyperparameter values of a study trial, keyed by the parameter_id of
+  // each parameter of the study_config. Required on work units of STUDY
+  // experiments and rejected on all others.
+  google.protobuf.Struct parameters = 11
+      [(google.api.field_behavior) = IMMUTABLE];
+  // The ID of the trial in the optimization engine, supplied by the study
+  // controller. Required on work units of STUDY experiments and rejected on all
+  // others.
+  string trial_id = 12 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 message Executable {

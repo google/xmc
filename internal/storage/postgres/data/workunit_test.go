@@ -22,8 +22,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
+	"xmanager_cloud/internal/prototest"
 )
 
 var (
@@ -119,6 +122,7 @@ func TestWorkUnitProtoAndRowRoundTrip(t *testing.T) {
 		"queuename": "test-queue", "executionstate": int64(essmsgpb.WorkUnitStatus_RUNNING),
 		"executionstatusmessageseverity": int64(essmsgpb.StructuredMessage_ERROR), "positioninqueue": int64(42),
 		"createtime": testWUTime, "updatetime": testWUTime.Add(time.Minute),
+		"parameters": []byte(nil), "trialid": (*string)(nil),
 	}
 	if diff := cmp.Diff(wantInsertArgs, map[string]any(row.GetInsertArgs())); diff != "" {
 		t.Errorf("GetInsertArgs() mismatch (-want +got):\n%s", diff)
@@ -255,6 +259,7 @@ func TestWorkUnitConversionErrors(t *testing.T) {
 		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, Executable: corrupt},
 		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, ExecutionMetadata: corrupt},
 		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, WorkUnitStatus: corrupt},
+		{Xid: 1, WorkUnitID: 1, ExecutionID: 1, Parameters: corrupt},
 	}
 	for i, r := range badWURows {
 		if _, err := WorkUnitRowToProto(r); err == nil {
@@ -271,5 +276,47 @@ func TestWorkUnitConversionErrors(t *testing.T) {
 		if _, err := UpdatingWorkUnitRowToProto(r); err == nil {
 			t.Errorf("UpdatingWorkUnitRowToProto(bad[%d]) = nil, want error", i)
 		}
+	}
+}
+
+func TestWorkUnitTrialFieldsRoundTrip(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters *structpb.Struct
+		trialID    string
+	}{
+		{name: "trial", parameters: experimenttest.TrialParameters(), trialID: "trial-7"},
+		{name: "empty parameters stay non-null", parameters: &structpb.Struct{}, trialID: "trial-8"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wu := prototest.Modify(sampleWorkUnitProto(), func(wu *essmsgpb.WorkUnit) {
+				wu.Parameters = tt.parameters
+				wu.TrialId = tt.trialID
+			})
+			row, err := WorkUnitProtoToRow(wu)
+			if err != nil {
+				t.Fatalf("WorkUnitProtoToRow() failed: %v", err)
+			}
+			if row.Parameters == nil || row.TrialID == nil || *row.TrialID != tt.trialID {
+				t.Fatalf("WorkUnitProtoToRow() Parameters = %v, TrialID = %v; want non-NULL columns", row.Parameters, row.TrialID)
+			}
+			got, err := WorkUnitRowToProto(row)
+			if err != nil {
+				t.Fatalf("WorkUnitRowToProto() failed: %v", err)
+			}
+			if diff := cmp.Diff(wu, got, protocmp.Transform()); diff != "" {
+				t.Errorf("round trip mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestWorkUnitProtoToRow_InvalidParameters(t *testing.T) {
+	wu := prototest.Modify(sampleWorkUnitProto(), func(wu *essmsgpb.WorkUnit) {
+		wu.Parameters = &structpb.Struct{Fields: map[string]*structpb.Value{"\xff": structpb.NewNumberValue(1)}}
+	})
+	if _, err := WorkUnitProtoToRow(wu); err == nil {
+		t.Error("WorkUnitProtoToRow(invalid UTF-8 parameter key) = nil, want error")
 	}
 }

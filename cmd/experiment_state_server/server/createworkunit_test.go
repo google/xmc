@@ -33,6 +33,7 @@ import (
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/security/securitytest"
 	"xmanager_cloud/internal/storage"
@@ -527,5 +528,33 @@ func TestCreateWorkUnit_StudyExperimentRejected(t *testing.T) {
 	}
 	if taskQueueClient.LastEnqueuedAction != nil {
 		t.Errorf("CreateWorkUnit() on a study enqueued a task: %v", taskQueueClient.LastEnqueuedAction)
+	}
+}
+
+func TestCreateWorkUnit_RejectsStudyTrialFields(t *testing.T) {
+	tests := []struct {
+		name string
+		wu   *msgpb.WorkUnit
+	}{
+		{name: "parameters", wu: &msgpb.WorkUnit{WorkUnitType: msgpb.WorkUnit_STANDARD, Executable: testExecutable, Parameters: experimenttest.TrialParameters()}},
+		{name: "trial_id", wu: &msgpb.WorkUnit{WorkUnitType: msgpb.WorkUnit_STANDARD, Executable: testExecutable, TrialId: "trial-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := &storage.MockStorage{Experiment: &msgpb.Experiment{Name: "experiments/123"}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(&mockXidClient{
+					checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				}),
+				withStorage(st),
+			)
+
+			_, err := server.CreateWorkUnit(context.Background(), &msgpb.CreateWorkUnitRequest{Parent: "experiments/123", WorkUnit: tt.wu})
+
+			if status.Code(err) != codes.InvalidArgument || st.InsertedWorkUnit != nil {
+				t.Errorf("CreateWorkUnit(%s) = %v, inserted %v; want InvalidArgument and no insert", tt.name, err, st.InsertedWorkUnit)
+			}
+		})
 	}
 }
