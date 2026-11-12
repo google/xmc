@@ -51,13 +51,18 @@ except ImportError:
 # hermetically using mocks without requiring external wheel installation.
 try:
     from xmanager_cloud.experiment_state_server import experiment_state_api as ess_api
-    from xmanager_cloud.experiment_state_server.proto import api_pb2 as ess_api_pb2, priority_pb2
+    from xmanager_cloud.experiment_state_server.proto import (
+        api_pb2 as ess_api_pb2,
+        priority_pb2,
+        status_pb2,
+    )
 except ImportError:
     ess_api = None
     ess_api_pb2 = None
     priority_pb2 = None
+    status_pb2 = None
 
-# State enum names matching cloud.xmanager.v1.WorkUnitStatus.WorkUnitState
+# Fallback state enum names matching cloud.xmanager.v1.WorkUnitStatus.WorkUnitState
 STATE_NAMES = [
     "UNSPECIFIED",
     "INITIALIZING",
@@ -71,6 +76,7 @@ STATE_NAMES = [
     "DESCHEDULING",
     "COMPLETED",
     "FAILED",
+    "SCHEDULING_PAUSED",
 ]
 (
     STATE_UNSPECIFIED,
@@ -85,6 +91,7 @@ STATE_NAMES = [
     STATE_DESCHEDULING,
     STATE_COMPLETED,
     STATE_FAILED,
+    STATE_SCHEDULING_PAUSED,
 ) = range(len(STATE_NAMES))
 
 # Priority fallback mapping matching cloud.xmanager.v1.Priority
@@ -116,6 +123,12 @@ def _make_req(cls_name: str, **kwargs: Any) -> Any:
 
 def state_enum_to_name(state_enum: int) -> str:
     """Maps WorkUnitState enum value to a human-readable string."""
+    if status_pb2 is not None and hasattr(status_pb2, "WorkUnitStatus"):
+        try:
+            name = str(status_pb2.WorkUnitStatus.WorkUnitState.Name(state_enum))
+        except ValueError:
+            return f"UNKNOWN({state_enum})"
+        return name.removeprefix("WORK_UNIT_STATE_")
     if 0 <= state_enum < len(STATE_NAMES):
         return STATE_NAMES[state_enum]
     return f"UNKNOWN({state_enum})"
