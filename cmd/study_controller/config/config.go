@@ -16,9 +16,12 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"strconv"
+	"strings"
 )
 
 // DefaultPort is the HTTP port serving the health and metrics endpoints.
@@ -28,6 +31,9 @@ const DefaultPort = "8080"
 type Config struct {
 	// Port is the HTTP port serving /healthz, /readyz and /metrics.
 	Port string
+	// RedisAddr is the host:port of the Redis server. The password is read from the
+	// REDIS_PASSWORD environment variable, never from a flag.
+	RedisAddr string
 }
 
 // RegisterFlags registers the Study Controller flags on fs and returns the Config they populate
@@ -35,17 +41,48 @@ type Config struct {
 func RegisterFlags(fs *flag.FlagSet) *Config {
 	c := &Config{}
 	fs.StringVar(&c.Port, "port", DefaultPort, "HTTP port serving the health and metrics endpoints.")
+	fs.StringVar(&c.RedisAddr, "redis_addr", "", "Required. Redis server address as host:port (no scheme or credentials).")
 	return c
 }
 
 // Validate reports whether c is usable.
 func (c Config) Validate() error {
-	port, err := strconv.Atoi(c.Port)
-	if err != nil {
-		return fmt.Errorf("invalid port %q: must be a number", c.Port)
+	if err := validatePort(c.Port); err != nil {
+		return err
 	}
-	if port < 1 || port > 65535 {
-		return fmt.Errorf("invalid port %d: must be between 1 and 65535", port)
+	return validateRedisAddr(c.RedisAddr)
+}
+
+// validateRedisAddr reports whether addr is a host:port with a non-empty host and a valid port.
+// Its errors never echo addr, which a misconfiguration could turn into a URL with credentials.
+func validateRedisAddr(addr string) error {
+	if addr == "" {
+		return errors.New("redis_addr is required")
+	}
+	if strings.ContainsAny(addr, "@/") {
+		return errors.New("invalid redis_addr: must be host:port without a scheme, credentials or path")
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return errors.New("invalid redis_addr: must be host:port, with IPv6 hosts in brackets")
+	}
+	if host == "" {
+		return errors.New("invalid redis_addr: host must not be empty")
+	}
+	if validatePort(port) != nil {
+		return errors.New("invalid redis_addr: port must be a number between 1 and 65535")
+	}
+	return nil
+}
+
+// validatePort reports whether port is a decimal TCP port number between 1 and 65535.
+func validatePort(port string) error {
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: must be a number", port)
+	}
+	if n < 1 || n > 65535 {
+		return fmt.Errorf("invalid port %d: must be between 1 and 65535", n)
 	}
 	return nil
 }

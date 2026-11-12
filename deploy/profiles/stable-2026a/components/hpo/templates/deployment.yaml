@@ -68,6 +68,14 @@ spec:
             drop: ["ALL"]
         args:
         - "-port={{ $port }}"
+        # Set by xmc-bridge from the umbrella chart value redisAddr.
+        - {{ printf "-redis_addr=%s" (required "hpoDeployment.redisAddr is required" (.Values.hpoDeployment | default dict).redisAddr) | quote }}
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
         ports:
         - containerPort: {{ $port }}
           name: http-port
@@ -77,6 +85,8 @@ spec:
             port: http-port
           initialDelaySeconds: 5
           periodSeconds: 10
+          # Longer than the 2s Redis ping of /readyz.
+          timeoutSeconds: 3
         livenessProbe:
           httpGet:
             path: /healthz

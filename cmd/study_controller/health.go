@@ -15,21 +15,48 @@
 package main
 
 import (
+	"context"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"xmanager_cloud/internal/logging"
 )
+
+// readinessPingTimeout bounds the Redis ping of one readiness probe. It is shorter than the
+// chart's readinessProbe timeoutSeconds, so a hung Redis yields a 503 rather than a probe timeout.
+const readinessPingTimeout = 2 * time.Second
+
+// pinger reports whether a dependency is reachable.
+type pinger interface {
+	Ping(ctx context.Context) error
+}
 
 // newHTTPHandler returns the mux serving the liveness, readiness and Prometheus metrics endpoints.
 //
-// Readiness only reports that the process is up: the Study Controller has no dependencies to
-// check yet.
-func newHTTPHandler() http.Handler {
+// Liveness only reports that the process serves requests, so a Redis outage never restarts the pod.
+// Readiness additionally requires Redis to answer a ping.
+func newHTTPHandler(redis pinger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", writeOK)
-	mux.HandleFunc("GET /readyz", writeOK)
+	mux.HandleFunc("GET /readyz", readinessCheck(redis))
 	mux.Handle("GET /metrics", promhttp.Handler())
 	return mux
+}
+
+// readinessCheck returns a handler that responds 200 OK when redis answers a ping within
+// readinessPingTimeout, and 503 Service Unavailable otherwise. The cause is logged, not returned.
+func readinessCheck(redis pinger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
+		defer cancel()
+		if err := redis.Ping(ctx); err != nil {
+			logging.Warn(ctx, "Readiness check failed: Redis is unreachable", "error", err)
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		writeOK(w, r)
+	}
 }
 
 // writeOK responds 200 OK with body "OK"; it backs the liveness and readiness probes.

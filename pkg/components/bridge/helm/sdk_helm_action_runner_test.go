@@ -384,7 +384,7 @@ func TestSDKHelmActionRunner_ResolveChart_EmbeddedHPOChart(t *testing.T) {
 	}
 
 	releaseOpts := chartutil.ReleaseOptions{Name: "xmc-cmp-hpo", Namespace: "xmc", Revision: 1, IsInstall: true}
-	vals, err := chartutil.ToRenderValues(ch, map[string]any{"hpoDeployment": map[string]any{"enabled": true}}, releaseOpts, nil)
+	vals, err := chartutil.ToRenderValues(ch, map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": "redis-service:6379"}}, releaseOpts, nil)
 	if err != nil {
 		t.Fatalf("ToRenderValues(xmc-cmp-hpo) failed: %v", err)
 	}

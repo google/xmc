@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026a/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It serves health and metrics endpoints and does not yet run Study reconciliation. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
+> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It connects to Redis and serves health and metrics endpoints, and does not yet run Study reconciliation. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
 
 ---
 
@@ -54,12 +54,21 @@ Rendered only for the `xmc-cmp-hpo` release:
 
 | Object | Name | Notes |
 | :--- | :--- | :--- |
-| `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
+| `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness, see [Redis Connection](#redis-connection)) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
 | `ServiceAccount` | `xmc-study-controller` | Pod identity, without a Workload Identity annotation. |
 
 The pod carries the label `xmc.google.com/vizier-client: "true"`. XMC ships no NetworkPolicy for Vizier, which is bring-your-own; operators who restrict access to their Vizier server can admit pods with this label.
 
 `xmc-bridge` may only manage the objects named above; their names are allowlisted in the bridge Role ([`deploy/helm/templates/components/rbac.yaml`](../../../../helm/templates/components/rbac.yaml)), so renaming or adding an object requires updating that Role.
+
+### Redis Connection
+
+The Study Controller connects to the XMC Redis server:
+
+- **Address**: the umbrella chart value `redisAddr` reaches `xmc-bridge` as `REDIS_ADDR` in the `xmc-bridge-config` ConfigMap, and `xmc-bridge` passes it to every 1P release as `<component>Deployment.redisAddr`. A `redisAddr` Component parameter is ignored. The chart renders the value as `-redis_addr`. The value is `required`: an `xmc-cmp-hpo` release without `hpoDeployment.redisAddr` fails to render, so the Helm install or upgrade fails instead of starting a Study Controller without Redis. The profile release does not need it.
+- **Password**: the `REDIS_PASSWORD` environment variable, read from key `redis-password` of the umbrella chart's `redis-secret` Secret. `xmc-bridge` only actuates Components in the XMC release namespace, where the umbrella chart renders `redis-secret`.
+- **Readiness**: `/readyz` pings Redis with a 2s timeout and returns `503 Service Unavailable` when the ping fails, so the pod reports `NotReady` while Redis is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check Redis, so a Redis outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect Redis reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
+- **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping.
 
 ### Image Resolution
 
