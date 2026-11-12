@@ -272,7 +272,9 @@ position. Author ordering uses case-sensitive byte order, ascending status order
 `STARTING`, `INITIALIZING`, then `SCHEDULING`, and ties break by work-unit ID then experiment ID
 (ascending). Filtering by `author` (case-insensitive substring) or active `status` (`RUNNING`,
 `STARTING`, `INITIALIZING`, `SCHEDULING`) also applies to the full queue before pagination and
-resets the displayed page while keeping `userAllocations` queue-wide.
+resets the displayed page while keeping `userAllocations` queue-wide. Clicking a user chip in the
+`"Who holds <resource>?"` breakdown bar toggles that user's email as the `author` filter
+(substring match).
 
 The ROD Data Provider's design mirrors the Reconciler's: controller-runtime reconcilers watch Kueue `ClusterQueue`,
 `LocalQueue`, and `ResourceFlavor` objects and maintain an in-memory `ResourceCache`. RPCs read the
