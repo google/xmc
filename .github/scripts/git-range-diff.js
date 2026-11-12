@@ -263,7 +263,9 @@ function computeBulkCommitPatchIds(shas, opts) {
         patchIdMap.set(sha, patchId);
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    /* Best-effort cache population; caller tolerates partial map. */
+  }
   return patchIdMap;
 }
 
@@ -310,7 +312,9 @@ function resolveParentBaseFromMatch(matchedSha, commitIndex, opts) {
   for (const target of [`${matchedSha}~${baseOffset}`, `${matchedSha}~1`]) {
     try {
       return execGit(['rev-parse', '--verify', target], { ...opts, ignoreExitCode: false }).trim();
-    } catch (_) {}
+    } catch (_) {
+      /* Probe next parent candidate when this offset does not exist. */
+    }
   }
   return null;
 }
@@ -369,7 +373,9 @@ function resolveStackedApprovedRange(currentRange, approvedRange, approvedSha, p
       const correlatedBase = correlateStackedParentBase(currCommits, approvedMaps, opts);
       if (correlatedBase) return `${correlatedBase}..${approvedSha}`;
     }
-  } catch (_) {}
+  } catch (_) {
+    /* Fall back to commit-count range resolution below. */
+  }
 
   try {
     execGit(['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], { ...opts, ignoreExitCode: false });
@@ -550,7 +556,9 @@ function getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, curren
             files.add(file);
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        /* Skip unreachable commit SHA gracefully when aggregating file paths. */
+      }
     }
     return Array.from(files);
   }
