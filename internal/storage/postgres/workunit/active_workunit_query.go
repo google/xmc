@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"strings"
 
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 )
@@ -29,30 +28,31 @@ type activeWorkUnitStatement struct {
 }
 
 func activeWorkUnitStatements(queueNames []string, limit, offset int64, query storage.ActiveWorkUnitQuery) (activeWorkUnitStatement, activeWorkUnitStatement, error) {
+	order, err := activeWorkUnitOrder(query.OrderBy)
+	if err != nil {
+		return activeWorkUnitStatement{}, activeWorkUnitStatement{}, err
+	}
 	where := safesql.New(" WHERE wu.QueueName = ANY($1) AND wu.IsPendingOrRunningJob IS NOT NULL")
 	count := activeWorkUnitStatement{
 		sql:  safesql.Concat(safesql.New("SELECT COUNT(*) FROM WorkUnits wu"), where),
 		args: []any{queueNames},
 	}
-	args := []any{queueNames, limit, offset}
-	order, orderArgs, err := activeWorkUnitOrder(query.OrderBy, len(args))
-	if err != nil {
-		return activeWorkUnitStatement{}, activeWorkUnitStatement{}, err
-	}
-	args = append(args, orderArgs...)
 	fetchSQL := safesql.Concat(
 		safesql.New(`SELECT wu.Xid, wu.WorkUnitId, wu.WorkUnitType, wu.Priority, wu.Urls, wu.Tags, wu.Notes, wu.Executable, wu.ExecutionCreateTime, wu.ExecutionUpdateTime, wu.ExecutionCompleteTime, wu.ExecutionId, wu.ExecutionMetadata, wu.WorkUnitStatus, wu.CreateTime, wu.UpdateTime, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS experiment_title FROM WorkUnits wu JOIN Experiments e ON wu.Xid = e.Xid`),
 		where,
 		order,
 		safesql.New(" LIMIT $2 OFFSET $3"),
 	)
-	return count, activeWorkUnitStatement{sql: fetchSQL, args: args}, nil
+	fetch := activeWorkUnitStatement{sql: fetchSQL, args: []any{queueNames, limit, offset}}
+	return count, fetch, nil
 }
 
 var (
 	activeWorkUnitSortCols = map[string]safesql.TrustedSQLString{
 		"author":   safesql.New(`COALESCE(e.Creator, '') COLLATE "C"`),
 		"priority": safesql.New("wu.Priority"),
+		// WorkUnitState enum values: RUNNING=4, STARTING=3, INITIALIZING=1, SCHEDULING=2.
+		"status": safesql.New("CASE wu.ExecutionState WHEN 4 THEN 0 WHEN 3 THEN 1 WHEN 1 THEN 2 ELSE 3 END"),
 	}
 	activeWorkUnitSortDirs = map[string]safesql.TrustedSQLString{
 		"asc":  safesql.New(" ASC"),
@@ -60,35 +60,15 @@ var (
 	}
 )
 
-func activeWorkUnitOrder(orderBy string, argOffset int) (safesql.TrustedSQLString, []any, error) {
+func activeWorkUnitOrder(orderBy string) (safesql.TrustedSQLString, error) {
 	if orderBy == "" {
-		return safesql.New(" ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC"), nil, nil
+		return safesql.New(" ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC"), nil
 	}
 	field, dir, ok := strings.Cut(orderBy, " ")
+	colSQL, colOK := activeWorkUnitSortCols[field]
 	dirSQL, dirOK := activeWorkUnitSortDirs[dir]
-	if !ok || !dirOK {
-		return safesql.EmptyString(), nil, fmt.Errorf("unsupported order_by %q", orderBy)
+	if !ok || !colOK || !dirOK {
+		return safesql.EmptyString(), fmt.Errorf("unsupported order_by %q", orderBy)
 	}
-	var colSQL safesql.TrustedSQLString
-	var orderArgs []any
-	if field == "status" {
-		colSQL = safesql.Concat(
-			safesql.New("CASE wu.ExecutionState WHEN "), safesql.NewBindingParam("$", uint64(argOffset+1)),
-			safesql.New(" THEN 0 WHEN "), safesql.NewBindingParam("$", uint64(argOffset+2)),
-			safesql.New(" THEN 1 WHEN "), safesql.NewBindingParam("$", uint64(argOffset+3)),
-			safesql.New(" THEN 2 ELSE 3 END"),
-		)
-		orderArgs = []any{
-			int32(essmsgpb.WorkUnitStatus_RUNNING),
-			int32(essmsgpb.WorkUnitStatus_STARTING),
-			int32(essmsgpb.WorkUnitStatus_INITIALIZING),
-		}
-	} else {
-		var colOK bool
-		colSQL, colOK = activeWorkUnitSortCols[field]
-		if !colOK {
-			return safesql.EmptyString(), nil, fmt.Errorf("unsupported order_by %q", orderBy)
-		}
-	}
-	return safesql.Concat(safesql.New(" ORDER BY "), colSQL, dirSQL, safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")), orderArgs, nil
+	return safesql.Concat(safesql.New(" ORDER BY "), colSQL, dirSQL, safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")), nil
 }

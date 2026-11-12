@@ -18,40 +18,28 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 )
 
 func TestActiveWorkUnitOrder(t *testing.T) {
-	statusArgs := []any{
-		int32(essmsgpb.WorkUnitStatus_RUNNING),
-		int32(essmsgpb.WorkUnitStatus_STARTING),
-		int32(essmsgpb.WorkUnitStatus_INITIALIZING),
-	}
-	tests := []struct {
-		order, want string
-		args        []any
-	}{
-		{"", "wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC", nil},
-		{"author asc", `COALESCE(e.Creator, '') COLLATE "C" ASC`, nil},
-		{"author desc", `COALESCE(e.Creator, '') COLLATE "C" DESC`, nil},
-		{"priority asc", "wu.Priority ASC", nil},
-		{"priority desc", "wu.Priority DESC", nil},
-		{"status asc", `CASE wu.ExecutionState WHEN $4 THEN 0 WHEN $5 THEN 1 WHEN $6 THEN 2 ELSE 3 END ASC`, statusArgs},
-		{"status desc", `CASE wu.ExecutionState WHEN $4 THEN 0 WHEN $5 THEN 1 WHEN $6 THEN 2 ELSE 3 END DESC`, statusArgs},
+	tests := []struct{ order, want string }{
+		{"", "wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC"},
+		{"author asc", `COALESCE(e.Creator, '') COLLATE "C" ASC`},
+		{"author desc", `COALESCE(e.Creator, '') COLLATE "C" DESC`},
+		{"priority asc", "wu.Priority ASC"},
+		{"priority desc", "wu.Priority DESC"},
+		{"status asc", `CASE wu.ExecutionState WHEN 4 THEN 0 WHEN 3 THEN 1 WHEN 1 THEN 2 ELSE 3 END ASC`},
+		{"status desc", `CASE wu.ExecutionState WHEN 4 THEN 0 WHEN 3 THEN 1 WHEN 1 THEN 2 ELSE 3 END DESC`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.order, func(t *testing.T) {
-			got, gotArgs, err := activeWorkUnitOrder(tt.order, 3)
+			got, err := activeWorkUnitOrder(tt.order)
 			if err != nil {
 				t.Fatal(err)
 			}
 			want := " ORDER BY " + tt.want + ", wu.WorkUnitId ASC, wu.Xid ASC"
 			if diff := cmp.Diff(want, got.String()); diff != "" {
 				t.Errorf("ordering (-want +got):\n%s", diff)
-			}
-			if diff := cmp.Diff(tt.args, gotArgs); diff != "" {
-				t.Errorf("order args (-want +got):\n%s", diff)
 			}
 		})
 	}
