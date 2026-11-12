@@ -43,6 +43,9 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (any, error) {
+	if pass.TypesInfo == nil {
+		return nil, nil
+	}
 	insp, _ := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if insp == nil {
 		return nil, nil
@@ -54,8 +57,8 @@ func run(pass *analysis.Pass) (any, error) {
 		(*ast.IncDecStmt)(nil),
 	}
 	insp.Preorder(nodeFilter, func(n ast.Node) {
-		filename := pass.Fset.Position(n.Pos()).Filename
-		if strings.HasSuffix(filename, "_test.go") {
+		file := pass.Fset.File(n.Pos())
+		if file == nil || strings.HasSuffix(file.Name(), "_test.go") {
 			return
 		}
 		switch node := n.(type) {
