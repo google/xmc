@@ -13,7 +13,7 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 -->
-<div class="finder-query-card">
+<div class="finder-query-card" data-testid="smart-resource-finder">
   <span class="query-prefix">I need</span>
 
   @for (row of rows(); track row.id) {
@@ -49,9 +49,11 @@
               [value]="row.resourceType"
               (selectionChange)="onResourceTypeChange($index, $event.value)"
             >
-              <mat-option value="">-</mat-option>
+              <mat-option value="" data-testid="resource-type-option">-</mat-option>
               @for (resType of availableResourceTypes(); track resType) {
-                <mat-option [value]="resType">{{ resType }}</mat-option>
+                <mat-option [value]="resType" data-testid="resource-type-option">{{
+                  resType
+                }}</mat-option>
               }
             </mat-select>
             @if ($index === 0) {

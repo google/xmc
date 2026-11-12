@@ -13,7 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<div class="dashboards-list-container">
+<div class="dashboards-list-container" data-testid="dashboards-list-page">
   <!-- Page Header and Actions -->
   <div class="page-header-row">
     <div class="header-title-group">
@@ -59,6 +59,7 @@ limitations under the License.
           mat-icon-button
           matSuffix
           type="button"
+          data-testid="dashboard-clear-filter-button"
           aria-label="Clear search query"
           (click)="searchQuery.set('')"
         >

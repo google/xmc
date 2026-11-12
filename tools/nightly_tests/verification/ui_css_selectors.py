@@ -14,8 +14,14 @@
 
 """CSS selector constants for XMC Playwright UI E2E verifiers."""
 
-DASHBOARD_ROOT_SEL, WIP_BANNER_SEL = "xmc-resource-dashboard", "xmc-wip-banner"
-QUEUE_CARD_SEL, RESOURCE_OPTION_SEL = '[data-testid="queue-card"]', "mat-option"
+DASHBOARD_ROOT_SEL, WIP_BANNER_SEL = (
+    '[data-testid="resource-dashboard"]',
+    '[data-testid="wip-banner"]',
+)
+QUEUE_CARD_SEL, RESOURCE_OPTION_SEL = (
+    '[data-testid="queue-card"]',
+    'mat-option[data-testid="resource-type-option"]',
+)
 QUEUE_TITLE_SEL, JOB_POSITION_CELL_SEL = (
     '[data-testid="queue-title"]',
     '[data-testid="job-position-cell"]',
@@ -25,11 +31,12 @@ FLAVOR_NAME_SEL, JOB_WORKUNIT_CELL_SEL = (
     '[data-testid="job-workunit-cell"]',
 )
 JOBS_PANE_QUEUE_NAME_SEL = '[data-testid="target-queue-name"]'
-SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
+SMART_FINDER_ROOT_SEL = '[data-testid="smart-resource-finder"]'
 JOBS_CONTENT_SEL = '[data-testid="jobs-empty-state"], [data-testid="jobs-table"]'
 JOBS_TABLE_ROW_SEL = 'xmc-queue-jobs-table [data-testid="job-row"]'
 JOB_EXPERIMENT_LINK_SEL_TMPL = 'a[data-testid="job-link"][href="/experiments/{xid}"]'
 JOBS_NEXT_PAGE_BTN_SEL = (
+    'mat-paginator[data-testid="jobs-paginator"] '
     "button.mat-mdc-paginator-navigation-next:not([disabled])"
     ':not([aria-disabled="true"]):not(.mat-mdc-button-disabled)'
 )
@@ -47,11 +54,11 @@ ACTIVE_PILL_SEL_TMPL = 'button[data-testid="velocity-pill"][aria-pressed="true"]
 AVAILABILITY_TAB_SEL = 'button[data-testid="subnav-tab-resource-availability"]'
 SMART_FINDER_TAB_SEL = 'button[data-testid="subnav-tab-smart-finder"]'
 
-DASHBOARDS_LIST_ROOT_SEL = "xmc-dashboards-list-page"
-DASHBOARDS_DETAIL_ROOT_SEL = "xmc-dashboards-page"
+DASHBOARDS_LIST_ROOT_SEL = '[data-testid="dashboards-list-page"]'
+DASHBOARDS_DETAIL_ROOT_SEL = '[data-testid="dashboards-page"]'
 DASHBOARD_ROW_SEL = 'tr[data-testid="dashboard-row"]'
 DASHBOARD_FILTER_INPUT_SEL = 'input[data-testid="dashboard-filter-input"]'
-DASHBOARD_CLEAR_FILTER_BTN_SEL = 'button[aria-label="Clear search query"]'
+DASHBOARD_CLEAR_FILTER_BTN_SEL = 'button[data-testid="dashboard-clear-filter-button"]'
 DASHBOARD_EMPTY_STATE_SEL = '[data-testid="dashboard-empty-state"]'
 DASHBOARD_LINK_SEL, DASHBOARD_TITLE_TEXT_SEL = (
     'a[data-testid="dashboard-link"]',
@@ -62,16 +69,19 @@ DASHBOARD_RESOURCE_NAME_SEL, DASHBOARD_BADGE_COUNT_SEL = (
     '[data-testid="dashboard-badge-count"]',
 )
 DASHBOARD_DETAIL_TITLE_SEL = 'h1[data-testid="dashboard-detail-title"]'
-CHART_CARD_SEL = "xmc-dashboard-grid xmc-chart-card"
+CHART_CARD_SEL = 'xmc-dashboard-grid [data-testid="chart-card"]'
 CHART_SPINNER_SEL, CHART_ERROR_SEL = (
     '[data-testid="chart-loading-spinner"]',
     'xmc-chart-card [data-testid="chart-error-container"]',
 )
 CHART_HEADER_LINK_SEL = 'a[data-testid="chart-header-link"]'
-SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = "xmc-summary-box", '[data-testid="summary-value"]'
+SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = (
+    '[data-testid="summary-box"]',
+    '[data-testid="summary-value"]',
+)
 PLOT_CANVAS_SEL = 'xmc-plot-card [data-testid="plot-canvas"] canvas'
 
-ADMIN_PANEL_ROOT_SEL = "xmc-admin-panel"
+ADMIN_PANEL_ROOT_SEL = '[data-testid="admin-panel"]'
 ADMIN_PAGE_TITLE_SEL, ADMIN_TIMESTAMP_BADGE_SEL = (
     'h1[data-testid="admin-page-title"]',
     '[data-testid="admin-timestamp-badge"]',
