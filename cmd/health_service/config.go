@@ -46,7 +46,6 @@ type Config struct {
 	CacheTTL                   time.Duration
 	ForceRefreshMaxRequests    int
 	ForceRefreshWindow         time.Duration
-	EnableComponents           bool
 	FeatureFlags               featureflags.Flags
 	SchedulingResumeBatchSize  int
 	SchedulingResumeMaxBacklog int
@@ -78,7 +77,6 @@ func init() {
 	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
 	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
 	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
-	configutil.BoolEnv(&cfg.EnableComponents, "enable_components", false)
 	cfg.FeatureFlags = featureflags.Load()
 	configutil.IntEnv(&cfg.SchedulingResumeBatchSize, "health_scheduling_resume_batch_size", 100)
 	configutil.IntEnv(&cfg.SchedulingResumeMaxBacklog, "health_scheduling_resume_max_backlog", 500)
@@ -101,7 +99,6 @@ func init() {
 	flag.StringVar(&cfg.TLSCertFile, "tls_cert_file", "", "The TLS certificate file path.")
 	flag.StringVar(&cfg.TLSKeyFile, "tls_key_file", "", "The TLS private key file path.")
 	flag.StringVar(&cfg.ConfigDir, "config_dir", "/config", "The directory where ConfigMaps are mounted.")
-	flag.BoolVar(&cfg.EnableComponents, "enable_components", cfg.EnableComponents, "Enable custom components discovery in health service.")
 }
 
 // LoadConfig loads and returns the configuration.

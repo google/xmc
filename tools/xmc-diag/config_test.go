@@ -92,6 +92,24 @@ func TestParseFlags_ComponentFlags(t *testing.T) {
 	if cfg.Kubeconfig != "/tmp/kc" {
 		t.Errorf("Kubeconfig = %q, want /tmp/kc", cfg.Kubeconfig)
 	}
+
+	t.Setenv("ENABLE_COMPONENTS", "false")
+	cfgEnv, err := ParseFlags([]string{})
+	if err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+	if !cfgEnv.CheckComponents {
+		t.Errorf("CheckComponents with ENABLE_COMPONENTS=false = false, want true")
+	}
+
+	t.Setenv("CHECK_COMPONENTS", "false")
+	cfgDisabled, err := ParseFlags([]string{})
+	if err != nil {
+		t.Fatalf("ParseFlags failed: %v", err)
+	}
+	if cfgDisabled.CheckComponents {
+		t.Errorf("CheckComponents with CHECK_COMPONENTS=false = true, want false")
+	}
 }
 
 func TestParseFlags_ValidationErrors(t *testing.T) {

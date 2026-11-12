@@ -200,53 +200,77 @@ class ConfigResolutionTest(unittest.TestCase):
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_service_mappings(self) -> None:
-        """Verifies feature flags conditionally expand enabled services."""
+        """Verifies feature flags conditionally expand enabled services and components stays in base."""
         args = argparse.Namespace(
             project_id="my-proj",
-            enable_metrics=True,
-            enable_components=True,
             rod_deployment_enabled=True,
             enable_health_service=True,
             enable_dashboard_service=True,
         )
         cfg = config.load_config(args, repo_root=self.root)
-        self.assertIn("ingestion_gateway", cfg.enabled_services)
+        # ingestion-gateway is a stable-2026a Component actuated by xmc-bridge; KinD never builds
+        # or deploys it from enable_metrics.
+        self.assertNotIn("ingestion_gateway", cfg.enabled_services)
         self.assertIn("components", cfg.enabled_services)
         self.assertIn("rod_data_provider", cfg.enabled_services)
         self.assertIn("health_service", cfg.enabled_services)
         self.assertIn("dashboard_service", cfg.enabled_services)
+
+        with (
+            patch.dict("os.environ", {"ENABLE_COMPONENTS": "false"}),
+            self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"),
+        ):
+            config.load_config(argparse.Namespace(project_id="my-proj"), repo_root=self.root)
+        disabled_cfg = self.root / "disabled_comp.yaml"
+        disabled_cfg.write_text("vars:\n  project_id: my-proj\n  enable_components: false\n")
+        with self.assertRaisesRegex(ValueError, "enable_components=false is no longer supported"):
+            config.load_config(
+                argparse.Namespace(config=str(disabled_cfg)),
+                repo_root=self.root,
+            )
+        retired_cfg = self.root / "retired_metrics.yaml"
+        retired_cfg.write_text("vars:\n  project_id: my-proj\n  enable_metrics: true\n")
+        with self.assertRaisesRegex(ValueError, "retired in XMC 1.0.0"):
+            config.load_config(
+                argparse.Namespace(config=str(retired_cfg)),
+                repo_root=self.root,
+            )
+        # Typos and non-boolean strings fail closed like the GKE loader (no silent default=True).
+        for typo in ("disabled", "flase"):
+            with (
+                self.subTest(typo=typo),
+                patch.dict("os.environ", {"ENABLE_COMPONENTS": typo}),
+                self.assertRaisesRegex(
+                    ValueError, "enable_components=false is no longer supported"
+                ),
+            ):
+                config.load_config(argparse.Namespace(project_id="my-proj"), repo_root=self.root)
+        # An empty ENABLE_COMPONENTS is "unset", not "false".
+        with patch.dict("os.environ", {"ENABLE_COMPONENTS": ""}):
+            self.assertIn(
+                "components",
+                config.load_config(
+                    argparse.Namespace(project_id="my-proj"), repo_root=self.root
+                ).enabled_services,
+            )
 
     @patch.dict("os.environ", {}, clear=True)
     def test_feature_flag_yaml_and_env_mappings(self) -> None:
         """Verifies feature flags resolved from YAML and environment variables."""
         cfg_file = self.root / "config.yaml"
         cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  health_service_deployment_enabled: false\n"
+            "vars:\n  project_id: yaml-p\n  health_service_deployment_enabled: false\n"
             "  rod_deployment_enabled: false\n",
-            encoding="utf-8",
-        )
-
-        with patch.dict("os.environ", {"ENABLE_COMPONENTS": "true"}, clear=True):
-            args = argparse.Namespace(config=str(cfg_file))
-            cfg = config.load_config(args, repo_root=self.root)
-            self.assertIn("ingestion_gateway", cfg.enabled_services)
-            self.assertIn("components", cfg.enabled_services)
-            self.assertNotIn("health_service", cfg.enabled_services)
-            self.assertNotIn("rod_data_provider", cfg.enabled_services)
-            self.assertNotIn("dashboard_service", cfg.enabled_services)
-
-    @patch.dict("os.environ", {}, clear=True)
-    def test_load_config_ingestion_gateway_disabled_overrides_enable_metrics(self) -> None:
-        """Verifies ingestion_gateway_deployment_enabled: false suppresses ingestion_gateway even if enable_metrics is true."""
-        cfg_file = self.root / "config.yaml"
-        cfg_file.write_text(
-            "vars:\n  project_id: yaml-p\n  enable_metrics: true\n  ingestion_gateway_deployment_enabled: false\n",
             encoding="utf-8",
         )
 
         args = argparse.Namespace(config=str(cfg_file))
         cfg = config.load_config(args, repo_root=self.root)
         self.assertNotIn("ingestion_gateway", cfg.enabled_services)
+        self.assertIn("components", cfg.enabled_services)
+        self.assertNotIn("health_service", cfg.enabled_services)
+        self.assertNotIn("rod_data_provider", cfg.enabled_services)
+        self.assertNotIn("dashboard_service", cfg.enabled_services)
 
     def test_remote_k8s_explicit_cli(self) -> None:
         """Verifies explicitly passing remote_k8s_context via CLI is resolved."""

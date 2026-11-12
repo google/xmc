@@ -129,7 +129,7 @@ func buildGCSVolumeSource(gcs *esspb.GcsVolumeSource) *corev1.CSIVolumeSource {
 		attrs["mountOptions"] = strings.Join(gcs.GetMountOptions(), ",")
 	}
 	return &corev1.CSIVolumeSource{
-		Driver:           "gcs.csi.storage.gke.io",
+		Driver:           "gcsfuse.csi.storage.gke.io",
 		ReadOnly:         gcs.ReadOnly,
 		VolumeAttributes: attrs,
 	}

@@ -65,7 +65,6 @@ class HelmDeployer:
             "kueue",
             "dashboard-service",
             "health-service",
-            "ingestion-gateway",
             "log-monitor",
             "rod",
             "ess/gateway.yaml",
@@ -122,7 +121,6 @@ ess_custom_image: "experiment_state_server_image:latest"
 xmc_bridge_custom_image: "xmc_bridge_image:latest"
 
 componentsDeployment:
-  enabled: true
   probeInterval: "2s"
   probeTimeout: "2s"
 

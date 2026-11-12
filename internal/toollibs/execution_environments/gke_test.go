@@ -1940,6 +1940,73 @@ func TestInjectOnJobSetCreation_GCSFuseAnnotation(t *testing.T) {
 	}
 }
 
+func TestInjectOnJobSetCreation_NoGCSVolume_NoGCSFuseAnnotation(t *testing.T) {
+	g := &GKE{}
+	workUnit := &epb.WorkUnit{
+		Executable: &epb.Executable{
+			Type: &epb.Executable_Jobset{
+				Jobset: &epb.JobSetExecutable{
+					Jobs: []*epb.KubernetesJob{
+						{
+							Name: "job1",
+							Spec: &epb.ExecutableSpec{
+								Resources: &epb.ResourceSet{
+									Resources: &epb.ResourceSet_CpuResources{
+										CpuResources: &epb.CpuResources{
+											CpuMillicores: 1000,
+											MemoryBytes:   1024 * 1024 * 1024,
+										},
+									},
+								},
+								DockerImage: "gcr.io/test/image",
+							},
+							Volumes: []*epb.Volume{
+								{
+									Name:   "scratch",
+									Source: &epb.Volume_EmptyDir{EmptyDir: &epb.EmptyDirVolumeSource{}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	jobSet := &jobsetv1alpha2.JobSet{
+		Spec: jobsetv1alpha2.JobSetSpec{
+			ReplicatedJobs: []jobsetv1alpha2.ReplicatedJob{
+				{
+					Name: "job1",
+					Template: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{
+										{
+											Name:  "container1",
+											Image: "gcr.io/test/image",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := g.InjectOnJobSetCreation(context.Background(), workUnit, jobSet)
+	if err != nil {
+		t.Fatalf("InjectOnJobSetCreation() returned error: %v", err)
+	}
+
+	annotations := got.Spec.ReplicatedJobs[0].Template.Spec.Template.ObjectMeta.Annotations
+	if _, ok := annotations["gke-gcsfuse/volumes"]; ok {
+		t.Errorf("Expected no 'gke-gcsfuse/volumes' annotation, got %v", annotations)
+	}
+}
+
 func TestEnsureTpuContainerPorts(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -157,7 +157,7 @@ def handle_build_images(args: argparse.Namespace) -> None:
 
     cfg = config.load_config(args)
     builder = ImageBuilder(cfg)
-    services = getattr(args, "services", None)
+    services = getattr(args, "services", None) or None
     skip_build = getattr(args, "skip_build", False)
     image_tags = builder.build_images(services=services, skip_build=skip_build)
     if getattr(args, "load_kind", False):
@@ -219,34 +219,6 @@ def _add_common_config_flags(p: argparse.ArgumentParser) -> None:
         action="store_false",
         default=None,
         help="Disable automatic database migrations.",
-    )
-    p.add_argument(
-        "--enable-metrics",
-        dest="enable_metrics",
-        action="store_true",
-        default=None,
-        help="Enable metrics ingestion service.",
-    )
-    p.add_argument(
-        "--no-enable-metrics",
-        dest="enable_metrics",
-        action="store_false",
-        default=None,
-        help="Disable metrics ingestion service.",
-    )
-    p.add_argument(
-        "--enable-components",
-        dest="enable_components",
-        action="store_true",
-        default=None,
-        help="Enable components service.",
-    )
-    p.add_argument(
-        "--no-enable-components",
-        dest="enable_components",
-        action="store_false",
-        default=None,
-        help="Disable components service.",
     )
     p.add_argument(
         "--rod-deployment-enabled",

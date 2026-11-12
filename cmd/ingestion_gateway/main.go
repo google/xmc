@@ -44,7 +44,7 @@ func main() {
 	slog.SetDefault(logger)
 	ctx := logging.WithLogger(context.Background(), logger)
 
-	resolveComponentConfigIfEnabled(ctx, cfg)
+	resolveComponentConfig(ctx, cfg)
 	logInitializing(ctx, cfg)
 
 	gMetrics := ingestiongateway.NewGatewayMetrics(nil)
@@ -62,8 +62,12 @@ func main() {
 	awaitShutdown(ctx, server)
 }
 
-func resolveComponentConfigIfEnabled(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
-	if cfg == nil || !cfg.EnableComponents {
+const componentResolveTimeout = 5 * time.Second
+
+var newComponentGetter = ingestiongateway.NewK8sComponentGetter
+
+func resolveComponentConfig(ctx context.Context, cfg *ingestiongateway.Config, optionalGetter ...ingestiongateway.ComponentGetter) {
+	if !cfg.UsesRedpanda() {
 		return
 	}
 	var getter ingestiongateway.ComponentGetter
@@ -71,14 +75,16 @@ func resolveComponentConfigIfEnabled(ctx context.Context, cfg *ingestiongateway.
 		getter = optionalGetter[0]
 	} else {
 		var err error
-		getter, err = ingestiongateway.NewK8sComponentGetter()
+		getter, err = newComponentGetter()
 		if err != nil {
 			logging.Warn(ctx, "Failed to initialize Kubernetes client for component resolution; falling back to static flags",
 				"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)
 			return
 		}
 	}
-	if err := ingestiongateway.ResolveRedpandaComponentConfig(ctx, cfg, getter); err != nil {
+	resolveCtx, cancel := context.WithTimeout(ctx, componentResolveTimeout)
+	defer cancel()
+	if err := ingestiongateway.ResolveRedpandaComponentConfig(resolveCtx, cfg, getter); err != nil {
 		logging.Warn(ctx, "Failed to resolve redpanda Component CR; falling back to static flags",
 			"fallback_brokers", cfg.RedpandaBrokers, "fallback_topic", cfg.TopicName, "error", err)
 	}

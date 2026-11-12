@@ -72,10 +72,10 @@ func verifyCustomVolumes(t *testing.T, volumes []corev1.Volume) {
 	if pvc := volMap["pvc-data"].PersistentVolumeClaim; pvc == nil || pvc.ClaimName != "my-claim" || !pvc.ReadOnly {
 		t.Errorf("Expected pvc-data volume with ClaimName 'my-claim' and ReadOnly true, got: %+v", pvc)
 	}
-	if csi := volMap["gcs-data"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket" || csi.ReadOnly == nil || *csi.ReadOnly {
+	if csi := volMap["gcs-data"].CSI; csi == nil || csi.Driver != "gcsfuse.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket" || csi.ReadOnly == nil || *csi.ReadOnly {
 		t.Errorf("Expected gcs-data CSI volume with ReadOnly false, got: %+v", csi)
 	}
-	if csi := volMap["gcs-data-nil"].CSI; csi == nil || csi.Driver != "gcs.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket-nil" || csi.ReadOnly != nil {
+	if csi := volMap["gcs-data-nil"].CSI; csi == nil || csi.Driver != "gcsfuse.csi.storage.gke.io" || csi.VolumeAttributes["bucketName"] != "my-bucket-nil" || csi.ReadOnly != nil {
 		t.Errorf("Expected gcs-data-nil CSI volume with ReadOnly nil, got: %+v", csi)
 	}
 	if hp := volMap["host-data"].HostPath; hp == nil || hp.Path != "/tmp/host" || hp.Type == nil || *hp.Type != "Directory" {
@@ -332,7 +332,7 @@ func TestBuildGCSVolumeSource(t *testing.T) {
 				MountOptions: []string{"implicit-dirs"},
 			},
 			want: &corev1.CSIVolumeSource{
-				Driver:   "gcs.csi.storage.gke.io",
+				Driver:   "gcsfuse.csi.storage.gke.io",
 				ReadOnly: proto.Bool(true),
 				VolumeAttributes: map[string]string{
 					"bucketName":   "my-bucket",
@@ -348,7 +348,7 @@ func TestBuildGCSVolumeSource(t *testing.T) {
 				MountOptions: []string{"implicit-dirs", "dir-mode=0755", "file-mode=0644", "uid=1000"},
 			},
 			want: &corev1.CSIVolumeSource{
-				Driver:   "gcs.csi.storage.gke.io",
+				Driver:   "gcsfuse.csi.storage.gke.io",
 				ReadOnly: proto.Bool(false),
 				VolumeAttributes: map[string]string{
 					"bucketName":   "my-bucket-no-prefix",
@@ -362,7 +362,7 @@ func TestBuildGCSVolumeSource(t *testing.T) {
 				Bucket: "gs://no-options-bucket",
 			},
 			want: &corev1.CSIVolumeSource{
-				Driver: "gcs.csi.storage.gke.io",
+				Driver: "gcsfuse.csi.storage.gke.io",
 				VolumeAttributes: map[string]string{
 					"bucketName": "no-options-bucket",
 				},

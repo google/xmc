@@ -332,10 +332,9 @@ func pendingVizierCatalog() map[string]*store.ComponentRecord {
 func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
-		name             string
-		expType          msgpb.Experiment_ExperimentType
-		enableComponents bool
-		catalog          *storage.MockComponentRepository
+		name    string
+		expType msgpb.Experiment_ExperimentType
+		catalog *storage.MockComponentRepository
 		// txCatalog, when set, is what the creation transaction reads instead of catalog.
 		txCatalog    *storage.MockComponentRepository
 		wantCode     codes.Code
@@ -343,20 +342,20 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 		wantXidCalls int
 		wantPinned   int
 	}{
-		{name: "study with components disabled", expType: msgpb.Experiment_STUDY,
-			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
-			wantCode: codes.FailedPrecondition, wantText: "HPO requires the Components feature"},
-		{name: "study rejected by the pre-check", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study without hpo component is rejected before provisioning xid", expType: msgpb.Experiment_STUDY,
+			catalog:  &storage.MockComponentRepository{},
+			wantCode: codes.FailedPrecondition, wantText: `"hpo"`},
+		{name: "study rejected by the pre-check", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{Records: pendingVizierCatalog()},
 			wantCode: codes.FailedPrecondition, wantText: `"vizier"`},
-		{name: "study rejected in the creation transaction", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study rejected in the creation transaction", expType: msgpb.Experiment_STUDY,
 			catalog:   &storage.MockComponentRepository{Records: readyHPOCatalog()},
 			txCatalog: &storage.MockComponentRepository{Records: pendingVizierCatalog()},
 			wantCode:  codes.FailedPrecondition, wantText: `"vizier"`, wantXidCalls: 1},
-		{name: "study catalog read failure is internal", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study catalog read failure is internal", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{GetActiveComponentErr: grpcerr.ErrUnavailable},
 			wantCode: codes.Internal},
-		{name: "study with ready components is pinned", expType: msgpb.Experiment_STUDY, enableComponents: true,
+		{name: "study with ready components is pinned", expType: msgpb.Experiment_STUDY,
 			catalog:  &storage.MockComponentRepository{Records: readyHPOCatalog()},
 			wantCode: codes.OK, wantXidCalls: 1, wantPinned: 3},
 		{name: "standard experiment reads no components", expType: msgpb.Experiment_STANDARD,
@@ -371,7 +370,7 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 				st.Transaction = &storage.Transaction{Components: tc.txCatalog}
 			}
 			server := newTestServer(t,
-				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: tc.enableComponents}),
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
 				withXidClient(xidClient),
 				withStorage(st),
 			)

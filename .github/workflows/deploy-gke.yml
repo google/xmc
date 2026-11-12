@@ -329,15 +329,27 @@ jobs:
             health_service_deployment_enabled: ${HEALTH_SERVICE_ENABLED}
             dashboard_service_deployment_enabled: ${DASHBOARD_SERVICE_ENABLED}
             rod_deployment_enabled: ${ROD_ENABLED}
-            enable_metrics: ${ENABLE_METRICS}
           EOF_YAML
+
+          cat << EOF_PROFILE > "${RUNNER_TEMP}/xmc-profile-values.yaml"
+          components:
+            redpanda:
+              enabled: ${ENABLE_METRICS}
+            clickhouse:
+              enabled: ${ENABLE_METRICS}
+            ingestion-gateway:
+              enabled: ${ENABLE_METRICS}
+              parameters:
+                hpaMinReplicas: 1
+          EOF_PROFILE
 
       - name: 'Pre-Deploy Metrics Addons on Existing Cluster'
         if: ${{ inputs.enable_metrics == true }}
         run: |
           # When upgrading an existing cluster, ensure Redpanda, ClickHouse, and the
-          # xmc-metrics topic are present BEFORE the xmc_app Helm release rolls out
-          # ingestion-gateway (which validates topic topology on startup).
+          # xmc-metrics topic are present BEFORE xmc-bridge reconciles the
+          # ingestion-gateway Component installed by xmc-profile (it validates topic
+          # topology on startup).
           if gcloud container clusters describe "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}" &>/dev/null; then
             gcloud container clusters get-credentials "xmc-${DEPLOYMENT_NAME}-${ENVIRONMENT}" --region="${REGION}" --project="${PROJECT_ID}"
             ./deploy/addons/metrics/setup_metrics_addons.sh
@@ -351,6 +363,7 @@ jobs:
             --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
             --dns-project "${DNS_PROJECT_ID}" \
             --dns-zone "${DNS_ZONE_NAME}" \
+            --profile-values "${RUNNER_TEMP}/xmc-profile-values.yaml" \
             --skip-verification
 
       - name: 'Deploy Metrics Addons (ClickHouse & Redpanda)'

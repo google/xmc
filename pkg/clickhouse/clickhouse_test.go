@@ -187,7 +187,7 @@ func TestConfigured(t *testing.T) {
 			want: false,
 		},
 		{
-			// The host is what the helm chart renders, and only when metrics are enabled.
+			// The host is set explicitly by local tooling or as a static fallback; the chart no longer renders it.
 			name: "host configured",
 			env:  map[string]string{"CLICKHOUSE_DSN": "", "CLICKHOUSE_HOST": "ch.example.internal"},
 			want: true,

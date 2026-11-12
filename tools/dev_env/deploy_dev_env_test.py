@@ -125,11 +125,12 @@ image_tag: latest
             deploy_dev_env.load_and_validate_config("dummy.yaml")
         self.assertEqual(cm.exception.code, 1)
 
+    @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
     @patch("os.access", return_value=True)
     @patch("tools.dev_env.deploy_dev_env.run_command")
-    def test_run_checks_success(self, mock_run, mock_access, mock_isfile, mock_which):
+    def test_run_checks_success(self, mock_run, mock_access, mock_isfile, mock_which, _mock_helm):
         # Mock terraform version output
         tf_version_mock = MagicMock()
         tf_version_mock.stdout = '{"terraform_version": "1.13.0"}'
@@ -181,11 +182,14 @@ image_tag: latest
         with self.assertRaises(SystemExit):
             deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
 
+    @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @patch("shutil.which", return_value=True)
     @patch("pathlib.Path.is_file", return_value=True)
     @patch("os.access", return_value=True)
     @patch("tools.dev_env.deploy_dev_env.run_command")
-    def test_run_checks_project_mismatch(self, mock_run, mock_access, mock_isfile, mock_which):
+    def test_run_checks_project_mismatch(
+        self, mock_run, mock_access, mock_isfile, mock_which, _mock_helm
+    ):
         tf_version_mock = MagicMock()
         tf_version_mock.stdout = '{"terraform_version": "1.13.0"}'
         active_project_mock = MagicMock()
@@ -858,24 +862,7 @@ image_tag: latest
             self.dns_zone,
             "my-config.yaml",
         )
-        mock_compile.assert_called_once_with(
-            "my-config.yaml", self.valid_config.deployment_name, enable_components=False
-        )
-
-    @patch("tools.dev_env.deploy_dev_env.compile_blueprint")
-    def test_step_compile_with_enable_components(self, mock_compile):
-        from dataclasses import replace
-
-        cfg = replace(self.valid_config, enable_components=True)
-        deploy_dev_env.step_compile(
-            cfg,
-            self.dns_project,
-            self.dns_zone,
-            "my-config.yaml",
-        )
-        mock_compile.assert_called_once_with(
-            "my-config.yaml", cfg.deployment_name, enable_components=True
-        )
+        mock_compile.assert_called_once_with("my-config.yaml", self.valid_config.deployment_name)
 
     @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
@@ -884,22 +871,19 @@ image_tag: latest
     def test_step_app_deploys_component_profile(
         self, mock_deploy, mock_profile, mock_restart, mock_creds
     ):
-        from dataclasses import replace
-
-        cfg = replace(self.valid_config, enable_components=True)
         manager = MagicMock()
         manager.attach_mock(mock_deploy, "deploy")
         manager.attach_mock(mock_creds, "creds")
         manager.attach_mock(mock_profile, "profile")
         manager.attach_mock(mock_restart, "restart")
 
-        deploy_dev_env.step_app(cfg, self.dns_project, self.dns_zone)
+        deploy_dev_env.step_app(self.valid_config, self.dns_project, self.dns_zone)
         manager.assert_has_calls(
             [
-                call.deploy(cfg.deployment_name, "xmc_app"),
-                call.creds(cfg),
-                call.profile(cfg),
-                call.restart(cfg),
+                call.deploy(self.valid_config.deployment_name, "xmc_app"),
+                call.creds(self.valid_config),
+                call.profile(self.valid_config),
+                call.restart(self.valid_config),
             ],
             any_order=False,
         )
@@ -1188,7 +1172,6 @@ image_tag: latest
                 "ENVIRONMENT": "dev",
                 "REGION": "us-central1",
                 "PROJECT_ID": "my-project",
-                "ENABLE_COMPONENTS": "false",
                 "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
             },
         )
@@ -1242,7 +1225,6 @@ image_tag: latest
                         "ENVIRONMENT": "dev",
                         "REGION": "us-central1",
                         "PROJECT_ID": "my-project",
-                        "ENABLE_COMPONENTS": "false",
                         "LOG_MONITOR_DEPLOYMENT_ENABLED": "true",
                     },
                     log_on_error=False,
@@ -1361,12 +1343,9 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", side_effect=RuntimeError("old"))
     @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
     @patch("tools.dev_env.deploy_dev_env._verify_binaries")
-    def test_run_checks_helm_version_low_when_components_enabled(
-        self, _mock_bin, _mock_tf, _mock_helm, mock_log_error
-    ):
-        cfg = replace(self.valid_config, enable_components=True)
+    def test_run_checks_helm_version_low(self, _mock_bin, _mock_tf, _mock_helm, mock_log_error):
         with self.assertRaises(SystemExit) as cm:
-            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with("Failed Helm version check: old")
 
@@ -1377,12 +1356,9 @@ image_tag: latest
     )
     @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
     @patch("tools.dev_env.deploy_dev_env._verify_binaries")
-    def test_run_checks_helm_oserror_when_components_enabled(
-        self, _mock_bin, _mock_tf, _mock_helm, mock_log_error
-    ):
-        cfg = replace(self.valid_config, enable_components=True)
+    def test_run_checks_helm_oserror(self, _mock_bin, _mock_tf, _mock_helm, mock_log_error):
         with self.assertRaises(SystemExit) as cm:
-            deploy_dev_env.run_checks(cfg, self.dns_project, self.dns_zone)
+            deploy_dev_env.run_checks(self.valid_config, self.dns_project, self.dns_zone)
         self.assertEqual(cm.exception.code, 1)
         mock_log_error.assert_called_once_with("Failed Helm version check: helm not executable")
 
@@ -1391,12 +1367,11 @@ image_tag: latest
     @patch("tools.dev_env.deploy_dev_env.verify_helm_min_version", return_value="v3.15.0")
     @patch("tools.dev_env.deploy_dev_env._check_terraform_version")
     @patch("tools.dev_env.deploy_dev_env._verify_binaries")
-    def test_run_checks_missing_profile_values_when_components_enabled(
+    def test_run_checks_missing_profile_values(
         self, _mock_bin, _mock_tf, _mock_helm, _mock_is_file, mock_log_error
     ):
         cfg = replace(
             self.valid_config,
-            enable_components=True,
             profile_values="/tmp/nonexistent-profile-values-1429.yaml",
         )
         with self.assertRaises(SystemExit) as cm:
@@ -1406,7 +1381,7 @@ image_tag: latest
             "Profile values file '/tmp/nonexistent-profile-values-1429.yaml' does not exist or is not a file."
         )
 
-    def test_build_resume_cmd_quotes_profile_values(self):
+    def test_build_resume_cmd_quotes_profile_values_and_rejects_removed_components_flags(self):
         parsed = deploy_dev_env.parse_args(
             [
                 "--config",
@@ -1415,30 +1390,30 @@ image_tag: latest
                 "dns-proj",
                 "--dns-zone",
                 "dns-zone",
-                "--enable-components",
                 "--profile-values",
                 "/tmp/my dir/profile values.yaml",
             ]
         )
         cmd = deploy_dev_env._build_resume_cmd(parsed, "app")
-        self.assertIn("--enable-components ", cmd)
         self.assertIn("--profile-values '/tmp/my dir/profile values.yaml' ", cmd)
         self.assertTrue(cmd.endswith("--start-from app"))
 
-        parsed_neg = deploy_dev_env.parse_args(
-            [
-                "--config",
-                "cfg.yaml",
-                "--dns-project",
-                "dns-proj",
-                "--dns-zone",
-                "dns-zone",
-                "--no-enable-components",
-            ]
-        )
-        self.assertIn(
-            "--no-enable-components ", deploy_dev_env._build_resume_cmd(parsed_neg, "app")
-        )
+        for flag in ("--enable-components", "--no-enable-components"):
+            err_stream = io.StringIO()
+            with patch("sys.stderr", err_stream), self.assertRaises(SystemExit) as cm:
+                deploy_dev_env.parse_args(
+                    [
+                        "--config",
+                        "cfg.yaml",
+                        "--dns-project",
+                        "dns-proj",
+                        "--dns-zone",
+                        "dns-zone",
+                        flag,
+                    ]
+                )
+            self.assertEqual(cm.exception.code, 2)
+            self.assertIn("unrecognized arguments", err_stream.getvalue())
 
 
 if __name__ == "__main__":

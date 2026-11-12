@@ -80,8 +80,8 @@ func helmTemplateFuncs() template.FuncMap {
 	}
 }
 
-// loadBridgeChartValues returns the chart's values.yaml with componentsDeployment.enabled set to enabled.
-func loadBridgeChartValues(t *testing.T, repoRoot string, enabled bool) map[string]any {
+// loadBridgeChartValues returns the chart's default values.yaml as a map.
+func loadBridgeChartValues(t *testing.T, repoRoot string) map[string]any {
 	t.Helper()
 	valuesRaw, err := os.ReadFile(filepath.Join(repoRoot, "deploy", "helm", "values.yaml"))
 	if err != nil {
@@ -91,15 +91,13 @@ func loadBridgeChartValues(t *testing.T, repoRoot string, enabled bool) map[stri
 	if err := yaml.Unmarshal(valuesRaw, &values); err != nil {
 		t.Fatalf("failed to unmarshal values.yaml: %v", err)
 	}
-	compDeploy, ok := values["componentsDeployment"].(map[string]any)
-	if !ok {
+	if _, ok := values["componentsDeployment"].(map[string]any); !ok {
 		t.Fatalf("values.yaml: componentsDeployment is missing or not a map: %T", values["componentsDeployment"])
 	}
-	compDeploy["enabled"] = enabled
 	return values
 }
 
-func renderChartTemplateWithValues(t *testing.T, relTemplatePath string, releaseNS string, enabled bool) []byte {
+func renderChartTemplateWithValues(t *testing.T, relTemplatePath string, releaseNS string, values map[string]any) []byte {
 	t.Helper()
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -113,9 +111,12 @@ func renderChartTemplateWithValues(t *testing.T, relTemplatePath string, release
 	if err != nil {
 		t.Fatalf("failed to parse template %s: %v", relTemplatePath, err)
 	}
+	if values == nil {
+		values = loadBridgeChartValues(t, repoRoot)
+	}
 	var buf bytes.Buffer
 	data := map[string]any{
-		"Values":  loadBridgeChartValues(t, repoRoot, enabled),
+		"Values":  values,
 		"Release": map[string]any{"Namespace": releaseNS},
 	}
 	if err := tmpl.Execute(&buf, data); err != nil {
@@ -139,7 +140,7 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 		t.Fatalf("could not locate repository root: %v", err)
 	}
 
-	renderedDefault := string(renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", true))
+	renderedDefault := string(renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", nil))
 	if !strings.Contains(renderedDefault, "kind: Role\nmetadata:\n  name: xmc-bridge-role") {
 		t.Errorf("expected default rbac.yaml render to define Role xmc-bridge-role, got:\n%s", renderedDefault)
 	}
@@ -152,8 +153,8 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 		}
 	}
 
-	if docs := decodeRBACDocs(t, renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", false)); len(docs) != 0 {
-		t.Errorf("expected rbac.yaml to render no objects when componentsDeployment.enabled=false, got %d: %+v", len(docs), docs)
+	if docs := decodeRBACDocs(t, renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", map[string]any{})); len(docs) != 6 {
+		t.Errorf("expected rbac.yaml to render 6 RBAC objects when componentsDeployment is nil/empty, got %d: %+v", len(docs), docs)
 	}
 
 	helmPath, err := exec.LookPath("helm")
@@ -164,7 +165,6 @@ func TestComponentsRBAC_TemplateRendering(t *testing.T) {
 	chartDir := filepath.Join(repoRoot, "deploy", "helm")
 	cmd := exec.Command(helmPath, "template", "xmc", chartDir,
 		"-s", "templates/components/rbac.yaml",
-		"--set", "componentsDeployment.enabled=true",
 		"--namespace", "custom-ns")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -417,7 +417,7 @@ func runHelmLifecycleAsBridge(ctx context.Context, t *testing.T, runner *helm.SD
 // TestComponentsRBAC_ScopeRendering asserts that xmc-bridge-role is a namespaced Role and that the
 // only cluster-scoped rules are the read-only cluster identity ones.
 func TestComponentsRBAC_ScopeRendering(t *testing.T) {
-	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", true)
+	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), "custom-ns", nil)
 	readVerbs := []string{"get", "list", "watch"}
 	var roles, clusterRoles []string
 	for _, doc := range decodeRBACDocs(t, rendered) {
@@ -545,7 +545,7 @@ func decodeRBACDocs(t *testing.T, rendered []byte) []rbacDoc {
 
 func applyBridgeRBACManifests(ctx context.Context, t *testing.T, kubeClient kubernetes.Interface, ns string) {
 	t.Helper()
-	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, true)
+	rendered := renderChartTemplateWithValues(t, filepath.Join("components", "rbac.yaml"), ns, nil)
 	for _, doc := range decodeRBACDocs(t, rendered) {
 		applySingleRBACDoc(ctx, t, kubeClient, ns, doc.kind, doc.raw)
 	}

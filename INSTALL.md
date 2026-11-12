@@ -21,7 +21,7 @@ Before launching any deployment pathway, ensure you have the following CLI tools
 | :--- | :--- | :--- |
 | **`gcloud`** | `gcloud --version` | Prints Google Cloud SDK version info |
 | **`kubectl`** | `kubectl version --client` | Prints Kubernetes client version |
-| **`helm`** | `helm version` | Prints Helm client version |
+| **`helm`** | `helm version` | Prints Helm client version (minimum 3.14.0) |
 | **`terraform`** | `terraform --version` | Prints Terraform version (minimum 1.12.2) |
 | **`gcluster`** | `./cluster-toolkit/gcluster version` | Prints gcluster tool version |
 
@@ -89,8 +89,6 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
    bazel run //cmd/xmc_bridge:xmc_bridge_image_push
-   # Workload of the hpo component (xmc-study-controller)
-   bazel run //cmd/study_controller:study_controller_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -306,6 +304,21 @@ We provide automated HPC Cluster Toolkit blueprints to compile and deploy the en
 
 1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
 2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: Every optional catalog component (`redpanda`, `clickhouse`, `ingestion-gateway`) is **disabled by default**. Create a `profile-values.yaml` that enables the ones you need (`redpanda`/`clickhouse` expect the BYO add-ons from [`deploy/addons/metrics`](deploy/addons/metrics/clickhouse/README.md) to be reachable), then install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+   ```yaml
+   # profile-values.yaml — enable the metrics pipeline
+   components:
+     redpanda:
+       enabled: true
+     clickhouse:
+       enabled: true
+     ingestion-gateway:
+       enabled: true
+   ```
+   ```bash
+   helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
+   ```
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -316,6 +329,7 @@ For direct control over your infrastructure:
 1. **Provision Infrastructure**: Use your organization's custom Terraform pipeline to provision the GCP resources:
    - VPC network and subnetworks.
    - GKE cluster with Workload Identity enabled.
+   - Cloud Storage FUSE CSI driver add-on enabled on the GKE cluster (required for GCS volumes).
    - Cloud Spanner database instance.
    - Memorystore Redis cache.
 2. **Deploy Helm Release**: Point your local kubeconfig context to the cluster and deploy the application chart:
@@ -323,7 +337,12 @@ For direct control over your infrastructure:
    helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
    ```
    *For details on configuring values, refer to [deploy/helm/values.yaml](deploy/helm/values.yaml).*
-   If you enable the `hpo` component (`componentsDeployment.enabled: true`), also set `hpo_custom_image: "<LOCATION>-docker.pkg.dev/<PROJECT_ID>/xmc/study-controller-<ENVIRONMENT>:<IMAGE_TAG>"` so that `xmc-bridge` deploys your `xmc-study-controller` image.
+   `xmc-bridge` is a mandatory controller in `1.0.0+`: set `xmc_bridge_custom_image` (and `ingestion_gateway_custom_image`, which `xmc-bridge` uses as the default Ingestion Gateway image) like the other `*_custom_image` values. When `xmc_bridge_custom_image` is empty the chart derives `us-docker.pkg.dev/<projectId>/xmc/xmc-bridge-<environment>:<imageTag>`, which only matches the push commands above if `<LOCATION>` is `us` and `imageTag` equals `BUILD_TAG`.
+3. **Install Optional Catalog Components (`stable-2026a` Profile)**: Every optional catalog component (`redpanda`, `clickhouse`, `ingestion-gateway`) is **disabled by default**. Create a `profile-values.yaml` that enables the ones you need (see the example in Approach 2, step 3), then install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
+   ```bash
+   helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
+   ```
+   If `dashboard-service` was already running before you enabled `clickhouse` (or `bigquery`), wait until `xmc-bridge` has reconciled the enabled component (use `component.xmc.dev/bigquery` when enabling BigQuery) and then restart it once so it picks up the new data engine: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ---
 
@@ -400,8 +419,6 @@ bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 bazel run //cmd/xmc_bridge:xmc_bridge_image_push
-# Workload of the hpo component (xmc-study-controller)
-bazel run //cmd/study_controller:study_controller_image_push
 ```
 
 #### Step 3: Run Database Schema Migrations
@@ -534,13 +551,19 @@ bazel run //internal/storage/spanner/migrations:migrations -- \
 
 #### Step 4: Upgrade Application Workloads
 
+> [!WARNING]
+> **Pre-Upgrade Requirement for `< 1.0.0` Legacy Metrics Deployments**: Deployments upgrading from `< 1.0.0` (`<= 0.18.x`) with umbrella-managed `ingestion-gateway` **MUST** follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) (`prepare` + `handoff` **before** running Step 4, and `finalize` after) rather than upgrading directly. XMC `1.0.0+` removes legacy non-component gateway templates and static ClickHouse env injection (`enable_metrics` / `metrics.enabled`). Direct Helm upgrades fail closed on `componentsDeployment.enabled: false` or `ingestionGatewayDeployment.enabled: true`, and `tools/dev_env` rejects `enable_components: false` and the retired `enable_metrics` / `ingestion_gateway_deployment_enabled` / `clickhouse_{host,port,database,user}` keys; a standalone `gcluster create` only *warns* about unused variables, so CTK operators must remove those legacy keys from `xmanager-cloud-deployment.yaml` / `my-values.yaml` before upgrading (retaining `clickhouse_password` / `metrics.clickhouse.{secretName,password}` for ClickHouse credentials).
+> - `secrets.csi.clickhousePasswordSecretName` now defaults to `""`. CSI releases (`secrets.csi.enabled: true`) that read the ClickHouse password from Secret Manager **must** set `secrets.csi.clickhousePasswordSecretName` explicitly (previously implied `"clickhouse-password"`) before upgrading; otherwise `dashboard-service` falls back to `Secret/clickhouse-secret`.
+> - Operators on `0.18.x` who already run Components (`xmc-bridge` active, where `migrate.py prepare` refuses to run) with `Component/clickhouse` disabled while relying on custom `metrics.clickhouse.{host,port,database,user}` values must move those settings into `components.clickhouse.parameters` (`host`, `nativePort`, `defaultDatabase`, `user`, `secretName`) in `xmc-profile` and set `components.clickhouse.enabled: true` (waiting until `xmc-bridge` reconciles it and restarting once if `xmc-profile` is applied after `dashboard-service` starts: `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`); otherwise `GetChartData` returns `FailedPrecondition: data engine is not configured` after the upgrade.
+
 Once database schemas and container images are updated, upgrade the Kubernetes workloads in your GKE cluster.
 
 ##### Option A: Using Cluster Toolkit Blueprint v2 (Recommended)
 
-Re-compile the blueprint so `ctk-out/<deployment_name>` picks up your updated deployment configuration (for example the new `image_tag`) and chart templates, then re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
+Re-compile the blueprint so `ctk-out/<deployment_name>` picks up your updated deployment configuration (for example the new `image_tag`) and chart templates (removing `.ghpc/staged` first if upgrading across a release that deleted chart templates), then re-run deployment for the application group (`xmc_app`) to roll out updated deployments and services:
 
 ```bash
+rm -rf ctk-out/<deployment_name>/.ghpc/staged
 ./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml -d <deployment_config_path> -o ctk-out -l WARNING -w --force
 ./cluster-toolkit/gcluster deploy ctk-out/<deployment_name> --only xmc_app --auto-approve
 ```
@@ -553,6 +576,15 @@ If managing workloads via direct Helm releases, point your `kubectl` context to 
 helm upgrade --install xmc ./deploy/helm -n xmc --create-namespace -f my-values.yaml
 ```
 
+##### Upgrade the `xmc-profile` Catalog Release (When Installed)
+
+Whenever the `xmc-profile` catalog release is installed on the cluster, upgrade it alongside the umbrella release (first updating any pinned `imageTag` or `parameters.image` tag in `profile-values.yaml` to match `<IMAGE_TAG>`; see [After Migration: Upgrading XMC](docs/migrations/components.md#after-migration-upgrading-xmc)):
+
+```bash
+helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc -f profile-values.yaml --wait
+```
+*(Omit `-f profile-values.yaml` if your `xmc-profile` release uses no values file.)*
+
 #### Step 5: Post-Upgrade Verification
 
 Run the verification script from the repository root to verify that all upgraded pods are running, endpoints respond correctly, and Gateway TLS certificates remain healthy:
@@ -560,10 +592,6 @@ Run the verification script from the repository root to verify that all upgraded
 ```bash
 python3 ./deploy/ctk_v2/verify_xmc.py
 ```
-
-#### Step 6 (Optional): Migrate Legacy Metrics Workloads to XMC Components
-
-If your deployment currently manages `ingestion-gateway` via legacy umbrella Helm values (`enable_components: false`), follow the one-time zero-downtime cutover runbook in [docs/migrations/components.md](docs/migrations/components.md) on XMC `0.18.x` (before `0.19.0` removes legacy non-component metrics templates). After migrating, also upgrade the separate `xmc-profile` release on every XMC upgrade (see [After Migration: Upgrading XMC](docs/migrations/components.md#after-migration-upgrading-xmc)).
 
 ---
 
@@ -602,4 +630,3 @@ Supply these parameters in your Cluster Toolkit overrides file (`xmanager-cloud-
 | `use_redis_queue` | No | `true` | Uses Memorystore Redis for internal queues when true |
 | `deploy_redis` | No | `true` | Provisions Memorystore Redis instance when true |
 | `redis_region` | No | - | Memorystore Redis region (defaults to region above) |
-| `enable_components` | No | `false` | Enables `xmc-bridge` and Component CR actuation (`componentsDeployment.enabled`) |

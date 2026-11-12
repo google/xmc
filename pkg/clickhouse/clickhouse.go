@@ -35,8 +35,9 @@ type Options = clickhouse.Options
 //
 // GetOptions falls back to a localhost address so that local development needs no configuration,
 // which means a failed connection alone cannot tell "ClickHouse is down" apart from "this
-// deployment does not run the metrics pipeline". The helm chart injects these variables only when
-// metrics are enabled, so their presence is what marks ClickHouse as expected to be reachable.
+// deployment does not run the metrics pipeline". In-cluster deployments resolve ClickHouse from
+// Component/clickhouse; these variables are only set explicitly (local tooling or static fallback),
+// so their presence is what marks ClickHouse as expected to be reachable.
 func Configured() bool {
 	return os.Getenv("CLICKHOUSE_DSN") != "" || os.Getenv("CLICKHOUSE_HOST") != ""
 }

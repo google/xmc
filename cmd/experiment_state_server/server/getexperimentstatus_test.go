@@ -22,7 +22,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
-	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
@@ -184,7 +183,6 @@ func TestGetExperimentStatus_DriftWarningPropagation(t *testing.T) {
 		checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
 	}
 	server := newTestServer(t,
-		withConfig(&config.Config{EnableComponents: true}),
 		withStorage(mockStorage),
 		withXidClient(xidClient),
 	)

@@ -4,7 +4,7 @@ This directory documents the developer cluster testing workflow for XManager on 
 
 > [!NOTE]
 > In XMC v2, Redpanda and ClickHouse are **Bring-Your-Own (BYO)** infrastructure components managed out-of-band by enterprise platform administrators. They are not bundled as local Docker containers in the delivered XMC product stack.
-> For developer testing, BYO Redpanda and ClickHouse instances are deployed directly onto a GKE developer test cluster (e.g. `xmc` namespace in project `xmc-example-project`) via Helm addons ([`deploy/addons/metrics/`](../addons/metrics)).
+> For developer testing, BYO Redpanda (`xmc` namespace) and ClickHouse (`xmc-metrics` namespace) instances are deployed onto a GKE developer test cluster via [`deploy/addons/metrics/setup_metrics_addons.sh`](../addons/metrics/setup_metrics_addons.sh), and `redpanda`, `clickhouse`, and `ingestion-gateway` are enabled via the [`stable-2026a` Component profile (`xmc-profile`)](../profiles/stable-2026a/README.md).
 
 ---
 
@@ -17,10 +17,10 @@ flowchart TD
         CURL["curl / Python Client"]
     end
 
-    subgraph "GKE Developer Cluster (Namespace: xmc)"
-        GW["svc/ingestion-gateway (8080)"]
-        RP["pod/redpanda-0 (9092)"]
-        CH["svc/clickhouse (9000 / 8123)"]
+    subgraph "GKE Developer Cluster (Namespaces: xmc & xmc-metrics)"
+        GW["svc/ingestion-gateway-service (8080, xmc)"]
+        RP["svc/redpanda (9092, xmc)"]
+        CH["svc/clickhouse (9000 / 8123, xmc-metrics)"]
     end
 
     CURL -->|kubectl port-forward 8080:8080| GW
@@ -32,9 +32,9 @@ flowchart TD
 
 ---
 
-## 2. Port-Forwarding to GKE Developer Cluster
+## 2. Metrics Addons, Component Profile & Port-Forwarding
 
-Authenticate to your target GKE developer cluster and open port-forwards for local testing:
+Deploy the backing metrics addons, enable `redpanda`, `clickhouse`, and `ingestion-gateway` in `xmc-profile`, and open port-forwards for local testing:
 
 ```bash
 # 1. Authenticate to GKE cluster
@@ -42,14 +42,28 @@ gcloud container clusters get-credentials <CLUSTER_NAME> \
     --region <REGION> \
     --project <PROJECT_ID>
 
-# 2. Port-forward ClickHouse native TCP port (9000)
-kubectl port-forward svc/clickhouse 9000:9000 -n xmc &
+# 2. Deploy lightweight Redpanda (xmc) and ClickHouse (xmc-metrics) addons + schema
+./deploy/addons/metrics/setup_metrics_addons.sh
 
-# 3. Port-forward Redpanda service (9092)
+# 3. Enable redpanda, clickhouse, and ingestion-gateway in xmc-profile (actuated by xmc-bridge)
+helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc \
+    --set components.redpanda.enabled=true \
+    --set components.clickhouse.enabled=true \
+    --set components.ingestion-gateway.enabled=true \
+    --wait
+
+# 3b. Wait for xmc-bridge to actuate the ingestion-gateway component release
+kubectl wait --for=condition=Ready components.xmc.dev/ingestion-gateway -n xmc --timeout=5m
+kubectl rollout status deployment/ingestion-gateway-deployment -n xmc --timeout=180s
+
+# 4. Port-forward ClickHouse native TCP port (9000 in xmc-metrics)
+kubectl port-forward svc/clickhouse 9000:9000 -n xmc-metrics &
+
+# 5. Port-forward Redpanda service (9092 in xmc)
 kubectl port-forward svc/redpanda 9092:9092 -n xmc &
 
-# 4. Port-forward Ingestion Gateway HTTP service (8080)
-kubectl port-forward svc/ingestion-gateway 8080:8080 -n xmc &
+# 6. Port-forward Ingestion Gateway HTTP service (8080 in xmc)
+kubectl port-forward svc/ingestion-gateway-service 8080:8080 -n xmc &
 ```
 
 ---
@@ -69,26 +83,30 @@ go run ./tools/xmc-diag \
 
 *Expected Output:*
 ```text
-=== XMC Diagnostic Report ===
-Overall Status: HEALTHY
+=== XMC Infrastructure Diagnostics (Status: HEALTHY) ===
 Timestamp: ...
 
---- ClickHouse ---
-  Status: HEALTHY
+[ClickHouse Diagnostics] Status: HEALTHY
   Connected: true
-  Version: 26.7.1...
-  Missing Schema Tables: None
-  Query Latency: 130ms
+  Version: 24.3...
+  Schema Tables: All required tables present (xmc_metrics, xmc_metrics_queue, xmc_metrics_mv)
+  Query Smoke Latency: 140ms
 
---- Redpanda / Kafka ---
-  Status: HEALTHY
+[Redpanda/Kafka Diagnostics] Status: HEALTHY
   Connected: true
   Broker Count: 1
-  Topic Partitions: 1
-  Consumer Group Lag:
-    Group: xmc-clickhouse-ingester
-    Topic: xmc-metrics
-    Total Lag: 0 records
+  Topic Partitions (xmc-metrics): 128
+  Consumer Group (xmc-clickhouse-ingester) Aggregate Lag: 0 records
+  Ping Smoke Latency: 540ms
+
+[Kubernetes Components Diagnostics] Status: HEALTHY
+  Healthy: true
+  Namespace: xmc
+  Component clickhouse: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
+  Component hpo: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
+  Component ingestion-gateway: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
+  Component redpanda: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
+  Component vizier: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
 ```
 
 ---
@@ -138,7 +156,7 @@ curl -X POST http://localhost:8080/api/v1/metrics \
 
 *Expected Response:*
 ```json
-{"status":"accepted","valid_count":3}
+{"count":3,"status":"accepted"}
 ```
 
 ---
@@ -151,14 +169,16 @@ Execute verification queries directly against ClickHouse via `kubectl exec`:
 
 #### 1. Query Raw Ingested Rows
 ```bash
-kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
+kubectl exec -it statefulset/clickhouse -n xmc-metrics -- clickhouse-client --query \
   "SELECT xid, work_unit_id, metric_name, metric_value, step, timestamp, created_at FROM xmc_metrics ORDER BY timestamp ASC;"
 ```
 
-#### 2. Query Deduplicated Metrics (`argMax(metric_value, created_at)`)
+#### 2. Query Deduplicated Metrics (`argMax(metric_value, (timestamp, created_at))`)
+
+Selects the value with the latest client event `timestamp` per step (matching `internal/dashboard/dataengine/summary_box.go`), breaking identical-`timestamp` ties by `created_at`:
 ```bash
-kubectl exec -it svc/clickhouse -n xmc -- clickhouse-client --query \
-  "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, created_at) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
+kubectl exec -it statefulset/clickhouse -n xmc-metrics -- clickhouse-client --query \
+  "SELECT xid, work_unit_id, metric_name, step, argMax(metric_value, (timestamp, created_at)) AS latest_value FROM xmc_metrics GROUP BY xid, work_unit_id, metric_name, step ORDER BY step ASC;"
 ```
 ---
 
@@ -193,24 +213,22 @@ python3 tools/dev_env/dev_env.py down
 
 ### Developing & Testing XMC Components (`xmc_bridge` & `stable-2026a` Profile)
 
-To enable foundational XMC Components (`components.xmc.dev` CRD and `xmc-bridge-deployment` in local KinD, plus automatic installation of the `stable-2026a` profile on GKE):
+Foundational XMC Components (`components.xmc.dev` CRD and `xmc-bridge-deployment`) are included by default in `dev_env.py up` and `reload`, and `deploy_dev_env.py` / `upgrade_dev_env.py` automatically deploy `xmc-bridge` and the `stable-2026a` profile (`xmc-profile`) on GKE:
 
 ```bash
-# Local KinD environment with components enabled (CRD + xmc-bridge-deployment)
-python3 tools/dev_env/dev_env.py up --enable-components
+# Local KinD environment (includes components.xmc.dev CRD + xmc-bridge-deployment by default)
+python3 tools/dev_env/dev_env.py up
 
 # Optional: install the stable-2026a Component CR profile into local KinD
-helm upgrade --install xmc-profile ./deploy/profiles/stable-2026a -n xmc --wait
+helm upgrade --install --reset-then-reuse-values xmc-profile ./deploy/profiles/stable-2026a -n xmc --wait
 
 # Hot-reload xmc_bridge after modifying cmd/xmc_bridge/ or pkg/components/
-# (or set enable_components: true in deploy/local/xmanager-cloud-local.yaml / ENABLE_COMPONENTS=true)
-python3 tools/dev_env/dev_env.py reload xmc_bridge --enable-components
+python3 tools/dev_env/dev_env.py reload xmc_bridge
 
-# GKE Developer Environment deploy or upgrade with components enabled (CRD + xmc-bridge + stable-2026a profile)
+# GKE Developer Environment deploy or upgrade (CRD + xmc-bridge + stable-2026a profile)
 python3 tools/dev_env/deploy_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
-  --dns-project <DNS_PROJECT> --dns-zone <DNS_ZONE> --enable-components
-python3 tools/dev_env/upgrade_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml \
-  --enable-components
+  --dns-project <DNS_PROJECT> --dns-zone <DNS_ZONE>
+python3 tools/dev_env/upgrade_dev_env.py --config deploy/ctk_v2/xmanager-cloud-deployment.yaml
 ```
 
 To run `cmd/xmc_bridge` directly on your workstation against a cluster:

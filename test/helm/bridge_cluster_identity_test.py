@@ -27,7 +27,7 @@ class BridgeClusterIdentityTest(unittest.TestCase):
         require_helm()
 
     def test_defaults(self) -> None:
-        manifest = render_template(_CONFIGMAP, {"componentsDeployment.enabled": "true"})
+        manifest = render_template(_CONFIGMAP, {})
         self.assertIn('CLUSTER_NAME: "xmc"', manifest)
         self.assertIn('COMPONENT_OWNERSHIP_EPOCH: "1"', manifest)
 
@@ -35,7 +35,6 @@ class BridgeClusterIdentityTest(unittest.TestCase):
         manifest = render_template(
             _CONFIGMAP,
             {
-                "componentsDeployment.enabled": "true",
                 "componentsDeployment.clusterName": "prod-east",
                 "componentsDeployment.ownershipEpoch": "1700000000",
             },
@@ -48,7 +47,6 @@ class BridgeClusterIdentityTest(unittest.TestCase):
         manifest = render_template(
             _CONFIGMAP,
             {
-                "componentsDeployment.enabled": "true",
                 "componentsDeployment.ownershipEpoch": "0",
             },
         )

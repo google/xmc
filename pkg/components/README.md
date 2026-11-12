@@ -280,9 +280,7 @@ To alert users when active experiments run against stale or deleted component co
 5. **Strict Transaction Isolation**:
    - Drift evaluation executes exclusively within top-level read RPCs (`GetExperiment`, `GetExperimentStatus`) using an independent read-only transaction (`ReadOnlyTransaction`) in `FetchDriftedComponents`.
    - Core read-write transaction methods (`FetchExperimentTransaction`, `fetchExperimentStatusTransaction`) remain completely side-effect free, preventing phantom reads, transaction aborts, or concurrent mutation deadlocks.
-6. **Feature Flag Gating (`enable_components`)**:
-   - Drift detection is strictly gated by the server configuration flag `enable_components` (`cfg.EnableComponents`). When `enable_components = false` (default across non-component clusters), drift evaluation is bypassed immediately, guaranteeing zero extra Spanner queries and zero regression risk on unmigrated databases.
-7. **Hot-Path Polling Cache (30-second TTL)**:
+6. **Hot-Path Polling Cache (30-second TTL)**:
    - To mitigate high-frequency polling overhead on `GetExperimentStatus` (where the UI console or CLI commands poll status every 1–2 seconds), ESS maintains a thread-safe in-memory cache with a 30-second TTL. If status is polled multiple times within 30 seconds, consistency evaluation is served directly from memory, eliminating redundant Spanner view queries.
 
 ---
