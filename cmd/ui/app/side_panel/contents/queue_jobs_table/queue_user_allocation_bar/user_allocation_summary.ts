@@ -19,7 +19,7 @@ import { matchesResourceFilter } from 'app/resource_dashboard/resource_filter';
 import { formatRate } from 'app/resource_dashboard/resource_velocity';
 import { classifyResourceType } from 'app/side_panel/contents/queue_jobs_table/queue_jobs_pipes';
 
-const UNKNOWN_USER = 'unknown';
+export const UNKNOWN_USER = 'unknown';
 
 /** One user's share of the dominant resource in the selected queue. */
 interface UserAllocationSegment {

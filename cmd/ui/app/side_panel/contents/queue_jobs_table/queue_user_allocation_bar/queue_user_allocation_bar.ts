@@ -16,7 +16,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 
 import { UserResourceAllocation } from 'app/protos/rod';
 
-import { summarizeUserAllocations } from './user_allocation_summary';
+import { summarizeUserAllocations, UNKNOWN_USER } from './user_allocation_summary';
 
 /**
  * Stacked bar and clickable user chips showing how much of the dominant resource each user requests
@@ -34,6 +34,8 @@ export class QueueUserAllocationBar {
   readonly dominantResource = input<string | null>(null);
   readonly selectedAuthor = input<string>('');
   readonly authorSelect = output<string>();
+
+  protected readonly unknownUser = UNKNOWN_USER;
 
   protected readonly summary = computed(() =>
     summarizeUserAllocations(this.allocations(), this.dominantResource()),

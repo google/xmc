@@ -47,11 +47,7 @@ class TestHostComponent {
   readonly allocations = signal<UserResourceAllocation[]>(ALLOCATIONS);
   readonly dominantResource = signal<string | null>(null);
   readonly selectedAuthor = signal<string>('');
-  readonly selectedAuthors: string[] = [];
-
-  onAuthorSelect(author: string): void {
-    this.selectedAuthors.push(author);
-  }
+  readonly onAuthorSelect = jasmine.createSpy('authorSelect');
 }
 
 describe('QueueUserAllocationBar', () => {
@@ -97,7 +93,7 @@ describe('QueueUserAllocationBar', () => {
     const bar = await getHarness(QueueUserAllocationBarHarness);
 
     await bar.clickUserChip('alice@example.com');
-    expect(host.selectedAuthors).toEqual(['alice@example.com']);
+    expect(host.onAuthorSelect).toHaveBeenCalledOnceWith('alice@example.com');
   });
 
   it('marks the matching chip as selected when selectedAuthor is set', async () => {
@@ -109,5 +105,28 @@ describe('QueueUserAllocationBar', () => {
 
     expect(await bar.isUserChipSelected('alice@example.com')).toBeTrue();
     expect(await bar.isUserChipSelected('bob@example.com')).toBeFalse();
+  });
+
+  it('renders unknown user allocations as non-clickable chips', async () => {
+    const host: TestHostComponent = bootstrap(TestHostComponent);
+    host.allocations.set([
+      { user: '', resourceType: 'nvidia.com/gpu: nvidia-tesla-h100', runningUnits: 1 },
+      {
+        user: 'alice@example.com',
+        resourceType: 'nvidia.com/gpu: nvidia-tesla-h100',
+        runningUnits: 1,
+      },
+    ]);
+    host.dominantResource.set('nvidia.com/gpu: nvidia-tesla-h100');
+    await flush();
+    const bar = await getHarness(QueueUserAllocationBarHarness);
+
+    expect(await bar.getChipTexts()).toEqual([
+      'alice@example.com 1 running GPUs',
+      'unknown 1 running GPUs',
+    ]);
+    expect(await bar.hasClickableUserChip('unknown')).toBeFalse();
+    expect(await bar.hasClickableUserChip('alice@example.com')).toBeTrue();
+    expect(host.onAuthorSelect).not.toHaveBeenCalled();
   });
 });

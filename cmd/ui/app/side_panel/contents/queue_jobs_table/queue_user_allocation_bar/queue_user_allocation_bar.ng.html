@@ -43,17 +43,33 @@
       <ul class="allocation-chips">
         @for (seg of s.segments; track seg.user) {
           <li>
-            <button
-              type="button"
-              class="allocation-chip"
-              [class.selected]="selectedAuthor() === seg.user"
-              [attr.aria-pressed]="selectedAuthor() === seg.user"
-              (click)="authorSelect.emit(seg.user)"
-            >
-              <span class="chip-dot" aria-hidden="true" [style.background-color]="seg.color"></span>
-              <span class="chip-user">{{ seg.user }}</span>
-              <span class="chip-units">{{ seg.label }}</span>
-            </button>
+            @if (seg.user === unknownUser) {
+              <span class="allocation-chip static">
+                <span
+                  class="chip-dot"
+                  aria-hidden="true"
+                  [style.background-color]="seg.color"
+                ></span>
+                <span class="chip-user">{{ seg.user }}</span>
+                <span class="chip-units">{{ seg.label }}</span>
+              </span>
+            } @else {
+              <button
+                type="button"
+                class="allocation-chip"
+                [class.selected]="selectedAuthor() === seg.user"
+                [attr.aria-pressed]="selectedAuthor() === seg.user"
+                (click)="authorSelect.emit(seg.user)"
+              >
+                <span
+                  class="chip-dot"
+                  aria-hidden="true"
+                  [style.background-color]="seg.color"
+                ></span>
+                <span class="chip-user">{{ seg.user }}</span>
+                <span class="chip-units">{{ seg.label }}</span>
+              </button>
+            }
           </li>
         }
       </ul>
