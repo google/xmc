@@ -410,7 +410,7 @@ func TestCreateExperiment_PersistsStudyConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: readyHPOCatalog()}}
 			server := newTestServer(t,
-				withConfig(&config.Config{DefaultExecutionEnvironment: "gke", EnableComponents: true}),
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
 				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
 				withStorage(st),
 			)
