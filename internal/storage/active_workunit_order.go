@@ -33,7 +33,8 @@ func ActiveWorkUnitOrderBy(value string) (string, error) {
 	if len(parts) > 2 {
 		return "", fmt.Errorf("order_by must name author, status, or priority with optional asc or desc")
 	}
-	switch parts[0] {
+	field := strings.ToLower(parts[0])
+	switch field {
 	case "author", "status", "priority":
 	default:
 		return "", fmt.Errorf("unsupported order_by field %q", parts[0])
@@ -45,5 +46,5 @@ func ActiveWorkUnitOrderBy(value string) (string, error) {
 	if direction != "asc" && direction != "desc" {
 		return "", fmt.Errorf("unsupported order_by direction %q", direction)
 	}
-	return parts[0] + " " + direction, nil
+	return field + " " + direction, nil
 }

@@ -24,7 +24,8 @@ func TestActiveWorkUnitOrderBy(t *testing.T) {
 	}{
 		{"", "", false}, {"  ", "", false},
 		{"author", "author asc", false}, {"status DESC", "status desc", false},
-		{" priority asc ", "priority asc", false},
+		{" priority asc ", "priority asc", false}, {"Author asc", "author asc", false},
+		{"STATUS desc", "status desc", false},
 		{"other", "", true}, {"author sideways", "", true},
 		{"author asc, priority desc", "", true},
 	}
