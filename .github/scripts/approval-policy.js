@@ -129,6 +129,89 @@ function checkAddedCommitsForProtectedFiles(addedCommitShas, execOptions = {}) {
  * @param {number} [params.maxGraceLines=MAX_OWNER_GRACE_LINES]
  * @returns {{ shouldReapprove: boolean, reason: string, trigger: string }}
  */
+function evaluateProtectedFilesDecision({ approvedSha, currentSha, isCleanRebase, hasRemovedCommits, deltaLines }) {
+  const isUnchangedRebase = approvedSha !== currentSha && isCleanRebase && !hasRemovedCommits && deltaLines === 0;
+  if (isUnchangedRebase) {
+    return {
+      shouldReapprove: true,
+      reason: 'Clean rebase detected with zero semantic patch lines changed. PR touches protected files, but the approved patches are unchanged.',
+      trigger: 'CLEAN_REBASE'
+    };
+  }
+  return {
+    shouldReapprove: false,
+    reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Manual human review is required.',
+    trigger: 'PROTECTED_FILES_MODIFIED'
+  };
+}
+
+function evaluateSameShaDecision(isDismissed) {
+  if (!isDismissed) {
+    return {
+      shouldReapprove: false,
+      reason: 'PR HEAD is already approved at this commit.',
+      trigger: 'ALREADY_APPROVED'
+    };
+  }
+  return {
+    shouldReapprove: true,
+    reason: 'PR HEAD matches previously approved commit whose approval was dismissed.',
+    trigger: 'RESTORE_DISMISSED_APPROVAL'
+  };
+}
+
+function evaluateOwnerGrace(deltaLines, testDeltaLines, maxGraceLines) {
+  const nonTestDelta = deltaLines - testDeltaLines;
+  const testSuffix = testDeltaLines > 0 ? `, excluding ${testDeltaLines} test file line${testDeltaLines === 1 ? '' : 's'}` : '';
+  if (nonTestDelta <= maxGraceLines) {
+    return {
+      shouldReapprove: true,
+      reason: `PR author is a code owner and changes since last approval (${nonTestDelta} line${nonTestDelta === 1 ? '' : 's'}${testSuffix}) are within the ${maxGraceLines}-line grace delta.`,
+      trigger: 'OWNER_GRACE_DELTA'
+    };
+  }
+  return {
+    shouldReapprove: false,
+    reason: `Changes since last approval (${nonTestDelta} lines${testSuffix}) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
+    trigger: 'EXCEEDS_OWNER_GRACE'
+  };
+}
+
+function evaluateDeltaPolicy({ isAuthorOwner, deltaLines, testDeltaLines, isCleanRebase, hasRemovedCommits, maxGraceLines }) {
+  const validDelta = typeof deltaLines === 'number' && !isNaN(deltaLines) && deltaLines >= 0;
+  const validTestDelta = typeof testDeltaLines === 'number' && !isNaN(testDeltaLines) &&
+    testDeltaLines >= 0 && validDelta && testDeltaLines <= deltaLines;
+  if (!validDelta || !validTestDelta) {
+    return {
+      shouldReapprove: false,
+      reason: `Invalid delta lines count: ${deltaLines} (test file lines: ${testDeltaLines}). Manual review required.`,
+      trigger: 'INVALID_DELTA'
+    };
+  }
+  if (isCleanRebase && deltaLines === 0 && !hasRemovedCommits) {
+    return {
+      shouldReapprove: true,
+      reason: 'Clean rebase detected with zero semantic patch lines changed.',
+      trigger: 'CLEAN_REBASE'
+    };
+  }
+  if (hasRemovedCommits) {
+    return {
+      shouldReapprove: false,
+      reason: 'PR contains removed or rewritten commits that were dropped from the approved history. Manual review required.',
+      trigger: 'REMOVED_COMMITS'
+    };
+  }
+  if (!isAuthorOwner) {
+    return {
+      shouldReapprove: false,
+      reason: `Non-owner author pushed ${deltaLines} changed line${deltaLines === 1 ? '' : 's'} since last approval. Manual review required.`,
+      trigger: 'NON_OWNER_MODIFICATION'
+    };
+  }
+  return evaluateOwnerGrace(deltaLines, testDeltaLines, maxGraceLines);
+}
+
 function evaluateIncrementalApproval({
   hasPriorApproval,
   approvedSha,
@@ -149,87 +232,13 @@ function evaluateIncrementalApproval({
       trigger: 'NO_PRIOR_APPROVAL'
     };
   }
-
   if (hasProtectedFileChanges) {
-    const isUnchangedRebase = approvedSha !== currentSha && isCleanRebase && !hasRemovedCommits && deltaLines === 0;
-    if (isUnchangedRebase) {
-      return {
-        shouldReapprove: true,
-        reason: 'Clean rebase detected with zero semantic patch lines changed. PR touches protected files, but the approved patches are unchanged.',
-        trigger: 'CLEAN_REBASE'
-      };
-    }
-    return {
-      shouldReapprove: false,
-      reason: 'PR modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Manual human review is required.',
-      trigger: 'PROTECTED_FILES_MODIFIED'
-    };
+    return evaluateProtectedFilesDecision({ approvedSha, currentSha, isCleanRebase, hasRemovedCommits, deltaLines });
   }
-
   if (approvedSha === currentSha) {
-    if (!isDismissed) {
-      return {
-        shouldReapprove: false,
-        reason: 'PR HEAD is already approved at this commit.',
-        trigger: 'ALREADY_APPROVED'
-      };
-    }
-    return {
-      shouldReapprove: true,
-      reason: 'PR HEAD matches previously approved commit whose approval was dismissed.',
-      trigger: 'RESTORE_DISMISSED_APPROVAL'
-    };
+    return evaluateSameShaDecision(isDismissed);
   }
-
-  const validDelta = typeof deltaLines === 'number' && !isNaN(deltaLines) && deltaLines >= 0;
-  const validTestDelta = typeof testDeltaLines === 'number' && !isNaN(testDeltaLines) &&
-    testDeltaLines >= 0 && validDelta && testDeltaLines <= deltaLines;
-  if (!validDelta || !validTestDelta) {
-    return {
-      shouldReapprove: false,
-      reason: `Invalid delta lines count: ${deltaLines} (test file lines: ${testDeltaLines}). Manual review required.`,
-      trigger: 'INVALID_DELTA'
-    };
-  }
-
-  if (isCleanRebase && validDelta && deltaLines === 0 && !hasRemovedCommits) {
-    return {
-      shouldReapprove: true,
-      reason: 'Clean rebase detected with zero semantic patch lines changed.',
-      trigger: 'CLEAN_REBASE'
-    };
-  }
-
-  if (hasRemovedCommits) {
-    return {
-      shouldReapprove: false,
-      reason: 'PR contains removed or rewritten commits that were dropped from the approved history. Manual review required.',
-      trigger: 'REMOVED_COMMITS'
-    };
-  }
-
-  if (isAuthorOwner) {
-    const nonTestDelta = deltaLines - testDeltaLines;
-    const testSuffix = testDeltaLines > 0 ? `, excluding ${testDeltaLines} test file line${testDeltaLines === 1 ? '' : 's'}` : '';
-    if (nonTestDelta <= maxGraceLines) {
-      return {
-        shouldReapprove: true,
-        reason: `PR author is a code owner and changes since last approval (${nonTestDelta} line${nonTestDelta === 1 ? '' : 's'}${testSuffix}) are within the ${maxGraceLines}-line grace delta.`,
-        trigger: 'OWNER_GRACE_DELTA'
-      };
-    }
-    return {
-      shouldReapprove: false,
-      reason: `Changes since last approval (${nonTestDelta} lines${testSuffix}) exceed the ${maxGraceLines}-line grace delta for code owners. Manual review required.`,
-      trigger: 'EXCEEDS_OWNER_GRACE'
-    };
-  }
-
-  return {
-    shouldReapprove: false,
-    reason: `Non-owner author pushed ${deltaLines} changed line${deltaLines === 1 ? '' : 's'} since last approval. Manual review required.`,
-    trigger: 'NON_OWNER_MODIFICATION'
-  };
+  return evaluateDeltaPolicy({ isAuthorOwner, deltaLines, testDeltaLines, isCleanRebase, hasRemovedCommits, maxGraceLines });
 }
 
 /**

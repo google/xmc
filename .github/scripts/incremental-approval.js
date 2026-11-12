@@ -49,68 +49,21 @@ function describeError(error) {
  * Orchestrator: Fetches PR reviews, calculates semantic delta, evaluates grace policy, and auto-reapproves.
  * @param {Object} params - Injected by actions/github-script.
  */
-async function run({ github, context, core }) {
-  const pr = context.payload ? context.payload.pull_request : null;
-  if (!pr) {
-    core.setFailed('This workflow must run in the context of a pull request synchronize event.');
-    return;
-  }
-
-  if (pr.draft) {
-    core.info(`PR #${pr.number} is in draft mode. Skipping auto-reapproval.`);
-    return;
-  }
-
-  const { owner, repo } = context.repo;
-  const prNumber = pr.number;
-  const prAuthor = pr.user ? pr.user.login : '';
-  const currentSha = pr.head ? pr.head.sha : '';
-  const baseRef = pr.base ? pr.base.ref : '';
-
-  if (!currentSha || !baseRef) {
-    core.setFailed('PR payload missing head SHA or base ref.');
-    return;
-  }
-
-  core.info(`Evaluating incremental approval for PR #${prNumber} (Author: @${prAuthor}, Base: ${baseRef}, HEAD: ${currentSha.slice(0, 7)})`);
-
-  let reviews = [];
-  try {
-    reviews = await github.paginate(github.rest.pulls.listReviews, {
-      owner,
-      repo,
-      pull_number: prNumber,
-      per_page: 100
-    });
-  } catch (reviewErr) {
-    core.setFailed(`Failed to fetch PR reviews: ${describeError(reviewErr)}`);
-    return;
-  }
-
-  const timelineEvents = await fetchTimelineEvents(github, owner, repo, prNumber, core);
-  const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
-  if (!latestApproval) {
-    core.info(`PR #${prNumber} does not have any prior active approvals or has blocking change requests. Skipping auto-reapproval.`);
-    return;
-  }
-
-  core.info(`Found previous approval by @${latestApproval.approver} on commit ${latestApproval.approvedSha.slice(0, 7)}`);
-
+function computeDeltaSummary(core, prNumber, baseRef, approvedSha, currentSha, prAuthor) {
   let refStatus;
   try {
-    refStatus = ensureGitRefs(baseRef, latestApproval.approvedSha, currentSha);
+    refStatus = ensureGitRefs(baseRef, approvedSha, currentSha);
   } catch (error) {
     core.warning(`Failed to verify git references (${describeError(error)}). Requiring manual review.`);
-    return;
+    return null;
   }
   if (!refStatus.success) {
-    core.warning(`Previously approved commit ${latestApproval.approvedSha.slice(0, 7)} is no longer reachable on remote (likely pruned by Git GC after force-push). Requiring manual review.`);
-    return;
+    core.warning(`Previously approved commit ${approvedSha.slice(0, 7)} is no longer reachable on remote (likely pruned by Git GC after force-push). Requiring manual review.`);
+    return null;
   }
-
   if (!fs.existsSync('OWNERS')) {
     core.setFailed('OWNERS file not found in repository root.');
-    return;
+    return null;
   }
 
   const ownersList = parseReviewersFromOwners(fs.readFileSync('OWNERS', 'utf8'));
@@ -119,10 +72,10 @@ async function run({ github, context, core }) {
 
   let hasProtectedFileChanges;
   try {
-    hasProtectedFileChanges = checkProtectedFileChanges(baseRef, latestApproval.approvedSha, currentSha);
+    hasProtectedFileChanges = checkProtectedFileChanges(baseRef, approvedSha, currentSha);
   } catch (error) {
     core.warning(`Unable to determine files changed by PR #${prNumber} (${describeError(error)}). Requiring manual review.`);
-    return;
+    return null;
   }
   if (hasProtectedFileChanges) {
     core.info(`PR #${prNumber} modifies sensitive CI workflows, scripts, ownership files, or the protobuf breaking-change baseline or its configuration (.github/, OWNERS, .githooks/, api/testdata/protos_baseline.binpb, api/buf.yaml, api/BUILD.bazel). Skipping auto-reapproval.`);
@@ -130,20 +83,13 @@ async function run({ github, context, core }) {
 
   let rangeDiffOutput = '';
   try {
-    rangeDiffOutput = runGitRangeDiff(baseRef, latestApproval.approvedSha, currentSha);
+    rangeDiffOutput = runGitRangeDiff(baseRef, approvedSha, currentSha);
   } catch (error) {
     core.warning(`Unable to compute git range-diff (${describeError(error)}). Requiring manual review.`);
-    return;
+    return null;
   }
 
-  const {
-    totalDelta: hunkDelta,
-    testDelta: hunkTestDelta,
-    isCleanRebase,
-    hasRemovedCommits,
-    addedCommitShas
-  } = parseRangeDiff(rangeDiffOutput);
-
+  const { totalDelta: hunkDelta, testDelta: hunkTestDelta, isCleanRebase, hasRemovedCommits, addedCommitShas } = parseRangeDiff(rangeDiffOutput);
   if (!hasProtectedFileChanges && checkAddedCommitsForProtectedFiles(addedCommitShas)) {
     hasProtectedFileChanges = true;
     core.info(`Newly added commit modifies sensitive files. Manual review required.`);
@@ -154,22 +100,26 @@ async function run({ github, context, core }) {
     addedDelta = computeAddedCommitsDelta(addedCommitShas);
   } catch (error) {
     core.warning(`Unable to compute line delta for added commits (${describeError(error)}). Requiring manual review.`);
-    return;
+    return null;
   }
+
   const totalDelta = hunkDelta + addedDelta.totalDelta;
   const testDelta = hunkTestDelta + addedDelta.testDelta;
   core.info(`Computed range-diff: isCleanRebase=${isCleanRebase}, hunkDelta=${hunkDelta}, addedCommitsDelta=${addedDelta.totalDelta} (commits: ${addedCommitShas.length}), totalDelta=${totalDelta} lines (test files: ${testDelta}), hasRemovedCommits=${hasRemovedCommits}, hasProtectedFileChanges=${hasProtectedFileChanges}`);
+  return { isAuthorOwner, totalDelta, testDelta, isCleanRebase, hasRemovedCommits, hasProtectedFileChanges };
+}
 
+async function applyIncrementalDecision({ github, core, owner, repo, prNumber, currentSha, latestApproval, deltaSummary }) {
   const decision = evaluateIncrementalApproval({
     hasPriorApproval: true,
     approvedSha: latestApproval.approvedSha,
     currentSha,
-    isAuthorOwner,
-    deltaLines: totalDelta,
-    testDeltaLines: testDelta,
-    isCleanRebase,
-    hasRemovedCommits,
-    hasProtectedFileChanges,
+    isAuthorOwner: deltaSummary.isAuthorOwner,
+    deltaLines: deltaSummary.totalDelta,
+    testDeltaLines: deltaSummary.testDelta,
+    isCleanRebase: deltaSummary.isCleanRebase,
+    hasRemovedCommits: deltaSummary.hasRemovedCommits,
+    hasProtectedFileChanges: deltaSummary.hasProtectedFileChanges,
     isDismissed: latestApproval.isDismissed
   });
 
@@ -179,7 +129,6 @@ async function run({ github, context, core }) {
   }
 
   core.info(`Decision: ${decision.reason} Auto-reapproving PR #${prNumber}...`);
-
   try {
     await github.rest.pulls.createReview({
       owner,
@@ -193,6 +142,67 @@ async function run({ github, context, core }) {
   } catch (error) {
     core.setFailed(`Failed to submit re-approval review for PR #${prNumber}: ${describeError(error)}`);
   }
+}
+
+function validatePullRequestContext(context, core) {
+  const pr = context.payload ? context.payload.pull_request : null;
+  if (!pr) {
+    core.setFailed('This workflow must run in the context of a pull request synchronize event.');
+    return null;
+  }
+  if (pr.draft) {
+    core.info(`PR #${pr.number} is in draft mode. Skipping auto-reapproval.`);
+    return null;
+  }
+  const currentSha = pr.head ? pr.head.sha : '';
+  const baseRef = pr.base ? pr.base.ref : '';
+  if (!currentSha || !baseRef) {
+    core.setFailed('PR payload missing head SHA or base ref.');
+    return null;
+  }
+  return {
+    owner: context.repo.owner,
+    repo: context.repo.repo,
+    prNumber: pr.number,
+    prAuthor: pr.user ? pr.user.login : '',
+    currentSha,
+    baseRef,
+  };
+}
+
+/**
+ * Main entrypoint executed by actions/github-script on pull_request synchronize.
+ * @param {Object} params - Injected by actions/github-script.
+ */
+async function run({ github, context, core }) {
+  const prCtx = validatePullRequestContext(context, core);
+  if (!prCtx) {
+    return;
+  }
+  const { owner, repo, prNumber, prAuthor, currentSha, baseRef } = prCtx;
+  core.info(`Evaluating incremental approval for PR #${prNumber} (Author: @${prAuthor}, Base: ${baseRef}, HEAD: ${currentSha.slice(0, 7)})`);
+
+  let reviews = [];
+  try {
+    reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: prNumber, per_page: 100 });
+  } catch (reviewErr) {
+    core.setFailed(`Failed to fetch PR reviews: ${describeError(reviewErr)}`);
+    return;
+  }
+
+  const timelineEvents = await fetchTimelineEvents(github, owner, repo, prNumber, core);
+  const latestApproval = findLatestApproval(reviews, prAuthor, timelineEvents);
+  if (!latestApproval) {
+    core.info(`PR #${prNumber} does not have any prior active approvals or has blocking change requests. Skipping auto-reapproval.`);
+    return;
+  }
+
+  core.info(`Found previous approval by @${latestApproval.approver} on commit ${latestApproval.approvedSha.slice(0, 7)}`);
+  const deltaSummary = computeDeltaSummary(core, prNumber, baseRef, latestApproval.approvedSha, currentSha, prAuthor);
+  if (!deltaSummary) {
+    return;
+  }
+  await applyIncrementalDecision({ github, core, owner, repo, prNumber, currentSha, latestApproval, deltaSummary });
 }
 
 module.exports = {
