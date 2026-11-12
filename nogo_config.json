@@ -24,6 +24,7 @@
   "httpresponse": {},
   "ifaceassert": {},
   "lostcancel": {},
+  "nilerr": {},
   "nilfunc": {},
   "nilness": {},
   "printf": {},

@@ -293,7 +293,7 @@ func getEnvOrFile(key, defaultVal string) (string, error) {
 		return defaultVal, nil
 	}
 	if _, err := os.Stat(val); err != nil {
-		return val, nil // Treat as literal string
+		return val, nil //nilerr: os.Stat failure means env var is a literal value rather than a file path
 	}
 	content, readErr := os.ReadFile(val)
 	if readErr != nil {

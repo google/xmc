@@ -29,6 +29,7 @@ nogo(
         for dep in TOOLS_NOGO
         if not dep.endswith("/loopclosure:go_default_library")
     ] + [
+        "//tools/lint/xmc_analyzers/nilerr",
         "@org_golang_x_tools//go/analysis/passes/hostport:go_default_library",
         "@org_golang_x_tools//go/analysis/passes/httpmux:go_default_library",
         "@org_golang_x_tools//go/analysis/passes/reflectvaluecompare:go_default_library",
