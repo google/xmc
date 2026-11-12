@@ -21,7 +21,7 @@
       </h3>
       <ng-content select="[headerActions]" />
     </div>
-    <div class="target-queue-name">{{ activeQueueName() }}</div>
+    <div class="target-queue-name" data-testid="target-queue-name">{{ activeQueueName() }}</div>
     <p class="jobs-card-subtitle">There are {{ tableControls.totalCount() }} jobs ahead of you.</p>
   </div>
 
@@ -37,7 +37,7 @@
       <span>Loading jobs...</span>
     </div>
   } @else if (jobs().length === 0) {
-    <div class="jobs-empty-state">
+    <div class="jobs-empty-state" data-testid="jobs-empty-state">
       <div class="empty-star-illustration">
         <img
           src="/static/empty_star.svg"
@@ -55,12 +55,13 @@
         mat-table
         aria-labelledby="queue-jobs-title"
         class="jobs-mat-table"
+        data-testid="jobs-table"
         [dataSource]="jobs()"
       >
         <!-- Position Column -->
         <ng-container matColumnDef="position">
           <th mat-header-cell *matHeaderCellDef>Position</th>
-          <td mat-cell *matCellDef="let job" class="position-cell">
+          <td mat-cell *matCellDef="let job" class="position-cell" data-testid="job-position-cell">
             {{ job | queueJobPosition }}
           </td>
         </ng-container>
@@ -71,6 +72,7 @@
           <td mat-cell *matCellDef="let job" class="name-cell">
             <a
               class="job-link"
+              data-testid="job-link"
               [routerLink]="['/experiments', job.xid]"
               [attr.aria-label]="'View ' + (job.experimentTitle || 'Experiment #' + job.xid)"
               >{{ job.experimentTitle || 'Experiment #' + job.xid }}</a
@@ -129,7 +131,7 @@
         <!-- Work / Aux Unit Column -->
         <ng-container matColumnDef="workUnitId">
           <th mat-header-cell *matHeaderCellDef>Work / Aux Unit</th>
-          <td mat-cell *matCellDef="let job" class="workunit-cell">
+          <td mat-cell *matCellDef="let job" class="workunit-cell" data-testid="job-workunit-cell">
             @if (job.workUnitId) {
               <a
                 class="workunit-link"

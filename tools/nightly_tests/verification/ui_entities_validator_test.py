@@ -48,11 +48,11 @@ class UIEntitiesValidatorTest(unittest.TestCase):
 
         def _locator_factory(selector: str) -> Any:
             loc = mock.MagicMock()
-            if "xmc-home-page" in selector or ".guest-page-container" in selector:
+            if "xmc-home-page" in selector or '[data-testid="guest-page-container"]' in selector:
                 loc.count.return_value = 0
             elif "body" in selector:
                 loc.inner_text.return_value = "Normal dashboard body content"
-            elif ".experiment-title" in selector or "h1" in selector:
+            elif '[data-testid="experiment-title"]' in selector:
                 loc.first.text_content.return_value = "Demo Workload - Exp 10"
             return loc
 
@@ -370,7 +370,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             "https://xmc.example.com/experiments/10", wait_until="networkidle", timeout=60000
         )
         mock_page.wait_for_selector.assert_called_once_with(
-            "xmc-experiment-page, xmc-home-page, .guest-page-container",
+            'xmc-experiment-page, xmc-home-page, [data-testid="guest-page-container"]',
             timeout=60000,
         )
         mock_page.screenshot.assert_called()
@@ -390,7 +390,10 @@ class UIEntitiesValidatorTest(unittest.TestCase):
 
                 def _locator_factory(selector: str, body_text: str = bad_body) -> Any:
                     loc = mock.MagicMock()
-                    if "xmc-home-page" in selector or ".guest-page-container" in selector:
+                    if (
+                        "xmc-home-page" in selector
+                        or '[data-testid="guest-page-container"]' in selector
+                    ):
                         loc.count.return_value = 0
                     elif "body" in selector:
                         loc.inner_text.return_value = f"Unauthorized: {body_text}"
@@ -410,7 +413,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
 
         def _locator_factory(selector: str) -> Any:
             loc = mock.MagicMock()
-            if "xmc-home-page" in selector or ".guest-page-container" in selector:
+            if "xmc-home-page" in selector or '[data-testid="guest-page-container"]' in selector:
                 loc.count.return_value = 1  # Landed on guest page
             elif "body" in selector:
                 loc.inner_text.return_value = "Normal text"
@@ -605,7 +608,7 @@ class UIEntitiesValidatorTest(unittest.TestCase):
             "https://xmc.example.com/resources", wait_until="networkidle", timeout=60000
         )
         mock_page.wait_for_selector.assert_called_once_with(
-            "xmc-resource-dashboard, xmc-home-page, .guest-page-container",
+            'xmc-resource-dashboard, xmc-home-page, [data-testid="guest-page-container"]',
             timeout=60000,
         )
 

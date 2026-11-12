@@ -15,7 +15,7 @@
 -->
 
 @if (message()) {
-  <div class="error-banner" role="alert">
+  <div class="error-banner" data-testid="error-banner" role="alert">
     <div class="error-content">
       <mat-icon class="error-icon" aria-hidden="true">error_outline</mat-icon>
       <span class="error-text">{{ message() }}</span>

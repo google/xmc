@@ -22,12 +22,19 @@
       XMC Services Health
     </h2>
     <div class="header-actions">
-      <button type="button" class="refresh-button" [disabled]="loading()" (click)="onRefresh()">
+      <button
+        type="button"
+        class="refresh-button"
+        data-testid="health-refresh-button"
+        [disabled]="loading()"
+        (click)="onRefresh()"
+      >
         <mat-icon class="button-icon" [class.animate-spin]="loading()">refresh</mat-icon>
         {{ loading() ? 'Refreshing...' : 'Refresh' }}
       </button>
       <span
         class="status-badge"
+        data-testid="health-overall-badge"
         [class.status-healthy]="isHealthy()"
         [class.status-degraded]="isDegraded()"
         [class.status-unknown]="isUnknown()"
@@ -102,7 +109,9 @@
   </div>
 
   @if (lastChecked()) {
-    <div class="last-checked">Last checked: {{ lastChecked() }}</div>
+    <div class="last-checked" data-testid="health-last-checked">
+      Last checked: {{ lastChecked() }}
+    </div>
   }
 </div>
 

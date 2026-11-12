@@ -143,6 +143,7 @@ def _select_primary_resource(session: Session, timeout_ms: int) -> str:
     options = session.page.locator(sel.RESOURCE_OPTION_SEL)
     if options.count() < 2:
         raise UIError("Missing selectable resource mat-option.")
+    # ui-contract: smart_resource_finder.ng.html renders resource-type names as mat-option text.
     cpu = options.filter(has_text="CPU").first
     opt = cpu if cpu.count() > 0 else options.nth(1)
     name = (opt.text_content() or "").strip()

@@ -22,6 +22,8 @@
         <button
           type="button"
           class="toggle-pill"
+          data-testid="velocity-pill"
+          [attr.aria-pressed]="velocityPeriod() === period"
           [class.active-toggle]="velocityPeriod() === period"
           (click)="setVelocityPeriod(period)"
         >
