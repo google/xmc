@@ -376,6 +376,9 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 				withStorage(st),
 			)
 			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
+			if tc.expType == msgpb.Experiment_STUDY {
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
+			}
 
 			_, err := server.CreateExperiment(ctx, req)
 
@@ -396,34 +399,47 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 	}
 }
 
-func TestCreateExperiment_PersistsStudyConfig(t *testing.T) {
+func TestCreateExperiment_StudyConfig(t *testing.T) {
 	ctx := context.Background()
+	multiObjective := prototest.Modify(experimenttest.StudyConfig(), func(cfg *msgpb.StudyConfig) {
+		cfg.Metrics = append(cfg.Metrics, &msgpb.MetricSpec{MetricId: "loss", Goal: msgpb.MetricSpec_MINIMIZE})
+	})
 	tests := []struct {
 		name        string
 		expType     msgpb.Experiment_ExperimentType
 		studyConfig *msgpb.StudyConfig
+		wantCode    codes.Code
 	}{
-		{name: "study config is persisted and returned", expType: msgpb.Experiment_STUDY, studyConfig: experimenttest.StudyConfig()},
-		{name: "standard experiment has no study config", expType: msgpb.Experiment_STANDARD},
+		{name: "study with config is persisted", expType: msgpb.Experiment_STUDY, studyConfig: experimenttest.StudyConfig(), wantCode: codes.OK},
+		{name: "study without config", expType: msgpb.Experiment_STUDY, wantCode: codes.InvalidArgument},
+		{name: "multi-objective study", expType: msgpb.Experiment_STUDY, studyConfig: multiObjective, wantCode: codes.InvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
 			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: readyHPOCatalog()}}
 			server := newTestServer(t,
 				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
-				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
+				withXidClient(xidClient),
 				withStorage(st),
 			)
-			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "study", ExperimentType: tc.expType}}
 			if tc.studyConfig != nil {
 				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: tc.studyConfig}
 			}
 
 			got, err := server.CreateExperiment(ctx, req)
-			if err != nil {
-				t.Fatalf("CreateExperiment() failed: %v", err)
-			}
 
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("CreateExperiment() error = %v, want code %v", err, tc.wantCode)
+			}
+			if tc.wantCode != codes.OK {
+				// Invalid study configs are rejected before an XID is provisioned.
+				if xidClient.createXidEntryCalls != 0 {
+					t.Errorf("CreateExperiment() made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
+				}
+				return
+			}
 			for desc, exp := range map[string]*msgpb.Experiment{"returned": got, "persisted": st.Experiment} {
 				if diff := cmp.Diff(tc.studyConfig, exp.GetStudyConfig(), protocmp.Transform()); diff != "" {
 					t.Errorf("CreateExperiment() %s study_config diff (-want +got):\n%s", desc, diff)
