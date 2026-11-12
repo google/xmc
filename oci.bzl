@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Bazel macros for building and testing XMC service OCI container images."""
+
 load("@rules_python//python:py_test.bzl", "py_test")
 
 # go_binary gotags that compile in authentication bypasses and must never ship in an image.
@@ -60,6 +62,12 @@ def dev_binary_guard_test(name, binary, expect_dev_binary = False):
     )
 
 def oci_image_for_service(name, binary):
+    """Defines loadable OCI tarball, push script, and dev-binary guard targets for a service.
+
+    Args:
+      name: Base name for generated image tarball, push script, and guard test targets.
+      binary: Label of the service go_binary target to package.
+    """
     dev_binary_guard_test(name = name + "_dev_binary_guard_test", binary = binary)
 
     # Split binary name
@@ -77,7 +85,7 @@ def oci_image_for_service(name, binary):
         name = tarball_target,
         srcs = [binary],
         outs = [tarball_file],
-        cmd = "python3 $(location //tools/common:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
+        cmd = "python3 $(execpath //tools/common:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
         tools = ["//tools/common:build_oci.py"],
         visibility = ["//visibility:public"],
     )

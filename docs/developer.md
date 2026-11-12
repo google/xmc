@@ -81,11 +81,12 @@ This will build the following targets:
   export XMC_ENV=dev # Optional, defaults to "dev"
   export BUILD_TAG=latest # Optional, defaults to "latest"
 
-### Breaking-Change Check (`buf_breaking_test`)
+### Breaking-Change & Lint Checks (`buf_breaking_test`, `buf_lint_test`)
 
-[`//api:protos_breaking_test`](../api/BUILD.bazel) runs with `bazel test` and fails on backward-incompatible changes to the first-party protobuf APIs:
-* It compares the `proto_library` targets listed in `_PROTOS` with the committed baseline [`api/testdata/protos_baseline.binpb`](../api/testdata/protos_baseline.binpb), using [rules_buf](https://buf.build/docs/cli/build-systems/bazel/) and the strict `FILE` rules from [`api/buf.yaml`](../api/buf.yaml). Bundled `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
-* A new `proto_library` under `//api` must be added to `_PROTOS`; CI fails, listing the uncovered files, until it is. `api/filter/filter_expression.proto` has no `proto_library` and is not covered.
+[`//api:protos_breaking_test`](../api/BUILD.bazel) and [`//api:protos_lint_test`](../api/BUILD.bazel) run with `bazel test` using [rules_buf](https://buf.build/docs/cli/build-systems/bazel/) and [`api/buf.yaml`](../api/buf.yaml):
+* `//api:protos_breaking_test` compares the `proto_library` targets listed in `_PROTOS` with the committed baseline [`api/testdata/protos_baseline.binpb`](../api/testdata/protos_baseline.binpb) under strict `FILE` rules. Bundled `google/*` files are ignored; unstable packages such as `components/v1alpha1` are checked because their messages are persisted.
+* `//api:protos_lint_test` checks `_PROTOS` against `STANDARD` Buf lint rules (excluding the multi-directory `PACKAGE_*` rules listed in `except:` and frozen legacy files in `ignore_only:`).
+* A new `proto_library` under `//api` must be added to `_PROTOS`; CI fails, listing any uncovered `.proto` files, until it is.
 
 To accept an intentional breaking change, refresh the baseline in the same pull request:
 ```bash
@@ -259,7 +260,7 @@ Angular and TypeScript frontend code under `cmd/ui` is formatted and linted usin
 
 ### 4. Bazel Build Files (`buildifier`)
 Bazel build graphs (`BUILD`, `BUILD.bazel`, `WORKSPACE`, `MODULE.bazel`, and `.bzl` files) are formatted and analyzed using **`buildifier`**:
-* Enforces canonical indentation, keyword ordering, and label formatting (`buildifier -mode=check`).
+* Enforces canonical indentation, keyword ordering, label formatting, and lint checks (`buildifier -lint=warn -mode=check`).
 
 ### 5. License Headers (`addlicense`)
 Source files are checked for Google LLC Apache 2.0 license headers using **`addlicense`**:
