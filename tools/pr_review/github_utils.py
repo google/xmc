@@ -34,7 +34,7 @@ class GithubAPIError(Exception):
     """Raised when a GitHub API call fails."""
 
 
-def parse_comment_url(url: str):
+def parse_comment_url(url: str) -> dict[str, Any] | None:
     """Parses GitHub review comment URL into component dictionary."""
     match_review = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)#discussion_r(\d+)", url)
     if match_review:
@@ -51,9 +51,9 @@ def parse_comment_url(url: str):
 def call_github_api(
     endpoint: str,
     method: str = "GET",
-    payload=None,
+    payload: Any = None,
     user_agent: str = "XMC-Github-Agent",
-):
+) -> Any:
     """Orchestrates GitHub API call trying gh CLI, GITHUB_TOKEN, or unauthenticated."""
     errors: list[tuple[str, Exception]] = []
 
@@ -91,7 +91,7 @@ def call_github_api(
     return None
 
 
-def _call_api_with_gh(endpoint, method, payload, _user_agent):
+def _call_api_with_gh(endpoint: str, method: str, payload: Any, _user_agent: str) -> Any:
     """Calls GitHub API using gh CLI binary."""
     cmd = ["gh", "api", "-X", method, endpoint]
     input_data = None
@@ -105,7 +105,9 @@ def _call_api_with_gh(endpoint, method, payload, _user_agent):
     return json.loads(res.stdout)
 
 
-def _call_api_with_token(endpoint, method, payload, token, user_agent):
+def _call_api_with_token(
+    endpoint: str, method: str, payload: Any, token: str, user_agent: str
+) -> Any:
     """Calls GitHub API via HTTP Request using token authorization."""
     url = f"https://api.github.com{endpoint}"
     req = urllib.request.Request(url, method=method)
@@ -121,7 +123,7 @@ def _call_api_with_token(endpoint, method, payload, token, user_agent):
         return json.loads(response.read().decode("utf-8"))
 
 
-def _call_api_unauthenticated(endpoint, user_agent):
+def _call_api_unauthenticated(endpoint: str, user_agent: str) -> Any:
     """Calls GitHub API via unauthenticated HTTP GET Request."""
     url = f"https://api.github.com{endpoint}"
     req = urllib.request.Request(url, method="GET")
@@ -131,7 +133,7 @@ def _call_api_unauthenticated(endpoint, user_agent):
         return json.loads(response.read().decode("utf-8"))
 
 
-def _raise_detailed_error(errors):
+def _raise_detailed_error(errors: list[tuple[str, Exception]]) -> None:
     """Analyzes errors from authentication attempts and raises detailed error."""
     is_auth_failure = False
 

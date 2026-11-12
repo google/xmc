@@ -1081,7 +1081,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
             for path, payload in routes.items():
                 if path in req.full_url:
                     return io.BytesIO(json.dumps(payload).encode("utf-8"))
-            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)  # type: ignore
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)  # type: ignore[arg-type]
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
             results = xmc_entities_validator.validate_dashboard(
@@ -1101,7 +1101,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
             resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1122,7 +1122,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
             resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1149,7 +1149,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
             resp = io.BytesIO(json.dumps(mock_dashboard_data).encode("utf-8"))
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1257,7 +1257,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                 # Second attempt: ready title
                 data = {"name": "dashboards/dash_1", "title": "Ready Title", "chart_ids": []}
             resp = io.BytesIO(json.dumps(data).encode("utf-8"))
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1287,7 +1287,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
                         {"name": "dashboards/dash_1", "title": "Ready", "chart_ids": []}
                     ).encode("utf-8")
                 )
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1304,7 +1304,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
     def test_validate_dashboard_json_decode_error_timeout(self) -> None:
         def mock_urlopen(req: urllib.request.Request, timeout: int = 10) -> io.BytesIO:
             resp = io.BytesIO(b"Invalid Non-JSON response")
-            resp.status = 200  # type: ignore
+            resp.status = 200  # type: ignore[attr-defined]
             return resp
 
         with mock.patch("urllib.request.urlopen", side_effect=mock_urlopen):
@@ -1405,7 +1405,7 @@ class XmcEntitiesValidatorTest(unittest.TestCase):
 
     def test_validate_dashboard_fatal_error_fails_fast(self) -> None:
         err_fp = io.BytesIO(b"data engine is not configured")
-        http_err = urllib.error.HTTPError("http://localhost:8080", 500, "Error", {}, err_fp)  # type: ignore
+        http_err = urllib.error.HTTPError("http://localhost:8080", 500, "Error", {}, err_fp)  # type: ignore[arg-type]
         with mock.patch("urllib.request.urlopen", side_effect=http_err) as mock_open:
             with self.assertRaisesRegex(AssertionError, "data engine is not configured"):
                 xmc_entities_validator.validate_dashboard(

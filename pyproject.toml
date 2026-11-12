@@ -29,6 +29,11 @@ select = [
     "W",       # pycodestyle warnings
     "F",       # Pyflakes
     "I",       # isort (import sorting)
+    "ANN001",  # flake8-annotations: Missing type annotation for function argument
+    "ANN201",  # flake8-annotations: Missing return type annotation for public function
+    "ANN202",  # flake8-annotations: Missing return type annotation for private function
+    "ARG",     # flake8-unused-arguments: Unused function/method/lambda arguments
+    "SLF001",  # flake8-self: Private member access outside class/module
     "D417",    # Missing argument description in docstrings
     "B",       # flake8-bugbear (bug prevention & exception handling)
     "PERF",    # perflint (performance anti-patterns & loop allocations)
@@ -86,6 +91,14 @@ convention = "google"
 "test/e2e/*" = ["TID251"]
 # TODO: migrate to StrEnum
 "test/e2e/lib/config.py" = ["UP042"]
+# Relax annotation, unused-arg, and private-member checks in tests, generated migrations, example launchers, and framework callback hooks
+"*_test.py" = ["ANN001", "ANN201", "ANN202", "ARG", "SLF001"]
+"test_*.py" = ["ANN001", "ANN201", "ANN202", "ARG", "SLF001"]
+"internal/storage/*/migrations/**" = ["ANN001", "ANN201", "ANN202", "ARG", "SLF001"]
+"examples/**" = ["SLF001"]
+"sdks/python/xmc/integrations/*" = ["ARG002"]
+# Step callbacks intentionally accept a uniform (config, dns_project, dns_zone) signature
+"tools/dev_env/deploy_dev_env.py" = ["ARG001"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.time".msg = "Use time.monotonic() for measuring intervals, deadlines, and elapsed time."
@@ -108,6 +121,9 @@ warn_unused_configs = true
 check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+warn_unreachable = true
+strict_equality = true
+enable_error_code = ["ignore-without-code"]
 exclude = [
     '(^|/)node_modules/',
     '(^|/)test/regression/',

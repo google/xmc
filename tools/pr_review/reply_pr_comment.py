@@ -20,6 +20,7 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -36,7 +37,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
 )
 
 
-def reply_comment(args):
+def reply_comment(args: argparse.Namespace) -> dict[str, Any]:
     """Posts a reply to a GitHub PR comment thread with telemetry data."""
     comment_url = args.comment_url
     message_file = getattr(args, "message_file", None)
@@ -210,7 +211,7 @@ def _resolve_replied_thread(parsed: dict, response: dict) -> dict:
         ) from e
 
 
-def main():
+def main() -> None:
     """Main entrypoint for reply_pr_comment tool."""
     parser = argparse.ArgumentParser(
         description="Post a reply to a Pull Request review comment thread."

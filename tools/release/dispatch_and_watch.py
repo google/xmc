@@ -71,7 +71,7 @@ def _extract_step_page_url(step: Any, get_url: Any) -> str:
     return get_url(outputs)
 
 
-def _extract_page_url(view_data: dict[str, Any]) -> str:
+def _extract_page_url(view_data: Any) -> str:
     """Extracts GitHub Pages URL from run view data or jobs step outputs if available."""
     if not isinstance(view_data, dict):
         return ""

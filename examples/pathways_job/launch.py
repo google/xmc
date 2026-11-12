@@ -40,7 +40,7 @@ logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
 # Skip git push snapshot during local test launch
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def main(argv: Sequence[str]) -> None:

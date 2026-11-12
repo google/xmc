@@ -38,6 +38,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
+from typing import Any
 
 import dotenv
 from absl import app
@@ -68,7 +69,7 @@ from xmanager_cloud.experiment_state_server.proto import (
 )
 
 # Skip git push snapshot during local test launch
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 _DEFAULT_GATEWAY_URL = "http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics"
 _DEFAULT_TOTAL_STEPS = "60"
@@ -149,7 +150,7 @@ def _resolve_image_path() -> str:
     return f"us-docker.pkg.dev/{_require_env('PROJECT_ID')}/xmc/chart-artifact-job:latest"
 
 
-def build_training_chart(xid: int, wid: int):
+def build_training_chart(xid: int, wid: int) -> Any:
     """Builds the Chart plotting the metrics the worker writes to ClickHouse.
 
     The chart is created inline with the dashboard, so the server renames it, generates
@@ -271,7 +272,7 @@ def dashboard_id_for(xid: int, wid: int) -> str:
 
 
 def _publish_dashboard_over_rest(
-    dashboard_endpoint: str, dashboard, dashboard_id: str, chart
+    dashboard_endpoint: str, dashboard: Any, dashboard_id: str, chart: Any
 ) -> None:
     """Creates the Dashboard and its Chart through the transcoded REST route."""
     print(f"--> Publishing Dashboard '{dashboard.title}' to HTTP REST {dashboard_endpoint}...")
@@ -297,7 +298,7 @@ def _publish_dashboard_over_rest(
 
 
 def _publish_dashboard_over_grpc(
-    dashboard_endpoint: str, dashboard, dashboard_id: str, chart
+    dashboard_endpoint: str, dashboard: Any, dashboard_id: str, chart: Any
 ) -> None:
     """Creates the Dashboard and its Chart through the Dashboard Service gRPC port."""
     print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
@@ -331,7 +332,7 @@ def create_experiment_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> 
         _publish_dashboard_over_grpc(dashboard_endpoint, dashboard, dashboard_id, chart)
 
 
-def create_chart_artifact(stub, work_unit_name: str, dashboard_url: str):
+def create_chart_artifact(stub: Any, work_unit_name: str, dashboard_url: str) -> Any:
     """Attaches the ChartArtifact to the work unit.
 
     Only `title` and `metric_names` may be supplied: the server rejects client-set
@@ -358,7 +359,7 @@ def create_chart_artifact(stub, work_unit_name: str, dashboard_url: str):
     return stub.create_artifact(request)
 
 
-def create_dashboard_link_artifact(stub, work_unit_name: str, dashboard_url: str):
+def create_dashboard_link_artifact(stub: Any, work_unit_name: str, dashboard_url: str) -> Any:
     """Attaches a URL artifact linking the work unit to its plotted dashboard.
 
     A chart artifact renders as its metric list and provisioned chart resource — the

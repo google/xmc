@@ -18,6 +18,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -32,7 +33,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
 )
 
 
-def fetch_comment(args):
+def fetch_comment(args: argparse.Namespace) -> dict[str, Any]:
     """Fetches GitHub review comment details given a comment URL."""
     comment_url = args.comment_url
     parsed = parse_comment_url(comment_url)
@@ -75,7 +76,7 @@ def fetch_comment(args):
         ) from e
 
 
-def main():
+def main() -> None:
     """Main entrypoint for fetch_pr_comment tool."""
     parser = argparse.ArgumentParser(
         description=(

@@ -48,7 +48,7 @@ logging.getLogger("dotenv.main").setLevel(logging.ERROR)
 dotenv.load_dotenv()
 
 # Bypass remote git repository push check for standalone launch execution.
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(

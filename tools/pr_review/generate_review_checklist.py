@@ -218,7 +218,7 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
-def main():
+def main() -> None:
     """Main entrypoint for generate_review_checklist tool."""
     parser = argparse.ArgumentParser(
         description="Fetch unresolved review comments and generate pr_review_checklist.md."

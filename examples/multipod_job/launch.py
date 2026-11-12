@@ -39,7 +39,7 @@ from xmanager_cloud.experiment_state_server.proto import (
 )
 
 # Skip git push snapshot during local test launch so SSH passphrase is not prompted
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def main(argv: Sequence[str]) -> None:

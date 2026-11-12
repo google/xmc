@@ -113,7 +113,7 @@ def create_authenticated_stub(endpoint: str) -> tuple[Any, Any]:
     """Creates an authenticated ExperimentStateService stub and gRPC channel."""
     if ess_api is None:
         raise RuntimeError("xmanager_cloud is required to establish ESS gRPC connection.")
-    return ess_api._create_experiment_state_server_stub(endpoint)
+    return ess_api._create_experiment_state_server_stub(endpoint)  # noqa: SLF001
 
 
 def _make_req(cls_name: str, **kwargs: Any) -> Any:

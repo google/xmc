@@ -19,6 +19,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -32,7 +33,7 @@ from tools.pr_review.github_utils import (  # noqa: E402
 )
 
 
-def parse_pr_identifier(pr_arg: str):
+def parse_pr_identifier(pr_arg: str) -> dict[str, Any]:
     """Parses PR argument into owner, repo, and pull_number."""
     if pr_arg.isdigit():
         return {"owner": "google", "repo": "xmc", "pull_number": int(pr_arg)}
@@ -52,7 +53,7 @@ def parse_pr_identifier(pr_arg: str):
     )
 
 
-def _resolve_body_content(args) -> str | None:
+def _resolve_body_content(args: argparse.Namespace) -> str | None:
     """Resolves PR body content from file or inline string argument."""
     if getattr(args, "body_file", None):
         body_path = Path(args.body_file)
@@ -73,7 +74,7 @@ def _resolve_body_content(args) -> str | None:
     return None
 
 
-def update_pr_description(args):
+def update_pr_description(args: argparse.Namespace) -> Any:
     """Updates the title and/or body/description of a GitHub Pull Request via REST API."""
     parsed = parse_pr_identifier(args.pr)
     owner = parsed["owner"]
@@ -126,7 +127,7 @@ def update_pr_description(args):
         ) from e
 
 
-def main():
+def main() -> None:
     """Main entrypoint for update_pr_description tool."""
     parser = argparse.ArgumentParser(
         description="Update Pull Request title or description/body on GitHub."

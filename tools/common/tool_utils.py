@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, TextIO
@@ -137,14 +137,16 @@ class HandledError(Exception):
     details optionally carries structured data that run_tool adds to the error JSON.
     """
 
-    def __init__(self, message, instruction, details: Mapping[str, Any] | None = None):
+    def __init__(
+        self, message: str, instruction: str, details: Mapping[str, Any] | None = None
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.instruction = instruction
         self.details = details
 
 
-def run_tool(parser: argparse.ArgumentParser, main_fn):
+def run_tool(parser: argparse.ArgumentParser, main_fn: Callable[[argparse.Namespace], Any]) -> None:
     """Standard runner for tools.
 
     - Handles `--help` automatically via argparse.

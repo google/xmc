@@ -84,6 +84,7 @@ class TestGithubUtils(unittest.TestCase):
         url = "https://github.com/google/xmc/pull/29#discussion_r3421091224"
         res = parse_comment_url(url)
         self.assertIsNotNone(res)
+        assert res is not None
         self.assertEqual(res["type"], "review_comment")
         self.assertEqual(res["owner"], "google")
         self.assertEqual(res["repo"], "xmc")

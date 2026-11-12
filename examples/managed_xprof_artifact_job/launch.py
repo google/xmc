@@ -31,7 +31,7 @@ from xmanager_cloud.experiment_state_server.proto import (
 )
 
 # Bypass remote git repository check for standalone launch execution
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def _build_work_unit(
