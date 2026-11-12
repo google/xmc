@@ -15,19 +15,23 @@
 package workunit
 
 import (
-	"fmt"
-	"strings"
-
 	"cloud.google.com/go/spanner"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 )
 
-func activeWorkUnitStatements(queueNames []string, limit, offset int64, query storage.ActiveWorkUnitQuery) (spanner.Statement, spanner.Statement, error) {
-	order, err := activeWorkUnitOrder(query.OrderBy)
-	if err != nil {
-		return spanner.Statement{}, spanner.Statement{}, err
+var (
+	schedulingOrderSQL = safesql.New(" ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC")
+	tieBreakerSQL      = safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")
+
+	activeWorkUnitSortCols = map[storage.ActiveWorkUnitSortField]safesql.TrustedSQLString{
+		storage.ActiveWorkUnitSortAuthor:   safesql.New("COALESCE(e.Creator, '')"),
+		storage.ActiveWorkUnitSortPriority: safesql.New("wu.Priority"),
+		storage.ActiveWorkUnitSortStatus:   safesql.New("CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END"),
 	}
+)
+
+func activeWorkUnitStatements(queueNames []string, limit, offset int64, query storage.ActiveWorkUnitQuery) (spanner.Statement, spanner.Statement) {
 	where := safesql.New(" WHERE wu.QueueName IN UNNEST(@queueNames) AND wu.IsPendingOrRunningJob IS NOT NULL")
 	count := spanner.Statement{
 		SQL:    safesql.Concat(safesql.New("SELECT COUNT(*) FROM WorkUnits wu"), where).String(),
@@ -36,37 +40,24 @@ func activeWorkUnitStatements(queueNames []string, limit, offset int64, query st
 	fetchSQL := safesql.Concat(
 		safesql.New("SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle FROM WorkUnits wu JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid"),
 		where,
-		order,
+		activeWorkUnitOrder(query),
 		safesql.New(" LIMIT @limit OFFSET @offset"),
 	)
 	fetch := spanner.Statement{
 		SQL:    fetchSQL.String(),
 		Params: map[string]any{"queueNames": queueNames, "limit": limit, "offset": offset},
 	}
-	return count, fetch, nil
+	return count, fetch
 }
 
-var (
-	activeWorkUnitSortCols = map[string]safesql.TrustedSQLString{
-		"author":   safesql.New("COALESCE(e.Creator, '')"),
-		"priority": safesql.New("wu.Priority"),
-		"status":   safesql.New("CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END"),
+func activeWorkUnitOrder(q storage.ActiveWorkUnitQuery) safesql.TrustedSQLString {
+	col, ok := activeWorkUnitSortCols[q.SortField]
+	if !ok {
+		return schedulingOrderSQL
 	}
-	activeWorkUnitSortDirs = map[string]safesql.TrustedSQLString{
-		"asc":  safesql.New(" ASC"),
-		"desc": safesql.New(" DESC"),
+	dir := safesql.New(" ASC")
+	if q.Descending {
+		dir = safesql.New(" DESC")
 	}
-)
-
-func activeWorkUnitOrder(orderBy string) (safesql.TrustedSQLString, error) {
-	if orderBy == "" {
-		return safesql.New(" ORDER BY wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC, wu.WorkUnitId ASC, wu.Xid ASC"), nil
-	}
-	field, dir, ok := strings.Cut(orderBy, " ")
-	colSQL, colOK := activeWorkUnitSortCols[field]
-	dirSQL, dirOK := activeWorkUnitSortDirs[dir]
-	if !ok || !colOK || !dirOK {
-		return safesql.EmptyString(), fmt.Errorf("unsupported order_by %q", orderBy)
-	}
-	return safesql.Concat(safesql.New(" ORDER BY "), colSQL, dirSQL, safesql.New(", wu.WorkUnitId ASC, wu.Xid ASC")), nil
+	return safesql.Concat(safesql.New(" ORDER BY "), col, dir, tieBreakerSQL)
 }

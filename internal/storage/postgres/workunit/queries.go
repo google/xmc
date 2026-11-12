@@ -126,10 +126,7 @@ func fetchActiveWorkUnitsFromDB(ctx context.Context, db pgdb.DBTX, queueNames []
 }
 
 func fetchActiveWorkUnitsPageFromDB(ctx context.Context, db pgdb.DBTX, queueNames []string, pageSize int32, offset int64, query storage.ActiveWorkUnitQuery) (*storage.ActiveWorkUnitsResult, error) {
-	count, fetch, err := activeWorkUnitStatements(queueNames, int64(pageSize)+1, offset, query)
-	if err != nil {
-		return nil, err
-	}
+	count, fetch := activeWorkUnitStatements(queueNames, int64(pageSize)+1, offset, query)
 	var totalQueueSize int64
 	if err := db.QueryRow(ctx, count.sql.String(), count.args...).Scan(&totalQueueSize); err != nil {
 		return nil, pgdb.TranslateError(err, entityName)

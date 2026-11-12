@@ -50,6 +50,9 @@
       <div class="empty-caption">No job ahead of you!</div>
     </div>
   } @else {
+    @if (isRefreshing()) {
+      <xmc-loading-bar [isRefreshing]="true" />
+    }
     <div class="jobs-table-container">
       <table
         mat-table

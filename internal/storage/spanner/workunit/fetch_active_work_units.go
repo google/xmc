@@ -152,10 +152,7 @@ func fetchActiveWorkUnitsInTxn(ctx context.Context, txn *spanner.ReadOnlyTransac
 		return nil, fmt.Errorf("failed to decode page token: %w", err)
 	}
 
-	countStmt, fetchStmt, err := activeWorkUnitStatements(queueNames, int64(pageSizeVal)+1, offset, query)
-	if err != nil {
-		return nil, err
-	}
+	countStmt, fetchStmt := activeWorkUnitStatements(queueNames, int64(pageSizeVal)+1, offset, query)
 
 	// Query 1: Count total active work units across matching queues
 	totalQueueSize, err := countActiveWorkUnits(ctx, txn, countStmt)

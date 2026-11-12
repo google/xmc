@@ -219,29 +219,24 @@ func TestActiveQueueOrderingAcrossPages(t *testing.T) {
 		}
 	}
 
-	t.Run("invalid ordering", func(t *testing.T) {
-		if _, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 1, "", storage.ActiveWorkUnitQuery{OrderBy: "invalid"}); err == nil {
-			t.Fatal("accepted invalid ordering")
-		}
-	})
-
 	cases := []struct {
-		order string
+		name  string
+		query storage.ActiveWorkUnitQuery
 		want  []string
 	}{
-		{"author asc", []string{"experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3"}},
-		{"author desc", []string{"experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3"}},
-		{"priority asc", []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3"}},
-		{"priority desc", []string{"experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
-		{"status asc", []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
-		{"status desc", []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2"}},
+		{"author asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor}, []string{"experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3"}},
+		{"author desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor, Descending: true}, []string{"experiments/100/workUnits/1", "experiments/100/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/1", "experiments/200/workUnits/2", "experiments/200/workUnits/3"}},
+		{"priority asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority}, []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3"}},
+		{"priority desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority, Descending: true}, []string{"experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus}, []string{"experiments/100/workUnits/2", "experiments/200/workUnits/2", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/1", "experiments/200/workUnits/1"}},
+		{"status desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus, Descending: true}, []string{"experiments/100/workUnits/1", "experiments/200/workUnits/1", "experiments/100/workUnits/3", "experiments/200/workUnits/3", "experiments/100/workUnits/2", "experiments/200/workUnits/2"}},
 	}
 	for _, tt := range cases {
-		t.Run(tt.order, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			var names []string
 			token := ""
 			for page := 0; page < 3; page++ {
-				result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, storage.ActiveWorkUnitQuery{OrderBy: tt.order})
+				result, err := repo.FetchActiveWorkUnitsByQueues(ctx, []string{"test-queue"}, 2, token, tt.query)
 				if err != nil {
 					t.Fatal(err)
 				}

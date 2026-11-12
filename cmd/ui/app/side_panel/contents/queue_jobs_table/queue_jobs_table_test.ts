@@ -388,6 +388,26 @@ describe('QueueJobsTable Component', () => {
     expect(await harness.getRowCount()).toBe(3);
   });
 
+  it('keeps the sort table mounted while a sort request is pending', async () => {
+    const jobsSubject = new Subject<GetRunningAndPendingJobsResponse>();
+    state.resourceService.getQueueJobs.and.returnValue(jobsSubject.asObservable());
+
+    bootstrap(TestHostComponent);
+    jobsSubject.next(TEST_QUEUE_JOBS_RESP);
+    await flush();
+
+    const harness = await getHarness(QueueJobsTableHarness);
+    await harness.sortBy('Author');
+
+    expect(document.querySelector(LOADING_CONTAINER_SELECTOR)).toBeNull();
+    expect(document.querySelector('xmc-loading-bar')).not.toBeNull();
+    expect(await harness.getRowCount()).toBe(3);
+
+    jobsSubject.next(TEST_QUEUE_JOBS_RESP);
+    await flush();
+    expect(document.querySelector('xmc-loading-bar')).toBeNull();
+  });
+
   it('should log a console.error when a job is missing an assigned user', async () => {
     spyOn(console, 'error');
     bootstrap(TestHostComponent);

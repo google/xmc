@@ -32,6 +32,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterModule } from '@angular/router';
 import { catchError, distinctUntilChanged, of, switchMap, tap } from 'rxjs';
 
+import { LoadingBar } from 'app/common/components/loading_bar/loading_bar';
 import { ResourceChip } from 'app/common/components/resource_chip/resource_chip';
 import { StatusChip } from 'app/common/components/status_chip/status_chip';
 import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
@@ -67,6 +68,7 @@ export class QueueJobsTableData implements BaseSidePanelData {
     MatIconModule,
     MatButtonModule,
     MatTooltipModule,
+    LoadingBar,
     StatusChip,
     ResourceChip,
     QueueJobPositionPipe,
@@ -94,7 +96,10 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
     return sort.direction ? `${sort.active} ${sort.direction}` : '';
   });
 
-  protected readonly isLoading = signal<boolean>(false);
+  protected readonly isFetching = signal<boolean>(false);
+  protected readonly hasLoaded = signal<boolean>(false);
+  protected readonly isLoading = computed(() => this.isFetching() && !this.hasLoaded());
+  protected readonly isRefreshing = computed(() => this.isFetching() && this.hasLoaded());
   protected readonly tableControls = {
     pageSize: signal<number>(10),
     pageIndex: signal<number>(0),
@@ -120,11 +125,12 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
           prev.pageToken === curr.pageToken &&
           prev.orderBy === curr.orderBy,
       ),
-      tap(() => this.isLoading.set(true)),
+      tap(() => this.isFetching.set(true)),
       switchMap(({ queueName, pageSize, pageToken, orderBy }) =>
         this.resourceService.getQueueJobs(queueName, pageSize, pageToken, orderBy).pipe(
           tap((resp) => {
-            this.isLoading.set(false);
+            this.isFetching.set(false);
+            this.hasLoaded.set(true);
             this.tableControls.totalCount.set(resp?.totalQueueSize ?? 0);
             this.tableControls.nextPageToken.set(resp?.nextPageToken ?? '');
             for (const job of resp?.jobs ?? []) {
@@ -136,7 +142,8 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
             }
           }),
           catchError(() => {
-            this.isLoading.set(false);
+            this.isFetching.set(false);
+            this.hasLoaded.set(true);
             this.tableControls.totalCount.set(0);
             this.tableControls.nextPageToken.set('');
             return of({ jobs: [], totalQueueSize: 0, nextPageToken: '' });
@@ -170,7 +177,10 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   constructor() {
     effect(() => {
       this.activeQueueName();
-      untracked(() => this.resetPage());
+      untracked(() => {
+        this.hasLoaded.set(false);
+        this.resetPage();
+      });
     });
   }
 

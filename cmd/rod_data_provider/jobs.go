@@ -32,9 +32,12 @@ import (
 
 // GetRunningAndPendingJobs handles fetching active and pending jobs for a cluster queue.
 func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest) (*spb.GetRunningAndPendingJobsResponse, error) {
-	query, err := validateJobsRequest(ctx, req, s.workUnitStore)
-	if err != nil {
+	if err := validateJobsRequest(ctx, req, s.workUnitStore); err != nil {
 		return nil, err
+	}
+	query, err := parseJobsOrderBy(req.GetOrderBy())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid order_by: %v", err)
 	}
 
 	clusterQueueName := req.GetQueueName()
@@ -89,26 +92,20 @@ func fetchJobsAndAllocations(ctx context.Context, store WorkUnitFetcher, targetQ
 	return result, activeResources, err
 }
 
-func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) (storage.ActiveWorkUnitQuery, error) {
-	query := storage.ActiveWorkUnitQuery{}
+func validateJobsRequest(ctx context.Context, req *spb.GetRunningAndPendingJobsRequest, store WorkUnitFetcher) error {
 	if err := ctx.Err(); err != nil {
-		return query, status.FromContextError(err).Err()
+		return status.FromContextError(err).Err()
 	}
 	if req == nil || req.GetQueueName() == "" {
-		return query, status.Error(codes.InvalidArgument, "queue_name is required")
+		return status.Error(codes.InvalidArgument, "queue_name is required")
 	}
 	if req.GetPageSize() < 0 {
-		return query, status.Error(codes.InvalidArgument, "page_size cannot be negative")
+		return status.Error(codes.InvalidArgument, "page_size cannot be negative")
 	}
-	orderBy, err := storage.ActiveWorkUnitOrderBy(req.GetOrderBy())
-	if err != nil {
-		return query, status.Error(codes.InvalidArgument, err.Error())
-	}
-	query.OrderBy = orderBy
 	if store == nil {
-		return query, status.Error(codes.Unavailable, "work unit store is uninitialized")
+		return status.Error(codes.Unavailable, "work unit store is uninitialized")
 	}
-	return query, nil
+	return nil
 }
 
 func extractWorkUnitsResult(result *storage.ActiveWorkUnitsResult) (workUnits []storage.ActiveWorkUnit, nextPageToken string) {

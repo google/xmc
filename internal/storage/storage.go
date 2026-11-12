@@ -219,6 +219,23 @@ type ActiveWorkUnit struct {
 	ExperimentTitle string
 }
 
+// ActiveWorkUnitSortField selects the display ordering of active work units.
+type ActiveWorkUnitSortField int
+
+const (
+	// ActiveWorkUnitSortScheduling keeps the scheduler's queue order (default).
+	ActiveWorkUnitSortScheduling ActiveWorkUnitSortField = iota
+	ActiveWorkUnitSortAuthor
+	ActiveWorkUnitSortStatus
+	ActiveWorkUnitSortPriority
+)
+
+// ActiveWorkUnitQuery holds validated display options applied before pagination.
+type ActiveWorkUnitQuery struct {
+	SortField  ActiveWorkUnitSortField
+	Descending bool
+}
+
 // ActiveWorkUnitsResult holds the result of querying active work units.
 type ActiveWorkUnitsResult struct {
 	WorkUnits      []ActiveWorkUnit

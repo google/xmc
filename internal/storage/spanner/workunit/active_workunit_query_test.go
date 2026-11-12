@@ -22,30 +22,26 @@ import (
 )
 
 func TestActiveWorkUnitOrder(t *testing.T) {
-	tests := []struct{ order, want string }{
-		{"", "wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC"},
-		{"author asc", `COALESCE(e.Creator, '') ASC`},
-		{"author desc", `COALESCE(e.Creator, '') DESC`},
-		{"priority asc", "wu.Priority ASC"},
-		{"priority desc", "wu.Priority DESC"},
-		{"status asc", `CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END ASC`},
-		{"status desc", `CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END DESC`},
+	tests := []struct {
+		name  string
+		query storage.ActiveWorkUnitQuery
+		want  string
+	}{
+		{"default", storage.ActiveWorkUnitQuery{}, "wu.SortPhase DESC, wu.PositionInQueue ASC, wu.CreateTime ASC"},
+		{"author asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor}, `COALESCE(e.Creator, '') ASC`},
+		{"author desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortAuthor, Descending: true}, `COALESCE(e.Creator, '') DESC`},
+		{"priority asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority}, "wu.Priority ASC"},
+		{"priority desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority, Descending: true}, "wu.Priority DESC"},
+		{"status asc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus}, `CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END ASC`},
+		{"status desc", storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus, Descending: true}, `CASE wu.ExecutionState WHEN 'RUNNING' THEN 0 WHEN 'STARTING' THEN 1 WHEN 'INITIALIZING' THEN 2 ELSE 3 END DESC`},
 	}
 	for _, tt := range tests {
-		t.Run(tt.order, func(t *testing.T) {
-			got, err := activeWorkUnitOrder(tt.order)
-			if err != nil {
-				t.Fatal(err)
-			}
+		t.Run(tt.name, func(t *testing.T) {
+			got := activeWorkUnitOrder(tt.query)
 			want := " ORDER BY " + tt.want + ", wu.WorkUnitId ASC, wu.Xid ASC"
 			if diff := cmp.Diff(want, got.String()); diff != "" {
 				t.Errorf("ordering (-want +got):\n%s", diff)
 			}
 		})
-	}
-	for _, order := range []string{"author", "author sideways", "priority desc; DROP TABLE WorkUnits"} {
-		if _, _, err := activeWorkUnitStatements([]string{"q"}, 10, 0, storage.ActiveWorkUnitQuery{OrderBy: order}); err == nil {
-			t.Errorf("accepted invalid order %q", order)
-		}
 	}
 }

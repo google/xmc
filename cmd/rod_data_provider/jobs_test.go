@@ -618,33 +618,68 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	}
 }
 
-func TestJobsOrderBy(t *testing.T) {
-	for _, orderBy := range []string{"author", "priority desc", "status asc"} {
-		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", OrderBy: orderBy}, &mockWorkUnitFetcher{}); err != nil {
-			t.Errorf("valid order %q: %v", orderBy, err)
-		}
+func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
+	tests := []struct {
+		name      string
+		orderBy   string
+		wantQuery storage.ActiveWorkUnitQuery
+		wantCode  codes.Code
+	}{
+		{
+			name:      "empty preserves default",
+			orderBy:   "",
+			wantQuery: storage.ActiveWorkUnitQuery{},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "case-insensitive status desc",
+			orderBy:   "Status DESC",
+			wantQuery: storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortStatus, Descending: true},
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "priority defaults asc",
+			orderBy:   "priority",
+			wantQuery: storage.ActiveWorkUnitQuery{SortField: storage.ActiveWorkUnitSortPriority},
+			wantCode:  codes.OK,
+		},
+		{
+			name:     "unknown field",
+			orderBy:  "title",
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "unsupported direction",
+			orderBy:  "author sideways",
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name:     "sql injection rejected",
+			orderBy:  "priority desc; DROP TABLE WorkUnits",
+			wantCode: codes.InvalidArgument,
+		},
 	}
-	for _, orderBy := range []string{"title", "author sideways", "priority desc; DROP TABLE WorkUnits"} {
-		if _, err := validateJobsRequest(context.Background(), &spb.GetRunningAndPendingJobsRequest{QueueName: "queue", OrderBy: orderBy}, &mockWorkUnitFetcher{}); status.Code(err) != codes.InvalidArgument {
-			t.Errorf("invalid order %q: %v", orderBy, err)
-		}
-	}
-}
 
-func TestJobsQueryForwarding(t *testing.T) {
-	fetcher := &mockWorkUnitFetcher{}
-	srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
-	req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
-		r.OrderBy = "priority"
-	})
-	if _, err := srv.GetRunningAndPendingJobs(context.Background(), req); err != nil {
-		t.Fatal(err)
-	}
-	got := fetcher.lastQuery
-	want := storage.ActiveWorkUnitQuery{
-		OrderBy: "priority asc",
-	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fetcher := &mockWorkUnitFetcher{}
+			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+			req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
+				r.OrderBy = tt.orderBy
+			})
+			_, err := srv.GetRunningAndPendingJobs(context.Background(), req)
+			if status.Code(err) != tt.wantCode {
+				t.Fatalf("GetRunningAndPendingJobs(order_by=%q) code = %v, want %v (err=%v)", tt.orderBy, status.Code(err), tt.wantCode, err)
+			}
+			if tt.wantCode != codes.OK {
+				if fetcher.snapshotCalls != 0 {
+					t.Errorf("fetcher called %d times on invalid order_by, want 0", fetcher.snapshotCalls)
+				}
+				return
+			}
+			if diff := cmp.Diff(tt.wantQuery, fetcher.lastQuery); diff != "" {
+				t.Errorf("forwarded query mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
