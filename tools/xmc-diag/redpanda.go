@@ -134,6 +134,7 @@ func inspectEndOffsets(ctx context.Context, querier RedpandaQuerier, topic strin
 		return nil, []string{fmt.Sprintf("failed listing partition end offsets for topic %q: %v", topic, err)}
 	}
 	var reasons []string
+	// TODO: sort partition IDs before iterating endOffsets to make diagnostic reason order deterministic.
 	for p, o := range endOffsets[topic] {
 		if o.Err != nil {
 			reasons = append(reasons, fmt.Sprintf("partition %d end offset error: %v", p, o.Err))
@@ -148,6 +149,7 @@ func inspectGroupOffsets(ctx context.Context, querier RedpandaQuerier, topic, gr
 		return nil, []string{fmt.Sprintf("failed fetching consumer group offsets for %q: %v", group, err)}
 	}
 	var reasons []string
+	// TODO: sort partition IDs before iterating groupOffsets to make diagnostic reason order deterministic.
 	for p, o := range groupOffsets[topic] {
 		if o.Err != nil {
 			reasons = append(reasons, fmt.Sprintf("partition %d committed offset error: %v", p, o.Err))

@@ -16,6 +16,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -55,7 +56,10 @@ func parseComponentFlagDefaults() (bool, bool, string) {
 	return enabled, raw != "" && enabled, cmp.Or(os.Getenv("XMC_NAMESPACE"), os.Getenv("NAMESPACE"), "xmc")
 }
 
-func finalizeDiagConfig(cfg *Config, brokersStr string, checkComp, checkCompExplicit bool) (*Config, error) {
+func finalizeDiagConfig(cfg *Config, brokersStr string) (*Config, error) {
+	if cfg == nil {
+		return nil, errors.New("config cannot be nil")
+	}
 	if cfg.SASLEnabled {
 		mech := strings.ToUpper(cfg.SASLMechanism)
 		if mech != "PLAIN" && mech != "SCRAM-SHA-256" && mech != "SCRAM-SHA-512" {
@@ -72,7 +76,6 @@ func finalizeDiagConfig(cfg *Config, brokersStr string, checkComp, checkCompExpl
 			cfg.RedpandaBrokers = append(cfg.RedpandaBrokers, trimmed)
 		}
 	}
-	cfg.CheckComponents, cfg.CheckComponentsExplicit = checkComp, checkCompExplicit
 	return cfg, nil
 }
 
@@ -80,7 +83,10 @@ func finalizeDiagConfig(cfg *Config, brokersStr string, checkComp, checkCompExpl
 func ParseFlags(args []string) (*Config, error) {
 	fs := flag.NewFlagSet("xmc-diag", flag.ContinueOnError)
 	checkComp, checkCompExplicit, defaultNS := parseComponentFlagDefaults()
-	cfg := &Config{}
+	cfg := &Config{
+		CheckComponents:         checkComp,
+		CheckComponentsExplicit: checkCompExplicit,
+	}
 	var brokersStr string
 
 	fs.StringVar(&cfg.ClickHouseHost, "clickhouse_host", "", "ClickHouse host (overrides CLICKHOUSE_HOST env)")
@@ -103,15 +109,15 @@ func ParseFlags(args []string) (*Config, error) {
 	fs.BoolVar(&cfg.SkipSmokeTests, "skip_smoke_tests", false, "Skip database and topic smoke queries")
 	fs.StringVar(&cfg.Namespace, "namespace", defaultNS, "Kubernetes namespace for Component CR checks")
 	fs.StringVar(&cfg.Kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"), "Path to kubeconfig file for Component CR checks")
-	fs.BoolVar(&checkComp, "check_components", checkComp, "Check Component CR health in Kubernetes")
-	fs.BoolVar(&checkComp, "check-components", checkComp, "Check Component CR health in Kubernetes")
+	fs.BoolVar(&cfg.CheckComponents, "check_components", cfg.CheckComponents, "Check Component CR health in Kubernetes")
+	fs.BoolVar(&cfg.CheckComponents, "check-components", cfg.CheckComponents, "Check Component CR health in Kubernetes")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "check_components" || f.Name == "check-components" {
-			checkCompExplicit = checkComp
+			cfg.CheckComponentsExplicit = cfg.CheckComponents
 		}
 	})
-	return finalizeDiagConfig(cfg, brokersStr, checkComp, checkCompExplicit)
+	return finalizeDiagConfig(cfg, brokersStr)
 }

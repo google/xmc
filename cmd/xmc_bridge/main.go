@@ -87,23 +87,21 @@ type ComponentAccess = bridge.ComponentAccess
 // ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
 type ComponentCondition = bridge.ComponentCondition
 
-// ParseConfig parses command line flags and environment variables into a validated Config object.
-// args typically receives os.Args[1:]. Default values fall back to corresponding environment
-// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
-// MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
-// Returns an error if flag parsing fails, if intervals/timeouts are non-positive, if
-// max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty or "0".
-func validateParsedConfig(cfg *Config, releaseName string) error {
+// validateParsedConfig checks required Config fields, resolves cluster identity, and validates timings.
+func validateParsedConfig(cfg *Config) error {
+	if cfg == nil {
+		return errors.New("config cannot be nil")
+	}
 	if cfg.CMSAddress == "" {
 		return errors.New("cms-address must be specified")
 	}
 	if cfg.Namespace == "" {
 		return errors.New("namespace must be specified")
 	}
-	if releaseName == "" {
+	if cfg.ReleaseName == "" {
 		return errors.New("release-name must be specified")
 	}
-	resolvedClusterName, err := resolveClusterIdentityFlags(cfg.ClusterName, releaseName, cfg.OwnershipEpoch)
+	resolvedClusterName, err := resolveClusterIdentityFlags(cfg.ClusterName, cfg.ReleaseName, cfg.OwnershipEpoch)
 	if err != nil {
 		return err
 	}
@@ -121,6 +119,11 @@ func validateParsedConfig(cfg *Config, releaseName string) error {
 }
 
 // ParseConfig parses command line flags and environment variables into a validated Config object.
+// args typically receives os.Args[1:]. Default values fall back to corresponding environment
+// variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
+// MAX_CONCURRENT_RECONCILES, KUBECONFIG) if flags are omitted.
+// Returns an error if flag parsing fails, if intervals/timeouts are non-positive, if
+// max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty or "0".
 func ParseConfig(args []string) (*Config, error) {
 	defaultOwnershipEpoch, err := ownershipEpochFromEnv()
 	if err != nil {
@@ -176,7 +179,7 @@ func ParseConfig(args []string) (*Config, error) {
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
 	}
-	if err := validateParsedConfig(cfg, cfg.ReleaseName); err != nil {
+	if err := validateParsedConfig(cfg); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -371,6 +374,8 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)
 	}
+	// The live UID reader bypasses the informer cache, so takeover and stale-incarnation checks see
+	// the current Component rather than a possibly stale cached copy.
 	reconciler, err := bridge.NewReconciler(cmsClient, k8sClients.prober, helmMgr, bridge.WithClusterFence(fence), bridge.WithLiveUIDReader(bridge.NewAPIReaderLiveUID(mgr.GetAPIReader())))
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
@@ -378,6 +383,9 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	if err := bridge.AddComponentHealthChecks(ctx, mgr); err != nil {
 		return err
 	}
+	// Helm hydration and the Helm worker's shutdown run only while this process holds the Lease.
+	// A lost Lease stops the manager without a grace period; RunBridge then cancels in-flight Helm work
+	// and returns, and the process exits, so that no Helm write outlives the Lease.
 	if err := mgr.Add(helm.NewHelmLeaderRunnable(helmMgr)); err != nil {
 		return fmt.Errorf("failed to add Helm manager runnable: %w", err)
 	}

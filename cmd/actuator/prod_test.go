@@ -172,6 +172,24 @@ func TestNewProd_Validation(t *testing.T) {
 	})
 }
 
+func TestRunCleanups(t *testing.T) {
+	var order []string
+	errA := errors.New("first failure")
+	errB := errors.New("second failure")
+	err := runCleanups([]func() error{
+		func() error { order = append(order, "first"); return errA },
+		nil,
+		func() error { order = append(order, "second"); return nil },
+		func() error { order = append(order, "third"); return errB },
+	})
+	if len(order) != 3 || order[0] != "third" || order[1] != "second" || order[2] != "first" {
+		t.Errorf("cleanup execution order = %v, want [third second first]", order)
+	}
+	if !errors.Is(err, errA) || !errors.Is(err, errB) {
+		t.Errorf("runCleanups() joined error = %v, want errors.Is both %v and %v", err, errA, errB)
+	}
+}
+
 func TestWorkerIDHelpers(t *testing.T) {
 	ctx := context.Background()
 	origHostname := osHostname

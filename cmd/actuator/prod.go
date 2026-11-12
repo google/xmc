@@ -90,6 +90,9 @@ func initActuatorRedisConsumer(ctx context.Context, cfg *Config) *redisclient.Co
 func runCleanups(cleanups []func() error) error {
 	var errs []error
 	for i := len(cleanups) - 1; i >= 0; i-- {
+		if cleanups[i] == nil {
+			continue
+		}
 		if err := cleanups[i](); err != nil {
 			errs = append(errs, err)
 		}
@@ -128,6 +131,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 		return nil, fmt.Errorf("failed to load verifying key: %w", err)
 	}
 
+	// TODO: fix data race between RunCleanup goroutine reading c.TaskHandler and SetTaskHandler, plus goroutine leak on NewProd error and unguarded Close().
 	redisConsumer := initActuatorRedisConsumer(ctx, cfg)
 	cleanups = append(cleanups, func() error { return redisConsumer.Close(context.Background()) })
 
