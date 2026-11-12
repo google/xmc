@@ -31,7 +31,7 @@ The following fields are structural constants of the Vizier blueprint defined in
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `bool` | `false` | Enables or disables the Vizier component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
+| `enabled` | `bool` | `false` | Enables or disables the Vizier component in the XMC catalog. Defaults to `false` until explicitly enabled in profile values. |
 | `acknowledgeExperimental` | `bool` | *(omitted)* | Explicit administrator acknowledgement required when `enabled: true` because `stability` is `EXPERIMENTAL`. |
 | `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |

@@ -49,11 +49,10 @@ For details on the transaction model, see [internal/storage/README.md](../../int
 
 When components are updated or deleted in the global catalog, active running experiments may diverge from their locked snapshots. ESS detects this dynamically during read operations without background cron jobs:
 
-1. **Feature Flag Guard**: Drift evaluation is gated by `enable_components` (`cfg.EnableComponents`, default `false`). In environments where components are disabled, drift checks are completely bypassed with zero Spanner queries.
-2. **Hot-Path Polling Cache**: On high-frequency polling endpoints (`GetExperimentStatus`), ESS caches consistency evaluations for 30 seconds in memory to protect Cloud Spanner from redundant view queries.
-3. **Read Path Evaluation**: On `GetExperiment` and `GetExperimentStatus` RPCs, ESS queries Cloud Spanner's `ExperimentConsistencyInfo` view using the experiment's primary key (`BitReversedXid`).
-4. **Warning Propagation**: When divergence is detected, ESS constructs a `StructuredMessage` with `WARNING` severity detailing the specific component generation differences and attaches it to the response `ExperimentStatus`.
-5. **Transaction Safety**: Drift checks execute in isolated read-only transactions, ensuring read-write transactions (`FetchExperimentTransaction`) remain strictly side-effect free.
+1. **Hot-Path Polling Cache**: On high-frequency polling endpoints (`GetExperimentStatus`), ESS caches consistency evaluations for 30 seconds in memory to protect the database from redundant view queries.
+2. **Read Path Evaluation**: On `GetExperiment` and `GetExperimentStatus` RPCs, ESS queries the `ExperimentConsistencyInfo` view using the experiment's primary key (`BitReversedXid`).
+3. **Warning Propagation**: When divergence is detected, ESS constructs a `StructuredMessage` with `WARNING` severity detailing the specific component generation differences and attaches it to the response `ExperimentStatus`.
+4. **Transaction Safety**: Drift checks execute in isolated read-only transactions, ensuring read-write transactions (`FetchExperimentTransaction`) remain strictly side-effect free.
 
 For comprehensive details on the Components subsystem, see [pkg/components/README.md](../../pkg/components/README.md).
 

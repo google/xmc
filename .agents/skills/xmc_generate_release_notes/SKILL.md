@@ -51,7 +51,7 @@ When invoking helper tools under `tools/` (e.g., `extract_release_metadata.py`):
    The release generator checks current disabled feature flags in `deploy/ctk_v2/xmanager-cloud-deployment.yaml` and `deploy/helm/values.yaml`.
 2. **Interactive Check for Approved / Production-Ready Flags**:
    Before or during metadata extraction, prompt the user in chat:
-   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `enable_components`, `dashboard_service_deployment_enabled`, `enable_metrics`."*
+   > *"Discovered disabled feature flags: `rod_deployment_enabled`, `health_service_deployment_enabled`, `dashboard_service_deployment_enabled`, `enable_metrics`."*
    > *"Are any of these flags approved / production-ready for this release (safe to be enabled)?"*
    
    > [!TIP]

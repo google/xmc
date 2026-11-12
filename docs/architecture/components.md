@@ -17,9 +17,9 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | Health Service | [`cmd/health_service`](../../cmd/health_service) | GKE `Deployment` | HTTP `8080`, gRPC | `healthServiceDeployment.enabled` |
 | Dashboard Service | [`cmd/dashboard_service`](../../cmd/dashboard_service) | GKE `Deployment` | HTTP `8080`, gRPC | `dashboardServiceDeployment.enabled` |
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
-| Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestionGatewayDeployment.enabled` |
-| XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | `componentsDeployment.enabled` |
-| Study Controller | [`cmd/study_controller`](../../cmd/study_controller) | GKE `Deployment` (`xmc-cmp-hpo` release installed by XMC Bridge) | HTTP `8080` (health & metrics) | `hpo` component enabled (requires `componentsDeployment.enabled`) |
+| Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestion-gateway` component enabled (in `xmc-profile`, actuated by XMC Bridge) |
+| XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | always |
+| Study Controller | [`cmd/study_controller`](../../cmd/study_controller) | GKE `Deployment` (`xmc-cmp-hpo` release installed by XMC Bridge) | HTTP `8080` (health & metrics) | `hpo` component enabled |
 | Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (or Cloud Run service) | HTTP `8080` (health) | `logMonitorDeployment.enabled` (default `true`) |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 

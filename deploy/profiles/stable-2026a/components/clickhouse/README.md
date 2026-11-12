@@ -27,7 +27,7 @@ The following fields are structural constants encapsulated in [`templates/compon
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `bool` | `false` | Enables or disables the ClickHouse component in the XMC catalog. Defaults to `false` so non-component deployments (`enable_components: false`) are unaffected. |
+| `enabled` | `bool` | `false` | Enables or disables the ClickHouse component in the XMC catalog. Defaults to `false` until explicitly enabled in profile values. |
 | `namespace` | `string` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | Namespace where the `Component` CR is installed. |
 | `deletionProtection` | `bool` | `true` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `string` | `"Delete"` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
@@ -135,7 +135,7 @@ spec:
 
 ## 4. Downstream Consumer Resolution (`dashboard-service` & `pkg/clickhouse/componentconfig`)
 
-When `enable_components` is `true`, `dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
+`dashboard-service` resolves ClickHouse connection options from the `clickhouse` `Component` CR via [`pkg/clickhouse/componentconfig`](../../../../../pkg/clickhouse/componentconfig/resolver.go):
 
 1. **Endpoint Precedence**: Reads `status.access.envVars` (`HOST` / `PORT` or `ENDPOINT`) published by `xmc-bridge` first, falling back to `spec.parameters` (`clusterEndpoints` or `host` + `nativePort`, default `9000`).
 2. **Database & User**: Reads `spec.parameters.defaultDatabase` (default `"default"`) and `spec.parameters.user` (default `"default"`).
@@ -145,6 +145,9 @@ When `enable_components` is `true`, `dashboard-service` resolves ClickHouse conn
 4. **Fallback & Failure Semantics**: Static `CLICKHOUSE_*` environment variables are used as a fallback when the `clickhouse` `Component` CR is `NotFound` or disabled (`spec.enabled: false` or `COMPONENT_STATE_DISABLED` / `DISABLING` / `DELETED`). As an exception for out-of-cluster execution, when the Kubernetes client itself cannot be initialized (no in-cluster config and no valid kubeconfig) and `CLICKHOUSE_HOST`/`CLICKHOUSE_DSN` is set, `dashboard-service` logs a warning and uses the static `CLICKHOUSE_*` configuration (matching the `BIGQUERY_DATASET` static fallback). Once Kubernetes access is initialized, any Kubernetes API error, malformed endpoint/port parameter, or missing/unreadable password Secret surfaces as a hard error so `/readyz` reports unready rather than connecting with stale credentials.
 
 ### 4.1 Dynamic Reconfiguration & Hot-Swapping (Zero Pod Restarts)
+
+> [!NOTE]
+> Hot-swapping applies once a data engine exists. `dashboard-service` decides **at startup** whether `Component/clickhouse` (or `bigquery`) is enabled; if you enable the component after the service is already running, restart it once: `kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 When ClickHouse parameters or credentials change in Kubernetes, `dashboard-service` dynamically detects the changes and reconfigures its data engine without requiring pod restarts or manual rollouts:
 

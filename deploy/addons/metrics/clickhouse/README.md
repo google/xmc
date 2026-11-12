@@ -142,9 +142,9 @@ curl "http://localhost:8123/?query=SELECT%20version()"
 
 The XMC backend ClickHouse client ([pkg/clickhouse](../../../../pkg/clickhouse/clickhouse.go)) connects using standard environment variables.
 
-#### In-Cluster Deployments (Helm)
+#### In-Cluster Deployments (Helm & `Component/clickhouse`)
 
-In-cluster services get these variables from the chart. Set `metrics.enabled` to `true` and override the `metrics.clickhouse` block in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to match this addon:
+When the [`clickhouse` `Component` CR](../../../profiles/stable-2026a/components/clickhouse/README.md) in the `stable-2026a` profile is enabled (`components.clickhouse.enabled=true`), `dashboard-service` dynamically resolves ClickHouse connection coordinates and its password Secret reference from `Component/clickhouse` (hot-swapping on changes without pod restarts). Set `metrics.enabled` to `true` and configure `metrics.clickhouse` in [`deploy/helm/values.yaml`](../../../helm/values.yaml) to render the `clickhouse-secret` Secret (when `secrets.csi.enabled` is `false`) and provide static `CLICKHOUSE_*` fallback coordinates when `Component/clickhouse` is absent or disabled:
 
 ```yaml
 metrics:

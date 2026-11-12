@@ -63,7 +63,7 @@ flowchart TD
 | `-sasl_password` | `string` | `""` | SASL authentication password. |
 | `-tls_enabled` | `bool` | `false` | Enable TLS/mTLS for Redpanda connections. |
 | `-tls_insecure_skip_verify` | `bool` | `false` | Skip TLS certificate verification (testing only). |
-| `-check-components` / `-check_components` | `bool` | `true` | Audit `components.xmc.dev` CR readiness in Kubernetes (overrides `CHECK_COMPONENTS` / `ENABLE_COMPONENTS` env). |
+| `-check-components` / `-check_components` | `bool` | `true` | Audit `components.xmc.dev` CR readiness in Kubernetes (overrides `CHECK_COMPONENTS` env). |
 | `-namespace` | `string` | `"xmc"` | Target Kubernetes namespace for `Component` CR checks (overrides `XMC_NAMESPACE` / `NAMESPACE` env). |
 | `-kubeconfig` | `string` | `""` | Path to kubeconfig file for `Component` CR checks (overrides `KUBECONFIG` env). |
 | `-output` | `string` | `"text"` | Output report format: `text` or `json`. |
@@ -97,7 +97,7 @@ xmc-diag \
 
 ### Inspecting Coordinates from the `clickhouse` `Component` CR
 
-`xmc-diag` runs out-of-cluster and takes explicit flags rather than reading Kubernetes CRs directly. On clusters with `enable_components: true`, inspect the [`clickhouse` `Component` CR](../../deploy/profiles/stable-2026a/components/clickhouse/README.md), port-forward the target service, and pass the resolved coordinates via `-clickhouse_*` flags:
+`xmc-diag` runs out-of-cluster and takes explicit flags rather than reading Kubernetes CRs directly. Inspect the [`clickhouse` `Component` CR](../../deploy/profiles/stable-2026a/components/clickhouse/README.md), port-forward the target service, and pass the resolved coordinates via `-clickhouse_*` flags:
 
 ```bash
 kubectl get component clickhouse -n xmc -o yaml
