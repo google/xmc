@@ -178,6 +178,13 @@ func TestMergeExperiments(t *testing.T) {
 			wantErr:    true,
 		},
 		{
+			name:       "immutable study_config",
+			current:    current,
+			updated:    updated,
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"study_config"}},
+			wantErr:    true,
+		},
+		{
 			name:    "update title with empty",
 			current: current,
 			updated: &pb.Experiment{

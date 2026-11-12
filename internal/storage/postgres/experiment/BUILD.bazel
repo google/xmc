@@ -50,6 +50,7 @@ go_test(
     deps = [
         "//api/protos/components/v1alpha1",
         "//api/protos/experiment:messages_go_proto",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/prototest",
         "//internal/storage",

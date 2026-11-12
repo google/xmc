@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
@@ -390,6 +391,69 @@ func TestCreateExperiment_ComponentRequirements(t *testing.T) {
 			}
 			if got := len(pinnedCatalog.Snapshots[123]); got != tc.wantPinned {
 				t.Errorf("CreateExperiment(%v) pinned %d components, want %d", tc.expType, got, tc.wantPinned)
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_PersistsStudyConfig(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name        string
+		expType     msgpb.Experiment_ExperimentType
+		studyConfig *msgpb.StudyConfig
+	}{
+		{name: "study config is persisted and returned", expType: msgpb.Experiment_STUDY, studyConfig: experimenttest.StudyConfig()},
+		{name: "standard experiment has no study config", expType: msgpb.Experiment_STANDARD},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &storage.MockStorage{ComponentRepository: &storage.MockComponentRepository{Records: readyHPOCatalog()}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(&mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}),
+				withStorage(st),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{Title: "exp", ExperimentType: tc.expType}}
+			if tc.studyConfig != nil {
+				req.Experiment.TypeConfig = &msgpb.Experiment_StudyConfig{StudyConfig: tc.studyConfig}
+			}
+
+			got, err := server.CreateExperiment(ctx, req)
+			if err != nil {
+				t.Fatalf("CreateExperiment() failed: %v", err)
+			}
+
+			for desc, exp := range map[string]*msgpb.Experiment{"returned": got, "persisted": st.Experiment} {
+				if diff := cmp.Diff(tc.studyConfig, exp.GetStudyConfig(), protocmp.Transform()); diff != "" {
+					t.Errorf("CreateExperiment() %s study_config diff (-want +got):\n%s", desc, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestCreateExperiment_RejectsStudyConfigOnNonStudy(t *testing.T) {
+	ctx := context.Background()
+	for _, expType := range []msgpb.Experiment_ExperimentType{msgpb.Experiment_STANDARD, msgpb.Experiment_EXPERIMENT_TYPE_UNSPECIFIED} {
+		t.Run(expType.String(), func(t *testing.T) {
+			xidClient := &mockXidClient{createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123")}}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(xidClient),
+				withStorage(&storage.MockStorage{}),
+			)
+			req := &msgpb.CreateExperimentRequest{Experiment: &msgpb.Experiment{
+				Title: "exp", ExperimentType: expType, TypeConfig: &msgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()},
+			}}
+
+			_, err := server.CreateExperiment(ctx, req)
+
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("CreateExperiment(%v with study_config) error = %v, want code %v", expType, err, codes.InvalidArgument)
+			}
+			if xidClient.createXidEntryCalls != 0 {
+				t.Errorf("CreateExperiment(%v with study_config) made %d CreateXidEntry calls, want 0", expType, xidClient.createXidEntryCalls)
 			}
 		})
 	}

@@ -43,7 +43,7 @@ import (
 
 const (
 	entityName              = "experiment"
-	selectExperimentColumns = "Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, CreateTime, UpdateTime, CompleteTime, ExperimentType"
+	selectExperimentColumns = "Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, CreateTime, UpdateTime, CompleteTime, ExperimentType, StudyConfig"
 )
 
 var (
@@ -53,7 +53,7 @@ var (
 	fetchExperimentSQL           = safesql.New("SELECT " + selectExperimentColumns + " FROM Experiments WHERE Xid = $1")
 	fetchExperimentForUpdateSQL  = safesql.New("SELECT " + selectExperimentColumns + " FROM Experiments WHERE Xid = $1 FOR NO KEY UPDATE")
 	fetchExperimentStatusSQL     = safesql.New("SELECT Status FROM Experiments WHERE Xid = $1")
-	insertExperimentSQL          = safesql.New("INSERT INTO Experiments (Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, ActiveState, LaunchState, CreateTime, UpdateTime, CompleteTime, ExperimentType) VALUES (@xid, @title, @creator, @priority, @urls, @tags, @notes, @resources, @status, @activestate, @launchstate, @createtime, @updatetime, @completetime, @experimenttype)")
+	insertExperimentSQL          = safesql.New("INSERT INTO Experiments (Xid, Title, Creator, Priority, Urls, Tags, Notes, Resources, Status, ActiveState, LaunchState, CreateTime, UpdateTime, CompleteTime, ExperimentType, StudyConfig) VALUES (@xid, @title, @creator, @priority, @urls, @tags, @notes, @resources, @status, @activestate, @launchstate, @createtime, @updatetime, @completetime, @experimenttype, @studyconfig)")
 	updateExperimentSQL          = safesql.New("UPDATE Experiments SET Title = @title, Priority = @priority, Urls = @urls, Tags = @tags, Notes = @notes, UpdateTime = @updatetime WHERE Xid = @xid")
 	updateExperimentStatusSQL    = safesql.New("UPDATE Experiments SET Status = @status, ActiveState = @activestate, LaunchState = @launchstate, UpdateTime = @updatetime, CompleteTime = @completetime WHERE Xid = @xid")
 	updateExperimentResourcesSQL = safesql.New("UPDATE Experiments SET Resources = @resources, UpdateTime = @updatetime WHERE Xid = @xid")

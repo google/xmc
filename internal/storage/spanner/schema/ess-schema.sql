@@ -23,6 +23,15 @@ CREATE PROTO BUNDLE (
   cloud.xmanager.v1.Priority,
   cloud.xmanager.v1.Experiment,
   cloud.xmanager.v1.Experiment.ExperimentType,
+  cloud.xmanager.v1.StudyConfig,
+  cloud.xmanager.v1.MetricSpec,
+  cloud.xmanager.v1.MetricSpec.GoalType,
+  cloud.xmanager.v1.ParameterSpec,
+  cloud.xmanager.v1.ParameterSpec.ScaleType,
+  cloud.xmanager.v1.DoubleValueSpec,
+  cloud.xmanager.v1.IntegerValueSpec,
+  cloud.xmanager.v1.CategoricalValueSpec,
+  cloud.xmanager.v1.DiscreteValueSpec,
 
   -- Protos used in StructuredMessages
   cloud.xmanager.v1.StructuredMessage,
@@ -140,6 +149,9 @@ CREATE TABLE Experiments (
   -- The type of the experiment. NULL (rows written before this column existed) reads and filters
   -- as STANDARD. No DEFAULT: see migration 018.
   ExperimentType cloud.xmanager.v1.Experiment.ExperimentType,
+
+  -- Experiment.study_config. NULL unless the experiment is a STUDY.
+  StudyConfig cloud.xmanager.v1.StudyConfig,
 ) PRIMARY KEY (BitReversedXid);
 
 CREATE INDEX ExperimentsByCreator ON Experiments (Creator);

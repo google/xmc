@@ -110,6 +110,7 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 		Notes:          exp.GetNotes(),
 		Resources:      []*msgpb.ResourceSet{},
 		ExperimentType: normalizeExperimentType(exp.GetExperimentType()),
+		TypeConfig:     exp.GetTypeConfig(),
 	}
 
 	// 5. Persist the experiment to the storage layer.

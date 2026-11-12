@@ -42,13 +42,14 @@ const (
 	completedTableField   = querytools.TableField("completed")
 
 	experimentTypeTableField = querytools.TableField("experiment_type")
+	studyConfigTableField    = querytools.TableField("study_config")
 )
 
 // ExperimentColumns is the full list of columns in the PostgreSQL Experiments table.
 var ExperimentColumns = []string{
 	"Xid", "Title", "Creator", "Priority", "Urls", "Tags", "Notes",
 	"Resources", "Status", "ActiveState", "LaunchState",
-	"CreateTime", "UpdateTime", "CompleteTime", "ExperimentType",
+	"CreateTime", "UpdateTime", "CompleteTime", "ExperimentType", "StudyConfig",
 }
 
 // ExperimentUpdateColumns is the list of columns that can be mutated in the Experiments table.
@@ -93,6 +94,8 @@ var (
 			updatedTableField:        {Name: updatedTableField, QueryLiteral: safesql.New("e.UpdateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			completedTableField:      {Name: completedTableField, QueryLiteral: safesql.New("e.CompleteTime"), Type: filtervisitor.Timestamp, Selectable: true, Nullable: true},
 			experimentTypeTableField: {Name: experimentTypeTableField, QueryLiteral: safesql.New("e.ExperimentType"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.Experiment_ExperimentType_value},
+			// Selectable only: the column holds an opaque proto, so it is not filterable.
+			studyConfigTableField: {Name: studyConfigTableField, QueryLiteral: safesql.New("e.StudyConfig"), Selectable: true},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: xidTableField, SortOrder: querytools.Asc},
@@ -108,6 +111,7 @@ var (
 		urlsTableField, tagsTableField, notesTableField, resourcesTableField,
 		statusTableField, activeStateTableField, launchStateTableField,
 		createdTableField, updatedTableField, completedTableField, experimentTypeTableField,
+		studyConfigTableField,
 	}
 
 	// ExperimentsFullTextFields is the list of fields that can be used for full text search for Experiments queries.

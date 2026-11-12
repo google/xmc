@@ -54,6 +54,13 @@ func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
 	if nullExperimentType.Valid {
 		experiment.ExperimentType = experimentType
 	}
+	studyConfig, err := studyConfigFromRow(row)
+	if err != nil {
+		return nil, err
+	}
+	if studyConfig != nil {
+		experiment.TypeConfig = &pb.Experiment_StudyConfig{StudyConfig: studyConfig}
+	}
 
 	if err := row.ColumnByName("Urls", &experiment.Urls); err != nil {
 		return nil, fmt.Errorf("failed to read column Urls: %w", err)
@@ -99,6 +106,28 @@ func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
 	return experiment, nil
 }
 
+// studyConfigFromRow reads the nullable StudyConfig column. NULL, stored for experiments that are
+// not studies, reads as nil.
+func studyConfigFromRow(row *spanner.Row) (*pb.StudyConfig, error) {
+	column := spanner.NullProtoMessage{ProtoMessageVal: &pb.StudyConfig{}}
+	if err := row.ColumnByName("StudyConfig", &column); err != nil {
+		return nil, fmt.Errorf("failed to read column StudyConfig: %w", err)
+	}
+	return studyConfigFromNullProto(column)
+}
+
+// studyConfigFromNullProto returns the StudyConfig held by column, or nil when column is NULL.
+func studyConfigFromNullProto(column spanner.NullProtoMessage) (*pb.StudyConfig, error) {
+	if !column.Valid {
+		return nil, nil
+	}
+	studyConfig, ok := column.ProtoMessageVal.(*pb.StudyConfig)
+	if !ok {
+		return nil, fmt.Errorf("column StudyConfig holds %T, want *StudyConfig", column.ProtoMessageVal)
+	}
+	return studyConfig, nil
+}
+
 // ExperimentProtoToInsertMutation creates a Spanner mutation to insert an Experiment.
 func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, error) {
 	xid, err := validator.ValidateExperimentName(exp.GetName())
@@ -128,6 +157,7 @@ func ExperimentProtoToInsertMutation(exp *pb.Experiment) (*spanner.Mutation, err
 			exp.UpdateTime.AsTime(), // UpdateTime
 			completeTime,            // CompleteTime
 			exp.ExperimentType,      // ExperimentType
+			exp.GetStudyConfig(),    // StudyConfig
 		},
 	), nil
 }

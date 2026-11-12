@@ -2,7 +2,7 @@
 
 The read and write paths for experiments, their status, their artifacts, and their status
 messages. All of these are handled entirely by the Experiment State Server (ESS), the XID Service,
-and Cloud Spanner — none of them touch the cluster.
+and the storage backend (Cloud Spanner or PostgreSQL) — none of them touch the cluster.
 
 For anything that starts, stops, or restarts actual work, see
 [Work Unit Lifecycle](work_unit_lifecycle.md).
@@ -16,30 +16,57 @@ sequenceDiagram
     participant Client
     participant ESS as ESS (Exp State Server)
     participant XID as XID Service
-    participant Spanner as Spanner (Storage)
+    participant Storage as Storage (Spanner/Postgres)
 
     Client->>ESS: 1. CreateExperiment(req)
     ESS->>ESS: 2. Authenticate & Validate
     ESS->>ESS: 3. Default ACLs & Authorize(WRITER)
-    ESS->>XID: 4. CreateXidEntry
-    XID-->>ESS: 5. XidEntry (XID)
-    ESS->>ESS: 6. Assemble Experiment
-    ESS->>Spanner: 7. CreateExperiment
-    Spanner-->>ESS: 8. Success
-    ESS-->>Client: 9. Experiment
+    opt Experiment type requires components (STUDY)
+        ESS->>Storage: 4. Pre-check component requirements (read-only)
+        Storage-->>ESS: Components ready
+    end
+    ESS->>XID: 5. CreateXidEntry
+    XID-->>ESS: 6. XidEntry (XID)
+    ESS->>ESS: 7. Assemble Experiment
+    ESS->>Storage: 8. One transaction: insert experiment, pin components, record status history
+    Storage-->>ESS: 9. Success
+    ESS-->>Client: 10. Experiment
 ```
 
 The ordering here is worth noting: the `xid` is allocated by the XID Service **before** the
 experiment row exists. The XID entry is what carries ownership and access control, which keeps a
-single source of truth for "who may touch experiment N" across every subsequent call.
+single source of truth for "who may touch experiment N" across every subsequent call. Request
+validation, authorization, and the component pre-check run before `CreateXidEntry`, so these
+rejections leave no XID entry behind; a failure in the creation transaction (step 8) happens after it
+and leaves its XID entry in place.
 
-Because there is no XID entry to check against yet, ESS authorizes the creator directly against the
-requested ACLs, using the same `internal/auth` evaluation the XID Service applies, **before**
-calling `CreateXidEntry`. A creator who does not hold `WRITER` (or `OWNER`) on the requested ACLs
-gets `PERMISSION_DENIED` and no XID entry is created. If the request's `acls` is unset or lists no
-principals in any role, ESS grants the creator `OWNER`; ACLs that list any principal are passed
-through unchanged, but must name at least one owner and a principal in every role, or the request
-fails with `INVALID_ARGUMENT`.
+**Validation (step 2).** Malformed requests fail with `INVALID_ARGUMENT`. Besides the general field
+rules, `experiment_type` must be a known value, and a missing or `UNSPECIFIED` `experiment_type` is
+normalized to `STANDARD` before the experiment is stored. `study_config` is rejected unless the type
+is `STUDY`.
+
+**Authorization (step 3).** Because there is no XID entry to check against yet, ESS authorizes the
+creator directly against the requested ACLs, using the same `internal/auth` evaluation the XID
+Service applies. A creator who does not hold `WRITER` (or `OWNER`) on the requested ACLs gets
+`PERMISSION_DENIED`. If the request's `acls` is unset or lists no principals in any role, ESS grants
+the creator `OWNER`; ACLs that list any principal are passed through unchanged, but must name at
+least one owner and a principal in every role, or the request fails with `INVALID_ARGUMENT`.
+
+**Component requirements (step 4).** Some experiment types require catalog components
+([`internal/experiment/componentrequirements.go`](../../internal/experiment/componentrequirements.go)):
+a `STUDY` requires the `hpo` component and, transitively, every dependency it declares (`vizier`,
+`clickhouse`). For these types ESS returns `FAILED_PRECONDITION` when a required component is
+missing, not `ENABLED`, of the wrong type, or has not observed its current generation. The pre-check reads one read-only catalog snapshot and writes nothing.
+`STANDARD` experiments require no components and skip it.
+
+**Persistence (step 8).** [`experiment.CreateExperiment`](../../internal/experiment/createexperiment.go)
+inserts the experiment and records its initial status message history in one storage transaction.
+For experiment types with component requirements, the transaction is serializable and, after the
+insert, repeats the requirement check authoritatively and pins each resolved component as an
+`ExperimentComponentSnapshots` row at its current generation. The repeated check closes the window
+between the pre-check and the transaction: an unmet requirement found there still returns
+`FAILED_PRECONDITION` and rolls back the experiment row, while other storage errors return
+`INTERNAL`.
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.

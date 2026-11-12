@@ -39,6 +39,7 @@ CREATE TABLE Experiments (
   UpdateTime TIMESTAMPTZ NOT NULL,
   CompleteTime TIMESTAMPTZ,
   ExperimentType BIGINT NOT NULL DEFAULT 1, -- Experiment.ExperimentType; legacy rows default to STANDARD.
+  StudyConfig BYTEA, -- Experiment.study_config (cloud.xmanager.v1.StudyConfig). NULL unless the experiment is a STUDY.
   PRIMARY KEY (Xid)
 );
 

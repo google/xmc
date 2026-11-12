@@ -205,12 +205,34 @@ func TestValidateCreateExperimentRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			// STUDY is a known type; CreateExperiment rejects it separately with Unimplemented.
 			name: "experiment_type_study",
 			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
 				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
 			}),
 			wantErr: nil,
+		},
+		{
+			name: "study_with_study_config",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.ExperimentType = essmsgpb.Experiment_STUDY
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
+			}),
+			wantErr: nil,
+		},
+		{
+			name: "standard_with_study_config",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.ExperimentType = essmsgpb.Experiment_STANDARD
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "unspecified_type_with_study_config",
+			req: prototest.Modify(validReq, func(r *essmsgpb.CreateExperimentRequest) {
+				r.Experiment.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}
+			}),
+			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
 			name: "create_time_not_empty",
@@ -330,6 +352,11 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 		},
 		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
 	}
+	withMaskPaths := func(paths ...string) *essmsgpb.UpdateExperimentRequest {
+		return prototest.Modify(validReq, func(r *essmsgpb.UpdateExperimentRequest) {
+			r.UpdateMask = &fmpb.FieldMask{Paths: paths}
+		})
+	}
 
 	tests := []struct {
 		name    string
@@ -363,6 +390,10 @@ func TestValidateUpdateExperimentRequest(t *testing.T) {
 			}),
 			wantErr: nil,
 		},
+		{name: "immutable_experiment_type", req: withMaskPaths("title", "experiment_type"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "immutable_study_config", req: withMaskPaths("study_config"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "immutable_study_config_subfield", req: withMaskPaths("study_config.max_trial_budget"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "path_sharing_an_immutable_prefix", req: withMaskPaths("study_configs"), wantErr: nil},
 	}
 
 	for _, tc := range tests {

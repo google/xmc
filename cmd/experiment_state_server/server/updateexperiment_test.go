@@ -198,6 +198,22 @@ func TestUpdateExperiment_BadPaths(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInternal,
 		},
+		{
+			name: "immutable_study_config",
+			req: &msgpb.UpdateExperimentRequest{
+				Experiment: &msgpb.Experiment{Name: "experiments/123"},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"study_config"}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "immutable_experiment_type",
+			req: &msgpb.UpdateExperimentRequest{
+				Experiment: &msgpb.Experiment{Name: "experiments/123"},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"experiment_type"}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range testCases {

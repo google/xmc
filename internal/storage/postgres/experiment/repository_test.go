@@ -32,6 +32,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
@@ -299,6 +300,76 @@ func TestExperimentType_RoundTripAndImmutable(t *testing.T) {
 	}
 	if res.Updated.GetExperimentType() != essmsgpb.Experiment_STUDY || got.GetExperimentType() != essmsgpb.Experiment_STUDY {
 		t.Errorf("experiment_type after UpdateExperiment(title) = %v (returned), %v (stored), want %v", res.Updated.GetExperimentType(), got.GetExperimentType(), essmsgpb.Experiment_STUDY)
+	}
+}
+
+func TestStudyConfig_RoundTripAndImmutable(t *testing.T) {
+	ctx := context.Background()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+
+	// experiments/300 is a legacy row inserted without the StudyConfig column (NULL).
+	postgrestest.SeedExperiment(ctx, t, essPool, 300)
+	study := seedExperiment(ctx, t, essPool, prototest.Modify(baseExperiment, func(e *essmsgpb.Experiment) {
+		e.Name = validator.ConstructExperimentName(301)
+		e.ExperimentType = essmsgpb.Experiment_STUDY
+		e.TypeConfig = &essmsgpb.Experiment_StudyConfig{StudyConfig: experimenttest.StudyConfig()}
+	}))
+
+	legacy, err := repo.FetchExperiment(ctx, 300)
+	if err != nil {
+		t.Fatalf("FetchExperiment(300) failed: %v", err)
+	}
+	if legacy.GetStudyConfig() != nil {
+		t.Errorf("FetchExperiment(300).StudyConfig = %v, want nil", legacy.GetStudyConfig())
+	}
+	got, err := repo.FetchExperiment(ctx, 301)
+	if err != nil {
+		t.Fatalf("FetchExperiment(301) failed: %v", err)
+	}
+	if diff := cmp.Diff(study, got, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchExperiment(301) diff (-want +got):\n%s", diff)
+	}
+	gotList, _, err := repo.ListExperiments(ctx, 10, "", "", "xid", 0)
+	if err != nil {
+		t.Fatalf("ListExperiments() failed: %v", err)
+	}
+	wantStudyConfigs := []*essmsgpb.StudyConfig{nil, study.GetStudyConfig()}
+	var gotStudyConfigs []*essmsgpb.StudyConfig
+	for _, exp := range gotList {
+		gotStudyConfigs = append(gotStudyConfigs, exp.GetStudyConfig())
+	}
+	if diff := cmp.Diff(wantStudyConfigs, gotStudyConfigs, protocmp.Transform()); diff != "" {
+		t.Errorf("ListExperiments() study configs diff (-want +got):\n%s", diff)
+	}
+	// study_config is selectable but holds an opaque proto, so it cannot be filtered on.
+	if _, _, err := repo.ListExperiments(ctx, 10, "", `study_config = "x"`, "xid", 0); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("ListExperiments(study_config filter) error = %v, want code %v", err, codes.InvalidArgument)
+	}
+
+	_, err = repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        301,
+		Experiment: &essmsgpb.Experiment{TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{}}},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"study_config"}},
+	})
+	if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("UpdateExperiment(study_config) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	res, err := repo.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+		XID:        301,
+		Experiment: &essmsgpb.Experiment{Title: "Renamed"},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"title"}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateExperiment(title) failed: %v", err)
+	}
+	if got, err = repo.FetchExperiment(ctx, 301); err != nil {
+		t.Fatalf("FetchExperiment(301) failed: %v", err)
+	}
+	for desc, exp := range map[string]*essmsgpb.Experiment{"returned": res.Updated, "stored": got} {
+		if diff := cmp.Diff(study.GetStudyConfig(), exp.GetStudyConfig(), protocmp.Transform()); diff != "" {
+			t.Errorf("study_config after UpdateExperiment(title) (%s) diff (-want +got):\n%s", desc, diff)
+		}
 	}
 }
 

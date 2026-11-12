@@ -141,6 +141,7 @@ go_test(
         "//cmd/xid_service/config",
         "//cmd/xid_service/server",
         "//internal/auth",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/prototest",
         "//internal/security/securitytest",
