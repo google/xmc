@@ -38,6 +38,7 @@
         type="text"
         placeholder="Filter entries"
         class="filter-input"
+        data-testid="config-filter-input"
         [value]="searchTerm()"
         (input)="onSearchInput($event)"
       />
@@ -56,6 +57,7 @@
           @for (group of filteredGroups(); track group.id) {
             <tr
               class="group-header-row"
+              data-testid="config-group-row"
               tabindex="0"
               role="button"
               [attr.aria-expanded]="!group.isCollapsed"
@@ -65,22 +67,26 @@
             >
               <td colspan="2" class="group-header-cell">
                 <div class="group-header-content">
-                  <span class="group-toggle-icon">{{ group.isCollapsed ? '+' : '−' }}</span>
-                  <span class="group-display-name">{{ group.displayName }}</span>
+                  <span class="group-toggle-icon" data-testid="config-group-icon">{{
+                    group.isCollapsed ? '+' : '−'
+                  }}</span>
+                  <span class="group-display-name" data-testid="config-group-name">{{
+                    group.displayName
+                  }}</span>
                 </div>
               </td>
             </tr>
             @if (!group.isCollapsed) {
               @for (config of group.configs; track config.key ?? $index) {
-                <tr class="config-row">
-                  <td class="cell-key">{{ config.key }}</td>
-                  <td class="cell-value">{{ config.value }}</td>
+                <tr class="config-row" data-testid="config-row">
+                  <td class="cell-key" data-testid="config-key-cell">{{ config.key }}</td>
+                  <td class="cell-value" data-testid="config-val-cell">{{ config.value }}</td>
                 </tr>
               }
             }
           }
           @if (filteredGroups().length === 0) {
-            <tr class="no-results-row">
+            <tr class="no-results-row" data-testid="config-no-results-row">
               <td colspan="2" class="no-results-cell">No entries match the filter</td>
             </tr>
           }

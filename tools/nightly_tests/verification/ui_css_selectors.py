@@ -14,61 +14,108 @@
 
 """CSS selector constants for XMC Playwright UI E2E verifiers."""
 
-DASHBOARD_ROOT_SEL, WIP_BANNER_SEL = "xmc-resource-dashboard", "xmc-wip-banner"
-QUEUE_CARD_SEL, RESOURCE_OPTION_SEL = "xmc-rod-queue-card .queue-card", "mat-option"
-QUEUE_TITLE_SEL, JOB_POSITION_CELL_SEL = "xmc-rod-queue-card .queue-title", ".position-cell"
-FLAVOR_NAME_SEL, JOB_WORKUNIT_CELL_SEL = ".capacity-box .flavor-main-name", ".workunit-cell"
-JOBS_PANE_QUEUE_NAME_SEL = "xmc-queue-jobs-table .target-queue-name"
-SMART_FINDER_ROOT_SEL = "xmc-smart-resource-finder"
-JOBS_CONTENT_SEL = "xmc-queue-jobs-table .jobs-mat-table, xmc-queue-jobs-table .jobs-empty-state"
-JOBS_TABLE_ROW_SEL = "xmc-queue-jobs-table table.jobs-mat-table tr.mat-mdc-row"
-JOB_EXPERIMENT_LINK_SEL_TMPL = 'a.job-link[href="/experiments/{xid}"]'
+DASHBOARD_ROOT_SEL, WIP_BANNER_SEL = (
+    '[data-testid="resource-dashboard"]',
+    '[data-testid="wip-banner"]',
+)
+QUEUE_CARD_SEL, RESOURCE_OPTION_SEL = (
+    '[data-testid="queue-card"]',
+    'mat-option[data-testid="resource-type-option"]',
+)
+QUEUE_TITLE_SEL, JOB_POSITION_CELL_SEL = (
+    '[data-testid="queue-title"]',
+    '[data-testid="job-position-cell"]',
+)
+FLAVOR_NAME_SEL, JOB_WORKUNIT_CELL_SEL = (
+    '[data-testid="flavor-main-name"]',
+    '[data-testid="job-workunit-cell"]',
+)
+JOBS_PANE_QUEUE_NAME_SEL = '[data-testid="target-queue-name"]'
+SMART_FINDER_ROOT_SEL = '[data-testid="smart-resource-finder"]'
+JOBS_CONTENT_SEL = '[data-testid="jobs-empty-state"], [data-testid="jobs-table"]'
+JOBS_TABLE_ROW_SEL = 'xmc-queue-jobs-table [data-testid="job-row"]'
+JOB_EXPERIMENT_LINK_SEL_TMPL = 'a[data-testid="job-link"][href="/experiments/{xid}"]'
 JOBS_NEXT_PAGE_BTN_SEL = (
+    'mat-paginator[data-testid="jobs-paginator"] '
     "button.mat-mdc-paginator-navigation-next:not([disabled])"
     ':not([aria-disabled="true"]):not(.mat-mdc-button-disabled)'
 )
-PREDICTABILITY_EMPTY_SEL = ".predictability-empty-state"
-PREDICTABILITY_STATS_GRID_SEL = ".predictability-stats-grid"
-PREDICTABILITY_CONTENT_SEL = ".predictability-stats-grid, .predictability-spinner-container"
-PREDICTABILITY_METRIC_VAL_SEL = ".predictability-stats-grid .cell-value"
-RESOURCE_SELECT_SEL = "xmc-smart-resource-finder mat-select.query-select-box"
-VELOCITY_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill:has-text("{tf}")'
-ACTIVE_PILL_SEL_TMPL = 'xmc-rod-queue-list button.toggle-pill.active-toggle:has-text("{tf}")'
-AVAILABILITY_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Resource availability")'
-SMART_FINDER_TAB_SEL = 'xmc-rod-subnav-tabs button.subnav-tab:has-text("Smart resource finder")'
-
-DASHBOARDS_LIST_ROOT_SEL = "xmc-dashboards-list-page"
-DASHBOARDS_DETAIL_ROOT_SEL = "xmc-dashboards-page"
-DASHBOARD_ROW_SEL = "table.dashboards-table tr.dashboard-row"
-DASHBOARD_FILTER_INPUT_SEL = '.filter-toolbar input[placeholder*="Filter dashboards"]'
-DASHBOARD_CLEAR_FILTER_BTN_SEL = 'button[aria-label="Clear search query"]'
-DASHBOARD_EMPTY_STATE_SEL = ".empty-state-container"
-DASHBOARD_LINK_SEL, DASHBOARD_TITLE_TEXT_SEL = "a.dashboard-link", ".dashboard-title-text"
-DASHBOARD_RESOURCE_NAME_SEL, DASHBOARD_BADGE_COUNT_SEL = ".dashboard-resource-name", ".badge-count"
-DASHBOARD_DETAIL_TITLE_SEL = "h1.dashboard-title"
-CHART_CARD_SEL = "xmc-dashboard-grid xmc-chart-card"
-CHART_SPINNER_SEL, CHART_ERROR_SEL = ".loading-container", "xmc-chart-card .error-container"
-CHART_HEADER_LINK_SEL = "a.chart-header-link"
-SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = "xmc-summary-box", ".summary-value"
-PLOT_CANVAS_SEL = "xmc-plot-card div.plot-canvas canvas"
-
-ADMIN_PANEL_ROOT_SEL = "xmc-admin-panel"
-ADMIN_PAGE_TITLE_SEL, ADMIN_TIMESTAMP_BADGE_SEL = "h1.page-title", ".timestamp-badge"
-ADMIN_FOOTER_SEL, SYSTEM_INFO_CARD_SEL = (
-    "footer.admin-panel-footer",
-    "xmc-system-info-card .system-info-card",
+PREDICTABILITY_EMPTY_SEL = '[data-testid="predictability-empty-state"]'
+PREDICTABILITY_STATS_GRID_SEL = '[data-testid="predictability-stats-grid"]'
+PREDICTABILITY_CONTENT_SEL = (
+    '[data-testid="predictability-stats-grid"], [data-testid="predictability-spinner"]'
 )
-APP_VERSION_VAL_SEL, ESS_SCHEMA_VAL_SEL = ".app-version-value", ".ess-schema-value"
-XID_SCHEMA_VAL_SEL = ".xid-schema-value"
-HEALTH_OVERALL_BADGE_SEL = "xmc-health-status-section .card-header .status-badge"
-HEALTH_REFRESH_BTN_SEL = "xmc-health-status-section button.refresh-button"
-HEALTH_REFRESH_READY_SEL = "xmc-health-status-section button.refresh-button:not([disabled])"
-HEALTH_LAST_CHECKED_SEL = "xmc-health-status-section .last-checked"
-HEALTH_GROUP_TITLE_SEL = "xmc-health-status-group-card .group-title"
-HEALTH_ITEM_ROW_SEL, HEALTH_ITEM_NAME_SEL = ".group-items-list .item-row", ".item-name"
-HEALTH_ITEM_STATUS_SEL = ".item-status-text"
-CONFIG_FILTER_INPUT_SEL = "xmc-config-entries-card input.filter-input"
-CONFIG_GROUP_ROW_SEL = "xmc-config-entries-card tr.group-header-row"
-CONFIG_GROUP_NAME_SEL, CONFIG_GROUP_ICON_SEL = ".group-display-name", ".group-toggle-icon"
-CONFIG_ROW_SEL, CONFIG_KEY_CELL_SEL = "xmc-config-entries-card tr.config-row", "td.cell-key"
-CONFIG_VAL_CELL_SEL, CONFIG_NO_RESULTS_SEL = "td.cell-value", "tr.no-results-row"
+PREDICTABILITY_METRIC_VAL_SEL = '[data-testid="predictability-metric-value"]'
+RESOURCE_SELECT_SEL = 'mat-select[data-testid="resource-type-select"]'
+# ui-contract: queue_list.ng.html renders velocityPeriodOptions ('1h', '24h', '7d') as button text.
+VELOCITY_PILL_SEL_TMPL = 'button[data-testid="velocity-pill"]:has-text("{tf}")'
+# ui-contract: queue_list.ng.html renders velocityPeriodOptions ('1h', '24h', '7d') as button text.
+ACTIVE_PILL_SEL_TMPL = 'button[data-testid="velocity-pill"][aria-pressed="true"]:has-text("{tf}")'
+AVAILABILITY_TAB_SEL = 'button[data-testid="subnav-tab-resource-availability"]'
+SMART_FINDER_TAB_SEL = 'button[data-testid="subnav-tab-smart-finder"]'
+
+DASHBOARDS_LIST_ROOT_SEL = '[data-testid="dashboards-list-page"]'
+DASHBOARDS_DETAIL_ROOT_SEL = '[data-testid="dashboards-page"]'
+DASHBOARD_ROW_SEL = 'tr[data-testid="dashboard-row"]'
+DASHBOARD_FILTER_INPUT_SEL = 'input[data-testid="dashboard-filter-input"]'
+DASHBOARD_CLEAR_FILTER_BTN_SEL = 'button[data-testid="dashboard-clear-filter-button"]'
+DASHBOARD_EMPTY_STATE_SEL = '[data-testid="dashboard-empty-state"]'
+DASHBOARD_LINK_SEL, DASHBOARD_TITLE_TEXT_SEL = (
+    'a[data-testid="dashboard-link"]',
+    '[data-testid="dashboard-title-text"]',
+)
+DASHBOARD_RESOURCE_NAME_SEL, DASHBOARD_BADGE_COUNT_SEL = (
+    '[data-testid="dashboard-resource-name"]',
+    '[data-testid="dashboard-badge-count"]',
+)
+DASHBOARD_DETAIL_TITLE_SEL = 'h1[data-testid="dashboard-detail-title"]'
+CHART_CARD_SEL = 'xmc-dashboard-grid [data-testid="chart-card"]'
+CHART_SPINNER_SEL, CHART_ERROR_SEL = (
+    '[data-testid="chart-loading-spinner"]',
+    'xmc-chart-card [data-testid="chart-error-container"]',
+)
+CHART_HEADER_LINK_SEL = 'a[data-testid="chart-header-link"]'
+SUMMARY_BOX_SEL, SUMMARY_VALUE_SEL = (
+    '[data-testid="summary-box"]',
+    '[data-testid="summary-value"]',
+)
+PLOT_CANVAS_SEL = 'xmc-plot-card [data-testid="plot-canvas"] canvas'
+
+ADMIN_PANEL_ROOT_SEL = '[data-testid="admin-panel"]'
+ADMIN_PAGE_TITLE_SEL, ADMIN_TIMESTAMP_BADGE_SEL = (
+    'h1[data-testid="admin-page-title"]',
+    '[data-testid="admin-timestamp-badge"]',
+)
+ADMIN_FOOTER_SEL, SYSTEM_INFO_CARD_SEL = (
+    'footer[data-testid="admin-panel-footer"]',
+    '[data-testid="system-info-card"]',
+)
+APP_VERSION_VAL_SEL, ESS_SCHEMA_VAL_SEL = (
+    '[data-testid="app-version-value"]',
+    '[data-testid="ess-schema-value"]',
+)
+XID_SCHEMA_VAL_SEL = '[data-testid="xid-schema-value"]'
+HEALTH_OVERALL_BADGE_SEL = '[data-testid="health-overall-badge"]'
+HEALTH_REFRESH_BTN_SEL = 'button[data-testid="health-refresh-button"]'
+HEALTH_REFRESH_READY_SEL = 'button[data-testid="health-refresh-button"]:not([disabled])'
+HEALTH_LAST_CHECKED_SEL = '[data-testid="health-last-checked"]'
+HEALTH_GROUP_TITLE_SEL = '[data-testid="health-group-title"]'
+HEALTH_ITEM_ROW_SEL, HEALTH_ITEM_NAME_SEL = (
+    '[data-testid="health-item-row"]',
+    '[data-testid="health-item-name"]',
+)
+HEALTH_ITEM_STATUS_SEL = '[data-testid="health-item-status"]'
+CONFIG_FILTER_INPUT_SEL = 'input[data-testid="config-filter-input"]'
+CONFIG_GROUP_ROW_SEL = 'tr[data-testid="config-group-row"]'
+CONFIG_GROUP_NAME_SEL, CONFIG_GROUP_ICON_SEL = (
+    '[data-testid="config-group-name"]',
+    '[data-testid="config-group-icon"]',
+)
+CONFIG_ROW_SEL, CONFIG_KEY_CELL_SEL = (
+    'tr[data-testid="config-row"]',
+    'td[data-testid="config-key-cell"]',
+)
+CONFIG_VAL_CELL_SEL, CONFIG_NO_RESULTS_SEL = (
+    'td[data-testid="config-val-cell"]',
+    'tr[data-testid="config-no-results-row"]',
+)

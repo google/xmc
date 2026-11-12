@@ -16,7 +16,7 @@
 
 <div class="group-card" [class.group-degraded]="isDegraded()">
   <div class="group-header">
-    <div class="group-title">
+    <div class="group-title" data-testid="health-group-title">
       <mat-icon class="group-icon">{{ icon() }}</mat-icon>
       {{ title() }}
     </div>
@@ -31,7 +31,7 @@
   </div>
   <div class="group-items-list">
     @for (item of items(); track item.name ?? $index) {
-      <div class="item-row">
+      <div class="item-row" data-testid="health-item-row">
         <div class="item-info">
           <span
             class="item-indicator-dot"
@@ -39,7 +39,7 @@
             [class.dot-degraded]="item.healthState === HealthState.UNHEALTHY"
             [class.dot-unknown]="item.healthState === HealthState.UNSPECIFIED"
           ></span>
-          <span class="item-name">{{ item.name }}</span>
+          <span class="item-name" data-testid="health-item-name">{{ item.name }}</span>
           @if (item.stability) {
             <span
               class="item-stability-badge"
@@ -54,6 +54,7 @@
         <div class="item-status">
           <span
             class="item-status-text"
+            data-testid="health-item-status"
             [class.text-healthy]="item.healthState === HealthState.HEALTHY"
             [class.text-degraded]="item.healthState === HealthState.UNHEALTHY"
             [class.text-unknown]="item.healthState === HealthState.UNSPECIFIED"

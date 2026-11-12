@@ -13,9 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 -->
-<div class="chart-column-container">
+<div class="chart-column-container" data-testid="chart-card">
   <div class="chart-header">
-    <a class="chart-header-link" [routerLink]="headerUrl()">
+    <a class="chart-header-link" data-testid="chart-header-link" [routerLink]="headerUrl()">
       {{ headerTitle() }}
     </a>
     <button
@@ -39,11 +39,11 @@ limitations under the License.
   </div>
 
   @if (isLoading()) {
-    <div class="loading-container">
+    <div class="loading-container" data-testid="chart-loading-spinner">
       <mat-spinner diameter="32" />
     </div>
   } @else if (error()) {
-    <div class="error-container">
+    <div class="error-container" data-testid="chart-error-container">
       <mat-icon class="error-icon">error_outline</mat-icon>
       <span>{{ error() }}</span>
       <button mat-stroked-button type="button" (click)="fetchChartData()">Retry</button>
