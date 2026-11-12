@@ -135,7 +135,13 @@ describe('ResourceService', () => {
       };
 
       const responsePromise: Promise<GetRunningAndPendingJobsResponse> = firstValueFrom(
-        state.service.getQueueJobs('custom-queue', 10, 'token-123', 'priority desc'),
+        state.service.getQueueJobs(
+          'custom-queue',
+          10,
+          'token-123',
+          'priority desc',
+          'status = RUNNING',
+        ),
       );
 
       const req = state.httpMock.expectOne(
@@ -143,7 +149,8 @@ describe('ResourceService', () => {
           r.url === `${XMC_API_DOMAIN}/clusterqueues/custom-queue/jobs` &&
           r.params.get('pageSize') === '10' &&
           r.params.get('pageToken') === 'token-123' &&
-          r.params.get('orderBy') === 'priority desc',
+          r.params.get('orderBy') === 'priority desc' &&
+          r.params.get('filter') === 'status = RUNNING',
       );
       expect(req.request.method).toBe('GET');
       req.flush(mockResponse);

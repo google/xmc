@@ -15,7 +15,10 @@
 package workunit
 
 import (
+	"maps"
+
 	"cloud.google.com/go/spanner"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/safesql"
 	"xmanager_cloud/internal/storage"
 )
@@ -32,22 +35,48 @@ var (
 )
 
 func activeWorkUnitStatements(queueNames []string, limit, offset int64, query storage.ActiveWorkUnitQuery) (spanner.Statement, spanner.Statement) {
-	where := safesql.New(" WHERE wu.QueueName IN UNNEST(@queueNames) AND wu.IsPendingOrRunningJob IS NOT NULL")
-	count := spanner.Statement{
-		SQL:    safesql.Concat(safesql.New("SELECT COUNT(*) FROM WorkUnits wu"), where).String(),
-		Params: map[string]any{"queueNames": queueNames},
+	baseWhere := safesql.New(" WHERE wu.QueueName IN UNNEST(@queueNames) AND wu.IsPendingOrRunningJob IS NOT NULL")
+	filterSQL, filterParams := activeWorkUnitPredicates(query.Filter)
+
+	countFrom := safesql.New("SELECT COUNT(*) FROM WorkUnits wu")
+	if query.Filter.HasAuthor {
+		countFrom = safesql.Concat(countFrom, safesql.New(" JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid"))
 	}
+	countParams := map[string]any{"queueNames": queueNames}
+	maps.Copy(countParams, filterParams)
+	count := spanner.Statement{
+		SQL:    safesql.Concat(countFrom, baseWhere, filterSQL).String(),
+		Params: countParams,
+	}
+
+	fetchParams := map[string]any{"queueNames": queueNames, "limit": limit, "offset": offset}
+	maps.Copy(fetchParams, filterParams)
 	fetchSQL := safesql.Concat(
 		safesql.New("SELECT wu.BitReversedXid, wu.WorkUnitId, COALESCE(e.Creator, '') AS Creator, COALESCE(e.Title, '') AS ExperimentTitle FROM WorkUnits wu JOIN Experiments e ON wu.BitReversedXid = e.BitReversedXid"),
-		where,
+		baseWhere,
+		filterSQL,
 		activeWorkUnitOrder(query),
 		safesql.New(" LIMIT @limit OFFSET @offset"),
 	)
 	fetch := spanner.Statement{
 		SQL:    fetchSQL.String(),
-		Params: map[string]any{"queueNames": queueNames, "limit": limit, "offset": offset},
+		Params: fetchParams,
 	}
 	return count, fetch
+}
+
+func activeWorkUnitPredicates(filter storage.ActiveWorkUnitFilter) (safesql.TrustedSQLString, map[string]any) {
+	var parts []safesql.TrustedSQLString
+	params := map[string]any{}
+	if filter.HasAuthor {
+		parts = append(parts, safesql.New(" AND STRPOS(LOWER(COALESCE(e.Creator, '')), LOWER(@author)) > 0"))
+		params["author"] = filter.AuthorSubstring
+	}
+	if filter.Status != essmsgpb.WorkUnitStatus_WORK_UNIT_STATE_UNSPECIFIED {
+		parts = append(parts, safesql.New(" AND wu.ExecutionState = @status"))
+		params["status"] = filter.Status.String()
+	}
+	return safesql.Concat(parts...), params
 }
 
 func activeWorkUnitOrder(q storage.ActiveWorkUnitQuery) safesql.TrustedSQLString {

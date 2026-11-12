@@ -13,7 +13,10 @@
 // limitations under the License.
 
 import { ComponentHarness } from '@angular/cdk/testing';
+import { MatButtonHarness } from '@angular/material/button/testing';
+import { MatInputHarness } from '@angular/material/input/testing';
 import { MatPaginatorHarness } from '@angular/material/paginator/testing';
+import { MatSelectHarness } from '@angular/material/select/testing';
 import { MatSortHeaderHarness } from '@angular/material/sort/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
@@ -83,6 +86,22 @@ export class QueueJobsTableRowHarness extends ComponentHarness {
 /** Harness for interacting with <xmc-queue-jobs-table> in tests. */
 export class QueueJobsTableHarness extends ComponentHarness {
   static hostSelector = 'xmc-queue-jobs-table';
+
+  async filterAuthor(author: string): Promise<void> {
+    const input = await this.locatorFor(MatInputHarness)();
+    await input.setValue(author);
+    await (await input.host()).dispatchEvent('change');
+  }
+
+  async filterStatus(status: string): Promise<void> {
+    const select = await this.locatorFor(MatSelectHarness.with({ ancestor: '.job-filters' }))();
+    await select.open();
+    await select.clickOptions({ text: status });
+  }
+
+  async clearFilters(): Promise<void> {
+    await (await this.locatorFor(MatButtonHarness.with({ text: 'Clear filters' }))()).click();
+  }
 
   async sortBy(label: string): Promise<void> {
     const header = await this.locatorFor(MatSortHeaderHarness.with({ label }))();
