@@ -180,9 +180,7 @@ python3 tools/dev_env/dev_env.py build-images --cluster-name xmc-local
 python3 tools/dev_env/dev_env.py build-images all --cluster-name xmc-local
 
 # Build and load specific microservices
-python3 tools/dev_env/dev_env.py build-images \
-  --services experiment_state_server ui \
-  --cluster-name xmc-local
+python3 tools/dev_env/dev_env.py build-images experiment_state_server ui --cluster-name xmc-local
 ```
 
 ##### Dynamic Service Discovery & OCI Conventions
@@ -196,7 +194,7 @@ python3 tools/dev_env/dev_env.py build-images \
 - **Extensibility**: Adding a new Go or UI microservice under `cmd/<service>` with an OCI target works immediately with `dev_env.py build-images` without requiring tooling modifications.
 
 ##### Options
-- `--services`, `-s`: Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
+- `services` (positional, optional): Specific microservice images to build (defaults to all enabled services, or `all` for all discovered repository microservices).
 - `--cluster-name`: Target KinD cluster name for image side-loading (`kind load docker-image`).
 - `--tag`: Image tag applied to local container images (defaults to `local-dev`).
 - `--push`: Push built container images to remote Artifact Registry (used for GKE deployments).
@@ -305,9 +303,8 @@ python3 tools/dev_env/dev_env.py gke-upgrade \
 - `--project-id`, `-p`: Google Cloud project ID.
 - `--environment`, `-e`: Deployment environment name.
 - `--run-migrations`, `-m`: Run Cloud Spanner database schema migrations during upgrade.
-<!-- TODO: sync --start-from / --only step list with tools/dev_env/upgrade_dev_env.STEPS (check, migrate, images, app, restart, verify). -->
-- `--start-from`: Start upgrade from a specific step (`images`, `migrate`, `helm`, `finalize`).
-- `--only`: Execute only a single upgrade step (`images`, `migrate`, `helm`, `finalize`).
+- `--start-from`: Start upgrade from a specific step (`check`, `migrate`, `images`, `app`, `restart`, `verify`).
+- `--only`: Execute only a single upgrade step (`check`, `migrate`, `images`, `app`, `restart`, `verify`).
 - `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
 
 ---
@@ -451,8 +448,8 @@ The `ChangeDetector` module lists modified files with the shared `tools/common/c
 - `cmd/dashboard_service/**`, `internal/dashboard/**`, `api/protos/dashboard/**` $\rightarrow$ `dashboard_service`
 - `cmd/health_service/**`, `api/protos/health/**` $\rightarrow$ `health_service`
 - `cmd/rod_data_provider/**`, `internal/rod/**` $\rightarrow$ `rod_data_provider`
-- **Shared Code** (`internal/common/**`, `internal/auth/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
-- **Helm Templates / Manifests** (`deploy/helm/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
+- **Shared Code** (`internal/**`, `api/**`, `pkg/**`): Rebuilds and reloads all enabled microservices.
+- **Helm Templates / Manifests** (`deploy/helm/**`, `deploy/local/**`, `test/e2e/manifests/**`): Triggers incremental Helm chart upgrade.
 
 ### Iteration Speed Benchmarks
 

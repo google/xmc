@@ -640,8 +640,12 @@ class TestConfigLoader(unittest.TestCase):
         """Retired 1.0.0 keys fail closed instead of being silently dropped by the blueprint."""
         for retired_key in (
             "enable_metrics: true",
+            "enable_metrics: false",
             "ingestion_gateway_deployment_enabled: true",
             "clickhouse_host: ch",
+            'clickhouse_port: "9000"',
+            "clickhouse_database: default",
+            "clickhouse_user: default",
         ):
             with self.subTest(retired_key=retired_key):
                 self.config_path.write_text(

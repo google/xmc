@@ -547,6 +547,11 @@ class DevEnvCliTest(unittest.TestCase):
         mock_load_config.assert_called_once_with(args)
         mock_build.assert_called_once_with(services=["reconciler", "ui"], skip_build=True)
 
+        mock_build.reset_mock()
+        no_svc_args = self.parser.parse_args(["build-images"])
+        no_svc_args.func(no_svc_args)
+        mock_build.assert_called_once_with(services=None, skip_build=False)
+
     @patch("tools.dev_env.image_builder.ImageBuilder.load_images_into_kind")
     @patch("tools.dev_env.image_builder.ImageBuilder.build_images")
     @patch("tools.dev_env.config.load_config")
