@@ -30,6 +30,7 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
+go_sdk.nogo(nogo = "//:xmc_nogo")
 
 # The buf CLI used by buf_breaking_test (//api:protos_breaking_test).
 # sha256 is the checksum of the release's sha256.txt.

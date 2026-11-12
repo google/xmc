@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@bazel_gazelle//:def.bzl", "gazelle")
-load("@io_bazel_rules_go//go:def.bzl", "nogo")
+load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
 
 # gazelle:prefix xmanager_cloud
 
@@ -21,8 +21,13 @@ nogo(
     name = "xmc_nogo",
     config = "nogo_config.json",
     visibility = ["//visibility:public"],
+    # Go 1.22+ gives each loop iteration its own variable, and rules_go's nogo
+    # runner omits GoVersion on packages, causing loopclosure false positives on
+    # parallel subtests and goroutines written for Go 1.26.
     deps = [
-        "@io_bazel_rules_go//go/tools/builders:nogo_srcs",
+        dep
+        for dep in TOOLS_NOGO
+        if not dep.endswith("/loopclosure:go_default_library")
     ],
 )
 

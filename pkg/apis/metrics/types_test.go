@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	pb "xmanager_cloud/api/protos/metrics"
 )
 
@@ -120,8 +122,11 @@ func TestMetric_IsValid(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := Metric{Metric: &pb.Metric{}}
-			*m.Metric = *validMetric.Metric
+			cloned, ok := proto.Clone(validMetric.Metric).(*pb.Metric)
+			if !ok {
+				t.Fatalf("proto.Clone(validMetric.Metric) returned unexpected type %T", validMetric.Metric)
+			}
+			m := Metric{Metric: cloned}
 			tt.modify(&m)
 			err := m.IsValid()
 			if (err != nil) != tt.wantErr {
