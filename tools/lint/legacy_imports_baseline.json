@@ -1,9 +1,11 @@
 {
   "compat_go_targets": 0,
   "gazelle_resolve_directives": 0,
+  "generic_helper_filenames": 27,
   "go_legacy_root_imports": 0,
   "go_unresolved_module_imports": 0,
   "helm_google3_flags": 0,
+  "oss_b_todo_references": 0,
   "proto_third_party_paths": 0,
   "python_legacy_paths": 0,
   "third_party_files": 0,

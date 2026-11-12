@@ -38,6 +38,27 @@ py_test(
 )
 
 py_library(
+    name = "check_doc_links_lib",
+    srcs = ["check_doc_links.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_agent_doc_paths_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "check_doc_links_test",
+    srcs = ["check_doc_links_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_agent_doc_paths_lib",
+        ":check_doc_links_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_file_naming_lib",
     srcs = ["check_file_naming.py"],
     imports = ["../.."],
