@@ -17,7 +17,6 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/experimentschema"
@@ -26,31 +25,27 @@ import (
 
 // ExperimentRowToProto converts a Spanner Row containing Experiments table data into an Experiment proto message.
 func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
-	experiment := &pb.Experiment{}
+	experiment := &pb.Experiment{ExperimentType: pb.Experiment_STANDARD}
 
 	var xid int64
-	if err := row.ColumnByName("Xid", &xid); err != nil {
-		return nil, fmt.Errorf("failed to read column Xid: %w", err)
-	}
-	experiment.Name = validator.ConstructExperimentName(xid)
-
-	if err := row.ColumnByName("Title", &experiment.Title); err != nil {
-		return nil, fmt.Errorf("failed to read column Title: %w", err)
-	}
-	if err := row.ColumnByName("Creator", &experiment.Creator); err != nil {
-		return nil, fmt.Errorf("failed to read column Creator: %w", err)
-	}
-
-	if err := row.ColumnByName("Priority", &experiment.Priority); err != nil {
-		return nil, fmt.Errorf("failed to read column Priority: %w", err)
-	}
-	// ExperimentType is nullable; NULL (rows written before the column existed) reads as STANDARD.
 	var experimentType pb.Experiment_ExperimentType
 	nullExperimentType := spanner.NullProtoEnum{ProtoEnumVal: &experimentType}
-	if err := row.ColumnByName("ExperimentType", &nullExperimentType); err != nil {
-		return nil, fmt.Errorf("failed to read column ExperimentType: %w", err)
+	err := readColumns(row,
+		colDest{"Xid", &xid},
+		colDest{"Title", &experiment.Title},
+		colDest{"Creator", &experiment.Creator},
+		colDest{"Priority", &experiment.Priority},
+		colDest{"ExperimentType", &nullExperimentType},
+		colDest{"Urls", &experiment.Urls},
+		colDest{"Notes", &experiment.Notes},
+		colDest{"Tags", &experiment.Tags},
+		colDest{"Resources", &experiment.Resources},
+		colDest{"Status", &experiment.Status},
+	)
+	if err != nil {
+		return nil, err
 	}
-	experiment.ExperimentType = pb.Experiment_STANDARD
+	experiment.Name = validator.ConstructExperimentName(xid)
 	if nullExperimentType.Valid {
 		experiment.ExperimentType = experimentType
 	}
@@ -62,47 +57,14 @@ func ExperimentRowToProto(row *spanner.Row) (*pb.Experiment, error) {
 		experiment.TypeConfig = &pb.Experiment_StudyConfig{StudyConfig: studyConfig}
 	}
 
-	if err := row.ColumnByName("Urls", &experiment.Urls); err != nil {
-		return nil, fmt.Errorf("failed to read column Urls: %w", err)
+	err = readNullTimestamps(row,
+		tsDest{"CreateTime", &experiment.CreateTime},
+		tsDest{"UpdateTime", &experiment.UpdateTime},
+		tsDest{"CompleteTime", &experiment.CompleteTime},
+	)
+	if err != nil {
+		return nil, err
 	}
-	if err := row.ColumnByName("Notes", &experiment.Notes); err != nil {
-		return nil, fmt.Errorf("failed to read column Notes: %w", err)
-	}
-	if err := row.ColumnByName("Tags", &experiment.Tags); err != nil {
-		return nil, fmt.Errorf("failed to read column Tags: %w", err)
-	}
-
-	if err := row.ColumnByName("Resources", &experiment.Resources); err != nil {
-		return nil, fmt.Errorf("failed to read column Resources: %w", err)
-	}
-
-	if err := row.ColumnByName("Status", &experiment.Status); err != nil {
-		return nil, fmt.Errorf("failed to read column Status: %w", err)
-	}
-
-	// Time fields.
-	var createTime, updateTime, completeTime spanner.NullTime
-	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
-		return nil, fmt.Errorf("failed to read column CreateTime: %w", err)
-	}
-	if createTime.Valid {
-		experiment.CreateTime = timestamppb.New(createTime.Time)
-	}
-
-	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
-		return nil, fmt.Errorf("failed to read column UpdateTime: %w", err)
-	}
-	if updateTime.Valid {
-		experiment.UpdateTime = timestamppb.New(updateTime.Time)
-	}
-
-	if err := row.ColumnByName("CompleteTime", &completeTime); err != nil {
-		return nil, fmt.Errorf("failed to read column CompleteTime: %w", err)
-	}
-	if completeTime.Valid {
-		experiment.CompleteTime = timestamppb.New(completeTime.Time)
-	}
-
 	return experiment, nil
 }
 

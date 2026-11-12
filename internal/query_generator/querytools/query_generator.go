@@ -524,7 +524,7 @@ type options struct {
 
 // Option is an optional argument to generating queries.
 type Option interface {
-	set(*options)
+	set(opts *options)
 }
 
 type optionwrap func(*options)

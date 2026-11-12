@@ -60,6 +60,7 @@ go_library(
         "component.go",
         "experiment.go",
         "operation.go",
+        "row_decoder.go",
         "statusmessage.go",
         "workunit.go",
         "workunitexecutions.go",
