@@ -48,7 +48,7 @@
               class="allocation-chip"
               [class.selected]="selectedAuthor() === seg.user"
               [attr.aria-pressed]="selectedAuthor() === seg.user"
-              (click)="onChipClick(seg.user)"
+              (click)="authorSelect.emit(seg.user)"
             >
               <span class="chip-dot" aria-hidden="true" [style.background-color]="seg.color"></span>
               <span class="chip-user">{{ seg.user }}</span>

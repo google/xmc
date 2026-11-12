@@ -38,8 +38,4 @@ export class QueueUserAllocationBar {
   protected readonly summary = computed(() =>
     summarizeUserAllocations(this.allocations(), this.dominantResource()),
   );
-
-  protected onChipClick(user: string): void {
-    this.authorSelect.emit(user);
-  }
 }

@@ -216,11 +216,7 @@ export class QueueJobsTable implements BaseSidePanelContent<QueueJobsTableData> 
   }
 
   protected onAuthorChipClick(author: string): void {
-    if (this.author() === author) {
-      this.onAuthorChange('');
-    } else {
-      this.onAuthorChange(author);
-    }
+    this.onAuthorChange(this.author() === author ? '' : author);
   }
 
   protected onStatusChange(status: string): void {

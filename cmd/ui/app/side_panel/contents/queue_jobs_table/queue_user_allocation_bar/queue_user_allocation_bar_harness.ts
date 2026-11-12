@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ComponentHarness } from '@angular/cdk/testing';
+import { ComponentHarness, TestElement } from '@angular/cdk/testing';
 
 /** Harness for interacting with <xmc-queue-user-allocation-bar> in tests. */
 export class QueueUserAllocationBarHarness extends ComponentHarness {
@@ -74,28 +74,22 @@ export class QueueUserAllocationBarHarness extends ComponentHarness {
     return styles.map((style) => /width:\s*([\d.]+%)/.exec(style ?? '')?.[1] ?? '');
   }
 
-  /** Clicks the chip for the given user. */
-  async clickUserChip(user: string): Promise<void> {
-    const buttons = await this.chipButtons();
-    for (const btn of buttons) {
-      const text = (await btn.text()).trim();
-      if (text.startsWith(user)) {
-        await btn.click();
-        return;
+  private async findUserChip(user: string): Promise<TestElement> {
+    for (const btn of await this.chipButtons()) {
+      if ((await btn.text()).trim().startsWith(user)) {
+        return btn;
       }
     }
     throw new Error(`User chip for ${user} not found`);
   }
 
+  /** Clicks the chip for the given user. */
+  async clickUserChip(user: string): Promise<void> {
+    await (await this.findUserChip(user)).click();
+  }
+
   /** Whether the given user's chip is currently selected. */
   async isUserChipSelected(user: string): Promise<boolean> {
-    const buttons = await this.chipButtons();
-    for (const btn of buttons) {
-      const text = (await btn.text()).trim();
-      if (text.startsWith(user)) {
-        return btn.hasClass('selected');
-      }
-    }
-    throw new Error(`User chip for ${user} not found`);
+    return (await this.findUserChip(user)).hasClass('selected');
   }
 }

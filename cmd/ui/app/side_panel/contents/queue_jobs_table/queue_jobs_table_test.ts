@@ -504,12 +504,13 @@ describe('QueueJobsTable Component', () => {
     await flush();
 
     const harness = await getHarness(QueueJobsTableHarness);
+    const bar = (await harness.getUserAllocationBar())!;
     state.resourceService.getQueueJobs.calls.reset();
 
-    await harness.clickUserAllocationChip('example@example.com');
+    await bar.clickUserChip('example@example.com');
     await flush();
 
-    expect(await harness.isUserAllocationChipSelected('example@example.com')).toBeTrue();
+    expect(await bar.isUserChipSelected('example@example.com')).toBeTrue();
     expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
       'gpu-cluster-queue',
       10,
@@ -520,10 +521,10 @@ describe('QueueJobsTable Component', () => {
 
     // Clicking the same chip again toggles/clears the author filter
     state.resourceService.getQueueJobs.calls.reset();
-    await harness.clickUserAllocationChip('example@example.com');
+    await bar.clickUserChip('example@example.com');
     await flush();
 
-    expect(await harness.isUserAllocationChipSelected('example@example.com')).toBeFalse();
+    expect(await bar.isUserChipSelected('example@example.com')).toBeFalse();
     expect(state.resourceService.getQueueJobs).toHaveBeenCalledOnceWith(
       'gpu-cluster-queue',
       10,

@@ -119,24 +119,6 @@ export class QueueJobsTableHarness extends ComponentHarness {
     return this.userAllocationBar();
   }
 
-  /** Clicks a user allocation chip by user name. */
-  async clickUserAllocationChip(user: string): Promise<void> {
-    const bar = await this.getUserAllocationBar();
-    if (!bar) {
-      throw new Error('User allocation bar is not rendered');
-    }
-    await bar.clickUserChip(user);
-  }
-
-  /** Whether the user allocation chip for the given user is selected. */
-  async isUserAllocationChipSelected(user: string): Promise<boolean> {
-    const bar = await this.getUserAllocationBar();
-    if (!bar) {
-      throw new Error('User allocation bar is not rendered');
-    }
-    return bar.isUserChipSelected(user);
-  }
-
   /** Gets the trimmed text contents of any elements projected into the [headerActions] slot. */
   async getHeaderActionTexts(): Promise<string[]> {
     const actions = await this.headerActions();
