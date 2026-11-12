@@ -55,9 +55,8 @@ least one owner and a principal in every role, or the request fails with `INVALI
 **Component requirements (step 4).** Some experiment types require catalog components
 ([`internal/experiment/componentrequirements.go`](../../internal/experiment/componentrequirements.go)):
 a `STUDY` requires the `hpo` component and, transitively, every dependency it declares (`vizier`,
-`clickhouse`). For these types ESS returns `FAILED_PRECONDITION` when `enable_components` is false,
-or when a required component is missing, not `ENABLED`, of the wrong type, or has not observed its
-current generation. The pre-check reads one read-only catalog snapshot and writes nothing.
+`clickhouse`). For these types ESS returns `FAILED_PRECONDITION` when a required component is
+missing, not `ENABLED`, of the wrong type, or has not observed its current generation. The pre-check reads one read-only catalog snapshot and writes nothing.
 `STANDARD` experiments require no components and skip it.
 
 **Persistence (step 8).** [`experiment.CreateExperiment`](../../internal/experiment/createexperiment.go)
