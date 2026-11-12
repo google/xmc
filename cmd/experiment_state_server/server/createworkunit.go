@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -92,6 +93,9 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateW
 
 		if status.Code(err) == codes.AlreadyExists {
 			return nil, fmt.Errorf("work unit %s already exists: %w", wu.GetName(), grpcerr.ErrAlreadyExists)
+		}
+		if errors.Is(err, workunit.ErrStudyWorkUnitCreation) {
+			return nil, fmt.Errorf("CreateWorkUnit rejected: %w", err)
 		}
 		return nil, fmt.Errorf("failed to save work unit: %v: %w", err, grpcerr.ErrInternal)
 	}

@@ -81,6 +81,11 @@ and combined with the work unit's own priority to resolve the Kueue `WorkloadPri
 (see [Execution Model §6](../architecture/execution_model.md#6-scheduling-and-priority)).
 Priority is therefore captured when the task is enqueued, not when the JobSet is built.
 
+`CreateWorkUnit` returns `FAILED_PRECONDITION` for a `STUDY` experiment. Its work units are trials,
+created only by the study controller, so the trial count always equals the number of stored work
+units (see [STUDY Experiments](../../cmd/experiment_state_server/README.md#study-experiments)). The
+check runs in step 4's transaction, which reads the experiment anyway, so nothing is written.
+
 ### What the Actuator builds
 
 Step 10 is where a protobuf `WorkUnit` becomes a Kubernetes object. `cmd/actuator/k8s_client`

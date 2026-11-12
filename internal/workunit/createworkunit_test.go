@@ -320,6 +320,19 @@ func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 			wantErr: boomErr,
 		},
 		{
+			name: "study_experiment_rejected",
+			wid:  0,
+			storage: &storage.MockStorage{
+				NextWorkUnitID: 1,
+				Experiment: &essmsgpb.Experiment{
+					Name:           "experiments/123",
+					ExperimentType: essmsgpb.Experiment_STUDY,
+					Status:         &essmsgpb.ExperimentStatus{},
+				},
+			},
+			wantErr: workunit.ErrStudyWorkUnitCreation,
+		},
+		{
 			name: "save_status_message_history_error",
 			wid:  1,
 			storage: &storage.MockStorage{

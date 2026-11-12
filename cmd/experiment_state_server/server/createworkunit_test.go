@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -38,6 +40,7 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 )
 
 func TestCreateWorkUnit_HappyPath(t *testing.T) {
@@ -491,5 +494,37 @@ func TestCreateWorkUnit_TaskEnqueueFails(t *testing.T) {
 	_, err := server.CreateWorkUnit(ctx, proto.Clone(goodReq).(*msgpb.CreateWorkUnitRequest))
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("CreateWorkUnit() = error %v, want %v", err, grpcerr.ErrInternal)
+	}
+}
+
+func TestCreateWorkUnit_StudyExperimentRejected(t *testing.T) {
+	ctx := context.Background()
+	st := &storage.MockStorage{
+		Experiment: &msgpb.Experiment{Name: "experiments/123", ExperimentType: msgpb.Experiment_STUDY},
+	}
+	taskQueueClient := &tq.FakeClient{}
+	server := newTestServer(t,
+		withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+		withXidClient(&mockXidClient{
+			checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		}),
+		withStorage(st),
+		withWorkUnitActuator(taskQueueClient),
+	)
+	req := &msgpb.CreateWorkUnitRequest{
+		Parent:   "experiments/123",
+		WorkUnit: &msgpb.WorkUnit{WorkUnitType: msgpb.WorkUnit_STANDARD, Executable: testExecutable},
+	}
+
+	_, err := server.CreateWorkUnit(ctx, req)
+
+	if got := status.Code(err); got != codes.FailedPrecondition || !errors.Is(err, workunit.ErrStudyWorkUnitCreation) {
+		t.Errorf("CreateWorkUnit() on a study = error %v (code %v), want %v wrapping ErrStudyWorkUnitCreation", err, got, codes.FailedPrecondition)
+	}
+	if st.UpdatedExperiment != nil {
+		t.Errorf("CreateWorkUnit() on a study updated the experiment: %v", st.UpdatedExperiment)
+	}
+	if taskQueueClient.LastEnqueuedAction != nil {
+		t.Errorf("CreateWorkUnit() on a study enqueued a task: %v", taskQueueClient.LastEnqueuedAction)
 	}
 }
