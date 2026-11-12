@@ -80,107 +80,119 @@ func (l *lexer) advance() rune {
 	return r
 }
 
-func (l *lexer) nextToken() (token, error) {
-	for {
-		r := l.peek()
-		if r == 0 {
-			return token{kind: tokEOF, value: "", pos: l.pos}, nil
-		}
-
-		if unicode.IsSpace(r) {
-			l.advance()
-			continue
-		}
-
-		startPos := l.pos
-
-		// Structural characters & basic operators
-		switch r {
-		case '(':
-			l.advance()
-			return token{kind: tokLParen, value: "(", pos: startPos}, nil
-		case ')':
-			l.advance()
-			return token{kind: tokRParen, value: ")", pos: startPos}, nil
-		case ',':
-			l.advance()
-			return token{kind: tokComma, value: ",", pos: startPos}, nil
-		case '-':
-			// We check if it is a number or prefix minus
-			l.advance()
-			next := l.peek()
-			if unicode.IsDigit(next) {
-				numStr := l.scanNumber("")
-				return token{kind: l.deduceNumberKind("-" + numStr), value: "-" + numStr, pos: startPos}, nil
-			}
-			return token{kind: tokMinus, value: "-", pos: startPos}, nil
-		case '=':
-			l.advance()
-			if l.peek() == '~' {
-				l.advance()
-				return token{kind: tokRegexMatch, value: "=~", pos: startPos}, nil
-			}
-			return token{kind: tokEq, value: "=", pos: startPos}, nil
-		case '!':
-			l.advance()
-			if l.peek() == '=' {
-				l.advance()
-				return token{kind: tokNotEq, value: "!=", pos: startPos}, nil
-			} else if l.peek() == '~' {
-				l.advance()
-				return token{kind: tokRegexNotMatch, value: "!~", pos: startPos}, nil
-			}
-			return token{}, fmt.Errorf("unexpected char '!' at position %d", startPos)
-		case '<':
-			l.advance()
-			if l.peek() == '=' {
-				l.advance()
-				return token{kind: tokLtEq, value: "<=", pos: startPos}, nil
-			}
-			return token{kind: tokLt, value: "<", pos: startPos}, nil
-		case '>':
-			l.advance()
-			if l.peek() == '=' {
-				l.advance()
-				return token{kind: tokGtEq, value: ">=", pos: startPos}, nil
-			}
-			return token{kind: tokGt, value: ">", pos: startPos}, nil
-		case ':':
-			l.advance()
-			return token{kind: tokHas, value: ":", pos: startPos}, nil
-		case '"', '\'':
-			strVal, err := l.scanString(r)
-			if err != nil {
-				return token{}, err
-			}
-			return token{kind: tokString, value: strVal, pos: startPos}, nil
-		}
-
-		if unicode.IsDigit(r) {
-			numStr := l.scanNumber("")
-			return token{kind: l.deduceNumberKind(numStr), value: numStr, pos: startPos}, nil
-		}
-
-		if isAlpha(r) || r == '_' {
-			ident := l.scanIdentifier()
-			lower := strings.ToLower(ident)
-			switch lower {
-			case "and":
-				return token{kind: tokAnd, value: ident, pos: startPos}, nil
-			case "or":
-				return token{kind: tokOr, value: ident, pos: startPos}, nil
-			case "not":
-				return token{kind: tokNot, value: ident, pos: startPos}, nil
-			case "true":
-				return token{kind: tokBool, value: "true", pos: startPos}, nil
-			case "false":
-				return token{kind: tokBool, value: "false", pos: startPos}, nil
-			}
-			return token{kind: tokIdentifier, value: ident, pos: startPos}, nil
-		}
-
-		return token{}, fmt.Errorf("unexpected character %q at position %d", r, startPos)
+func (l *lexer) skipWhitespace() {
+	for unicode.IsSpace(l.peek()) {
+		l.advance()
 	}
+}
+
+func (l *lexer) scanComparisonOrOperator(r rune, startPos int) (token, bool, error) {
+	switch r {
+	case '(':
+		l.advance()
+		return token{kind: tokLParen, value: "(", pos: startPos}, true, nil
+	case ')':
+		l.advance()
+		return token{kind: tokRParen, value: ")", pos: startPos}, true, nil
+	case ',':
+		l.advance()
+		return token{kind: tokComma, value: ",", pos: startPos}, true, nil
+	case ':':
+		l.advance()
+		return token{kind: tokHas, value: ":", pos: startPos}, true, nil
+	case '-':
+		l.advance()
+		if unicode.IsDigit(l.peek()) {
+			numStr := l.scanNumber("")
+			return token{kind: l.deduceNumberKind("-" + numStr), value: "-" + numStr, pos: startPos}, true, nil
+		}
+		return token{kind: tokMinus, value: "-", pos: startPos}, true, nil
+	case '=':
+		return l.scanEqualsToken(startPos), true, nil
+	case '!':
+		return l.scanBangToken(startPos)
+	case '<':
+		return l.scanOrderToken(tokLt, tokLtEq, "<", "<=", startPos), true, nil
+	case '>':
+		return l.scanOrderToken(tokGt, tokGtEq, ">", ">=", startPos), true, nil
+	case '"', '\'':
+		strVal, err := l.scanString(r)
+		if err != nil {
+			return token{}, false, err
+		}
+		return token{kind: tokString, value: strVal, pos: startPos}, true, nil
+	default:
+		return token{}, false, nil
+	}
+}
+
+func (l *lexer) scanEqualsToken(startPos int) token {
+	l.advance()
+	if l.peek() == '~' {
+		l.advance()
+		return token{kind: tokRegexMatch, value: "=~", pos: startPos}
+	}
+	return token{kind: tokEq, value: "=", pos: startPos}
+}
+
+func (l *lexer) scanBangToken(startPos int) (token, bool, error) {
+	l.advance()
+	if l.peek() == '=' {
+		l.advance()
+		return token{kind: tokNotEq, value: "!=", pos: startPos}, true, nil
+	}
+	if l.peek() == '~' {
+		l.advance()
+		return token{kind: tokRegexNotMatch, value: "!~", pos: startPos}, true, nil
+	}
+	return token{}, false, fmt.Errorf("unexpected char '!' at position %d", startPos)
+}
+
+func (l *lexer) scanOrderToken(singleKind, eqKind tokenKind, singleVal, eqVal string, startPos int) token {
+	l.advance()
+	if l.peek() == '=' {
+		l.advance()
+		return token{kind: eqKind, value: eqVal, pos: startPos}
+	}
+	return token{kind: singleKind, value: singleVal, pos: startPos}
+}
+
+func keywordOrIdentToken(ident string, startPos int) token {
+	switch strings.ToLower(ident) {
+	case "and":
+		return token{kind: tokAnd, value: ident, pos: startPos}
+	case "or":
+		return token{kind: tokOr, value: ident, pos: startPos}
+	case "not":
+		return token{kind: tokNot, value: ident, pos: startPos}
+	case "true":
+		return token{kind: tokBool, value: "true", pos: startPos}
+	case "false":
+		return token{kind: tokBool, value: "false", pos: startPos}
+	default:
+		return token{kind: tokIdentifier, value: ident, pos: startPos}
+	}
+}
+
+func (l *lexer) nextToken() (token, error) {
+	l.skipWhitespace()
+	r := l.peek()
+	if r == 0 {
+		return token{kind: tokEOF, value: "", pos: l.pos}, nil
+	}
+
+	startPos := l.pos
+	if tok, ok, err := l.scanComparisonOrOperator(r, startPos); err != nil || ok {
+		return tok, err
+	}
+	if unicode.IsDigit(r) {
+		numStr := l.scanNumber("")
+		return token{kind: l.deduceNumberKind(numStr), value: numStr, pos: startPos}, nil
+	}
+	if isAlpha(r) || r == '_' {
+		return keywordOrIdentToken(l.scanIdentifier(), startPos), nil
+	}
+	return token{}, fmt.Errorf("unexpected character %q at position %d", r, startPos)
 }
 
 func (l *lexer) scanString(quote rune) (string, error) {
@@ -458,8 +470,40 @@ func isComparator(k tokenKind) bool {
 		k == tokRegexMatch || k == tokRegexNotMatch
 }
 
+func (p *parser) comparatorFromToken(comp tokenKind) (fpb.Restriction_Comparator, error) {
+	switch comp {
+	case tokEq:
+		return fpb.Restriction_EQUALS, nil
+	case tokNotEq:
+		return fpb.Restriction_NOT_EQUALS, nil
+	case tokLt:
+		return fpb.Restriction_LESS_THAN, nil
+	case tokLtEq:
+		return fpb.Restriction_LESS_EQUALS, nil
+	case tokGt:
+		return fpb.Restriction_GREATER_THAN, nil
+	case tokGtEq:
+		return fpb.Restriction_GREATER_EQUALS, nil
+	case tokHas:
+		return fpb.Restriction_HAS, nil
+	case tokRegexMatch, tokRegexNotMatch:
+		if !p.options.GetEnableRegexpMatching() {
+			opStr := "=~"
+			if comp == tokRegexNotMatch {
+				opStr = "!~"
+			}
+			return fpb.Restriction_COMPARATOR_UNSPECIFIED, fmt.Errorf("regexp matching operator %s is disabled by options", opStr)
+		}
+		if comp == tokRegexMatch {
+			return fpb.Restriction_REGEXP_MATCH, nil
+		}
+		return fpb.Restriction_REGEXP_NOT_MATCH, nil
+	default:
+		return fpb.Restriction_COMPARATOR_UNSPECIFIED, nil
+	}
+}
+
 func (p *parser) parseRestriction() (*fpb.Expression, error) {
-	// A term on the left side
 	left, err := p.parseTerm()
 	if err != nil {
 		return nil, err
@@ -467,7 +511,6 @@ func (p *parser) parseRestriction() (*fpb.Expression, error) {
 
 	comp := p.peek().kind
 	if !isComparator(comp) {
-		// No explicit comparator: parse as global/unary restriction!
 		return &fpb.Expression{
 			Expression: &fpb.Expression_Restriction{
 				Restriction: &fpb.Restriction{
@@ -479,8 +522,9 @@ func (p *parser) parseRestriction() (*fpb.Expression, error) {
 	}
 
 	p.advance() // Consume comparator
+	isRegexOp := comp == tokRegexMatch || comp == tokRegexNotMatch
 	var right *fpb.Expression
-	if (comp == tokRegexMatch || comp == tokRegexNotMatch) && p.peek().kind == tokLParen {
+	if isRegexOp && p.peek().kind == tokLParen {
 		right, err = p.parseExpression()
 	} else {
 		right, err = p.parseTerm()
@@ -488,39 +532,13 @@ func (p *parser) parseRestriction() (*fpb.Expression, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if comp == tokRegexMatch || comp == tokRegexNotMatch {
-		if right.WhichExpression() == fpb.Expression_Member_case || right.WhichExpression() == fpb.Expression_Value_case {
-			return nil, fmt.Errorf("regular expression match RHS must be a quoted string literal")
-		}
+	if isRegexOp && (right.WhichExpression() == fpb.Expression_Member_case || right.WhichExpression() == fpb.Expression_Value_case) {
+		return nil, fmt.Errorf("regular expression match RHS must be a quoted string literal")
 	}
 
-	var op fpb.Restriction_Comparator
-	switch comp {
-	case tokEq:
-		op = fpb.Restriction_EQUALS
-	case tokNotEq:
-		op = fpb.Restriction_NOT_EQUALS
-	case tokLt:
-		op = fpb.Restriction_LESS_THAN
-	case tokLtEq:
-		op = fpb.Restriction_LESS_EQUALS
-	case tokGt:
-		op = fpb.Restriction_GREATER_THAN
-	case tokGtEq:
-		op = fpb.Restriction_GREATER_EQUALS
-	case tokHas:
-		op = fpb.Restriction_HAS
-	case tokRegexMatch:
-		if !p.options.GetEnableRegexpMatching() {
-			return nil, fmt.Errorf("regexp matching operator =~ is disabled by options")
-		}
-		op = fpb.Restriction_REGEXP_MATCH
-	case tokRegexNotMatch:
-		if !p.options.GetEnableRegexpMatching() {
-			return nil, fmt.Errorf("regexp matching operator !~ is disabled by options")
-		}
-		op = fpb.Restriction_REGEXP_NOT_MATCH
+	op, err := p.comparatorFromToken(comp)
+	if err != nil {
+		return nil, err
 	}
 
 	return &fpb.Expression{
