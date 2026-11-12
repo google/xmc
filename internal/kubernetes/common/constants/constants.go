@@ -131,6 +131,17 @@ const (
 	ActuatorWorkerID = "actuator-worker"
 	// ActuatorCleanupWorkerID is the prefix for the ID of the Actuator cleanup worker.
 	ActuatorCleanupWorkerID = "actuator-cleanup"
+	// RedisStudyReconcileStream is the name of the Redis stream carrying study reconcile ticks
+	// from the Experiment State Server to the Study Controller.
+	RedisStudyReconcileStream = "xmc-study-reconcile-stream"
+	// RedisStudyControllerGroup is the name of the Redis consumer group for Study Controller workers.
+	RedisStudyControllerGroup = "study-controller-group"
+	// RedisStudyReconcileDLQ is the name of the Redis dead-letter stream for study reconcile ticks.
+	RedisStudyReconcileDLQ = "xmc-study-reconcile-dlq-stream"
+	// StudyControllerWorkerID is the prefix for the ID of the Study Controller worker.
+	StudyControllerWorkerID = "study-controller-worker"
+	// StudyControllerCleanupWorkerID is the prefix for the ID of the Study Controller cleanup worker.
+	StudyControllerCleanupWorkerID = "study-controller-cleanup"
 
 	// RedisMaxRetries is the maximum number of retries for a Redis task.
 	RedisMaxRetries = 5

@@ -49,6 +49,8 @@ const (
 	DefaultBatchSize = 1
 	// cleanupInterval is the interval at which the cleanup goroutine checks for abandoned messages.
 	cleanupInterval = 500 * time.Millisecond
+	// settleTimeout bounds the Redis writes that acknowledge, retry or dead-letter a handled message.
+	settleTimeout = 5 * time.Second
 )
 
 // NewConsumer creates a new redis client and configures client settings for consumption.
@@ -186,7 +188,8 @@ func (c *ConsumerClient) StartWorker(ctx context.Context, workerID string) {
 				break
 			}
 			logging.Error(ctx, "Worker error reading stream", "workerID", workerID, "error", err)
-			time.Sleep(1 * time.Second) // back off on other errors
+			c.recreateGroupIfMissing(ctx, err)
+			sleepUnlessDone(ctx, time.Second) // back off on other errors
 			continue
 		}
 
@@ -199,6 +202,34 @@ func (c *ConsumerClient) StartWorker(ctx context.Context, workerID string) {
 	logging.Info(ctx, "Worker shutting down", "workerID", workerID)
 }
 
+// recreateGroupIfMissing re-creates the stream and consumer group after a NOGROUP error. Redis
+// returns NOGROUP when it lost them, e.g. when it was unreachable as the worker started or
+// restarted without persistence; without this, the worker would read nothing until restarted.
+func (c *ConsumerClient) recreateGroupIfMissing(ctx context.Context, err error) {
+	if !strings.Contains(err.Error(), "NOGROUP") {
+		return
+	}
+	logging.Warn(ctx, "Consumer group is missing; re-creating it", "stream", c.StreamName, "group", c.GroupName)
+	c.InitializeClient(ctx)
+}
+
+// sleepUnlessDone waits for d or until ctx is done, whichever comes first.
+func sleepUnlessDone(ctx context.Context, d time.Duration) {
+	select {
+	case <-ctx.Done():
+	case <-time.After(d):
+	}
+}
+
+// settle runs write, which acknowledges, retries or dead-letters a message, on a context that is
+// not cancelled with ctx and is bounded by settleTimeout, so that a message handled during
+// shutdown is still settled instead of being re-delivered.
+func settle(ctx context.Context, write func(context.Context)) {
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	defer cancel()
+	write(settleCtx)
+}
+
 // processMessage processes a single message from the Redis stream.
 func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage, workerID string) {
 	done := make(chan struct{})
@@ -207,7 +238,17 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 	failedCount := getFailedCount(msg)
 
 	if failedCount > c.MaxRetries {
-		c.handleCrashedTask(ctx, msg, "too_many_failed_attempts")
+		settle(ctx, func(ctx context.Context) { c.handleCrashedTask(ctx, msg, "too_many_failed_attempts") })
+		return
+	}
+
+	// A message without a string data field cannot be handled, now or on a retry.
+	data, ok := msg.Values["data"].(string)
+	if !ok {
+		settle(ctx, func(ctx context.Context) {
+			c.moveToDLQ(ctx, msg, "missing_data")
+			c.AckMessage(ctx, msg.ID)
+		})
 		return
 	}
 
@@ -216,7 +257,7 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 
 	// Run logic in goroutine
 	go func() {
-		result = c.TaskHandler(taskCtx, workerID, msg.Values["data"].(string))
+		result = c.TaskHandler(taskCtx, workerID, data)
 		close(done)
 	}()
 
@@ -226,18 +267,7 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 	for {
 		select {
 		case <-done:
-			if result.WasRunSuccessful {
-				c.AckMessage(ctx, msg.ID)
-			} else {
-				msg = increaseFailedCount(ctx, msg)
-
-				if result.ShouldBeRetried {
-					c.handleCrashedTask(ctx, msg, "function_error_retryable")
-				} else {
-					c.moveToDLQ(ctx, msg, "non_retryable_error")
-					c.AckMessage(ctx, msg.ID)
-				}
-			}
+			settle(ctx, func(ctx context.Context) { c.handleResult(ctx, msg, result) })
 			return
 
 		case <-extendChan:
@@ -253,14 +283,32 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 		case <-timer.C:
 			msg = increaseFailedCount(ctx, msg)
 			// Case: Local Timeout (Worker is alive but too slow)
-			c.handleTimedOutTask(ctx, msg, "timeout")
+			settle(ctx, func(ctx context.Context) { c.handleTimedOutTask(ctx, msg, "timeout") })
 			return
 		}
 	}
 }
 
+// handleResult acknowledges a successfully handled message, and retries or dead-letters a failed
+// one according to result.
+func (c *ConsumerClient) handleResult(ctx context.Context, msg redis.XMessage, result TaskResult) {
+	if result.WasRunSuccessful {
+		c.AckMessage(ctx, msg.ID)
+		return
+	}
+	msg = increaseFailedCount(ctx, msg)
+	if result.ShouldBeRetried {
+		c.handleCrashedTask(ctx, msg, "function_error_retryable")
+		return
+	}
+	c.moveToDLQ(ctx, msg, "non_retryable_error")
+	c.AckMessage(ctx, msg.ID)
+}
+
 func (c *ConsumerClient) moveToDLQ(ctx context.Context, msg redis.XMessage, reason string) {
 	logging.Warn(ctx, "Task moving to DLQ", "taskID", msg.ID, "reason", reason)
+	// TODO(b/585143354): handle the XAdd error; today a failed DLQ write loses the message once it
+	// is acknowledged.
 	c.XAdd(ctx, &redis.XAddArgs{
 		Stream: c.DLQStreamName,
 		MaxLen: DefaultMaxLen,
@@ -328,6 +376,7 @@ func (c *ConsumerClient) RunCleanup(ctx context.Context, workerID string) {
 
 			if err != nil && err != redis.Nil {
 				logging.Error(ctx, fmt.Sprintf("Cleanup worker %s XAutoClaim error: %v", workerID, err))
+				c.recreateGroupIfMissing(ctx, err)
 			} else if len(claimed) > 0 {
 				logging.Info(ctx, fmt.Sprintf("Cleanup: Claimed %d abandoned tasks", len(claimed)))
 				for _, msg := range claimed {

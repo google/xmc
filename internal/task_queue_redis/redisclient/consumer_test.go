@@ -26,8 +26,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// fakeRedisClient records the stream commands used by ExtendClaim and processMessage.
-// Other Client methods are not implemented and panic if called.
+// fakeRedisClient records the stream commands used by ExtendClaim, processMessage, StartWorker
+// and RunCleanup. Other Client methods are not implemented and panic if called.
 type fakeRedisClient struct {
 	Client
 	mu        sync.Mutex
@@ -35,6 +35,14 @@ type fakeRedisClient struct {
 	claimErr  error
 	ackedIDs  []string
 	addedArgs []*redis.XAddArgs
+	// settleCtxErrs records ctx.Err() of every XAck and XAdd call.
+	settleCtxErrs []error
+	// readErr and autoClaimErr are returned by XReadGroup and XAutoClaim.
+	readErr      error
+	autoClaimErr error
+	// groupCreates counts XGroupCreateMkStream calls; onGroupCreate runs on each of them.
+	groupCreates  int
+	onGroupCreate func(n int)
 }
 
 func (f *fakeRedisClient) XClaim(_ context.Context, a *redis.XClaimArgs) *redis.XMessageSliceCmd {
@@ -44,18 +52,41 @@ func (f *fakeRedisClient) XClaim(_ context.Context, a *redis.XClaimArgs) *redis.
 	return redis.NewXMessageSliceCmdResult(nil, f.claimErr)
 }
 
-func (f *fakeRedisClient) XAck(_ context.Context, _, _ string, ids ...string) *redis.IntCmd {
+func (f *fakeRedisClient) XAck(ctx context.Context, _, _ string, ids ...string) *redis.IntCmd {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ackedIDs = append(f.ackedIDs, ids...)
+	f.settleCtxErrs = append(f.settleCtxErrs, ctx.Err())
 	return redis.NewIntResult(int64(len(ids)), nil)
 }
 
-func (f *fakeRedisClient) XAdd(_ context.Context, a *redis.XAddArgs) *redis.StringCmd {
+func (f *fakeRedisClient) XAdd(ctx context.Context, a *redis.XAddArgs) *redis.StringCmd {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.addedArgs = append(f.addedArgs, a)
+	f.settleCtxErrs = append(f.settleCtxErrs, ctx.Err())
 	return redis.NewStringResult("1-0", nil)
+}
+
+func (f *fakeRedisClient) XReadGroup(context.Context, *redis.XReadGroupArgs) *redis.XStreamSliceCmd {
+	return redis.NewXStreamSliceCmdResult(nil, f.readErr)
+}
+
+func (f *fakeRedisClient) XAutoClaim(context.Context, *redis.XAutoClaimArgs) *redis.XAutoClaimCmd {
+	cmd := redis.NewXAutoClaimCmd(context.Background())
+	cmd.SetErr(f.autoClaimErr)
+	return cmd
+}
+
+func (f *fakeRedisClient) XGroupCreateMkStream(context.Context, string, string, string) *redis.StatusCmd {
+	f.mu.Lock()
+	f.groupCreates++
+	n, hook := f.groupCreates, f.onGroupCreate
+	f.mu.Unlock()
+	if hook != nil {
+		hook(n)
+	}
+	return redis.NewStatusResult("OK", nil)
 }
 
 func newTestConsumer(processTimeout time.Duration) (*ConsumerClient, *fakeRedisClient) {
@@ -278,5 +309,185 @@ func TestProcessMessage_NonRetryableError(t *testing.T) {
 	}
 	if !slices.Equal(fake.ackedIDs, []string{"msg-fatal"}) {
 		t.Errorf("ackedIDs = %v, want [msg-fatal]", fake.ackedIDs)
+	}
+}
+
+func TestProcessMessage_InvalidDataGoesToDLQ(t *testing.T) {
+	tests := []struct {
+		name   string
+		values map[string]any
+	}{
+		{name: "missing data", values: map[string]any{"failedAttempts": "0"}},
+		{name: "non-string data", values: map[string]any{"data": 42, "failedAttempts": "0"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, fake := newTestConsumer(500 * time.Millisecond)
+			var handlerCalled bool
+			client.SetTaskHandler(func(ctx context.Context, workerID, data string) TaskResult {
+				handlerCalled = true
+				return TaskResult{WasRunSuccessful: true}
+			})
+
+			client.processMessage(context.Background(), redis.XMessage{ID: "msg-poison", Values: tc.values}, "worker-1")
+
+			if handlerCalled {
+				t.Error("task handler was called for a message without string data, want it skipped")
+			}
+			if len(fake.addedArgs) != 1 || fake.addedArgs[0].Stream != "test-dlq" || fake.addedArgs[0].Values.(map[string]any)["reason"] != "missing_data" {
+				t.Errorf("addedArgs = %+v, want 1 DLQ entry on test-dlq with reason missing_data", fake.addedArgs)
+			}
+			if !slices.Equal(fake.ackedIDs, []string{"msg-poison"}) {
+				t.Errorf("ackedIDs = %v, want [msg-poison]", fake.ackedIDs)
+			}
+		})
+	}
+}
+
+// errNoGroup is the error Redis returns when the stream or consumer group does not exist.
+var errNoGroup = errors.New("NOGROUP No such key 'test-stream' or consumer group 'test-group'")
+
+func TestStartWorker_RecreatesMissingGroup(t *testing.T) {
+	client, fake := newTestConsumer(time.Second)
+	fake.readErr = errNoGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The first create is the worker's start-up; the second is the re-creation after NOGROUP.
+	fake.onGroupCreate = func(n int) {
+		if n == 2 {
+			cancel()
+		}
+	}
+
+	done := make(chan struct{})
+	go func() {
+		client.StartWorker(ctx, "worker-1")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StartWorker did not re-create the group after NOGROUP")
+	}
+	if fake.groupCreates != 2 {
+		t.Errorf("XGroupCreateMkStream calls = %d, want 2 (start-up and after NOGROUP)", fake.groupCreates)
+	}
+}
+
+func TestStartWorker_OtherReadErrorsKeepGroup(t *testing.T) {
+	client, fake := newTestConsumer(time.Second)
+	fake.readErr = errors.New("connection refused")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	client.StartWorker(ctx, "worker-1")
+
+	if elapsed := time.Since(start); elapsed > 900*time.Millisecond {
+		t.Errorf("StartWorker took %v after its context ended, want the error back-off to stop early", elapsed)
+	}
+	if fake.groupCreates != 1 {
+		t.Errorf("XGroupCreateMkStream calls = %d, want 1 (start-up only)", fake.groupCreates)
+	}
+}
+
+func TestRunCleanup_RecreatesMissingGroup(t *testing.T) {
+	client, fake := newTestConsumer(time.Second)
+	fake.autoClaimErr = errNoGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fake.onGroupCreate = func(int) { cancel() }
+
+	done := make(chan struct{})
+	go func() {
+		client.RunCleanup(ctx, "cleanup-1")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunCleanup did not re-create the group after NOGROUP")
+	}
+	if fake.groupCreates != 1 {
+		t.Errorf("XGroupCreateMkStream calls = %d, want 1", fake.groupCreates)
+	}
+}
+
+func TestProcessMessage_SettlesAfterShutdown(t *testing.T) {
+	tests := []struct {
+		name      string
+		result    TaskResult
+		wantAdds  int
+		wantAcked []string
+	}{
+		{name: "success is acknowledged", result: TaskResult{WasRunSuccessful: true}, wantAcked: []string{"msg-1"}},
+		{name: "non-retryable failure is dead-lettered", result: TaskResult{Error: errors.New("fatal")}, wantAdds: 1, wantAcked: []string{"msg-1"}},
+		{name: "retryable failure is re-added", result: TaskResult{ShouldBeRetried: true, Error: errors.New("temporary")}, wantAdds: 1, wantAcked: []string{"msg-1"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, fake := newTestConsumer(time.Second)
+			ctx, cancel := context.WithCancel(context.Background())
+			// Shutdown cancels the worker's context while the handler runs.
+			client.SetTaskHandler(func(context.Context, string, string) TaskResult {
+				cancel()
+				return tc.result
+			})
+
+			client.processMessage(ctx, redis.XMessage{ID: "msg-1", Values: map[string]any{"data": "d"}}, "worker-1")
+
+			if len(fake.addedArgs) != tc.wantAdds || !slices.Equal(fake.ackedIDs, tc.wantAcked) {
+				t.Errorf("after shutdown: %d XAdds, acked %v; want %d and %v", len(fake.addedArgs), fake.ackedIDs, tc.wantAdds, tc.wantAcked)
+			}
+			for i, err := range fake.settleCtxErrs {
+				if err != nil {
+					t.Errorf("settle write %d ran on a done context (%v), want one that survives shutdown", i, err)
+				}
+			}
+		})
+	}
+}
+
+func TestSleepUnlessDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		d       time.Duration
+		wantMin time.Duration
+		wantMax time.Duration
+	}{
+		{name: "sleeps for d", ctx: context.Background(), d: 20 * time.Millisecond, wantMin: 20 * time.Millisecond, wantMax: time.Second},
+		{name: "returns when ctx is done", ctx: ctx, d: time.Hour, wantMax: time.Second},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			start := time.Now()
+			sleepUnlessDone(tc.ctx, tc.d)
+			if elapsed := time.Since(start); elapsed < tc.wantMin || elapsed > tc.wantMax {
+				t.Errorf("sleepUnlessDone() took %v, want between %v and %v", elapsed, tc.wantMin, tc.wantMax)
+			}
+		})
+	}
+}
+
+func TestProcessMessage_TooManyAttemptsGoesToDLQ(t *testing.T) {
+	client, fake := newTestConsumer(time.Second)
+	var handlerCalled bool
+	client.SetTaskHandler(func(context.Context, string, string) TaskResult {
+		handlerCalled = true
+		return TaskResult{WasRunSuccessful: true}
+	})
+
+	client.processMessage(context.Background(), redis.XMessage{ID: "msg-old", Values: map[string]any{"data": "d", "failedAttempts": "4"}}, "worker-1")
+
+	if handlerCalled {
+		t.Error("task handler was called for a message past MaxRetries, want it skipped")
+	}
+	if len(fake.addedArgs) != 1 || fake.addedArgs[0].Stream != "test-dlq" || !slices.Equal(fake.ackedIDs, []string{"msg-old"}) {
+		t.Errorf("addedArgs = %+v, acked %v; want 1 DLQ entry on test-dlq and [msg-old] acked", fake.addedArgs, fake.ackedIDs)
 	}
 }

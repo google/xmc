@@ -119,3 +119,19 @@ message UpdateAction {
   // mask, this field will be ignored.
   Priority experiment_priority = 2 [(google.api.field_behavior) = OPTIONAL];
 }
+
+// StudyReconcilePayload is a study reconcile tick, sent as protojson on the
+// xmc-study-reconcile-stream Redis stream from the Experiment State Server to
+// the Study Controller. It names the study only: the consumer re-reads the
+// study's state from the Experiment State Server, so the payload carries no
+// state and needs no signed envelope.
+//
+// A tick is an unsigned hint, delivered at least once. Its fields must never
+// carry intent or state; a field that does requires a signed envelope like
+// ActuatorPayload's. Consumers treat a tick as a hint to reconcile and
+// re-validate the study against the Experiment State Server before acting.
+message StudyReconcilePayload {
+  // The resource name of the STUDY experiment to reconcile, in the form
+  // "experiments/{xid}".
+  string experiment = 1 [(google.api.field_behavior) = REQUIRED];
+}

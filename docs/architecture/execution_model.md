@@ -389,12 +389,13 @@ question. Two mechanisms answer it:
 
 ## 7. Failure and Retry Boundaries
 
-Retries exist at four independent layers. Keeping them straight is the key to reasoning about
+Retries exist at five independent layers. Keeping them straight is the key to reasoning about
 duplicate work.
 
 | Layer | Mechanism | Bounded by | Re-runs succeeded work? |
 | :--- | :--- | :--- | :--- |
 | Actuation task | Redis stream redelivery to the `actuator-group` consumer group | 5 retries, 2 min processing timeout, 5 min abandoned-message reclaim, then `xmc-dlq-stream` | No — payloads carry an idempotency key. |
+| Study reconcile tick | Redis stream redelivery to the `study-controller-group` consumer group | 5 retries, 2 min processing timeout, 5 min abandoned-message reclaim, then `xmc-study-reconcile-dlq-stream`; a tick that does not name a valid experiment goes to the dead-letter stream at once | Yes, harmlessly — a tick is a hint to reconcile a study from its ESS state, so re-handling it repeats an idempotent reconcile. |
 | Pod | `JobSpec.BackoffLimit` replaces failed pods | Per-job backoff limit (100 by default under `restart_policy: "OnFailure"`) | No — only failed pods are replaced. |
 | Container | Native sidecar `restartPolicy: Always` on init containers | Kubernetes | No — only the failed sidecar restarts. |
 | Execution | A user or automation calls `RestartWorkUnit`, creating a new `WorkUnitExecution` | Explicit user action | Yes, by design and by explicit request. |

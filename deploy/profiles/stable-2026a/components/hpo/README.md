@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026a/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It connects to Redis and serves health and metrics endpoints, and does not yet run Study reconciliation. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
+> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It consumes study reconcile ticks from Redis and logs them, and serves health and metrics endpoints; it does not yet reconcile studies. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
 
 ---
 
@@ -69,6 +69,12 @@ The Study Controller connects to the XMC Redis server:
 - **Password**: the `REDIS_PASSWORD` environment variable, read from key `redis-password` of the umbrella chart's `redis-secret` Secret. `xmc-bridge` only actuates Components in the XMC release namespace, where the umbrella chart renders `redis-secret`.
 - **Readiness**: `/readyz` pings Redis with a 2s timeout and returns `503 Service Unavailable` when the ping fails, so the pod reports `NotReady` while Redis is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check Redis, so a Redis outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect Redis reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
 - **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping.
+
+### Study Reconcile Ticks
+
+The Study Controller consumes the `xmc-study-reconcile-stream` Redis stream as the `study-controller-group` consumer group. Each message is a protojson `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`) that names a study; ticks are unsigned hints, delivered at least once. The controller logs each valid tick with the study's XID (`Received study reconcile tick`) and acknowledges it; it does not reconcile the study yet. A payload that does not name a valid experiment, or a message without data, goes to the `xmc-study-reconcile-dlq-stream` dead-letter stream without a retry. The controller re-creates the consumer group when Redis loses it, for example after a restart without persistence.
+
+- **Troubleshooting**: to inspect dead-lettered ticks and the reason each was rejected, run `XRANGE xmc-study-reconcile-dlq-stream - +` in `redis-cli`.
 
 ### Image Resolution
 
