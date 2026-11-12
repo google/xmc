@@ -17,9 +17,10 @@ package dataengine
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
+	"xmanager_cloud/pkg/metricsquery/metricsquerytest"
 )
 
 type mockClickHouseConn struct {
@@ -41,73 +42,4 @@ func (m *mockClickHouseConn) Ping(ctx context.Context) error {
 	return nil
 }
 
-type mockRows struct {
-	data   [][]any
-	idx    int
-	closed bool
-	err    error
-}
-
-func (r *mockRows) Next() bool {
-	if r.idx < len(r.data) {
-		r.idx++
-		return true
-	}
-	return false
-}
-
-func (r *mockRows) Scan(dest ...any) error {
-	if r.idx == 0 || r.idx > len(r.data) {
-		return fmt.Errorf("scan called out of range")
-	}
-	row := r.data[r.idx-1]
-	return assignValues(dest, row)
-}
-
-func (r *mockRows) ScanStruct(dest any) error {
-	return fmt.Errorf("ScanStruct not implemented in mock")
-}
-
-func (r *mockRows) Close() error {
-	r.closed = true
-	return nil
-}
-
-func (r *mockRows) Err() error {
-	return r.err
-}
-
-func (r *mockRows) Columns() []string {
-	return nil
-}
-
-func (r *mockRows) Totals(dest ...any) error {
-	return nil
-}
-
-func (r *mockRows) ColumnTypes() []driver.ColumnType {
-	return nil
-}
-
-func assignValues(dest []any, src []any) error {
-	if len(dest) != len(src) {
-		return fmt.Errorf("column count mismatch: got %d dest, %d src", len(dest), len(src))
-	}
-	for i, d := range dest {
-		s := src[i]
-		dv := reflect.ValueOf(d)
-		if dv.Kind() != reflect.Ptr || dv.IsNil() {
-			return fmt.Errorf("destination %d is not a non-nil pointer", i)
-		}
-		target := dv.Elem()
-		sv := reflect.ValueOf(s)
-		if sv.IsValid() && sv.Type().AssignableTo(target.Type()) {
-			target.Set(sv)
-		} else if sv.IsValid() && sv.Type().ConvertibleTo(target.Type()) {
-			target.Set(sv.Convert(target.Type()))
-		} else {
-			return fmt.Errorf("cannot assign %T to %T", s, target.Interface())
-		}
-	}
-	return nil
-}
+type mockRows = metricsquerytest.Rows

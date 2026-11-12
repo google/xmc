@@ -316,6 +316,7 @@ For direct control over your infrastructure:
 1. **Provision Infrastructure**: Use your organization's custom Terraform pipeline to provision the GCP resources:
    - VPC network and subnetworks.
    - GKE cluster with Workload Identity enabled.
+   - Cloud Storage FUSE CSI driver add-on enabled on the GKE cluster (required for GCS volumes).
    - Cloud Spanner database instance.
    - Memorystore Redis cache.
 2. **Deploy Helm Release**: Point your local kubeconfig context to the cluster and deploy the application chart:

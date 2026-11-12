@@ -16,6 +16,8 @@ import { ComponentHarness } from '@angular/cdk/testing';
 import { MatPaginatorHarness } from '@angular/material/paginator/testing';
 import { MatTooltipHarness } from '@angular/material/tooltip/testing';
 
+import { QueueUserAllocationBarHarness } from './queue_user_allocation_bar/queue_user_allocation_bar_harness';
+
 /** Harness for interacting with individual rows inside <xmc-queue-jobs-table>. */
 export class QueueJobsTableRowHarness extends ComponentHarness {
   static hostSelector = 'tr.mat-mdc-row';
@@ -85,6 +87,12 @@ export class QueueJobsTableHarness extends ComponentHarness {
   private readonly tableRows = this.locatorForAll(QueueJobsTableRowHarness);
   private readonly paginator = this.locatorForOptional(MatPaginatorHarness);
   private readonly headerActions = this.locatorForAll('.title-row > [headerActions]');
+  private readonly userAllocationBar = this.locatorForOptional(QueueUserAllocationBarHarness);
+
+  /** Gets the per-user allocation bar rendered above the jobs table, or null while jobs load. */
+  async getUserAllocationBar(): Promise<QueueUserAllocationBarHarness | null> {
+    return this.userAllocationBar();
+  }
 
   /** Gets the trimmed text contents of any elements projected into the [headerActions] slot. */
   async getHeaderActionTexts(): Promise<string[]> {

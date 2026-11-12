@@ -21,68 +21,50 @@ import (
 	"golang.org/x/sync/errgroup"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xmcbigquery "xmanager_cloud/pkg/bigquery"
+	"xmanager_cloud/pkg/metricsquery"
 )
 
 const (
-	defaultMetricsTable = "xmc_metrics"
 	maxConcurrentPlots  = 8
 	maxChartWidthPixels = 4000
 )
 
 // DataEngine orchestrates analytics queries against the configured metrics backend.
 type DataEngine struct {
-	backend   queryBackend
-	tableName string
+	querier *metricsquery.Querier
 }
 
 // Option configures DataEngine settings.
-type Option func(*DataEngine)
+type Option = metricsquery.Option
 
 // WithTableName overrides the default metrics table name.
 func WithTableName(name string) Option {
-	return func(e *DataEngine) {
-		if name != "" {
-			e.tableName = name
-		}
-	}
+	return metricsquery.WithTableName(name)
 }
 
 // New creates a new DataEngine instance.
 func New(conn ClickHouseConn, opts ...Option) (*DataEngine, error) {
-	if conn == nil {
-		return nil, fmt.Errorf("clickhouse connection must not be nil")
+	q, err := metricsquery.NewClickHouse(conn, opts...)
+	if err != nil {
+		return nil, err
 	}
-	engine := &DataEngine{
-		backend:   clickHouseBackend{conn: conn},
-		tableName: defaultMetricsTable,
-	}
-	for _, opt := range opts {
-		opt(engine)
-	}
-	return engine, nil
+	return &DataEngine{querier: q}, nil
 }
 
 // NewBigQuery creates a new DataEngine backed by a BigQuery connection.
 func NewBigQuery(conn xmcbigquery.Conn, opts ...Option) (*DataEngine, error) {
-	if conn == nil {
-		return nil, fmt.Errorf("bigquery connection must not be nil")
+	q, err := metricsquery.NewBigQuery(conn, opts...)
+	if err != nil {
+		return nil, err
 	}
-	tableName := conn.TableRef()
-	if tableName == "" {
-		tableName = defaultMetricsTable
-	}
-	engine := &DataEngine{backend: bigQueryBackend{conn: conn}, tableName: tableName}
-	for _, opt := range opts {
-		opt(engine)
-	}
-	return engine, nil
+	return &DataEngine{querier: q}, nil
 }
 
-func (e *DataEngine) activeBackend() queryBackend {
+func (e *DataEngine) activeQuerier() *metricsquery.Querier {
 	if e == nil {
 		return nil
 	}
-	return e.backend
+	return e.querier
 }
 
 // Ping checks that the database connection behind the engine is still usable.
@@ -90,25 +72,25 @@ func (e *DataEngine) activeBackend() queryBackend {
 // A built engine says only that a connection was established once. Readiness needs to know whether
 // queries would work now, and the only way to find that out is to ask the backend.
 func (e *DataEngine) Ping(ctx context.Context) error {
-	if e.activeBackend() == nil {
+	if e.activeQuerier() == nil {
 		return fmt.Errorf("data engine is not initialized")
 	}
-	return e.activeBackend().Ping(ctx)
+	return e.activeQuerier().Ping(ctx)
 }
 
 // Close releases any underlying client resources held by the DataEngine.
 func (e *DataEngine) Close() error {
-	if e.activeBackend() == nil {
+	if e.activeQuerier() == nil {
 		return nil
 	}
-	return e.activeBackend().Close()
+	return e.activeQuerier().Close()
 }
 
 // FetchChartData compiles and executes queries for all plots within a Chart.
 func (e *DataEngine) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dpb.GetChartDataRequest) (*dpb.ChartData, error) {
 	// The engine is optional at startup, so a caller can end up holding a nil one. Report that as an
 	// error rather than letting the plot fetchers take down the process on a nil dereference.
-	if e.activeBackend() == nil {
+	if e.activeQuerier() == nil {
 		return nil, fmt.Errorf("data engine is not initialized")
 	}
 	if chart == nil {

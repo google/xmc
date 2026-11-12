@@ -42,7 +42,7 @@
         />
       }
       <div class="jobs-side-pane" [style.flex]="rightPaneFlex()">
-        <xmc-queue-jobs-table [queueName]="selectedQueue()">
+        <xmc-queue-jobs-table [queueName]="selectedQueue()" [dominantResource]="dominantResource()">
           <button
             headerActions
             type="button"

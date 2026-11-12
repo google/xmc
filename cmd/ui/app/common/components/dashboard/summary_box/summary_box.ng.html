@@ -16,7 +16,7 @@ limitations under the License.
 <mat-card class="summary-box-card" appearance="outlined">
   <mat-card-content class="summary-content">
     <div class="summary-title">{{ displayTitle() }}</div>
-    <div class="summary-value">{{ formattedValue() }}</div>
+    <div class="summary-value" data-testid="summary-value">{{ formattedValue() }}</div>
     @if (deltaInfo(); as delta) {
       <div class="summary-delta" [class.improved]="delta.isImproved" [class.worse]="delta.isWorse">
         <mat-icon class="delta-icon">{{ delta.arrowIcon }}</mat-icon>

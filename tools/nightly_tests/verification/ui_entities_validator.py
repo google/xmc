@@ -304,7 +304,7 @@ class XMCUIBrowserSession:
         print(f"\n[UI Action] Navigating to UI Route: {target_url}...")
         self.page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
         self.page.wait_for_selector(
-            f"{root_sel}, xmc-home-page, .guest-page-container", timeout=timeout_ms
+            f'{root_sel}, xmc-home-page, [data-testid="guest-page-container"]', timeout=timeout_ms
         )
         self.settle_and_wait_fonts()
         shot = self.take_screenshot(shot_name)
@@ -322,7 +322,7 @@ class XMCUIBrowserSession:
         )
         if (
             any(marker in body for marker in auth_error_markers)
-            or self.page.locator("xmc-home-page, .guest-page-container").count() != 0
+            or self.page.locator('xmc-home-page, [data-testid="guest-page-container"]').count() != 0
         ):
             err_shot = self.take_screenshot(f"ui_AUTHENTICATION_REQUIRED_{err_tag}.png")
             raise UIVerificationError(f"❌ AUTHENTICATION REQUIRED: {err_shot}")
@@ -337,7 +337,7 @@ class XMCUIBrowserSession:
         self, context_label: str, ignored_http_substrings: Sequence[str] = ()
     ) -> None:
         """Asserts zero uncaught page errors, same-origin HTTP >= 400 responses, or error banners."""
-        b_loc = self.page.locator("xmc-error-banner, .error-banner")
+        b_loc = self.page.locator('xmc-error-banner, [data-testid="error-banner"]')
         banner = (b_loc.first.text_content() or "").strip() if b_loc.count() > 0 else ""
         errs = [e for e in self.http_errors if not any(s in e for s in ignored_http_substrings)]
         if self.page_errors or errs or banner:
@@ -371,7 +371,7 @@ class XMCUIBrowserSession:
             UIVerificationError: If the header text is empty or missing expected substrings.
         """
         print("\n[UI Assertion] Asserting Experiment Header rendering...")
-        title_locator = self.page.locator("h1.experiment-title, .experiment-title").first
+        title_locator = self.page.locator('[data-testid="experiment-title"]').first
         title_locator.wait_for(state="visible", timeout=timeout_ms)
         self.settle_and_wait_fonts()
         text = (title_locator.text_content() or "").strip()
@@ -393,7 +393,7 @@ class XMCUIBrowserSession:
         """
         print(f"\n[UI Action] Traversing to tab: '{tab_name}'...")
         tab_locator = self.page.locator(
-            # ui-contract: experiment_page.ng.html <mat-tab label="..."> is the only tab key.
+            # ui-contract: experiment_page.ng.html renders mat-tab labels (e.g. "Work Units").
             f'mat-tab-header .mdc-tab:has-text("{tab_name}"), .mat-tab-label:has-text("{tab_name}")'
         ).first
         tab_locator.wait_for(state="visible", timeout=timeout_ms)
@@ -428,9 +428,7 @@ class XMCUIBrowserSession:
         self.settle_and_wait_fonts()
 
         # Locate work unit rows
-        rows_locator = self.page.locator(
-            "xmc-work-units-table table tr.mat-mdc-row:not(.detail-row), xmc-work-units-table tr.mat-row:not(.detail-row)"
-        )
+        rows_locator = self.page.locator('xmc-work-units-table tr[data-testid="work-unit-row"]')
         extracted_texts = [(text or "").strip() for text in rows_locator.all_inner_texts()]
         row_count = len(extracted_texts)
 

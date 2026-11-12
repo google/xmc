@@ -110,7 +110,7 @@ func TestFetchSummaryBox(t *testing.T) {
 					if tt.mockErr != nil {
 						return nil, tt.mockErr
 					}
-					return &mockRows{data: tt.mockData}, nil
+					return &mockRows{Data: tt.mockData}, nil
 				},
 			}
 
@@ -127,10 +127,10 @@ func TestFetchSummaryBox(t *testing.T) {
 				return
 			}
 
-			if !strings.Contains(recordedQuery, "argMax(metric_value, timestamp)") {
+			if !strings.Contains(recordedQuery, "argMax(metric_value, (timestamp, step))") {
 				t.Errorf("query missing argMax metric_value: %s", recordedQuery)
 			}
-			if !strings.Contains(recordedQuery, "argMax(step, timestamp)") {
+			if !strings.Contains(recordedQuery, "argMax(step, (timestamp, step))") {
 				t.Errorf("query missing argMax step: %s", recordedQuery)
 			}
 

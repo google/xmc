@@ -18,11 +18,11 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/pkg/metricsquery"
 )
 
 const defaultTargetPoints = 1000
@@ -63,109 +63,102 @@ func (e *DataEngine) fetchSeriesData(ctx context.Context, xid int64, wid int64, 
 		return nil, fmt.Errorf("plot or data spec cannot be nil")
 	}
 
-	pred := buildWhereClause(xid, wid, plot.GetData(), plot.GetData().GetRanges())
 	bucketSize := calculateBucketSize(plot.GetData().GetRanges(), widthPixels)
-
-	var query string
-	if bucketSize > 1 {
-		divFunc := "intDiv"
-		if _, ok := e.activeBackend().(bigQueryBackend); ok {
-			divFunc = "DIV"
-		}
-		query = fmt.Sprintf(`
-			SELECT
-				%s(step, %d) * %d AS bucket_step,
-				avg(metric_value) AS avg_val,
-				min(metric_value) AS min_val,
-				max(metric_value) AS max_val,
-				max(timestamp) AS max_ts,
-				metric_name,
-				work_unit_id,
-				xid
-			FROM %s
-			WHERE %s
-			GROUP BY bucket_step, metric_name, work_unit_id, xid
-			ORDER BY metric_name ASC, work_unit_id ASC, bucket_step ASC;
-		`, divFunc, bucketSize, bucketSize, e.tableName, pred.whereClause)
-	} else {
-		// Raw identity series points
-		query = fmt.Sprintf(`
-			SELECT
-				step AS bucket_step,
-				metric_value AS avg_val,
-				metric_value AS min_val,
-				metric_value AS max_val,
-				timestamp AS max_ts,
-				metric_name,
-				work_unit_id,
-				xid
-			FROM %s
-			WHERE %s
-			ORDER BY metric_name ASC, work_unit_id ASC, step ASC, timestamp ASC;
-		`, e.tableName, pred.whereClause)
-	}
-
-	rows, err := e.activeBackend().Query(ctx, query, pred.args...)
+	points, err := e.querier.QuerySeries(ctx, metricFilter(xid, wid, plot.GetData()), bucketSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query series data: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
+	if bucketSize > 1 {
+		points = collapseSeriesBuckets(points)
+	}
+	return scatterPlots(plot.GetPlotId(), points), nil
+}
 
+// collapseSeriesBuckets merges adjacent bucketed points sharing (metric, work unit, step) across
+// executions, jobs, and replicas into one work-unit-level bucket point.
+func collapseSeriesBuckets(points []metricsquery.MetricPoint) []metricsquery.MetricPoint {
+	if len(points) == 0 {
+		return nil
+	}
+	collapsed := make([]metricsquery.MetricPoint, 0, len(points))
+	start := 0
+	for i := 1; i <= len(points); i++ {
+		if i < len(points) && sameSeriesStep(points[start], points[i]) {
+			continue
+		}
+		collapsed = append(collapsed, mergeBucketPoints(points[start:i]))
+		start = i
+	}
+	return collapsed
+}
+
+func sameSeriesStep(a, b metricsquery.MetricPoint) bool {
+	return a.XID == b.XID && a.MetricName == b.MetricName && a.WorkUnitID == b.WorkUnitID && a.Step == b.Step
+}
+
+func mergeBucketPoints(bucket []metricsquery.MetricPoint) metricsquery.MetricPoint {
+	merged := metricsquery.MetricPoint{
+		XID:        bucket[0].XID,
+		WorkUnitID: bucket[0].WorkUnitID,
+		MetricName: bucket[0].MetricName,
+		Step:       bucket[0].Step,
+		Timestamp:  bucket[0].Timestamp,
+		Avg:        bucket[0].Avg,
+		Min:        bucket[0].Min,
+		Max:        bucket[0].Max,
+		Count:      max(bucket[0].Count, 1),
+	}
+	if len(bucket) == 1 {
+		return merged
+	}
+	weightedSum := merged.Avg * float64(merged.Count)
+	for _, p := range bucket[1:] {
+		weight := max(p.Count, 1)
+		weightedSum += p.Avg * float64(weight)
+		merged.Count += weight
+		merged.Min = min(merged.Min, p.Min)
+		merged.Max = max(merged.Max, p.Max)
+		if p.Timestamp.After(merged.Timestamp) {
+			merged.Timestamp = p.Timestamp
+		}
+	}
+	merged.Avg = weightedSum / float64(merged.Count)
+	return merged
+}
+
+// scatterPlots groups ordered points into one scatter series per (metric, work unit), keeping the
+// order in which each series first appears.
+func scatterPlots(plotID string, points []metricsquery.MetricPoint) []*dpb.ChartData_PlotData {
 	type seriesKey struct {
 		metricName string
 		workUnitID int64
 	}
 	seriesMap := make(map[seriesKey]*dpb.ChartData_SeriesData)
-	var orderedKeys []seriesKey
-
-	for rows.Next() {
-		var (
-			step               int64
-			avgVal, minVal     float64
-			maxVal             float64
-			ts                 time.Time
-			metricName         string
-			workUnitID, rowXID int64
-		)
-		if err := rows.Scan(&step, &avgVal, &minVal, &maxVal, &ts, &metricName, &workUnitID, &rowXID); err != nil {
-			return nil, fmt.Errorf("failed to scan series row: %w", err)
-		}
-
-		key := seriesKey{metricName: metricName, workUnitID: workUnitID}
+	var plotsData []*dpb.ChartData_PlotData
+	for _, p := range points {
+		key := seriesKey{metricName: p.MetricName, workUnitID: p.WorkUnitID}
 		sd, exists := seriesMap[key]
 		if !exists {
 			sd = &dpb.ChartData_SeriesData{
-				MetricName: metricName,
-				WorkUnitId: strconv.FormatInt(workUnitID, 10),
-				Xid:        rowXID,
+				MetricName: p.MetricName,
+				WorkUnitId: strconv.FormatInt(p.WorkUnitID, 10),
+				Xid:        p.XID,
 				Points:     make([]*dpb.ChartData_SeriesPoint, 0),
 			}
 			seriesMap[key] = sd
-			orderedKeys = append(orderedKeys, key)
+			plotsData = append(plotsData, &dpb.ChartData_PlotData{
+				PlotId:  plotID,
+				Type:    dpb.PlotType_SCATTER,
+				Content: &dpb.ChartData_PlotData_ScatterSeries{ScatterSeries: sd},
+			})
 		}
-
 		sd.Points = append(sd.Points, &dpb.ChartData_SeriesPoint{
-			Step:      step,
-			Timestamp: timestamppb.New(ts),
-			AvgValue:  avgVal,
-			MinValue:  minVal,
-			MaxValue:  maxVal,
+			Step:      p.Step,
+			Timestamp: timestamppb.New(p.Timestamp),
+			AvgValue:  p.Avg,
+			MinValue:  p.Min,
+			MaxValue:  p.Max,
 		})
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("series rows iteration error: %w", err)
-	}
-
-	var plotsData []*dpb.ChartData_PlotData
-	for _, k := range orderedKeys {
-		plotsData = append(plotsData, &dpb.ChartData_PlotData{
-			PlotId: plot.GetPlotId(),
-			Type:   dpb.PlotType_SCATTER,
-			Content: &dpb.ChartData_PlotData_ScatterSeries{
-				ScatterSeries: seriesMap[k],
-			},
-		})
-	}
-
-	return plotsData, nil
+	return plotsData
 }

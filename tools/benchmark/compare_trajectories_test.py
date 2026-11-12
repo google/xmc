@@ -185,5 +185,127 @@ class CompareTrajectoriesTest(unittest.TestCase):
             self.assertIn("Pre-Registered Scenario Verdict", res["markdown_report"])
 
 
+# Sanitized fixtures mirroring the two transcript.jsonl schemas with synthetic values only. Both
+# describe the same trajectory: two file edits to the same two files and two error steps.
+_LEGACY_SCHEMA_STEPS: tuple[dict, ...] = (
+    {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE"},
+    {
+        "step_index": 1,
+        "type": "PLANNER_RESPONSE",
+        "status": "DONE",
+        "content": "Editing files",
+        "tool_calls": [
+            {"name": "write_to_file", "args": {"TargetFile": "/ws/a.py", "CodeContent": "x"}},
+            {
+                "name": "replace_file_content",
+                "args": {"TargetFile": "/ws/b.py", "TargetContent": "x", "ReplacementContent": "y"},
+            },
+        ],
+    },
+    {"step_index": 2, "type": "GENERIC", "status": "ERROR", "content": "Step failed"},
+    {"step_index": 3, "type": "GENERIC", "status": "ERROR", "content": "Step failed"},
+    {"step_index": 4, "type": "PLANNER_RESPONSE", "status": "DONE", "content": "Done ✅"},
+)
+
+_CURRENT_SCHEMA_STEPS: tuple[dict, ...] = (
+    {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE"},
+    {
+        "step_index": 1,
+        "source": "MODEL",
+        "type": "PLANNER_RESPONSE",
+        "status": "DONE",
+        "content": "Editing files",
+        "tool_calls": [
+            {"name": "write_file", "args": {"Path": "/ws/a.py", "Content": "x"}},
+            {
+                "name": "edit_file",
+                "args": {"Path": "/ws/b.py", "Target": "x", "Replacement": "y"},
+            },
+        ],
+    },
+    {
+        "step_index": 2,
+        "source": "MODEL",
+        "type": "GENERIC",
+        "status": "ERROR",
+        "error": "file does not exist",
+        "content": "Encountered error in step execution: file does not exist",
+    },
+    {
+        "step_index": 3,
+        "source": "SYSTEM",
+        "type": "ERROR_MESSAGE",
+        "status": "DONE",
+        "error": "API error (attempt 1): RESOURCE_EXHAUSTED",
+    },
+    {"step_index": 4, "type": "PLANNER_RESPONSE", "status": "DONE", "content": "Done ✅"},
+)
+
+
+def _write_transcript(directory: str, name: str, lines: list[str]) -> Path:
+    """Writes raw JSONL lines to a transcript file and returns its path."""
+    path = Path(directory) / name
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _encode_steps(steps: tuple[dict, ...]) -> list[str]:
+    """Serializes transcript steps into JSONL lines."""
+    return [json.dumps(step, ensure_ascii=False) for step in steps]
+
+
+class TranscriptSchemaCompatibilityTest(unittest.TestCase):
+    """Verifies parse_transcript handles both the legacy and the current transcript schema."""
+
+    def _parse(self, lines: list[str]) -> dict:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            return parse_transcript(_write_transcript(tmp_dir, "transcript.jsonl", lines))
+
+    def test_legacy_and_current_schema_yield_identical_metrics(self):
+        legacy = self._parse(_encode_steps(_LEGACY_SCHEMA_STEPS))
+        current = self._parse(_encode_steps(_CURRENT_SCHEMA_STEPS))
+
+        for key in ("total_steps", "turns", "error_count", "modified_files", "last_response"):
+            with self.subTest(metric=key):
+                self.assertEqual(legacy[key], current[key])
+        self.assertEqual(sum(legacy["tool_counts"].values()), sum(current["tool_counts"].values()))
+
+    def test_current_schema_counts_write_file_and_edit_file(self):
+        res = self._parse(_encode_steps(_CURRENT_SCHEMA_STEPS))
+
+        self.assertEqual(res["modified_files"], ["/ws/a.py", "/ws/b.py"])
+        self.assertEqual(res["tool_counts"]["write_file"], 1)
+        self.assertEqual(res["tool_counts"]["edit_file"], 1)
+
+    def test_error_steps_counted_in_both_schemas(self):
+        cases = {
+            "legacy_status": ({"type": "GENERIC", "status": "ERROR"}, 1),
+            "current_error_field": ({"type": "GENERIC", "status": "INVALID", "error": "boom"}, 1),
+            "current_error_message_type": ({"type": "ERROR_MESSAGE", "status": "DONE"}, 1),
+            "empty_error_field": ({"type": "GENERIC", "status": "DONE", "error": ""}, 0),
+            "success": ({"type": "GENERIC", "status": "DONE"}, 0),
+        }
+        for label, (step, expected) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(self._parse([json.dumps(step)])["error_count"], expected)
+
+    def test_mutating_call_without_path_arg_is_ignored(self):
+        step = {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "edit_file", "args": {}}]}
+
+        res = self._parse([json.dumps(step)])
+
+        self.assertEqual(res["modified_files"], [])
+        self.assertEqual(res["tool_counts"]["edit_file"], 1)
+
+    def test_malformed_lines_are_skipped_in_current_schema(self):
+        lines = ["", "not json {", "[1, 2]", "   "] + _encode_steps(_CURRENT_SCHEMA_STEPS)
+
+        res = self._parse(lines)
+
+        self.assertEqual(res["total_steps"], len(_CURRENT_SCHEMA_STEPS))
+        self.assertEqual(res["error_count"], 2)
+        self.assertEqual(res["last_response"], "Done ✅")
+
+
 if __name__ == "__main__":
     unittest.main()

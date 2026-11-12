@@ -15,17 +15,17 @@
 
 """Lint keeping nightly UI verifier selectors in sync with the Angular templates.
 
-Parses every `*.py` under NIGHTLY_TESTS_DIR (minus EXCLUDED_SOURCES and hidden or
-`__pycache__` paths; syntax errors fail). Selectors: string values of _SEL_NAME_RE
-names and the first positional or `selector=` argument of _SELECTOR_CALLS
-(`{...}` = wildcard). Rules: dom-tag, dom-class, dom-attribute (custom tags,
-classes, attributes must exist in cmd/ui/app; FRAMEWORK_PREFIXES and
-STANDARD_ATTRIBUTES exempt); copy (`:has-text`/`has_text=` need `# ui-contract:
-<reason>` on the string's line or the one above); unknown-selector-constant
-(`alias.NAME` / imported names from SELECTOR_MODULE must be defined there).
-Limitations: regex tokenizing (ids, escapes, href/aria-* values unchecked); no
-Playwright `text=`/`role=`/`>>` engines, variable or unaliased dotted indirection;
-classes set only in TypeScript (HostBinding, `host:`, classList) are reported.
+Parses every tracked `*.py` under NIGHTLY_TESTS_DIR (minus EXCLUDED_SOURCES;
+syntax errors fail). Selectors: string values of _SEL_NAME_RE names and the
+first positional or `selector=` argument of _SELECTOR_CALLS (`{...}` = wildcard).
+Rules: dom-testid (`[data-testid="..."]` values must exist in cmd/ui/app
+templates), dom-tag (custom tags must exist in cmd/ui/app templates or component
+selectors; FRAMEWORK_PREFIXES exempt), dom-class and dom-attribute (custom
+classes and non-standard attributes require `# ui-contract: <reason>`;
+FRAMEWORK_PREFIXES and STANDARD_ATTRIBUTES exempt), copy (`:has-text`/`has_text=`
+need `# ui-contract: <reason>` on the string's line or a standalone comment line
+above), unknown-selector-constant (`alias.NAME` / imported names from
+SELECTOR_MODULE must be defined there).
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -58,7 +59,7 @@ FRAMEWORK_PREFIXES: tuple[str, ...] = ("mat-", "mdc-", "cdk-")
 # Rendered at runtime: routerLink renders href; Material sets [disabled] and aria-*.
 STANDARD_ATTRIBUTES: frozenset[str] = frozenset({"href", "disabled"})
 STANDARD_ATTRIBUTE_PREFIXES: tuple[str, ...] = ("aria-",)
-# DOM names declared by the Angular UI, keyed like tokenize_selector(): tag/class/attribute.
+# DOM names declared by the Angular UI, keyed by token kind: tag/testid.
 TemplateIndex = dict[str, frozenset[str]]
 
 _SELECTOR_CALLS = frozenset({"locator", "wait_for_selector"})
@@ -68,19 +69,15 @@ _HAS_TEXT_RE = re.compile(r":has-text\(")
 _PLACEHOLDER = "__ph__"
 _FORMAT_FIELD_RE = re.compile(r"\{[^{}]*\}")
 _QUOTED_RE = re.compile(r"\"[^\"]*\"|'[^']*'")
+_SEL_TESTID_RE = re.compile(r"""\[\s*data-testid\s*=\s*(['"])([\w-]+)\1\s*\]""")
 _SEL_ATTR_RE = re.compile(r"\[\s*([\w-]+)[^\]]*\]")
 _SEL_PSEUDO_RE = re.compile(r"::?[\w-]+")
 _SEL_CLASS_RE = re.compile(r"\.([\w-]+)")
 _SEL_ID_RE = re.compile(r"#[\w-]+")
 _SEL_TAG_RE = re.compile(r"[A-Za-z_][\w-]*")
 _TS_SELECTOR_RE = re.compile(r"""selector:\s*['"`]([^'"`]+)['"`]""")
-_TPL_OPEN_TAG_RE = re.compile(r"""<([A-Za-z][\w-]*)((?:"[^"]*"|'[^']*'|[^'">])*)>""")
-_TPL_ATTR_NAME_RE = re.compile(r"(?<!\S)(?:\[attr\.([\w-]+)\]|([A-Za-z][\w-]*))(?=[\s=/]|$)")
-_TPL_INTERPOLATION_RE = re.compile(r"\{\{.*?\}\}", re.DOTALL)
-_TPL_STATIC_CLASS_RE = re.compile(r"(?<![\w.\[-])class\s*=\s*([\"'])(.*?)\1", re.DOTALL)
-_TPL_CLASS_PROP_RE = re.compile(r"\[class\.([\w-]+)\]")
-_TPL_CLASS_BINDING_RE = re.compile(r"\[(?:class|ngClass)\]\s*=\s*([\"'])(.*?)\1", re.DOTALL)
-_TPL_BINDING_KEY_RE = re.compile(r"([\w-]+)\s*:")
+_TPL_OPEN_TAG_RE = re.compile(r"<([A-Za-z][\w-]*)")
+_TPL_TESTID_RE = re.compile(r"""(?<![\w.-])data-testid\s*=\s*(['"])([\w-]+)\1""")
 
 
 @dataclass(frozen=True)
@@ -149,66 +146,71 @@ def extract_selectors(rel_path: str, tree: ast.AST) -> list[Selector]:
 
 
 def tokenize_selector(text: str) -> dict[str, set[str]]:
-    """Split a selector into tag/class/attribute names (drops quotes, pseudos, ids, `{}`)."""
-    rest = _FORMAT_FIELD_RE.sub(_PLACEHOLDER, _QUOTED_RE.sub('""', text))
+    """Split a selector into tag/testid/class/attribute tokens (drops pseudos, ids, `{}`)."""
+    raw = _FORMAT_FIELD_RE.sub(_PLACEHOLDER, text)
+    testids = {val for _, val in _SEL_TESTID_RE.findall(raw)}
+    rest = _QUOTED_RE.sub('""', _SEL_TESTID_RE.sub(" ", raw))
     attributes = set(_SEL_ATTR_RE.findall(rest))
+    if "data-testid" in attributes:
+        attributes.remove("data-testid")
+        testids.add("data-testid")
     rest = _SEL_PSEUDO_RE.sub(" ", _SEL_ATTR_RE.sub(" ", rest))
     classes = set(_SEL_CLASS_RE.findall(rest))
     rest = _SEL_ID_RE.sub(" ", _SEL_CLASS_RE.sub(" ", rest))
-    tokens = {"tag": set(_SEL_TAG_RE.findall(rest)), "class": classes, "attribute": attributes}
+    tokens = {
+        "tag": set(_SEL_TAG_RE.findall(rest)),
+        "testid": testids,
+        "class": classes,
+        "attribute": attributes,
+    }
     return {kind: {n for n in names if _PLACEHOLDER not in n} for kind, names in tokens.items()}
 
 
-def _template_classes(html: str) -> set[str]:
-    """Collect class names from static attributes and class bindings."""
-    classes: set[str] = set(_TPL_CLASS_PROP_RE.findall(html))
-    for _, value in _TPL_STATIC_CLASS_RE.findall(html):
-        classes.update(_TPL_INTERPOLATION_RE.sub(" ", value).split())
-    for _, expr in _TPL_CLASS_BINDING_RE.findall(html):
-        for literal in _QUOTED_RE.findall(expr):
-            classes.update(literal[1:-1].split())
-        classes.update(_TPL_BINDING_KEY_RE.findall(expr))
-    return classes
-
-
-def _template_attributes(html: str) -> set[str]:
-    """Collect `[attr.x]`, static, and valueless attribute names from opening tags."""
-    return {
-        bound or plain
-        for _, attrs in _TPL_OPEN_TAG_RE.findall(html)
-        for bound, plain in _TPL_ATTR_NAME_RE.findall(_QUOTED_RE.sub('""', attrs))
-    }
+def _tracked_files(repo_root: Path, *paths: str) -> list[Path]:
+    """Return sorted existing git-tracked files under `paths` in `repo_root`."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "ls-files", "-z", "--", *paths],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise HandledError(
+            f"Failed to list tracked files in {repo_root}.",
+            "Pass a valid git repository root via --repo-root.",
+        ) from exc
+    files = [repo_root / rel for rel in proc.stdout.split("\0") if rel]
+    return [p for p in sorted(files) if p.is_file()]
 
 
 def build_template_index(repo_root: Path) -> TemplateIndex:
-    """Index tags, classes, and attributes from cmd/ui/app templates and index.html."""
+    """Index tags and data-testid values from tracked cmd/ui/app files and index.html."""
     app_dir = repo_root / UI_APP_DIR
     if not app_dir.is_dir():
         raise HandledError(
             f"UI app directory not found: {app_dir}", "Pass the repository root via --repo-root."
         )
-    htmls = sorted(app_dir.rglob("*.ng.html"))
-    index_html = repo_root / UI_INDEX_HTML
-    htmls += [index_html] if index_html.is_file() else []
-    tags, classes, attributes = set[str](), set[str](), set[str]()
-    for path in htmls:
-        html = path.read_text(encoding="utf-8")
-        tags.update(tag for tag, _ in _TPL_OPEN_TAG_RE.findall(html))
-        classes.update(_template_classes(html))
-        attributes.update(_template_attributes(html))
-    for path in sorted(app_dir.rglob("*.ts")):
-        if not path.name.endswith("_test.ts"):
-            for value in _TS_SELECTOR_RE.findall(path.read_text(encoding="utf-8")):
+    tags, testids = set[str](), set[str]()
+    for path in _tracked_files(repo_root, UI_APP_DIR, UI_INDEX_HTML):
+        text = path.read_text(encoding="utf-8")
+        if path.name.endswith(".ng.html") or path == repo_root / UI_INDEX_HTML:
+            tags.update(_TPL_OPEN_TAG_RE.findall(text))
+            testids.update(val for _, val in _TPL_TESTID_RE.findall(text))
+        elif path.suffix == ".ts" and not path.name.endswith(("_test.ts", "_harness.ts")):
+            for value in _TS_SELECTOR_RE.findall(text):
                 tags.update(_SEL_TAG_RE.findall(value))
-    return {"tag": frozenset(tags), "class": frozenset(classes), "attribute": frozenset(attributes)}
+    return {"tag": frozenset(tags), "testid": frozenset(testids)}
 
 
-def _is_known(kind: str, name: str, index: TemplateIndex) -> bool:
+def _is_known(kind: str, name: str, index: TemplateIndex, annotated: bool = False) -> bool:
     """Return whether a selector token is declared or exempt."""
-    if name.startswith(FRAMEWORK_PREFIXES) or name in index[kind]:
-        return True
+    if kind == "testid":
+        return name in index["testid"]
     if kind == "tag":
-        return "-" not in name
+        return "-" not in name or name.startswith(FRAMEWORK_PREFIXES) or name in index["tag"]
+    if annotated or name.startswith(FRAMEWORK_PREFIXES):
+        return True
     is_standard = name in STANDARD_ATTRIBUTES or name.startswith(STANDARD_ATTRIBUTE_PREFIXES)
     return kind == "attribute" and is_standard
 
@@ -218,19 +220,25 @@ def _violation(sel: Selector, token: str, rule: str) -> dict[str, Any]:
     return {"file": sel.file, "line": sel.line, "selector": sel.text, "token": token, "rule": rule}
 
 
-def find_dom_violations(sel: Selector, index: TemplateIndex) -> list[dict[str, Any]]:
-    """Report selector tokens that no template declares."""
+def find_dom_violations(
+    sel: Selector, index: TemplateIndex, lines: list[str] | None = None
+) -> list[dict[str, Any]]:
+    """Report selector tokens that violate the DOM/data-testid contract."""
+    annotated = bool(lines and has_annotation(lines, sel.line, sel.end_line))
     return [
         _violation(sel, name, f"dom-{kind}")
         for kind, names in tokenize_selector(sel.text).items()
         for name in sorted(names)
-        if not _is_known(kind, name, index)
+        if not _is_known(kind, name, index, annotated)
     ]
 
 
 def has_annotation(lines: list[str], first: int, last: int) -> bool:
     """Return whether a `# ui-contract:` comment covers 1-based lines [first-1, last]."""
-    return any(_ANNOTATION_RE.search(line) for line in lines[max(first - 2, 0) : last])
+    above = lines[first - 2] if first >= 2 else ""
+    if above.lstrip().startswith("#") and _ANNOTATION_RE.search(above):
+        return True
+    return any(_ANNOTATION_RE.search(line) for line in lines[first - 1 : last])
 
 
 def _has_text_literals(tree: ast.AST) -> Iterator[tuple[ast.keyword, str]]:
@@ -296,12 +304,11 @@ def find_unknown_constants(rel_path: str, tree: ast.AST, known: set[str]) -> lis
 
 
 def _parse_nightly_files(repo_root: Path) -> dict[str, tuple[ast.Module, list[str]]]:
-    """Parse non-excluded, non-hidden `*.py` under NIGHTLY_TESTS_DIR, failing closed."""
+    """Parse non-excluded tracked `*.py` under NIGHTLY_TESTS_DIR, failing closed."""
     parsed = {}
-    for path in sorted((repo_root / NIGHTLY_TESTS_DIR).rglob("*.py")):
+    for path in _tracked_files(repo_root, NIGHTLY_TESTS_DIR):
         rel_path = path.relative_to(repo_root).as_posix()
-        hidden = any(p.startswith(".") or p == "__pycache__" for p in rel_path.split("/"))
-        if hidden or rel_path in EXCLUDED_SOURCES:
+        if path.suffix != ".py" or rel_path in EXCLUDED_SOURCES:
             continue
         source = path.read_text(encoding="utf-8")
         parsed[rel_path] = (parse_source(rel_path, source), source.splitlines())
@@ -327,14 +334,15 @@ def check_ui_selector_contract(args: argparse.Namespace) -> dict[str, Any]:
         if selectors or any(_has_text_literals(tree)):
             sources.append(rel_path)
         count += len(selectors)
-        violations += [v for sel in selectors for v in find_dom_violations(sel, index)]
+        violations += [v for sel in selectors for v in find_dom_violations(sel, index, lines)]
         violations += find_copy_violations(rel_path, tree, selectors, lines)
         violations += find_unknown_constants(rel_path, tree, known)
     if violations:
         raise HandledError(
             f"Found {len(violations)} UI selector contract violation(s).",
-            "Point selectors at DOM rendered by cmd/ui/app templates (prefer stable classes "
-            "over copy); annotate unavoidable copy matches with '# ui-contract: <reason>'.",
+            "Point selectors at data-testid attributes or component tags rendered by "
+            "cmd/ui/app templates; annotate unavoidable copy/class/attribute matches "
+            "with '# ui-contract: <reason>'.",
             details={"violations": violations},
         )
     return {"sources": sources, "selectors_scanned": count, "violations": 0}

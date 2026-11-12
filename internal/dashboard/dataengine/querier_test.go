@@ -22,43 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xmcbigquery "xmanager_cloud/pkg/bigquery"
 )
-
-func TestClickHouseBackend(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	nonClosable := clickHouseBackend{conn: &mockClickHouseConn{
-		queryFn: func(context.Context, string, ...any) (driver.Rows, error) {
-			return &mockRows{data: [][]any{{int64(1)}}}, nil
-		},
-	}}
-	rows, err := nonClosable.Query(ctx, "SELECT 1")
-	if err != nil {
-		t.Fatalf("Query() error: %v", err)
-	}
-	_ = rows.Close()
-	if err := nonClosable.Ping(ctx); err != nil {
-		t.Errorf("Ping() error: %v", err)
-	}
-	if err := nonClosable.Close(); err != nil {
-		t.Errorf("Close() on non-closable conn error: %v", err)
-	}
-
-	closable := &closableMockConn{}
-	closable.pingFn = func(context.Context) error { return errors.New("offline") }
-	backend := clickHouseBackend{conn: closable}
-	if err := backend.Ping(ctx); err == nil {
-		t.Error("Ping() succeeded on failing conn, want error")
-	}
-	if err := backend.Close(); err != nil || !closable.closed.Load() {
-		t.Errorf("Close() err=%v, closed=%v; want nil, true", err, closable.closed.Load())
-	}
-}
 
 type stubBigQueryConn struct {
 	tableRef string
@@ -91,9 +57,8 @@ func TestBigQueryEngineAndSQLGeneration(t *testing.T) {
 	if _, err := NewBigQuery(nil); err == nil {
 		t.Fatal("NewBigQuery(nil) succeeded, want error")
 	}
-	defaultTbl, err := NewBigQuery(&stubBigQueryConn{})
-	if err != nil || defaultTbl.tableName != defaultMetricsTable {
-		t.Fatalf("NewBigQuery(empty TableRef) = (%v, %v), want tableName %q", defaultTbl, err, defaultMetricsTable)
+	if _, err := NewBigQuery(&stubBigQueryConn{}); err != nil {
+		t.Fatalf("NewBigQuery(empty TableRef) error: %v", err)
 	}
 
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
@@ -103,9 +68,9 @@ func TestBigQueryEngineAndSQLGeneration(t *testing.T) {
 		queryFn: func(_ context.Context, sql string, _ ...any) (xmcbigquery.Rows, error) {
 			queries = append(queries, sql)
 			if strings.Contains(sql, "ARRAY_AGG") {
-				return &mockRows{data: [][]any{{"loss", 0.05, 0.01, 0.99, 0.25, int64(500), sampleTime}}}, nil
+				return &mockRows{Data: [][]any{{"loss", 0.05, 0.01, 0.99, 0.25, int64(500), sampleTime}}}, nil
 			}
-			return &mockRows{data: [][]any{{int64(0), 0.9, 0.8, 1.0, sampleTime, "acc", int64(1), int64(1001)}}}, nil
+			return &mockRows{Data: [][]any{{int64(0), 0.9, 0.8, 1.0, int64(10), sampleTime, "acc", int64(1), int64(1001), int64(1), "worker", "0"}}}, nil
 		},
 	}
 	engine, err := NewBigQuery(conn)

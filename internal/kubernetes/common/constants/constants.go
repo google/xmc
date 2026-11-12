@@ -166,6 +166,12 @@ const (
 	// ResourceTypeTPU represents the standard TPU resource identifier.
 	ResourceTypeTPU = "tpu"
 
+	// NvidiaGPUResourceName is the Kubernetes extended resource name for NVIDIA GPUs.
+	NvidiaGPUResourceName = "nvidia.com/gpu"
+
+	// TPUResourceName is the Kubernetes extended resource name for Cloud TPUs.
+	TPUResourceName = "google.com/tpu"
+
 	// ComponentSnapshotsAnnotation is the annotation specifying locked component snapshots.
 	ComponentSnapshotsAnnotation = "xmc.dev/component-snapshots"
 	// ComponentDriftWarningAnnotation is the annotation applied to JobSets when component drift is detected.
@@ -178,3 +184,36 @@ const (
 	ComponentCRDResource       = "components"
 	DefaultComponentsNamespace = "xmc"
 )
+
+// GKEAcceleratorForGPUType returns the GKE accelerator node label for an XManager GPU type
+// (GpuResources.type).
+func GKEAcceleratorForGPUType(gpuType string) (string, bool) {
+	accelerator, ok := gpuTypeToGKEAccelerator[gpuType]
+	return accelerator, ok
+}
+
+var gpuTypeToGKEAccelerator = map[string]string{
+	"P4":         "nvidia-tesla-p4",
+	"T4":         "nvidia-tesla-t4",
+	"L4_24TH":    "nvidia-l4",
+	"P100":       "nvidia-tesla-p100",
+	"V100":       "nvidia-tesla-v100",
+	"A100":       "nvidia-a100-40gb",
+	"A100_80GIB": "nvidia-a100-80gb",
+	"H100":       "nvidia-h100-80gb",
+	// The NVIDIA H100 80GB Mega GPU, which backs GCP's A3 Mega (a3-megagpu-8g)
+	// machine types. Because XManager's client enum only defines H100 (mapped
+	// to nvidia-h100-80gb for a3-highgpu-8g), callers targeting A3 Mega pass
+	// either the symbolic H100_MEGA key or the GKE accelerator label directly.
+	"H100_MEGA":             "nvidia-h100-mega-80gb",
+	"nvidia-h100-mega-80gb": "nvidia-h100-mega-80gb",
+	"H200":                  "nvidia-h200-141gb",
+	"B200":                  "nvidia-b200",
+	"GB200":                 "nvidia-gb200",
+	// The NVIDIA RTX PRO 6000 Blackwell Server Edition, which backs GCP's G4
+	// machine types. XManager's client enum already carries this card as
+	// B40_48TH and special-cases it in JobRequirements topology handling, but
+	// no entry was ever added here, so requesting one is rejected outright by
+	// updateNodeSelector.
+	"B40_48TH": "nvidia-rtx-pro-6000",
+}

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,12 +31,11 @@ _VERIFIER = "tools/nightly_tests/examples_verification/any_name.py"
 _IMPORT_SEL = "from tools.nightly_tests.verification import ui_css_selectors as sel\n"
 
 _BASE_TEMPLATE = """\
-<div class="queue-card {{ extra }}" [class.active-toggle]="on">
-  <xmc-child [ngClass]="{'is-open': open, 'a-one a-two': x, bare_key: y}"></xmc-child>
-  <span [class]="cond ? 'tern-yes' : 'tern-no'" [attr.data-row]="r">−5 Ünïcödé</span>
+<div data-testid="queue-card" class="queue-card">
+  <xmc-child data-testid='child-item'></xmc-child>
+  <span data-testid="unicode-val">−5 Ünïcödé</span>
   <input placeholder="Filter" (input)="f()" [disabled]="d" />
-  <button hidden (click)="go()" [value]="v" *ngIf="a > b" class="b-one {{ a ? 'b-two' : '' }}">
-  <p class='sq-one sq-two' [ngClass]='{"dq-key": c}'></p>
+  <button hidden (click)="go()" [value]="v" *ngIf="a > b"></button>
 </div>
 """
 _BASE_TS = "@Component({\n  selector: 'xmc-root-page',\n  templateUrl: './p.ng.html',\n})\n"
@@ -61,6 +61,14 @@ class TokenizeSelectorTest(unittest.TestCase):
                 "xmc-a .b, table.c tr.mat-mdc-row",
                 {"tag": {"xmc-a", "table", "tr"}, "class": {"b", "c", "mat-mdc-row"}},
             ),
+            "testid_and_standard_attributes": (
+                'a[data-testid="job-link"][href="/e/{xid}"], [data-testid=\'sq-id\']',
+                {"tag": {"a"}, "testid": {"job-link", "sq-id"}, "attribute": {"href"}},
+            ),
+            "bare_testid_without_value": (
+                "div[data-testid]",
+                {"tag": {"div"}, "testid": {"data-testid"}},
+            ),
             "attributes_and_pseudo": (
                 'button.x:not([disabled]):not([aria-disabled="true"]):not(.y)',
                 {
@@ -74,8 +82,8 @@ class TokenizeSelectorTest(unittest.TestCase):
                 {"tag": {"input"}, "class": {"t"}, "attribute": {"placeholder"}},
             ),
             "placeholder_tokens_skipped": (
-                '{}, a.job[href="/e/{xid}"], .pre-{kind}:has-text("{tf}")',
-                {"tag": {"a"}, "class": {"job"}, "attribute": {"href"}},
+                '{}, a[data-testid="row-{xid}"][href="/e/{xid}"], .pre-{kind}:has-text("{tf}")',
+                {"tag": {"a"}, "attribute": {"href"}},
             ),
             "id_dropped": ("#main .k", {"class": {"k"}}),
             "dotted_attribute_value": ('a[href="/a.b"]', {"tag": {"a"}, "attribute": {"href"}}),
@@ -85,7 +93,7 @@ class TokenizeSelectorTest(unittest.TestCase):
         for name, (selector, expected) in cases.items():
             with self.subTest(name):
                 tokens = cli.tokenize_selector(selector)
-                for kind in ("tag", "class", "attribute"):
+                for kind in ("tag", "testid", "class", "attribute"):
                     self.assertEqual(tokens[kind], expected.get(kind, set()), kind)
 
 
@@ -147,6 +155,11 @@ class FindCopyViolationsTest(unittest.TestCase):
                 "page.locator(\n    # ui-contract: tab label\n    f'.tab:has-text(\"{n}\")'\n)\n",
                 0,
             ),
+            "trailing_comment_above_does_not_cover_next_line": (
+                "A_SEL = ':has-text(\"ok\")'  # ui-contract: covers A_SEL only\n"
+                "B_SEL = ':has-text(\"unannotated\")'\n",
+                1,
+            ),
             "no_copy": ('A_SEL = ".t"\n', 0),
         }
         for name, (source, expected) in cases.items():
@@ -163,16 +176,20 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self._write("cmd/ui/app/page/p.ng.html", _BASE_TEMPLATE)
         self._write("cmd/ui/app/page/p.ts", _BASE_TS)
         self._write("cmd/ui/app/page/p_test.ts", "selector: 'xmc-test-only'\n")
+        self._write("cmd/ui/app/page/p_harness.ts", "selector: 'xmc-harness-only'\n")
         self._write("cmd/ui/index.html", "<xmc-root></xmc-root>\n")
         self._write("tools/nightly_tests/no_selectors.py", "X = 1\n")
 
-    def _write(self, rel_path: str, content: str) -> None:
+    def _write(self, rel_path: str, content: str, *, stage: bool = True) -> None:
         path = self.root / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
+        if stage:
+            subprocess.run(["git", "add", "--", rel_path], cwd=self.root, check=True)
 
     def _run(self, css_source: str) -> dict:
         """Run the lint; stash discovered sources in self.sources and return the rest."""
@@ -189,14 +206,15 @@ class CheckUiSelectorContractTest(unittest.TestCase):
 
     def test_passes_known_dom(self) -> None:
         source = (
-            'A_SEL, B_SEL = "xmc-root-page .queue-card", "xmc-child.is-open.a-two"\n'
-            'C_SEL = "div.bare_key.tern-no.active-toggle, xmc-root span[data-row]"\n'
-            'D_SEL = "input[placeholder][disabled][aria-label], a[href]"\n'
+            "A_SEL, B_SEL = 'xmc-root-page [data-testid=\"queue-card\"]', "
+            "\"xmc-child[data-testid='child-item']\"\n"
+            "C_SEL = 'xmc-root span[data-testid=\"unicode-val\"]'\n"
+            'D_SEL = "input[disabled][aria-label], a[href]"\n'
             'E_SEL = "mat-tab-header .mdc-tab .mat-row cdk-overlay-pane, body h1"\n'
-            'F_SEL = "button.b-one[hidden]"\n'
-            'G_SEL = "p.sq-one.sq-two.dq-key"\n'
+            "# ui-contract: third-party class and native attribute\n"
+            "F_SEL = 'button.custom-class[placeholder=\"x\"]'\n"
         )
-        self.assertEqual(self._run(source), {"selectors_scanned": 7, "violations": 0})
+        self.assertEqual(self._run(source), {"selectors_scanned": 6, "violations": 0})
 
     def test_backtick_component_selector(self) -> None:
         self._write("cmd/ui/app/page/q.ts", "@Component({selector: `xmc-backtick`})\n")
@@ -206,18 +224,35 @@ class CheckUiSelectorContractTest(unittest.TestCase):
 
     def test_reports_missing_dom(self) -> None:
         cases = {
-            "missing_class": ('A_SEL = "xmc-child .gone"\n', [("dom-class", "gone")]),
-            "missing_tag": ('A_SEL = "xmc-gone .queue-card"\n', [("dom-tag", "xmc-gone")]),
-            "test_only_selector": ('A_SEL = "xmc-test-only"\n', [("dom-tag", "xmc-test-only")]),
-            "missing_attribute": ('A_SEL = "div[data-gone]"\n', [("dom-attribute", "data-gone")]),
-            "interpolation_not_class": ('A_SEL = ".extra"\n', [("dom-class", "extra")]),
-            "interpolation_tokens_not_classes": ('A_SEL = ".a"\n', [("dom-class", "a")]),
-            "event_binding_not_attribute": ('A_SEL = "[click]"\n', [("dom-attribute", "click")]),
-            "property_binding_not_attribute": (
-                'A_SEL = "[value]"\n',
-                [("dom-attribute", "value")],
+            "missing_testid": (
+                "A_SEL = '[data-testid=\"gone\"]'\n",
+                [("dom-testid", "gone")],
             ),
-            "copy": ('A_SEL = ".queue-card:has-text(\\"−5\\")"\n', [("copy", "has-text")]),
+            "bare_testid": (
+                'A_SEL = "div[data-testid]"\n',
+                [("dom-testid", "data-testid")],
+            ),
+            "custom_class_unannotated": (
+                'A_SEL = "xmc-child .queue-card"\n',
+                [("dom-class", "queue-card")],
+            ),
+            "custom_attribute_unannotated": (
+                "A_SEL = 'input[placeholder=\"x\"]'\n",
+                [("dom-attribute", "placeholder")],
+            ),
+            "missing_tag": (
+                "A_SEL = 'xmc-gone [data-testid=\"queue-card\"]'\n",
+                [("dom-tag", "xmc-gone")],
+            ),
+            "test_only_selector": ('A_SEL = "xmc-test-only"\n', [("dom-tag", "xmc-test-only")]),
+            "harness_only_selector": (
+                'A_SEL = "xmc-harness-only"\n',
+                [("dom-tag", "xmc-harness-only")],
+            ),
+            "copy": (
+                'A_SEL = \'[data-testid="queue-card"]:has-text("−5")\'\n',
+                [("copy", "has-text")],
+            ),
         }
         for name, (source, expected) in cases.items():
             with self.subTest(name):
@@ -228,11 +263,13 @@ class CheckUiSelectorContractTest(unittest.TestCase):
         self.assertEqual(self.sources, [])
 
     def test_discovers_arbitrary_verifier_and_ignores_plain_files(self) -> None:
-        self._write(_VERIFIER, 'page.locator(".queue-card")\n')
-        self.assertEqual(self._run('A_SEL = ".queue-card"\n')["selectors_scanned"], 2)
+        self._write(_VERIFIER, "page.locator('[data-testid=\"queue-card\"]')\n")
+        self.assertEqual(
+            self._run("A_SEL = '[data-testid=\"queue-card\"]'\n")["selectors_scanned"], 2
+        )
         self.assertCountEqual(self.sources, [_VERIFIER, _CSS_SOURCE])
-        self._write(_VERIFIER, 'page.locator(".gone")\n')
-        self.assertEqual(self._violations(""), [("dom-class", "gone")])
+        self._write(_VERIFIER, "page.locator('[data-testid=\"gone\"]')\n")
+        self.assertEqual(self._violations(""), [("dom-testid", "gone")])
 
     def test_has_text_literal_marks_source(self) -> None:
         self._write(_VERIFIER, '# ui-contract: label\nx.filter(has_text="Go")\n')
@@ -245,7 +282,7 @@ class CheckUiSelectorContractTest(unittest.TestCase):
             self.assertEqual(self._run(""), {"selectors_scanned": 0, "violations": 0})
 
     def test_selector_constant_references(self) -> None:
-        css = 'KNOWN_SEL = ".queue-card"\n'
+        css = "KNOWN_SEL = '[data-testid=\"queue-card\"]'\n"
         cases = {
             "known_alias": (_IMPORT_SEL + "page.locator(sel.KNOWN_SEL.format(x=1))\n", []),
             "missing_alias": (_IMPORT_SEL + "helper(sel.MISSING_SEL)\n", ["MISSING_SEL"]),
@@ -283,10 +320,20 @@ class CheckUiSelectorContractTest(unittest.TestCase):
                 got = self._violations(css)
                 self.assertEqual(got, [("unknown-selector-constant", t) for t in expected])
 
-    def test_hidden_and_pycache_paths_are_ignored(self) -> None:
-        self._write("tools/nightly_tests/.venv/x.py", "def broken(:\n")
-        self._write("tools/nightly_tests/__pycache__/y.py", "def broken(:\n")
+    def test_untracked_files_are_ignored(self) -> None:
+        self._write("tools/nightly_tests/scratch.py", "def broken(:\n", stage=False)
+        self._write("tools/nightly_tests/.venv/x.py", "def broken(:\n", stage=False)
+        self._write("cmd/ui/app/page/untracked.ts", "selector: 'xmc-untracked'\n", stage=False)
         self.assertEqual(self._run(""), {"selectors_scanned": 0, "violations": 0})
+        self.assertEqual(
+            self._violations('A_SEL = "xmc-untracked"\n'), [("dom-tag", "xmc-untracked")]
+        )
+
+    def test_non_git_repo_root_is_handled(self) -> None:
+        with tempfile.TemporaryDirectory() as non_git:
+            (Path(non_git) / "cmd/ui/app").mkdir(parents=True)
+            with self.assertRaisesRegex(HandledError, "Failed to list tracked files"):
+                cli.check_ui_selector_contract(argparse.Namespace(repo_root=non_git))
 
     def test_missing_selector_module_is_handled(self) -> None:
         with mock.patch.object(cli, "SELECTOR_MODULE", "tools/nightly_tests/gone.py"):

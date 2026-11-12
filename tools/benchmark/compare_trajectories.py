@@ -18,7 +18,9 @@ import argparse
 import collections
 import json
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -34,13 +36,35 @@ from tools.benchmark.scenario_assertions import (  # noqa: E402
 )
 from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 
-_MUTATING_TOOLS: frozenset[str] = frozenset(
+# Maps each file-mutating tool name to the argument holding the target file path. Covers both
+# the legacy transcript schema (`write_to_file`/`TargetFile`) and the current one
+# (`write_file`/`edit_file` with `Path`).
+_MUTATING_TOOL_PATH_ARGS: Mapping[str, str] = MappingProxyType(
     {
-        "write_to_file",
-        "replace_file_content",
-        "multi_replace_file_content",
+        "write_to_file": "TargetFile",
+        "replace_file_content": "TargetFile",
+        "multi_replace_file_content": "TargetFile",
+        "write_file": "Path",
+        "edit_file": "Path",
     }
 )
+
+# Step types that represent an error regardless of their `status` (current schema logs, e.g.,
+# model API failures as `ERROR_MESSAGE` steps with status `DONE`).
+_ERROR_STEP_TYPES: frozenset[str] = frozenset({"ERROR_MESSAGE"})
+
+
+def _is_error_step(step: dict[str, Any]) -> bool:
+    """Returns whether a transcript step records an error in either transcript schema.
+
+    The legacy schema marks failed steps with status `ERROR`; the current schema may also attach
+    a non-empty `error` field or emit a dedicated `ERROR_MESSAGE` step.
+    """
+    if step.get("status") == "ERROR":
+        return True
+    if step.get("type") in _ERROR_STEP_TYPES:
+        return True
+    return bool(step.get("error"))
 
 
 def _record_tool_call(
@@ -53,11 +77,12 @@ def _record_tool_call(
         return
     name = tc.get("name") or tc.get("tool_name") or "unknown_tool"
     tool_counts[name] += 1
-    if name not in _MUTATING_TOOLS:
+    path_arg = _MUTATING_TOOL_PATH_ARGS.get(name)
+    if path_arg is None:
         return
     args = tc.get("args") or {}
     if isinstance(args, dict):
-        target = args.get("TargetFile")
+        target = args.get(path_arg)
         if target and target not in modified_files:
             modified_files.append(str(target))
 
@@ -104,7 +129,7 @@ def parse_transcript(transcript_path: Path) -> dict[str, Any]:
                     if content:
                         last_response = content
 
-                if step.get("status") == "ERROR":
+                if _is_error_step(step):
                     error_count += 1
 
                 tool_calls = step.get("tool_calls", [])
