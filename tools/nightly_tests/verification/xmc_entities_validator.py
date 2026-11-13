@@ -775,6 +775,14 @@ def wait_for_experiment_state(
     )
 
 
+def stop_work_unit(stub: Any, xid: str, wid: str | int) -> None:
+    """Stops a single WorkUnit for an experiment via StopWorkUnit RPC."""
+    name = f"experiments/{xid}/workUnits/{wid}"
+    req = _make_req("StopWorkUnitRequest", name=name)
+    stub.StopWorkUnit(req)
+    print(f"  [✓] Stopped WorkUnit {name}")
+
+
 def stop_work_units(stub: Any, xid: str) -> None:
     """Stops all WorkUnits for an experiment via BatchStopWorkUnits RPC."""
     req = _make_req("BatchStopWorkUnitsRequest", parent=f"experiments/{xid}")
