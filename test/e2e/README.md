@@ -84,7 +84,7 @@ Two more exit codes are not outcomes:
 
 ### Infra Retry
 
-The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 480 s of the harness start, so that a healthy retry still ends before the harness deadline:
+The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 1800 s of the harness start, so that a healthy retry still ends before the harness deadline:
 
 1. Teardown of the failed attempt completes first: its Spanner databases are dropped, and its KinD cluster and temporary directory are deleted.
 2. The harness prints a GitHub Actions warning annotation that names the failed phase, for example:
@@ -99,7 +99,7 @@ Each attempt writes its screenshots and diagnostics to its own subdirectory of `
 
 ### Harness Deadline
 
-900 s after it started, the harness stops itself as described in [Stopping & Teardown](#stopping--teardown) and exits with `3`. Together with the workflow steps before and after the harness, a stopped run still ends more than a minute before the job timeout of 20 minutes.
+2400 s after it started, the harness stops itself as described in [Stopping & Teardown](#stopping--teardown) and exits with `3`. Together with the workflow steps before and after the harness, a stopped run still ends more than a minute before the job timeout of 45 minutes.
 
 ### Stopping & Teardown
 
@@ -194,24 +194,6 @@ bazel test //test/e2e:redpanda_3p_test --test_output=streamed
 # Optionally reuse an existing KinD cluster:
 bazel test //test/e2e:clickhouse_3p_test //test/e2e:redpanda_3p_test \
   --test_env=KIND_CLUSTER_NAME=xmc-dev --test_output=streamed
-```
-
----
-
-## Vizier Fixture KinD E2E Suite (`vizier_kind_test.go`)
-
-[vizier_kind_test.go](vizier_kind_test.go) applies the dev/test-only [Vizier fixture](testdata/vizier/README.md) (`vizier.yaml`, with `vizier-service` switched to a `NodePort` in code) into a fresh test namespace, waits for the `vizier` Deployment to become Available, applies the `stable-2026a` [`vizier` Component blueprint](../../deploy/profiles/stable-2026a/components/vizier/README.md) with `parameters.endpoint` set to `vizier-service.<namespace>.svc.cluster.local:7077`, and asserts that the in-process `xmc-bridge` TCP probe reports the component Ready with the expected `ENDPOINT`, `HOST` and `PORT` access envVars.
-
-The fixture image is not published, so the suite expects it in the local Docker daemon. It uses `xmc-vizier:0.1.24` and skips with a build hint when that image is missing; `XMC_VIZIER_IMAGE` names another image, and the suite fails rather than skips when that image is missing.
-
-```bash
-docker build -t xmc-vizier:0.1.24 test/e2e/testdata/vizier
-bazel test //test/e2e:vizier_kind_test --test_output=streamed
-
-# Optionally reuse an existing KinD cluster or test another image:
-bazel test //test/e2e:vizier_kind_test \
-  --test_env=KIND_CLUSTER_NAME=xmc-dev \
-  --test_env=XMC_VIZIER_IMAGE=xmc-vizier:0.1.24 --test_output=streamed
 ```
 
 ---

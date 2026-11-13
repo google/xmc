@@ -35,10 +35,10 @@ logger = logging.getLogger("xmc_e2e_runner")
 MAX_ATTEMPTS = 2
 # A retry starts only if the failed attempt, including its teardown, ended within this many
 # seconds of the harness start, so that a healthy retry still ends before the deadline.
-RETRY_START_LIMIT_SECONDS = 480
+RETRY_START_LIMIT_SECONDS = 1800
 # When the harness has run this long, it stops, tears down, and reports an infra failure, so
 # that a stopped run still ends at least a minute before the CI job timeout.
-HARNESS_DEADLINE_SECONDS = 900
+HARNESS_DEADLINE_SECONDS = 2400
 
 
 def run_attempt(cfg: E2EConfig) -> AttemptResult:

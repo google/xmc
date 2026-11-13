@@ -107,7 +107,7 @@ class TestRunCmd(unittest.TestCase):
             with self.assertRaises(subprocess.TimeoutExpired) as ctx:
                 run_cmd(["sleep", "30"])
 
-        self.assertEqual(ctx.exception.timeout, 900.0)
+        self.assertEqual(ctx.exception.timeout, 2400.0)
 
     def test_run_cmd_kills_process_group_when_harness_halts(self):
         killpg = self._start_patch(patch.object(command.os, "killpg", wraps=os.killpg))

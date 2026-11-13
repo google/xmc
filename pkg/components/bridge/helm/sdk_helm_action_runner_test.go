@@ -373,27 +373,27 @@ func TestSDKHelmActionRunner_ResolveChart_DefaultFallback(t *testing.T) {
 	}
 }
 
-func TestSDKHelmActionRunner_ResolveChart_EmbeddedHPOChart(t *testing.T) {
+func TestSDKHelmActionRunner_ResolveChart_EmbeddedIngestionGatewayChart(t *testing.T) {
 	runner := NewSDKHelmActionRunner(nil)
-	ch, err := runner.resolveChart("xmc-cmp-hpo", nil)
+	ch, err := runner.resolveChart("xmc-cmp-ingestion-gateway", nil)
 	if err != nil {
-		t.Fatalf("unexpected error resolving embedded hpo chart: %v", err)
+		t.Fatalf("unexpected error resolving embedded ingestion-gateway chart: %v", err)
 	}
-	if ch == nil || ch.Name() != "hpo" {
-		t.Fatalf("resolveChart(xmc-cmp-hpo) = %v, want embedded chart named %q", ch, "hpo")
+	if ch == nil || ch.Name() != "ingestion-gateway" {
+		t.Fatalf("resolveChart(xmc-cmp-ingestion-gateway) = %v, want embedded chart named %q", ch, "ingestion-gateway")
 	}
 
-	releaseOpts := chartutil.ReleaseOptions{Name: "xmc-cmp-hpo", Namespace: "xmc", Revision: 1, IsInstall: true}
-	vals, err := chartutil.ToRenderValues(ch, map[string]any{"hpoDeployment": map[string]any{"enabled": true}}, releaseOpts, nil)
+	releaseOpts := chartutil.ReleaseOptions{Name: "xmc-cmp-ingestion-gateway", Namespace: "xmc", Revision: 1, IsInstall: true}
+	vals, err := chartutil.ToRenderValues(ch, map[string]any{"ingestionGatewayDeployment": map[string]any{"enabled": true}}, releaseOpts, nil)
 	if err != nil {
-		t.Fatalf("ToRenderValues(xmc-cmp-hpo) failed: %v", err)
+		t.Fatalf("ToRenderValues(xmc-cmp-ingestion-gateway) failed: %v", err)
 	}
 	rendered, err := engine.Render(ch, vals)
 	if err != nil {
-		t.Fatalf("engine.Render(xmc-cmp-hpo) failed: %v", err)
+		t.Fatalf("engine.Render(xmc-cmp-ingestion-gateway) failed: %v", err)
 	}
-	if got := strings.TrimSpace(rendered["hpo/templates/component.yaml"]); got != "" {
-		t.Errorf("xmc-cmp-hpo rendered component.yaml = %q, want empty (guarded by not hasPrefix xmc-cmp-)", got)
+	if got := strings.TrimSpace(rendered["ingestion-gateway/templates/component.yaml"]); got != "" {
+		t.Errorf("xmc-cmp-ingestion-gateway rendered component.yaml = %q, want empty (guarded by not hasPrefix xmc-cmp-)", got)
 	}
 }
 

@@ -31,7 +31,7 @@ global:
 #   acknowledgeExperimental - bool, renders spec.acknowledgeExperimental to opt into EXPERIMENTAL components.
 #   parameters              - map of component parameters (see each component README).
 #   dependencies            - list of component names the component depends on.
-# ingestion-gateway and hpo additionally accept imageTag, a fallback used only when
+# ingestion-gateway additionally accepts imageTag, a fallback used only when
 # global.imageTag is empty.
 # Component identity (componentClass), stability, and chart versions are fixed by
 # the catalog and cannot be overridden.
@@ -41,8 +41,4 @@ components:
   clickhouse:
     enabled: false
   ingestion-gateway:
-    enabled: false
-  vizier:
-    enabled: false
-  hpo:
     enabled: false

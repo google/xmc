@@ -1,8 +1,0 @@
-# Copyright 2026 Google LLC
-# SPDX-License-Identifier: Apache-2.0
-apiVersion: v2
-name: hpo
-description: XMC 1P Hyperparameter Optimization (HPO) component
-type: application
-version: 0.1.0
-appVersion: "1.0.0"

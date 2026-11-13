@@ -50,7 +50,6 @@ go_test(
         "constraints_test.go",
         "dag_test.go",
         "diagnostic_test.go",
-        "hpo_chart_test.go",
         "linter_internal_test.go",
         "linter_test.go",
         "manifest_decoder_test.go",

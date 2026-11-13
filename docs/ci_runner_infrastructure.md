@@ -4,9 +4,25 @@ This document outlines the XMC continuous integration infrastructure, the in-clu
 
 ---
 
-## 1. Current Architecture: Self-Hosted ARC Runners & In-Cluster Remote Cache
+## 1. Current Architecture: GitHub-Hosted Runners (`ubuntu-latest`) & Actions Cache
 
-XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE.
+XMC CI workflows execute on standard GitHub-hosted runners (`ubuntu-latest`) with Bazel disk and repository caching managed through `actions/cache` (`~/.cache/bazel-disk` and `~/.cache/bazel-repo`).
+
+### Bazel Configuration (`.bazelrc`)
+
+- CI builds use the `--config=ci` profile in [`.bazelrc`](../.bazelrc):
+  ```ini
+  build:ci --remote_cache_compression=true
+  build:ci --modify_execution_info=GoLink=+no-remote-cache
+  test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
+  ```
+- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk`, pass `--disk_cache=${HOME}/.cache/bazel-disk` explicitly to Bazel (avoiding unexpanded `~` in `.bazelrc`), and save updated caches on `refs/heads/main`, `merge_group`, or initial cold-start (`cache-matched-key == ''`) runs (while [`.github/workflows/deploy-gke.yml`](../.github/workflows/deploy-gke.yml) restores both caches and configures `--disk_cache=${HOME}/.cache/bazel-disk` before building OCI images).
+
+---
+
+## 2. Optional Self-Hosted Architecture: GKE ARC Runners & In-Cluster Remote Cache
+
+When self-hosted GitHub Actions runners managed by **Actions Runner Controller (ARC)** on GKE are enabled, workflows can target `arc-runner-set` and connect to the in-cluster Bazel Remote Cache.
 
 ### Infrastructure Overview
 
@@ -44,8 +60,8 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
    - Provides internal Gigabit/10Gbps cluster networking speeds, eliminating the 2.5–10 minute overhead of downloading/uploading compressed cache tarballs across public GitHub cache APIs.
    - Automatically manages LRU cache eviction at 90 GiB.
 
-4. **Bazel Configuration (`.bazelrc`)**:
-   - CI builds use the `--config=ci` profile:
+4. **ARC Bazel Configuration (`.bazelrc`)**:
+   - When targeting `arc-runner-set`, `--config=ci` can be configured to use the in-cluster gRPC remote cache:
      ```ini
      build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
      build:ci --remote_upload_local_results=false
@@ -57,9 +73,9 @@ XMC CI workflows execute on self-hosted GitHub Actions runners managed by **Acti
 
 ---
 
-## 2. Reversion & Migration Playbook: Moving Back to GitHub-Hosted Runners (`ubuntu-latest`)
+## 3. Migration Reference: Switching Between ARC Runners and GitHub-Hosted Runners (`ubuntu-latest`)
 
-If the team ever decides to migrate from self-hosted ARC runners back to GitHub-hosted cloud runners (`ubuntu-latest`), follow this step-by-step checklist.
+To switch between self-hosted ARC runners and GitHub-hosted cloud runners (`ubuntu-latest`), follow this step-by-step checklist.
 
 ### Checklist Summary
 
@@ -74,13 +90,17 @@ If the team ever decides to migrate from self-hosted ARC runners back to GitHub-
 
 Search and replace `runs-on: 'arc-runner-set'` with `runs-on: 'ubuntu-latest'` across all `.github/workflows/*.yml` files:
 
-- `.github/workflows/unit-tests.yml`
-- `.github/workflows/lint.yml`
-- `.github/workflows/terraform-lint.yml`
 - `.github/workflows/auto-approve-absence.yml`
 - `.github/workflows/auto-assign-reviewers.yml`
-- `.github/workflows/block-feature-request-merges.yml`
-- `.github/workflows/e2e-tests.yml` (if enabled)
+- `.github/workflows/deploy-gke.yml`
+- `.github/workflows/e2e-tests.yml`
+- `.github/workflows/examples-smoke.yml`
+- `.github/workflows/incremental-pr-approval.yml`
+- `.github/workflows/lint.yml`
+- `.github/workflows/nightly-build.yml`
+- `.github/workflows/nightly-examples-e2e.yml`
+- `.github/workflows/nightly-visual-snapshot.yml`
+- `.github/workflows/unit-tests.yml`
 
 ```yaml
 # Example change in workflow jobs:
@@ -101,7 +121,7 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
 #### Option A: GitHub Actions Cache (`actions/cache`) — Simple, Zero GCP Infrastructure
 
-1. In `.github/workflows/unit-tests.yml`, re-add the disk cache restore and save steps around the `run-backend-tests` step:
+1. In `.github/actions/run-backend-tests/action.yml` (and `.github/workflows/e2e-tests.yml`), configure the disk cache restore and save steps around Bazel execution:
 
 ```yaml
       - name: 'Restore Bazel Disk Cache'
@@ -113,21 +133,19 @@ Choose one of the two options below for caching on GitHub-hosted runners:
           restore-keys: |
             bazel-disk-${{ runner.os }}-
 
-      - name: 'Run Backend Unit Tests'
-        uses: './.github/actions/run-backend-tests'
-
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        if: github.ref == 'refs/heads/main' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.cache-matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/bazel-disk
           key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 ```
 
-2. In `.bazelrc`, replace the in-cluster remote cache with the local disk cache path under the `ci` config (which `run-backend-tests` enables via `--config=ci`):
+2. In `.bazelrc`, remove the in-cluster remote cache under `ci` (since workflows pass `--disk_cache=${HOME}/.cache/bazel-disk` explicitly to avoid unexpanded `~` in `.bazelrc`):
 ```ini
 # build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
-build:ci --disk_cache=~/.cache/bazel-disk
+build:ci --remote_cache_compression=true
+build:ci --modify_execution_info=GoLink=+no-remote-cache
 ```
 
 #### Option B: Google Cloud Storage (GCS) Remote Cache — High Performance & Shared Across GitHub Runners
@@ -150,7 +168,7 @@ GitHub-hosted `ubuntu-latest` virtual environments come with many pre-installed 
 
 - `actions/setup-go@v5` (pins Go version, e.g. `1.26.0`)
 - `actions/setup-node@v4` (pins Node version, e.g. `22`)
-- `actions/setup-python@v5` (pins Python version, e.g. `3.14`)
+- `actions/setup-python@v5` (pins Python version, e.g. `3.13`)
 - `bazelbuild/setup-bazelisk@v3` (installs `bazelisk`)
 
 ---
@@ -175,7 +193,7 @@ To eliminate cloud resource costs when reverting to GitHub-hosted runners:
 
 ---
 
-## 3. Maintenance & Troubleshooting
+## 4. Maintenance & Troubleshooting (In-Cluster Remote Cache)
 
 ### Inspecting Bazel Remote Cache Status
 ```bash
@@ -201,7 +219,7 @@ kubectl apply -f deploy/ci/bazel-remote-cache.yaml
 
 ---
 
-## 4. Headless KinD & Playwright End-to-End (E2E) Pipeline
+## 5. Headless KinD & Playwright End-to-End (E2E) Pipeline
 
 The end-to-end test workflow ([`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml)) spins up an entire ephemeral XMC environment for every merge queue entry (`merge_group`), on manual dispatch (`workflow_dispatch`), and via reusable workflow calls (`workflow_call`). On `pull_request` events targeting `main`, the heavy `execute-e2e` job is skipped via `if: github.event_name != 'pull_request'` while the lightweight `run-e2e` (`KinD & Playwright Headless E2E`) gate job completes with `conclusion: SUCCESS` so pull requests satisfy the required status check to enter the merge queue, where the full E2E suite executes on `merge_group`.
 
@@ -264,5 +282,5 @@ Workload Identity Federation allows GitHub Actions to authenticate directly to G
   - Requires `runs-on: 'ubuntu-latest'` in `.github/workflows/e2e-tests.yml`.
   - Docker is natively available.
   - WIF authentication requires the GitHub repository `google/xmc` to be mapped in the GCP Workload Identity Pool.
-  - Bazel caching will use the fallback GitHub Actions cache or GCS remote cache as configured in Section 2.
+  - Bazel caching will use the fallback GitHub Actions cache or GCS remote cache as configured in Section 1 and Section 3.
 

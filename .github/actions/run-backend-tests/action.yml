@@ -38,6 +38,15 @@ runs:
       # Base/head/ref/event/output are derived from GITHUB_* env and GITHUB_EVENT_PATH.
       run: python3 tools/benchmark/resolve_test_scope.py --no-rdeps
 
+    - name: 'Reclaim Unused Runner Disk Space'
+      if: steps.classify.outputs.run_backend == 'true'
+      shell: bash
+      # Standard ubuntu-latest runners have ~18 GB free on / because Android SDK,
+      # .NET, GHC, and Boost consume ~28 GB. Reclaim them before building all Go targets.
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+        df -h /
+
     - name: 'Set up Bazel'
       if: steps.classify.outputs.run_backend == 'true'
       uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
@@ -51,6 +60,16 @@ runs:
         key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
         restore-keys: |
           bazel-repo-${{ runner.os }}-
+
+    - name: 'Restore Bazel Disk Cache'
+      if: steps.classify.outputs.run_backend == 'true'
+      id: 'cache-bazel-disk-restore'
+      uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      with:
+        path: ~/.cache/bazel-disk
+        key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+        restore-keys: |
+          bazel-disk-${{ runner.os }}-
 
     - name: 'Check Protobuf Breaking-Change Coverage'
       if: steps.classify.outputs.run_backend == 'true'
@@ -71,7 +90,6 @@ runs:
         XMC_BYPASS_VENV: '1'
         SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
         SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
-        REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
         TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
       shell: bash
       # The same entrypoint as local runs resolves the rdeps scope of the event, waits for the
@@ -82,7 +100,7 @@ runs:
           --repository-cache "${HOME}/.cache/bazel-repo" \
           --emulator-wait-seconds "${SPANNER_TIMEOUT_INPUT}" \
           --bazel-flag=--config=ci \
-          --bazel-flag="--remote_upload_local_results=${REMOTE_UPLOAD}" \
+          --bazel-flag="--disk_cache=${HOME}/.cache/bazel-disk" \
           --bazel-flag=--experimental_repository_cache_hardlinks \
           --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300"
 
@@ -132,7 +150,7 @@ runs:
         bazel coverage \
           --repository_cache="${HOME}/.cache/bazel-repo" \
           --config=ci \
-          --remote_upload_local_results=false \
+          --disk_cache="${HOME}/.cache/bazel-disk" \
           --experimental_repository_cache_hardlinks \
           --test_output=errors \
           --test_tag_filters=-e2e,-integration,-manual \
@@ -147,11 +165,18 @@ runs:
 
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-      # Only save repository cache on main branch pushes when external dependencies change.
-      if: github.ref == 'refs/heads/main' && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+      # Save repository cache on main/merge_group or when no baseline cache exists yet.
+      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.cache-matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/bazel-repo
         key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+
+    - name: 'Save Bazel Disk Cache'
+      uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.cache-matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+      with:
+        path: ~/.cache/bazel-disk
+        key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 
     - name: 'Log Backend Test Skip Summary'
       if: steps.classify.outputs.run_backend != 'true'
