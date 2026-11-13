@@ -864,14 +864,16 @@ image_tag: latest
         )
         mock_compile.assert_called_once_with("my-config.yaml", self.valid_config.deployment_name)
 
+    @patch("tools.dev_env.deploy_dev_env.verify_schema_version_alignment")
     @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
     @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     def test_step_app_deploys_component_profile(
-        self, mock_deploy, mock_profile, mock_restart, mock_creds
+        self, mock_deploy, mock_profile, mock_restart, mock_creds, mock_verify_schema
     ):
         manager = MagicMock()
+        manager.attach_mock(mock_verify_schema, "verify_schema")
         manager.attach_mock(mock_deploy, "deploy")
         manager.attach_mock(mock_creds, "creds")
         manager.attach_mock(mock_profile, "profile")
@@ -880,6 +882,7 @@ image_tag: latest
         deploy_dev_env.step_app(self.valid_config, self.dns_project, self.dns_zone)
         manager.assert_has_calls(
             [
+                call.verify_schema(self.valid_config),
                 call.deploy(self.valid_config.deployment_name, "xmc_app"),
                 call.creds(self.valid_config),
                 call.profile(self.valid_config),
@@ -959,12 +962,16 @@ image_tag: latest
         self.assertEqual(cm.exception.code, 1)
         mock_apply.assert_not_called()
 
+    @patch("tools.dev_env.deploy_dev_env.verify_schema_version_alignment")
     @patch("tools.dev_env.deploy_dev_env._fetch_cluster_credentials")
     @patch("tools.dev_env.deploy_dev_env.deploy_component_profile")
     @patch("tools.dev_env.deploy_dev_env.run_gcluster_deploy")
     @patch("tools.dev_env.deploy_dev_env.step_restart")
-    def test_step_app_triggers_restart(self, mock_restart, mock_gcluster, mock_profile, mock_creds):
+    def test_step_app_triggers_restart(
+        self, mock_restart, mock_gcluster, mock_profile, mock_creds, mock_verify_schema
+    ):
         manager = MagicMock()
+        manager.attach_mock(mock_verify_schema, "verify_schema")
         manager.attach_mock(mock_gcluster, "gcluster")
         manager.attach_mock(mock_creds, "creds")
         manager.attach_mock(mock_profile, "profile")
@@ -977,6 +984,7 @@ image_tag: latest
         )
         manager.assert_has_calls(
             [
+                call.verify_schema(self.valid_config),
                 call.gcluster(self.valid_config.deployment_name, "xmc_app"),
                 call.creds(self.valid_config),
                 call.profile(self.valid_config),

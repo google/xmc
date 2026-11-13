@@ -54,6 +54,7 @@ from tools.dev_env.upgrade_dev_env import (  # noqa: E402
     apply_pending_migrations,
     check_pending_migrations,
     step_restart,
+    verify_schema_version_alignment,
     wait_for_deployments_ready,
 )
 
@@ -702,6 +703,7 @@ def step_app(
         dns_project: GCP Project ID hosting the DNS zone.
         dns_zone: Cloud DNS Managed Zone name.
     """
+    verify_schema_version_alignment(config)
     log_info("Deploying xmc_app group (Helm release)...")
     run_gcluster_deploy(config.deployment_name, "xmc_app")
     log_success("XMC application Helm release deployed successfully.")

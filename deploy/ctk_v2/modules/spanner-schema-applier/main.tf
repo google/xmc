@@ -61,7 +61,13 @@ resource "null_resource" "apply_schema" {
         echo "Error: Database ${var.database_name} is in a DIRTY migration state ($version_output)." >&2
         exit 1
       elif [[ "$version_output" == *"Version: "* ]]; then
-        echo "Database ${var.database_name} is already initialized with schema migrations. Skipping DDL bootstrap."
+        echo "Database ${var.database_name} is already initialized ($version_output). Applying any pending incremental migrations..."
+        (cd "$workspace_root" && bazel run //internal/storage/spanner/migrations:migrations -- \
+          --project="${var.project_id}" \
+          --instance="${var.instance_name}" \
+          --database="${var.database_name}" \
+          --migrations_dir="${var.db_type}" \
+          --command="up")
         exit 0
       fi
 

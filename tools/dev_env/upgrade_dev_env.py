@@ -19,6 +19,7 @@ the latest code in the current repository branch.
 """
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -355,6 +356,115 @@ def step_migrate(config: UpgradeConfig) -> None:
     apply_pending_migrations(config, pending)
 
 
+_SCHEMA_CHECKED_SERVICES: tuple[tuple[str, str], ...] = (
+    ("experiment-state-server", "ess"),
+    ("xid-service", "xid"),
+    ("actuator", "ess"),
+    ("reconciler", "ess"),
+    ("rod-data-provider", "ess"),
+    ("dashboard-service", "ess"),
+    ("log-monitor", "ess"),
+    ("health-service", "ess"),
+)
+
+
+def _inspect_image_labels(image_ref: str) -> dict[str, str] | None:
+    """Inspects local Docker image labels for a given image reference.
+
+    Args:
+      image_ref: Full container image reference (e.g. 'registry/service-env:tag').
+
+    Returns:
+      Dictionary of string labels if the image is present locally, or None.
+    """
+    res = run_command(
+        ["docker", "image", "inspect", image_ref, "--format={{json .Config.Labels}}"],
+        check=False,
+        capture_output=True,
+        log_on_error=False,
+    )
+    raw = (res.stdout or "").strip()
+    if res.returncode != 0 or not raw or raw == "null":
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return {str(k): str(v) for k, v in parsed.items()}
+
+
+def verify_image_schema_labels(
+    config: DeploymentConfig, expected_versions: dict[str, int] | None = None
+) -> None:
+    """Verifies that locally cached container images match expected schema version labels.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+      expected_versions: Optional mapping of migration directory ('ess', 'xid') to version.
+    """
+    if not shutil.which("docker"):
+        return
+
+    versions = expected_versions or {
+        mig_dir: extract_migration_version(
+            list(Path(f"internal/storage/spanner/migrations/{mig_dir}").glob("*.up.sql"))
+        )
+        for mig_dir in ("ess", "xid")
+    }
+    for service_name, db_type in _SCHEMA_CHECKED_SERVICES:
+        expected_ver = versions.get(db_type, 0)
+        if expected_ver <= 0:
+            continue
+        image_ref = (
+            f"{config.image_registry}/{service_name}-{config.environment}:{config.image_tag}"
+        )
+        labels = _inspect_image_labels(image_ref)
+        if not labels:
+            continue
+        label_key = f"xmc.google.com/{db_type}-schema-version"
+        actual_ver = labels.get(label_key)
+        if actual_ver is not None and actual_ver != str(expected_ver):
+            error_exit(
+                f"Container image '{image_ref}' has label {label_key}={actual_ver},"
+                f" which does not match expected {db_type.upper()} schema version"
+                f" ({expected_ver}). Rebuild and push container images ('images' step)"
+                " before deploying workloads."
+            )
+
+
+def verify_schema_version_alignment(config: DeploymentConfig) -> None:
+    """Verifies that Spanner database schemas and local image labels match repository versions.
+
+    Args:
+      config: Loaded DeploymentConfig instance.
+    """
+    if config.database_backend == "postgres":
+        log_info("Skipping Spanner schema alignment check because database_backend is 'postgres'.")
+        return
+
+    log_info("Verifying Spanner schema version alignment before workload rollout...")
+    spanner_instance = f"xmc-{config.environment}"
+    targets = [
+        ("ess", f"experiment-db-{config.environment}"),
+        ("xid", f"xids-db-{config.environment}"),
+    ]
+    expected_versions: dict[str, int] = {}
+    for mig_dir, db_name in targets:
+        current, available = get_migration_status(config, mig_dir, spanner_instance, db_name)
+        expected_versions[mig_dir] = available
+        if current != available:
+            error_exit(
+                f"Spanner {mig_dir.upper()} database '{db_name}' schema version ({current})"
+                f" does not match expected repository schema version ({available})."
+                " Apply pending migrations first (e.g. pass --run-migrations or run the"
+                " 'migrate' step) before rolling out application workloads."
+            )
+
+    verify_image_schema_labels(config, expected_versions)
+
+
 def step_images(config: UpgradeConfig) -> None:
     """Rebuilds and pushes XMC microservice OCI images to Artifact Registry."""
     build_and_push_images(config)
@@ -362,6 +472,7 @@ def step_images(config: UpgradeConfig) -> None:
 
 def step_app(config: UpgradeConfig) -> None:
     """Upgrades XMC Kubernetes workloads via Cluster Toolkit gcluster CLI."""
+    verify_schema_version_alignment(config)
     log_info("Upgrading XMC Kubernetes application workloads using Cluster Toolkit...")
 
     ctk_dir = Path(f"ctk-out/{config.deployment_name}")

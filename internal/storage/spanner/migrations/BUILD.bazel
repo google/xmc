@@ -18,13 +18,13 @@ load("//:oci.bzl", "oci_image_for_service")
 filegroup(
     name = "ess_migrations",
     srcs = glob(["ess/*.up.sql"]),
-    visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "xid_migrations",
     srcs = glob(["xid/*.up.sql"]),
-    visibility = ["//internal/storage/spanner/migrations:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 genrule(

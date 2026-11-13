@@ -89,6 +89,7 @@ The XMC services require OCI container images built from the codebase. You must 
    bazel run //cmd/rod_data_provider:rod_data_provider_image_push
    bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
    bazel run //cmd/xmc_bridge:xmc_bridge_image_push
+   bazel run //cmd/study_controller:study_controller_image_push
    ```
 
 5. **Update image variables** in your deployment configuration file (e.g. `xmanager-cloud-deployment.yaml`, copy of [xmc-deployment-template.yaml](deploy/ctk_v2/xmc-deployment-template.yaml)):
@@ -419,7 +420,11 @@ bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 bazel run //cmd/xmc_bridge:xmc_bridge_image_push
+bazel run //cmd/study_controller:study_controller_image_push
 ```
+
+> [!IMPORTANT]
+> **Binary-to-Spanner Schema Version Parity**: Every database-backed XMC service binary compiles in the expected migration schema version and enforces exact version parity (`current == expected` and `dirty == false`) on its `/readyz` readiness probe, while OCI images record `xmc.google.com/ess-schema-version` and `xmc.google.com/xid-schema-version` labels. Always apply pending Spanner migrations (Step 3) before rolling out updated workloads (Step 4) so pods pass `/readyz` on startup.
 
 #### Step 3: Run Database Schema Migrations
 
