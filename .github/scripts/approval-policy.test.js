@@ -356,6 +356,23 @@ test('evaluateIncrementalApproval rejects code owner when delta exceeds 50 lines
   assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
 });
 
+test('evaluateIncrementalApproval uses singular line phrasing when 1 non-test line exceeds maxGraceLines', () => {
+  const result = evaluateIncrementalApproval({
+    hasPriorApproval: true,
+    approvedSha: 'sha-111',
+    currentSha: 'sha-222',
+    isAuthorOwner: true,
+    deltaLines: 1,
+    isCleanRebase: false,
+    hasRemovedCommits: false,
+    hasProtectedFileChanges: false,
+    maxGraceLines: 0
+  });
+  assert.strictEqual(result.shouldReapprove, false);
+  assert.strictEqual(result.trigger, 'EXCEEDS_OWNER_GRACE');
+  assert.match(result.reason, /\(1 line\)/);
+});
+
 test('evaluateIncrementalApproval excludes test file lines from code owner grace budget', () => {
   const result = evaluateIncrementalApproval({
     hasPriorApproval: true,
