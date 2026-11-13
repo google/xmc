@@ -115,12 +115,13 @@ Choose a state storage location outside the Git repository based on your environ
 
 #### Option 1: Google Cloud Storage (`gcs`) Remote Backend (Recommended)
 
-1. Create a dedicated GCS bucket with **Object Versioning** enabled so infrastructure state history is versioned independently of Git:
+1. Create a dedicated GCS bucket and enable **Object Versioning** so infrastructure state history is versioned independently of Git:
    ```bash
    gcloud storage buckets create gs://YOUR_TF_STATE_GCS_BUCKET \
      --project=YOUR_PROJECT_ID \
      --location=YOUR_REGION \
      --uniform-bucket-level-access
+   # Enable Object Versioning (gcloud storage buckets create does not accept --versioning):
    gcloud storage buckets update gs://YOUR_TF_STATE_GCS_BUCKET --versioning
    ```
 2. Configure `terraform_backend_defaults` at the top of `deploy/ctk_v2/xmanager-cloud-deployment.yaml`:
@@ -144,7 +145,9 @@ mkdir -p "${HOME}/.local/share/xmc/ctk-out"
   -d deploy/ctk_v2/xmanager-cloud-deployment.yaml \
   -o "${HOME}/.local/share/xmc/ctk-out" -l WARNING -w --force
 
-# Or, if using tools/dev_env (which reads ./ctk-out), point ./ctk-out in each worktree to the external directory:
+# Or, if using tools/dev_env (which reads ./ctk-out), point ./ctk-out in each worktree to the external directory
+# (if ./ctk-out already exists from an earlier run, move its contents into the external directory first):
+rm -rf ctk-out
 ln -s "${HOME}/.local/share/xmc/ctk-out" ctk-out
 ```
 
