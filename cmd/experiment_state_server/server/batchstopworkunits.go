@@ -18,10 +18,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/storage/state"
 	"xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
 
@@ -69,6 +71,7 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *msgpb.Bat
 		return nil, fmt.Errorf("failed to list work units: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
+	workUnits = filterStoppableWorkUnits(ctx, workUnits)
 	if len(workUnits) == 0 {
 		logging.Warn(ctx, "No work units to stop")
 		return &lropb.Operation{Done: true}, nil
@@ -115,6 +118,34 @@ func (h *WorkUnitHandler) BatchStopWorkUnits(ctx context.Context, req *msgpb.Bat
 type WorkUnitStopEnqueueResult struct {
 	Operation       *lropb.Operation
 	ExecutionUpdate *storage.WorkUnitExecutionUpdate
+}
+
+// filterStoppableWorkUnits returns only work units that are not already in a terminal or stopping state.
+func filterStoppableWorkUnits(ctx context.Context, workUnits []*msgpb.WorkUnit) []*msgpb.WorkUnit {
+	stoppable := make([]*msgpb.WorkUnit, 0, len(workUnits))
+	for _, workUnit := range workUnits {
+		if !isWorkUnitStoppable(workUnit) {
+			logging.Info(ctx, "Skipping stop for work unit in terminal or stopping state",
+				"work_unit", workUnit.GetName(),
+				"state", workUnit.GetCurrentWorkUnitExecution().GetStatus().GetState(),
+			)
+			continue
+		}
+		stoppable = append(stoppable, workUnit)
+	}
+	return stoppable
+}
+
+// isWorkUnitStoppable returns whether the given work unit is in a state that can be stopped.
+func isWorkUnitStoppable(workUnit *msgpb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetCurrentWorkUnitExecution() == nil {
+		return false
+	}
+	currentState := workUnit.GetCurrentWorkUnitExecution().GetStatus().GetState()
+	if currentState == msgpb.WorkUnitStatus_STOPPING {
+		return false
+	}
+	return !slices.Contains(state.WorkUnitTerminalStates, currentState)
 }
 
 // enqueueWorkUnitStop handles the stopping process for a single work unit.
