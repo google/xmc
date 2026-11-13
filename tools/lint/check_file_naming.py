@@ -346,27 +346,21 @@ def _check_unwired_bazel_test(path: str, tracked_set: set[str], repo_root: Path)
 
 def _is_paired_in_tracked(path: str, tracked_set: set[str]) -> bool:
     """Return True if a legacy allowlisted source file now has a paired unit test."""
-    if (go_test := _expected_go_test(path)) and go_test in tracked_set:
-        return True
-    if (py_tests := _expected_py_test(path)) and any(t in tracked_set for t in py_tests):
-        return True
-    if (ts_test := _expected_ui_ts_test(path)) and ts_test in tracked_set:
-        return True
-    return bool((js_test := _expected_github_script_test(path)) and js_test in tracked_set)
+    spec = _paired_test_spec(path)
+    return spec is not None and any(candidate in tracked_set for candidate in spec[0])
 
 
 def _find_stale_allowlist_entries(tracked_set: set[str]) -> list[str]:
     """Return sorted allowlist entries that no longer exist or now have paired unit tests."""
-    stale = [path for path in ALLOWLIST if path not in tracked_set]
-    if "MODULE.bazel" in tracked_set:
-        for path in LEGACY_UNPAIRED_ALLOWLIST:
-            if path not in tracked_set or _is_paired_in_tracked(path, tracked_set):
-                stale.append(path)
-    else:
-        for path in LEGACY_UNPAIRED_ALLOWLIST:
-            if path in tracked_set and _is_paired_in_tracked(path, tracked_set):
-                stale.append(path)
-    return sorted(set(stale))
+    full_repo = "MODULE.bazel" in tracked_set
+    stale_allow = [path for path in ALLOWLIST if path not in tracked_set]
+    stale_legacy = [
+        path
+        for path in LEGACY_UNPAIRED_ALLOWLIST
+        if (full_repo and path not in tracked_set)
+        or (path in tracked_set and _is_paired_in_tracked(path, tracked_set))
+    ]
+    return sorted(set(stale_allow + stale_legacy))
 
 
 def _classify_repo_violation(path: str, tracked_set: set[str], repo_root: Path) -> str | None:
