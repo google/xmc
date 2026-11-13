@@ -43,6 +43,7 @@ linters:
     - depguard
     - dogsled
     - dupword
+    - funlen
     - gocheckcompilerdirectives
     - gocognit
     - gomoddirectives
@@ -56,6 +57,9 @@ linters:
 linters-settings:
   gofmt:
     simplify: true
+  funlen:
+    lines: 80
+    statements: 55
   gocognit:
     min-complexity: 28
   misspell:
@@ -160,6 +164,7 @@ issues:
         - dupl
     - path: _test\.go
       linters:
+        - funlen
         - gocyclo
         - gocognit
 

@@ -69,6 +69,37 @@ func (p *ProdServer) Close() error {
 	return p.cleanup()
 }
 
+func initActuatorRedisConsumer(ctx context.Context, cfg *Config) *redisclient.ConsumerClient {
+	redisConsumer := redisclient.NewConsumer(
+		redisclient.Config{Addr: cfg.RedisConfig.RedisAddr},
+		constants.RedisStream,
+		constants.RedisGroup,
+		constants.RedisDLQ,
+		cfg.RedisConfig.RedisMaxRetries,
+		cfg.RedisConfig.RedisProcessTimeout,
+		cfg.RedisConfig.RedisAbandonedMessageTimeout,
+		cfg.RedisConfig.RedisReadBatchSize,
+	)
+	redisConsumer.InitializeClient(ctx)
+	cleanupWorkerID := actuatorCleanupWorkerID(ctx)
+	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
+	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
+	return redisConsumer
+}
+
+func runCleanups(cleanups []func() error) error {
+	var errs []error
+	for i := len(cleanups) - 1; i >= 0; i-- {
+		if cleanups[i] == nil {
+			continue
+		}
+		if err := cleanups[i](); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // NewProd initializes production dependencies for the actuator server.
 func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer, retErr error) {
 	if cfg == nil {
@@ -81,9 +112,7 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	var cleanups []func() error
 	defer func() {
 		if retErr != nil {
-			for i := len(cleanups) - 1; i >= 0; i-- {
-				_ = cleanups[i]()
-			}
+			_ = runCleanups(cleanups)
 		}
 	}()
 
@@ -91,68 +120,38 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	if err != nil {
 		return nil, err
 	}
-	cleanups = append(cleanups, func() error {
-		dbStorage.Close()
-		return nil
-	})
+	cleanups = append(cleanups, func() error { dbStorage.Close(); return nil })
 
 	k8sClient, err := k8sclient.New(cfg.RuntimeConfig, dbStorage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-
 	keyReloader, err := keyreloader.NewVerifierReloader(cfg.VerifyingKeyFile, cfg.MaxRecentKeys)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load verifying key: %w", err)
 	}
 
-	redisConfig := redisclient.Config{
-		Addr: cfg.RedisConfig.RedisAddr,
-	}
-	redisConsumer := redisclient.NewConsumer(
-		redisConfig,
-		constants.RedisStream,
-		constants.RedisGroup,
-		constants.RedisDLQ,
-		cfg.RedisConfig.RedisMaxRetries,
-		cfg.RedisConfig.RedisProcessTimeout,
-		cfg.RedisConfig.RedisAbandonedMessageTimeout,
-		cfg.RedisConfig.RedisReadBatchSize,
-	)
-	redisConsumer.InitializeClient(ctx)
-	cleanups = append(cleanups, func() error {
-		return redisConsumer.Close(context.Background())
-	})
-
-	cleanupWorkerID := actuatorCleanupWorkerID(ctx)
-	go redisConsumer.RunCleanup(ctx, cleanupWorkerID)
-	logging.Info(ctx, "Initialized Redis task queue and started cleanup worker", "addr", cfg.RedisConfig.RedisAddr, "cleanup_worker_id", cleanupWorkerID)
+	// TODO: fix data race between RunCleanup goroutine reading c.TaskHandler and SetTaskHandler, plus goroutine leak on NewProd error and unguarded Close().
+	redisConsumer := initActuatorRedisConsumer(ctx, cfg)
+	cleanups = append(cleanups, func() error { return redisConsumer.Close(context.Background()) })
 
 	pauseCache := pausescheduling.NewCache()
 	pauseListener, err := initPauseListener(ctx, cfg, pauseCache, dbStorage)
 	if err != nil {
 		return nil, err
 	}
-
 	if pauseListener != nil {
 		cleanups = append(cleanups, pauseListener.Close)
 	}
-
 	pauseHandler, err := initPauseHandler(cfg, pauseCache, dbStorage)
 	if err != nil {
 		return nil, err
 	}
 
-	tokenValidator := initJWKSTokenValidator(cfg)
-
 	handler, err := workunittaskhandler.New(workunittaskhandler.Params{
-		K8sClient:              k8sClient,
-		ProjectID:              projectID,
-		Audience:               cfg.Audience,
-		XManagerServiceAccount: cfg.XManagerServiceAccount,
-		JWTVerifier:            keyReloader.Verifier,
-		TokenValidator:         tokenValidator,
-		PauseHandler:           pauseHandler,
+		K8sClient: k8sClient, ProjectID: projectID, Audience: cfg.Audience,
+		XManagerServiceAccount: cfg.XManagerServiceAccount, JWTVerifier: keyReloader.Verifier,
+		TokenValidator: initJWKSTokenValidator(cfg), PauseHandler: pauseHandler,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create work unit task handler: %w", err)
@@ -162,24 +161,9 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	go redisConsumer.StartWorker(ctx, workerID)
 	logging.Info(ctx, "Started Redis task queue worker", "worker_id", workerID)
 
-	cleanup := func() error {
-		var errs []error
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			if err := cleanups[i](); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		return errors.Join(errs...)
-	}
-
 	return &ProdServer{
-		Handler:       handler,
-		K8sClient:     k8sClient,
-		dbHealth:      dbStorage,
-		RedisClient:   redisConsumer,
-		PauseListener: pauseListener,
-		PauseHandler:  pauseHandler,
-		cleanup:       cleanup,
+		Handler: handler, K8sClient: k8sClient, dbHealth: dbStorage, RedisClient: redisConsumer,
+		PauseListener: pauseListener, PauseHandler: pauseHandler, cleanup: func() error { return runCleanups(cleanups) },
 	}, nil
 }
 

@@ -87,6 +87,37 @@ type ComponentAccess = bridge.ComponentAccess
 // ComponentCondition defines a condition entry matching standard RFC3339 timestamps.
 type ComponentCondition = bridge.ComponentCondition
 
+// finalizeConfig checks required Config fields, resolves cluster identity, and validates timings.
+func finalizeConfig(cfg *Config) error {
+	if cfg == nil {
+		return errors.New("config cannot be nil")
+	}
+	if cfg.CMSAddress == "" {
+		return errors.New("cms-address must be specified")
+	}
+	if cfg.Namespace == "" {
+		return errors.New("namespace must be specified")
+	}
+	if cfg.ReleaseName == "" {
+		return errors.New("release-name must be specified")
+	}
+	resolvedClusterName, err := resolveClusterIdentityFlags(cfg.ClusterName, cfg.ReleaseName, cfg.OwnershipEpoch)
+	if err != nil {
+		return err
+	}
+	cfg.ClusterName = resolvedClusterName
+	if err := validateTimings(cfg.ProbeInterval, cfg.ProbeTimeout, cfg.ReconcileTimeout); err != nil {
+		return err
+	}
+	if cfg.MaxConcurrentReconciles < 1 {
+		return fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", cfg.MaxConcurrentReconciles)
+	}
+	if cfg.HealthProbeBindAddress == "" || cfg.HealthProbeBindAddress == "0" {
+		return fmt.Errorf("health-probe-bind-address must be a listen address (\"\" and \"0\" disable the probes), got %q", cfg.HealthProbeBindAddress)
+	}
+	return nil
+}
+
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
 // variables (CMS_ADDRESS, NAMESPACE, PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT,
@@ -94,10 +125,6 @@ type ComponentCondition = bridge.ComponentCondition
 // Returns an error if flag parsing fails, if intervals/timeouts are non-positive, if
 // max-concurrent-reconciles is below 1 or if health-probe-bind-address is empty or "0".
 func ParseConfig(args []string) (*Config, error) {
-	defaultCMS := os.Getenv("CMS_ADDRESS")
-	defaultNS := os.Getenv("NAMESPACE")
-	defaultReleaseName := os.Getenv("HELM_RELEASE_NAME")
-	defaultClusterName := os.Getenv("CLUSTER_NAME")
 	defaultOwnershipEpoch, err := ownershipEpochFromEnv()
 	if err != nil {
 		return nil, err
@@ -118,64 +145,44 @@ func ParseConfig(args []string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	defaultKubeconfig := os.Getenv("KUBECONFIG")
-	defaultChartPath := os.Getenv("HELM_CHART_PATH")
 
+	cfg := &Config{
+		CMSAddress:              os.Getenv("CMS_ADDRESS"),
+		Namespace:               os.Getenv("NAMESPACE"),
+		ReleaseName:             os.Getenv("HELM_RELEASE_NAME"),
+		ClusterName:             os.Getenv("CLUSTER_NAME"),
+		OwnershipEpoch:          defaultOwnershipEpoch,
+		ProbeInterval:           defaultProbeInterval,
+		ProbeTimeout:            defaultProbeTimeout,
+		ReconcileTimeout:        defaultReconcileTimeout,
+		MaxConcurrentReconciles: defaultMaxConcurrentReconciles,
+		MetricsBindAddress:      "127.0.0.1:8080",
+		HealthProbeBindAddress:  ":8081",
+		Kubeconfig:              os.Getenv("KUBECONFIG"),
+		ChartPath:               os.Getenv("HELM_CHART_PATH"),
+	}
 	fs := flag.NewFlagSet("xmc_bridge", flag.ContinueOnError)
-	cmsAddress := fs.String("cms-address", defaultCMS, "CMS gRPC server address")
-	namespace := fs.String("namespace", defaultNS, "Kubernetes namespace to watch for Component resources")
-	releaseName := fs.String("release-name", defaultReleaseName, "Helm release name for 1P component actuation")
-	clusterName := fs.String("cluster-name", defaultClusterName, "Human-readable cluster label declared to CMS (defaults to release-name)")
-	ownershipEpoch := fs.Int64("ownership-epoch", defaultOwnershipEpoch, "Monotonic fencing epoch declared to CMS (>= 1)")
-	probeInterval := fs.Duration("probe-interval", defaultProbeInterval, "Delay after a successful reconcile pass before a Component is re-probed")
-	probeTimeout := fs.Duration("probe-timeout", defaultProbeTimeout, "Timeout duration for an individual component health probe")
-	reconcileTimeout := fs.Duration("reconcile-timeout", defaultReconcileTimeout, "Timeout duration for one Component reconcile pass")
-	maxConcurrentReconciles := fs.Int("max-concurrent-reconciles", defaultMaxConcurrentReconciles, "Number of Components reconciled in parallel")
-	metricsBindAddress := fs.String("metrics-bind-address", "127.0.0.1:8080", "Address of the unauthenticated metrics endpoint; 0 disables it")
-	healthProbeBindAddress := fs.String("health-probe-bind-address", ":8081", "Address of the /healthz and /readyz endpoints; must not be empty or 0")
-	kubeconfig := fs.String("kubeconfig", defaultKubeconfig, "Path to kubeconfig file")
-	chartPath := fs.String("chart-path", defaultChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
+	fs.StringVar(&cfg.CMSAddress, "cms-address", cfg.CMSAddress, "CMS gRPC server address")
+	fs.StringVar(&cfg.Namespace, "namespace", cfg.Namespace, "Kubernetes namespace to watch for Component resources")
+	fs.StringVar(&cfg.ReleaseName, "release-name", cfg.ReleaseName, "Helm release name for 1P component actuation")
+	fs.StringVar(&cfg.ClusterName, "cluster-name", cfg.ClusterName, "Human-readable cluster label declared to CMS (defaults to release-name)")
+	fs.Int64Var(&cfg.OwnershipEpoch, "ownership-epoch", cfg.OwnershipEpoch, "Monotonic fencing epoch declared to CMS (>= 1)")
+	fs.DurationVar(&cfg.ProbeInterval, "probe-interval", cfg.ProbeInterval, "Delay after a successful reconcile pass before a Component is re-probed")
+	fs.DurationVar(&cfg.ProbeTimeout, "probe-timeout", cfg.ProbeTimeout, "Timeout duration for an individual component health probe")
+	fs.DurationVar(&cfg.ReconcileTimeout, "reconcile-timeout", cfg.ReconcileTimeout, "Timeout duration for one Component reconcile pass")
+	fs.IntVar(&cfg.MaxConcurrentReconciles, "max-concurrent-reconciles", cfg.MaxConcurrentReconciles, "Number of Components reconciled in parallel")
+	fs.StringVar(&cfg.MetricsBindAddress, "metrics-bind-address", cfg.MetricsBindAddress, "Address of the unauthenticated metrics endpoint; 0 disables it")
+	fs.StringVar(&cfg.HealthProbeBindAddress, "health-probe-bind-address", cfg.HealthProbeBindAddress, "Address of the /healthz and /readyz endpoints; must not be empty or 0")
+	fs.StringVar(&cfg.Kubeconfig, "kubeconfig", cfg.Kubeconfig, "Path to kubeconfig file")
+	fs.StringVar(&cfg.ChartPath, "chart-path", cfg.ChartPath, "Base path to per-component Helm charts (<chart-path>/components/<name>) or a fallback Helm chart directory/tarball")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, fmt.Errorf("failed to parse command line flags: %w", err)
 	}
-	if *cmsAddress == "" {
-		return nil, errors.New("cms-address must be specified")
-	}
-	if *namespace == "" {
-		return nil, errors.New("namespace must be specified")
-	}
-	if *releaseName == "" {
-		return nil, errors.New("release-name must be specified")
-	}
-	resolvedClusterName, err := resolveClusterIdentityFlags(*clusterName, *releaseName, *ownershipEpoch)
-	if err != nil {
+	if err := finalizeConfig(cfg); err != nil {
 		return nil, err
 	}
-	if err := validateTimings(*probeInterval, *probeTimeout, *reconcileTimeout); err != nil {
-		return nil, err
-	}
-	if *maxConcurrentReconciles < 1 {
-		return nil, fmt.Errorf("max-concurrent-reconciles must be at least 1, got %d", *maxConcurrentReconciles)
-	}
-	if *healthProbeBindAddress == "" || *healthProbeBindAddress == "0" {
-		return nil, fmt.Errorf("health-probe-bind-address must be a listen address (\"\" and \"0\" disable the probes), got %q", *healthProbeBindAddress)
-	}
-	return &Config{
-		CMSAddress:              *cmsAddress,
-		Namespace:               *namespace,
-		ReleaseName:             *releaseName,
-		ClusterName:             resolvedClusterName,
-		OwnershipEpoch:          *ownershipEpoch,
-		ProbeInterval:           *probeInterval,
-		ProbeTimeout:            *probeTimeout,
-		ReconcileTimeout:        *reconcileTimeout,
-		MaxConcurrentReconciles: *maxConcurrentReconciles,
-		MetricsBindAddress:      *metricsBindAddress,
-		HealthProbeBindAddress:  *healthProbeBindAddress,
-		Kubeconfig:              *kubeconfig,
-		ChartPath:               *chartPath,
-	}, nil
+	return cfg, nil
 }
 
 // validateTimings returns an error for the first non-positive probe or reconcile duration. It is
@@ -293,6 +300,39 @@ func dialCMS(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
+type bridgeK8sClients struct {
+	restCfg   *rest.Config
+	k8sClient kubernetes.Interface
+	prober    *healthprobe.BridgeProber
+}
+
+func buildBridgeK8sClients(kubeconfig string, probeTimeout time.Duration) (bridgeK8sClients, error) {
+	k8sCfg, err := BuildKubeConfig(kubeconfig)
+	if err != nil {
+		return bridgeK8sClients{}, fmt.Errorf("failed to build Kubernetes client config: %w", err)
+	}
+	dynamicClient, err := dynamic.NewForConfig(k8sCfg)
+	if err != nil {
+		return bridgeK8sClients{}, fmt.Errorf("failed to create Kubernetes dynamic client: %w", err)
+	}
+	k8sClient, err := kubernetes.NewForConfig(k8sCfg)
+	if err != nil {
+		return bridgeK8sClients{}, fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(k8sCfg)
+	if err != nil {
+		return bridgeK8sClients{}, fmt.Errorf("failed to create Kubernetes discovery client: %w", err)
+	}
+	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
+	detector := statusdetector.NewK8sStatusDetector(dynamicClient, restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery))
+	netProber := healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(probeTimeout))
+	return bridgeK8sClients{
+		restCfg:   k8sCfg,
+		k8sClient: k8sClient,
+		prober:    healthprobe.NewBridgeProber(detector, netProber, probeTimeout),
+	}, nil
+}
+
 // RunBridge initializes all dependencies (CMS gRPC client, Kubernetes clients, WorkloadManager and
 // Reconciler) and runs the Component controller until ctx is cancelled.
 func RunBridge(ctx context.Context, cfg *Config) error {
@@ -303,62 +343,40 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 	defer conn.Close()
 
 	logging.Info(ctx, "Configuring Kubernetes clients", "kubeconfig", cfg.Kubeconfig)
-	k8sCfg, err := BuildKubeConfig(cfg.Kubeconfig)
+	k8sClients, err := buildBridgeK8sClients(cfg.Kubeconfig, cfg.ProbeTimeout)
 	if err != nil {
-		return fmt.Errorf("failed to build Kubernetes client config: %w", err)
+		return err
 	}
-	dynamicClient, err := dynamic.NewForConfig(k8sCfg)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes dynamic client: %w", err)
-	}
-	k8sClient, err := kubernetes.NewForConfig(k8sCfg)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
-	}
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(k8sCfg)
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes discovery client: %w", err)
-	}
-	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
-	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
-	detector := statusdetector.NewK8sStatusDetector(dynamicClient, mapper)
-	netProber := healthprobe.NewNetworkHealthProber(healthprobe.WithHealthProbeTimeout(cfg.ProbeTimeout))
-	bridgeProber := healthprobe.NewBridgeProber(detector, netProber, cfg.ProbeTimeout)
 
-	helmOpts := []helm.HelmManagerOption{
-		helm.WithKubeconfig(cfg.Kubeconfig),
-	}
+	var helmOpts []helm.HelmManagerOption
+	helmOpts = append(helmOpts, helm.WithKubeconfig(cfg.Kubeconfig))
 	if cfg.ChartPath != "" {
 		helmOpts = append(helmOpts, helm.WithChartPath(cfg.ChartPath))
 	}
-	helmMgr := helm.NewK8sHelmManager(k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
+	helmMgr := helm.NewK8sHelmManager(k8sClients.k8sClient, cfg.Namespace, cfg.ReleaseName, helmOpts...)
 	// The leader's runnable drains the Helm worker on a graceful shutdown. This stops the worker on every other
 	// return path too: a follower that never led, an early error, or a lost Lease, where Helm work is cancelled
 	// rather than awaited, so exit waits only for the cancelled Helm actions to return.
 	defer helmMgr.Abort()
-	clusterUID, err := bridge.ReadClusterUID(ctx, k8sClient)
+
+	clusterUID, err := bridge.ReadClusterUID(ctx, k8sClients.k8sClient)
 	if err != nil {
 		return fmt.Errorf("failed to read cluster identity: %w", err)
 	}
 	cmsClient := componentspb.NewComponentManagerServiceClient(conn)
-	identity := &componentspb.ClusterIdentity{Uid: clusterUID, Name: cfg.ClusterName, Epoch: cfg.OwnershipEpoch}
-	fence, err := bridge.NewClusterFence(cmsClient, identity, bridge.ClusterFenceOptions{})
+	fence, err := bridge.NewClusterFence(cmsClient, &componentspb.ClusterIdentity{Uid: clusterUID, Name: cfg.ClusterName, Epoch: cfg.OwnershipEpoch}, bridge.ClusterFenceOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to initialize cluster fence: %w", err)
 	}
-	mgr, err := ctrl.NewManager(k8sCfg, bridge.ComponentManagerOptions(bridge.ComponentManagerConfig{
-		Namespace:              cfg.Namespace,
-		LeaderElection:         true,
-		MetricsBindAddress:     cfg.MetricsBindAddress,
-		HealthProbeBindAddress: cfg.HealthProbeBindAddress,
+	mgr, err := ctrl.NewManager(k8sClients.restCfg, bridge.ComponentManagerOptions(bridge.ComponentManagerConfig{
+		Namespace: cfg.Namespace, LeaderElection: true, MetricsBindAddress: cfg.MetricsBindAddress, HealthProbeBindAddress: cfg.HealthProbeBindAddress,
 	}))
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)
 	}
 	// The live UID reader bypasses the informer cache, so takeover and stale-incarnation checks see
 	// the current Component rather than a possibly stale cached copy.
-	reconciler, err := bridge.NewReconciler(cmsClient, bridgeProber, helmMgr, bridge.WithClusterFence(fence),
-		bridge.WithLiveUIDReader(bridge.NewAPIReaderLiveUID(mgr.GetAPIReader())))
+	reconciler, err := bridge.NewReconciler(cmsClient, k8sClients.prober, helmMgr, bridge.WithClusterFence(fence), bridge.WithLiveUIDReader(bridge.NewAPIReaderLiveUID(mgr.GetAPIReader())))
 	if err != nil {
 		return fmt.Errorf("failed to initialize Reconciler: %w", err)
 	}
@@ -375,10 +393,7 @@ func RunBridge(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("failed to add cluster fence runnable: %w", err)
 	}
 	controller := bridge.NewComponentController(mgr.GetClient(), reconciler, bridge.ComponentControllerOptions{
-		Namespace:               cfg.Namespace,
-		ProbeInterval:           cfg.ProbeInterval,
-		ReconcileTimeout:        cfg.ReconcileTimeout,
-		MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,
+		Namespace: cfg.Namespace, ProbeInterval: cfg.ProbeInterval, ReconcileTimeout: cfg.ReconcileTimeout, MaxConcurrentReconciles: cfg.MaxConcurrentReconciles,
 	})
 	if err := controller.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to set up Component controller: %w", err)

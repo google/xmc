@@ -51,89 +51,50 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 	if reg == nil {
 		reg = prometheus.NewRegistry()
 	}
+	m := newGatewayMetricCollectors(reg)
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		m.HTTPRequestsTotal,
+		m.HTTPRequestDurationSeconds,
+		m.ActiveConnections,
+		m.DroppedPayloadsTotal,
+		m.BrokersConnections,
+		m.ProduceRecordSizeBytes,
+		m.ProduceRecordsTotal,
+		m.ProduceErrorsTotal,
+	)
+	return m
+}
 
-	m := &GatewayMetrics{
+func newGatewayMetricCollectors(reg *prometheus.Registry) *GatewayMetrics {
+	return &GatewayMetrics{
 		Registry: reg,
-
 		HTTPRequestsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "xmc_ingestion_http_requests_total",
-				Help: "Total number of HTTP requests processed by ingestion gateway.",
-			},
+			prometheus.CounterOpts{Name: "xmc_ingestion_http_requests_total", Help: "Total number of HTTP requests processed by ingestion gateway."},
 			[]string{"status_code", "path", "method"},
 		),
-
 		HTTPRequestDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "xmc_ingestion_http_request_duration_seconds",
-				Help:    "HTTP request latency in seconds.",
-				Buckets: httpDurationBuckets,
-			},
+			prometheus.HistogramOpts{Name: "xmc_ingestion_http_request_duration_seconds", Help: "HTTP request latency in seconds.", Buckets: httpDurationBuckets},
 			[]string{"status_code", "path", "method"},
 		),
-
-		ActiveConnections: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "xmc_ingestion_active_connections",
-				Help: "Number of active HTTP connections.",
-			},
-		),
-
+		ActiveConnections: prometheus.NewGauge(prometheus.GaugeOpts{Name: "xmc_ingestion_active_connections", Help: "Number of active HTTP connections."}),
 		DroppedPayloadsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "xmc_ingestion_dropped_payloads_total",
-				Help: "Total number of dropped metric payloads.",
-			},
+			prometheus.CounterOpts{Name: "xmc_ingestion_dropped_payloads_total", Help: "Total number of dropped metric payloads."},
 			[]string{"reason"},
 		),
-
-		BrokersConnections: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: "franz_go_brokers_connections",
-				Help: "Number of active Franz-Go broker connections.",
-			},
-		),
-
-		ProduceRecordSizeBytes: prometheus.NewHistogram(
-			prometheus.HistogramOpts{
-				Name: "xmc_ingestion_produce_record_size_bytes",
-				Help: "Size in bytes of each metric record accepted by the message bus.",
-				// One serialized metric record, not a batch: a few hundred bytes typically, capped by
-				// the 1 MiB producer batch limit. The old 1 KiB floor put nearly every observation in
-				// the first bucket and told us nothing.
-				Buckets: prometheus.ExponentialBuckets(64, 2, 15),
-			},
-		),
-
-		ProduceRecordsTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "xmc_ingestion_produce_records_total",
-				Help: "Total number of records produced to the message bus.",
-			},
-		),
-
-		ProduceErrorsTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: "xmc_ingestion_produce_errors_total",
-				Help: "Total number of produce errors.",
-			},
-		),
+		BrokersConnections: prometheus.NewGauge(prometheus.GaugeOpts{Name: "franz_go_brokers_connections", Help: "Number of active Franz-Go broker connections."}),
+		ProduceRecordSizeBytes: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name: "xmc_ingestion_produce_record_size_bytes",
+			Help: "Size in bytes of each metric record accepted by the message bus.",
+			// One serialized metric record, not a batch: a few hundred bytes typically, capped by
+			// the 1 MiB producer batch limit. The old 1 KiB floor put nearly every observation in
+			// the first bucket and told us nothing.
+			Buckets: prometheus.ExponentialBuckets(64, 2, 15),
+		}),
+		ProduceRecordsTotal: prometheus.NewCounter(prometheus.CounterOpts{Name: "xmc_ingestion_produce_records_total", Help: "Total number of records produced to the message bus."}),
+		ProduceErrorsTotal:  prometheus.NewCounter(prometheus.CounterOpts{Name: "xmc_ingestion_produce_errors_total", Help: "Total number of produce errors."}),
 	}
-
-	reg.MustRegister(collectors.NewGoCollector())
-	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-
-	reg.MustRegister(m.HTTPRequestsTotal)
-	reg.MustRegister(m.HTTPRequestDurationSeconds)
-	reg.MustRegister(m.ActiveConnections)
-	reg.MustRegister(m.DroppedPayloadsTotal)
-
-	reg.MustRegister(m.BrokersConnections)
-	reg.MustRegister(m.ProduceRecordSizeBytes)
-	reg.MustRegister(m.ProduceRecordsTotal)
-	reg.MustRegister(m.ProduceErrorsTotal)
-
-	return m
 }
 
 // RecordHTTPRequest records status, duration, and active connection tracking for an HTTP request.
