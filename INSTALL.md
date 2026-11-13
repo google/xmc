@@ -302,7 +302,7 @@ Instruct the agent:
 
 We provide automated HPC Cluster Toolkit blueprints to compile and deploy the entire GCP and GKE stack:
 
-1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md).
+1. **Step-by-step Compilation**: Follow the step-by-step instructions on compilation and group-by-group deployments in the [deploy/ctk_v2/README.md](deploy/ctk_v2/README.md) (including [Terraform State Storage (`terraform.tfstate`)](deploy/ctk_v2/README.md#terraform-state-storage-terraformtfstate) guidance on storing infrastructure state outside repository worktrees via GCS or an external host directory).
 2. **Execute Deployment**: Run `gcluster deploy` command groups sequentially, checking resource state transitions as you go.
 3. **Install Optional Catalog Components (`stable-2026a` Profile)**: Every optional catalog component (`redpanda`, `clickhouse`, `ingestion-gateway`) is **disabled by default**. Create a `profile-values.yaml` that enables the ones you need (`redpanda`/`clickhouse` expect the BYO add-ons from [`deploy/addons/metrics`](deploy/addons/metrics/clickhouse/README.md) to be reachable), then install the [`stable-2026a` catalog profile](deploy/profiles/stable-2026a/README.md):
    ```yaml
