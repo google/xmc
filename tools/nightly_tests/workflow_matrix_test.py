@@ -26,9 +26,18 @@ from tools.nightly_tests import workflow_matrix as wm
 _WORKFLOW_SAMPLE = textwrap.dedent(
     """\
     jobs:
+      import-smoke:
+        strategy:
+          matrix:
+            xmanager_version:
+              - '0.8.5.post1'
+              - '0.8.4'
       a:
         strategy:
           matrix:
+            xmanager_version:
+              - '0.8.5.post1'
+              - '0.8.4'
             example:
               - id: 'ok_job'
                 name: "OK Job"
