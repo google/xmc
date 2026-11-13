@@ -79,6 +79,8 @@ function applyExecutionMetadata(
   replacements['MGMT_PROJECT'] = metadata.managementCluster?.project;
   replacements['PROJECT'] = metadata.executingCluster?.project;
   replacements['LOCATION'] = metadata.executingCluster?.location;
+  // When xmc.google.com/cluster-name is omitted on the MultiKueueCluster,
+  // multiKueueClusterName serves as a best-effort stand-in for the GKE cluster name.
   replacements['CLUSTER'] =
     metadata.executingCluster?.clusterName || metadata.multiKueueClusterName;
 }

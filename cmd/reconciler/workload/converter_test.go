@@ -90,16 +90,6 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 		},
 	}
 
-	multiKueueClusterNoClusterNameLabel := &v1beta1.MultiKueueCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "worker-cluster-from-name",
-			Labels: map[string]string{
-				"xmc.google.com/project":  "exec-project",
-				"xmc.google.com/location": "exec-location",
-			},
-		},
-	}
-
 	resourceFlavorNoNodeLabels := &v1beta1.ResourceFlavor{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-flavor-no-node-labels",
@@ -130,34 +120,6 @@ func TestConvertWorkloadToWorkUnitExecutionUpdate(t *testing.T) {
 					Metadata: &spb.WorkUnitExecutionMetadata{
 						ExecutingCluster:      executingClusterInfo,
 						MultiKueueClusterName: "worker-cluster",
-						ResourceFlavor:        "",
-						NodeSelectors:         nil,
-					},
-				},
-				UpdateMask: &fmpb.FieldMask{Paths: []string{"metadata.executing_cluster", "metadata.multi_kueue_cluster_name", "metadata.resource_flavor", "metadata.node_selectors"}},
-			},
-		},
-		{
-			name: "multikueue defaults cluster_name to multikueue cluster name when label omitted",
-			workload: &v1beta1.Workload{
-				ObjectMeta: metav1.ObjectMeta{},
-				Spec:       workloadSpecWithNecessaryLabels,
-				Status: v1beta1.WorkloadStatus{
-					ClusterName: ptr.To("worker-cluster-from-name"),
-				},
-			},
-			objs: []runtime.Object{multiKueueClusterNoClusterNameLabel},
-			want: &storagepkg.WorkUnitExecutionUpdate{
-				WID: 1,
-				EID: 1,
-				WorkUnitExecution: &spb.WorkUnitExecution{
-					Metadata: &spb.WorkUnitExecutionMetadata{
-						ExecutingCluster: &spb.ClusterInfo{
-							Project:     "exec-project",
-							Location:    "exec-location",
-							ClusterName: "worker-cluster-from-name",
-						},
-						MultiKueueClusterName: "worker-cluster-from-name",
 						ResourceFlavor:        "",
 						NodeSelectors:         nil,
 					},

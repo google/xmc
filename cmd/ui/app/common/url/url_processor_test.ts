@@ -188,6 +188,22 @@ describe('UrlProcessor', () => {
     expect(processedUrls[1].disableReason).toBeUndefined();
   });
 
+  it('should disable executingCluster urls when only multiKueueClusterName is set', () => {
+    const workUnit = createWorkUnitWithMetadata({
+      multiKueueClusterName: 'worker-multikueue-cluster',
+    });
+    const urls: Url[] = [
+      {
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}',
+        displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+    ];
+    const processedUrls = processUrls(urls, workUnit);
+    expect(processedUrls[0].processedUrl).toBeUndefined();
+    expect(processedUrls[0].disableReason).toBe('Unavailable: no executing cluster assigned');
+  });
+
   it('should disable executingCluster urls when executingCluster is missing while resolving MGMT_PROJECT', () => {
     const unadmittedWorkUnit = createWorkUnitWithMetadata({});
     const urls: Url[] = [
