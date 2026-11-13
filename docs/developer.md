@@ -279,7 +279,7 @@ Tracked UI templates, UI test specs, and GitHub Actions script tests are checked
 
 ### 8. GitHub Actions Workflows & Shell Scripts (`actionlint` & `shellcheck`)
 Workflows and tracked shell scripts are validated in CI ([`.github/workflows/lint.yml`](../.github/workflows/lint.yml)) and locally in `.githooks/pre-commit`:
-* **`actionlint`**: Validates `.github/workflows/*.{yml,yaml}` against [`.github/actionlint.yaml`](../.github/actionlint.yaml) (registering `arc-runner-set` labels and integrating `shellcheck` across workflow `run:` blocks).
+* **`actionlint`**: Validates `.github/workflows/*.{yml,yaml}` and integrates `shellcheck` across workflow `run:` blocks.
 * **`shellcheck`**: Validates tracked `*.sh` and `*.bash` scripts with `shellcheck -S style -e SC1091`.
 * **Node JS Script Tests**: Runs `node --test .github/scripts/*.test.js` and `node --test tools/nightly_tests/*_test.js` in CI when workflow scripts or nightly test utilities change.
 

@@ -510,8 +510,8 @@ check_security() {
 
 check_workflows() {
   if [ "${MODE}" = "check" ]; then
-    if [ -z "$(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml' '.github/actionlint.yaml')" ]; then return; fi
-  elif ! staged_paths_match AMD '^\.github/(workflows/|actions/|actionlint\.yaml$)'; then
+    if [ -z "$(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')" ]; then return; fi
+  elif ! staged_paths_match AMD '^\.github/(workflows/|actions/)'; then
     return
   fi
 
@@ -540,7 +540,7 @@ check_workflows() {
   fi
 
   echo "--> Running GitHub Actions Workflow Linter (actionlint)..."
-  if ! "${actionlint_bin}" -config-file .github/actionlint.yaml; then
+  if ! "${actionlint_bin}"; then
     echo "❌ actionlint failed."
     FAILED=1
   fi
