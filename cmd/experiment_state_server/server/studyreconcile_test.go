@@ -169,10 +169,12 @@ func startSilentRedis(t *testing.T) string {
 	}
 	var mu sync.Mutex
 	var conns []net.Conn
+	closed := false
 	t.Cleanup(func() {
 		lis.Close()
 		mu.Lock()
 		defer mu.Unlock()
+		closed = true
 		for _, c := range conns {
 			c.Close()
 		}
@@ -184,6 +186,12 @@ func startSilentRedis(t *testing.T) string {
 				return
 			}
 			mu.Lock()
+			if closed {
+				// Cleanup already ran: close the late connection instead of leaking it.
+				conn.Close()
+				mu.Unlock()
+				return
+			}
 			conns = append(conns, conn)
 			mu.Unlock()
 		}
