@@ -29,8 +29,83 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
+func assignWorkUnitMetadataAndTimestamps(ctx context.Context, tx *storage.Transaction, wu *essmsgpb.WorkUnit, now time.Time) (int64, int64, error) {
+	xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(wu.GetName())
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
+	}
+	ensureWorkUnitExecutionStatus(wu)
+	if wid == 0 {
+		wid, err = tx.WorkUnits.FetchNextWorkUnitID(ctx, xid)
+		if err != nil {
+			return 0, 0, fmt.Errorf("failed to fetch next work unit ID: %w", err)
+		}
+		wu.Name = validator.ConstructWorkUnitName(xid, wid)
+		wu.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, 1)
+	}
+	setParentIfNonNil(wu.CurrentWorkUnitExecution.Status.SystemMessage, wu.GetName())
+	setParentIfNonNil(wu.CurrentWorkUnitExecution.Status.UserMessage, wu.GetName())
+
+	wu.CreateTime, wu.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.CreateTime, wu.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now), timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.Status.UpdateTime, wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now), timestamppb.New(now)
+	return xid, wid, nil
+}
+
+func insertWorkUnitAndSyncExperiment(ctx context.Context, tx *storage.Transaction, localWU *essmsgpb.WorkUnit, xid, wid int64, now time.Time) (*essmsgpb.Experiment, error) {
+	if err := tx.WorkUnits.InsertWorkUnit(ctx, localWU); err != nil {
+		return nil, fmt.Errorf("failed to insert work unit: %w", err)
+	}
+	exp, err := tx.Experiments.FetchExperiment(ctx, xid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch experiment: %w", err)
+	}
+	if exp == nil {
+		return nil, fmt.Errorf("experiment %d not found", xid)
+	}
+	if err := RecordExecutionHistory(ctx, tx, xid, wid, 1, localWU.GetExecutable(), nil, localWU.GetCurrentWorkUnitExecution()); err != nil {
+		return nil, err
+	}
+	creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
+	}
+	// TODO: Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.
+	if err := tx.Experiments.UpdateExperimentStatus(ctx, creationRes.Experiment); err != nil {
+		return nil, fmt.Errorf("failed to update experiment status: %w", err)
+	}
+	if creationRes.ResourcesChanged {
+		if err := tx.Experiments.UpdateExperimentResources(ctx, creationRes.Experiment); err != nil {
+			return nil, fmt.Errorf("failed to update experiment resources: %w", err)
+		}
+	}
+	return creationRes.Experiment, nil
+}
+
+func copyCommittedWorkUnitTimestamps(dst, src *essmsgpb.WorkUnit) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.CreateTime, dst.UpdateTime = src.CreateTime, src.UpdateTime
+	if dst.CurrentWorkUnitExecution == nil || src.CurrentWorkUnitExecution == nil {
+		return
+	}
+	dst.CurrentWorkUnitExecution.CreateTime = src.CurrentWorkUnitExecution.CreateTime
+	dst.CurrentWorkUnitExecution.UpdateTime = src.CurrentWorkUnitExecution.UpdateTime
+	if dst.CurrentWorkUnitExecution.Status != nil && src.CurrentWorkUnitExecution.Status != nil {
+		dst.CurrentWorkUnitExecution.Status.UpdateTime = src.CurrentWorkUnitExecution.Status.UpdateTime
+		dst.CurrentWorkUnitExecution.Status.StateUpdateTime = src.CurrentWorkUnitExecution.Status.StateUpdateTime
+	}
+}
+
 // CreateWorkUnit creates a new work unit in storage.
 func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
+	if wu == nil {
+		return nil, fmt.Errorf("work unit cannot be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	if txRunner == nil {
+		return nil, fmt.Errorf("transaction runner cannot be nil: %w", grpcerr.ErrInternal)
+	}
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
 
@@ -39,73 +114,15 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 	err := txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		now := time.Now()
 		localWU := proto.Clone(wu).(*essmsgpb.WorkUnit)
-
-		// 1. Extract the XID and WID from the work unit name.
-		xid, wid, err := validator.ValidateWorkUnitNameAllowZeroWID(localWU.GetName())
+		xid, wid, err := assignWorkUnitMetadataAndTimestamps(ctx, tx, localWU, now)
 		if err != nil {
-			return fmt.Errorf("failed to validate work unit name: %w (%v)", grpcerr.ErrInvalidArgument, err)
-		}
-
-		ensureWorkUnitExecutionStatus(localWU)
-
-		// 1.1. If the work unit ID is 0, fetch the next available ID and update the names.
-		initialEID := int64(1)
-		if wid == 0 {
-			wid, err = tx.WorkUnits.FetchNextWorkUnitID(ctx, xid)
-			if err != nil {
-				return fmt.Errorf("failed to fetch next work unit ID: %w", err)
-			}
-			localWU.Name = validator.ConstructWorkUnitName(xid, wid)
-			localWU.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, wid, initialEID)
-		}
-		setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.SystemMessage, localWU.GetName())
-		setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.UserMessage, localWU.GetName())
-
-		// 1.2. Set the initial timestamps to the current time.
-		localWU.CreateTime = timestamppb.New(now)
-		localWU.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
-
-		// 2. Insert the work unit into storage.
-		if err := tx.WorkUnits.InsertWorkUnit(ctx, localWU); err != nil {
-			return fmt.Errorf("failed to insert work unit: %w", err)
-		}
-
-		// 3. Read the Experiment row.
-		exp, err = tx.Experiments.FetchExperiment(ctx, xid)
-		if err != nil {
-			return fmt.Errorf("failed to fetch experiment: %w", err)
-		}
-		if exp == nil {
-			return fmt.Errorf("experiment %d not found", xid)
-		}
-
-		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
-		if err := RecordExecutionHistory(ctx, tx, xid, wid, initialEID, localWU.GetExecutable(), nil, localWU.GetCurrentWorkUnitExecution()); err != nil {
 			return err
 		}
-
-		creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
+		updatedExp, err := insertWorkUnitAndSyncExperiment(ctx, tx, localWU, xid, wid, now)
 		if err != nil {
-			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
+			return err
 		}
-		exp = creationRes.Experiment
-		resourcesChanged := creationRes.ResourcesChanged
-
-		// 5. Buffer mutations for Experiment status and resources via thin repository methods.
-		// TODO: Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.
-		if err := tx.Experiments.UpdateExperimentStatus(ctx, exp); err != nil {
-			return fmt.Errorf("failed to update experiment status: %w", err)
-		}
-		if resourcesChanged {
-			if err := tx.Experiments.UpdateExperimentResources(ctx, exp); err != nil {
-				return fmt.Errorf("failed to update experiment resources: %w", err)
-			}
-		}
-
+		exp = updatedExp
 		committedWU = localWU
 		return nil
 	})
@@ -114,21 +131,10 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		return nil, err
 	}
 
-	// Populate timestamps back onto input proto pointer for caller convenience (matching CreateExperiment behavior).
-	wu.CreateTime = committedWU.CreateTime
-	wu.UpdateTime = committedWU.UpdateTime
-	if wu.CurrentWorkUnitExecution != nil {
-		wu.CurrentWorkUnitExecution.CreateTime = committedWU.CurrentWorkUnitExecution.CreateTime
-		wu.CurrentWorkUnitExecution.UpdateTime = committedWU.CurrentWorkUnitExecution.UpdateTime
-		if wu.CurrentWorkUnitExecution.Status != nil {
-			wu.CurrentWorkUnitExecution.Status.UpdateTime = committedWU.CurrentWorkUnitExecution.Status.UpdateTime
-			wu.CurrentWorkUnitExecution.Status.StateUpdateTime = committedWU.CurrentWorkUnitExecution.Status.StateUpdateTime
-		}
-	}
-
+	// Populate timestamps back onto caller's proto pointer (matching CreateExperiment behavior).
+	copyCommittedWorkUnitTimestamps(wu, committedWU)
 	logging.Info(ctx, "Written work unit to storage", "work_unit", committedWU)
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
-
 	return committedWU, nil
 }
 
