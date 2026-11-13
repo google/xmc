@@ -30,7 +30,6 @@ import (
 type createArtifactContext struct {
 	creator   string
 	parentXID int64
-	parentWID int64
 }
 
 func (h *ArtifactHandler) validateAndPrepareArtifactCreation(ctx context.Context, req *msgpb.CreateArtifactRequest) (createArtifactContext, *msgpb.Artifact, error) {
@@ -64,7 +63,7 @@ func (h *ArtifactHandler) validateAndPrepareArtifactCreation(ctx context.Context
 	if err := h.validateChartArtifactPayload(ctx, artifact, req.GetParent()); err != nil {
 		return createArtifactContext{}, nil, err
 	}
-	return createArtifactContext{creator: creator, parentXID: parentXID, parentWID: parentWID}, artifact, nil
+	return createArtifactContext{creator: creator, parentXID: parentXID}, artifact, nil
 }
 
 func (h *ArtifactHandler) notifyArtifactObservers(ctx context.Context, artifact *msgpb.Artifact) error {
