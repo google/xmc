@@ -105,6 +105,7 @@ func (a *Authenticator) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to generate secure random state", http.StatusInternalServerError)
 		return
 	}
+	state = stateWithReturnPath(state, r.URL.Query().Get("return_to"))
 
 	a.setOAuthStateCookie(w, r, state)
 	// A CLI login abandoned in this browser must not outlive this Dashboard login.
@@ -165,10 +166,10 @@ func (a *Authenticator) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.completeDashboardLogin(ctx, w, r, userInfo)
+	a.completeDashboardLogin(ctx, w, r, userInfo, returnPathFromState(oauthState))
 }
 
-func (a *Authenticator) completeDashboardLogin(ctx context.Context, w http.ResponseWriter, r *http.Request, userInfo *GoogleUserInfo) {
+func (a *Authenticator) completeDashboardLogin(ctx context.Context, w http.ResponseWriter, r *http.Request, userInfo *GoogleUserInfo, returnPath string) {
 	dynamicFrontendURL := a.getDynamicFrontendURL(r)
 
 	identity, err := a.admitLogin(ctx, userInfo)
@@ -190,7 +191,7 @@ func (a *Authenticator) completeDashboardLogin(ctx context.Context, w http.Respo
 		return
 	}
 
-	dashboardURL := fmt.Sprintf("%s/experiments", dynamicFrontendURL)
+	dashboardURL := dynamicFrontendURL + returnPath
 	http.Redirect(w, r, dashboardURL, http.StatusTemporaryRedirect)
 }
 

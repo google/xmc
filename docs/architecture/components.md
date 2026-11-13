@@ -69,6 +69,9 @@ Responsibilities beyond CRUD:
   from Spanner back to `xmc-tasks-stream` in priority order with backlog throttling.
 - **OAuth2 endpoints.** The application-level OAuth2 login, callback, and session handling live in
   [`pkg/auth/oauth2`](../../pkg/auth/oauth2) and are mounted by ESS.
+  The UI passes the requested route as `return_to` to `/api/login`. The callback restores its path,
+  query, and fragment after validating the OAuth state and creating a session. Missing or invalid
+  destinations fall back to `/experiments`; destinations must be local absolute paths.
 
 **Depends on:** Cloud Spanner (ESS database), XID Service, Redis.
 
