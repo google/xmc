@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from xdash._protos import messages_pb2 as dashboard_messages_pb2
 
 # Skip git push snapshot during local test launch
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 DEFAULT_GATEWAY_URL = "http://ingestion-gateway-service.xmc.svc.cluster.local:8080/api/v1/metrics"
 

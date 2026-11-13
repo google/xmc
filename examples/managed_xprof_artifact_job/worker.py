@@ -17,6 +17,7 @@
 
 import os
 import time
+from collections.abc import Sequence
 
 import jax
 import jax.numpy as jnp
@@ -83,7 +84,7 @@ def _run_workload(
         time.sleep(1)
 
 
-def main(argv):
+def main(argv: Sequence[str]) -> None:
     if len(argv) > 1:
         raise app.UsageError("Too many command-line arguments.")
 

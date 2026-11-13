@@ -51,7 +51,7 @@ def get_sha256(filepath: str) -> str:
     return h.hexdigest()
 
 
-def copy_flat(src_dir: str, dest_dir: str):
+def copy_flat(src_dir: str, dest_dir: str) -> None:
     """Copies UI source files resolving symlinks into flat physical files.
 
     Bazel sandboxes and monorepos often rely heavily on symlinks. When building
@@ -106,7 +106,7 @@ def copy_flat(src_dir: str, dest_dir: str):
                 raise
 
 
-def main():
+def main() -> None:
     """Main entrypoint for building UI container image.
 
     Strategy:

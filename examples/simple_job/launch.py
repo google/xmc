@@ -64,7 +64,7 @@ flags.DEFINE_string(
 )
 
 # Skip git push snapshot during test launch so SSH passphrase is not prompted
-snapshot_code.push_repo_state = lambda *args, **kwargs: type("Dummy", (), {"commit_url": None})()
+snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
 
 
 def parse_priority(priority_str: str) -> priority_pb2.Priority.ValueType:

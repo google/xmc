@@ -19,6 +19,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -28,7 +29,7 @@ from tools.common.tool_utils import HandledError, run_tool  # noqa: E402
 from tools.pr_review.github_utils import call_github_api  # noqa: E402
 
 
-def _fetch_comments(owner: str, repo: str, since: str | None = None):
+def _fetch_comments(owner: str, repo: str, since: str | None = None) -> list[dict[str, Any]]:
     """Fetches review comments from the repository via GitHub API."""
     comments = []
     page = 1
@@ -53,7 +54,7 @@ def _fetch_comments(owner: str, repo: str, since: str | None = None):
     return comments
 
 
-def _parse_telemetry(comments):
+def _parse_telemetry(comments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Parses and formats telemetry records from the raw comment objects."""
     records = []
     pattern = re.compile(r"<!--\s*xmc-telemetry:\s*(\{.*?\})\s*-->")
@@ -82,7 +83,7 @@ def _parse_telemetry(comments):
     return records
 
 
-def extract_telemetry(args):
+def extract_telemetry(args: argparse.Namespace) -> str | list[dict[str, Any]]:
     """Main orchestrator for extracting telemetry records."""
     comments = _fetch_comments(args.owner, args.repo, args.since)
     records = _parse_telemetry(comments)
@@ -98,7 +99,7 @@ def extract_telemetry(args):
     return records
 
 
-def main():
+def main() -> None:
     """Main entrypoint for extract_telemetry tool."""
     parser = argparse.ArgumentParser(description="Extract usage telemetry from GitHub PR comments.")
     parser.add_argument("owner", help="GitHub repository owner (e.g. google).")

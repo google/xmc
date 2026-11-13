@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 
-def main():
+def main() -> None:
     try:
         # Run git describe to get the tag, commits since tag, and commit hash
         res = subprocess.run(

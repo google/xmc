@@ -37,7 +37,7 @@ def missing_dependencies_error(ui_dir: str) -> str | None:
     )
 
 
-def main():
+def main() -> None:
     """Runs Angular UI unit tests in physical directory."""
     # Resolve the real physical directory of this script on the host system
     real_script_path = os.path.realpath(__file__)

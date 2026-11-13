@@ -83,7 +83,7 @@ def main() -> None:
     _LOGGER.info("Vizier fixture listening on %s", server.endpoint)
     wait_for_termination_signal()
     # DefaultVizierServer exposes no stop method; _server is its started grpc.Server.
-    server._server.stop(_SHUTDOWN_GRACE_SECONDS).wait()
+    server._server.stop(_SHUTDOWN_GRACE_SECONDS).wait()  # noqa: SLF001
 
 
 if __name__ == "__main__":

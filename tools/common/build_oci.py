@@ -62,7 +62,7 @@ _ELF_MACHINE_ARCH = {
 }
 
 
-def detect_elf_architecture(binary_path: str):
+def detect_elf_architecture(binary_path: str) -> str | None:
     """Detects architecture of an ELF binary. Returns 'amd64', 'arm64', or None."""
     try:
         with open(binary_path, "rb") as f:
@@ -119,7 +119,7 @@ def _write_json_file(path: str, payload: object, label: str) -> None:
         ) from e
 
 
-def build_oci(args):
+def build_oci(args: argparse.Namespace) -> dict[str, str]:
     """Packages a binary into an OCI container image tarball."""
     binary_path = args.binary_path
     binary_name = args.binary_name
@@ -203,7 +203,7 @@ def build_oci(args):
     }
 
 
-def main():
+def main() -> None:
     """Main entrypoint parsing CLI arguments and executing OCI build."""
     parser = argparse.ArgumentParser(
         description=(

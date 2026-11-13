@@ -54,7 +54,7 @@ class _LiveState:
     """Live GitHub state of a PR that checklist items are verified against."""
 
     login: str
-    comments: list[dict[str, Any]]
+    comments: list[Any]
     resolved_comment_ids: frozenset[int]
 
 

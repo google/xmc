@@ -20,6 +20,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -77,7 +78,7 @@ def _fetch_my_replied_to_ids(owner: str, repo: str, pull_number: int) -> set[int
     }
 
 
-def verify_resolution(args):
+def verify_resolution(args: argparse.Namespace) -> dict[str, Any]:
     """Verifies that all checklist comment IDs have inline replies from the authenticated user."""
     owner = args.owner
     repo = args.repo
@@ -132,7 +133,7 @@ def verify_resolution(args):
     }
 
 
-def main():
+def main() -> None:
     """Main entrypoint for verify_pr_comment_resolution tool."""
     parser = argparse.ArgumentParser(
         description=(
