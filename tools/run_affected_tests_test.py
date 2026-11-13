@@ -469,12 +469,12 @@ class RunAffectedTestsTest(unittest.TestCase):
 
 class DiffCoverTest(unittest.TestCase):
     def test_build_bazel_test_command_with_coverage(self):
-        cmd = rat.build_bazel_test_command(["//pkg:t"], [], {}, Path("/tmp/bep.json"), coverage=True)
+        cmd = rat.build_bazel_test_command(["//pkg:t"], [], {}, Path("/tmp/b.json"), coverage=True)
         self.assertEqual(cmd[:2], ["bazel", "coverage"])
         self.assertIn("--combined_report=lcov", cmd)
 
     def test_resolve_compare_branch_precedence(self):
-        self.assertEqual(rat.resolve_compare_branch(parse("--base-ref=origin/dev"), {}), "origin/dev")
+        self.assertEqual(rat.resolve_compare_branch(parse("--base-ref=dev"), {}), "dev")
         self.assertEqual(
             rat.resolve_compare_branch(parse("--ci"), {"GITHUB_BASE_REF": "release"}),
             "origin/release",

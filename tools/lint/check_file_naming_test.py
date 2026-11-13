@@ -271,14 +271,8 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
             "cmd/ui/app/banner/banner.model.ts",
             "export interface BannerModel { id: string; }\n",
         )
-        self._write_and_stage(
-            "cmd/ui/app/banner/banner_harness.ts",
-            "export class BannerHarness {}\n",
-        )
-        self._write_and_stage(
-            "examples/demo/train.py",
-            "def train() -> None:\n    pass\n",
-        )
+        self._write_and_stage("cmd/ui/app/banner/banner_harness.ts", "export class Harness {}\n")
+        self._write_and_stage("examples/demo/train.py", "def train() -> None:\n    pass\n")
 
         result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
         self.assertEqual(result["violations"], 0)
@@ -295,10 +289,7 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
 
         assert ctx.exception.details is not None
         violation_paths = [v["path"] for v in ctx.exception.details["violations"]]
-        self.assertEqual(
-            violation_paths,
-            ["internal/pkg/service_test.go", "tools/helper_test.py"],
-        )
+        self.assertEqual(violation_paths, ["internal/pkg/service_test.go", "tools/helper_test.py"])
 
         # Registering the tests in BUILD.bazel resolves the violations.
         self._write_and_stage(
@@ -325,10 +316,7 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
             cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
 
         assert ctx.exception.details is not None
-        self.assertEqual(
-            ctx.exception.details["stale_allowlist"],
-            [legacy_go],
-        )
+        self.assertEqual(ctx.exception.details["stale_allowlist"], [legacy_go])
 
 
 if __name__ == "__main__":

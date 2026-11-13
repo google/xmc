@@ -393,11 +393,10 @@ def run_affected_tests(args: argparse.Namespace, env: Mapping[str, str]) -> dict
         ensure_emulator_reachable(env, args.emulator_wait_seconds)
     cache_flag = [f"--repository_cache={args.repository_cache}"] if args.repository_cache else []
     flags = [*cache_flag, *args.bazel_flags]
-    outcome = (
-        run_bazel_tests(report["bazel_targets"], flags, env, coverage=True)
-        if args.coverage
-        else run_bazel_tests(report["bazel_targets"], flags, env)
-    )
+    if args.coverage:
+        outcome = run_bazel_tests(report["bazel_targets"], flags, env, coverage=True)
+    else:
+        outcome = run_bazel_tests(report["bazel_targets"], flags, env)
     raise_for_test_failure(outcome, report)
     result = report | {"passed_targets": list(outcome.passed_targets)}
     if args.coverage:

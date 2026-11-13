@@ -41,7 +41,6 @@ LEGACY_UNPAIRED_ALLOWLIST: frozenset[str] = frozenset(
         "api/filter/expression_helper.go",
         "api/filter/go/filter/parser.go",
         "api/filter/go/filtervisitor/visitor.go",
-        "api/filter/go/queryfilterbase/base.go",
         "cmd/actuator/config.go",
         "cmd/actuator/metadata.go",
         "cmd/log_monitor/database.go",
@@ -120,13 +119,29 @@ _GO_EXEMPT_DIRS = frozenset(
         "profilecontract",
     }
 )
-_GO_EXEMPT_NAMES = frozenset({"main.go", "test_utils.go", "test_mocks.go"})
+_GO_EXEMPT_NAMES = frozenset({"main.go", "test_utils.go", "test_mocks.go", "harness.go"})
 _GO_FUNC_RE = re.compile(r"^func\s+", re.MULTILINE)
 _PY_DEF_RE = re.compile(r"^\s*(?:async\s+)?def\s+\w+", re.MULTILINE)
 _TS_LOGIC_RE = re.compile(
     r"@(?:Component|Injectable|Directive|Pipe)\b"
     r"|\bexport\s+(?:(?:abstract\s+)?class|(?:async\s+)?function)\s+\w+"
 )
+_UI_TS_EXEMPT_SUFFIXES = (
+    "_test.ts",
+    ".spec.ts",
+    "_spec.ts",
+    ".test.ts",
+    ".d.ts",
+    "_harness.ts",
+    "/mock_data.ts",
+)
+_UI_TS_EXEMPT_PATHS = frozenset(
+    {
+        "cmd/ui/app/app_config.ts",
+        "cmd/ui/app/side_panel/side_panel_registry.ts",
+    }
+)
+_NON_BAZEL_PY_TEST_DIRS = ("test/e2e/", "test/regression/")
 
 
 def _check_ui_html(path: str) -> str | None:
@@ -215,11 +230,7 @@ def classify_path_violation(path: str) -> str | None:
 
 def _expected_go_test(path: str) -> str | None:
     """Return the expected *_test.go path for a Go source file, or None if exempt."""
-    if (
-        not path.endswith(".go")
-        or path.endswith("_test.go")
-        or path == "test/dataengine/harness.go"
-    ):
+    if not path.endswith(".go") or path.endswith("_test.go"):
         return None
     p = Path(path)
     if p.name in _GO_EXEMPT_NAMES or p.name.endswith("_test_utils.go"):
@@ -245,14 +256,7 @@ def _expected_ui_ts_test(path: str) -> str | None:
     """Return the expected *_test.ts path for a UI TypeScript module, or None if exempt."""
     if not (path.startswith("cmd/ui/app/") and path.endswith(".ts")):
         return None
-    if path.endswith(
-        ("_test.ts", ".spec.ts", "_spec.ts", ".test.ts", ".d.ts", "_harness.ts", "/mock_data.ts")
-    ):
-        return None
-    if "/testing/" in path or path in {
-        "cmd/ui/app/app_config.ts",
-        "cmd/ui/app/side_panel/side_panel_registry.ts",
-    }:
+    if path.endswith(_UI_TS_EXEMPT_SUFFIXES) or "/testing/" in path or path in _UI_TS_EXEMPT_PATHS:
         return None
     return f"{path[:-3]}_test.ts"
 
@@ -275,9 +279,7 @@ def _has_executable_declarations(repo_root: Path, path: str, pattern: re.Pattern
     return bool(pattern.search(file_path.read_text(encoding="utf-8", errors="replace")))
 
 
-def _paired_test_spec(
-    path: str,
-) -> tuple[tuple[str, ...], re.Pattern[str] | None, str] | None:
+def _paired_test_spec(path: str) -> tuple[tuple[str, ...], re.Pattern[str] | None, str] | None:
     """Return (candidate_tests, logic_pattern, error_message) for a source file, or None."""
     if js_test := _expected_github_script_test(path):
         msg = f"Node workflow scripts under .github/scripts/ must have a paired {js_test}."
@@ -294,9 +296,7 @@ def _paired_test_spec(
     return None
 
 
-def _check_missing_paired_test(
-    path: str, tracked_set: set[str], repo_root: Path
-) -> str | None:
+def _check_missing_paired_test(path: str, tracked_set: set[str], repo_root: Path) -> str | None:
     """Return a violation if a source file lacks its required 1-to-1 unit test file."""
     if path in LEGACY_UNPAIRED_ALLOWLIST or (spec := _paired_test_spec(path)) is None:
         return None
@@ -322,12 +322,10 @@ def _find_nearest_build_file(path: str, tracked_set: set[str]) -> tuple[str, str
         parent = parent.parent
 
 
-def _check_unwired_bazel_test(
-    path: str, tracked_set: set[str], repo_root: Path
-) -> str | None:
+def _check_unwired_bazel_test(path: str, tracked_set: set[str], repo_root: Path) -> str | None:
     """Return a violation if a *_test.go or *_test.py file is not wired in BUILD.bazel."""
     is_go_test = path.endswith("_test.go") and not path.startswith(("vendor/", "third_party/"))
-    is_py_test = path.endswith("_test.py") and not path.startswith(("test/e2e/", "test/regression/"))
+    is_py_test = path.endswith("_test.py") and not path.startswith(_NON_BAZEL_PY_TEST_DIRS)
     if not (is_go_test or is_py_test):
         return None
     if "BUILD.bazel" not in tracked_set and "BUILD" not in tracked_set:
@@ -350,9 +348,7 @@ def _is_paired_in_tracked(path: str, tracked_set: set[str]) -> bool:
     """Return True if a legacy allowlisted source file now has a paired unit test."""
     if (go_test := _expected_go_test(path)) and go_test in tracked_set:
         return True
-    if (py_tests := _expected_py_test(path)) and (
-        py_tests[0] in tracked_set or py_tests[1] in tracked_set
-    ):
+    if (py_tests := _expected_py_test(path)) and any(t in tracked_set for t in py_tests):
         return True
     if (ts_test := _expected_ui_ts_test(path)) and ts_test in tracked_set:
         return True
@@ -373,9 +369,7 @@ def _find_stale_allowlist_entries(tracked_set: set[str]) -> list[str]:
     return sorted(set(stale))
 
 
-def _classify_repo_violation(
-    path: str, tracked_set: set[str], repo_root: Path
-) -> str | None:
+def _classify_repo_violation(path: str, tracked_set: set[str], repo_root: Path) -> str | None:
     """Validate path naming, 1-to-1 unit test pairing, and BUILD.bazel test registration."""
     if (naming_error := classify_path_violation(path)) is not None:
         return naming_error
