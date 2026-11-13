@@ -16,6 +16,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, Subject, throwError } from 'rxjs';
 
+import { HealthStatusResponse } from 'app/protos/health_service';
+
 import { FeatureFlagService } from '../service/feature_flag_service';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
@@ -118,7 +120,7 @@ describe('AdminPanelPage Component', () => {
           xidDbSchemaVersion: '1',
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);
@@ -156,13 +158,13 @@ describe('AdminPanelPage Component', () => {
       },
       components: [],
       healthCheckTime: { seconds: 1717804800, nanos: 0 },
-    };
+    } as unknown as HealthStatusResponse;
     spyOn(healthService, 'getHealthStatus').and.callFake(() => {
       attempts++;
       if (attempts === 1) {
         return throwError(() => new Error('Initial load failed'));
       }
-      return of(mockStatus as any);
+      return of(mockStatus);
     });
 
     bootstrap(AdminPanelPage);
@@ -193,9 +195,9 @@ describe('AdminPanelPage Component', () => {
       },
       components: [],
       healthCheckTime: { seconds: 1717804800, nanos: 0 },
-    };
+    } as unknown as HealthStatusResponse;
     spyOn(healthService, 'getHealthStatus').and.returnValues(
-      of(firstStatus as any),
+      of(firstStatus),
       throwError(() => new Error('Refresh error')),
     );
 
@@ -216,7 +218,7 @@ describe('AdminPanelPage Component', () => {
   it('should display progress spinner while loading', async () => {
     const healthService = get(HealthService);
     // Never emit to keep isLoading true
-    spyOn(healthService, 'getHealthStatus').and.returnValue(new Subject<any>());
+    spyOn(healthService, 'getHealthStatus').and.returnValue(new Subject<HealthStatusResponse>());
 
     bootstrap(AdminPanelPage);
     // Flush microtasks without completing observable
@@ -322,7 +324,7 @@ describe('AdminPanelPage Component', () => {
           xidDbSchemaVersion: '1',
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);
@@ -344,7 +346,7 @@ describe('AdminPanelPage Component', () => {
           xidDbSchemaVersion: '1',
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);
@@ -360,7 +362,7 @@ describe('AdminPanelPage Component', () => {
       of({
         healthState: 'HEALTH_STATE_HEALTHY',
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);
@@ -393,7 +395,7 @@ describe('AdminPanelPage Component', () => {
           isSchedulingPaused: true,
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);
@@ -500,7 +502,7 @@ describe('AdminPanelPage Component', () => {
           isSchedulingPaused: pausedOnBackend,
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any);
+      } as unknown as HealthStatusResponse);
     });
 
     bootstrap(AdminPanelPage);
@@ -551,7 +553,7 @@ describe('AdminPanelPage Component', () => {
 
   it('should disable toggle while pauseScheduling is in flight', async () => {
     const healthService = get(HealthService);
-    const pauseSubject$ = new Subject<any>();
+    const pauseSubject$ = new Subject<void>();
     spyOn(healthService, 'pauseScheduling').and.returnValue(pauseSubject$);
 
     bootstrap(AdminPanelPage);
@@ -570,7 +572,7 @@ describe('AdminPanelPage Component', () => {
     // While request is pending, button is disabled
     expect(await pauseBtn!.isDisabled()).toBeTrue();
 
-    pauseSubject$.next({});
+    pauseSubject$.next();
     pauseSubject$.complete();
     await flush();
 
@@ -592,7 +594,7 @@ describe('AdminPanelPage Component', () => {
           schedulingPauseError: 'spanner read timeout',
         },
         healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      } as unknown as HealthStatusResponse),
     );
 
     bootstrap(AdminPanelPage);

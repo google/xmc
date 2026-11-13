@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { ActivatedRouteSnapshot, Router, RouterStateSnapshot } from '@angular/router';
 import { firstValueFrom, Observable, of } from 'rxjs';
 
 import { adminPanelGuard } from './admin_panel.guard';
@@ -53,7 +53,7 @@ describe('adminPanelGuard', () => {
     state.setAdminPanelAccessible(true);
 
     const resultOrObservable = TestBed.runInInjectionContext(() =>
-      adminPanelGuard({} as any, {} as any),
+      adminPanelGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
     );
     const result =
       resultOrObservable instanceof Observable
@@ -68,7 +68,7 @@ describe('adminPanelGuard', () => {
     state.setAdminPanelAccessible(false);
 
     const resultOrObservable = TestBed.runInInjectionContext(() =>
-      adminPanelGuard({} as any, {} as any),
+      adminPanelGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
     );
     const result =
       resultOrObservable instanceof Observable

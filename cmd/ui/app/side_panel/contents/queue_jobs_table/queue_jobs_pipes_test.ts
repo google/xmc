@@ -168,7 +168,7 @@ describe('QueueJobPositionPipe', () => {
       description: 'negative position',
     },
     {
-      input: { status: 'PENDING', positionInQueue: null as any },
+      input: { status: 'PENDING', positionInQueue: null as unknown as number },
       expected: '-',
       description: 'null position',
     },

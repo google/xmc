@@ -13,11 +13,11 @@
 // limitations under the License.
 
 import { TestBed } from '@angular/core/testing';
-import { Router, UrlTree } from '@angular/router';
-import { of } from 'rxjs';
+import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
+import { Observable, of } from 'rxjs';
 
 import { guestGuard } from './guest.guard';
-import { AuthService } from './service/auth.service';
+import { AuthService, UserResponse } from './service/auth.service';
 import { cleanState, setupModule } from './testing/test';
 
 function setup() {
@@ -42,13 +42,15 @@ describe('guestGuard', () => {
   const state = setup();
 
   it('should redirect to /experiments if user is logged in', (done) => {
-    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as any));
+    state.authServiceSpy.getUser.and.returnValue(of({ email: 'user@example.com' } as UserResponse));
     const mockUrlTree = {} as UrlTree;
     state.routerSpy.parseUrl.and.returnValue(mockUrlTree);
 
-    const result = TestBed.runInInjectionContext(() => guestGuard({} as any, {} as any));
+    const result = TestBed.runInInjectionContext(() =>
+      guestGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
+    );
 
-    (result as any).subscribe((res: boolean | UrlTree) => {
+    (result as Observable<boolean | UrlTree>).subscribe((res: boolean | UrlTree) => {
       expect(res).toBe(mockUrlTree);
       expect(state.routerSpy.parseUrl).toHaveBeenCalledWith('/experiments');
       done();
@@ -58,9 +60,11 @@ describe('guestGuard', () => {
   it('should return true if user is not logged in', (done) => {
     state.authServiceSpy.getUser.and.returnValue(of(null));
 
-    const result = TestBed.runInInjectionContext(() => guestGuard({} as any, {} as any));
+    const result = TestBed.runInInjectionContext(() =>
+      guestGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
+    );
 
-    (result as any).subscribe((res: boolean | UrlTree) => {
+    (result as Observable<boolean | UrlTree>).subscribe((res: boolean | UrlTree) => {
       expect(res).toBeTrue();
       expect(state.routerSpy.parseUrl).not.toHaveBeenCalled();
       done();

@@ -16,6 +16,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { firstValueFrom, of } from 'rxjs';
 
+import { ArtifactSingle } from 'app/common/artifacts/interfaces';
 import { Artifact, ListArtifactsResponse } from 'app/protos/experiment_state_server';
 import { ArtifactService } from 'app/service/artifact_service';
 import { bootstrap, setupModule } from 'app/testing/test';
@@ -81,67 +82,77 @@ describe('ArtifactsList Component', () => {
   });
 
   it('should enable both EXPERIMENT and WORK_UNIT filters by default on experiment page', async () => {
-    const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
+    const comp: ArtifactsList = bootstrap(ArtifactsList, {
+      parentName: 'experiments/1',
+    });
     expect(comp).toBeTruthy();
 
-    const filter = (comp as any).artifactFilter.value;
+    const filter = comp['artifactFilter'].value;
     expect(filter).toContain(ArtifactFilter.EXPERIMENT);
     expect(filter).toContain(ArtifactFilter.WORK_UNIT);
-    expect((comp as any).showFilterToggle).toBeTrue();
-    expect((comp as any).isWorkUnitPage).toBeFalse();
+    expect(comp['showFilterToggle']).toBeTrue();
+    expect(comp['isWorkUnitPage']).toBeFalse();
 
-    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems = await firstValueFrom(comp['inputArtifacts$']);
     // Both experiment-level and work-unit level input artifacts should be present
     expect(inputItems.length).toBe(2);
 
-    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems = await firstValueFrom(comp['outputArtifacts$']);
     // Both experiment-level and work-unit level output artifacts should be present
     expect(outputItems.length).toBe(2);
   });
 
   it('should filter to only experiment-level artifacts when WORK_UNIT filter is unchecked', async () => {
-    const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
-    (comp as any).onFilterChange([ArtifactFilter.EXPERIMENT]);
+    const comp: ArtifactsList = bootstrap(ArtifactsList, {
+      parentName: 'experiments/1',
+    });
+    comp['onFilterChange']([ArtifactFilter.EXPERIMENT]);
 
-    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems = await firstValueFrom(comp['inputArtifacts$']);
     expect(inputItems.length).toBe(1);
-    expect((inputItems[0] as any).artifact.artifact.name).toBe('artifacts/1');
+    expect((inputItems[0] as ArtifactSingle).artifact.artifact.name).toBe('artifacts/1');
 
-    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems = await firstValueFrom(comp['outputArtifacts$']);
     expect(outputItems.length).toBe(1);
-    expect((outputItems[0] as any).artifact.artifact.name).toBe('artifacts/3');
+    expect((outputItems[0] as ArtifactSingle).artifact.artifact.name).toBe('artifacts/3');
   });
 
   it('should filter to only work-unit level artifacts when EXPERIMENT filter is unchecked', async () => {
-    const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
-    (comp as any).onFilterChange([ArtifactFilter.WORK_UNIT]);
+    const comp: ArtifactsList = bootstrap(ArtifactsList, {
+      parentName: 'experiments/1',
+    });
+    comp['onFilterChange']([ArtifactFilter.WORK_UNIT]);
 
-    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems = await firstValueFrom(comp['inputArtifacts$']);
     expect(inputItems.length).toBe(1);
-    expect((inputItems[0] as any).artifact.artifact.name).toBe('artifacts/2');
+    expect((inputItems[0] as ArtifactSingle).artifact.artifact.name).toBe('artifacts/2');
 
-    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems = await firstValueFrom(comp['outputArtifacts$']);
     expect(outputItems.length).toBe(1);
-    expect((outputItems[0] as any).artifact.artifact.name).toBe('artifacts/4');
+    expect((outputItems[0] as ArtifactSingle).artifact.artifact.name).toBe('artifacts/4');
   });
 
   it('should return empty lists when all filters are deselected', async () => {
-    const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1' });
-    (comp as any).onFilterChange([]);
+    const comp: ArtifactsList = bootstrap(ArtifactsList, {
+      parentName: 'experiments/1',
+    });
+    comp['onFilterChange']([]);
 
-    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems = await firstValueFrom(comp['inputArtifacts$']);
     expect(inputItems.length).toBe(0);
 
-    const outputItems: any = await firstValueFrom((comp as any).outputArtifacts$);
+    const outputItems = await firstValueFrom(comp['outputArtifacts$']);
     expect(outputItems.length).toBe(0);
   });
 
   it('should disable filter toggle and return all artifacts on work unit page', async () => {
-    const comp = bootstrap(ArtifactsList, { parentName: 'experiments/1/workUnits/1' });
-    expect((comp as any).showFilterToggle).toBeFalse();
-    expect((comp as any).isWorkUnitPage).toBeTrue();
+    const comp: ArtifactsList = bootstrap(ArtifactsList, {
+      parentName: 'experiments/1/workUnits/1',
+    });
+    expect(comp['showFilterToggle']).toBeFalse();
+    expect(comp['isWorkUnitPage']).toBeTrue();
 
-    const inputItems: any = await firstValueFrom((comp as any).inputArtifacts$);
+    const inputItems = await firstValueFrom(comp['inputArtifacts$']);
     expect(inputItems.length).toBe(2);
   });
 });
