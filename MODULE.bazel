@@ -100,6 +100,11 @@ go_deps.module(
     sum = "h1:F29+wU6Ee6qgu9TddPgooOdaqsxTMunOoj8KA5yuS5A=",
     version = "v1.5.1",
 )
+go_deps.module(
+    path = "golang.org/x/tools",
+    sum = "h1:3+hClM1aLL5mjMKm5ovokw9epgRXPuu2tILgismM6RE=",
+    version = "v0.48.0",
+)
 go_deps.gazelle_override(
     build_file_generation = "on",
     directives = [
