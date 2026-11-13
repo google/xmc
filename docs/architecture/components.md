@@ -44,7 +44,7 @@ Its RPC surface groups into five families:
 | Family | RPCs |
 | :--- | :--- |
 | Experiments | `CreateExperiment`, `GetExperiment`, `UpdateExperiment`, `ListExperiments`, `SearchExperiments`, `GetExperimentStatus`, `UpdateExperimentLaunchState` |
-| Work units | `CreateWorkUnit`, `GetWorkUnit`, `UpdateWorkUnit`, `ListWorkUnits`, `SearchWorkUnits`, `StopWorkUnit`, `BatchStopWorkUnits`, `RestartWorkUnit`, `BatchRestartWorkUnits` |
+| Work units | `CreateWorkUnit`, `BatchCreateWorkUnits`, `GetWorkUnit`, `UpdateWorkUnit`, `ListWorkUnits`, `SearchWorkUnits`, `StopWorkUnit`, `BatchStopWorkUnits`, `RestartWorkUnit`, `BatchRestartWorkUnits` |
 | Executions | `GetCurrentWorkUnitExecution`, `ListWorkUnitExecutions` |
 | Artifacts | `CreateArtifact`, `GetArtifact`, `UpdateArtifact`, `DeleteArtifact`, `ListArtifacts`, `SearchArtifacts` |
 | Status messages | `ListStatusMessages`, `SearchStatusMessages` |

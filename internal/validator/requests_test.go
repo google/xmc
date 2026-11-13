@@ -2292,3 +2292,49 @@ func TestValidateJobSetCoordinator(t *testing.T) {
 		})
 	}
 }
+
+// batchCreateRequest returns a valid batch of n requests under experiments/123, mutated by fn.
+func batchCreateRequest(n int, fn func(req *essmsgpb.BatchCreateWorkUnitsRequest)) *essmsgpb.BatchCreateWorkUnitsRequest {
+	req := &essmsgpb.BatchCreateWorkUnitsRequest{Parent: "experiments/123"}
+	for range n {
+		inner := prototest.Modify(baseWorkUnitReqWithSuccessPolicy, func(r *essmsgpb.CreateWorkUnitRequest) {
+			r.Parent = ""
+		})
+		req.Requests = append(req.Requests, inner)
+	}
+	return prototest.Modify(req, fn)
+}
+
+func TestValidateBatchCreateWorkUnitsRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		req     *essmsgpb.BatchCreateWorkUnitsRequest
+		wantMsg string
+	}{
+		{name: "valid with empty inner parents", req: batchCreateRequest(3, nil)},
+		{name: "valid with matching inner parent", req: batchCreateRequest(2, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[1].Parent = "experiments/123" })},
+		{name: "valid at max batch size", req: batchCreateRequest(maxBatchCreateWorkUnits, nil)},
+		{name: "nil request", req: nil, wantMsg: "parent must be in the format"},
+		{name: "invalid parent", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Parent = "experiments/abc" }), wantMsg: "parent must be in the format"},
+		{name: "no requests", req: batchCreateRequest(0, nil), wantMsg: "between 1 and 500 requests, got 0"},
+		{name: "too many requests", req: batchCreateRequest(maxBatchCreateWorkUnits+1, nil), wantMsg: "between 1 and 500 requests, got 501"},
+		{name: "mismatched inner parent", req: batchCreateRequest(2, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[1].Parent = "experiments/124" }), wantMsg: `requests[1]: parent must be empty or "experiments/123"`},
+		{name: "work unit ID set", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0].WorkUnitId = 7 }), wantMsg: "work_unit_id must be unset"},
+		{name: "nil inner request", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0] = nil }), wantMsg: "work_unit cannot be nil"},
+		{name: "invalid inner work unit", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0].WorkUnit.Executable = nil }), wantMsg: "work_unit.executable cannot be nil"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			xid, err := ValidateBatchCreateWorkUnitsRequest(tt.req)
+			if tt.wantMsg == "" {
+				if err != nil || xid != 123 {
+					t.Errorf("ValidateBatchCreateWorkUnitsRequest() = (%d, %v), want (123, nil)", xid, err)
+				}
+				return
+			}
+			if !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Errorf("ValidateBatchCreateWorkUnitsRequest() = %v, want InvalidArgument containing %q", err, tt.wantMsg)
+			}
+		})
+	}
+}

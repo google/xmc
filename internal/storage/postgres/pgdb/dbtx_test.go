@@ -43,6 +43,10 @@ func (f *fakeDBTX) QueryRow(context.Context, string, ...any) pgx.Row {
 	return nil
 }
 
+func (f *fakeDBTX) SendBatch(context.Context, *pgx.Batch) pgx.BatchResults {
+	return nil
+}
+
 func TestFromPool(t *testing.T) {
 	pool := &pgxpool.Pool{}
 	tests := []struct {

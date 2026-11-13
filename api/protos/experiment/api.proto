@@ -128,6 +128,20 @@ service ExperimentStateService {
     option (google.api.method_signature) = "parent,work_unit,work_unit_id";
   }
 
+  // Creates up to 500 work units of an experiment in a single transaction and
+  // returns them in request order. Work unit IDs are assigned by the server as
+  // one contiguous range. Only supported on STUDY experiments, where only the
+  // study controller may call it.
+  // AIP-233 compliant.
+  rpc BatchCreateWorkUnits(BatchCreateWorkUnitsRequest)
+      returns (BatchCreateWorkUnitsResponse) {
+    option (google.api.http) = {
+      post: "/v1/{parent=experiments/*}/workUnits:batchCreate"
+      body: "*"
+    };
+    option (google.api.method_signature) = "parent,requests";
+  }
+
   // Gets the state, metadata, and current execution of a work unit.
   // AIP-131 compliant.
   rpc GetWorkUnit(GetWorkUnitRequest) returns (WorkUnit) {
@@ -460,6 +474,28 @@ message CreateWorkUnitRequest {
   // Server-side generation is much less efficient and should be avoided.
   // Per AIP-155, requests are idempotent if a `work_unit_id` is provided.
   int64 work_unit_id = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message BatchCreateWorkUnitsRequest {
+  // The resource name of the parent experiment shared by all work units.
+  // Format: experiments/{xid}
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {
+      type: "cloud.xmanager.googleapis.com/Experiment"
+    }
+  ];
+
+  // The work units to create: between 1 and 500. The `parent` of each request
+  // must be empty or equal to the outer `parent`, and `work_unit_id` must be
+  // unset because the server assigns the IDs.
+  repeated CreateWorkUnitRequest requests = 2
+      [(google.api.field_behavior) = REQUIRED];
+}
+
+message BatchCreateWorkUnitsResponse {
+  // The created work units, in request order.
+  repeated WorkUnit work_units = 1;
 }
 
 message GetWorkUnitRequest {

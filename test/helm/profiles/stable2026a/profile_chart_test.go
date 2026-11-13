@@ -69,6 +69,8 @@ func TestStable2026a_OverridesMatchStandalone(t *testing.T) {
 			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "dependencies": []any{"vizier"}}},
 		{name: "hpo maxTrialBudget override", component: "hpo", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
 			"parameters": map[string]any{"maxTrialBudget": "250"}}},
+		{name: "hpo studyControllerServiceAccount override", component: "hpo", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
+			"parameters": map[string]any{"studyControllerServiceAccount": "xmc-study-controller@my-project.iam.gserviceaccount.com"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -139,6 +141,8 @@ func TestStable2026a_RejectsInvalidValues(t *testing.T) {
 		{name: "exponent maxTrialBudget on hpo", overrides: hpoMaxTrialBudget("1e6"), wantErr: "maxTrialBudget"},
 		{name: "ten-digit string maxTrialBudget on hpo", overrides: hpoMaxTrialBudget("2147483648"), wantErr: "maxTrialBudget"},
 		{name: "int32 overflow maxTrialBudget on hpo", overrides: hpoMaxTrialBudget(2147483648), wantErr: "maxTrialBudget"},
+		{name: "non-email studyControllerServiceAccount on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": "xmc-study-controller"}}), wantErr: "studyControllerServiceAccount"},
+		{name: "display-name studyControllerServiceAccount on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": "SC <sc@p.iam.gserviceaccount.com>"}}), wantErr: "studyControllerServiceAccount"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

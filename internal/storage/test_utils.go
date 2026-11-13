@@ -237,6 +237,8 @@ type MockStorage struct {
 	NextWorkUnitID                    int64
 	InsertWorkUnitErr                 error
 	InsertedWorkUnit                  *essmsgpb.WorkUnit
+	InsertWorkUnitsErr                error
+	InsertedWorkUnits                 []*essmsgpb.WorkUnit
 	AddWorkUnitOperationErr           error
 	LROOp                             *lropb.Operation
 	UpdateCurrentWorkUnitExecutionErr error
@@ -427,6 +429,18 @@ func (s *MockStorage) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit)
 		return s.InsertWorkUnitErr
 	}
 	s.InsertedWorkUnit = proto.Clone(wu).(*essmsgpb.WorkUnit)
+	return nil
+}
+
+// InsertWorkUnits mocks inserting a batch of work units within a transaction and records copies.
+func (s *MockStorage) InsertWorkUnits(ctx context.Context, wus []*essmsgpb.WorkUnit) error {
+	if s.InsertWorkUnitsErr != nil {
+		return s.InsertWorkUnitsErr
+	}
+	s.InsertedWorkUnits = make([]*essmsgpb.WorkUnit, len(wus))
+	for i, wu := range wus {
+		s.InsertedWorkUnits[i] = proto.Clone(wu).(*essmsgpb.WorkUnit)
+	}
 	return nil
 }
 

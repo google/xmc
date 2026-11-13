@@ -18,6 +18,7 @@ package workunit
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -164,25 +165,52 @@ func (r *TxRepository) FetchNextWorkUnitID(ctx context.Context, xid int64) (int6
 
 // InsertWorkUnit inserts a new work unit and its initial execution within the transaction.
 func (r *TxRepository) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error {
-	if wu == nil {
+	return r.InsertWorkUnits(ctx, []*essmsgpb.WorkUnit{wu})
+}
+
+// InsertWorkUnits inserts new work units of one experiment and their initial executions within the
+// transaction. It locks the experiment once and sends all inserts in a single batch round trip.
+func (r *TxRepository) InsertWorkUnits(ctx context.Context, wus []*essmsgpb.WorkUnit) error {
+	if slices.Contains(wus, nil) {
 		return pgdb.WrapStatusError("work unit must not be nil", grpcerr.ErrInvalidArgument, nil)
 	}
 	if err := requireDB(r.tx); err != nil {
 		return err
 	}
-	row, err := postgresdata.WorkUnitProtoToRow(wu)
+	if len(wus) == 0 {
+		return nil
+	}
+	batch, xid, err := workUnitInsertBatch(wus)
 	if err != nil {
 		return err
 	}
-	tag, err := r.tx.Exec(ctx, lockExperimentSQL.String(), row.Xid)
+	tag, err := r.tx.Exec(ctx, lockExperimentSQL.String(), xid)
 	if err != nil {
 		return pgdb.TranslateError(err, "experiment")
 	}
 	if tag.RowsAffected() == 0 {
 		return pgdb.TranslateError(pgx.ErrNoRows, "experiment")
 	}
-	_, err = r.tx.Exec(ctx, insertWorkUnitSQL.String(), row.GetInsertArgs())
-	return pgdb.TranslateError(err, entityName)
+	return pgdb.TranslateError(r.tx.SendBatch(ctx, batch).Close(), entityName)
+}
+
+// workUnitInsertBatch queues one INSERT per work unit and returns the batch with the XID that all
+// work units share.
+func workUnitInsertBatch(wus []*essmsgpb.WorkUnit) (*pgx.Batch, int64, error) {
+	batch := &pgx.Batch{}
+	var xid int64
+	for i, wu := range wus {
+		row, err := postgresdata.WorkUnitProtoToRow(wu)
+		if err != nil {
+			return nil, 0, err
+		}
+		if i > 0 && row.Xid != xid {
+			return nil, 0, pgdb.WrapStatusError("work units must belong to one experiment", grpcerr.ErrInvalidArgument, nil)
+		}
+		xid = row.Xid
+		batch.Queue(insertWorkUnitSQL.String(), row.GetInsertArgs())
+	}
+	return batch, xid, nil
 }
 
 // FetchWorkUnit retrieves a work unit by its unique ID within the transaction.

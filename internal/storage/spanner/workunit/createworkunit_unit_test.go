@@ -18,16 +18,43 @@ import (
 	"context"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/validator"
 )
 
-func TestInsertWorkUnit_NilWorkUnit(t *testing.T) {
-	ctx := context.Background()
-	r := &TxRepository{}
+// newWorkUnit returns a work unit wid of experiment xid with its first execution named.
+func newWorkUnit(xid, wid int64) *essmsgpb.WorkUnit {
+	return &essmsgpb.WorkUnit{
+		Name:                     validator.ConstructWorkUnitName(xid, wid),
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: validator.ConstructWorkUnitExecutionName(xid, wid, 1)},
+	}
+}
 
-	err := r.InsertWorkUnit(ctx, nil)
-	if err == nil || err.Error() != "work unit must not be nil" {
-		t.Errorf("InsertWorkUnit(nil wu) returned error: %v, want 'work unit must not be nil'", err)
+func TestInsertWorkUnit_NilWorkUnit(t *testing.T) {
+	err := (&TxRepository{}).InsertWorkUnit(context.Background(), nil)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("InsertWorkUnit(nil wu) = %v, want InvalidArgument", err)
+	}
+}
+
+func TestInsertWorkUnits_RejectsInvalidBatches(t *testing.T) {
+	tests := []struct {
+		name string
+		wus  []*essmsgpb.WorkUnit
+	}{
+		{name: "nil work unit", wus: []*essmsgpb.WorkUnit{newWorkUnit(1, 1), nil}},
+		{name: "mixed experiments", wus: []*essmsgpb.WorkUnit{newWorkUnit(1, 1), newWorkUnit(2, 1)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The transaction is nil: the batch is rejected before it is used.
+			err := (&TxRepository{}).InsertWorkUnits(t.Context(), tt.wus)
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("InsertWorkUnits() = %v, want InvalidArgument", err)
+			}
+		})
 	}
 }
 

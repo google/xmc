@@ -35,6 +35,9 @@ spec:
   {{- $maxTrialBudget := $params.maxTrialBudget | default "1000" }}
   parameters:
     maxTrialBudget: {{ ternary ($maxTrialBudget | int64) $maxTrialBudget (kindIs "float64" $maxTrialBudget) | toString | quote }}
+    {{- with $params.studyControllerServiceAccount }}
+    studyControllerServiceAccount: {{ . | quote }}
+    {{- end }}
   {{- if .Values.dependencies }}
   dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
   {{- end }}

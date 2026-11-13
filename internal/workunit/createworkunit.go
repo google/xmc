@@ -70,12 +70,7 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		setParentIfNonNil(localWU.CurrentWorkUnitExecution.Status.UserMessage, localWU.GetName())
 
 		// 1.2. Set the initial timestamps to the current time.
-		localWU.CreateTime = timestamppb.New(now)
-		localWU.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
-		localWU.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
+		stampNewWorkUnit(localWU, now)
 
 		// 2. Insert the work unit into storage.
 		if err := tx.WorkUnits.InsertWorkUnit(ctx, localWU); err != nil {
@@ -93,22 +88,10 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 			return err
 		}
 
-		creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, localWU, now)
-		if err != nil {
-			return fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
-		}
-		exp = creationRes.Experiment
-		resourcesChanged := creationRes.ResourcesChanged
-
 		// 5. Buffer mutations for Experiment status and resources via thin repository methods.
-		// TODO: Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.
-		if err := tx.Experiments.UpdateExperimentStatus(ctx, exp); err != nil {
-			return fmt.Errorf("failed to update experiment status: %w", err)
-		}
-		if resourcesChanged {
-			if err := tx.Experiments.UpdateExperimentResources(ctx, exp); err != nil {
-				return fmt.Errorf("failed to update experiment resources: %w", err)
-			}
+		exp, err = applyWorkUnitCreations(ctx, tx, exp, []*essmsgpb.WorkUnit{localWU}, now)
+		if err != nil {
+			return err
 		}
 
 		committedWU = localWU
@@ -140,15 +123,24 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 // fetchWorkUnitParent reads the parent experiment of a single new work unit. It returns
 // ErrStudyWorkUnitCreation for a STUDY, whose trials only the study controller creates.
 func fetchWorkUnitParent(ctx context.Context, tx *storage.Transaction, xid int64) (*essmsgpb.Experiment, error) {
+	exp, err := fetchExperimentInTx(ctx, tx, xid)
+	if err != nil {
+		return nil, err
+	}
+	if exp.GetExperimentType() == essmsgpb.Experiment_STUDY {
+		return nil, fmt.Errorf("experiment %d is a study: %w", xid, ErrStudyWorkUnitCreation)
+	}
+	return exp, nil
+}
+
+// fetchExperimentInTx reads experiment xid within tx and fails when it does not exist.
+func fetchExperimentInTx(ctx context.Context, tx *storage.Transaction, xid int64) (*essmsgpb.Experiment, error) {
 	exp, err := tx.Experiments.FetchExperiment(ctx, xid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch experiment: %w", err)
 	}
 	if exp == nil {
 		return nil, fmt.Errorf("experiment %d not found", xid)
-	}
-	if exp.GetExperimentType() == essmsgpb.Experiment_STUDY {
-		return nil, fmt.Errorf("experiment %d is a study: %w", xid, ErrStudyWorkUnitCreation)
 	}
 	return exp, nil
 }
@@ -160,4 +152,40 @@ func ensureWorkUnitExecutionStatus(wu *essmsgpb.WorkUnit) {
 	if wu.CurrentWorkUnitExecution.Status == nil {
 		wu.CurrentWorkUnitExecution.Status = &essmsgpb.WorkUnitStatus{}
 	}
+}
+
+// stampNewWorkUnit sets the creation and update timestamps of a new work unit, its current
+// execution, and its status to now.
+func stampNewWorkUnit(wu *essmsgpb.WorkUnit, now time.Time) {
+	wu.CreateTime = timestamppb.New(now)
+	wu.UpdateTime = timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.CreateTime = timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.Status.UpdateTime = timestamppb.New(now)
+	wu.CurrentWorkUnitExecution.Status.StateUpdateTime = timestamppb.New(now)
+}
+
+// applyWorkUnitCreations folds the creation of wus into the denormalized status and resources of
+// their parent experiment exp in memory, then writes the Experiment row once. It returns the
+// updated experiment.
+func applyWorkUnitCreations(ctx context.Context, tx *storage.Transaction, exp *essmsgpb.Experiment, wus []*essmsgpb.WorkUnit, now time.Time) (*essmsgpb.Experiment, error) {
+	resourcesChanged := false
+	for _, wu := range wus {
+		creationRes, err := experimentdomain.PrepareWorkUnitCreation(ctx, exp, wu, now)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepare experiment status for work unit creation: %w", err)
+		}
+		exp = creationRes.Experiment
+		resourcesChanged = resourcesChanged || creationRes.ResourcesChanged
+	}
+	// TODO: Consolidate UpdateExperimentStatus and UpdateExperimentResources into a single mutation write to prevent duplicate row updates for the same Experiments row in Spanner.
+	if err := tx.Experiments.UpdateExperimentStatus(ctx, exp); err != nil {
+		return nil, fmt.Errorf("failed to update experiment status: %w", err)
+	}
+	if resourcesChanged {
+		if err := tx.Experiments.UpdateExperimentResources(ctx, exp); err != nil {
+			return nil, fmt.Errorf("failed to update experiment resources: %w", err)
+		}
+	}
+	return exp, nil
 }
