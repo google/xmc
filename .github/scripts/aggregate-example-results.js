@@ -104,24 +104,36 @@ function resolveStatusHeader(results, allPassed) {
 }
 
 /**
- * Formats a 6-column markdown table for multiple workload results.
+ * Formats a markdown table for multiple workload results, including an
+ * XManager Version column when any result specifies `xmanager_version`.
  *
  * @param {Array<object>} results
  * @returns {Array<string>}
  */
 function formatMultiResultTable(results) {
-  const rows = [
-    '| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |',
-    '| --- | --- | --- | --- | --- | --- |',
-  ];
+  const showVersion = results.some(r => r && r.xmanager_version);
+  const rows = showVersion
+    ? [
+        '| Example ID | Name | XManager Version | Status | Launch | Verify | Experiment / Identifier |',
+        '| --- | --- | --- | --- | --- | --- | --- |',
+      ]
+    : [
+        '| Example ID | Name | Status | Launch | Verify | Experiment / Identifier |',
+        '| --- | --- | --- | --- | --- | --- |',
+      ];
   for (const r of results) {
     const id = r.id || '';
     const name = r.name || '';
+    const version = r.xmanager_version || 'N/A';
     const statusBadge = formatStatusBadge(r.status);
     const launchStatus = r.launch_status || 'N/A';
     const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
     const xid = r.xid || 'N/A';
-    rows.push(`| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`);
+    rows.push(
+      showVersion
+        ? `| \`${id}\` | ${name} | \`${version}\` | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`
+        : `| \`${id}\` | ${name} | ${statusBadge} | \`${launchStatus}\` | \`${verifyStatus}\` | \`${xid}\` |`
+    );
   }
   return rows;
 }
@@ -139,16 +151,43 @@ function formatSingleResultTable(r) {
   const launchStatus = r.launch_status || 'N/A';
   const verifyStatus = r.verify_status?.toLowerCase() === 'skipped' ? '⏭️ Skipped' : r.verify_status || 'N/A';
   const xid = r.xid || 'N/A';
-  return [
+  const rows = [
     '| Property | Value |',
     '| --- | --- |',
     `| **Example ID** | \`${id}\` |`,
     `| **Name** | ${name} |`,
+  ];
+  if (r.xmanager_version) {
+    rows.push(`| **XManager Version** | \`${r.xmanager_version}\` |`);
+  }
+  rows.push(
     `| **Status** | ${statusBadge} |`,
     `| **Launch Step** | \`${launchStatus}\` |`,
     `| **Verify Step** | \`${verifyStatus}\` |`,
-    `| **Experiment / Identifier** | \`${xid}\` |`,
-  ];
+    `| **Experiment / Identifier** | \`${xid}\` |`
+  );
+  return rows;
+}
+
+/**
+ * Builds a map of launched Example IDs (disambiguated by xmanager_version when
+ * multiple versions of the same example produce valid XIDs) to their XIDs.
+ *
+ * @param {Array<object>} results
+ * @returns {Record<string, string>}
+ */
+function buildXidMap(results) {
+  const valid = results.filter(r => r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A');
+  const idCounts = {};
+  for (const r of valid) {
+    idCounts[r.id] = (idCounts[r.id] || 0) + 1;
+  }
+  const xidMap = {};
+  for (const r of valid) {
+    const key = idCounts[r.id] > 1 && r.xmanager_version ? `${r.id}@${r.xmanager_version}` : r.id;
+    xidMap[key] = r.xid;
+  }
+  return xidMap;
 }
 
 /**
@@ -163,12 +202,7 @@ function formatSingleResultTable(r) {
  */
 function aggregateResults(rawResults, { title, matrixResult } = {}) {
   const results = (rawResults || []).filter(Boolean);
-  const xidMap = {};
-  for (const r of results) {
-    if (r.id && r.xid && r.xid !== 'skipped' && r.xid !== 'N/A') {
-      xidMap[r.id] = r.xid;
-    }
-  }
+  const xidMap = buildXidMap(results);
 
   const hasPassed = results.some(r => r.status === 'PASSED');
   const hasFailed = results.some(r => r.status !== 'PASSED' && r.status !== 'SKIPPED');
@@ -200,7 +234,10 @@ function resolveFailureAnnotation(results, matrixResult) {
   }
   const failedIds = results
     .filter(r => r && r.status !== 'PASSED' && r.status !== 'SKIPPED')
-    .map(r => `${r.id || 'unknown'} (${r.status || 'FAILED'})`);
+    .map(r => {
+      const label = r.xmanager_version ? `${r.id || 'unknown'}@${r.xmanager_version}` : (r.id || 'unknown');
+      return `${label} (${r.status || 'FAILED'})`;
+    });
   if (failedIds.length > 0) {
     return `::error::One or more example workloads failed launch or verification: ${failedIds.join(', ')}`;
   }
