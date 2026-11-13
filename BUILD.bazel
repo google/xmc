@@ -28,6 +28,15 @@ nogo(
         dep
         for dep in TOOLS_NOGO
         if not dep.endswith("/loopclosure:go_default_library")
+    ] + [
+        "@org_golang_x_tools//go/analysis/passes/hostport:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/httpmux:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/reflectvaluecompare:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/scannererr:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/sqlrowserr:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/stdversion:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/unusedwrite:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/waitgroup:go_default_library",
     ],
 )
 
