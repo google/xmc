@@ -26,6 +26,7 @@ py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
+        ":resource_fixtures",
         "//cmd/ui:server",
     ],
 )
@@ -49,4 +50,16 @@ py_test(
     deps = [
         ":server_local",
     ],
+)
+
+py_library(
+    name = "resource_fixtures",
+    srcs = ["resource_fixtures.py"],
+    imports = ["."],
+)
+
+py_test(
+    name = "resource_fixtures_test",
+    srcs = ["resource_fixtures_test.py"],
+    deps = [":resource_fixtures"],
 )

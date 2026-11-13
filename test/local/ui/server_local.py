@@ -11,17 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-A standalone Python server for local UI development with mock APIs and SPA fallback.
-This is intentionally scoped as a minimal mock setup for the performance dashboards
-and metrics workflow for now rather than an exhaustive mock of all XMC endpoints
-(such as /v1/clusterqueues).
-There is parallel ongoing work around running the UI locally,
-so this implementation serves as the starting point to establish
-and consolidate those local development workflows.
-Additional endpoints can be incrementally added
-and unified as those parallel efforts converge.
-"""
+"""Local UI preview server with dashboard, experiment, and resource mock APIs."""
 
 import argparse
 import glob
@@ -32,6 +22,9 @@ import os
 import re
 import sys
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, unquote, urlsplit
+
+import resource_fixtures
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +167,8 @@ class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
         )
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:
         """Handles preflight CORS requests."""
@@ -189,29 +183,35 @@ class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
 
     def do_GET(self) -> None:
         """Handles GET requests for SPA routing, static files, and mock APIs."""
-        if self.path == "/healthz":
+        clean_path = self.path.split("?", 1)[0].rstrip("/")
+        if clean_path == "/healthz":
             self.send_response(200, "OK")
             self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "2")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(b"OK")
+            if self.command != "HEAD":
+                self.wfile.write(b"OK")
             return
 
-        if self.path == "/config.js":
+        if clean_path == "/config.js":
             self._handle_config_js()
             return
 
-        if self.path.startswith("/v1/auth/user") or self.path.startswith("/auth/user"):
+        if clean_path in ("/api/user", "/v1/auth/user", "/auth/user"):
             self._handle_auth_user()
             return
 
-        if ":getData" in self.path:
-            self._handle_chart_data(self.path)
+        if clean_path == "/v1/static/auth-check.js":
+            self._handle_auth_check()
             return
 
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
-            clean_path = self.path.split("?")[0].rstrip("/")
-            if clean_path in ("/v1/dashboards", "/dashboards"):
+        if clean_path.startswith("/v1/") and clean_path.endswith(":getData"):
+            self._handle_chart_data(clean_path)
+            return
+
+        if clean_path == "/v1/dashboards" or clean_path.startswith("/v1/dashboards/"):
+            if clean_path == "/v1/dashboards":
                 self.send_json(200, {"dashboards": SPAHandler.in_memory_dashboards})
                 return
             dashboard_name = clean_path.lstrip("/").removeprefix("v1/")
@@ -222,34 +222,78 @@ class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
             self.send_json(404, {"error": f"Dashboard {dashboard_name} not found"})
             return
 
-        if self.path.startswith("/v1/experiments") or self.path.startswith("/experiments"):
-            clean_path = self.path.split("?")[0].rstrip("/")
-            if clean_path in ("/v1/experiments", "/experiments"):
+        if clean_path == "/v1/experiments" or clean_path.startswith("/v1/experiments/"):
+            if clean_path == "/v1/experiments":
                 self._handle_experiments_list()
                 return
             self._handle_single_experiment(clean_path)
             return
 
+        if self._handle_resource_get(clean_path):
+            return
+
+        if self.command == "HEAD":
+            super().do_HEAD()
+            return
         super().do_GET()
 
     def do_HEAD(self) -> None:
-        """Handles HEAD requests, routing them with SPA fallback."""
-        if self.path in ("/healthz", "/config.js") or self.path.startswith(("/v1/", "/auth/")):
-            self.do_GET()
-            return
-
-        super().do_HEAD()
+        """Uses GET routing without writing a response body."""
+        self.do_GET()
 
     def do_POST(self) -> None:
         """Handles POST requests for creating resources."""
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if path in (
+            "/v1/clusterqueues:batchGetSecondaryData",
+            "/clusterqueues:batchGetSecondaryData",
+        ):
+            self._handle_resource_secondary()
+            return
+        if path == "/v1/dashboards" or path.startswith("/v1/dashboards/"):
             self._handle_dashboards_post()
             return
         self.send_json(404, {"error": "Not Found"})
 
+    def _handle_resource_get(self, path: str) -> bool:
+        route = path.removeprefix("/v1")
+        if route == "/clusterqueues":
+            self.send_json(200, resource_fixtures.cluster_queues())
+            return True
+        match = re.fullmatch(r"/clusterqueues/([^/]+)/(jobs|submitqueue)", route)
+        if match is None:
+            return False
+        queue, operation = unquote(match[1]), match[2]
+        try:
+            params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            response = (
+                resource_fixtures.queue_jobs(queue, params)
+                if operation == "jobs"
+                else resource_fixtures.submit_queue(queue)
+            )
+            self.send_json(200, response)
+        except KeyError:
+            self.send_json(404, {"error": "Unknown cluster queue"})
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+        return True
+
+    def _handle_resource_secondary(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 0 or length > 65536:
+                raise ValueError("invalid request length")
+            body = json.loads(self.rfile.read(length))
+            self.send_json(200, resource_fixtures.secondary_data(body))
+        except KeyError:
+            self.send_json(404, {"error": "Unknown cluster queue"})
+        except (ValueError, UnicodeError) as error:
+            self.send_json(400, {"error": str(error)})
+
     def do_DELETE(self) -> None:
         """Handles DELETE requests for deleting resources."""
-        if self.path.startswith("/v1/dashboards") or self.path.startswith("/dashboards"):
+        path = self.path.split("?", 1)[0].rstrip("/")
+        if path == "/v1/dashboards" or path.startswith("/v1/dashboards/"):
             self._handle_dashboards_delete()
             return
         self.send_json(404, {"error": "Not Found"})
@@ -302,7 +346,15 @@ class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         config_content = server.generate_runtime_config(default_api_url="/v1")
-        self.wfile.write(config_content.encode("utf-8"))
+        if self.command != "HEAD":
+            self.wfile.write(config_content.encode("utf-8"))
+
+    def _handle_auth_check(self) -> None:
+        """Serves an empty script because local authentication needs no IAP handshake."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _handle_auth_user(self) -> None:
         """Serves mock authenticated user for local development."""

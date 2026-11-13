@@ -40,3 +40,10 @@ graph TD
 ## E2E Runner Host Pre-Compilation (`test/e2e/lib/image_builder.py`)
 
 The E2E test runner accelerates test execution by running `npm ci` and `ng build` directly on the host runner (where Node.js 22 is available) before invoking Bazel, allowing `build_ui_oci.py` to consistently hit the fast single-stage Nginx path.
+
+
+## Local resource dashboard preview
+
+Run `npm run build` and `npm run serve:local -- --port 8080` in `cmd/ui` and open `http://localhost:8080/resources`. The local server serves deterministic fixtures for queue quota, jobs, submission queues, and predictability. Available controls depend on the checked-out UI branch.
+
+The GPU queue contains 24 jobs across three authors (`alice@example.com`, `bob@example.com`, and `carol@example.com`) and four active states. H100 used quota is 24 against a nominal quota of 16, with zero free nominal quota and borrowing headroom of 8. L4 used quota is 6 of 16, with free nominal quota of 10 and borrowing headroom of 18. CPU and empty queues provide additional selection and empty-state cases. Author/status filters and column sorts apply before pagination and preserve scheduling positions. These values are preview fixtures, not measurements from a cluster.
