@@ -850,3 +850,97 @@ func TestBatchStopWorkUnits_AllTerminalOrStoppingReturnsDone(t *testing.T) {
 		}
 	}
 }
+
+func TestIsWorkUnitStoppable(t *testing.T) {
+	testCases := []struct {
+		name     string
+		workUnit *msgpb.WorkUnit
+		want     bool
+	}{
+		{
+			name:     "nil_work_unit",
+			workUnit: nil,
+			want:     false,
+		},
+		{
+			name: "nil_current_execution",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+			},
+			want: false,
+		},
+		{
+			name: "nil_status_unspecified_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name: "experiments/1/workUnits/1/executions/1",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "running_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
+					Status: &msgpb.WorkUnitStatus{State: msgpb.WorkUnitStatus_RUNNING},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "stopping_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
+					Status: &msgpb.WorkUnitStatus{State: msgpb.WorkUnitStatus_STOPPING},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "completed_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
+					Status: &msgpb.WorkUnitStatus{State: msgpb.WorkUnitStatus_COMPLETED},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "failed_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
+					Status: &msgpb.WorkUnitStatus{State: msgpb.WorkUnitStatus_FAILED},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "stopped_state",
+			workUnit: &msgpb.WorkUnit{
+				Name: "experiments/1/workUnits/1",
+				CurrentWorkUnitExecution: &msgpb.WorkUnitExecution{
+					Name:   "experiments/1/workUnits/1/executions/1",
+					Status: &msgpb.WorkUnitStatus{State: msgpb.WorkUnitStatus_STOPPED},
+				},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isWorkUnitStoppable(tc.workUnit); got != tc.want {
+				t.Errorf("isWorkUnitStoppable() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

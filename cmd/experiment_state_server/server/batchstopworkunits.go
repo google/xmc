@@ -138,6 +138,9 @@ func filterStoppableWorkUnits(ctx context.Context, workUnits []*msgpb.WorkUnit) 
 
 // isWorkUnitStoppable returns whether the given work unit is in a state that can be stopped.
 func isWorkUnitStoppable(workUnit *msgpb.WorkUnit) bool {
+	if workUnit == nil || workUnit.GetCurrentWorkUnitExecution() == nil {
+		return false
+	}
 	currentState := workUnit.GetCurrentWorkUnitExecution().GetStatus().GetState()
 	if currentState == msgpb.WorkUnitStatus_STOPPING {
 		return false
