@@ -944,6 +944,46 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         )
 
     @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_sanitizes_before_profile_values(self, mock_run):
+        stored_values = json.dumps(
+            {"components": {"clickhouse": {"enabled": True}, "vizier": {"enabled": False}}}
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            values_file = Path(tmp_dir) / "profile-values.yaml"
+            values_file.write_text("components: {}\n", encoding="utf-8")
+            captured_sanitized: dict[str, object] = {}
+
+            def fake_run(cmd, **_kwargs):
+                if cmd[:2] == ["kubectl", "get"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+                if cmd[:3] == ["helm", "get", "values"]:
+                    return subprocess.CompletedProcess(
+                        args=cmd, returncode=0, stdout=stored_values, stderr=""
+                    )
+                sanitized_idx = cmd.index("-f") + 1
+                captured_sanitized.update(json.loads(Path(cmd[sanitized_idx]).read_text("utf-8")))
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            mock_run.side_effect = fake_run
+            cfg = replace(self.base_config, namespace="tenant-a", profile_values=str(values_file))
+            deploy_component_profile(cfg)
+            upgrade_cmd = mock_run.call_args[0][0]
+            self.assertEqual(
+                upgrade_cmd[:5],
+                ["helm", "upgrade", "--install", "--reset-values", "xmc-profile"],
+            )
+            flag_files = [
+                upgrade_cmd[i + 1] for i, arg in enumerate(upgrade_cmd[:-1]) if arg == "-f"
+            ]
+            self.assertEqual(len(flag_files), 2)
+            self.assertTrue(flag_files[0].endswith("/sanitized-values.json"))
+            self.assertEqual(
+                upgrade_cmd[6:],
+                ["-f", flag_files[0], "-f", str(values_file), "-n", "tenant-a", "--wait"],
+            )
+            self.assertEqual(captured_sanitized, {"components": {"clickhouse": {"enabled": True}}})
+
+    @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_handles_missing_cli_and_empty_catalog(self, mock_run):
         mock_run.side_effect = [
             FileNotFoundError("kubectl"),
