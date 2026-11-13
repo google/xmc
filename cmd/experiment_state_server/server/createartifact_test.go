@@ -37,6 +37,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner"
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/validator"
 
 	"google.golang.org/grpc"
@@ -426,12 +427,13 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 				obs = append(obs, NewDashboardObserver(toolClient, storageClient, &bgTaskWG))
 			}
 			server, err := New(Params{
-				Config:            cfg,
-				Storage:           storageClient,
-				Authorizer:        auth,
-				XidClient:         xidClient,
-				WorkUnitActuator:  taskQueueClient,
-				ArtifactObservers: obs,
+				Config:                  cfg,
+				Storage:                 storageClient,
+				Authorizer:              auth,
+				XidClient:               xidClient,
+				WorkUnitActuator:        taskQueueClient,
+				ArtifactObservers:       obs,
+				StudyReconcilePublisher: redisclient.NewFakeClient(),
 			})
 			if err != nil {
 				t.Fatalf("Failed to create server: %v", err)

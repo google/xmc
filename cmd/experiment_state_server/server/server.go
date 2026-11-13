@@ -63,8 +63,9 @@ type baseHandler struct {
 // ExperimentHandler handles experiment lifecycle operations.
 type ExperimentHandler struct {
 	baseHandler
-	driftEvaluator *experiment.DriftEvaluator
-	server         apipb.ExperimentStateServiceServer
+	driftEvaluator          *experiment.DriftEvaluator
+	studyReconcilePublisher StudyReconcilePublisher
+	server                  apipb.ExperimentStateServiceServer
 }
 
 // ArtifactHandler handles artifact operations.
@@ -86,11 +87,12 @@ type WorkUnitHandler struct {
 	server          apipb.ExperimentStateServiceServer
 }
 
-func newExperimentHandler(base baseHandler, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
+func newExperimentHandler(base baseHandler, publisher StudyReconcilePublisher, server apipb.ExperimentStateServiceServer) *ExperimentHandler {
 	return &ExperimentHandler{
-		baseHandler:    base,
-		driftEvaluator: experiment.NewDriftEvaluator(base.storage),
-		server:         server,
+		baseHandler:             base,
+		driftEvaluator:          experiment.NewDriftEvaluator(base.storage),
+		studyReconcilePublisher: publisher,
+		server:                  server,
 	}
 }
 
@@ -124,6 +126,8 @@ type Params struct {
 	XidClient         xidgrpcpb.XidServiceClient
 	WorkUnitActuator  WorkUnitActuator
 	ArtifactObservers []ArtifactObserver
+	// StudyReconcilePublisher receives the initial reconcile tick of every created STUDY.
+	StudyReconcilePublisher StudyReconcilePublisher
 }
 
 // New creates a new instance of the Experiment State Server.
@@ -143,6 +147,9 @@ func New(p Params) (*Server, error) {
 	if p.WorkUnitActuator == nil {
 		return nil, fmt.Errorf("server.New: WorkUnitActuator is required")
 	}
+	if p.StudyReconcilePublisher == nil {
+		return nil, fmt.Errorf("server.New: StudyReconcilePublisher is required")
+	}
 
 	base := baseHandler{
 		cfg:       p.Config,
@@ -152,7 +159,7 @@ func New(p Params) (*Server, error) {
 	}
 
 	s := &Server{}
-	s.ExperimentHandler = newExperimentHandler(base, s)
+	s.ExperimentHandler = newExperimentHandler(base, p.StudyReconcilePublisher, s)
 	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
 	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
 	s.StatusMessageHandler = newStatusMessageHandler(base)

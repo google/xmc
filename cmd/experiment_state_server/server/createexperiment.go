@@ -124,6 +124,9 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 5.1. Set the experiment's ACLs to the XIDEntry's ACLs.
 	retExp.Acls = xidEntry.Acls
 
+	// 5.2. Enqueue the initial reconcile tick of a STUDY for the Study Controller.
+	h.enqueueStudyReconcile(ctx, retExp)
+
 	// 6. Return the successful response.
 	logging.Info(ctx, "Successfully created experiment", "experiment_name", retExp.GetName())
 	return retExp, nil

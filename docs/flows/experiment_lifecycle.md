@@ -17,6 +17,8 @@ sequenceDiagram
     participant ESS as ESS (Exp State Server)
     participant XID as XID Service
     participant Storage as Storage (Spanner/Postgres)
+    participant Redis as Redis (xmc-study-reconcile-stream)
+    participant SC as Study Controller
 
     Client->>ESS: 1. CreateExperiment(req)
     ESS->>ESS: 2. Authenticate & Validate (incl. study_config)
@@ -30,7 +32,14 @@ sequenceDiagram
     ESS->>ESS: 7. Assemble Experiment
     ESS->>Storage: 8. One transaction: resolve components, clamp study budget, insert experiment, pin components, record status history
     Storage-->>ESS: 9. Success
-    ESS-->>Client: 10. Experiment
+    opt STUDY
+        ESS->>Redis: 10. Enqueue StudyReconcilePayload (best effort)
+    end
+    ESS-->>Client: 11. Experiment
+    opt STUDY
+        Note over Redis,SC: Asynchronously, after the RPC returns
+        Redis-->>SC: Reconcile tick (logged)
+    end
 ```
 
 The ordering here is worth noting: the `xid` is allocated by the XID Service **before** the
@@ -79,6 +88,20 @@ The repeated check closes the window between the pre-check and the transaction: 
 found there still returns `FAILED_PRECONDITION` and leaves no experiment row, while other storage
 errors return `INTERNAL`. A retried transaction starts again from the requested status and study
 config, so the budget is never clamped twice.
+
+**Study reconcile tick (step 10).** After the transaction commits, ESS publishes one
+`StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}` as protojson,
+[`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) for a `STUDY` to the
+`xmc-study-reconcile-stream` Redis stream. The payload names the study only; the Study Controller
+re-reads its state from ESS. Enqueueing is best effort and bounded at 2s, and it is not cancelled
+when the client cancels the RPC: when it fails, ESS logs the error, increments
+`xmc_ess_study_reconcile_enqueue_failures_total`, and still returns the created experiment, because
+failing the RPC would make the client retry and create a duplicate study. Such a study is not
+reconciled until a future sweeper recovers it. `STANDARD` experiments enqueue nothing. The Study
+Controller ([`cmd/study_controller`](../../cmd/study_controller)) consumes the stream
+asynchronously as the `study-controller-group` consumer group and logs each tick; a payload that
+does not name a valid experiment goes to the `xmc-study-reconcile-dlq-stream` dead-letter stream.
+Each submission enqueues one tick (delivered at least once); periodic ticks are not implemented yet.
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.
