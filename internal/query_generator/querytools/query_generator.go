@@ -690,10 +690,7 @@ func (q *queryGen) selectCandidateTables(userFilters map[string]TableField, user
 	}
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
 	if len(candidateTables) == 0 {
-		if len(ptFields) > 0 {
-			return nil, status.Errorf(codes.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
-		}
-		return nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
+		return nil, status.Errorf(codes.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
 	}
 
 	logging.Info(context.Background(), "Removing tables with null filtered fields that aren't satisfied by the base or user filters...")
