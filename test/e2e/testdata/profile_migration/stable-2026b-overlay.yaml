@@ -29,5 +29,3 @@ chartVersions:
   redpanda: "0.2.0"
   clickhouse: "0.2.0"
   ingestion-gateway: "0.2.0"
-  vizier: "0.2.0"
-  hpo: "0.2.0"

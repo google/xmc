@@ -784,8 +784,13 @@ class TestComponentProfileAndFlags(unittest.TestCase):
 
     @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_default(self, mock_run):
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found"),
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
         deploy_component_profile(self.base_config)
-        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_count, 3)
         cmd = mock_run.call_args[0][0]
         self.assertEqual(
             cmd[:5],
@@ -794,29 +799,235 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         self.assertTrue(cmd[5].endswith("deploy/profiles/stable-2026a"))
         self.assertEqual(cmd[6:], ["-n", "xmc", "--wait"])
 
-    @patch("tools.common.tool_utils.Path.is_file", return_value=True)
     @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
-        cfg = replace(
-            self.base_config,
-            namespace="tenant-a",
-            profile_values="/tmp/profile-values.yaml",
-        )
-        deploy_component_profile(cfg)
-        mock_is_file.assert_called_once()
-        cmd = mock_run.call_args[0][0]
-        self.assertEqual(cmd[6:], ["-f", "/tmp/profile-values.yaml", "-n", "tenant-a", "--wait"])
-
-    @patch("tools.common.tool_utils.Path.is_file", return_value=False)
-    @patch("tools.common.tool_utils.run_command")
-    def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
-        cfg = replace(
-            self.base_config,
-            profile_values="/tmp/missing-profile-values.yaml",
-        )
-        with self.assertRaises(FileNotFoundError):
+    def test_deploy_component_profile_with_values_file(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            values_file = Path(tmp_dir) / "profile-values.yaml"
+            values_file.write_text("components: {}\n", encoding="utf-8")
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout="not-json", stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout="not-json", stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            ]
+            cfg = replace(
+                self.base_config,
+                namespace="tenant-a",
+                profile_values=str(values_file),
+            )
             deploy_component_profile(cfg)
-        mock_run.assert_not_called()
+            cmd = mock_run.call_args[0][0]
+            self.assertEqual(cmd[6:], ["-f", str(values_file), "-n", "tenant-a", "--wait"])
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_unprotects_only_retired_disabled_crs(self, mock_run):
+        cluster_list = json.dumps(
+            {
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "vizier",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "hpo",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": True, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "missing-enabled",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "--flag-injection",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "clickhouse",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "custom-retired",
+                            "annotations": {"meta.helm.sh/release-name": "other-release"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "already-unprotected",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": False},
+                    },
+                ]
+            }
+        )
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=cluster_list, stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+        deploy_component_profile(self.base_config)
+        self.assertEqual(mock_run.call_count, 4)
+        patch_cmd = mock_run.call_args_list[1][0][0]
+        self.assertEqual(
+            patch_cmd,
+            [
+                "kubectl",
+                "patch",
+                "-n",
+                "xmc",
+                "--type=merge",
+                "-p",
+                '{"spec":{"deletionProtection":false}}',
+                "--",
+                "components.xmc.dev",
+                "vizier",
+            ],
+        )
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_sanitizes_retired_disabled_helm_values(self, mock_run):
+        stored_values = json.dumps(
+            {
+                "components": {
+                    "clickhouse": {"enabled": True},
+                    "vizier": {"enabled": False},
+                    "hpo": {"enabled": True},
+                },
+                "global": {"env": "dev"},
+            }
+        )
+        captured_sanitized: dict[str, object] = {}
+
+        def fake_run(cmd, **_kwargs):
+            if cmd[:2] == ["kubectl", "get"]:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+            if cmd[:3] == ["helm", "get", "values"]:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout=stored_values, stderr=""
+                )
+            sanitized_idx = cmd.index("-f") + 1
+            captured_sanitized.update(json.loads(Path(cmd[sanitized_idx]).read_text("utf-8")))
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = fake_run
+        deploy_component_profile(self.base_config)
+        upgrade_cmd = mock_run.call_args[0][0]
+        self.assertEqual(
+            upgrade_cmd[:5],
+            ["helm", "upgrade", "--install", "--reset-values", "xmc-profile"],
+        )
+        self.assertEqual(
+            captured_sanitized,
+            {
+                "components": {
+                    "clickhouse": {"enabled": True},
+                    "hpo": {"enabled": True},
+                },
+                "global": {"env": "dev"},
+            },
+        )
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_sanitizes_before_profile_values(self, mock_run):
+        stored_values = json.dumps(
+            {"components": {"clickhouse": {"enabled": True}, "vizier": {"enabled": False}}}
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            values_file = Path(tmp_dir) / "profile-values.yaml"
+            values_file.write_text("components: {}\n", encoding="utf-8")
+            captured_sanitized: dict[str, object] = {}
+
+            def fake_run(cmd, **_kwargs):
+                if cmd[:2] == ["kubectl", "get"]:
+                    return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+                if cmd[:3] == ["helm", "get", "values"]:
+                    return subprocess.CompletedProcess(
+                        args=cmd, returncode=0, stdout=stored_values, stderr=""
+                    )
+                sanitized_idx = cmd.index("-f") + 1
+                captured_sanitized.update(json.loads(Path(cmd[sanitized_idx]).read_text("utf-8")))
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+            mock_run.side_effect = fake_run
+            cfg = replace(self.base_config, namespace="tenant-a", profile_values=str(values_file))
+            deploy_component_profile(cfg)
+            upgrade_cmd = mock_run.call_args[0][0]
+            self.assertEqual(
+                upgrade_cmd[:5],
+                ["helm", "upgrade", "--install", "--reset-values", "xmc-profile"],
+            )
+            flag_files = [
+                upgrade_cmd[i + 1] for i, arg in enumerate(upgrade_cmd[:-1]) if arg == "-f"
+            ]
+            self.assertEqual(len(flag_files), 2)
+            self.assertTrue(flag_files[0].endswith("/sanitized-values.json"))
+            self.assertEqual(
+                upgrade_cmd[6:],
+                ["-f", flag_files[0], "-f", str(values_file), "-n", "tenant-a", "--wait"],
+            )
+            self.assertEqual(captured_sanitized, {"components": {"clickhouse": {"enabled": True}}})
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_handles_missing_cli_and_empty_catalog(self, mock_run):
+        mock_run.side_effect = [
+            FileNotFoundError("kubectl"),
+            FileNotFoundError("helm"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+        deploy_component_profile(self.base_config)
+        self.assertEqual(mock_run.call_count, 3)
+
+        with tempfile.TemporaryDirectory() as empty_chart_dir:
+            mock_run.reset_mock()
+            mock_run.side_effect = None
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            )
+            with patch(
+                "tools.common.tool_utils._resolve_default_profile_chart",
+                return_value=Path(empty_chart_dir),
+            ):
+                deploy_component_profile(self.base_config)
+            self.assertEqual(mock_run.call_count, 1)
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_ignores_non_mapping_json_payloads(self, mock_run):
+        for payload in ("null", "[]", '{"items": "not-a-list"}'):
+            mock_run.reset_mock()
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            ]
+            deploy_component_profile(self.base_config)
+            self.assertEqual(mock_run.call_count, 3)
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_missing_values_file(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg = replace(
+                self.base_config,
+                profile_values=str(Path(tmp_dir) / "missing-profile-values.yaml"),
+            )
+            with self.assertRaises(FileNotFoundError):
+                deploy_component_profile(cfg)
+            mock_run.assert_not_called()
 
     def test_parse_semver_prefix(self):
         self.assertEqual(parse_semver_prefix("v3.14.2+g0a1b2c"), (3, 14, 2))

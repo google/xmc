@@ -103,10 +103,8 @@ Timestamp: ...
   Healthy: true
   Namespace: xmc
   Component clickhouse: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
-  Component hpo: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
   Component ingestion-gateway: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
   Component redpanda: enabled=true state=STATE_READY ready=true healthy=true stability=STABLE
-  Component vizier: enabled=false state=STATE_DISABLED ready=false healthy=true stability=EXPERIMENTAL
 ```
 
 ---

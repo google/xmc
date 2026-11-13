@@ -29,7 +29,7 @@ import (
 var realProfile = Spec{
 	ChartRelPath: "deploy/profiles/stable-2026a",
 	ProfileName:  "stable-2026a",
-	Components:   []string{"redpanda", "clickhouse", "ingestion-gateway", "vizier", "hpo"},
+	Components:   []string{"redpanda", "clickhouse", "ingestion-gateway"},
 }
 
 // copyProfile copies the real profile chart into a temporary directory and returns a Spec for
@@ -174,7 +174,7 @@ func TestContractChecks_DetectViolations(t *testing.T) {
 			s.ProfileName = "other"
 		}},
 		{name: "minXmcVersion not MAJOR.MINOR.PATCH", wantCheck: "MetadataIsConsistent", wantErr: "minXmcVersion", mutate: func(t *testing.T, s *Spec) {
-			replaceInFile(t, *s, "profile.yaml", `minXmcVersion: "0.13.0"`, `minXmcVersion: "1.0"`)
+			replaceInFile(t, *s, "profile.yaml", `minXmcVersion: "1.0.0"`, `minXmcVersion: "1.0"`)
 		}},
 		{name: "supportWindow ends before it starts", wantCheck: "MetadataIsConsistent", wantErr: "must be before end", mutate: func(t *testing.T, s *Spec) {
 			replaceInFile(t, *s, "profile.yaml", `end: "2027-03"`, `end: "2026-01"`)
