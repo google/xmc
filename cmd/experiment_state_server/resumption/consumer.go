@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultDrainTimeout = 5 * time.Second
+	defaultDrainTimeout = redisclient.SettleTimeout + 3*time.Second // XREADGROUP block + settle
 )
 
 // ConsumerConfig defines the configuration required to initialize the resumption stream consumer.

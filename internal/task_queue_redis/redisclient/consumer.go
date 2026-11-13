@@ -244,6 +244,9 @@ func settle(ctx context.Context, write func(context.Context)) {
 
 // processMessage processes a single message from the Redis stream.
 func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage, workerID string) {
+	if ctx.Err() != nil {
+		return // Shutdown started: leave the message pending, its attempt count unchanged.
+	}
 	done := make(chan struct{})
 	var result TaskResult
 

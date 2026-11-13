@@ -133,8 +133,8 @@ func TestConsumer_CloseStopsLoopsAndClosesClient(t *testing.T) {
 	if err := c.Close(context.Background()); !errors.Is(err, fake.closeErr) {
 		t.Errorf("Close() error = %v, want %v", err, fake.closeErr)
 	}
-	if err := c.Close(context.Background()); err != nil {
-		t.Errorf("second Close() error = %v, want nil", err)
+	if err := c.Close(context.Background()); !errors.Is(err, fake.closeErr) {
+		t.Errorf("second Close() error = %v, want the first call's %v", err, fake.closeErr)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -151,10 +151,7 @@ func TestStart_ContextCancelStopsLoops(t *testing.T) {
 
 	cancel()
 	done := make(chan struct{})
-	go func() {
-		c.wg.Wait()
-		close(done)
-	}()
+	go func() { c.wg.Wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -165,49 +162,40 @@ func TestStart_ContextCancelStopsLoops(t *testing.T) {
 	}
 }
 
-func TestConsumer_CloseBoundedByDrainTimeout(t *testing.T) {
-	fake := newFakeConsumer()
-	fake.ignoreCancel = true
-	defer close(fake.release)
-	c := Start(context.Background(), fake)
-	fake.waitForLoops(t)
-	c.drainTimeout = 20 * time.Millisecond
-
-	start := time.Now()
-	if err := c.Close(context.Background()); err != nil {
-		t.Errorf("Close() error = %v, want nil", err)
-	}
-	if elapsed := time.Since(start); elapsed < c.drainTimeout || elapsed > time.Second {
-		t.Errorf("Close() with stuck loops took %v, want about the %v drain timeout", elapsed, c.drainTimeout)
-	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.closeCalls != 1 {
-		t.Errorf("client closes = %d, want 1 even when loops are stuck", fake.closeCalls)
-	}
-}
-
-func TestConsumer_CloseStopsWaitingWhenContextDone(t *testing.T) {
-	fake := newFakeConsumer()
-	fake.ignoreCancel = true
-	defer close(fake.release)
-	c := Start(context.Background(), fake)
-	fake.waitForLoops(t)
-	c.drainTimeout = time.Hour
-	ctx, cancel := context.WithCancel(context.Background())
+func TestConsumer_CloseWithStuckLoops(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
+	tests := []struct {
+		name         string
+		ctx          context.Context
+		drainTimeout time.Duration
+		minElapsed   time.Duration
+	}{
+		{name: "drain timeout", ctx: context.Background(), drainTimeout: 20 * time.Millisecond, minElapsed: 20 * time.Millisecond},
+		{name: "context done", ctx: cancelled, drainTimeout: time.Hour},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := newFakeConsumer()
+			fake.ignoreCancel = true
+			defer close(fake.release)
+			c := Start(context.Background(), fake)
+			fake.waitForLoops(t)
+			c.drainTimeout = tc.drainTimeout
 
-	start := time.Now()
-	if err := c.Close(ctx); err != nil {
-		t.Errorf("Close() error = %v, want nil", err)
-	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Errorf("Close() with a done context took %v, want it to return without waiting for stuck loops", elapsed)
-	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.closeCalls != 1 {
-		t.Errorf("client closes = %d, want 1", fake.closeCalls)
+			start := time.Now()
+			if err := c.Close(tc.ctx); err != nil {
+				t.Errorf("Close() error = %v, want nil", err)
+			}
+			if elapsed := time.Since(start); elapsed < tc.minElapsed || elapsed > time.Second {
+				t.Errorf("Close() with stuck loops took %v, want between %v and 1s", elapsed, tc.minElapsed)
+			}
+			fake.mu.Lock()
+			defer fake.mu.Unlock()
+			if fake.closeCalls != 1 {
+				t.Errorf("client closes = %d, want 1 even when loops are stuck", fake.closeCalls)
+			}
+		})
 	}
 }
 

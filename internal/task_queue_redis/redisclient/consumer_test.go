@@ -37,8 +37,7 @@ type fakeRedisClient struct {
 	addedArgs []*redis.XAddArgs
 	// settleCtxErrs records ctx.Err() of every XAck and XAdd call.
 	settleCtxErrs []error
-	// readErr and autoClaimErr are returned by XReadGroup and XAutoClaim; onAutoClaim, if set,
-	// runs before XAutoClaim returns.
+	// readErr and autoClaimErr are returned by XReadGroup and XAutoClaim, after onAutoClaim runs.
 	readErr      error
 	autoClaimErr error
 	onAutoClaim  func()
@@ -416,7 +415,6 @@ func TestRunCleanup_AutoClaimError(t *testing.T) {
 			if tc.shutdown {
 				fake.onAutoClaim = cancel
 			}
-
 			done := make(chan struct{})
 			go func() { client.RunCleanup(ctx, "cleanup-1"); close(done) }()
 			select {
@@ -428,6 +426,16 @@ func TestRunCleanup_AutoClaimError(t *testing.T) {
 				t.Errorf("XGroupCreateMkStream calls = %d, want %d", fake.groupCreates, tc.wantCreates)
 			}
 		})
+	}
+}
+
+func TestProcessMessage_AfterShutdownStaysPending(t *testing.T) {
+	client, fake := newTestConsumer(time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client.processMessage(ctx, redis.XMessage{ID: "msg-2", Values: map[string]any{"data": "d"}}, "worker-1")
+	if len(fake.addedArgs) != 0 || len(fake.ackedIDs) != 0 {
+		t.Errorf("after shutdown: %d XAdds, acked %v; want none (left pending)", len(fake.addedArgs), fake.ackedIDs)
 	}
 }
 

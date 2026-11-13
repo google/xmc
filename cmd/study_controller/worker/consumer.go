@@ -53,6 +53,7 @@ type Consumer struct {
 	wg           sync.WaitGroup
 	once         sync.Once
 	drainTimeout time.Duration
+	closeErr     error // result of the first Close, returned by every call
 }
 
 // Start sets handleTask on client and runs its worker and cleanup loops until ctx is done or Close
@@ -85,15 +86,14 @@ func (c *Consumer) runLoop(loop func()) {
 // Close stops the loops and closes the Redis client. It waits for the loops to return, but at
 // most the drain timeout (8s) and only until ctx is done; after that it logs a warning and closes
 // the client anyway, leaving a stuck loop to fail on the closed client. A tick being handled when
-// Close is called is still acknowledged or retried. Calls after the first return nil.
+// Close is called is still acknowledged or retried. Every call returns the first call's error.
 func (c *Consumer) Close(ctx context.Context) error {
-	var err error
 	c.once.Do(func() {
 		c.cancel()
 		c.waitForLoops(ctx)
-		err = c.client.Close(ctx)
+		c.closeErr = c.client.Close(ctx)
 	})
-	return err
+	return c.closeErr
 }
 
 // waitForLoops waits for the loops to return, the drain timeout or ctx, whichever comes first, and
