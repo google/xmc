@@ -35,10 +35,11 @@ func (m *mockRedisPublisher) XAdd(ctx context.Context, a *redis.XAddArgs) *redis
 func (m *mockRedisPublisher) Close() error { return nil }
 
 func TestNewPublisher(t *testing.T) {
-	var pub Publisher = NewPublisher(nil, "test-stream")
+	pub := NewPublisher(nil, "test-stream")
 	if pub == nil {
 		t.Fatal("NewPublisher() returned nil")
 	}
+	var _ Publisher = pub
 }
 
 func TestPublisherClientValidation(t *testing.T) {
