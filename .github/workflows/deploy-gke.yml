@@ -212,6 +212,11 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
+      - name: 'Set up Google Cloud SDK & gke-gcloud-auth-plugin'
+        uses: 'google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db' # v3.0.1
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
       - name: 'Set up Cloud SDK & Docker Auth'
         run: |
           gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -296,14 +301,9 @@ jobs:
             chmod +x "${HOME}/.local/bin/helm"
           fi
 
-          if ! command -v gke-gcloud-auth-plugin &>/dev/null; then
-            gcloud components install gke-gcloud-auth-plugin --quiet || \
-            (sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin) || true
-          fi
-
           kubectl version --client
           helm version --short
-          gke-gcloud-auth-plugin --version || true
+          gke-gcloud-auth-plugin --version
 
       - name: 'Generate Deployment Configuration'
         env:
