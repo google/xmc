@@ -253,9 +253,7 @@ def derive_verdict(outcomes: Mapping[str, ScenarioOutcome]) -> Verdict:
         )
 
     origin_baseline = outcomes.get(ORIGIN_BASELINE)
-    if origin_baseline is not None and origin_baseline.passed:
-        return Verdict.REJECTED
-    if not origin.passed:
+    if (origin_baseline is not None and origin_baseline.passed) or not origin.passed:
         return Verdict.REJECTED
 
     transfer_failed = transfer is not None and not transfer.passed
@@ -270,10 +268,7 @@ def derive_verdict(outcomes: Mapping[str, ScenarioOutcome]) -> Verdict:
 
     if transfer is None:
         return Verdict.SHIP_ORIGIN_ONLY
-    if negative is None:
-        return Verdict.SHIP_NO_NEGATIVE
-
-    return Verdict.SHIP
+    return Verdict.SHIP_NO_NEGATIVE if negative is None else Verdict.SHIP
 
 
 def _status_mark(outcome: ScenarioOutcome | None) -> str:

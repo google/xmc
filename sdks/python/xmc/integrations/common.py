@@ -34,29 +34,31 @@ def parse_version(version_str: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-def extract_scalar(val: Any) -> float | int | None:
-    """Extracts a primitive float or int scalar from various framework tensor types.
-
-    Supports PyTorch, TensorFlow, JAX, NumPy 0d arrays, and standard Python numbers.
-    """
+def _unwrap_scalar(val: Any) -> float | int | None:
+    """Extracts a primitive scalar from an object exposing `.item()` or `float()` conversion."""
     if isinstance(val, (int, float)):
         return val
-
     if hasattr(val, "item") and callable(val.item):
         with contextlib.suppress(Exception):
             res = val.item()
             if isinstance(res, (int, float)):
                 return res
+    return None
+
+
+def extract_scalar(val: Any) -> float | int | None:
+    """Extracts a primitive float or int scalar from various framework tensor types.
+
+    Supports PyTorch, TensorFlow, JAX, NumPy 0d arrays, and standard Python numbers.
+    """
+    if (scalar := _unwrap_scalar(val)) is not None:
+        return scalar
 
     if hasattr(val, "numpy") and callable(val.numpy):
         with contextlib.suppress(Exception):
             n_val = val.numpy()
-            if isinstance(n_val, (int, float)):
-                return n_val
-            if hasattr(n_val, "item") and callable(n_val.item):
-                res = n_val.item()
-                if isinstance(res, (int, float)):
-                    return res
+            if (scalar := _unwrap_scalar(n_val)) is not None:
+                return scalar
             return float(n_val)
 
     with contextlib.suppress(Exception):

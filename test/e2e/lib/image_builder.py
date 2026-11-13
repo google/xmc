@@ -109,28 +109,43 @@ class ImageBuilder:
                     continue
         return False
 
-    def _maybe_precompile_ui(self) -> None:
-        """Pre-compiles the Angular UI on the host machine to accelerate OCI packaging.
+    def _needs_npm_install(self, install_sentinel: str, ui_dir: str) -> bool:
+        """Checks whether UI npm dependencies are missing or older than package manifests."""
+        if not os.path.isfile(install_sentinel):
+            return True
+        try:
+            installed_time = os.path.getmtime(install_sentinel)
+            return any(
+                os.path.isfile(p) and os.path.getmtime(p) > installed_time
+                for p in (
+                    os.path.join(ui_dir, "package-lock.json"),
+                    os.path.join(ui_dir, "package.json"),
+                )
+            )
+        except OSError:
+            return True
 
-        In the standard Docker multi-stage build, running `npm ci` and `ng build` inside
-        a container takes ~99 seconds per test run. By leveraging the host runner's
-        pre-installed Node.js environment:
-          1. Environment Check: Confirms `node`, `npm`, and `npx` exist on the host.
-             If absent, gracefully skips host build to let Bazel use the Docker fallback.
-          2. Freshness Check: If `dist/browser/index.html` already exists and no UI source
-             files have changed, skips compilation entirely (0 seconds).
-          3. Dependency Cache: Uses an `.install-success` sentinel file inside `node_modules`
-             to only run `npm ci` when `package.json` or `package-lock.json` are modified.
-          4. Native Host Build: Executes `npx ng build --configuration production` using
-             the host's native V8 engine, reducing build time to ~25 seconds.
-          5. Failure Recovery: On any compilation error, wipes `dist` so Bazel cleanly
-             falls back to the hermetic containerized build without leaving partial state.
-             Crucially preserves the npm install sentinel so developers fixing TypeScript
-             bugs don't suffer redundant `npm ci` reinstalls.
-        """
+    def _run_host_ui_build(self, ui_dir: str, node_modules_dir: str, install_sentinel: str) -> None:
+        """Installs UI dependencies if stale and compiles the production Angular bundle."""
+        if self._needs_npm_install(install_sentinel, ui_dir):
+            logger.info("=== [UI] Installing npm dependencies... ===")
+            run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
+            try:
+                os.makedirs(node_modules_dir, exist_ok=True)
+                with open(install_sentinel, "w", encoding="utf-8") as f:
+                    f.write("ok")
+            except OSError as e:
+                logger.warning(
+                    "[UI] Failed to write npm install sentinel %s: %s", install_sentinel, e
+                )
+
+        run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
+        logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
+
+    def _maybe_precompile_ui(self) -> None:
+        """Pre-compiles the Angular UI on the host machine to accelerate OCI packaging."""
         ui_dir = os.path.join(self.cfg.workspace_root, "cmd", "ui")
-        dist_dir = os.path.join(ui_dir, "dist", "browser")
-        index_html = os.path.join(dist_dir, "index.html")
+        index_html = os.path.join(ui_dir, "dist", "browser", "index.html")
 
         # 1. Check if existing pre-compiled bundle exists and verify freshness.
         if os.path.isfile(index_html):
@@ -148,8 +163,6 @@ class ImageBuilder:
                 logger.warning("[UI] Failed to remove stale dist directory: %s", e)
 
         # 2. Skip host compilation if Node.js toolchain is not available on host.
-        # If dist was stale above, it has now been wiped so Bazel cleanly falls back
-        # to the containerized Docker build instead of packaging stale assets.
         if not (shutil.which("node") and shutil.which("npm") and shutil.which("npx")):
             logger.info(
                 "=== [UI] Node.js toolchain not found on host. Falling back to containerized"
@@ -160,38 +173,8 @@ class ImageBuilder:
         logger.info("=== [UI] Compiling Angular UI on host with local node/npm ===")
         node_modules_dir = os.path.join(ui_dir, "node_modules")
         install_sentinel = os.path.join(node_modules_dir, ".install-success")
-        package_json = os.path.join(ui_dir, "package.json")
-        package_lock = os.path.join(ui_dir, "package-lock.json")
-
-        # 3. Determine if npm dependencies need installation/refresh.
-        needs_install = not os.path.isfile(install_sentinel)
-        if not needs_install:
-            try:
-                installed_time = os.path.getmtime(install_sentinel)
-                if any(
-                    os.path.isfile(p) and os.path.getmtime(p) > installed_time
-                    for p in (package_lock, package_json)
-                ):
-                    needs_install = True
-            except OSError:
-                needs_install = True
-
         try:
-            if needs_install:
-                logger.info("=== [UI] Installing npm dependencies... ===")
-                run_cmd(["npm", "ci", "--legacy-peer-deps"], cwd=ui_dir)
-                try:
-                    os.makedirs(node_modules_dir, exist_ok=True)
-                    with open(install_sentinel, "w", encoding="utf-8") as f:
-                        f.write("ok")
-                except OSError as e:
-                    logger.warning(
-                        "[UI] Failed to write npm install sentinel %s: %s", install_sentinel, e
-                    )
-
-            # 4. Compile Angular production bundle on host.
-            run_cmd(["npx", "ng", "build", "--configuration", "production"], cwd=ui_dir)
-            logger.info("=== [UI] Successfully pre-compiled Angular UI on host ===")
+            self._run_host_ui_build(ui_dir, node_modules_dir, install_sentinel)
         except Exception as e:
             # 5. Clean up failed dist directory to force clean containerized Docker fallback.
             logger.warning(

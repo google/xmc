@@ -198,40 +198,77 @@ def create_experiment_dashboard(
             print(f"--> Server-assigned chart IDs: {list(created_dashboard.chart_ids)}")
 
 
-def main(argv: Sequence[str]) -> None:
-    """Launches ClickHouse metrics logging experiment and configures its dashboard."""
-    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
-    dotenv.load_dotenv()
-    # Load worker-specific environment defaults if present
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    worker_env_path = os.path.join(script_dir, "worker.env")
-    if os.path.exists(worker_env_path):
-        dotenv.load_dotenv(worker_env_path)
-
-    if len(argv) > 1:
-        raise app.UsageError("Too many command-line arguments.")
-
+def _load_worker_settings() -> tuple[str, str, dict[str, str]]:
+    """Loads worker container and ClickHouse connection configuration from env."""
     project_id = os.environ.get("PROJECT_ID", "my-project")
     image_path = os.environ.get(
         "IMAGE_PATH",
         f"us-docker.pkg.dev/{project_id}/xmc/clickhouse-metrics-job:latest",
     )
     queue_name = os.environ.get("QUEUE_NAME", "cpu-queue")
+    ch_env = {
+        "CLICKHOUSE_HOST": os.environ.get(
+            "CLICKHOUSE_HOST", "clickhouse.xmc-metrics.svc.cluster.local"
+        ),
+        "CLICKHOUSE_PORT": os.environ.get("CLICKHOUSE_PORT", "8123"),
+        "CLICKHOUSE_USER": os.environ.get("CLICKHOUSE_USER", "default"),
+        "CLICKHOUSE_PASSWORD": os.environ.get("CLICKHOUSE_PASSWORD", ""),
+        "CLICKHOUSE_DATABASE": os.environ.get("CLICKHOUSE_DATABASE", "default"),
+        "CLICKHOUSE_SECURE": os.environ.get("CLICKHOUSE_SECURE", "false"),
+        "CLICKHOUSE_TABLE": os.environ.get("CLICKHOUSE_TABLE", "xmc_metrics"),
+        "NUM_STEPS": os.environ.get("NUM_STEPS", "100"),
+    }
+    return image_path, queue_name, ch_env
 
-    # ClickHouse connection parameters inside cluster
-    ch_host = os.environ.get(
-        "CLICKHOUSE_HOST",
-        "clickhouse.xmc-metrics.svc.cluster.local",
+
+def _build_worker_work_unit(
+    image_path: str, queue_name: str, ch_env: dict[str, str]
+) -> work_unit_pb2.WorkUnit:
+    """Constructs the ClickHouse metric-writer WorkUnit protobuf."""
+    worker_env = [work_unit_pb2.EnvVar(name=k, value=v) for k, v in ch_env.items()]
+    worker_resources = resources_pb2.ResourceSet(
+        cpu_resources=resources_pb2.CpuResources(
+            cpu_millicores=100,
+            memory_bytes=256 * 1024 * 1024,
+        ),
     )
-    ch_port = os.environ.get("CLICKHOUSE_PORT", "8123")
-    ch_user = os.environ.get("CLICKHOUSE_USER", "default")
-    ch_password = os.environ.get("CLICKHOUSE_PASSWORD", "")
-    ch_database = os.environ.get("CLICKHOUSE_DATABASE", "default")
-    ch_secure = os.environ.get("CLICKHOUSE_SECURE", "false")
-    ch_table = os.environ.get("CLICKHOUSE_TABLE", "xmc_metrics")
-    num_steps = os.environ.get("NUM_STEPS", "100")
+    return work_unit_pb2.WorkUnit(
+        work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
+        priority=priority_pb2.Priority.NORMAL,
+        notes="WorkUnit ingesting DataEngine metrics directly into ClickHouse.",
+        tags=["metrics-test", "clickhouse", "dataengine"],
+        executable=work_unit_pb2.Executable(
+            scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
+            jobset=work_unit_pb2.JobSetExecutable(
+                jobs=[
+                    work_unit_pb2.KubernetesJob(
+                        name="clickhouse-metric-writer",
+                        replicas=1,
+                        spec=work_unit_pb2.ExecutableSpec(
+                            name="clickhouse-metric-writer",
+                            docker_image=image_path,
+                            command=["python3", "-u", "/app/worker.py"],
+                            resources=worker_resources,
+                            env=worker_env,
+                        ),
+                    ),
+                ]
+            ),
+        ),
+    )
 
-    # Dashboard service endpoint derived from environment (XMANAGER_ENDPOINT / XMANAGER_UI_URL)
+
+def main(argv: Sequence[str]) -> None:
+    """Launches ClickHouse metrics logging experiment and configures its dashboard."""
+    logging.getLogger("dotenv.main").setLevel(logging.ERROR)
+    dotenv.load_dotenv()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.exists(worker_env_path := os.path.join(script_dir, "worker.env")):
+        dotenv.load_dotenv(worker_env_path)
+    if len(argv) > 1:
+        raise app.UsageError("Too many command-line arguments.")
+
+    image_path, queue_name, ch_env = _load_worker_settings()
     dashboard_endpoint = _resolve_dashboard_endpoint()
     create_dash = _get_env_bool("CREATE_DASHBOARD", default=True)
 
@@ -240,8 +277,8 @@ def main(argv: Sequence[str]) -> None:
     print("==================================================")
     print(f"Worker Image       : {image_path}")
     print(f"Queue Name         : {queue_name}")
-    print(f"ClickHouse Host    : {ch_host}:{ch_port}")
-    print(f"ClickHouse Database: {ch_database}")
+    print(f"ClickHouse Host    : {ch_env['CLICKHOUSE_HOST']}:{ch_env['CLICKHOUSE_PORT']}")
+    print(f"ClickHouse Database: {ch_env['CLICKHOUSE_DATABASE']}")
     print(f"Dashboard Endpoint : {dashboard_endpoint}")
     print("==================================================")
 
@@ -253,56 +290,12 @@ def main(argv: Sequence[str]) -> None:
         xid = int(experiment.resource_name.split("/")[-1])
         print(f"\n[1/3] Created Experiment successfully: {experiment.resource_name} (XID: {xid})")
 
-        # WorkUnit environment variables passing ClickHouse configuration
-        worker_env = [
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_HOST", value=ch_host),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_PORT", value=ch_port),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_USER", value=ch_user),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_PASSWORD", value=ch_password),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_DATABASE", value=ch_database),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_SECURE", value=ch_secure),
-            work_unit_pb2.EnvVar(name="CLICKHOUSE_TABLE", value=ch_table),
-            work_unit_pb2.EnvVar(name="NUM_STEPS", value=num_steps),
-        ]
-
-        worker_resources = resources_pb2.ResourceSet(
-            cpu_resources=resources_pb2.CpuResources(
-                cpu_millicores=100,
-                memory_bytes=256 * 1024 * 1024,
-            ),
+        created_wu = stub.create_work_unit(
+            ess_api_pb2.CreateWorkUnitRequest(
+                parent=experiment.resource_name,
+                work_unit=_build_worker_work_unit(image_path, queue_name, ch_env),
+            )
         )
-
-        work_unit = work_unit_pb2.WorkUnit(
-            work_unit_type=work_unit_pb2.WorkUnit.WorkUnitType.STANDARD,
-            priority=priority_pb2.Priority.NORMAL,
-            notes="WorkUnit ingesting DataEngine metrics directly into ClickHouse.",
-            tags=["metrics-test", "clickhouse", "dataengine"],
-            executable=work_unit_pb2.Executable(
-                scheduling_constraints=work_unit_pb2.SchedulingConstraints(queue_name=queue_name),
-                jobset=work_unit_pb2.JobSetExecutable(
-                    jobs=[
-                        work_unit_pb2.KubernetesJob(
-                            name="clickhouse-metric-writer",
-                            replicas=1,
-                            spec=work_unit_pb2.ExecutableSpec(
-                                name="clickhouse-metric-writer",
-                                docker_image=image_path,
-                                command=["python3", "-u", "/app/worker.py"],
-                                resources=worker_resources,
-                                env=worker_env,
-                            ),
-                        ),
-                    ]
-                ),
-            ),
-        )
-
-        create_req = ess_api_pb2.CreateWorkUnitRequest(
-            parent=experiment.resource_name,
-            work_unit=work_unit,
-        )
-        created_wu = stub.create_work_unit(create_req)
-        # Parse work unit ID from resource name "experiments/{xid}/workUnits/{wid}"
         raw_wid = created_wu.name.split("/")[-1]
         wid = int(raw_wid) if raw_wid.isdigit() else 1
         print(f"[2/3] Created WorkUnit successfully: {created_wu.name} (WID: {wid})")

@@ -57,6 +57,20 @@ def _gh_json(args: list[str], repo_dir: Path | None, expected_type: type) -> Any
     return parsed if isinstance(parsed, expected_type) else None
 
 
+def _extract_step_page_url(step: Any, get_url: Any) -> str:
+    if not isinstance(step, dict):
+        return ""
+    if url := get_url(step):
+        return url
+    outputs = step.get("outputs") or step.get("output")
+    if isinstance(outputs, str) and outputs.strip().startswith("{"):
+        try:
+            outputs = json.loads(outputs)
+        except json.JSONDecodeError:
+            outputs = None
+    return get_url(outputs)
+
+
 def _extract_page_url(view_data: dict[str, Any]) -> str:
     """Extracts GitHub Pages URL from run view data or jobs step outputs if available."""
     if not isinstance(view_data, dict):
@@ -67,33 +81,19 @@ def _extract_page_url(view_data: dict[str, Any]) -> str:
             return str(obj.get("page_url") or obj.get("pageUrl") or "")
         return ""
 
-    url = _get_url(view_data)
-    if url:
+    if url := _get_url(view_data):
         return url
 
     for job in view_data.get("jobs", []):
         if not isinstance(job, dict):
             continue
-        url = _get_url(job)
-        if url:
-            return url
         env = job.get("environment")
-        if isinstance(env, dict) and env.get("url"):
-            return str(env["url"])
+        if url := (
+            _get_url(job) or (str(env["url"]) if isinstance(env, dict) and env.get("url") else "")
+        ):
+            return url
         for step in job.get("steps", []):
-            if not isinstance(step, dict):
-                continue
-            url = _get_url(step)
-            if url:
-                return url
-            outputs = step.get("outputs") or step.get("output")
-            if isinstance(outputs, str) and outputs.strip().startswith("{"):
-                try:
-                    outputs = json.loads(outputs)
-                except json.JSONDecodeError:
-                    outputs = None
-            url = _get_url(outputs)
-            if url:
+            if url := _extract_step_page_url(step, _get_url):
                 return url
     return ""
 

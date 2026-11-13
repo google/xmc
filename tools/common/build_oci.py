@@ -54,38 +54,69 @@ def get_sha256(filepath: str) -> str:
         return h.hexdigest()
 
 
+_ELF_MACHINE_ARCH = {
+    62: "amd64",  # EM_X86_64
+    183: "arm64",  # EM_AARCH64
+    3: "386",  # EM_386
+    40: "arm",  # EM_ARM
+}
+
+
 def detect_elf_architecture(binary_path: str):
     """Detects architecture of an ELF binary. Returns 'amd64', 'arm64', or None."""
     try:
         with open(binary_path, "rb") as f:
             header = f.read(64)
-            if len(header) < 52:
+            if len(header) < 52 or header[0:4] != b"\x7fELF":
                 return None
-            # Check ELF magic bytes: \x7f ELF
-            if header[0:4] != b"\x7fELF":
-                return None
-
-            # e_machine is at offset 18 (2 bytes)
-            # Go binaries for linux are almost always little-endian (class 2, data 1).
             ei_data = header[5]
-            if ei_data == 1:  # Little endian
-                (e_machine,) = struct.unpack("<H", header[18:20])
-            elif ei_data == 2:  # Big endian
-                (e_machine,) = struct.unpack(">H", header[18:20])
-            else:
+            if ei_data not in (1, 2):
                 return None
-
-            if e_machine == 62:  # EM_X86_64
-                return "amd64"
-            if e_machine == 183:  # EM_AARCH64
-                return "arm64"
-            if e_machine == 3:  # EM_386
-                return "386"
-            if e_machine == 40:  # EM_ARM
-                return "arm"
+            endian = "<H" if ei_data == 1 else ">H"
+            (e_machine,) = struct.unpack(endian, header[18:20])
+            return _ELF_MACHINE_ARCH.get(e_machine)
     except Exception as e:
         _LOGGER.debug("Failed to detect ELF architecture for %s: %s", binary_path, e)
     return None
+
+
+def _add_root_file_to_tar(tar: tarfile.TarFile, src_path: str, arcname: str, mode: int) -> None:
+    info = tar.gettarinfo(src_path, arcname=arcname)
+    info.uid = 0
+    info.gid = 0
+    info.uname = "root"
+    info.gname = "root"
+    info.mode = mode
+    with open(src_path, "rb") as f:
+        tar.addfile(info, f)
+
+
+def _create_layer_tarball(
+    layer_tar_path: str, real_binary_path: str, binary_name: str, host_ca_path: str | None
+) -> None:
+    try:
+        with tarfile.open(layer_tar_path, "w") as tar:
+            _add_root_file_to_tar(tar, real_binary_path, f"app/{binary_name}", EXEC_PERMISSION)
+            if host_ca_path:
+                _add_root_file_to_tar(
+                    tar, host_ca_path, "etc/ssl/certs/ca-certificates.crt", FILE_PERMISSION
+                )
+    except Exception as e:
+        raise HandledError(
+            f"Failed to create layer tarball: {e}",
+            "Check directory write permissions and ensure the binary path is a valid file.",
+        ) from e
+
+
+def _write_json_file(path: str, payload: object, label: str) -> None:
+    try:
+        with open(path, "w") as f:
+            json.dump(payload, f)
+    except Exception as e:
+        raise HandledError(
+            f"Failed to write {label} JSON: {e}",
+            "Check disk space and write permissions in the current working directory.",
+        ) from e
 
 
 def build_oci(args):
@@ -123,35 +154,7 @@ def build_oci(args):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         layer_tar_path = os.path.join(tmpdir, "layer.tar")
-
-        try:
-            with tarfile.open(layer_tar_path, "w") as tar:
-                info = tar.gettarinfo(real_binary_path, arcname=f"app/{binary_name}")
-                info.uid = 0
-                info.gid = 0
-                info.uname = "root"
-                info.gname = "root"
-                info.mode = EXEC_PERMISSION
-                with open(real_binary_path, "rb") as f:
-                    tar.addfile(info, f)
-
-                if host_ca_path:
-                    info_ca = tar.gettarinfo(
-                        host_ca_path, arcname="etc/ssl/certs/ca-certificates.crt"
-                    )
-                    info_ca.uid = 0
-                    info_ca.gid = 0
-                    info_ca.uname = "root"
-                    info_ca.gname = "root"
-                    info_ca.mode = FILE_PERMISSION
-                    with open(host_ca_path, "rb") as f:
-                        tar.addfile(info_ca, f)
-        except Exception as e:
-            raise HandledError(
-                f"Failed to create layer tarball: {e}",
-                "Check directory write permissions and ensure the binary path is a valid file.",
-            ) from e
-
+        _create_layer_tarball(layer_tar_path, real_binary_path, binary_name, host_ca_path)
         layer_sha = get_sha256(layer_tar_path)
 
         config = {
@@ -164,17 +167,8 @@ def build_oci(args):
             "os": "linux",
             "rootfs": {"type": "layers", "diff_ids": [f"sha256:{layer_sha}"]},
         }
-
         config_json_path = os.path.join(tmpdir, "config.json")
-        try:
-            with open(config_json_path, "w") as f:
-                json.dump(config, f)
-        except Exception as e:
-            raise HandledError(
-                f"Failed to write config JSON: {e}",
-                "Check disk space and write permissions in the current working directory.",
-            ) from e
-
+        _write_json_file(config_json_path, config, "config")
         config_sha = get_sha256(config_json_path)
         final_config_path = os.path.join(tmpdir, f"{config_sha}.json")
         os.rename(config_json_path, final_config_path)
@@ -186,16 +180,8 @@ def build_oci(args):
                 "Layers": ["layer.tar"],
             }
         ]
-
         manifest_json_path = os.path.join(tmpdir, "manifest.json")
-        try:
-            with open(manifest_json_path, "w") as f:
-                json.dump(manifest, f)
-        except Exception as e:
-            raise HandledError(
-                f"Failed to write manifest JSON: {e}",
-                "Check disk space and write permissions in the current working directory.",
-            ) from e
+        _write_json_file(manifest_json_path, manifest, "manifest")
 
         try:
             with tarfile.open(output_tar, "w") as tar:

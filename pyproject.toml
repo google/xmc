@@ -59,6 +59,9 @@ select = [
     "RUF015",  # Ruff: Prefer next(iter()) over list()[0]
     "RUF019",  # Ruff: Unnecessary key check before dictionary access
     "LOG015",  # flake8-logging: Forbid calls on root logger
+    "PLR0911", # Pylint: Too many return statements
+    "PLR0912", # Pylint: Too many branches
+    "PLR0915", # Pylint: Too many statements
     "RUF012",  # Ruff: Mutable class default values
     "RUF100",  # Ruff: Unused noqa directives
     "S110",    # Bandit: try-except-pass without logging

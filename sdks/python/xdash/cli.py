@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from xdash.builders import (
     ChartBuilder,
@@ -302,6 +302,16 @@ def _handle_list(client: DashboardClient) -> int:
     return 0
 
 
+_COMMAND_HANDLERS: dict[str, Callable[[DashboardClient, argparse.Namespace], int]] = {
+    "create-preset": _handle_create_preset,
+    "create-dashboard": _handle_create_dashboard,
+    "create-chart": _handle_create_chart,
+    "get": _handle_get,
+    "get-data": _handle_get_data,
+    "list": lambda client, _args: _handle_list(client),
+}
+
+
 def run_cli(
     argv: Sequence[str] | None = None,
     client: DashboardClient | None = None,
@@ -323,18 +333,8 @@ def run_cli(
             )
             client = owned_client
 
-        if args.command == "create-preset":
-            return _handle_create_preset(client, args)
-        if args.command == "create-dashboard":
-            return _handle_create_dashboard(client, args)
-        if args.command == "create-chart":
-            return _handle_create_chart(client, args)
-        if args.command == "get":
-            return _handle_get(client, args)
-        if args.command == "get-data":
-            return _handle_get_data(client, args)
-        if args.command == "list":
-            return _handle_list(client)
+        if handler := _COMMAND_HANDLERS.get(args.command):
+            return handler(client, args)
     except (XDashError, ValueError) as err:
         sys.stderr.write(f"Error: {err}\n")
         return 1
