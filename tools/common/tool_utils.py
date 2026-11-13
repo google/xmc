@@ -650,6 +650,60 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
     return out
 
 
+def _is_retired_disabled_profile_component(
+    item: Mapping[str, Any], release_name: str, catalog_names: set[str]
+) -> bool:
+    """Returns True when item is a disabled, deletion-protected CR removed from catalog_names."""
+    meta: Mapping[str, Any] = raw_m if isinstance(raw_m := item.get("metadata"), Mapping) else {}
+    ann: Mapping[str, Any] = raw_a if isinstance(raw_a := meta.get("annotations"), Mapping) else {}
+    name = str(meta.get("name") or "")
+    if not name or name in catalog_names or ann.get("meta.helm.sh/release-name") != release_name:
+        return False
+    spec: Mapping[str, Any] = raw_s if isinstance(raw_s := item.get("spec"), Mapping) else {}
+    return not parse_bool_flag(spec.get("enabled", False)) and parse_bool_flag(
+        spec.get("deletionProtection", True)
+    )
+
+
+def _unprotect_retired_profile_components(
+    namespace: str, chart_dir: Path, release_name: str = "xmc-profile"
+) -> None:
+    """Disables deletionProtection on disabled xmc-profile CRs removed from chart_dir."""
+    res = run_command(
+        ["kubectl", "get", "components.xmc.dev", "-n", namespace, "-o", "json"],
+        check=False,
+        capture_output=True,
+        log_cmd=False,
+        log_on_error=False,
+    )
+    if res.returncode != 0 or not (res.stdout or "").strip():
+        return
+    try:
+        items = json.loads(res.stdout).get("items") or []
+    except json.JSONDecodeError:
+        return
+    catalog_names = {p.parent.name for p in (chart_dir / "components").glob("*/Chart.yaml")}
+    for item in items:
+        if isinstance(item, Mapping) and _is_retired_disabled_profile_component(
+            item, release_name, catalog_names
+        ):
+            name = str(item["metadata"]["name"])
+            log_info(f"Clearing deletionProtection on retired disabled Component '{name}'...")
+            run_command(
+                [
+                    "kubectl",
+                    "patch",
+                    "components.xmc.dev",
+                    name,
+                    "-n",
+                    namespace,
+                    "--type=merge",
+                    "-p",
+                    '{"spec":{"deletionProtection":false}}',
+                ]
+            )
+
+
 def deploy_component_profile(config: DeploymentConfig) -> None:
     """Deploys default XMC component profile (stable-2026a).
 
@@ -660,8 +714,15 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
         FileNotFoundError: If config.profile_values is specified and missing.
     """
     ns = config.namespace or "xmc"
-    chart = str(Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a")
-    cmd = ["helm", "upgrade", "--install", "--reset-then-reuse-values", "xmc-profile", chart]
+    chart_dir = Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a"
+    cmd = [
+        "helm",
+        "upgrade",
+        "--install",
+        "--reset-then-reuse-values",
+        "xmc-profile",
+        str(chart_dir),
+    ]
     if config.profile_values:
         if not Path(config.profile_values).is_file():
             raise FileNotFoundError(
@@ -669,6 +730,7 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
             )
         cmd.extend(["-f", config.profile_values])
     cmd.extend(["-n", ns, "--wait"])
+    _unprotect_retired_profile_components(ns, chart_dir)
     log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
     run_command(cmd)
     log_success("Default component profile (stable-2026a) deployed.")

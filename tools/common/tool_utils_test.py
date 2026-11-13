@@ -784,8 +784,12 @@ class TestComponentProfileAndFlags(unittest.TestCase):
 
     @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_default(self, mock_run):
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="not found"),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
         deploy_component_profile(self.base_config)
-        mock_run.assert_called_once()
+        self.assertEqual(mock_run.call_count, 2)
         cmd = mock_run.call_args[0][0]
         self.assertEqual(
             cmd[:5],
@@ -797,6 +801,10 @@ class TestComponentProfileAndFlags(unittest.TestCase):
     @patch("tools.common.tool_utils.Path.is_file", return_value=True)
     @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_with_values_file(self, mock_run, mock_is_file):
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="not-json", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
         cfg = replace(
             self.base_config,
             namespace="tenant-a",
@@ -806,6 +814,72 @@ class TestComponentProfileAndFlags(unittest.TestCase):
         mock_is_file.assert_called_once()
         cmd = mock_run.call_args[0][0]
         self.assertEqual(cmd[6:], ["-f", "/tmp/profile-values.yaml", "-n", "tenant-a", "--wait"])
+
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_unprotects_only_retired_disabled_crs(self, mock_run):
+        cluster_list = json.dumps(
+            {
+                "items": [
+                    {
+                        "metadata": {
+                            "name": "vizier",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "hpo",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": True, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "clickhouse",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "custom-retired",
+                            "annotations": {"meta.helm.sh/release-name": "other-release"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": True},
+                    },
+                    {
+                        "metadata": {
+                            "name": "already-unprotected",
+                            "annotations": {"meta.helm.sh/release-name": "xmc-profile"},
+                        },
+                        "spec": {"enabled": False, "deletionProtection": False},
+                    },
+                ]
+            }
+        )
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout=cluster_list, stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ]
+        deploy_component_profile(self.base_config)
+        self.assertEqual(mock_run.call_count, 3)
+        patch_cmd = mock_run.call_args_list[1][0][0]
+        self.assertEqual(
+            patch_cmd,
+            [
+                "kubectl",
+                "patch",
+                "components.xmc.dev",
+                "vizier",
+                "-n",
+                "xmc",
+                "--type=merge",
+                "-p",
+                '{"spec":{"deletionProtection":false}}',
+            ],
+        )
 
     @patch("tools.common.tool_utils.Path.is_file", return_value=False)
     @patch("tools.common.tool_utils.run_command")

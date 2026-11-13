@@ -51,8 +51,8 @@ kubectl set image -n xmc deployment/vizier vizier="${IMAGE}"
 
 ## Register the `vizier` Component
 
-Enable the component in the `stable-2026a` profile with the fixture's endpoint (see the
-[component blueprint](../../../../deploy/profiles/stable-2026a/components/vizier/README.md)):
+When testing against a profile that includes the experimental `vizier` wrapper component, configure
+it with the fixture's endpoint:
 
 ```yaml
 components:

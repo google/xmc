@@ -32,9 +32,3 @@ components:
     deletionProtection: false
     # Redpanda stays disabled in this suite, so the gateway only depends on ClickHouse.
     dependencies: ["clickhouse"]
-  vizier:
-    enabled: false
-    deletionProtection: false
-  hpo:
-    enabled: false
-    deletionProtection: false
