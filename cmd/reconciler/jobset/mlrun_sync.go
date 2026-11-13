@@ -157,8 +157,24 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 		logging.Warn(ctx, "JobSet creation timestamp is uninitialized when constructing MLRun ID", "jobset", jobSet.Name)
 	}
 
-	mlRunID := ConstructMLRunID(r.ClusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
-	clusterPath := resolveClusterPath(r.ClusterName, r.Project, r.Location)
+	// Under MultiKueue the JobSet executes on a remote worker cluster, so the MLRun
+	// (its ID and workloadDetails cluster) must reference the worker, not the
+	// manager. JobSets not managed by MultiKueue use the manager values. While the
+	// execution cluster cannot be determined yet (for example, before Kueue admits
+	// the Workload), report the MLRun as unconfirmed so nothing is cached and a
+	// later reconcile retries.
+	//
+	// The MLRun itself is still created under MLRunProject/MLRunLocation (the
+	// client is built once in manager.go), so only workloadDetails.cluster follows
+	// the worker. MultiKueue workers must therefore be in MLRunLocation, and in
+	// MLRunProject unless it is set to the worker's project.
+	cluster, ok := r.resolveExecutionCluster(ctx, jobSet)
+	if !ok {
+		return "", false
+	}
+	project, location, clusterName := cluster.GetProject(), cluster.GetLocation(), cluster.GetClusterName()
+	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	clusterPath := resolveClusterPath(clusterName, project, location)
 	labels := buildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
 	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)

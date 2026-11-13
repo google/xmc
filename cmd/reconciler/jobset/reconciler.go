@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
+	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/shared"
 	"xmanager_cloud/internal/kubernetes/common/constants"
@@ -401,6 +402,63 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 	r.Batcher.Add(logging.Strip(ctx), xid, *update, shared.JobsetSource)
 
 	return result, nil
+}
+
+// kueueJobUIDLabel is the label Kueue sets on a Workload to the UID of the job that owns it.
+const kueueJobUIDLabel = "kueue.x-k8s.io/job-uid"
+
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (*spb.ClusterInfo, bool) {
+	if r.Client == nil || jobSet == nil {
+		return r.managerClusterInfo(), true
+	}
+	var wlList v1beta1.WorkloadList
+	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace), client.MatchingLabels{kueueJobUIDLabel: string(jobSet.UID)}); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; skipping MLRun sync", "error", err)
+		return nil, false
+	}
+	wl := findJobSetWorkload(wlList.Items, jobSet.Name)
+	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
+		if awaitingAdmission(jobSet, wl) {
+			return nil, false
+		}
+		return r.managerClusterInfo(), true
+	}
+	var mc v1beta1.MultiKueueCluster
+	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
+		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; skipping MLRun sync", "cluster", *wl.Status.ClusterName, "error", err)
+		return nil, false
+	}
+	info := shared.ClusterInfoFromMultiKueueCluster(&mc)
+	if info.GetProject() == "" || info.GetLocation() == "" || info.GetClusterName() == "" {
+		logging.Warn(ctx, "resolveExecutionCluster: MultiKueueCluster is missing XMC cluster labels; skipping MLRun sync", "cluster", *wl.Status.ClusterName)
+		return nil, false
+	}
+	return info, true
+}
+
+func (r *Reconciler) managerClusterInfo() *spb.ClusterInfo {
+	return &spb.ClusterInfo{Project: r.Project, Location: r.Location, ClusterName: r.ClusterName}
+}
+
+// awaitingAdmission reports whether a JobSet without an assigned MultiKueue
+// cluster may still get one: it is queued but its Workload does not exist yet,
+// or its Workload is not admitted while the JobSet is suspended.
+func awaitingAdmission(jobSet *v1alpha2.JobSet, wl *v1beta1.Workload) bool {
+	if wl == nil {
+		return jobSet.Labels["kueue.x-k8s.io/queue-name"] != ""
+	}
+	return wl.Status.Admission == nil && jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend
+}
+
+func findJobSetWorkload(workloads []v1beta1.Workload, jobSetName string) *v1beta1.Workload {
+	for i := range workloads {
+		for _, or := range workloads[i].OwnerReferences {
+			if or.Kind == "JobSet" && or.Name == jobSetName {
+				return &workloads[i]
+			}
+		}
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
