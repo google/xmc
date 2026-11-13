@@ -137,7 +137,7 @@ sequenceDiagram
     ESS->>ESS: 4. Validate parameters and trial_id, and assemble each work unit
     ESS->>DB: 5. One transaction: re-check caller, next WID, insert N work units, update experiment once
     ESS->>DB: 6. AddWorkUnitOperation per work unit
-    ESS->>Redis: 7. XADD signed payload per work unit
+    ESS->>Redis: 7. Pipelined XADD of N signed payloads
     ESS-->>SC: 8. N WorkUnits in request order
     Redis-->>Actuator: 9. HandleWorkUnitTask per work unit (Async)
 ```

@@ -43,6 +43,11 @@ type Config struct {
 // Publisher is an interface for publishing messages to Redis.
 type Publisher interface {
 	AddMessage(ctx context.Context, data string, failedAttempts string) error
+	// AddMessages adds new messages in a single pipelined round trip and returns one error per
+	// message, nil for the messages that were added. A non-nil error does not guarantee the message
+	// was not added: the reply may be lost after Redis applied the XADD, and go-redis may retry the
+	// pipeline, so consumers must tolerate duplicates.
+	AddMessages(ctx context.Context, data []string) []error
 	// BacklogLength returns the number of unprocessed messages for the consumer group on the
 	// publisher's stream, exact below maxThreshold and capped just above it.
 	BacklogLength(ctx context.Context, group string, maxThreshold int) (int64, error)
@@ -78,6 +83,7 @@ type Client interface {
 	XRange(ctx context.Context, stream, start, stop string) *redis.XMessageSliceCmd
 	XRangeN(ctx context.Context, stream, start, stop string, count int64) *redis.XMessageSliceCmd
 	XInfoGroups(ctx context.Context, key string) *redis.XInfoGroupsCmd
+	Pipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error)
 }
 
 type baseManager struct {

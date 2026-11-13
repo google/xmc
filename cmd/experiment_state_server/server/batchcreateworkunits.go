@@ -27,14 +27,14 @@ import (
 	msgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
-	client "xmanager_cloud/internal/task_queue"
+	"xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/internal/workunit"
 )
 
 // BatchCreateWorkUnits creates the trials of a STUDY experiment for the study controller: it
 // validates every work unit against the study config, persists all of them in one transaction,
-// records one creation operation per work unit, and enqueues their creation tasks.
+// records one creation operation per work unit, and enqueues their creation tasks in one round trip.
 func (h *WorkUnitHandler) BatchCreateWorkUnits(ctx context.Context, req *msgpb.BatchCreateWorkUnitsRequest) (*msgpb.BatchCreateWorkUnitsResponse, error) {
 	ctx = logging.InjectOperation(ctx, "")
 	logging.Info(ctx, "Batch create work units", "parent", req.GetParent(), "count", len(req.GetRequests()))
@@ -147,8 +147,8 @@ func batchCreateError(err error) error {
 }
 
 // actuateCreatedWorkUnits records a creation operation for each created work unit and enqueues
-// their creation tasks. A work unit whose operation or task cannot be created gets a FATAL status
-// message, like in CreateWorkUnit, and is named in the returned Internal error.
+// their creation tasks in one round trip. A work unit whose operation or task cannot be created
+// gets a FATAL status message, like in CreateWorkUnit, and is named in the returned Internal error.
 func (h *WorkUnitHandler) actuateCreatedWorkUnits(ctx context.Context, xid int64, priority msgpb.Priority, created []*msgpb.WorkUnit, email string) error {
 	var failed []string
 	var queued []createdWorkUnit
@@ -160,10 +160,13 @@ func (h *WorkUnitHandler) actuateCreatedWorkUnits(ctx context.Context, xid int64
 		}
 		queued = append(queued, cwu)
 	}
-	for _, cwu := range queued {
-		err := h.actuator.EnqueueWorkUnitTask(ctx, cwu.wu.GetCurrentWorkUnitExecution().GetName(), cwu.wu, client.CreateAction(priority, email), cwu.operation.GetName())
+	tasks := make([]client.WorkUnitTask, len(queued))
+	for i, cwu := range queued {
+		tasks[i] = client.WorkUnitTask{Target: cwu.wu.GetCurrentWorkUnitExecution().GetName(), WorkUnit: cwu.wu, Action: client.CreateAction(priority, email), OperationName: cwu.operation.GetName()}
+	}
+	for i, err := range h.actuator.EnqueueWorkUnitTasks(ctx, tasks) {
 		if err != nil {
-			failed = append(failed, h.failCreatedWorkUnit(ctx, xid, cwu, err))
+			failed = append(failed, h.failCreatedWorkUnit(ctx, xid, queued[i], err))
 		}
 	}
 	if len(failed) > 0 {

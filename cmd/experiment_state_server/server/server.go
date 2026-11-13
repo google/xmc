@@ -26,6 +26,7 @@ import (
 	"xmanager_cloud/internal/auth"
 	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/storage"
+	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/workunit"
 )
 
@@ -50,6 +51,8 @@ type Server struct {
 // WorkUnitActuator defines the interface for task actuation on work units.
 type WorkUnitActuator interface {
 	EnqueueWorkUnitTask(ctx context.Context, target string, workUnit *apipb.WorkUnit, action *actuatortaskpb.Action, operationName string) error
+	// EnqueueWorkUnitTasks enqueues tasks in one round trip and returns one error per task.
+	EnqueueWorkUnitTasks(ctx context.Context, tasks []tq.WorkUnitTask) []error
 }
 
 // baseHandler encapsulates common infrastructure dependencies shared across domain handlers.

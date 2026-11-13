@@ -25,7 +25,11 @@ go_test(
         "backlog_test.go",
         "consumer_test.go",
         "fake_test.go",
+        "publisher_test.go",
     ],
     embed = [":redisclient"],
-    deps = ["@com_github_redis_go_redis_v9//:go-redis"],
+    deps = [
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
 )
