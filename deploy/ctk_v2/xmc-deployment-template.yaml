@@ -14,7 +14,7 @@
 
 # Recommended: Store Terraform state in a versioned GCS bucket outside the Git
 # repository so code and infrastructure state are versioned separately and
-# deployments work across git worktrees without 409 conflict errors.
+# state is shared across git worktrees and machines (migrate existing local state first).
 # See deploy/ctk_v2/README.md#terraform-state-storage-terraformtfstate for options.
 # terraform_backend_defaults:
 #   type: gcs
