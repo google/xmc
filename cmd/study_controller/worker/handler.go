@@ -25,8 +25,8 @@ import (
 
 // handleTask handles one study reconcile tick. A payload that does not decode to a valid
 // experiment name can never succeed, so it is moved to the dead-letter stream without a retry.
-// A valid tick is logged with the study's XID and acknowledged; reconciling the study is not
-// implemented yet.
+// A valid tick is logged at debug level (it repeats per active study) with the study's XID and
+// acknowledged; reconciling the study is not implemented yet.
 func handleTask(ctx context.Context, workerID, data string) redisclient.TaskResult {
 	xid, err := parseReconcilePayload(data)
 	if err != nil {
@@ -34,6 +34,6 @@ func handleTask(ctx context.Context, workerID, data string) redisclient.TaskResu
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: err}
 	}
 	ctx = logging.WithExperimentName(ctx, validator.ConstructExperimentName(xid))
-	logging.Info(ctx, "Received study reconcile tick", "worker_id", workerID)
+	logging.Debug(ctx, "Received study reconcile tick", "worker_id", workerID)
 	return redisclient.TaskResult{WasRunSuccessful: true}
 }

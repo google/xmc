@@ -42,7 +42,7 @@ func TestHandleTask(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var logs bytes.Buffer
-			ctx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))
+			ctx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 
 			got := handleTask(ctx, "worker-1", tc.data)
 
