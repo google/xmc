@@ -133,8 +133,8 @@ sequenceDiagram
 
     SC->>ESS: 1. BatchCreateWorkUnits(parent, N requests)
     ESS->>DB: 2. Read hpo component (studyControllerServiceAccount)
-    ESS->>DB: 3. FetchExperiment (STUDY, priority)
-    ESS->>ESS: 4. Validate and assemble each work unit
+    ESS->>DB: 3. FetchExperiment (STUDY, study_config, priority)
+    ESS->>ESS: 4. Validate parameters and trial_id, and assemble each work unit
     ESS->>DB: 5. One transaction: re-check caller, next WID, insert N work units, update experiment once
     ESS->>DB: 6. AddWorkUnitOperation per work unit
     ESS->>Redis: 7. XADD signed payload per work unit

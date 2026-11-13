@@ -56,6 +56,7 @@ proto_library(
         "@com_google_googleapis//google/api:field_behavior_proto",
         "@com_google_googleapis//google/api:resource_proto",
         "@com_google_googleapis//google/rpc:status_proto",
+        "@com_google_protobuf//:struct_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -132,6 +133,7 @@ proto_library(
         "@com_google_googleapis//google/rpc:status_proto",
         "@com_google_protobuf//:empty_proto",
         "@com_google_protobuf//:field_mask_proto",
+        "@com_google_protobuf//:struct_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )

@@ -83,7 +83,8 @@ func batchRequest(n int, fn func(req *msgpb.BatchCreateWorkUnitsRequest)) *msgpb
 		req.Requests = append(req.Requests, &msgpb.CreateWorkUnitRequest{WorkUnit: &msgpb.WorkUnit{
 			WorkUnitType: msgpb.WorkUnit_STANDARD,
 			Executable:   testExecutable,
-			Notes:        fmt.Sprintf("trial-%d", i+1),
+			Parameters:   experimenttest.TrialParameters(),
+			TrialId:      fmt.Sprintf("trial-%d", i+1),
 		}})
 	}
 	return prototest.Modify(req, fn)
@@ -112,14 +113,14 @@ func TestBatchCreateWorkUnits_CreatesTrialsInOneTransaction(t *testing.T) {
 	var gotNames, gotTrials []string
 	for _, wu := range resp.GetWorkUnits() {
 		gotNames = append(gotNames, wu.GetName())
-		gotTrials = append(gotTrials, wu.GetNotes())
+		gotTrials = append(gotTrials, wu.GetTrialId())
 	}
 	wantNames := []string{"experiments/123/workUnits/4", "experiments/123/workUnits/5", "experiments/123/workUnits/6"}
 	if diff := cmp.Diff(wantNames, gotNames); diff != "" {
 		t.Errorf("created work unit names mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff([]string{"trial-1", "trial-2", "trial-3"}, gotTrials); diff != "" {
-		t.Errorf("created work unit notes mismatch (-want +got):\n%s", diff)
+		t.Errorf("created trial IDs mismatch (-want +got):\n%s", diff)
 	}
 	if st.txCalls != 1 || st.UpdatedExperiment == nil || len(st.InsertedWorkUnits) != 3 {
 		t.Errorf("transactions = %d, experiment updated = %v, inserted = %d; want 1, true, 3", st.txCalls, st.UpdatedExperiment != nil, len(st.InsertedWorkUnits))
@@ -204,6 +205,10 @@ func TestBatchCreateWorkUnits_Rejections(t *testing.T) {
 			st.ComponentRepository = &storage.MockComponentRepository{GetActiveComponentErr: errors.New("catalog down")}
 			return st
 		}, wantCode: codes.Internal},
+		{name: "parameters do not match the study", req: batchRequest(2, func(r *msgpb.BatchCreateWorkUnitsRequest) {
+			r.Requests[1].WorkUnit.Parameters.Fields["momentum"] = r.Requests[1].WorkUnit.Parameters.Fields["dropout"]
+		}), wantCode: codes.InvalidArgument, wantErrSub: "requests[1]"},
+		{name: "missing trial ID", req: batchRequest(1, func(r *msgpb.BatchCreateWorkUnitsRequest) { r.Requests[0].WorkUnit.TrialId = "" }), wantCode: codes.InvalidArgument},
 		{name: "unknown execution environment", opts: []testServerOpt{withConfig(&config.Config{DefaultExecutionEnvironment: "unknown"})}, wantCode: codes.Internal, wantErrSub: "requests[0]"},
 		{name: "storage failure", storage: func() *batchStorage {
 			st := newBatchStorage("test@example.com")

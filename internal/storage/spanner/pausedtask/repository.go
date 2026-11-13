@@ -43,7 +43,7 @@ const pendingTasksSQL = `SELECT
   p.Priority AS TaskPriority, p.CreateTime AS TaskCreateTime,
   w.Xid, w.WorkUnitId, w.WorkUnitType, w.Priority, w.Urls, w.Tags, w.Notes, w.Executable,
   w.ExecutionCreateTime, w.ExecutionUpdateTime, w.ExecutionCompleteTime, w.ExecutionId,
-  w.ExecutionMetadata, w.WorkUnitStatus, w.CreateTime, w.UpdateTime
+  w.ExecutionMetadata, w.WorkUnitStatus, w.CreateTime, w.UpdateTime, w.Parameters, w.TrialId
 FROM PausedTasks@{FORCE_INDEX=PausedTasksUnprocessed} AS p
 JOIN WorkUnits AS w ON w.BitReversedXid = p.BitReversedXid AND w.WorkUnitId = p.WorkUnitId
 WHERE p.IsPending IS NOT NULL

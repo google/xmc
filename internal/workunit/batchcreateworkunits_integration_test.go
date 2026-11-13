@@ -97,11 +97,11 @@ func TestBatchCreateWorkUnits_OnEveryBackend(t *testing.T) {
 			}
 			var got []*essmsgpb.WorkUnit
 			for _, wu := range listed {
-				got = append(got, &essmsgpb.WorkUnit{Name: wu.GetName(), Notes: wu.GetNotes()})
+				got = append(got, &essmsgpb.WorkUnit{Name: wu.GetName(), Parameters: wu.GetParameters(), TrialId: wu.GetTrialId()})
 			}
 			var want []*essmsgpb.WorkUnit
 			for wid := int64(1); wid <= 5; wid++ {
-				want = append(want, &essmsgpb.WorkUnit{Name: fmt.Sprintf("experiments/%d/workUnits/%d", batchXID, wid), Notes: fmt.Sprintf("t%d", wid)})
+				want = append(want, &essmsgpb.WorkUnit{Name: fmt.Sprintf("experiments/%d/workUnits/%d", batchXID, wid), Parameters: experimenttest.TrialParameters(), TrialId: fmt.Sprintf("t%d", wid)})
 			}
 			if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("stored trials mismatch (-want +got):\n%s", diff)

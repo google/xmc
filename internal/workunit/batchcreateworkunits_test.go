@@ -59,7 +59,7 @@ func TestBatchCreateWorkUnits_AssignsContiguousIDsInOneTransaction(t *testing.T)
 	var gotNames, gotTrials []string
 	for _, wu := range created {
 		gotNames = append(gotNames, wu.GetName(), wu.GetCurrentWorkUnitExecution().GetName(), wu.GetCurrentWorkUnitExecution().GetStatus().GetSystemMessage().GetParent())
-		gotTrials = append(gotTrials, wu.GetNotes())
+		gotTrials = append(gotTrials, wu.GetTrialId())
 		if wu.GetCreateTime() == nil || !proto.Equal(wu.GetCreateTime(), wu.GetCurrentWorkUnitExecution().GetStatus().GetStateUpdateTime()) {
 			t.Errorf("work unit %s timestamps not stamped: %v", wu.GetName(), wu)
 		}
@@ -73,7 +73,7 @@ func TestBatchCreateWorkUnits_AssignsContiguousIDsInOneTransaction(t *testing.T)
 		t.Errorf("created names mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff([]string{"a", "b", "c"}, gotTrials); diff != "" {
-		t.Errorf("created work unit notes mismatch (-want +got):\n%s", diff)
+		t.Errorf("created trial IDs mismatch (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff(created, st.InsertedWorkUnits, protocmp.Transform()); diff != "" {
 		t.Errorf("inserted work units mismatch (-want +got):\n%s", diff)

@@ -34,6 +34,7 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
@@ -774,6 +775,14 @@ func assertNoKeyUpdateCompatibleWithKeyShare(t *testing.T, pool *pgxpool.Pool, r
 	}
 }
 
+// trialWorkUnitProto returns blankWorkUnitProto(xid, wid) as a study trial.
+func trialWorkUnitProto(xid, wid int64) *essmsgpb.WorkUnit {
+	wu := blankWorkUnitProto(xid, wid, baseTestTime)
+	wu.Parameters = experimenttest.TrialParameters()
+	wu.TrialId = fmt.Sprintf("trial-%d", wid)
+	return wu
+}
+
 func TestTxRepository_InsertWorkUnits(t *testing.T) {
 	ctx := t.Context()
 	_, essPool := postgrestest.Setup(ctx, t)
@@ -787,7 +796,7 @@ func TestTxRepository_InsertWorkUnits(t *testing.T) {
 		})
 	}
 
-	want := []*essmsgpb.WorkUnit{blankWorkUnitProto(xid, 1, baseTestTime), blankWorkUnitProto(xid, 2, baseTestTime), blankWorkUnitProto(xid, 3, baseTestTime)}
+	want := []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 1), blankWorkUnitProto(xid, 2, baseTestTime), trialWorkUnitProto(xid, 3)}
 	if err := insert(want); err != nil {
 		t.Fatalf("InsertWorkUnits() failed: %v", err)
 	}
@@ -815,11 +824,11 @@ func TestTxRepository_InsertWorkUnits(t *testing.T) {
 		wantCode codes.Code
 	}{
 		{name: "empty batch", wus: nil, wantCode: codes.OK},
-		{name: "nil work unit", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(xid, 4, baseTestTime), nil}, wantCode: codes.InvalidArgument},
-		{name: "mixed experiments", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(xid, 4, baseTestTime), blankWorkUnitProto(otherXID, 1, baseTestTime)}, wantCode: codes.InvalidArgument},
+		{name: "nil work unit", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), nil}, wantCode: codes.InvalidArgument},
+		{name: "mixed experiments", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), trialWorkUnitProto(otherXID, 1)}, wantCode: codes.InvalidArgument},
 		{name: "invalid execution name", wus: []*essmsgpb.WorkUnit{{Name: "invalid"}}, wantCode: codes.InvalidArgument},
-		{name: "missing experiment", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(99999, 1, baseTestTime)}, wantCode: codes.NotFound},
-		{name: "duplicate work unit rolls back the batch", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(xid, 4, baseTestTime), blankWorkUnitProto(xid, 3, baseTestTime)}, wantCode: codes.AlreadyExists},
+		{name: "missing experiment", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(99999, 1)}, wantCode: codes.NotFound},
+		{name: "duplicate work unit rolls back the batch", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), trialWorkUnitProto(xid, 3)}, wantCode: codes.AlreadyExists},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

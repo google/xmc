@@ -115,7 +115,8 @@ it, and skips a warning that is already present.
 
 A study's work units are its trials, which only the study controller creates. `CreateWorkUnit` on a
 `STUDY` experiment returns `FAILED_PRECONDITION` without writing anything
-([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)).
+([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)), and rejects
+`parameters` and `trial_id` with `INVALID_ARGUMENT`.
 
 #### Creating Trials: `BatchCreateWorkUnits`
 
@@ -133,7 +134,8 @@ experiment's largest work unit ID. ESS checks, in order
 | The caller's verified email equals the `hpo` component parameter `studyControllerServiceAccount` (ASCII case-insensitive). XID ACLs are not consulted. A missing `hpo` component or an empty parameter rejects every caller. This check runs before the experiment is read or the payload is validated. | `PERMISSION_DENIED` |
 | The experiment exists. | `NOT_FOUND` |
 | The experiment is a `STUDY`; other types are not supported yet. | `UNIMPLEMENTED` |
-| The request holds 1 to 500 requests, and each work unit is valid, as for `CreateWorkUnit`. | `INVALID_ARGUMENT` |
+| The request holds 1 to 500 requests, each work unit is valid, as for `CreateWorkUnit`, and trial IDs are unique in the batch. | `INVALID_ARGUMENT` |
+| Each work unit has a `trial_id` (at most 128 bytes, printable) and `parameters` with exactly one feasible value per `study_config` parameter: a finite number in range for `DOUBLE`, an integral one for `INTEGER`, one of the values for `DISCRETE`, and one of the category strings for `CATEGORICAL`. | `INVALID_ARGUMENT` |
 
 ESS then writes all work units in one transaction
 ([`internal/workunit/batchcreateworkunits.go`](../../internal/workunit/batchcreateworkunits.go)): it
@@ -141,9 +143,10 @@ checks the caller against the `hpo` component again, reads the experiment once, 
 single next-ID read, inserts the work units in one write, and updates the experiment's denormalized
 status and resources once. After the commit it records one creation operation per work unit and
 enqueues each creation task. A work unit whose operation or task cannot be created gets the same
-`FATAL` status message as in `CreateWorkUnit`, and the RPC returns `INTERNAL` naming those work units;
-the other work units are scheduled. The work units are already stored, so the study controller must
-not create them again when it retries.
+`FATAL` status message as in `CreateWorkUnit`, and the RPC returns `INTERNAL` naming those work
+units; the other work units are scheduled. Because the trials are already stored, the study
+controller must not create them again when it retries; ESS does not deduplicate `trial_id` across
+batches. `parameters` and `trial_id` are immutable and returned by `GetWorkUnit` and `ListWorkUnits`.
 
 ---
 

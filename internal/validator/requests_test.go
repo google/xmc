@@ -2296,9 +2296,10 @@ func TestValidateJobSetCoordinator(t *testing.T) {
 // batchCreateRequest returns a valid batch of n requests under experiments/123, mutated by fn.
 func batchCreateRequest(n int, fn func(req *essmsgpb.BatchCreateWorkUnitsRequest)) *essmsgpb.BatchCreateWorkUnitsRequest {
 	req := &essmsgpb.BatchCreateWorkUnitsRequest{Parent: "experiments/123"}
-	for range n {
+	for i := range n {
 		inner := prototest.Modify(baseWorkUnitReqWithSuccessPolicy, func(r *essmsgpb.CreateWorkUnitRequest) {
 			r.Parent = ""
+			r.WorkUnit.TrialId = strings.Repeat("t", i+1)
 		})
 		req.Requests = append(req.Requests, inner)
 	}
@@ -2314,6 +2315,10 @@ func TestValidateBatchCreateWorkUnitsRequest(t *testing.T) {
 		{name: "valid with empty inner parents", req: batchCreateRequest(3, nil)},
 		{name: "valid with matching inner parent", req: batchCreateRequest(2, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[1].Parent = "experiments/123" })},
 		{name: "valid at max batch size", req: batchCreateRequest(maxBatchCreateWorkUnits, nil)},
+		{name: "valid with repeated empty trial IDs", req: batchCreateRequest(2, func(r *essmsgpb.BatchCreateWorkUnitsRequest) {
+			r.Requests[0].WorkUnit.TrialId = ""
+			r.Requests[1].WorkUnit.TrialId = ""
+		})},
 		{name: "nil request", req: nil, wantMsg: "parent must be in the format"},
 		{name: "invalid parent", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Parent = "experiments/abc" }), wantMsg: "parent must be in the format"},
 		{name: "no requests", req: batchCreateRequest(0, nil), wantMsg: "between 1 and 500 requests, got 0"},
@@ -2322,6 +2327,7 @@ func TestValidateBatchCreateWorkUnitsRequest(t *testing.T) {
 		{name: "work unit ID set", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0].WorkUnitId = 7 }), wantMsg: "work_unit_id must be unset"},
 		{name: "nil inner request", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0] = nil }), wantMsg: "work_unit cannot be nil"},
 		{name: "invalid inner work unit", req: batchCreateRequest(1, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[0].WorkUnit.Executable = nil }), wantMsg: "work_unit.executable cannot be nil"},
+		{name: "duplicate trial IDs", req: batchCreateRequest(3, func(r *essmsgpb.BatchCreateWorkUnitsRequest) { r.Requests[2].WorkUnit.TrialId = "t" }), wantMsg: `requests[2]: work_unit.trial_id "t" is not unique`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

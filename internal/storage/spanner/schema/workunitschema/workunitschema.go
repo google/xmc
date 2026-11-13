@@ -47,6 +47,9 @@ const (
 
 	createdTableField = querytools.TableField("created")
 	updatedTableField = querytools.TableField("updated")
+
+	parametersTableField = querytools.TableField("parameters")
+	trialIDTableField    = querytools.TableField("trial_id")
 )
 
 // WorkUnitColumns is the full list of columns in the WorkUnits table. It is used when fetching
@@ -69,6 +72,8 @@ var WorkUnitColumns = []string{
 	"WorkUnitStatus",
 	"CreateTime",
 	"UpdateTime",
+	"Parameters",
+	"TrialId",
 }
 
 // CurrentWorkUnitExecutionColumns is the list of columns to fetch when getting the current work
@@ -255,6 +260,9 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			// Selectable only: study trial fields are not filterable.
+			parametersTableField: {Name: parametersTableField, QueryLiteral: safesql.New("wu.Parameters"), Selectable: true},
+			trialIDTableField:    {Name: trialIDTableField, QueryLiteral: safesql.New("wu.TrialId"), Selectable: true},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: bitReversedXidTableField, SortOrder: querytools.Asc},
@@ -286,6 +294,8 @@ var (
 		executionStateTableField,
 		createdTableField,
 		updatedTableField,
+		parametersTableField,
+		trialIDTableField,
 	}
 
 	// WorkUnitFullTextFields is the list of fields that can be used for full text search for WorkUnit queries.

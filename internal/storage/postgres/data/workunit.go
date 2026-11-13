@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/validator"
@@ -47,6 +48,8 @@ type WorkUnitRow struct {
 	PositionInQueue                int64      `db:"positioninqueue"`
 	CreateTime                     time.Time  `db:"createtime"`
 	UpdateTime                     time.Time  `db:"updatetime"`
+	Parameters                     []byte     `db:"parameters"`
+	TrialID                        *string    `db:"trialid"`
 }
 
 // GetInsertArgs returns the strict named arguments required by the WorkUnits INSERT statement.
@@ -60,6 +63,7 @@ func (r WorkUnitRow) GetInsertArgs() pgx.StrictNamedArgs {
 		"queuename": r.QueueName, "executionstate": r.ExecutionState,
 		"executionstatusmessageseverity": r.ExecutionStatusMessageSeverity, "positioninqueue": r.PositionInQueue,
 		"createtime": r.CreateTime, "updatetime": r.UpdateTime,
+		"parameters": r.Parameters, "trialid": r.TrialID,
 	}
 }
 
@@ -182,7 +186,7 @@ func WorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &essmsgpb.WorkUnit{
+	wu := &essmsgpb.WorkUnit{
 		Name:                     validator.ConstructWorkUnitName(row.Xid, row.WorkUnitID),
 		WorkUnitType:             essmsgpb.WorkUnit_WorkUnitType(row.WorkUnitType),
 		Priority:                 essmsgpb.Priority(row.Priority),
@@ -193,7 +197,41 @@ func WorkUnitRowToProto(row WorkUnitRow) (*essmsgpb.WorkUnit, error) {
 		CurrentWorkUnitExecution: wue,
 		CreateTime:               timestamppb.New(row.CreateTime),
 		UpdateTime:               timestamppb.New(row.UpdateTime),
-	}, nil
+	}
+	if err := setTrialFields(wu, row.Parameters, row.TrialID); err != nil {
+		return nil, err
+	}
+	return wu, nil
+}
+
+// setTrialFields sets the study trial fields of wu from the nullable Parameters and TrialId
+// columns. NULL, stored for work units that are not trials, leaves the fields unset.
+func setTrialFields(wu *essmsgpb.WorkUnit, parameters []byte, trialID *string) error {
+	if parameters != nil {
+		params, err := UnmarshalProto[structpb.Struct](parameters)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal Parameters: %w", err)
+		}
+		wu.Parameters = params
+	}
+	if trialID != nil {
+		wu.TrialId = *trialID
+	}
+	return nil
+}
+
+// trialFieldsToColumns returns the nullable Parameters and TrialId column values of wu, which are
+// NULL for work units that are not study trials.
+func trialFieldsToColumns(wu *essmsgpb.WorkUnit) ([]byte, *string, error) {
+	parameters, err := MarshalNullableProto(wu.GetParameters())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal Parameters: %w", err)
+	}
+	if wu.GetTrialId() == "" {
+		return parameters, nil, nil
+	}
+	trialID := wu.GetTrialId()
+	return parameters, &trialID, nil
 }
 
 // WorkUnitProtoToRow converts a WorkUnit proto into a WorkUnitRow for insertion.
@@ -212,6 +250,10 @@ func WorkUnitProtoToRow(wu *essmsgpb.WorkUnit) (WorkUnitRow, error) {
 		return WorkUnitRow{}, fmt.Errorf("failed to marshal Executable: %w", err)
 	}
 	row, err := CurrentWorkUnitExecutionProtoToRow(xid, wid, eid, exec)
+	if err != nil {
+		return WorkUnitRow{}, err
+	}
+	row.Parameters, row.TrialID, err = trialFieldsToColumns(wu)
 	if err != nil {
 		return WorkUnitRow{}, err
 	}
