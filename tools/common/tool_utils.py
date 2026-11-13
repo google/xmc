@@ -650,19 +650,20 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
     return out
 
 
-def _is_retired_disabled_profile_component(
+def _retired_disabled_component_name(
     item: Mapping[str, Any], release_name: str, catalog_names: set[str]
-) -> bool:
-    """Returns True when item is a disabled, deletion-protected CR removed from catalog_names."""
+) -> str:
+    """Returns CR name when item is a disabled, deletion-protected CR removed from catalog_names."""
     meta: Mapping[str, Any] = raw_m if isinstance(raw_m := item.get("metadata"), Mapping) else {}
     ann: Mapping[str, Any] = raw_a if isinstance(raw_a := meta.get("annotations"), Mapping) else {}
     name = str(meta.get("name") or "")
     if not name or name in catalog_names or ann.get("meta.helm.sh/release-name") != release_name:
-        return False
+        return ""
     spec: Mapping[str, Any] = raw_s if isinstance(raw_s := item.get("spec"), Mapping) else {}
-    return not parse_bool_flag(spec.get("enabled", False)) and parse_bool_flag(
+    is_retired_disabled = not parse_bool_flag(spec.get("enabled", False)) and parse_bool_flag(
         spec.get("deletionProtection", True)
     )
+    return name if is_retired_disabled else ""
 
 
 def _unprotect_retired_profile_components(
@@ -679,15 +680,16 @@ def _unprotect_retired_profile_components(
     if res.returncode != 0 or not (res.stdout or "").strip():
         return
     try:
-        items = json.loads(res.stdout).get("items") or []
+        data = json.loads(res.stdout)
     except json.JSONDecodeError:
         return
+    raw_items = data.get("items") if isinstance(data, Mapping) else None
+    items = raw_items if isinstance(raw_items, list) else []
     catalog_names = {p.parent.name for p in (chart_dir / "components").glob("*/Chart.yaml")}
     for item in items:
-        if isinstance(item, Mapping) and _is_retired_disabled_profile_component(
-            item, release_name, catalog_names
+        if isinstance(item, Mapping) and (
+            name := _retired_disabled_component_name(item, release_name, catalog_names)
         ):
-            name = str(item["metadata"]["name"])
             log_info(f"Clearing deletionProtection on retired disabled Component '{name}'...")
             run_command(
                 [

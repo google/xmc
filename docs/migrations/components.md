@@ -113,7 +113,8 @@ kill "${PF_PID}"
 2. In `profile-values.yaml`, update `components.ingestion-gateway.imageTag` and, if present, the tag in `components.ingestion-gateway.parameters.image` to match the new `<IMAGE_TAG>` (the same tag used for the umbrella upgrade).
 3. If `xmc-profile` was previously installed on XMC `0.18.x` and you are upgrading directly with `helm` rather than `dev_env.py gke-upgrade --profile-values`, clear `deletionProtection` on the retired disabled `vizier` and `hpo` `Component` CRs once so Helm can prune them cleanly:
    ```bash
-   kubectl patch components.xmc.dev vizier hpo -n xmc --type=merge -p '{"spec":{"deletionProtection":false}}'
+   kubectl patch components.xmc.dev vizier -n xmc --type=merge -p '{"spec":{"deletionProtection":false}}'
+   kubectl patch components.xmc.dev hpo -n xmc --type=merge -p '{"spec":{"deletionProtection":false}}'
    ```
 4. Re-run the Step 4 `helm upgrade --install --reset-then-reuse-values xmc-profile ...` command from the new release checkout (`dev_env.py gke-upgrade --profile-values` unprotects retired disabled CRs and runs this upgrade automatically).
 

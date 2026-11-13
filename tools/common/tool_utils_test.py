@@ -881,6 +881,17 @@ class TestComponentProfileAndFlags(unittest.TestCase):
             ],
         )
 
+    @patch("tools.common.tool_utils.run_command")
+    def test_deploy_component_profile_ignores_non_mapping_json_payloads(self, mock_run):
+        for payload in ("null", "[]", '{"items": "not-a-list"}'):
+            mock_run.reset_mock()
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=payload, stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            ]
+            deploy_component_profile(self.base_config)
+            self.assertEqual(mock_run.call_count, 2)
+
     @patch("tools.common.tool_utils.Path.is_file", return_value=False)
     @patch("tools.common.tool_utils.run_command")
     def test_deploy_component_profile_missing_values_file(self, mock_run, _mock_is_file):
