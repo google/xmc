@@ -57,6 +57,7 @@ vars:
   deploy_redis: true
   redis_region:
   database_backend: "spanner"
+  deploy_postgres: true
   postgres_host: ""
   postgres_port: 5432
   postgres_user: ""
@@ -561,6 +562,9 @@ deployment_groups:
         value: $(vars.database_backend)
       - name: database.experimentalPostgres
         value: $(vars.database_backend == "postgres")
+        type: auto
+      - name: database.postgres.deploy
+        value: $(vars.deploy_postgres)
         type: auto
       - name: database.postgres.host
         value: $(vars.postgres_host)

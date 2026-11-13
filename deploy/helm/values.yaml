@@ -319,7 +319,14 @@ database:
   # Opt-in for the experimental PostgreSQL backend.
   experimentalPostgres: false
   postgres:
-    # host, user, essDatabase and xidDatabase are required when backend is "postgres".
+    # When true, deploys an in-cluster PostgreSQL StatefulSet and auto-defaults host, user,
+    # essDatabase, xidDatabase, and sslMode ("disable") unless overridden.
+    # When false (default, Bring-Your-Own), host, user, essDatabase, and xidDatabase are required
+    # and sslMode defaults to "verify-full".
+    deploy: false
+    image: "postgres:16-alpine"
+    storageSize: "20Gi"
+    storageClassName: ""
     # No password in db-config: the password is delivered via the postgres-secret Secret.
     host: ""
     port: 5432
@@ -328,5 +335,5 @@ database:
     password: ""
     essDatabase: ""
     xidDatabase: ""
-    # libpq sslmode. Plaintext ("disable") must be chosen explicitly.
-    sslMode: "verify-full"
+    # libpq sslmode. Defaults to "verify-full" when deploy is false, or "disable" when deploy is true.
+    sslMode: ""
