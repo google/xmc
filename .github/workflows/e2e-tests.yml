@@ -39,9 +39,9 @@ jobs:
   execute-e2e:
     name: 'Execute KinD & Playwright Headless E2E'
     if: github.event_name != 'pull_request'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: e2e-test
-    timeout-minutes: 20
+    timeout-minutes: 45
 
     permissions:
       contents: read
@@ -52,6 +52,11 @@ jobs:
         uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
         with:
           persist-credentials: false
+
+      - name: 'Reclaim Unused Runner Disk Space'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
 
       - name: 'Validate CI Secrets Configuration'
         env:
@@ -97,14 +102,20 @@ jobs:
           restore-keys: |
             bazel-repo-${{ runner.os }}-
 
+      - name: 'Restore Bazel Disk Cache'
+        id: 'cache-bazel-disk-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
       - name: 'Configure Bazel Cache Settings'
-        env:
-          REMOTE_UPLOAD: ${{ github.ref == 'refs/heads/main' || github.event_name == 'merge_group' }}
         run: |
-          mkdir -p ~/.cache/bazel-repo
+          mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
-          common --remote_upload_local_results=${REMOTE_UPLOAD}
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
@@ -161,10 +172,24 @@ jobs:
           SPANNER_INSTANCE: '${{ secrets.GCP_E2E_SPANNER_INSTANCE }}'
           XMC_SCREENSHOTS_DIR: '${{ github.workspace }}/e2e-screenshots'
           XMC_KIND_NODE_IMAGE: 'us-docker.pkg.dev/${{ secrets.GCP_E2E_PROJECT_ID }}/xmc/kindest-node:v1.33.1'
-          PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright'
+          PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: 'ubuntu24.04-x64'
         run: |
           mkdir -p "${XMC_SCREENSHOTS_DIR}"
           exec python3 test/e2e/runner.py --screenshots-dir "${XMC_SCREENSHOTS_DIR}"
+
+      - name: 'Save Bazel Repository Cache'
+        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.matched-key == '') && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+
+      - name: 'Save Bazel Disk Cache'
+        uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 
       - name: 'Upload E2E Screenshots & Diagnostic Logs'
         if: always()
@@ -180,7 +205,7 @@ jobs:
     needs:
       - execute-e2e
     if: always()
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     timeout-minutes: 5
     permissions: {}
 

@@ -84,7 +84,7 @@ Two more exit codes are not outcomes:
 
 ### Infra Retry
 
-The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 480 s of the harness start, so that a healthy retry still ends before the harness deadline:
+The harness retries an infra failure once ([`lib/infra_retry.py`](lib/infra_retry.py)), but only if the failed attempt, including its teardown, ended within 1800 s of the harness start, so that a healthy retry still ends before the harness deadline:
 
 1. Teardown of the failed attempt completes first: its Spanner databases are dropped, and its KinD cluster and temporary directory are deleted.
 2. The harness prints a GitHub Actions warning annotation that names the failed phase, for example:
@@ -99,7 +99,7 @@ Each attempt writes its screenshots and diagnostics to its own subdirectory of `
 
 ### Harness Deadline
 
-900 s after it started, the harness stops itself as described in [Stopping & Teardown](#stopping--teardown) and exits with `3`. Together with the workflow steps before and after the harness, a stopped run still ends more than a minute before the job timeout of 20 minutes.
+2400 s after it started, the harness stops itself as described in [Stopping & Teardown](#stopping--teardown) and exits with `3`. Together with the workflow steps before and after the harness, a stopped run still ends more than a minute before the job timeout of 45 minutes.
 
 ### Stopping & Teardown
 

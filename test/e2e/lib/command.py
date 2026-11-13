@@ -24,7 +24,7 @@ import time
 
 from test.e2e.lib import cancellation
 
-DEFAULT_TIMEOUT_SECONDS: float = 900.0  # 15 minutes
+DEFAULT_TIMEOUT_SECONDS: float = 2400.0  # 40 minutes
 # Timeout of a teardown command. Teardown commands still run after a stop, so this bounds
 # how long teardown can take.
 TEARDOWN_TIMEOUT_SECONDS: float = 20.0
