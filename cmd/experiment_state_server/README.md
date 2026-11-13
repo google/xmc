@@ -104,8 +104,7 @@ the experiment, then pins them as `ExperimentComponentSnapshots` at their curren
 "uses experimental components" `WARNING` to the status returned by `GetExperiment` and
 `GetExperimentStatus` while the study is `ACTIVE`; the warning is computed at read time and never stored.
 
-The operator limits study size with the `hpo` component parameter `maxTrialBudget` (default `1000`;
-see the [hpo component README](../../deploy/profiles/stable-2026a/components/hpo/README.md)). In the
+The operator limits study size with the `hpo` component parameter `maxTrialBudget` (default `1000`). In the
 creation transaction, ESS caps a larger `max_trial_budget` at that limit, stores the effective value,
 and appends a warning such as `max_trial_budget 5000 exceeds the hpo component limit; clamped to
 1000` to the initial status message, raising it to `WARNING`. Unlike the drift and experimental

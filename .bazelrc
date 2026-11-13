@@ -7,23 +7,23 @@ build:linux_arm64 --platforms=@io_bazel_rules_go//go/toolchain:linux_arm64
 # Require explicit __init__.py files in Python targets (future rules_python 3.0 default)
 build --@rules_python//python/config_settings:incompatible_default_to_explicit_init_py=true
 
+# Exclude target Starlark flags (e.g. rules_go race/linkmode transitions) from the exec
+# configuration so host tools like protoc are compiled once instead of per transition.
+build --incompatible_exclude_starlark_flags_from_exec_config=true
+
 # Configure workspace status command for version stamping
 build --workspace_status_command="python3 tools/common/workspace_status.py"
 build --stamp
 
-# In-cluster Bazel Remote Cache for self-hosted ARC CI runners (GKE)
-build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
-build:ci --remote_upload_local_results=false
-build:ci --remote_download_toplevel
-build:ci --experimental_remote_cache_compression=true
-# CI runner pods are provisioned with 15-core limits on 16-core (n2-standard-16) nodes.
-# Setting --jobs=14 maximizes parallel action execution across test shards while reserving
-# headroom (1-2 cores) for the Spanner emulator service container and system daemons.
-build:ci --jobs=14
-# Disable the testcontainers Ryuk reaper on CI. Ryuk startup inside the DinD sidecar
-# intermittently exceeds the container start deadline ("reaper: context deadline
-# exceeded"), and ephemeral runner pods discard leaked containers with the DinD
-# storage. Local runs keep Ryuk enabled so developer machines don't leak containers.
+# Local Bazel disk cache settings for GitHub-hosted CI runners (ubuntu-latest).
+# CI workflows pass --disk_cache=${HOME}/.cache/bazel-disk explicitly (avoiding
+# unexpanded '~' in .bazelrc). Compress cached blobs and skip caching linked Go
+# binaries (~9 GB of static test executables) so ephemeral runners do not exhaust disk space.
+build:ci --remote_cache_compression=true
+build:ci --modify_execution_info=GoLink=+no-remote-cache
+# Disable the testcontainers Ryuk reaper on CI. Ephemeral CI runner VMs discard
+# containers on job teardown, whereas local runs keep Ryuk enabled so developer
+# machines don't leak containers.
 test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
 
 # Deterministic test execution environment

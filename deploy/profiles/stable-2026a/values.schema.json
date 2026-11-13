@@ -68,42 +68,6 @@
             "description": "commonKeys plus imageTag.",
             "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
           }
-        },
-        "vizier": {
-          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
-          "properties": {
-            "parameters": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "endpoint": { "$ref": "#/definitions/parameterValue" }
-              }
-            }
-          },
-          "propertyNames": { "$ref": "#/definitions/commonKeys" }
-        },
-        "hpo": {
-          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
-          "properties": {
-            "imageTag": { "type": "string" },
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "maxTrialBudget": {
-                  "description": "Positive integer, at most 2147483647. Strings are limited to 9 digits to stay within int32.",
-                  "oneOf": [
-                    { "type": "string", "pattern": "^[1-9][0-9]{0,8}$" },
-                    { "type": "integer", "minimum": 1, "maximum": 2147483647 }
-                  ]
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "propertyNames": {
-            "description": "commonKeys plus imageTag.",
-            "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
-          }
         }
       }
     }

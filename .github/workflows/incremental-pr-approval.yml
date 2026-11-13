@@ -30,7 +30,7 @@ permissions:
 jobs:
   incremental-approval:
     name: 'Validate Rebase & Code Owner Grace Delta'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     if: github.event.pull_request.draft == false
     steps:
       - name: 'Checkout repository'

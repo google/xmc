@@ -62,7 +62,7 @@ const (
 )
 
 // profileCatalogComponents are the Component CRs the stable-2026a profile renders.
-var profileCatalogComponents = []string{"redpanda", clickhouseComponent, gatewayComponent, "vizier", "hpo"}
+var profileCatalogComponents = []string{"redpanda", clickhouseComponent, gatewayComponent}
 
 // enabledProfileComponents are the Component CRs the admin values fixture enables and the suite
 // migrates.
@@ -231,8 +231,6 @@ func writeRunValues(t *testing.T, ns, imageTag string) string {
 			"redpanda":          map[string]any{"namespace": ns},
 			clickhouseComponent: map[string]any{"namespace": ns, "parameters": clickhouseParams},
 			gatewayComponent:    map[string]any{"namespace": ns, "parameters": gatewayParams},
-			"vizier":            map[string]any{"namespace": ns},
-			"hpo":               map[string]any{"namespace": ns},
 		},
 	}
 	raw, err := json.Marshal(values)

@@ -353,7 +353,7 @@ func wrapperRBACCases(dyn dynamic.Interface) []rbacCase {
 }
 
 // TestComponentsRBAC_HelmLifecycleEnvtest installs, upgrades, inspects and uninstalls the embedded
-// ingestion-gateway and hpo charts as xmc-bridge-sa, so xmc-bridge-role is checked against the requests
+// ingestion-gateway chart as xmc-bridge-sa, so xmc-bridge-role is checked against the requests
 // Helm actually makes (release Secrets, chart objects by name, RBAC escalation checks) rather than a verb list.
 func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 	ctx := context.Background()
@@ -371,24 +371,6 @@ func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 	})
 	if _, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "ingestion-gateway-deployment", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("Deployment ingestion-gateway-deployment after Uninstall: err = %v, want NotFound", err)
-	}
-
-	// The second call changes the image, so Helm PATCHes the xmc-study-controller Deployment.
-	const studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
-	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-hpo", []map[string]any{
-		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1"}},
-		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage}},
-	}, func() {
-		dep, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
-		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {
-			t.Fatalf("Deployment xmc-study-controller after upgrade = %+v, %v; want image %s", dep, err, studyControllerImage)
-		}
-	})
-	if _, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-		t.Errorf("Deployment xmc-study-controller after Uninstall: err = %v, want NotFound", err)
-	}
-	if _, err := adminKube.CoreV1().ServiceAccounts("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
-		t.Errorf("ServiceAccount xmc-study-controller after Uninstall: err = %v, want NotFound", err)
 	}
 }
 

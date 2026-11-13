@@ -340,73 +340,6 @@ parameters:
 				},
 			},
 		},
-		{
-			name:      "VizierDefaultBlueprint",
-			component: "vizier",
-			want: linter.ComponentManifest{
-				APIVersion: "xmc.dev/v1alpha1",
-				Kind:       "Component",
-				Metadata: linter.ObjectMetadata{
-					Name:      "vizier",
-					Namespace: "xmc",
-					Labels: map[string]string{
-						"xmc.dev/profile":              "stable-2026a",
-						"app.kubernetes.io/name":       "vizier",
-						"app.kubernetes.io/managed-by": "Helm",
-					},
-					Annotations: profileCRAnnotations(),
-				},
-				Spec: linter.ComponentManifestSpec{
-					Enabled:            boolPtr(false),
-					ComponentType:      "COMPONENT_TYPE_CUSTOM_3P_WRAPPER",
-					ComponentClass:     "optimization-engine",
-					Version:            "0.1.0",
-					ChartVersion:       "0.1.0",
-					Stability:          "EXPERIMENTAL",
-					DeletionProtection: true,
-					DeletionPolicy:     "Delete",
-					Parameters: map[string]string{
-						"endpoint": "vizier-service.xmc.svc.cluster.local:7077",
-					},
-				},
-			},
-		},
-		{
-			name:      "HPODefaultBlueprint",
-			component: "hpo",
-			want: linter.ComponentManifest{
-				APIVersion: "xmc.dev/v1alpha1",
-				Kind:       "Component",
-				Metadata: linter.ObjectMetadata{
-					Name:      "hpo",
-					Namespace: "xmc",
-					Labels: map[string]string{
-						"xmc.dev/profile":              "stable-2026a",
-						"xmc.dev/component-type":       "custom-1p-component",
-						"app.kubernetes.io/name":       "hpo",
-						"app.kubernetes.io/managed-by": "Helm",
-					},
-					Annotations: profileCRAnnotations(),
-				},
-				Spec: linter.ComponentManifestSpec{
-					Enabled:            boolPtr(false),
-					ComponentType:      "COMPONENT_TYPE_CUSTOM_1P_COMPONENT",
-					ComponentClass:     "hyperparameter-optimization",
-					Version:            "0.1.0",
-					ChartVersion:       "0.1.0",
-					Stability:          "EXPERIMENTAL",
-					DeletionProtection: true,
-					DeletionPolicy:     "Delete",
-					Parameters: map[string]string{
-						"maxTrialBudget": "1000",
-					},
-					Dependencies: []linter.ComponentDependencyRef{
-						{Name: "vizier"},
-						{Name: "clickhouse"},
-					},
-				},
-			},
-		},
 	}
 
 	for _, tc := range tests {
@@ -926,6 +859,9 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRules(%q) failed: %v", rulesPath, err)
 	}
+	if rules.StaticChecks.IsExperimentalAllowed() {
+		t.Fatal("stable-2026a rules.yaml StaticChecks.IsExperimentalAllowed() = true, want false")
+	}
 
 	res, err := linter.NewLinter(rules).ValidateDirectory(profileDir)
 	if err != nil {
@@ -969,42 +905,8 @@ func TestStable2026aProfileDAGValidation(t *testing.T) {
 			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
 		},
 		{
-			name:      "default profile renders valid with disabled experimental components",
+			name:      "default profile renders valid with all components disabled",
 			overrides: map[string]any{},
-			wantValid: true,
-		},
-		{
-			name: "vizier enabled without acknowledgeExperimental fails",
-			overrides: map[string]any{
-				"vizier": map[string]any{"enabled": true},
-			},
-			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
-		},
-		{
-			name: "hpo enabled without acknowledgeExperimental fails",
-			overrides: map[string]any{
-				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
-				"clickhouse": map[string]any{"enabled": true},
-				"hpo":        map[string]any{"enabled": true},
-			},
-			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
-		},
-		{
-			name: "hpo enabled with disabled vizier fails DAG and compatibility matrix",
-			overrides: map[string]any{
-				"vizier":     map[string]any{"enabled": false},
-				"clickhouse": map[string]any{"enabled": true},
-				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
-			},
-			wantRules: []string{"DISABLED_DEPENDENCY", "REQUIRED_COMPONENT_MISSING"},
-		},
-		{
-			name: "vizier clickhouse and hpo enabled with acknowledgeExperimental passes without stability inversion",
-			overrides: map[string]any{
-				"vizier":     map[string]any{"enabled": true, "acknowledgeExperimental": true},
-				"clickhouse": map[string]any{"enabled": true},
-				"hpo":        map[string]any{"enabled": true, "acknowledgeExperimental": true},
-			},
 			wantValid: true,
 		},
 	}
@@ -1301,8 +1203,8 @@ func TestStable2026aCustomReleaseNamespace(t *testing.T) {
 					t.Errorf("%s metadata.namespace = %q, want %q", cm.Metadata.Name, cm.Metadata.Namespace, tc.wantNS)
 				}
 			}
-			if count != 5 {
-				t.Errorf("decoded %d Component CRs, want 5", count)
+			if count != 3 {
+				t.Errorf("decoded %d Component CRs, want 3", count)
 			}
 		})
 	}

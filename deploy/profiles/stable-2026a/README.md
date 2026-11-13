@@ -31,8 +31,8 @@ The meta-chart has no Helm `dependencies:`. It reads each co-located component c
 | [`templates/_helpers.tpl`](templates/_helpers.tpl) | Value merging and `component.yaml` rendering helpers. |
 | [`profile.yaml`](profile.yaml) | Profile metadata: `name`, `minXmcVersion`, `supportWindow`. |
 | [`rules.yaml`](rules.yaml) | Static checks and compatibility matrix used by the [component linter](../../../cmd/component-linter/README.md). |
-| [`components/`](components/) | Component charts: [`redpanda`](components/redpanda/README.md), [`clickhouse`](components/clickhouse/README.md), [`ingestion-gateway`](components/ingestion-gateway/README.md), [`vizier`](components/vizier/README.md) (`EXPERIMENTAL`), [`hpo`](components/hpo/README.md) (`EXPERIMENTAL`). |
-| [`charts.go`](charts.go) | Embeds the `ingestion-gateway` and `hpo` 1P charts into `xmc-bridge`. |
+| [`components/`](components/) | Component charts: [`redpanda`](components/redpanda/README.md), [`clickhouse`](components/clickhouse/README.md), [`ingestion-gateway`](components/ingestion-gateway/README.md). |
+| [`charts.go`](charts.go) | Embeds the `ingestion-gateway` 1P chart into `xmc-bridge`. |
 
 ## Admin Workflow
 
@@ -94,21 +94,9 @@ components:
 
 Renders with `deletionProtection: false` intentionally fail the component linter, because the profile [`rules.yaml`](rules.yaml) sets `enforceDeletionProtection: true`. Apply these teardown and removal steps without the lint gate.
 
-### Experimental components
+### Stability Policy
 
-Catalog components declare a `spec.stability` level (`EXPERIMENTAL`, `PREVIEW`, or `STABLE`) in their component chart's `values.yaml` (`redpanda`, `clickhouse`, and `ingestion-gateway` are `STABLE`; `vizier` and `hpo` are `EXPERIMENTAL`). `STABLE` and `PREVIEW` components can be enabled with `enabled: true` alone. Enabling an `EXPERIMENTAL` component requires an explicit acknowledgement in your admin values:
-
-```yaml
-components:
-  vizier:
-    enabled: true
-    acknowledgeExperimental: true
-  hpo:
-    enabled: true
-    acknowledgeExperimental: true
-```
-
-Without `acknowledgeExperimental: true`, an enabled `EXPERIMENTAL` component is rejected by Kubernetes CRD CEL validation at admission time and by `component-linter`. Admins cannot override `stability` through profile values.
+Catalog components declare a `spec.stability` level (`EXPERIMENTAL`, `PREVIEW`, or `STABLE`) in their component chart's `values.yaml`. Every component in `stable-2026a` (`redpanda`, `clickhouse`, and `ingestion-gateway`) is `STABLE`, and [`rules.yaml`](rules.yaml) sets `staticChecks.allowExperimental: false` so `EXPERIMENTAL` components are disallowed in this profile. Admins cannot override `stability` through profile values.
 
 ## Values Contract
 
@@ -117,16 +105,16 @@ Per-component overrides live under `components.<name>` and are deep-merged over 
 | Key | Components | Description |
 | :--- | :--- | :--- |
 | `global.platformProfile` | all | Fixed to `stable-2026a`. |
-| `global.imageTag` | `ingestion-gateway`, `hpo` | Image tag rendered into `spec.imageTag`. |
+| `global.imageTag` | `ingestion-gateway` | Image tag rendered into `spec.imageTag`. |
 | Other `global.*` keys | none | Accepted so the profile can be nested under a wrapper chart with its own globals; the component templates ignore them. |
 | `enabled` | all | Renders `spec.enabled`. |
 | `namespace` | all | Namespace of the `Component` CR. Must be a DNS-1123 label. |
 | `deletionProtection` | all | Renders `spec.deletionProtection`. |
 | `deletionPolicy` | all | `Delete` or `Orphan`. |
-| `acknowledgeExperimental` | all | Renders `spec.acknowledgeExperimental` to opt into enabling an `EXPERIMENTAL` component (`vizier`, `hpo`). |
-| `parameters` | all | Component parameters. `redpanda`, `clickhouse`, `vizier`, and `hpo` accept only the parameters documented in their READMEs; `ingestion-gateway` passes extra keys through. |
+| `acknowledgeExperimental` | all | Renders `spec.acknowledgeExperimental` (unused in `stable-2026a`, where all catalog components are `STABLE`). |
+| `parameters` | all | Component parameters. `redpanda` and `clickhouse` accept only the parameters documented in their READMEs; `ingestion-gateway` passes extra keys through. |
 | `dependencies` | all | Component names rendered into `spec.dependencies`. |
-| `imageTag` | `ingestion-gateway`, `hpo` | Used when `global.imageTag` is empty. |
+| `imageTag` | `ingestion-gateway` | Used when `global.imageTag` is empty. |
 
 These keys are rejected by the schema:
 
@@ -137,7 +125,7 @@ These keys are rejected by the schema:
 
 Component runtime dependencies are not Helm dependencies. They are expressed in two places:
 
-1. `spec.dependencies` on each `Component` CR, from the component's `values.yaml` (for example, `ingestion-gateway` depends on `redpanda` and `clickhouse`, and `hpo` depends on `vizier` and `clickhouse`). `xmc-bridge` waits for dependencies to be Ready before actuating a component.
+1. `spec.dependencies` on each `Component` CR, from the component's `values.yaml` (for example, `ingestion-gateway` depends on `redpanda` and `clickhouse`). `xmc-bridge` waits for dependencies to be Ready before actuating a component.
 2. The `compatibilityMatrix` in [`rules.yaml`](rules.yaml), which the component linter checks against the rendered CRs.
 
 ## Versioning
