@@ -17,6 +17,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -90,7 +91,7 @@ func deployRedpandaInstance(ctx context.Context, t *testing.T, h *kindClusterHar
 			Name: "redpanda", Image: redpandaImage, ImagePullPolicy: corev1.PullIfNotPresent,
 			Args: []string{
 				"redpanda", "start", "--smp", "1", "--memory", "512M", "--overprovisioned", "--node-id", "0",
-				"--kafka-addr", "PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr", fmt.Sprintf("PLAINTEXT://%s:9092", advHost),
+				"--kafka-addr", "PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr", fmt.Sprintf("PLAINTEXT://%s", net.JoinHostPort(advHost, "9092")),
 				"--rpc-addr", "0.0.0.0:33145", "--advertise-rpc-addr", fmt.Sprintf("%s:33145", advHost), "--check=false",
 			},
 			Ports: []corev1.ContainerPort{{Name: "kafka", ContainerPort: 9092}, {Name: "admin", ContainerPort: 9644}},

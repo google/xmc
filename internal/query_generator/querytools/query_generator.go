@@ -524,7 +524,7 @@ type options struct {
 
 // Option is an optional argument to generating queries.
 type Option interface {
-	set(*options)
+	set(opts *options)
 }
 
 type optionwrap func(*options)
@@ -635,128 +635,77 @@ func addSortDirectionToOrderedFieldsAndIndices(t TableView) (TableView, error) {
 	return table, nil
 }
 
-// GenerateQuery generates a spanner SQL query with the following contents:
-// SELECT: returns the selectFields, plus any fields needed for a page token
-// Note that it's possible for a query to SELECT a field more than once, because of a lack of
-// deduping between explicitly selected fields and fields needed for pagination.
-// FROM: a base table selected as the one that can satisfy the query with the
-// lowest cost, and possibly some joins to fulfill additional select fields
-// WHERE: applies the baseFilterExp condition, the userFilterExp condition,
-// and if ptFields is non-empty the conditions to continue from those page token
-// values
-// GROUP BY, ORDER BY: as implied by the metadata of the fields used
-// LIMIT, OFFSET: according to pageSize and offset, respectively
-//
-// It returns a map of TableField to index so that the caller can
-// build the page token, an Unnester that can patch up any repeated fields that
-// were selected, and any error that occurred.
-func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (selectFieldIndexes map[TableField]int, u Unnester, err error) {
-	// Captures the names referenced in userFilterExp and the fields that
-	// we're mapping them to.
-	userFilters := map[string]TableField{}
+// whereClauseInputs bundles inputs for constructing the SQL WHERE clause.
+type whereClauseInputs struct {
+	fromTable       TableView
+	filters         map[string]Member
+	fullTextFields  []safesql.TrustedSQLString
+	baseFilterExp   *fpb.Expression
+	userFilterExp   *fpb.Expression
+	ptFields        map[TableField]any
+	orderedPtFields []UserOrderedIndex
+	unnestWheres    []safesql.TrustedSQLString
+}
 
-	// equalityFilters will contain the set of fields used in equality
-	// statements in userFilterExp, plus all base filters which are always
-	// equality comparisons. Having this list allows us to determine which
-	// fields should be included in the page token for paginated queries.
-	// For example, if the table has primary key A,B,C but we have a base
-	// filter A=2 and a user filter C=3, the page token only needs to
-	// contain B.
-	equalityFilters := map[TableField]bool{}
-
-	// Do a walk over the userFilterExp expression so that we can scout
-	// what Members it accesses. We reuse queryfilter.Visitor with a nil
-	// Statement (rendered SQL is discarded) so it walks the expression and
-	// calls us back on Members.
-	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
-		return nil, nil, err
+func isCandidateTableEligible(t TableView, baseFilters []TableField, userOrderBy []UserOrderedIndex, optimizeOrderBy bool) (bool, error) {
+	valid, err := checkCandidateTableOrderBy(t, userOrderBy, optimizeOrderBy)
+	if err != nil || !valid {
+		return false, err
 	}
-
-	// Add all of the base filter fields as equality filters. The base filters are assumed to be fixed
-	// in the client code, so we do not validate that they are actually equality conditions.
-	for _, bf := range q.baseFilters {
-		equalityFilters[bf] = true
+	for _, f := range baseFilters {
+		if _, ok := t.Fields[f]; !ok {
+			return false, nil
+		}
 	}
+	return true, nil
+}
 
+func (q *queryGen) selectCandidateTables(userFilters map[string]TableField, userOrderBy []UserOrderedIndex, ptFields map[TableField]any) (map[TableName]*candidateTable, error) {
 	candidateTables := map[TableName]*candidateTable{}
-
-	// Find candidate tables for the user order by and base filters.
 	for _, t := range q.tables {
-		ct := &candidateTable{t: t}
-
-		valid, err := checkCandidateTableOrderBy(t, userOrderBy, q.optimizeOrderBy)
+		eligible, err := isCandidateTableEligible(t, q.baseFilters, userOrderBy, q.optimizeOrderBy)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if !valid {
-			continue
-		}
-
-		// If there are no base filters, this table is a candidate.
-		if len(q.baseFilters) == 0 {
-			candidateTables[t.Name] = ct
-			continue
-		}
-
-		// Otherwise we need to ensure this table satisfies base filters.
-		allFiltersFound := true
-		for _, f := range q.baseFilters {
-			if _, ok := t.Fields[f]; !ok {
-				allFiltersFound = false
-				break
-			}
-		}
-		if allFiltersFound {
-			candidateTables[t.Name] = ct
+		if eligible {
+			candidateTables[t.Name] = &candidateTable{t: t}
 		}
 	}
-
 	if len(candidateTables) == 0 {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy base filters %v", q.baseFilters)
+		return nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy base filters %v", q.baseFilters)
 	}
 
-	// Iterate over user filters removing tables that don't have the fields to satisfy filters.
 	logging.Info(context.Background(), "Removing tables that don't have the fields to satisfy filters", "userFilters", filterNames(userFilters), "candidateTables", tableNames(candidateTables))
 	for _, filter := range userFilters {
 		removeTableIfMissingField(filter, candidateTables)
 	}
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
-
 	if len(candidateTables) == 0 {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v and base filters %v", userFilters, q.baseFilters)
+		return nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v and base filters %v", userFilters, q.baseFilters)
 	}
 
-	// Iterate over fields in the requested page token to ensure that we select the same table as
-	// previously selected.
 	logging.Info(context.Background(), "Removing tables that don't satisfy the page token", "pageTokenFields", pageTokenNames(ptFields), "candidateTables", tableNames(candidateTables))
 	for k := range ptFields {
 		removeTableIfMissingField(k, candidateTables)
 	}
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
-
 	if len(candidateTables) == 0 {
-		if len(ptFields) > 0 {
-			return nil, nil, status.Errorf(codes.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
-		}
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
+		return nil, status.Errorf(codes.InvalidArgument, "page token contains unsupported or mismatched fields %v for candidate tables", ptFields)
 	}
 
-	// Remove tables that have null filtered fields in them that aren't satisfied by the base or
-	// user filters.
 	logging.Info(context.Background(), "Removing tables with null filtered fields that aren't satisfied by the base or user filters...")
 	removeIfNullFilterUnsatisfied(candidateTables, q.baseFilters, userFilters)
 	logging.Info(context.Background(), "Available tables updated", "candidateTables", tableNames(candidateTables))
-
 	if len(candidateTables) == 0 {
-		return nil, nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
+		return nil, status.Errorf(codes.FailedPrecondition, "no tables can satisfy all user filters %v, base filters %v, and page token filters %v", userFilters, q.baseFilters, ptFields)
 	}
+	return candidateTables, nil
+}
 
-	// For the remaining candidate tables, update the heuristic for number of filter fields that make
-	// up the prefix of each candidate table's index.
+func chooseBestTable(candidateTables map[TableName]*candidateTable, baseFilters []TableField, userFilters map[string]TableField) TableView {
 	logging.Info(context.Background(), "Updating the heuristic for number of filter fields that make up the prefix of each candidate table's index...")
-	updateNumFiltersIndexed(candidateTables, q.baseFilters, userFilters)
+	updateNumFiltersIndexed(candidateTables, baseFilters, userFilters)
 
-	// Determine the best table to select from.
 	logging.Info(context.Background(), "Finding the best table to select from based on available tables", "candidateTables", tableNames(candidateTables))
 	var bestTable *candidateTable
 	for _, ct := range candidateTables {
@@ -765,46 +714,49 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 			bestTable = ct
 			continue
 		}
-
 		if ct.numFiltersIndexed > bestTable.numFiltersIndexed {
 			logging.Info(context.Background(), "Setting table with more ordered indexes as best table", "candidateTable", ct.t.Name, "candidateNumFiltersIndexed", ct.numFiltersIndexed, "currentBestTable", bestTable.t.Name, "currentBestNumFiltersIndexed", bestTable.numFiltersIndexed)
 			bestTable = ct
 			continue
 		}
-
 		if ct.numFiltersIndexed == bestTable.numFiltersIndexed && ct.t.Cost < bestTable.t.Cost {
 			logging.Info(context.Background(), "Setting table with lower cost as best table", "candidateTable", ct.t.Name, "candidateCost", ct.t.Cost, "currentBestTable", bestTable.t.Name, "currentBestCost", bestTable.t.Cost)
 			bestTable = ct
 		}
-
 		logging.Info(context.Background(), "Skipping candidate table", "candidateTable", ct.t.Name, "currentBestTable", bestTable.t.Name)
 	}
-	fromTable := bestTable.t
+	return bestTable.t
+}
 
-	// Create a set to lookup whether a field is a selectField.
+func findSelectableInExistingJoins(sf TableField, joins []Join) (Member, bool) {
+	for _, jt := range joins {
+		if m, ok := jt.T.Fields[sf]; ok && m.Selectable {
+			logging.Info(context.Background(), "Join field is selectable from join table", "joinField", sf, "joinTable", jt.T.Name)
+			return m, true
+		}
+	}
+	return Member{}, false
+}
+
+func collectJoinsAndSelectMembers(fromTable TableView, selectFields, baseFilters []TableField) ([]Join, []Member, error) {
 	sfs := make(map[TableField]bool, len(selectFields))
 	for _, sf := range selectFields {
 		sfs[sf] = true
 	}
-	var selectMembers []Member
-	// Create a list of fields to use for join selection. We need to find
-	// all of the selectFields and all of the baseFilters.
 	joinFields := make([]TableField, len(selectFields))
 	copy(joinFields, selectFields)
-	for _, bf := range q.baseFilters {
+	for _, bf := range baseFilters {
 		if !sfs[bf] {
 			joinFields = append(joinFields, bf)
 		}
 	}
 
-	// Iterate over joinFields to figure out what joins we need to perform.
 	logging.Info(context.Background(), "Processing join fields", "joinFields", joinFields)
 	var joins []Join
+	var selectMembers []Member
 	for _, sf := range joinFields {
 		logging.Info(context.Background(), "Looking for join field", "joinField", sf)
-		m, ok := fromTable.Fields[sf]
-		if ok && m.Selectable {
-			// This field is selectable in fromTable.
+		if m, ok := fromTable.Fields[sf]; ok && m.Selectable {
 			logging.Info(context.Background(), "Join field is selectable from table", "joinField", sf, "table", fromTable.Name)
 			if sfs[sf] {
 				logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
@@ -812,63 +764,48 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 			}
 			continue
 		}
-
-		found := false
 		logging.Info(context.Background(), "Join field not selectable from table, checking existing joins", "joinField", sf, "fromTable", fromTable.Name, "existingJoins", relationshipTableNames(joins))
-		for _, jt := range joins {
-			// Is it available in any existing joins?
-			m, ok = jt.T.Fields[sf]
-			if ok && m.Selectable {
-				logging.Info(context.Background(), "Join field is selectable from join table", "joinField", sf, "joinTable", jt.T.Name)
-				if sfs[sf] {
-					logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
-					selectMembers = append(selectMembers, m)
-				}
-				found = true
-				break
+		if m, ok := findSelectableInExistingJoins(sf, joins); ok {
+			if sfs[sf] {
+				logging.Info(context.Background(), "Join field is in select fields, adding to select members", "joinField", sf)
+				selectMembers = append(selectMembers, m)
 			}
+			continue
 		}
-		if !found {
-			var err error
-			found, err = resolveJoinFieldFromRelationships(sf, sfs, fromTable, &joins, &selectMembers)
-			if err != nil {
-				return nil, nil, err
-			}
+		if _, err := resolveJoinFieldFromRelationships(sf, sfs, fromTable, &joins, &selectMembers); err != nil {
+			return nil, nil, err
 		}
 	}
+	return joins, selectMembers, nil
+}
 
-	// Iterate over base and user filter fields to get their members to create an unnester with any
-	// unnest fields while we're iterating.
-	unr := unnester{
-		seen: make(map[*Unnest]bool),
-	}
+func buildFilterMapAndUnnester(fromTable TableView, baseFilters []TableField, baseFilterExp *fpb.Expression, userFilters map[string]TableField) (map[string]Member, *unnester, error) {
+	unr := &unnester{seen: make(map[*Unnest]bool)}
 	filters := make(map[string]Member)
-	for _, f := range q.baseFilters {
+	for _, f := range baseFilters {
 		m, ok := fromTable.Fields[f]
 		if !ok {
-			// At this point we should have already thrown an error
-			// if we have no single Table that has all filters.
 			return nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy filter %+v", fromTable.Name, f)
 		}
 		filters[string(f)] = m
-		if !emptyExpression(baseFilterExp) {
+		if !emptyExpression(baseFilterExp) && m.UnnestClause != nil {
 			unr.seen[m.UnnestClause] = true
 		}
 	}
 	for n, f := range userFilters {
 		m, ok := fromTable.Fields[f]
 		if !ok {
-			// At this point we should have already thrown an error
-			// if we have no single Table that has all filters.
 			return nil, nil, status.Errorf(codes.FailedPrecondition, "selected from table %q cannot satisfy user filter %+v", fromTable.Name, f)
 		}
 		filters[n] = m
-		unr.seen[m.UnnestClause] = true
+		if m.UnnestClause != nil {
+			unr.seen[m.UnnestClause] = true
+		}
 	}
+	return filters, unr, nil
+}
 
-	// Proceed to building the query statement.
-
-	// Start with the preamble and the SELECT clause.
+func appendSelectMembersClause(stmt queryfilter.Statement, selectMembers []Member, preamble *safesql.TrustedSQLString) (map[safesql.TrustedSQLString]int, int, bool) {
 	selectedMembers := make(map[safesql.TrustedSQLString]int)
 	if preamble != nil {
 		stmt.AppendSQL(safesql.Concat(*preamble, safesql.New(" SELECT ")))
@@ -885,61 +822,52 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 		if sf.NeedGroupBy {
 			needGroupBy = true
 		}
-
-		var selectSQL safesql.TrustedSQLString
+		selectSQL := sf.QueryLiteral
 		if sf.SelectSQLString != safesql.EmptyString() {
 			selectSQL = sf.SelectSQLString
-		} else {
-			selectSQL = sf.QueryLiteral
 		}
-
 		stmt.AppendSQL(selectSQL)
-
 		selectedMembers[selectSQL] = selectIdx
 		selectIdx++
 	}
+	return selectedMembers, selectIdx, needGroupBy
+}
 
+func buildOrderByAndPageTokenFields(fromTable TableView, userOrderBy []UserOrderedIndex, equalityFilters map[TableField]bool) ([]UserOrderedIndex, []UserOrderedIndex) {
 	obs := make(map[TableField]bool, len(userOrderBy))
 	var orderByFields []UserOrderedIndex
 	for _, ob := range userOrderBy {
 		orderByFields = append(orderByFields, ob)
 		obs[ob.TableField] = true
 	}
-
 	// If this table has specified an order by override, use that instead of the default that orders
 	// by the fields that are indexed.
+	tableOrderFields := fromTable.OrderedIndicesWithSortDirection
 	if len(fromTable.OrderByFieldsWithSortDirection) > 0 {
-		for _, oi := range fromTable.OrderByFieldsWithSortDirection {
-			// Add table order by fields iff the user did not specify them.
-			if !obs[oi.TableField] {
-				orderByFields = append(orderByFields, oi)
-			}
-		}
-	} else {
-		for _, oi := range fromTable.OrderedIndicesWithSortDirection {
-			// Add table order by fields iff the user did not specify them.
-			if !obs[oi.TableField] {
-				orderByFields = append(orderByFields, oi)
-			}
+		tableOrderFields = fromTable.OrderByFieldsWithSortDirection
+	}
+	for _, oi := range tableOrderFields {
+		if !obs[oi.TableField] {
+			orderByFields = append(orderByFields, oi)
 		}
 	}
 
-	// Add query literal for each field that needs to be included for the
-	// page token to the query. Store the index of these in the select
-	// statement in a map to be returned so the fields can be retrieved.
 	var pageTokenFields []UserOrderedIndex
 	for _, f := range orderByFields {
 		if !equalityFilters[f.TableField] {
 			pageTokenFields = append(pageTokenFields, f)
 		}
 	}
+	return orderByFields, pageTokenFields
+}
+
+func (q *queryGen) appendPageTokenSelects(stmt queryfilter.Statement, fromTable TableView, pageTokenFields []UserOrderedIndex, selectedMembers map[safesql.TrustedSQLString]int, selectIdx int) (map[TableField]int, error) {
 	tfToIdx := make(map[TableField]int)
 	for _, t := range pageTokenFields {
 		f, ok := fromTable.Fields[t.TableField]
 		if !ok {
-			return nil, nil, status.Errorf(codes.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
+			return nil, status.Errorf(codes.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
 		}
-
 		if index, ok := selectedMembers[f.QueryLiteral]; q.options.deduplicateSelects && ok {
 			tfToIdx[t.TableField] = index
 			continue
@@ -954,98 +882,170 @@ func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []Tabl
 		}
 		selectIdx++
 	}
+	return tfToIdx, nil
+}
 
-	// Add FROM.
+func appendFromAndUnnestClauses(stmt queryfilter.Statement, fromTable TableView, joins []Join, unr *unnester) ([]safesql.TrustedSQLString, error) {
 	froms := []safesql.TrustedSQLString{safesql.New(" FROM "), fromTable.NameClause}
-	// Add JOIN clauses.
 	for _, j := range joins {
 		froms = append(froms, j.Clause)
 	}
-	// Apply the UNNEST.
 	if err := unr.Apply(stmt, froms); err != nil {
-		return nil, nil, status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
+		return nil, status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
 	}
-
-	// Get all the WHERE clauses in UNNEST conditions.
 	var unnestWheres []safesql.TrustedSQLString
 	for unnest := range unr.seen {
 		if unnest != nil && unnest.Where != safesql.New("") {
 			unnestWheres = append(unnestWheres, unnest.Where)
 		}
 	}
+	return unnestWheres, nil
+}
 
-	orderedPtFields, err := resolveOrderedPageTokenFields(pageTokenFields, orderByFields, ptFields)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	hasBaseFilter := !emptyExpression(baseFilterExp)
-	hasUserFilter := !emptyExpression(userFilterExp)
-	if hasBaseFilter || hasUserFilter || len(orderedPtFields) > 0 || len(unnestWheres) > 0 {
-		stmt.AppendSQL(safesql.New(" WHERE "))
-	}
-
-	qf := queryfilter.Visitor{
-		MemberFunc:           MemberMap(filters),
-		FunctionFunc:         FunctionMap(q.functions),
-		DisjunctionFunc:      DisjunctionMemberMap(filters),
-		OptimizeDisjunction:  q.optimizeFilters,
-		Q:                    stmt,
-		RestrictionTranslate: q.translateRestriction,
-		TextSearchColumns:    fullTextFields,
-		FilterBaseOptions:    []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
-	}
-
-	// Add base filters.
+func appendWhereFilters(qf *queryfilter.Visitor, stmt queryfilter.Statement, hasBaseFilter, hasUserFilter bool, baseFilterExp, userFilterExp *fpb.Expression) error {
 	if hasBaseFilter {
-		err := qf.AppendFilters(baseFilterExp)
-		if err != nil {
-			return nil, nil, status.Errorf(codes.InvalidArgument, "error processing base filter expression: %v", err)
+		if err := qf.AppendFilters(baseFilterExp); err != nil {
+			return status.Errorf(codes.InvalidArgument, "error processing base filter expression: %v", err)
 		}
 	}
-	// Add user filters.
 	if hasUserFilter {
 		if hasBaseFilter {
 			stmt.AppendSQL(safesql.New(" AND "))
 		}
-		err := qf.AppendFilters(userFilterExp)
-		if err != nil {
-			return nil, nil, status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
+		if err := qf.AppendFilters(userFilterExp); err != nil {
+			return status.Errorf(codes.InvalidArgument, "error processing filter expression: %v", err)
 		}
 	}
+	return nil
+}
 
-	// Add page token filters.
-	if len(orderedPtFields) != 0 {
+func (q *queryGen) appendWhereClauses(stmt queryfilter.Statement, in *whereClauseInputs) error {
+	if in == nil {
+		return nil
+	}
+	hasBaseFilter := !emptyExpression(in.baseFilterExp)
+	hasUserFilter := !emptyExpression(in.userFilterExp)
+	if !hasBaseFilter && !hasUserFilter && len(in.orderedPtFields) == 0 && len(in.unnestWheres) == 0 {
+		return nil
+	}
+
+	stmt.AppendSQL(safesql.New(" WHERE "))
+	qf := queryfilter.Visitor{
+		MemberFunc:           MemberMap(in.filters),
+		FunctionFunc:         FunctionMap(q.functions),
+		DisjunctionFunc:      DisjunctionMemberMap(in.filters),
+		OptimizeDisjunction:  q.optimizeFilters,
+		Q:                    stmt,
+		RestrictionTranslate: q.translateRestriction,
+		TextSearchColumns:    in.fullTextFields,
+		FilterBaseOptions:    []queryfilter.FilterBaseOption{queryfilter.WithFullTextSearchEnabled},
+	}
+
+	if err := appendWhereFilters(&qf, stmt, hasBaseFilter, hasUserFilter, in.baseFilterExp, in.userFilterExp); err != nil {
+		return err
+	}
+	if len(in.orderedPtFields) != 0 {
 		if hasBaseFilter || hasUserFilter {
 			stmt.AppendSQL(safesql.New(" AND "))
 		}
 		stmt.AppendSQL(safesql.New("("))
-		if err := q.appendPageTokenFields(fromTable, ptFields, orderedPtFields, stmt); err != nil {
-			return nil, nil, status.Errorf(codes.Internal, "error adding page token fields %v", err)
+		if err := q.appendPageTokenFields(in.fromTable, in.ptFields, in.orderedPtFields, stmt); err != nil {
+			return status.Errorf(codes.Internal, "error adding page token fields %v", err)
 		}
 		stmt.AppendSQL(safesql.New(")"))
 	}
-
-	// Add UNNEST conditions to WHERE.
-	for _, unnestWhere := range unnestWheres {
+	for _, unnestWhere := range in.unnestWheres {
 		stmt.AppendSQL(unnestWhere)
 	}
+	return nil
+}
 
+func appendClausesAfterWhere(stmt queryfilter.Statement, selectMembers []Member, orderByFields []UserOrderedIndex, fromTable TableView, needGroupBy bool, pageSize, offset int) {
 	if needGroupBy {
 		appendGroupByClause(stmt, selectMembers, orderByFields, fromTable)
 	}
-
 	appendOrderByClause(stmt, orderByFields, fromTable)
-
-	// Add pageSize limit if needed.
 	if pageSize > 0 {
 		stmt.AppendSQL(safesql.NewBindingParam(" LIMIT ", uint64(pageSize)))
 	}
 	if offset > 0 {
 		stmt.AppendSQL(safesql.NewBindingParam(" OFFSET ", uint64(offset)))
 	}
+}
 
-	return tfToIdx, &unr, nil
+// GenerateQuery generates a spanner SQL query with the following contents:
+// SELECT: returns the selectFields, plus any fields needed for a page token
+// Note that it's possible for a query to SELECT a field more than once, because of a lack of
+// deduping between explicitly selected fields and fields needed for pagination.
+// FROM: a base table selected as the one that can satisfy the query with the
+// lowest cost, and possibly some joins to fulfill additional select fields
+// WHERE: applies the baseFilterExp condition, the userFilterExp condition,
+// and if ptFields is non-empty the conditions to continue from those page token
+// values
+// GROUP BY, ORDER BY: as implied by the metadata of the fields used
+// LIMIT, OFFSET: according to pageSize and offset, respectively
+//
+// It returns a map of TableField to index so that the caller can
+// build the page token, an Unnester that can patch up any repeated fields that
+// were selected, and any error that occurred.
+func (q *queryGen) GenerateQuery(stmt queryfilter.Statement, selectFields []TableField, fullTextFields []safesql.TrustedSQLString, baseFilterExp *fpb.Expression, userFilterExp *fpb.Expression, userOrderBy []UserOrderedIndex, pageSize, offset int, ptFields map[TableField]any, preamble *safesql.TrustedSQLString) (selectFieldIndexes map[TableField]int, u Unnester, err error) {
+	// Captures the names referenced in userFilterExp and the fields that we're mapping them to.
+	userFilters := map[string]TableField{}
+	// equalityFilters contains fields used in equality statements plus fixed base filters,
+	// allowing pagination tokens to omit constrained primary-key columns.
+	equalityFilters := map[TableField]bool{}
+	// Walk userFilterExp with a nil Statement to collect referenced Members without emitting SQL.
+	if err := q.scoutUserFilterMembers(userFilterExp, fullTextFields, userFilters, equalityFilters); err != nil {
+		return nil, nil, err
+	}
+	for _, bf := range q.baseFilters {
+		equalityFilters[bf] = true
+	}
+
+	candidateTables, err := q.selectCandidateTables(userFilters, userOrderBy, ptFields)
+	if err != nil {
+		return nil, nil, err
+	}
+	fromTable := chooseBestTable(candidateTables, q.baseFilters, userFilters)
+	joins, selectMembers, err := collectJoinsAndSelectMembers(fromTable, selectFields, q.baseFilters)
+	if err != nil {
+		return nil, nil, err
+	}
+	filters, unr, err := buildFilterMapAndUnnester(fromTable, q.baseFilters, baseFilterExp, userFilters)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	selectedMembers, selectIdx, needGroupBy := appendSelectMembersClause(stmt, selectMembers, preamble)
+	orderByFields, pageTokenFields := buildOrderByAndPageTokenFields(fromTable, userOrderBy, equalityFilters)
+	tfToIdx, err := q.appendPageTokenSelects(stmt, fromTable, pageTokenFields, selectedMembers, selectIdx)
+	if err != nil {
+		return nil, nil, err
+	}
+	unnestWheres, err := appendFromAndUnnestClauses(stmt, fromTable, joins, unr)
+	if err != nil {
+		return nil, nil, err
+	}
+	orderedPtFields, err := resolveOrderedPageTokenFields(pageTokenFields, orderByFields, ptFields)
+	if err != nil {
+		return nil, nil, err
+	}
+	whereIn := &whereClauseInputs{
+		fromTable:       fromTable,
+		filters:         filters,
+		fullTextFields:  fullTextFields,
+		baseFilterExp:   baseFilterExp,
+		userFilterExp:   userFilterExp,
+		ptFields:        ptFields,
+		orderedPtFields: orderedPtFields,
+		unnestWheres:    unnestWheres,
+	}
+	if err := q.appendWhereClauses(stmt, whereIn); err != nil {
+		return nil, nil, err
+	}
+
+	appendClausesAfterWhere(stmt, selectMembers, orderByFields, fromTable, needGroupBy, pageSize, offset)
+	return tfToIdx, unr, nil
 }
 
 func appendOrderByClause(stmt queryfilter.Statement, orderByFields []UserOrderedIndex, fromTable TableView) {

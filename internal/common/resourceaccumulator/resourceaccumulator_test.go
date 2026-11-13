@@ -194,7 +194,7 @@ func TestAccumulateExecutable(t *testing.T) {
 	})
 }
 
-func TestConcurrentGetters(t *testing.T) {
+func TestConcurrentGetters(_ *testing.T) {
 	acc := New()
 	acc.Add("cpu", 4.0)
 	acc.Add("nvidia-tesla-h100", 8.0)
@@ -252,7 +252,7 @@ func TestNilAccumulatorReceiverSafety(t *testing.T) {
 		}
 	})
 
-	t.Run("mutator methods on nil accumulator do not panic", func(t *testing.T) {
+	t.Run("mutator methods on nil accumulator do not panic", func(_ *testing.T) {
 		acc.Add("cpu", 1.0)
 		acc.AccumulateResourceSet(nil)
 		acc.AccumulateExecutable(nil)

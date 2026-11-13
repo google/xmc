@@ -370,3 +370,9 @@ func TestConfigureLogger_SetsDefaultForControllerRuntimeContexts(t *testing.T) {
 		t.Errorf("logging.FromContext(context.Background()) = %p, want %p (slog.Default fallback)", got, logger)
 	}
 }
+
+func TestFinalizeConfig_Nil(t *testing.T) {
+	if err := finalizeConfig(nil); err == nil {
+		t.Error("finalizeConfig(nil) = nil, want non-nil error")
+	}
+}

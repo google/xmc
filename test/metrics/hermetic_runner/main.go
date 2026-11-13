@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
+	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/test/metrics/infra"
 )
 

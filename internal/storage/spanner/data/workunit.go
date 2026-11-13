@@ -17,7 +17,6 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
@@ -26,89 +25,41 @@ import (
 
 // WorkUnitRowToProto converts a Spanner Row containing WorkUnits table data into a WorkUnit proto message.
 func WorkUnitRowToProto(row *spanner.Row) (*pb.WorkUnit, error) {
-	workUnit := &pb.WorkUnit{
-		CurrentWorkUnitExecution: &pb.WorkUnitExecution{},
-	}
+	exec := &pb.WorkUnitExecution{State: pb.WorkUnitExecution_ACTIVE}
+	workUnit := &pb.WorkUnit{CurrentWorkUnitExecution: exec}
 
-	var xid, workUnitID int64
-	if err := row.ColumnByName("Xid", &xid); err != nil {
-		return nil, fmt.Errorf("failed to read column Xid: %w", err)
-	}
-	if err := row.ColumnByName("WorkUnitId", &workUnitID); err != nil {
-		return nil, fmt.Errorf("failed to read column WorkUnitId: %w", err)
-	}
-	workUnit.Name = validator.ConstructWorkUnitName(xid, workUnitID)
-
+	var xid, workUnitID, eid int64
 	var workUnitType pb.WorkUnit_WorkUnitType
-	if err := row.ColumnByName("WorkUnitType", &workUnitType); err != nil {
-		return nil, fmt.Errorf("failed to read column WorkUnitType: %w", err)
+	err := readColumns(row,
+		colDest{"Xid", &xid},
+		colDest{"WorkUnitId", &workUnitID},
+		colDest{"WorkUnitType", &workUnitType},
+		colDest{"Priority", &workUnit.Priority},
+		colDest{"Notes", &workUnit.Notes},
+		colDest{"Tags", &workUnit.Tags},
+		colDest{"Urls", &workUnit.Urls},
+		colDest{"Executable", &workUnit.Executable},
+		colDest{"ExecutionId", &eid},
+		colDest{"ExecutionMetadata", &exec.Metadata},
+		colDest{"WorkUnitStatus", &exec.Status},
+	)
+	if err != nil {
+		return nil, err
 	}
+	err = readNullTimestamps(row,
+		tsDest{"ExecutionCreateTime", &exec.CreateTime},
+		tsDest{"ExecutionUpdateTime", &exec.UpdateTime},
+		tsDest{"ExecutionCompleteTime", &exec.CompleteTime},
+		tsDest{"CreateTime", &workUnit.CreateTime},
+		tsDest{"UpdateTime", &workUnit.UpdateTime},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	workUnit.Name = validator.ConstructWorkUnitName(xid, workUnitID)
 	workUnit.WorkUnitType = workUnitType
-
-	if err := row.ColumnByName("Priority", &workUnit.Priority); err != nil {
-		return nil, fmt.Errorf("failed to read column Priority: %w", err)
-	}
-
-	if err := row.ColumnByName("Notes", &workUnit.Notes); err != nil {
-		return nil, fmt.Errorf("failed to read column Notes: %w", err)
-	}
-	if err := row.ColumnByName("Tags", &workUnit.Tags); err != nil {
-		return nil, fmt.Errorf("failed to read column Tags: %w", err)
-	}
-
-	if err := row.ColumnByName("Urls", &workUnit.Urls); err != nil {
-		return nil, fmt.Errorf("failed to read column Urls: %w", err)
-	}
-	if err := row.ColumnByName("Executable", &workUnit.Executable); err != nil {
-		return nil, fmt.Errorf("failed to read column Executable: %w", err)
-	}
-
-	var executionCreateTime, executionUpdateTime, executionCompleteTime spanner.NullTime
-	if err := row.ColumnByName("ExecutionCreateTime", &executionCreateTime); err != nil {
-		return nil, fmt.Errorf("failed to read column ExecutionCreateTime: %w", err)
-	}
-	if executionCreateTime.Valid {
-		workUnit.CurrentWorkUnitExecution.CreateTime = timestamppb.New(executionCreateTime.Time)
-	}
-	if err := row.ColumnByName("ExecutionUpdateTime", &executionUpdateTime); err != nil {
-		return nil, fmt.Errorf("failed to read column ExecutionUpdateTime: %w", err)
-	}
-	if executionUpdateTime.Valid {
-		workUnit.CurrentWorkUnitExecution.UpdateTime = timestamppb.New(executionUpdateTime.Time)
-	}
-	if err := row.ColumnByName("ExecutionCompleteTime", &executionCompleteTime); err != nil {
-		return nil, fmt.Errorf("failed to read column ExecutionCompleteTime: %w", err)
-	}
-	if executionCompleteTime.Valid {
-		workUnit.CurrentWorkUnitExecution.CompleteTime = timestamppb.New(executionCompleteTime.Time)
-	}
-	var eid int64
-	if err := row.ColumnByName("ExecutionId", &eid); err != nil {
-		return nil, fmt.Errorf("failed to read column ExecutionId: %w", err)
-	}
-	workUnit.CurrentWorkUnitExecution.Name = validator.ConstructWorkUnitExecutionName(xid, workUnitID, eid)
-	if err := row.ColumnByName("ExecutionMetadata", &workUnit.CurrentWorkUnitExecution.Metadata); err != nil {
-		return nil, fmt.Errorf("failed to read column ExecutionMetadata: %w", err)
-	}
-	if err := row.ColumnByName("WorkUnitStatus", &workUnit.CurrentWorkUnitExecution.Status); err != nil {
-		return nil, fmt.Errorf("failed to read column WorkUnitStatus: %w", err)
-	}
-	workUnit.CurrentWorkUnitExecution.State = pb.WorkUnitExecution_ACTIVE
-
-	var createTime, updateTime spanner.NullTime
-	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
-		return nil, fmt.Errorf("failed to read column CreateTime: %w", err)
-	}
-	if createTime.Valid {
-		workUnit.CreateTime = timestamppb.New(createTime.Time)
-	}
-	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
-		return nil, fmt.Errorf("failed to read column UpdateTime: %w", err)
-	}
-	if updateTime.Valid {
-		workUnit.UpdateTime = timestamppb.New(updateTime.Time)
-	}
-
+	exec.Name = validator.ConstructWorkUnitExecutionName(xid, workUnitID, eid)
 	return workUnit, nil
 }
 

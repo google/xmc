@@ -294,8 +294,8 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) err
 	return nil
 }
 
-func areWorkloadStatusEqual(old, new *v1beta1.Workload) bool {
-	o, n := old.Status, new.Status
+func areWorkloadStatusEqual(oldWL, newWL *v1beta1.Workload) bool {
+	o, n := oldWL.Status, newWL.Status
 	if (o.ClusterName == nil) != (n.ClusterName == nil) {
 		return false
 	}

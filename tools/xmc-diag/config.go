@@ -16,6 +16,7 @@ package main
 
 import (
 	"cmp"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -55,87 +56,68 @@ func parseComponentFlagDefaults() (bool, bool, string) {
 	return enabled, raw != "" && enabled, cmp.Or(os.Getenv("XMC_NAMESPACE"), os.Getenv("NAMESPACE"), "xmc")
 }
 
+func finalizeDiagConfig(cfg *Config, brokersStr string) (*Config, error) {
+	if cfg == nil {
+		return nil, errors.New("config cannot be nil")
+	}
+	if cfg.SASLEnabled {
+		mech := strings.ToUpper(cfg.SASLMechanism)
+		if mech != "PLAIN" && mech != "SCRAM-SHA-256" && mech != "SCRAM-SHA-512" {
+			return nil, fmt.Errorf("unsupported SASL mechanism %q (must be 'PLAIN', 'SCRAM-SHA-256', or 'SCRAM-SHA-512')", cfg.SASLMechanism)
+		}
+	}
+	out := strings.ToLower(cfg.OutputFormat)
+	if out != "text" && out != "json" {
+		return nil, fmt.Errorf("unsupported output format %q (must be 'text' or 'json')", cfg.OutputFormat)
+	}
+	cfg.OutputFormat = out
+	for _, b := range strings.Split(brokersStr, ",") {
+		if trimmed := strings.TrimSpace(b); trimmed != "" {
+			cfg.RedpandaBrokers = append(cfg.RedpandaBrokers, trimmed)
+		}
+	}
+	return cfg, nil
+}
+
 // ParseFlags parses command-line arguments into Config.
 func ParseFlags(args []string) (*Config, error) {
 	fs := flag.NewFlagSet("xmc-diag", flag.ContinueOnError)
 	checkComp, checkCompExplicit, defaultNS := parseComponentFlagDefaults()
+	cfg := &Config{
+		CheckComponents:         checkComp,
+		CheckComponentsExplicit: checkCompExplicit,
+	}
+	var brokersStr string
 
-	var (
-		chHost      = fs.String("clickhouse_host", "", "ClickHouse host (overrides CLICKHOUSE_HOST env)")
-		chPort      = fs.Int("clickhouse_port", 0, "ClickHouse native protocol port (overrides CLICKHOUSE_PORT env, default 9000)")
-		chUser      = fs.String("clickhouse_user", "", "ClickHouse user (overrides CLICKHOUSE_USER env, default \"default\")")
-		chPassword  = fs.String("clickhouse_password", "", "ClickHouse password")
-		chDatabase  = fs.String("clickhouse_database", "", "ClickHouse database name (overrides CLICKHOUSE_DATABASE env, default \"default\")")
-		chDSN       = fs.String("clickhouse_dsn", "", "ClickHouse DSN string")
-		brokersStr  = fs.String("redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses")
-		topicName   = fs.String("topic_name", "xmc-metrics", "Redpanda metrics topic name")
-		consumerGrp = fs.String("consumer_group", "xmc-clickhouse-ingester", "Kafka consumer group name to inspect lag for")
-		saslEnable  = fs.Bool("sasl_enabled", false, "Enable SASL authentication for Redpanda")
-		saslMech    = fs.String("sasl_mechanism", "SCRAM-SHA-256", "SASL mechanism")
-		saslUser    = fs.String("sasl_user", "", "SASL user")
-		saslPass    = fs.String("sasl_password", "", "SASL password")
-		tlsEnable   = fs.Bool("tls_enabled", false, "Enable TLS for Redpanda connection")
-		tlsInsecure = fs.Bool("tls_insecure_skip_verify", false, "Skip TLS verification for Redpanda")
-		seedOnly    = fs.Bool("dial_with_seed_only", false, "Dial only seed brokers (useful for port-forwarding/tunneling)")
-		outFormat   = fs.String("output", "text", "Output format: text or json")
-		skipSmoke   = fs.Bool("skip_smoke_tests", false, "Skip database and topic smoke queries")
-		namespace   = fs.String("namespace", defaultNS, "Kubernetes namespace for Component CR checks")
-		kubeconfig  = fs.String("kubeconfig", os.Getenv("KUBECONFIG"), "Path to kubeconfig file for Component CR checks")
-	)
-	fs.BoolVar(&checkComp, "check_components", checkComp, "Check Component CR health in Kubernetes")
-	fs.BoolVar(&checkComp, "check-components", checkComp, "Check Component CR health in Kubernetes")
+	fs.StringVar(&cfg.ClickHouseHost, "clickhouse_host", "", "ClickHouse host (overrides CLICKHOUSE_HOST env)")
+	fs.IntVar(&cfg.ClickHousePort, "clickhouse_port", 0, "ClickHouse native protocol port (overrides CLICKHOUSE_PORT env, default 9000)")
+	fs.StringVar(&cfg.ClickHouseUser, "clickhouse_user", "", "ClickHouse user (overrides CLICKHOUSE_USER env, default \"default\")")
+	fs.StringVar(&cfg.ClickHousePassword, "clickhouse_password", "", "ClickHouse password")
+	fs.StringVar(&cfg.ClickHouseDatabase, "clickhouse_database", "", "ClickHouse database name (overrides CLICKHOUSE_DATABASE env, default \"default\")")
+	fs.StringVar(&cfg.ClickHouseDSN, "clickhouse_dsn", "", "ClickHouse DSN string")
+	fs.StringVar(&brokersStr, "redpanda_brokers", "localhost:9092", "Comma-separated Redpanda broker addresses")
+	fs.StringVar(&cfg.TopicName, "topic_name", "xmc-metrics", "Redpanda metrics topic name")
+	fs.StringVar(&cfg.ConsumerGroup, "consumer_group", "xmc-clickhouse-ingester", "Kafka consumer group name to inspect lag for")
+	fs.BoolVar(&cfg.SASLEnabled, "sasl_enabled", false, "Enable SASL authentication for Redpanda")
+	fs.StringVar(&cfg.SASLMechanism, "sasl_mechanism", "SCRAM-SHA-256", "SASL mechanism")
+	fs.StringVar(&cfg.SASLUser, "sasl_user", "", "SASL user")
+	fs.StringVar(&cfg.SASLPassword, "sasl_password", "", "SASL password")
+	fs.BoolVar(&cfg.TLSEnabled, "tls_enabled", false, "Enable TLS for Redpanda connection")
+	fs.BoolVar(&cfg.TLSInsecure, "tls_insecure_skip_verify", false, "Skip TLS verification for Redpanda")
+	fs.BoolVar(&cfg.DialWithSeedOnly, "dial_with_seed_only", false, "Dial only seed brokers (useful for port-forwarding/tunneling)")
+	fs.StringVar(&cfg.OutputFormat, "output", "text", "Output format: text or json")
+	fs.BoolVar(&cfg.SkipSmokeTests, "skip_smoke_tests", false, "Skip database and topic smoke queries")
+	fs.StringVar(&cfg.Namespace, "namespace", defaultNS, "Kubernetes namespace for Component CR checks")
+	fs.StringVar(&cfg.Kubeconfig, "kubeconfig", os.Getenv("KUBECONFIG"), "Path to kubeconfig file for Component CR checks")
+	fs.BoolVar(&cfg.CheckComponents, "check_components", cfg.CheckComponents, "Check Component CR health in Kubernetes")
+	fs.BoolVar(&cfg.CheckComponents, "check-components", cfg.CheckComponents, "Check Component CR health in Kubernetes")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "check_components" || f.Name == "check-components" {
-			checkCompExplicit = checkComp
+			cfg.CheckComponentsExplicit = cfg.CheckComponents
 		}
 	})
-
-	if *saslEnable {
-		mech := strings.ToUpper(*saslMech)
-		if mech != "PLAIN" && mech != "SCRAM-SHA-256" && mech != "SCRAM-SHA-512" {
-			return nil, fmt.Errorf("unsupported SASL mechanism %q (must be 'PLAIN', 'SCRAM-SHA-256', or 'SCRAM-SHA-512')", *saslMech)
-		}
-	}
-
-	out := strings.ToLower(*outFormat)
-	if out != "text" && out != "json" {
-		return nil, fmt.Errorf("unsupported output format %q (must be 'text' or 'json')", *outFormat)
-	}
-
-	var brokers []string
-	if *brokersStr != "" {
-		for _, b := range strings.Split(*brokersStr, ",") {
-			b = strings.TrimSpace(b)
-			if b != "" {
-				brokers = append(brokers, b)
-			}
-		}
-	}
-
-	cfg := &Config{
-		ClickHouseHost:     *chHost,
-		ClickHousePort:     *chPort,
-		ClickHouseUser:     *chUser,
-		ClickHousePassword: *chPassword,
-		ClickHouseDatabase: *chDatabase,
-		ClickHouseDSN:      *chDSN,
-		RedpandaBrokers:    brokers,
-		TopicName:          *topicName,
-		ConsumerGroup:      *consumerGrp,
-		SASLEnabled:        *saslEnable,
-		SASLMechanism:      *saslMech,
-		SASLUser:           *saslUser,
-		SASLPassword:       *saslPass,
-		TLSEnabled:         *tlsEnable,
-		TLSInsecure:        *tlsInsecure,
-		DialWithSeedOnly:   *seedOnly,
-		OutputFormat:       out,
-		SkipSmokeTests:     *skipSmoke,
-	}
-	cfg.CheckComponents, cfg.CheckComponentsExplicit = checkComp, checkCompExplicit
-	cfg.Namespace, cfg.Kubeconfig = *namespace, *kubeconfig
-	return cfg, nil
+	return finalizeDiagConfig(cfg, brokersStr)
 }

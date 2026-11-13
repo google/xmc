@@ -420,7 +420,7 @@ func TestRepository_MutationsEdgeCases(t *testing.T) {
 			t.Fatalf("GetComponentByID(%d) failed: %v", wantDB.ComponentID, err)
 		}
 		if got.ObservedGeneration != nil || got.Status != nil || got.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
-			t.Errorf("got ObservedGeneration=%v, Status=%v, State=%v; want nil, nil, ENABLED", got.ObservedGeneration, got.Status, got.State)
+			t.Errorf("got ObservedGeneration=%v, Status=%v, State=%v; want nil, nil, ENABLED", got.ObservedGeneration, got.Status, got.State) //nolint:dupword // intentional format string for two nil fields
 		}
 	})
 

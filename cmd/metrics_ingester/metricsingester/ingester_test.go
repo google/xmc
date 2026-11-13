@@ -173,7 +173,7 @@ func publishMetric(t *testing.T, srv *pstest.Server, m *pb.Metric) string {
 	return srv.Publish(testTopicName, data, nil)
 }
 
-// startConfiguredIngester runs in in the background and returns a function that stops it and
+// startConfiguredIngester runs in the background and returns a function that stops it and
 // returns Run's error.
 func startConfiguredIngester(t *testing.T, in *Ingester) func() error {
 	t.Helper()

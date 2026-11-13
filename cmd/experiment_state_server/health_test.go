@@ -110,7 +110,7 @@ func TestActiveHealthCheck(t *testing.T) {
 			var xidClient xidgrpcpb.XidServiceClient = &fakeXidClient{}
 			handler := activeHealthCheck(tc.mockDB, xidClient, tqClient)
 
-			req := httptest.NewRequest("GET", "/readyz", nil)
+			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 			rr := httptest.NewRecorder()
 
 			handler.ServeHTTP(rr, req)
@@ -132,7 +132,7 @@ func TestActiveHealthCheck(t *testing.T) {
 func TestLivenessCheck(t *testing.T) {
 	handler := livenessCheck()
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
 
 	handler.ServeHTTP(rr, req)

@@ -420,11 +420,8 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 				createChartErr: tc.clientErr,
 			}
 			var bgTaskWG sync.WaitGroup
-			var obs []ArtifactObserver
-			if mockDash != nil {
-				toolClient := toollibs.NewDashboardToolClient(mockDash)
-				obs = append(obs, NewDashboardObserver(toolClient, storageClient, &bgTaskWG))
-			}
+			toolClient := toollibs.NewDashboardToolClient(mockDash)
+			obs := []ArtifactObserver{NewDashboardObserver(toolClient, storageClient, &bgTaskWG)}
 			server, err := New(Params{
 				Config:            cfg,
 				Storage:           storageClient,

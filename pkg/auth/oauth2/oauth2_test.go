@@ -133,7 +133,7 @@ func TestIntegrationMockAuth(t *testing.T) {
 
 	// 4. Verify Programmatic Service Account Bearer Token Bypassing Cookies
 	cleanClient := &http.Client{}
-	req, err := http.NewRequest("GET", ts.URL+"/api/secret", nil)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/api/secret", nil)
 	if err != nil {
 		t.Fatalf("Failed to create request: %v", err)
 	}
@@ -306,7 +306,7 @@ func TestHandleLoginGenerateStateFailure(t *testing.T) {
 	randReader = errorReader{}
 
 	a := newTestAuthenticator(&Config{})
-	req := httptest.NewRequest("GET", "/api/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/login", nil)
 	w := httptest.NewRecorder()
 
 	a.HandleLogin(w, req)
@@ -363,7 +363,7 @@ func TestXForwardedProtoTrust(t *testing.T) {
 				AllowedHosts:         []string{"localhost:8080"},
 			}
 			a := newTestAuthenticator(cfg)
-			req := httptest.NewRequest("GET", "http://localhost:8080/api/login", nil)
+			req := httptest.NewRequest(http.MethodGet, "http://localhost:8080/api/login", nil)
 			if tt.headerVal != "" {
 				req.Header.Set("X-Forwarded-Proto", tt.headerVal)
 			}
@@ -424,7 +424,7 @@ func TestCORSMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 
-			req := httptest.NewRequest("GET", "http://frontend.com/api/test", nil)
+			req := httptest.NewRequest(http.MethodGet, "http://frontend.com/api/test", nil)
 			if tt.origin != "" {
 				req.Header.Set("Origin", tt.origin)
 			}
@@ -590,7 +590,7 @@ func TestBearerTokenValidation(t *testing.T) {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
 
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 
@@ -611,7 +611,7 @@ func TestBearerTokenValidation(t *testing.T) {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
 
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 
@@ -636,7 +636,7 @@ func TestBearerTokenValidation(t *testing.T) {
 			}, nil
 		}
 
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer mock-oidc-token-123")
 		w := httptest.NewRecorder()
 
@@ -661,7 +661,7 @@ func TestBearerTokenValidation(t *testing.T) {
 			}, nil
 		}
 
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer mock-oidc-token-123")
 		w := httptest.NewRecorder()
 
@@ -685,7 +685,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	})
 
 	t.Run("Standard HTTP Security Headers", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://frontend.com/api", nil)
 		w := httptest.NewRecorder()
 
 		a.securityHeadersMiddleware(targetHandler).ServeHTTP(w, req)
@@ -702,7 +702,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	})
 
 	t.Run("HTTPS via TLS Context HSTS", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "https://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "https://frontend.com/api", nil)
 		req.TLS = &tls.ConnectionState{}
 		w := httptest.NewRecorder()
 
@@ -715,7 +715,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	})
 
 	t.Run("HTTPS via X-Forwarded-Proto Header HSTS", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://frontend.com/api", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
 		w := httptest.NewRecorder()
 
@@ -742,7 +742,7 @@ func TestAuthenticateCookie(t *testing.T) {
 	})
 
 	t.Run("Cookie Missing", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		w := httptest.NewRecorder()
 		handled := a.authenticateCookie(w, req, targetHandler)
 		if handled {
@@ -754,7 +754,7 @@ func TestAuthenticateCookie(t *testing.T) {
 	})
 
 	t.Run("Cookie Present but Invalid Signature", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.AddCookie(&http.Cookie{Name: "session_token", Value: "invalid-token"})
 		w := httptest.NewRecorder()
 		handled := a.authenticateCookie(w, req, targetHandler)
@@ -768,7 +768,7 @@ func TestAuthenticateCookie(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 		w := httptest.NewRecorder()
 		handled := a.authenticateCookie(w, req, targetHandler)
@@ -788,7 +788,7 @@ func TestAuthenticateCookie(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 		w := httptest.NewRecorder()
 		handled := a.authenticateCookie(w, req, targetHandler)
@@ -817,7 +817,7 @@ func TestAuthenticateBearer(t *testing.T) {
 	})
 
 	t.Run("Header Missing", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		w := httptest.NewRecorder()
 		handled := a.authenticateBearer(w, req, targetHandler)
 		if handled {
@@ -826,7 +826,7 @@ func TestAuthenticateBearer(t *testing.T) {
 	})
 
 	t.Run("Mock Token Support", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer mock-sa-token")
 		w := httptest.NewRecorder()
 		handled := a.authenticateBearer(w, req, targetHandler)
@@ -843,7 +843,7 @@ func TestAuthenticateBearer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 		handled := a.authenticateBearer(w, req, targetHandler)
@@ -864,7 +864,7 @@ func TestAuthenticateBearer(t *testing.T) {
 				},
 			}, nil
 		}
-		req := httptest.NewRequest("GET", "/api/data", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 		req.Header.Set("Authorization", "Bearer oidc-token-123")
 		w := httptest.NewRecorder()
 		handled := a.authenticateBearer(w, req, targetHandler)
@@ -883,7 +883,7 @@ func TestValidateState(t *testing.T) {
 	})
 
 	t.Run("Valid state cookie matches query parameter", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback?state=mystate123", nil)
 		req.AddCookie(&http.Cookie{
 			Name:  "oauth_state",
 			Value: "mystate123",
@@ -898,7 +898,7 @@ func TestValidateState(t *testing.T) {
 	})
 
 	t.Run("Missing state cookie", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback?state=mystate123", nil)
 		_, err := a.validateState(req)
 		if err == nil {
 			t.Fatal("validateState expected error, got nil")
@@ -906,7 +906,7 @@ func TestValidateState(t *testing.T) {
 	})
 
 	t.Run("Empty state cookie", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/callback?state=mystate123", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback?state=mystate123", nil)
 		req.AddCookie(&http.Cookie{
 			Name:  "oauth_state",
 			Value: "",
@@ -918,7 +918,7 @@ func TestValidateState(t *testing.T) {
 	})
 
 	t.Run("State mismatch", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/api/callback?state=mismatch", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback?state=mismatch", nil)
 		req.AddCookie(&http.Cookie{
 			Name:  "oauth_state",
 			Value: "mystate123",
@@ -935,7 +935,7 @@ func TestGetUserInfo(t *testing.T) {
 		a := newTestAuthenticator(&Config{
 			MockAuth: true,
 		})
-		req := httptest.NewRequest("GET", "/api/callback", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback", nil)
 		info, err := a.OAuthProvider.ExchangeAndGetUserInfo(context.Background(), req, "anycode")
 		if err != nil {
 			t.Fatalf("getUserInfo failed: %v", err)
@@ -972,7 +972,7 @@ func TestGetUserInfo(t *testing.T) {
 			APIURL:       mockOIDC.URL + "/userinfo",
 		})
 
-		req := httptest.NewRequest("GET", "/api/callback", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/callback", nil)
 		info, err := a.OAuthProvider.ExchangeAndGetUserInfo(context.Background(), req, "validcode")
 		if err != nil {
 			t.Fatalf("getUserInfo failed: %v", err)
@@ -1003,7 +1003,7 @@ func TestCreateSession(t *testing.T) {
 				CookieDomain: "xmc.example.com",
 				SecureCookie: true,
 			})
-			req := httptest.NewRequest("GET", "https://xmc.example.com/api/callback", nil)
+			req := httptest.NewRequest(http.MethodGet, "https://xmc.example.com/api/callback", nil)
 			w := httptest.NewRecorder()
 			if err := a.createSession(w, req, "test@mycompany.com", "Test User", "https://example.com/pic"); err != nil {
 				t.Fatalf("createSession failed: %v", err)
@@ -1051,7 +1051,7 @@ func TestCreateSessionRejectsInvalidTTL(t *testing.T) {
 		t.Run(ttl.String(), func(t *testing.T) {
 			a := newTestAuthenticator(&Config{SessionTTL: ttl})
 			w := httptest.NewRecorder()
-			req := httptest.NewRequest("GET", "/api/callback", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/callback", nil)
 			if err := a.createSession(w, req, "test@mycompany.com", "Test User", ""); err == nil {
 				t.Fatal("expected an invalid session lifetime error")
 			}
@@ -1095,7 +1095,7 @@ func TestSecurityMiddlewares(t *testing.T) {
 	handler := a.SecurityMiddlewares(targetHandler)
 
 	t.Run("Applies CORS and Security Headers on GET", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://frontend.com/api", nil)
 		req.Header.Set("Origin", "http://allowed.com")
 		w := httptest.NewRecorder()
 
@@ -1115,7 +1115,7 @@ func TestSecurityMiddlewares(t *testing.T) {
 	})
 
 	t.Run("Applies CSRF and early terminates POST without token, keeping Security Headers", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "http://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodPost, "http://frontend.com/api", nil)
 		req.Header.Set("Origin", "http://disallowed.com")
 		w := httptest.NewRecorder()
 
@@ -1135,7 +1135,7 @@ func TestSecurityMiddlewares(t *testing.T) {
 	})
 
 	t.Run("GET with disallowed origin omits CORS headers but keeps Security Headers", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "http://frontend.com/api", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://frontend.com/api", nil)
 		req.Header.Set("Origin", "http://disallowed.com")
 		w := httptest.NewRecorder()
 
@@ -1163,7 +1163,7 @@ func TestHandleUser(t *testing.T) {
 		}
 		a := newTestAuthenticator(cfg)
 
-		req := httptest.NewRequest("GET", "/api/user", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
 		w := httptest.NewRecorder()
 
 		a.HandleUser(w, req)
@@ -1190,7 +1190,7 @@ func TestHandleUser(t *testing.T) {
 			},
 		}
 
-		req := httptest.NewRequest("GET", "/api/user", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
 		req = req.WithContext(context.WithValue(req.Context(), UserClaimsContextKey, claims))
 		w := httptest.NewRecorder()
 
@@ -1235,7 +1235,7 @@ func TestHandleUser(t *testing.T) {
 			Name:  "Prod User",
 		}
 
-		req := httptest.NewRequest("GET", "/api/user", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/user", nil)
 		req = req.WithContext(context.WithValue(req.Context(), UserClaimsContextKey, claims))
 		w := httptest.NewRecorder()
 

@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"time"
 
-	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"cloud.google.com/go/spanner"
 	"github.com/google/uuid"
-	anypb "google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/anypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"

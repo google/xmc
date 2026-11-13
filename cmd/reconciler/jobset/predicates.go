@@ -107,43 +107,43 @@ func jobSetChanged(oldJobSet, newJobSet *v1alpha2.JobSet) bool {
 	return !(specSame && labelsSame && statusSame && deletionSame)
 }
 
-func isJobSetStatusEqual(old, new *v1alpha2.JobSetStatus) bool {
-	if old.Restarts != new.Restarts {
+func isJobSetStatusEqual(oldStatus, newStatus *v1alpha2.JobSetStatus) bool {
+	if oldStatus.Restarts != newStatus.Restarts {
 		return false
 	}
-	if !isJobSetConditionsEqual(old.Conditions, new.Conditions) {
+	if !isJobSetConditionsEqual(oldStatus.Conditions, newStatus.Conditions) {
 		return false
 	}
-	return isReplicatedJobsStatusEqual(old.ReplicatedJobsStatus, new.ReplicatedJobsStatus)
+	return isReplicatedJobsStatusEqual(oldStatus.ReplicatedJobsStatus, newStatus.ReplicatedJobsStatus)
 }
 
 // TODO: Compare conditions order-independently by Type rather than index-by-index.
-func isJobSetConditionsEqual(old, new []metav1.Condition) bool {
-	if len(old) != len(new) {
+func isJobSetConditionsEqual(oldConds, newConds []metav1.Condition) bool {
+	if len(oldConds) != len(newConds) {
 		return false
 	}
-	for i := range old {
-		if old[i].Type != new[i].Type ||
-			old[i].Status != new[i].Status ||
-			old[i].Reason != new[i].Reason ||
-			old[i].Message != new[i].Message {
+	for i := range oldConds {
+		if oldConds[i].Type != newConds[i].Type ||
+			oldConds[i].Status != newConds[i].Status ||
+			oldConds[i].Reason != newConds[i].Reason ||
+			oldConds[i].Message != newConds[i].Message {
 			return false
 		}
 	}
 	return true
 }
 
-func isReplicatedJobsStatusEqual(old, new []v1alpha2.ReplicatedJobStatus) bool {
-	if len(old) != len(new) {
+func isReplicatedJobsStatusEqual(oldJobs, newJobs []v1alpha2.ReplicatedJobStatus) bool {
+	if len(oldJobs) != len(newJobs) {
 		return false
 	}
-	for i := range old {
-		if old[i].Name != new[i].Name ||
-			old[i].Ready != new[i].Ready ||
-			old[i].Succeeded != new[i].Succeeded ||
-			old[i].Failed != new[i].Failed ||
-			old[i].Active != new[i].Active ||
-			old[i].Suspended != new[i].Suspended {
+	for i := range oldJobs {
+		if oldJobs[i].Name != newJobs[i].Name ||
+			oldJobs[i].Ready != newJobs[i].Ready ||
+			oldJobs[i].Succeeded != newJobs[i].Succeeded ||
+			oldJobs[i].Failed != newJobs[i].Failed ||
+			oldJobs[i].Active != newJobs[i].Active ||
+			oldJobs[i].Suspended != newJobs[i].Suspended {
 			return false
 		}
 	}

@@ -168,12 +168,7 @@ func initObservers(ctx context.Context, cfg *config.Config, st storage.Storage, 
 	if err != nil {
 		return nil, nil, err
 	}
-	cleanup := func() error {
-		if err := dashConn.Close(); err != nil {
-			return fmt.Errorf("failed to close Dashboard gRPC connection: %w", err)
-		}
-		return nil
-	}
+	cleanup := closeWithLabel("Dashboard gRPC connection", dashConn.Close)
 	return []ArtifactObserver{NewDashboardObserver(dashboardClient, st, wg)}, cleanup, nil
 }
 
@@ -187,6 +182,27 @@ func runCleanups(cleanups []func() error) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func closeWithLabel(label string, closeFn func() error) func() error {
+	return func() error {
+		if err := closeFn(); err != nil {
+			return fmt.Errorf("failed to close %s: %w", label, err)
+		}
+		return nil
+	}
+}
+
+func initProdStorage(ctx context.Context) (*dbfactory.Storage, func() error, error) {
+	dbCfg, err := dbconfig.Load()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load database config: %w", err)
+	}
+	st, err := dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize storage: %w", err)
+	}
+	return st, func() error { st.Close(); return nil }, nil
 }
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
@@ -207,80 +223,51 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 		}
 	}()
 
-	dbCfg, err := dbconfig.Load()
+	st, storageCleanup, err := initProdStorage(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load database config: %w", err)
+		return nil, err
 	}
-
-	storage, err := dbfactory.NewStorage(ctx, dbCfg, dbfactory.ESS)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage: %w", err)
-	}
-	cleanups = append(cleanups, func() error {
-		storage.Close()
-		return nil
-	})
+	cleanups = append(cleanups, storageCleanup)
 
 	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
 	if err != nil {
 		return nil, err
 	}
-
 	xidClient, xidConn, err := initXidClient(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	cleanups = append(cleanups, func() error {
-		if err := xidConn.Close(); err != nil {
-			return fmt.Errorf("failed to close XID gRPC connection: %w", err)
-		}
-		return nil
-	})
+	cleanups = append(cleanups, closeWithLabel("XID gRPC connection", xidConn.Close))
 
 	taskQueueClient, err := initTaskQueueClient(ctx, cfg, oauthCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task queue client: %w", err)
 	}
-	cleanups = append(cleanups, func() error {
-		if err := taskQueueClient.Close(); err != nil {
-			return fmt.Errorf("failed to close task queue client: %w", err)
-		}
-		return nil
-	})
+	cleanups = append(cleanups, closeWithLabel("task queue client", taskQueueClient.Close))
 
 	var bgTaskWG sync.WaitGroup
-	observers, obsCleanup, err := initObservers(ctx, cfg, storage, &bgTaskWG)
+	observers, obsCleanup, err := initObservers(ctx, cfg, st, &bgTaskWG)
 	if err != nil {
 		return nil, err
 	}
 	cleanups = append(cleanups, obsCleanup)
 
 	srv, err := New(Params{
-		Config:            cfg,
-		Storage:           storage,
-		Authorizer:        auth,
-		XidClient:         xidClient,
-		WorkUnitActuator:  taskQueueClient,
-		ArtifactObservers: observers,
+		Config: cfg, Storage: st, Authorizer: auth,
+		XidClient: xidClient, WorkUnitActuator: taskQueueClient, ArtifactObservers: observers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
-
-	workerCleanups, err := startBackgroundWorkers(ctx, cfg, taskQueueClient, storage)
+	workerCleanups, err := startBackgroundWorkers(ctx, cfg, taskQueueClient, st)
 	if err != nil {
 		return nil, err
 	}
 	cleanups = append(cleanups, workerCleanups...)
 
 	return &ProdServer{
-		Server:          srv,
-		storage:         storage,
-		dbHealth:        storage,
-		xidClient:       xidClient,
-		taskQueueClient: taskQueueClient,
-		bgTaskWG:        &bgTaskWG,
-		cleanup:         func() error { return runCleanups(cleanups) },
+		Server: srv, storage: st, dbHealth: st, xidClient: xidClient, taskQueueClient: taskQueueClient,
+		bgTaskWG: &bgTaskWG, cleanup: func() error { return runCleanups(cleanups) },
 	}, nil
 }
 

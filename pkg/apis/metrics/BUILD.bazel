@@ -30,5 +30,6 @@ go_test(
     embed = [":metrics"],
     deps = [
         "//api/protos/metrics:metrics_go_proto",
+        "@org_golang_google_protobuf//proto",
     ],
 )

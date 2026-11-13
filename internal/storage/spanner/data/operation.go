@@ -30,38 +30,26 @@ import (
 
 // OperationRowToProto converts a Spanner Row containing Operations table data into an Operation proto message.
 func OperationRowToProto(row *spanner.Row) (*lropb.Operation, error) {
-	var xid int64
-	if err := row.ColumnByName("Xid", &xid); err != nil {
-		return nil, fmt.Errorf("failed to read column Xid: %w", err)
-	}
-
-	var workUnitID int64
-	if err := row.ColumnByName("WorkUnitId", &workUnitID); err != nil {
-		return nil, fmt.Errorf("failed to read column WorkUnitId: %w", err)
-	}
-
+	var xid, workUnitID int64
 	var operationID string
-	if err := row.ColumnByName("OperationId", &operationID); err != nil {
-		return nil, fmt.Errorf("failed to read column OperationId: %w", err)
-	}
-
 	var done bool
-	if err := row.ColumnByName("Done", &done); err != nil {
-		return nil, fmt.Errorf("failed to read column Done: %w", err)
-	}
-
-	statusMsg := spanner.NullProtoMessage{ProtoMessageVal: &statuspb.Status{}}
-	if err := row.ColumnByName("Status", &statusMsg); err != nil {
-		return nil, fmt.Errorf("failed to read column Status: %w", err)
-	}
-	var status *statuspb.Status
-	if statusMsg.Valid {
-		status = statusMsg.ProtoMessageVal.(*statuspb.Status)
-	}
-
 	var responseBytes []byte
-	if err := row.ColumnByName("Response", &responseBytes); err != nil {
-		return nil, fmt.Errorf("failed to read column Response: %w", err)
+	metadata := &pb.OperationMetadata{}
+	err := readColumns(row,
+		colDest{"Xid", &xid},
+		colDest{"WorkUnitId", &workUnitID},
+		colDest{"OperationId", &operationID},
+		colDest{"Done", &done},
+		colDest{"Response", &responseBytes},
+		colDest{"OperationMetadata", metadata},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := readNullProto(row, "Status", &statuspb.Status{})
+	if err != nil {
+		return nil, err
 	}
 	var response *pb.WorkUnit
 	if responseBytes != nil {
@@ -70,26 +58,19 @@ func OperationRowToProto(row *spanner.Row) (*lropb.Operation, error) {
 			return nil, fmt.Errorf("failed to unmarshal Response: %w", err)
 		}
 	}
-
-	metadata := &pb.OperationMetadata{}
-	if err := row.ColumnByName("OperationMetadata", metadata); err != nil {
-		return nil, fmt.Errorf("failed to read column OperationMetadata: %w", err)
+	if response != nil && status != nil {
+		return nil, fmt.Errorf("operation cannot have both Response and Status set")
 	}
+
 	anyMetadata, err := anypb.New(metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal OperationMetadata to Any proto: %w", err)
 	}
-
 	op := &lropb.Operation{
 		Name:     fmt.Sprintf("experiments/%d/workUnits/%d/operations/%s", xid, workUnitID, operationID),
 		Done:     done,
 		Metadata: anyMetadata,
 	}
-
-	if response != nil && status != nil {
-		return nil, fmt.Errorf("operation cannot have both Response and Status set")
-	}
-
 	if response != nil {
 		anyResponse, err := anypb.New(response)
 		if err != nil {
@@ -99,7 +80,6 @@ func OperationRowToProto(row *spanner.Row) (*lropb.Operation, error) {
 	} else if status != nil {
 		op.Result = &lropb.Operation_Error{Error: status}
 	}
-
 	return op, nil
 }
 

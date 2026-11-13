@@ -17,6 +17,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestClickHouse3PComponentE2E(t *testing.T) {
 				"host": host, "clusterEndpoints": endpoint, "nativePort": "9000", "httpPort": "8123",
 				"defaultDatabase": "default", "user": "default", "secretName": clickhouseSecretName,
 				"secretPasswordKey": clickhouseSecretKey, "storageSize": "10Gi",
-				"healthCheckEndpoint": fmt.Sprintf("http://%s:8123/ping", host),
+				"healthCheckEndpoint": fmt.Sprintf("http://%s/ping", net.JoinHostPort(host, "8123")),
 			},
 			podName: "ch-workload-stable2026a",
 			marker:  "stable2026a_ok",

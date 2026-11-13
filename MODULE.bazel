@@ -30,6 +30,7 @@ bazel_dep(name = "rules_license", version = "1.0.0")
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
+go_sdk.nogo(nogo = "//:xmc_nogo")
 
 # The buf CLI used by buf_breaking_test (//api:protos_breaking_test).
 # sha256 is the checksum of the release's sha256.txt.
@@ -98,6 +99,11 @@ go_deps.module(
     path = "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
     sum = "h1:F29+wU6Ee6qgu9TddPgooOdaqsxTMunOoj8KA5yuS5A=",
     version = "v1.5.1",
+)
+go_deps.module(
+    path = "golang.org/x/tools",
+    sum = "h1:3+hClM1aLL5mjMKm5ovokw9epgRXPuu2tILgismM6RE=",
+    version = "v0.48.0",
 )
 go_deps.gazelle_override(
     build_file_generation = "on",
@@ -172,6 +178,7 @@ use_repo(
     "org_golang_x_sync",
     "org_golang_x_text",
     "org_golang_x_time",
+    "org_golang_x_tools",
     "sh_helm_helm_v3",
     "xyz_gomodules_jsonpatch_v2",
 )

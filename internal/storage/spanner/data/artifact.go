@@ -17,7 +17,6 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
-	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/artifactschema"
@@ -26,91 +25,45 @@ import (
 
 // ArtifactRowToProto converts a Spanner Row containing Artifacts table data into an Artifact proto message.
 func ArtifactRowToProto(row *spanner.Row) (*pb.Artifact, error) {
-	artifact := &pb.Artifact{}
-	artifact.Url = &pb.Url{}
+	urlMsg := &pb.Url{}
+	artifact := &pb.Artifact{Url: urlMsg}
 
-	var xid int64
-	if err := row.ColumnByName("Xid", &xid); err != nil {
-		return nil, fmt.Errorf("failed to read column Xid: %w", err)
-	}
+	var xid, aid, priority int64
 	var wid spanner.NullInt64
-	if err := row.ColumnByName("WorkUnitId", &wid); err != nil {
-		return nil, fmt.Errorf("failed to read column WorkUnitId: %w", err)
+	err := readColumns(row,
+		colDest{"Xid", &xid},
+		colDest{"WorkUnitId", &wid},
+		colDest{"ArtifactId", &aid},
+		colDest{"Url", &urlMsg.Url},
+		colDest{"Icon", &urlMsg.Icon},
+		colDest{"DisplayName", &urlMsg.DisplayName},
+		colDest{"Priority", &priority},
+		colDest{"Tags", &artifact.Tags},
+		colDest{"Notes", &artifact.Notes},
+		colDest{"LifecyclePhase", &artifact.LifecyclePhase},
+		colDest{"DataType", &artifact.DataType},
+		colDest{"MimeType", &artifact.MimeType},
+	)
+	if err != nil {
+		return nil, err
 	}
 	if wid.Valid {
 		artifact.Parent = validator.ConstructWorkUnitName(xid, wid.Int64)
 	} else {
 		artifact.Parent = validator.ConstructExperimentName(xid)
 	}
-
-	var aid int64
-	if err := row.ColumnByName("ArtifactId", &aid); err != nil {
-		return nil, fmt.Errorf("failed to read column ArtifactId: %w", err)
-	}
 	artifact.Name = validator.ConstructArtifactName(aid)
+	artifact.Priority, urlMsg.Priority = int32(priority), int32(priority)
 
-	if err := row.ColumnByName("Url", &artifact.Url.Url); err != nil {
-		return nil, fmt.Errorf("failed to read column Url: %w", err)
+	if artifact.AdditionalInfo, err = readNullProto(row, "AdditionalInfo", &pb.Artifact_AdditionalInfo{}); err != nil {
+		return nil, err
 	}
-	if err := row.ColumnByName("Icon", &artifact.Url.Icon); err != nil {
-		return nil, fmt.Errorf("failed to read column Icon: %w", err)
+	if artifact.Payload, err = readNullProto(row, "Payload", &pb.ArtifactPayload{}); err != nil {
+		return nil, err
 	}
-	if err := row.ColumnByName("DisplayName", &artifact.Url.DisplayName); err != nil {
-		return nil, fmt.Errorf("failed to read column DisplayName: %w", err)
+	if err := readNullTimestamps(row, tsDest{"CreateTime", &artifact.CreateTime}, tsDest{"UpdateTime", &artifact.UpdateTime}); err != nil {
+		return nil, err
 	}
-	var priority int64
-	if err := row.ColumnByName("Priority", &priority); err != nil {
-		return nil, fmt.Errorf("failed to read column Priority: %w", err)
-	}
-	artifact.Priority = int32(priority)
-	artifact.Url.Priority = int32(priority)
-	if err := row.ColumnByName("Tags", &artifact.Tags); err != nil {
-		return nil, fmt.Errorf("failed to read column Tags: %w", err)
-	}
-	if err := row.ColumnByName("Notes", &artifact.Notes); err != nil {
-		return nil, fmt.Errorf("failed to read column Notes: %w", err)
-	}
-	if err := row.ColumnByName("LifecyclePhase", &artifact.LifecyclePhase); err != nil {
-		return nil, fmt.Errorf("failed to read column LifecyclePhase: %w", err)
-	}
-	if err := row.ColumnByName("DataType", &artifact.DataType); err != nil {
-		return nil, fmt.Errorf("failed to read column DataType: %w", err)
-	}
-	if err := row.ColumnByName("MimeType", &artifact.MimeType); err != nil {
-		return nil, fmt.Errorf("failed to read column MimeType: %w", err)
-	}
-	additionalInfo := spanner.NullProtoMessage{ProtoMessageVal: &pb.Artifact_AdditionalInfo{}}
-	if err := row.ColumnByName("AdditionalInfo", &additionalInfo); err != nil {
-		return nil, fmt.Errorf("failed to read column AdditionalInfo: %w", err)
-	}
-	if additionalInfo.Valid {
-		artifact.AdditionalInfo = additionalInfo.ProtoMessageVal.(*pb.Artifact_AdditionalInfo)
-	}
-
-	payload := spanner.NullProtoMessage{ProtoMessageVal: &pb.ArtifactPayload{}}
-	if err := row.ColumnByName("Payload", &payload); err != nil {
-		return nil, fmt.Errorf("failed to read column Payload: %w", err)
-	}
-	if payload.Valid {
-		artifact.Payload = payload.ProtoMessageVal.(*pb.ArtifactPayload)
-	}
-
-	// Time fields.
-	var createTime, updateTime spanner.NullTime
-	if err := row.ColumnByName("CreateTime", &createTime); err != nil {
-		return nil, fmt.Errorf("failed to read column CreateTime: %w", err)
-	}
-	if createTime.Valid {
-		artifact.CreateTime = timestamppb.New(createTime.Time)
-	}
-
-	if err := row.ColumnByName("UpdateTime", &updateTime); err != nil {
-		return nil, fmt.Errorf("failed to read column UpdateTime: %w", err)
-	}
-	if updateTime.Valid {
-		artifact.UpdateTime = timestamppb.New(updateTime.Time)
-	}
-
 	return artifact, nil
 }
 

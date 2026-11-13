@@ -101,6 +101,63 @@ func CalculateConsumerLag(endOffsets kadm.ListedOffsets, groupOffsets kadm.Offse
 	return report
 }
 
+func inspectTopicPartitions(ctx context.Context, querier RedpandaQuerier, topic string, report *RedpandaReport) (int, bool) {
+	topics, err := querier.ListTopics(ctx, topic)
+	if err != nil {
+		report.Status = StatusFailed
+		report.Connected = report.BrokerCount > 0
+		report.Reason = fmt.Sprintf("Failed listing metadata for topic %q", topic)
+		report.Error = fmt.Sprintf("failed listing topics: %v", err)
+		return 0, false
+	}
+	report.Connected = true
+
+	topicDetail, exists := topics[topic]
+	if !exists {
+		report.Status = StatusFailed
+		report.Reason = fmt.Sprintf("Required metrics topic %q does not exist", topic)
+		report.Error = fmt.Sprintf("topic %q not found", topic)
+		return 0, false
+	}
+	if topicDetail.Err != nil {
+		report.Status = StatusFailed
+		report.Reason = fmt.Sprintf("Topic %q reports error", topic)
+		report.Error = topicDetail.Err.Error()
+		return 0, false
+	}
+	return len(topicDetail.Partitions), true
+}
+
+func inspectEndOffsets(ctx context.Context, querier RedpandaQuerier, topic string) (kadm.ListedOffsets, []string) {
+	endOffsets, err := querier.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("failed listing partition end offsets for topic %q: %v", topic, err)}
+	}
+	var reasons []string
+	// TODO: sort partition IDs before iterating endOffsets to make diagnostic reason order deterministic.
+	for p, o := range endOffsets[topic] {
+		if o.Err != nil {
+			reasons = append(reasons, fmt.Sprintf("partition %d end offset error: %v", p, o.Err))
+		}
+	}
+	return endOffsets, reasons
+}
+
+func inspectGroupOffsets(ctx context.Context, querier RedpandaQuerier, topic, group string) (kadm.OffsetResponses, []string) {
+	groupOffsets, err := querier.FetchOffsets(ctx, group)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("failed fetching consumer group offsets for %q: %v", group, err)}
+	}
+	var reasons []string
+	// TODO: sort partition IDs before iterating groupOffsets to make diagnostic reason order deterministic.
+	for p, o := range groupOffsets[topic] {
+		if o.Err != nil {
+			reasons = append(reasons, fmt.Sprintf("partition %d committed offset error: %v", p, o.Err))
+		}
+	}
+	return groupOffsets, reasons
+}
+
 // CheckRedpanda performs Redpanda diagnostics using querier.
 func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, topic, group string, skipSmoke bool) RedpandaReport {
 	if connErr != nil {
@@ -110,7 +167,6 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 			Error:  connErr.Error(),
 		}
 	}
-
 	if querier == nil {
 		return RedpandaReport{
 			Status: StatusFailed,
@@ -119,8 +175,7 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 		}
 	}
 
-	var pingLatStr string
-	var brokerCount int
+	report := RedpandaReport{Status: StatusHealthy}
 	if !skipSmoke {
 		pingRes, err := querier.Ping(ctx)
 		if err != nil {
@@ -130,89 +185,23 @@ func CheckRedpanda(ctx context.Context, querier RedpandaQuerier, connErr error, 
 				Error:  fmt.Sprintf("ping failed: %v", err),
 			}
 		}
-		brokerCount = pingRes.BrokerCount
-		pingLatStr = pingRes.Latency.String()
+		report.BrokerCount = pingRes.BrokerCount
+		report.PingLatency = pingRes.Latency.String()
 	}
 
-	topics, err := querier.ListTopics(ctx, topic)
-	if err != nil {
-		return RedpandaReport{
-			Status:      StatusFailed,
-			Connected:   brokerCount > 0,
-			BrokerCount: brokerCount,
-			PingLatency: pingLatStr,
-			Reason:      fmt.Sprintf("Failed listing metadata for topic %q", topic),
-			Error:       fmt.Sprintf("failed listing topics: %v", err),
-		}
+	numPartitions, ok := inspectTopicPartitions(ctx, querier, topic, &report)
+	if !ok {
+		return report
 	}
+	report.TopicPartitions = numPartitions
 
-	topicDetail, exists := topics[topic]
-	if !exists {
-		return RedpandaReport{
-			Status:      StatusFailed,
-			Connected:   true,
-			BrokerCount: brokerCount,
-			PingLatency: pingLatStr,
-			Reason:      fmt.Sprintf("Required metrics topic %q does not exist", topic),
-			Error:       fmt.Sprintf("topic %q not found", topic),
-		}
-	}
-
-	if topicDetail.Err != nil {
-		return RedpandaReport{
-			Status:      StatusFailed,
-			Connected:   true,
-			BrokerCount: brokerCount,
-			PingLatency: pingLatStr,
-			Reason:      fmt.Sprintf("Topic %q reports error", topic),
-			Error:       topicDetail.Err.Error(),
-		}
-	}
-
-	numPartitions := len(topicDetail.Partitions)
-	var statusReasons []string
-	status := StatusHealthy
-
-	endOffsets, err := querier.ListEndOffsets(ctx, topic)
-	if err != nil {
-		status = StatusDegraded
-		statusReasons = append(statusReasons, fmt.Sprintf("failed listing partition end offsets for topic %q: %v", topic, err))
-	} else {
-		for p, o := range endOffsets[topic] {
-			if o.Err != nil {
-				status = StatusDegraded
-				statusReasons = append(statusReasons, fmt.Sprintf("partition %d end offset error: %v", p, o.Err))
-			}
-		}
-	}
-
-	groupOffsets, err := querier.FetchOffsets(ctx, group)
-	if err != nil {
-		status = StatusDegraded
-		statusReasons = append(statusReasons, fmt.Sprintf("failed fetching consumer group offsets for %q: %v", group, err))
-	} else {
-		for p, o := range groupOffsets[topic] {
-			if o.Err != nil {
-				status = StatusDegraded
-				statusReasons = append(statusReasons, fmt.Sprintf("partition %d committed offset error: %v", p, o.Err))
-			}
-		}
-	}
-
-	lagRep := CalculateConsumerLag(endOffsets, groupOffsets, topic, group)
-
-	var reason string
+	endOffsets, endReasons := inspectEndOffsets(ctx, querier, topic)
+	groupOffsets, groupReasons := inspectGroupOffsets(ctx, querier, topic, group)
+	statusReasons := append(endReasons, groupReasons...)
 	if len(statusReasons) > 0 {
-		reason = strings.Join(statusReasons, "; ")
+		report.Status = StatusDegraded
+		report.Reason = strings.Join(statusReasons, "; ")
 	}
-
-	return RedpandaReport{
-		Status:          status,
-		Connected:       true,
-		BrokerCount:     brokerCount,
-		TopicPartitions: numPartitions,
-		Lag:             lagRep,
-		PingLatency:     pingLatStr,
-		Reason:          reason,
-	}
+	report.Lag = CalculateConsumerLag(endOffsets, groupOffsets, topic, group)
+	return report
 }
