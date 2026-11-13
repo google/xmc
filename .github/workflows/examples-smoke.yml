@@ -61,7 +61,7 @@ jobs:
     # Always runs so the check reports a status when used as a required check;
     # individual steps are skipped when no relevant paths changed.
     name: 'Examples Import Check'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     # ~31 checks x 30s worst case, plus the venv build, stays under this budget.
     timeout-minutes: 25
     permissions:

@@ -181,7 +181,7 @@ permissions:
 jobs:
   deploy-to-gke:
     name: 'Deploy XMC to GKE'
-    runs-on: 'arc-runner-set'
+    runs-on: 'ubuntu-latest'
     environment: xmc-nightly
     permissions:
       contents: read
@@ -212,6 +212,11 @@ jobs:
           workload_identity_provider: '${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}'
           service_account: '${{ secrets.GCP_SERVICE_ACCOUNT }}'
 
+      - name: 'Set up Google Cloud SDK & gke-gcloud-auth-plugin'
+        uses: 'google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db' # v3.0.1
+        with:
+          install_components: 'gke-gcloud-auth-plugin'
+
       - name: 'Set up Cloud SDK & Docker Auth'
         run: |
           gcloud auth configure-docker us-docker.pkg.dev --quiet
@@ -240,13 +245,35 @@ jobs:
       - name: 'Set up Bazel'
         uses: 'bazelbuild/setup-bazelisk@b39c379c82683a5f25d34f0d062761f62693e0b2' # v3.0.0
 
+      - name: 'Reclaim Unused Runner Disk Space'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: 'Restore Bazel Repository Cache'
+        id: 'cache-bazel-repo-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-repo
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+
+      - name: 'Restore Bazel Disk Cache'
+        id: 'cache-bazel-disk-restore'
+        uses: 'actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
+        with:
+          path: ~/.cache/bazel-disk
+          key: bazel-disk-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            bazel-disk-${{ runner.os }}-
+
       - name: 'Configure Bazel Cache Settings'
         run: |
-          mkdir -p "${HOME}/.cache/bazel-repo"
+          mkdir -p "${HOME}/.cache/bazel-repo" "${HOME}/.cache/bazel-disk"
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
-          common --remote_upload_local_results=true
-          common --remote_download_outputs=all
+          common --disk_cache=${HOME}/.cache/bazel-disk
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
@@ -267,21 +294,16 @@ jobs:
             chmod +x "${HOME}/.local/bin/kubectl"
           fi
 
-          if ! command -v helm &>/dev/null; then
+          if ! helm version --short 2>/dev/null | grep -q '^v3\.'; then
             curl -fsSL "https://get.helm.sh/helm-v3.20.1-linux-amd64.tar.gz" -o /tmp/helm.tar.gz
             tar -zxvf /tmp/helm.tar.gz -C /tmp linux-amd64/helm
             mv /tmp/linux-amd64/helm "${HOME}/.local/bin/helm"
             chmod +x "${HOME}/.local/bin/helm"
           fi
 
-          if ! command -v gke-gcloud-auth-plugin &>/dev/null; then
-            gcloud components install gke-gcloud-auth-plugin --quiet || \
-            (sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin) || true
-          fi
-
           kubectl version --client
           helm version --short
-          gke-gcloud-auth-plugin --version || true
+          gke-gcloud-auth-plugin --version
 
       - name: 'Generate Deployment Configuration'
         env:
