@@ -454,22 +454,31 @@ check_tflint() {
 
 check_helm() {
   # helm lint covers the whole chart, so fix mode runs it for any staged add,
-  # modify, delete or rename under deploy/helm/.
+  # modify, delete or rename under deploy/helm/; chart/blueprint unit tests in
+  # test/helm/ also run when deploy/ctk_v2/xmanager-cloud.yaml or test/helm/ changes.
   if [ "${MODE}" = "check" ]; then
-    if [ -z "$(find deploy/helm -type f \( -name "*.yaml" -o -name "*.yml" \) || true)" ]; then return; fi
-  elif ! staged_paths_match AMD '^deploy/helm/'; then
+    if [ -z "$(find deploy/helm test/helm -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*_test.py" \) || true)" ]; then return; fi
+  elif ! staged_paths_match AMD '^(deploy/helm/|deploy/ctk_v2/xmanager-cloud\.yaml$|test/helm/)'; then
     return
   fi
 
-  if command -v helm >/dev/null 2>&1; then
-    echo "--> Running Helm Chart Linter (helm lint)..."
-    if ! helm lint deploy/helm; then
-      echo "❌ Helm lint failed."
-      FAILED=1
+  if [ "${MODE}" = "check" ] || staged_paths_match AMD '^deploy/helm/'; then
+    if command -v helm >/dev/null 2>&1; then
+      echo "--> Running Helm Chart Linter (helm lint)..."
+      if ! helm lint deploy/helm; then
+        echo "❌ Helm lint failed."
+        FAILED=1
+      fi
+    else
+      echo "--> WARNING: helm not found. Helm chart linting skipped."
+      if [ "$MODE" = "check" ]; then FAILED=1; fi
     fi
-  else
-    echo "--> WARNING: helm not found. Helm chart linting skipped."
-    if [ "$MODE" = "check" ]; then FAILED=1; fi
+  fi
+
+  echo "--> Running Helm Chart & Blueprint Unit Tests (test/helm)..."
+  if ! PYTHONPATH="test/helm:${PYTHONPATH:-}" python3 -m unittest discover --start-directory test/helm --pattern '*_test.py'; then
+    echo "❌ Helm chart & blueprint unit tests failed."
+    FAILED=1
   fi
 }
 
@@ -500,6 +509,11 @@ check_security() {
 }
 
 check_affected_tests() {
+  if ! command -v bazel >/dev/null 2>&1; then
+    echo "--> WARNING: bazel not found. Affected Bazel unit tests skipped."
+    if [ "$MODE" = "check" ]; then FAILED=1; fi
+    return
+  fi
   echo "--> Running Affected Bazel Unit Tests..."
   local lockfile_was_clean=0
   if git diff --quiet -- MODULE.bazel.lock 2>/dev/null; then
