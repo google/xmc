@@ -19,8 +19,6 @@ const {
   extractDismissalContext,
   parseTimelineReviewEvent,
   resolveActiveApproval,
-  findLatestApprovalFromTimeline,
-  findLatestApprovalFromReviews,
   findLatestApproval,
   GRAPHQL_TIMELINE_QUERY,
   MAX_TIMELINE_PAGES,

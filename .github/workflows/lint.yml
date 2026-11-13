@@ -72,6 +72,13 @@ jobs:
               - 'tools/common/tool_utils.py'
               - '.github/workflows/nightly-examples-e2e.yml'
               - '.github/workflows/lint.yml'
+            nonui_js:
+              - '.github/scripts/*.js'
+              - 'tools/nightly_tests/*.js'
+              - 'cmd/experiment_state_server/static/*.js'
+              - 'tools/lint/eslint.nonui.config.mjs'
+              - 'cmd/ui/package-lock.json'
+              - '.github/workflows/lint.yml'
 
       # 1. Python Linting (Ruff & Mypy)
       - name: 'Set up Python 3.13'
@@ -248,7 +255,7 @@ jobs:
 
       # 3. UI Linting & Formatting (Prettier & ESLint)
       - name: 'Set up Node.js'
-        if: steps.changes.outputs.ui == 'true'
+        if: steps.changes.outputs.ui == 'true' || steps.changes.outputs.nonui_js == 'true'
         uses: 'actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a' # v4.2.0
         with:
           node-version: '22'
@@ -256,7 +263,7 @@ jobs:
           cache-dependency-path: 'cmd/ui/package-lock.json'
 
       - name: 'Install UI Dependencies'
-        if: steps.changes.outputs.ui == 'true'
+        if: steps.changes.outputs.ui == 'true' || steps.changes.outputs.nonui_js == 'true'
         run: npm ci --prefer-offline --no-audit
         working-directory: 'cmd/ui'
 
@@ -269,6 +276,12 @@ jobs:
         if: steps.changes.outputs.ui == 'true'
         run: npm run lint
         working-directory: 'cmd/ui'
+
+      - name: 'Run ESLint on Non-UI JS Scripts'
+        if: steps.changes.outputs.nonui_js == 'true'
+        run: |
+          ./cmd/ui/node_modules/.bin/eslint --no-config-lookup -c tools/lint/eslint.nonui.config.mjs \
+            .github/scripts/*.js tools/nightly_tests/*.js cmd/experiment_state_server/static/*.js
 
       # 3a. GitHub Actions & Nightly JS Script Tests (node:test, no dependencies)
       - name: 'Set up Node.js for JS Script Tests'
