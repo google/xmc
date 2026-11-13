@@ -38,7 +38,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 import dotenv
 from absl import app
@@ -67,6 +67,12 @@ from xmanager_cloud.experiment_state_server.proto import (
     url_pb2,
     work_unit_pb2,
 )
+
+if TYPE_CHECKING:
+    # Type-only imports resolved via xdash._protos and xmanager_cloud;
+    # `from __future__ import annotations` keeps them out of the runtime path.
+    from xdash._protos import messages_pb2 as dashboard_messages_pb2
+    from xmanager_cloud.experiment_state_server import experiment_state_api
 
 # Skip git push snapshot during local test launch
 snapshot_code.push_repo_state = lambda *_args, **_kwargs: type("Dummy", (), {"commit_url": None})()
@@ -150,7 +156,7 @@ def _resolve_image_path() -> str:
     return f"us-docker.pkg.dev/{_require_env('PROJECT_ID')}/xmc/chart-artifact-job:latest"
 
 
-def build_training_chart(xid: int, wid: int) -> Any:
+def build_training_chart(xid: int, wid: int) -> dashboard_messages_pb2.Chart:
     """Builds the Chart plotting the metrics the worker writes to ClickHouse.
 
     The chart is created inline with the dashboard, so the server renames it, generates
@@ -272,7 +278,10 @@ def dashboard_id_for(xid: int, wid: int) -> str:
 
 
 def _publish_dashboard_over_rest(
-    dashboard_endpoint: str, dashboard: Any, dashboard_id: str, chart: Any
+    dashboard_endpoint: str,
+    dashboard: dashboard_messages_pb2.Dashboard,
+    dashboard_id: str,
+    chart: dashboard_messages_pb2.Chart,
 ) -> None:
     """Creates the Dashboard and its Chart through the transcoded REST route."""
     print(f"--> Publishing Dashboard '{dashboard.title}' to HTTP REST {dashboard_endpoint}...")
@@ -298,7 +307,10 @@ def _publish_dashboard_over_rest(
 
 
 def _publish_dashboard_over_grpc(
-    dashboard_endpoint: str, dashboard: Any, dashboard_id: str, chart: Any
+    dashboard_endpoint: str,
+    dashboard: dashboard_messages_pb2.Dashboard,
+    dashboard_id: str,
+    chart: dashboard_messages_pb2.Chart,
 ) -> None:
     """Creates the Dashboard and its Chart through the Dashboard Service gRPC port."""
     print(f"--> Connecting to Dashboard Service gRPC at {dashboard_endpoint}...")
@@ -332,7 +344,11 @@ def create_experiment_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> 
         _publish_dashboard_over_grpc(dashboard_endpoint, dashboard, dashboard_id, chart)
 
 
-def create_chart_artifact(stub: Any, work_unit_name: str, dashboard_url: str) -> Any:
+def create_chart_artifact(
+    stub: experiment_state_api.ExperimentStateGRpcApi,
+    work_unit_name: str,
+    dashboard_url: str,
+) -> artifact_pb2.Artifact:
     """Attaches the ChartArtifact to the work unit.
 
     Only `title` and `metric_names` may be supplied: the server rejects client-set
@@ -359,7 +375,11 @@ def create_chart_artifact(stub: Any, work_unit_name: str, dashboard_url: str) ->
     return stub.create_artifact(request)
 
 
-def create_dashboard_link_artifact(stub: Any, work_unit_name: str, dashboard_url: str) -> Any:
+def create_dashboard_link_artifact(
+    stub: experiment_state_api.ExperimentStateGRpcApi,
+    work_unit_name: str,
+    dashboard_url: str,
+) -> artifact_pb2.Artifact:
     """Attaches a URL artifact linking the work unit to its plotted dashboard.
 
     A chart artifact renders as its metric list and provisioned chart resource — the
@@ -414,7 +434,8 @@ def main(argv: Sequence[str]) -> None:
         experiment_title=_EXPERIMENT_TITLE,
         # No `acls`: XMC makes you (the creator) the owner. See docs/authentication.md.
     ) as experiment:
-        stub = experiment._experiment_state_stub  # pylint: disable=protected-access
+        # pylint: disable=protected-access
+        stub: experiment_state_api.ExperimentStateGRpcApi = experiment._experiment_state_stub
         xid = int(experiment.resource_name.split("/")[-1])
         print(f"\n[1/4] Created Experiment successfully: {experiment.resource_name} (XID: {xid})")
 

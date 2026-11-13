@@ -97,8 +97,6 @@ convention = "google"
 "internal/storage/*/migrations/**" = ["ANN001", "ANN201", "ANN202", "ARG", "SLF001"]
 "examples/**" = ["SLF001"]
 "sdks/python/xmc/integrations/*" = ["ARG002"]
-# Step callbacks intentionally accept a uniform (config, dns_project, dns_zone) signature
-"tools/dev_env/deploy_dev_env.py" = ["ARG001"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.time".msg = "Use time.monotonic() for measuring intervals, deadlines, and elapsed time."

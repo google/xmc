@@ -25,6 +25,7 @@ from unittest.mock import patch
 from tools.common import tool_utils
 from tools.common.tool_utils import HandledError
 from tools.release.dispatch_and_watch import (
+    _extract_page_url,
     create_parser,
     dispatch_and_watch,
 )
@@ -323,6 +324,11 @@ class DispatchAndWatchTest(unittest.TestCase):
         ]
         res = dispatch_and_watch(p)
         self.assertEqual(res["page_url"], "https://google.github.io/xmc/str-out/")
+
+    def test_extract_page_url_non_dict_returns_empty(self) -> None:
+        for non_dict in (None, "https://example.com", ["jobs"], 123):
+            with self.subTest(non_dict=non_dict):
+                self.assertEqual(_extract_page_url(non_dict), "")
 
     def test_state_file_updates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

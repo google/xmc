@@ -74,7 +74,7 @@ def _resolve_body_content(args: argparse.Namespace) -> str | None:
     return None
 
 
-def update_pr_description(args: argparse.Namespace) -> Any:
+def update_pr_description(args: argparse.Namespace) -> dict[str, Any]:
     """Updates the title and/or body/description of a GitHub Pull Request via REST API."""
     parsed = parse_pr_identifier(args.pr)
     owner = parsed["owner"]
