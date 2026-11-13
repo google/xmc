@@ -47,9 +47,21 @@ GENERATED_PATTERNS = (
     r".*\.min\.(js|css)$",
 )
 
+# Bazel build definitions are reported separately and excluded from code totals.
+# These are compiled case-sensitively so lowercase `build` scripts stay in prod.
+BUILD_PATTERNS = (
+    r"(^|.*/)BUILD(\.bazel)?$",
+    r".*\.bzl$",
+)
+
+# English words ending in "test" that are not Go-style `<pkg>test` helper dirs.
+_NON_HELPER_TEST_DIRS = r"(?:latest|attest|contest|protest|detest|greatest)"
+
 TEST_PATTERNS = (
     r".*(_test|\.spec|\.test)\.(go|py|ts|js)$",
     r"(^|.*/)(test|tests|testing|testdouble)/.*",
+    # Go-style test-helper packages such as `prototest/` or `experimenttest/`.
+    rf"(^|.*/)(?!{_NON_HELPER_TEST_DIRS}/)[a-z0-9]+test/.*",
     r".*(fixture|fake|mock).*\.(go|py|ts|js)$",
 )
 
@@ -58,16 +70,29 @@ DOC_PATTERNS = (
     r"(^|.*/)docs/.*",
 )
 
+# Production roots whose behavior changes usually require documentation updates.
+DOC_SYNC_PROD_ROOTS = ("api/", "cmd/", "deploy/", "internal/", "pkg/")
+
+
+def _compile_all(patterns: tuple[str, ...], flags: int = 0) -> tuple[re.Pattern[str], ...]:
+    return tuple(re.compile(p, flags) for p in patterns)
+
+
+# Evaluated in order; the first matching category wins.
+_ORDERED_CATEGORIES = (
+    ("generated", _compile_all(GENERATED_PATTERNS, re.IGNORECASE)),
+    ("build", _compile_all(BUILD_PATTERNS)),
+    ("doc", _compile_all(DOC_PATTERNS, re.IGNORECASE)),
+    ("test", _compile_all(TEST_PATTERNS, re.IGNORECASE)),
+)
+
 
 def classify_file(file_path: str) -> str:
-    """Classifies a relative path as 'generated', 'test', 'doc', or 'prod'."""
+    """Classifies a relative path as 'generated', 'build', 'doc', 'test', or 'prod'."""
     normalized = file_path.replace("\\", "/").strip()
-    if any(re.match(p, normalized, re.IGNORECASE) for p in GENERATED_PATTERNS):
-        return "generated"
-    if any(re.match(p, normalized, re.IGNORECASE) for p in DOC_PATTERNS):
-        return "doc"
-    if any(re.match(p, normalized, re.IGNORECASE) for p in TEST_PATTERNS):
-        return "test"
+    for category, patterns in _ORDERED_CATEGORIES:
+        if any(p.match(normalized) for p in patterns):
+            return category
     return "prod"
 
 
@@ -180,23 +205,32 @@ def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
     return entries + get_untracked_entries(diff_paths, repo_root)
 
 
-def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
-    """Evaluates diff size against mandatory PR sizing thresholds."""
-    entries = get_diff_entries(args.base_ref)
-
-    prod, test, doc, gen = 0, 0, 0, 0
+def tally_lines(entries: list[tuple[int, str]]) -> dict[str, int]:
+    """Sums added lines per category, plus prod lines under DOC_SYNC_PROD_ROOTS."""
+    totals = dict.fromkeys(("prod", "test", "doc", "generated", "build", "doc_sync_prod"), 0)
     for added, path in entries:
         category = classify_file(path)
-        if category == "prod":
-            prod += added
-        elif category == "test":
-            test += added
-        elif category == "doc":
-            doc += added
-        elif category == "generated":
-            gen += added
+        totals[category] += added
+        if category == "prod" and path.startswith(DOC_SYNC_PROD_ROOTS):
+            totals["doc_sync_prod"] += added
+    return totals
 
-    total_code = prod + test
+
+def doc_sync_warnings(totals: dict[str, int]) -> list[str]:
+    """Returns an advisory warning when documented roots change without doc updates."""
+    if totals["doc_sync_prod"] == 0 or totals["doc"] > 0:
+        return []
+    roots = ", ".join(DOC_SYNC_PROD_ROOTS)
+    return [
+        f"Production code under {roots} changed ({totals['doc_sync_prod']} lines) "
+        "with no documentation lines. If behavior, APIs, flags, or config changed, update "
+        "docs/flows/*.md, the affected binary/component/profile README.md, and "
+        "docs/migrations/*.md in the same PR; otherwise state why in the PR body."
+    ]
+
+
+def exceeded_threshold_reasons(prod: int, total_code: int, doc: int) -> list[str]:
+    """Lists every sizing threshold that the diff meets or exceeds."""
     exceeded_reasons: list[str] = []
     if prod >= PROD_THRESHOLD:
         exceeded_reasons.append(
@@ -210,7 +244,14 @@ def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
         exceeded_reasons.append(
             f"Documentation diff ({doc} lines) exceeds threshold ({DOC_THRESHOLD} lines)."
         )
+    return exceeded_reasons
 
+
+def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
+    """Evaluates diff size against mandatory PR sizing thresholds."""
+    totals = tally_lines(get_diff_entries(args.base_ref))
+    total_code = totals["prod"] + totals["test"]
+    exceeded_reasons = exceeded_threshold_reasons(totals["prod"], total_code, totals["doc"])
     should_split = len(exceeded_reasons) > 0
     return {
         "thresholds": {
@@ -219,15 +260,17 @@ def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
             "docs": DOC_THRESHOLD,
         },
         "metrics": {
-            "prod_code_lines": prod,
-            "test_code_lines": test,
+            "prod_code_lines": totals["prod"],
+            "test_code_lines": totals["test"],
             "total_code_lines": total_code,
-            "doc_lines": doc,
-            "generated_lines": gen,
+            "doc_lines": totals["doc"],
+            "generated_lines": totals["generated"],
+            "build_lines": totals["build"],
         },
         "threshold_exceeded": should_split,
         "exceeded_reasons": exceeded_reasons,
         "should_trigger_split_verifier": should_split,
+        "warnings": doc_sync_warnings(totals),
     }
 
 

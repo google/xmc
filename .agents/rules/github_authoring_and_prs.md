@@ -48,6 +48,7 @@ This document defines standards and policy rules for AI agents acting as **Code 
     - **Combined Code (Prod + Tests)**: $\ge 1,000$ lines (including unit, integration, and E2E tests).
     - **Documentation / Markdown**: $\ge 1,000$ lines (measured separately from code).
     - *Generated Code & Lockfiles*: Automatically excluded (`*.pb.go`, `package-lock.json`, `MODULE.bazel.lock`, `go.sum`).
+    - *Build Definitions*: Reported separately as `build_lines` and excluded from code totals (`BUILD`, `BUILD.bazel`, `*.bzl`).
   - **Mandatory Split Verification Subagent**: If any sizing threshold is exceeded, the author agent MUST launch the **PR Split Verification Subagent** per [XMC PR Split Verification Skill](../skills/xmc_pr_split_verification/SKILL.md) prior to opening a PR.
   - **Vertical Slices over Horizontal Layers**: Always decompose work into vertical end-to-end user flow slices (schema + backend + handler + tests) rather than horizontal architectural tiers (all models in PR 1, all handlers in PR 2).
   - **Dead Code & Reachability Invariant**:

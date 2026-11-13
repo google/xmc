@@ -51,9 +51,12 @@ Before requesting user confirmation to open a PR (`gh pr create`), the agent MUS
 | Category | Threshold | Measurement Rule |
 | :--- | :--- | :--- |
 | **Production Code** | **$\ge 400$ lines** | Added + modified lines across production files (`.go`, `.py`, `.ts`, `.js`, `.ng.html`, `.html`, `.scss`, `.css`, `.yaml`, `.tf`, `.proto`). |
-| **Total Code (Prod + Tests)** | **$\ge 1,000$ lines** | Combined production and test code (`*_test.go`, `*_test.py`, `*.spec.ts`, `test/**`). |
+| **Total Code (Prod + Tests)** | **$\ge 1,000$ lines** | Combined production and test code (`*_test.go`, `*_test.py`, `*.spec.ts`, `test/**`, Go-style test-helper packages such as `prototest/**` or `experimenttest/**`). |
 | **Documentation / Markdown** | **$\ge 1,000$ lines** | Markdown files (`.md`, `.markdown`, `.rst`, `docs/**`). Excluded from code calculations. |
+| **Build Definitions** | *Reported only* | `BUILD`, `BUILD.bazel`, `*.bzl`, reported as `build_lines` and excluded from prod and total code. |
 | **Generated Code & Lockfiles** | *Ignored* | Automatically excluded (`*.pb.go`, `package-lock.json`, `MODULE.bazel.lock`, `go.sum`). |
+
+The tool also emits a non-blocking `warnings` list. It flags production changes under `api/`, `cmd/`, `deploy/`, `internal/`, or `pkg/` that ship with zero documentation lines. Resolve the warning per [Documentation Alignment](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity) or explain in the PR body why no docs apply.
 
 If `should_trigger_split_verifier` is `true`, the agent **must not** open a monolithic PR directly. Instead, proceed to Section 2.
 

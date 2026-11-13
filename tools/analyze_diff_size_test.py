@@ -72,6 +72,43 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(analyze_diff_size.classify_file("test/e2e/cluster_test.go"), "test")
         self.assertEqual(analyze_diff_size.classify_file("pkg/testdouble/fixture.go"), "test")
 
+    def test_classify_file_test_helper_packages(self):
+        for path in (
+            "internal/prototest/modify.go",
+            "internal/experiment/experimenttest/builder.go",
+            "pkg/components/bridge/helm/helmtest/chart.go",
+            "securitytest/server.go",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(analyze_diff_size.classify_file(path), "test")
+
+    def test_classify_file_test_helper_false_positives_stay_prod(self):
+        for path in (
+            "deploy/profiles/latest/values.yaml",
+            "pkg/attest/signer.go",
+            "internal/contest/runner.go",
+            "pkg/greatest/hits.go",
+            "pkg/test.go",
+            "pkg/foo/footest.go",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(analyze_diff_size.classify_file(path), "prod")
+
+    def test_classify_file_build(self):
+        for path in (
+            "tools/BUILD.bazel",
+            "BUILD.bazel",
+            "pkg/foo/BUILD",
+            "oci.bzl",
+            "internal/prototest/BUILD.bazel",
+        ):
+            with self.subTest(path=path):
+                self.assertEqual(analyze_diff_size.classify_file(path), "build")
+
+    def test_classify_file_lowercase_build_script_stays_prod(self):
+        self.assertEqual(analyze_diff_size.classify_file("scripts/build"), "prod")
+        self.assertEqual(analyze_diff_size.classify_file("MODULE.bazel"), "prod")
+
     def test_classify_file_doc(self):
         self.assertEqual(analyze_diff_size.classify_file("README.md"), "doc")
         self.assertEqual(
@@ -84,7 +121,7 @@ class AnalyzeDiffSizeTest(unittest.TestCase):
         self.assertEqual(analyze_diff_size.classify_file("pkg/reconciler/handler.go"), "prod")
         self.assertEqual(analyze_diff_size.classify_file("cmd/actuator/main.go"), "prod")
         self.assertEqual(analyze_diff_size.classify_file("deploy/helm/values.yaml"), "prod")
-        self.assertEqual(analyze_diff_size.classify_file("tools/BUILD.bazel"), "prod")
+        self.assertEqual(analyze_diff_size.classify_file("tools/run_affected_tests.py"), "prod")
 
     @mock.patch.object(analyze_diff_size, "list_untracked_files", return_value=[])
     @mock.patch.object(analyze_diff_size.subprocess, "run")
@@ -358,6 +395,68 @@ class AnalyzeDiffSizeThresholdTest(unittest.TestCase):
         self.assertTrue(res["threshold_exceeded"])
         self.assertTrue(res["should_trigger_split_verifier"])
         self.assertTrue(any("Documentation diff" in r for r in res["exceeded_reasons"]))
+
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
+    def test_analyze_diff_size_excludes_build_and_helpers_from_prod(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (300, "pkg/reconciler/handler.go"),  # prod: 300
+            (150, "pkg/reconciler/BUILD.bazel"),  # build: 150
+            (20, "oci.bzl"),  # build: 20
+            (500, "internal/experiment/experimenttest/builder.go"),  # test: 500
+            (10, "docs/flows/reconciliation.md"),  # doc: 10
+        ]
+
+        res = analyze_diff_size.analyze_diff_size(argparse.Namespace(base_ref="origin/main..."))
+
+        self.assertFalse(res["threshold_exceeded"])
+        self.assertEqual(res["metrics"]["prod_code_lines"], 300)
+        self.assertEqual(res["metrics"]["test_code_lines"], 500)
+        self.assertEqual(res["metrics"]["total_code_lines"], 800)
+        self.assertEqual(res["metrics"]["build_lines"], 170)
+        self.assertEqual(res["warnings"], [])
+
+    @mock.patch.object(analyze_diff_size, "get_diff_entries")
+    def test_analyze_diff_size_warns_on_prod_without_docs(self, mock_diff_entries):
+        mock_diff_entries.return_value = [
+            (40, "cmd/actuator/main.go"),
+            (5, "deploy/helm/values.yaml"),
+            (30, "cmd/actuator/main_test.go"),
+        ]
+
+        res = analyze_diff_size.analyze_diff_size(argparse.Namespace(base_ref="origin/main..."))
+
+        self.assertFalse(res["threshold_exceeded"])
+        self.assertEqual(len(res["warnings"]), 1)
+        self.assertIn("(45 lines)", res["warnings"][0])
+        self.assertIn("docs/flows/*.md", res["warnings"][0])
+
+    def test_doc_sync_warnings_boundaries(self):
+        base = {"prod": 0, "test": 0, "doc": 0, "generated": 0, "build": 0, "doc_sync_prod": 0}
+        cases: tuple[tuple[str, dict[str, int], int], ...] = (
+            ("no_prod_changes", {}, 0),
+            ("docs_updated", {"doc_sync_prod": 10, "doc": 1}, 0),
+            ("prod_outside_doc_roots", {"prod": 50}, 0),
+            ("single_line_without_docs", {"doc_sync_prod": 1}, 1),
+        )
+        for name, delta, want in cases:
+            with self.subTest(name=name):
+                self.assertEqual(len(analyze_diff_size.doc_sync_warnings({**base, **delta})), want)
+
+    def test_tally_lines_counts_doc_sync_roots_only_for_prod(self):
+        totals = analyze_diff_size.tally_lines(
+            [
+                (7, "api/v1/service.proto"),
+                (3, "internal/storage/store.go"),
+                (11, "tools/run_affected_tests.py"),
+                (13, "internal/storage/store_test.go"),
+                (17, "internal/storage/BUILD.bazel"),
+            ]
+        )
+
+        self.assertEqual(totals["prod"], 21)
+        self.assertEqual(totals["doc_sync_prod"], 10)
+        self.assertEqual(totals["test"], 13)
+        self.assertEqual(totals["build"], 17)
 
 
 if __name__ == "__main__":
