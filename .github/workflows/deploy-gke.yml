@@ -268,6 +268,7 @@ jobs:
           mkdir -p "${HOME}/.cache/bazel-repo" "${HOME}/.cache/bazel-disk"
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
+          common --disk_cache=${HOME}/.cache/bazel-disk
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL

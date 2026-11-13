@@ -12,12 +12,11 @@ XMC CI workflows execute on standard GitHub-hosted runners (`ubuntu-latest`) wit
 
 - CI builds use the `--config=ci` profile in [`.bazelrc`](../.bazelrc):
   ```ini
-  build:ci --disk_cache=~/.cache/bazel-disk
   build:ci --remote_cache_compression=true
   build:ci --modify_execution_info=GoLink=+no-remote-cache
   test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
   ```
-- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk` before running Bazel and save updated caches on `refs/heads/main`, `merge_group`, or initial cold-start (`matched-key == ''`) runs (while [`.github/workflows/deploy-gke.yml`](../.github/workflows/deploy-gke.yml) restores both caches before building OCI images).
+- [`.github/actions/run-backend-tests/action.yml`](../.github/actions/run-backend-tests/action.yml) and [`.github/workflows/e2e-tests.yml`](../.github/workflows/e2e-tests.yml) restore `~/.cache/bazel-repo` and `~/.cache/bazel-disk`, pass `--disk_cache=${HOME}/.cache/bazel-disk` explicitly to Bazel (avoiding unexpanded `~` in `.bazelrc`), and save updated caches on `refs/heads/main`, `merge_group`, or initial cold-start (`cache-matched-key == ''`) runs (while [`.github/workflows/deploy-gke.yml`](../.github/workflows/deploy-gke.yml) restores both caches and configures `--disk_cache=${HOME}/.cache/bazel-disk` before building OCI images).
 
 ---
 
@@ -136,16 +135,15 @@ Choose one of the two options below for caching on GitHub-hosted runners:
 
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.cache-matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/bazel-disk
           key: bazel-disk-${{ runner.os }}-${{ github.sha }}
 ```
 
-2. In `.bazelrc`, replace the in-cluster remote cache with the local disk cache path under the `ci` config (which `run-backend-tests` enables via `--config=ci`):
+2. In `.bazelrc`, remove the in-cluster remote cache under `ci` (since workflows pass `--disk_cache=${HOME}/.cache/bazel-disk` explicitly to avoid unexpanded `~` in `.bazelrc`):
 ```ini
 # build:ci --remote_cache=grpc://bazel-remote-cache.arc-runners.svc.cluster.local:9092
-build:ci --disk_cache=~/.cache/bazel-disk
 build:ci --remote_cache_compression=true
 build:ci --modify_execution_info=GoLink=+no-remote-cache
 ```

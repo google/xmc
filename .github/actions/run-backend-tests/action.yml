@@ -100,20 +100,21 @@ runs:
           --repository-cache "${HOME}/.cache/bazel-repo" \
           --emulator-wait-seconds "${SPANNER_TIMEOUT_INPUT}" \
           --bazel-flag=--config=ci \
+          --bazel-flag="--disk_cache=${HOME}/.cache/bazel-disk" \
           --bazel-flag=--experimental_repository_cache_hardlinks \
           --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300"
 
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
       # Save repository cache on main/merge_group or when no baseline cache exists yet.
-      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.cache-matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/bazel-repo
         key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
 
     - name: 'Save Bazel Disk Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+      if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.cache-matched-key == '') && steps.classify.outputs.run_backend == 'true' && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
       with:
         path: ~/.cache/bazel-disk
         key: bazel-disk-${{ runner.os }}-${{ github.sha }}

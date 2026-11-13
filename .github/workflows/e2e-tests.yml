@@ -116,6 +116,7 @@ jobs:
           mkdir -p ~/.cache/bazel-repo ~/.cache/bazel-disk
           cat << EOF_BAZEL >> ~/.bazelrc
           common --config=ci
+          common --disk_cache=${HOME}/.cache/bazel-disk
           common --repository_cache=${HOME}/.cache/bazel-repo
           common --experimental_repository_cache_hardlinks
           EOF_BAZEL
@@ -179,14 +180,14 @@ jobs:
 
       - name: 'Save Bazel Repository Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.matched-key == '') && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-repo-restore.outputs.cache-matched-key == '') && steps.cache-bazel-repo-restore.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/bazel-repo
           key: bazel-repo-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'go.mod', 'go.sum') }}
 
       - name: 'Save Bazel Disk Cache'
         uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
-        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.event_name == 'merge_group' || steps.cache-bazel-disk-restore.outputs.cache-matched-key == '') && steps.cache-bazel-disk-restore.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/bazel-disk
           key: bazel-disk-${{ runner.os }}-${{ github.sha }}

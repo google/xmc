@@ -15,10 +15,10 @@ build --incompatible_exclude_starlark_flags_from_exec_config=true
 build --workspace_status_command="python3 tools/common/workspace_status.py"
 build --stamp
 
-# Local Bazel disk cache for GitHub-hosted CI runners (ubuntu-latest).
-# Compress cached blobs and skip caching linked Go binaries (~9 GB of static test
-# executables) in --disk_cache so ephemeral runners do not exhaust disk space.
-build:ci --disk_cache=~/.cache/bazel-disk
+# Local Bazel disk cache settings for GitHub-hosted CI runners (ubuntu-latest).
+# CI workflows pass --disk_cache=${HOME}/.cache/bazel-disk explicitly (avoiding
+# unexpanded '~' in .bazelrc). Compress cached blobs and skip caching linked Go
+# binaries (~9 GB of static test executables) so ephemeral runners do not exhaust disk space.
 build:ci --remote_cache_compression=true
 build:ci --modify_execution_info=GoLink=+no-remote-cache
 # Disable the testcontainers Ryuk reaper on CI. Ephemeral CI runner VMs discard
