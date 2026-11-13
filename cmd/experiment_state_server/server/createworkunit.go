@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
@@ -87,6 +88,10 @@ func (h *WorkUnitHandler) CreateWorkUnit(ctx context.Context, req *msgpb.CreateW
 
 	// 5. Persist the new work unit to the storage layer.
 	newWorkUnit, err := workunit.CreateWorkUnit(ctx, h.storage, wu)
+	if errors.Is(err, workunit.ErrStudyWorkUnitCreation) {
+		logging.Warn(ctx, "CreateWorkUnit rejected on a study experiment", "error", err)
+		return nil, fmt.Errorf("CreateWorkUnit rejected: %w", err)
+	}
 	if err != nil {
 		logging.Error(ctx, "Failed to save work unit", "error", err)
 

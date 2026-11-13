@@ -113,6 +113,10 @@ components warnings, this warning is persisted with the experiment and in its st
 history. On read, drift detection appends its warnings to the stored message instead of replacing
 it, and skips a warning that is already present.
 
+A study's work units are its trials, which only the study controller creates. `CreateWorkUnit` on a
+`STUDY` experiment returns `FAILED_PRECONDITION` without writing anything
+([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)).
+
 ---
 
 ## Testing & Verification

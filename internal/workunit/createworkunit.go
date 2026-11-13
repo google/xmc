@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
@@ -29,7 +31,13 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-// CreateWorkUnit creates a new work unit in storage.
+// ErrStudyWorkUnitCreation is returned when a single work unit is created on a STUDY experiment.
+// Study trials are created only by the study controller, which keeps the trial count equal to the
+// persisted work unit count.
+var ErrStudyWorkUnitCreation = status.Error(codes.FailedPrecondition, "work units of a study experiment are created by the study controller")
+
+// CreateWorkUnit creates a new work unit in storage. It rejects STUDY experiments with
+// ErrStudyWorkUnitCreation.
 func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu *essmsgpb.WorkUnit) (*essmsgpb.WorkUnit, error) {
 	ctx = logging.WithWorkUnitExecutionName(ctx, wu.GetCurrentWorkUnitExecution().GetName())
 	logging.Info(ctx, "Write work unit to storage", "work_unit", wu)
@@ -75,12 +83,9 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 		}
 
 		// 3. Read the Experiment row.
-		exp, err = tx.Experiments.FetchExperiment(ctx, xid)
+		exp, err = fetchWorkUnitParent(ctx, tx, xid)
 		if err != nil {
-			return fmt.Errorf("failed to fetch experiment: %w", err)
-		}
-		if exp == nil {
-			return fmt.Errorf("experiment %d not found", xid)
+			return err
 		}
 
 		// 4. Update the denormalized status fields and resources in the Experiment row using domain rules.
@@ -130,6 +135,22 @@ func CreateWorkUnit(ctx context.Context, txRunner storage.TransactionRunner, wu 
 	logging.Info(ctx, "Updated experiment successfully", "experiment", exp)
 
 	return committedWU, nil
+}
+
+// fetchWorkUnitParent reads the parent experiment of a single new work unit. It returns
+// ErrStudyWorkUnitCreation for a STUDY, whose trials only the study controller creates.
+func fetchWorkUnitParent(ctx context.Context, tx *storage.Transaction, xid int64) (*essmsgpb.Experiment, error) {
+	exp, err := tx.Experiments.FetchExperiment(ctx, xid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch experiment: %w", err)
+	}
+	if exp == nil {
+		return nil, fmt.Errorf("experiment %d not found", xid)
+	}
+	if exp.GetExperimentType() == essmsgpb.Experiment_STUDY {
+		return nil, fmt.Errorf("experiment %d is a study: %w", xid, ErrStudyWorkUnitCreation)
+	}
+	return exp, nil
 }
 
 func ensureWorkUnitExecutionStatus(wu *essmsgpb.WorkUnit) {
