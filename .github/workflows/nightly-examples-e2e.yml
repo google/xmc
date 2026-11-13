@@ -363,7 +363,7 @@ jobs:
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xmc
           "${GITHUB_WORKSPACE}/.venv/bin/pip" install -e sdks/python/xdash
           if [ "${VERIFY_UI:-}" = "true" ]; then
-            "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.61.1"
+            "${GITHUB_WORKSPACE}/.venv/bin/pip" install "playwright==1.61.0"
             # --with-deps is omitted: ubuntu-latest pre-bakes Chrome/Chromium system libraries and
             # its unbounded apt-get update can hang until the job timeout.
             timeout --kill-after=30 300 "${GITHUB_WORKSPACE}/.venv/bin/python3" -m playwright install chromium
