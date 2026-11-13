@@ -119,7 +119,7 @@ func (s *Store) readUnchangedIntent(ctx context.Context, canonicalName string, s
 	// makes the intent's dependencies differ and the plan a write; the read-write fallback then
 	// rejects it authoritatively.
 	if plan, err := ownership.PlanIntent(canonicalName, rec, spec, labels, deps, desiredGen, src); err != nil || plan.Write != ownership.WriteNothing {
-		//nolint:nilerr // Fast-path read misses or errors fall back to the authoritative read-write transaction.
+		//nolint:nilerr // Non-fence PlanIntent rejections and writes fall back to the authoritative read-write transaction.
 		return nil, false, nil
 	}
 	return store.CloneRecord(rec), true, nil

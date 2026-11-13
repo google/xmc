@@ -487,7 +487,6 @@ func MemberExp(qfv QueryFilterVisitor, el *fpb.ExpressionList) (filtervisitor.Pr
 	if err != nil && qfv.GetIsRHS() {
 		joined := strings.Join(path, ".")
 		qfv.AppendBindingString(joined)
-		// Unknown RHS member path falls back to string literal binding.
 		return filtervisitor.String, nil
 	}
 	if err != nil {
