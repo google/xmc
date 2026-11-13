@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"xmanager_cloud/cmd/study_controller/config"
+	"xmanager_cloud/cmd/study_controller/worker"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -101,14 +101,15 @@ func TestRun_CancelledContextExitsZero(t *testing.T) {
 	}
 }
 
-func TestRedisPinger_UnreachableServer(t *testing.T) {
-	client := newRedisClient("127.0.0.1:" + freePort(t))
-	defer client.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func TestReadiness_UnreachableRedis(t *testing.T) {
+	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	defer client.Close(context.Background())
+	rec := httptest.NewRecorder()
 
-	if err := (redisPinger{client: client}).Ping(ctx); err == nil {
-		t.Error("redisPinger.Ping() against a closed port error = nil, want non-nil")
+	newHTTPHandler(client).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("GET /readyz with Redis on a closed port status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
 	}
 }
 
@@ -144,13 +145,13 @@ func startSilentServer(t *testing.T) string {
 	return lis.Addr().String()
 }
 
-// TestReadiness_HungRedisFailsBeforeProbeTimeout uses the production Redis client, including its
-// default retries, to check that /readyz answers 503 within readinessPingTimeout, before the
-// 3s readiness probe timeout, when Redis accepts connections but never replies.
+// TestReadiness_HungRedisFailsBeforeProbeTimeout uses the production Redis consumer client,
+// including its default retries, to check that /readyz answers 503 within readinessPingTimeout,
+// before the 3s readiness probe timeout, when Redis accepts connections but never replies.
 func TestReadiness_HungRedisFailsBeforeProbeTimeout(t *testing.T) {
-	client := newRedisClient(startSilentServer(t))
-	defer client.Close()
-	handler := newHTTPHandler(redisPinger{client: client})
+	client := worker.NewRedisConsumer(startSilentServer(t))
+	defer client.Close(context.Background())
+	handler := newHTTPHandler(client)
 	rec := httptest.NewRecorder()
 
 	start := time.Now()
@@ -165,18 +166,22 @@ func TestReadiness_HungRedisFailsBeforeProbeTimeout(t *testing.T) {
 	}
 }
 
-func TestCloseRedisClient_AlreadyClosed(t *testing.T) {
-	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
-	if err := client.Close(); err != nil {
+func TestStopConsumer_LogsCloseFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	consumer := worker.Start(ctx, client)
+	// Closing the client first makes the consumer's own close fail.
+	if err := client.Close(context.Background()); err != nil {
 		t.Fatalf("client.Close() error = %v", err)
 	}
 	var logs bytes.Buffer
-	ctx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))
+	logCtx := logging.WithLogger(context.Background(), slog.New(slog.NewTextHandler(&logs, nil)))
 
-	closeRedisClient(ctx, client)
+	stopConsumer(logCtx, consumer)
 
-	if !strings.Contains(logs.String(), "Failed to close Redis client") {
-		t.Errorf("closeRedisClient() of a closed client logs = %q, want a close failure warning", logs.String())
+	if !strings.Contains(logs.String(), "Failed to close the study reconcile consumer") {
+		t.Errorf("stopConsumer() with a closed client logs = %q, want a close failure warning", logs.String())
 	}
 }
 

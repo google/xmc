@@ -312,7 +312,7 @@ their sub-paths before the ESS catch-all sees them. Full routing, TLS, and IAM d
 | :--- | :--- | :--- | :--- |
 | **Cloud Spanner** (ESS database) | Source of truth for experiments, work units, executions, operations, artifacts, status messages, dashboards, components, global scheduling pause state (`PauseSchedulingState`), and buffered paused tasks (`PausedTasks`). | ESS, Actuator, Reconciler, Log Monitor, Dashboard Service, Health Service | ESS, Actuator, Health Service, ROD, Dashboard Service |
 | **Cloud Spanner** (XID database) | Experiment ID allocation and authorization records. | XID Service | XID Service, Health Service |
-| **Redis** (Memorystore or in-cluster) | Actuation task stream (`xmc-tasks-stream`), dead-letter stream (`xmc-dlq-stream`), pause broadcast stream (`xmc-pause-stream`), resumption trigger stream (`xmc-scheduling-resume-stream`), OAuth2 session cache. | ESS, Actuator, Health Service | Actuator, ESS, Health Service |
+| **Redis** (Memorystore or in-cluster) | Actuation task stream (`xmc-tasks-stream`), dead-letter stream (`xmc-dlq-stream`), pause broadcast stream (`xmc-pause-stream`), resumption trigger stream (`xmc-scheduling-resume-stream`), study reconcile tick stream (`xmc-study-reconcile-stream`) and its dead-letter stream (`xmc-study-reconcile-dlq-stream`), OAuth2 session cache. | ESS, Actuator, Health Service, Study Controller | Actuator, ESS, Health Service, Study Controller |
 | **Redpanda / Kafka** | Durable buffer for the metrics firehose (topic `xmc-metrics`). Cloud Pub/Sub is a supported alternative backend, chosen with the Ingestion Gateway's `-message_bus` flag. | Ingestion Gateway | ClickHouse |
 | **ClickHouse** | Analytical store for time-series metrics (`xmc_metrics` table). | ClickHouse Kafka engine + materialized view | Dashboard Service |
 | **Pub/Sub** | Transport for workload log entries exported from Cloud Logging. | Cloud Logging sink | Log Monitor |
@@ -354,6 +354,13 @@ trust boundary. Each message carries three parts:
 
 The Actuator validates both tokens and the body hash before acting. A tampered or replayed payload
 fails verification and is rejected.
+
+Study reconcile ticks on `xmc-study-reconcile-stream` are a documented exception: they are unsigned
+hints, delivered at least once. A tick only names a study (`StudyReconcilePayload`, protojson); the
+Study Controller derives every action from the study's state, which it reads from ESS with its own
+identity, so a forged tick can at most cause an extra reconcile of an existing study. Tick fields
+must never carry intent or state; a field that does needs a signed envelope like the
+`ActuatorPayload`'s.
 
 ### 7.3 Identifier propagation
 

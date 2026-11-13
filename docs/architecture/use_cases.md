@@ -219,7 +219,8 @@ An operation that never completes means a task did not make it through the queue
 
 1. **The Redis stream** — is the message pending in `actuator-group` on `xmc-tasks-stream`?
 2. **The DLQ** — messages exhaust 5 retries (2-minute processing timeout each) and land in
-   `xmc-dlq-stream` with a failure reason.
+   `xmc-dlq-stream` with a failure reason. A message without a `data` field lands there at once,
+   with reason `missing_data`.
 3. **Abandoned messages** — a crashed Actuator leaves messages unacknowledged; they are reclaimed
    after 5 minutes idle.
 4. **Actuator logs** — signature or OIDC verification failures reject the task at the boundary.

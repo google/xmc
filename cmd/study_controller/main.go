@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Package main is the entrypoint of xmc-study-controller, the workload of the hpo component.
-// It connects to Redis and serves health and metrics endpoints; /readyz reports whether Redis is
-// reachable.
+// It consumes study reconcile ticks from Redis and serves health and metrics endpoints; /readyz
+// reports whether Redis is reachable.
 package main
 
 import (
@@ -29,10 +29,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/redis/go-redis/v9"
 	"xmanager_cloud/cmd/study_controller/config"
+	"xmanager_cloud/cmd/study_controller/worker"
 	"xmanager_cloud/internal/logging"
-	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
 // HTTP server timeouts bound per-connection resource usage (e.g. slow-client attacks).
@@ -75,40 +74,24 @@ func run(ctx context.Context, args []string) int {
 	return 0
 }
 
-// listenAndServe listens on cfg.Port and serves the HTTP endpoints, with readiness backed by a
-// Redis client for cfg.RedisAddr, until ctx is done. The Redis client is closed on return.
+// listenAndServe listens on cfg.Port, consumes study reconcile ticks from the Redis server at
+// cfg.RedisAddr and serves the HTTP endpoints until ctx is done. The Redis consumer client also
+// backs readiness. The consumer is stopped and its client closed on return.
 func listenAndServe(ctx context.Context, cfg config.Config) error {
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %s: %w", cfg.Port, err)
 	}
-	client := newRedisClient(cfg.RedisAddr)
-	defer closeRedisClient(ctx, client)
-	return serve(ctx, lis, newHTTPHandler(redisPinger{client: client}))
+	client := worker.NewRedisConsumer(cfg.RedisAddr)
+	consumer := worker.Start(ctx, client)
+	defer stopConsumer(ctx, consumer)
+	return serve(ctx, lis, newHTTPHandler(client))
 }
 
-// newRedisClient returns a client for the Redis server at addr. It reads the password from
-// REDIS_PASSWORD and connects lazily, on the first command. Context deadlines bound socket I/O,
-// so a Redis server that accepts connections but never replies fails a readiness ping after
-// readinessPingTimeout rather than after the client's longer read timeout.
-func newRedisClient(addr string) *redis.Client {
-	return redisclient.NewClient(redisclient.Config{Addr: addr, ContextTimeoutEnabled: true})
-}
-
-// redisPinger adapts a go-redis client to the pinger interface of the readiness check.
-type redisPinger struct {
-	client *redis.Client
-}
-
-// Ping sends a Redis PING and returns its error, if any.
-func (p redisPinger) Ping(ctx context.Context) error {
-	return p.client.Ping(ctx).Err()
-}
-
-// closeRedisClient closes client, logging rather than returning a failure: it runs on shutdown.
-func closeRedisClient(ctx context.Context, client *redis.Client) {
-	if err := client.Close(); err != nil {
-		logging.Warn(ctx, "Failed to close Redis client", "error", err)
+// stopConsumer stops consumer, logging rather than returning a failure: it runs on shutdown.
+func stopConsumer(ctx context.Context, consumer *worker.Consumer) {
+	if err := consumer.Close(context.WithoutCancel(ctx)); err != nil {
+		logging.Warn(ctx, "Failed to close the study reconcile consumer", "error", err)
 	}
 }
 

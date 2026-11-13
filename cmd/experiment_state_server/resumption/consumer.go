@@ -17,7 +17,6 @@ package resumption
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -27,7 +26,7 @@ import (
 )
 
 const (
-	defaultDrainTimeout = 5 * time.Second
+	defaultDrainTimeout = redisclient.SettleTimeout + 3*time.Second // XREADGROUP block + settle
 )
 
 // ConsumerConfig defines the configuration required to initialize the resumption stream consumer.
@@ -86,8 +85,8 @@ func StartConsumer(ctx context.Context, cfg ConsumerConfig, worker Worker) (*Con
 	client.InitializeClient(ctx)
 	client.SetTaskHandler(handler.HandleTask)
 
-	workerID := essWorkerID(constants.ESSResumptionWorkerID)
-	cleanupWorkerID := essWorkerID(constants.ESSResumptionCleanupWorkerID)
+	workerID := redisclient.HostConsumerName(constants.ESSResumptionWorkerID)
+	cleanupWorkerID := redisclient.HostConsumerName(constants.ESSResumptionCleanupWorkerID)
 
 	consumerCtx, cancel := context.WithCancel(ctx)
 	c := &Consumer{
@@ -154,12 +153,4 @@ func (c *Consumer) Close() error {
 		}
 	})
 	return err
-}
-
-func essWorkerID(prefix string) string {
-	hostname, err := os.Hostname()
-	if err != nil || hostname == "" {
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("%s-%s", prefix, hostname)
 }
