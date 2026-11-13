@@ -75,9 +75,10 @@ func validateRedisAddr(addr string) error {
 	return nil
 }
 
-// validatePort reports whether port is a decimal TCP port number between 1 and 65535.
+// validatePort reports whether port is a decimal TCP port number between 1 and 65535. A sign is
+// rejected: the dialer would read "+6379" as a service name rather than a port.
 func validatePort(port string) error {
-	n, err := strconv.Atoi(port)
+	n, err := strconv.ParseUint(port, 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid port %q: must be a number", port)
 	}
