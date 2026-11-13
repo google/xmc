@@ -22,6 +22,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -650,60 +651,121 @@ def verify_helm_min_version(min_version: str = MIN_HELM_VERSION) -> str:
     return out
 
 
+_DNS1123_RE = re.compile(r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?\Z")
+
+
+def _profile_catalog_names(chart_dir: Path) -> set[str]:
+    """Returns component directory names under chart_dir/components containing Chart.yaml."""
+    return {p.parent.name for p in (chart_dir / "components").glob("*/Chart.yaml")}
+
+
+def _list_cluster_components(namespace: str) -> list[Mapping[str, Any]]:
+    """Lists Component CRs in namespace via kubectl, returning [] when absent or unavailable."""
+    try:
+        res = run_command(
+            ["kubectl", "get", "components.xmc.dev", "-n", namespace, "-o", "json"],
+            check=False,
+            capture_output=True,
+            log_cmd=False,
+            log_on_error=False,
+        )
+    except FileNotFoundError:
+        log_info("kubectl not found on PATH; skipping retired Component unprotect check.")
+        return []
+    if res.returncode != 0 or not (res.stdout or "").strip():
+        return []
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return []
+    raw_items = data.get("items") if isinstance(data, Mapping) else None
+    items = raw_items if isinstance(raw_items, list) else []
+    return [item for item in items if isinstance(item, Mapping)]
+
+
 def _retired_disabled_component_name(
     item: Mapping[str, Any], release_name: str, catalog_names: set[str]
 ) -> str:
     """Returns CR name when item is a disabled, deletion-protected CR removed from catalog_names."""
     meta: Mapping[str, Any] = raw_m if isinstance(raw_m := item.get("metadata"), Mapping) else {}
     ann: Mapping[str, Any] = raw_a if isinstance(raw_a := meta.get("annotations"), Mapping) else {}
-    name = str(meta.get("name") or "")
+    raw_name = meta.get("name")
+    name = raw_name if isinstance(raw_name, str) and _DNS1123_RE.match(raw_name) else ""
     if not name or name in catalog_names or ann.get("meta.helm.sh/release-name") != release_name:
         return ""
     spec: Mapping[str, Any] = raw_s if isinstance(raw_s := item.get("spec"), Mapping) else {}
-    is_retired_disabled = not parse_bool_flag(spec.get("enabled", False)) and parse_bool_flag(
+    is_retired_disabled = not parse_bool_flag(spec.get("enabled", True)) and parse_bool_flag(
         spec.get("deletionProtection", True)
     )
     return name if is_retired_disabled else ""
 
 
 def _unprotect_retired_profile_components(
-    namespace: str, chart_dir: Path, release_name: str = "xmc-profile"
+    namespace: str, catalog_names: set[str], release_name: str = "xmc-profile"
 ) -> None:
-    """Disables deletionProtection on disabled xmc-profile CRs removed from chart_dir."""
-    res = run_command(
-        ["kubectl", "get", "components.xmc.dev", "-n", namespace, "-o", "json"],
-        check=False,
-        capture_output=True,
-        log_cmd=False,
-        log_on_error=False,
-    )
-    if res.returncode != 0 or not (res.stdout or "").strip():
+    """Disables deletionProtection on disabled xmc-profile CRs removed from catalog_names."""
+    if not catalog_names:
         return
-    try:
-        data = json.loads(res.stdout)
-    except json.JSONDecodeError:
-        return
-    raw_items = data.get("items") if isinstance(data, Mapping) else None
-    items = raw_items if isinstance(raw_items, list) else []
-    catalog_names = {p.parent.name for p in (chart_dir / "components").glob("*/Chart.yaml")}
-    for item in items:
-        if isinstance(item, Mapping) and (
-            name := _retired_disabled_component_name(item, release_name, catalog_names)
-        ):
+    for item in _list_cluster_components(namespace):
+        if name := _retired_disabled_component_name(item, release_name, catalog_names):
             log_info(f"Clearing deletionProtection on retired disabled Component '{name}'...")
             run_command(
                 [
                     "kubectl",
                     "patch",
-                    "components.xmc.dev",
-                    name,
                     "-n",
                     namespace,
                     "--type=merge",
                     "-p",
                     '{"spec":{"deletionProtection":false}}',
+                    "--",
+                    "components.xmc.dev",
+                    name,
                 ]
             )
+
+
+def _load_sanitized_profile_values(
+    namespace: str, catalog_names: set[str], release_name: str = "xmc-profile"
+) -> dict[str, Any] | None:
+    """Returns stored Helm values with retired disabled component keys stripped, or None."""
+    if not catalog_names:
+        return None
+    try:
+        res = run_command(
+            ["helm", "get", "values", release_name, "-n", namespace, "-o", "json"],
+            check=False,
+            capture_output=True,
+            log_cmd=False,
+            log_on_error=False,
+        )
+    except FileNotFoundError:
+        return None
+    if res.returncode != 0 or not (res.stdout or "").strip():
+        return None
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        return None
+    comps = data.get("components") if isinstance(data, Mapping) else None
+    if not isinstance(data, Mapping) or not isinstance(comps, Mapping):
+        return None
+    kept = {
+        k: v
+        for k, v in comps.items()
+        if k in catalog_names
+        or (isinstance(v, Mapping) and parse_bool_flag(v.get("enabled", False)))
+    }
+    return {**data, "components": kept} if len(kept) != len(comps) else None
+
+
+def _resolve_default_profile_chart() -> Path:
+    """Resolves deploy/profiles/stable-2026a from runfiles first, then workspace symlink target."""
+    for base in (Path(__file__).absolute().parents[2], Path(__file__).resolve().parents[2]):
+        candidate = base / "deploy" / "profiles" / "stable-2026a"
+        if candidate.is_dir():
+            return candidate
+    return Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a"
 
 
 def deploy_component_profile(config: DeploymentConfig) -> None:
@@ -715,24 +777,37 @@ def deploy_component_profile(config: DeploymentConfig) -> None:
     Raises:
         FileNotFoundError: If config.profile_values is specified and missing.
     """
+    if config.profile_values and not Path(config.profile_values).is_file():
+        raise FileNotFoundError(
+            f"Profile values file '{config.profile_values}' does not exist or is not a file."
+        )
     ns = config.namespace or "xmc"
-    chart_dir = Path(__file__).resolve().parents[2] / "deploy" / "profiles" / "stable-2026a"
-    cmd = [
-        "helm",
-        "upgrade",
-        "--install",
-        "--reset-then-reuse-values",
-        "xmc-profile",
-        str(chart_dir),
-    ]
-    if config.profile_values:
-        if not Path(config.profile_values).is_file():
-            raise FileNotFoundError(
-                f"Profile values file '{config.profile_values}' does not exist or is not a file."
-            )
-        cmd.extend(["-f", config.profile_values])
-    cmd.extend(["-n", ns, "--wait"])
-    _unprotect_retired_profile_components(ns, chart_dir)
-    log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
-    run_command(cmd)
+    chart_dir = _resolve_default_profile_chart()
+    catalog_names = _profile_catalog_names(chart_dir)
+    _unprotect_retired_profile_components(ns, catalog_names)
+    sanitized = _load_sanitized_profile_values(ns, catalog_names)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        mode = "--reset-then-reuse-values"
+        extra_files: list[str] = []
+        if sanitized is not None:
+            mode = "--reset-values"
+            prev_path = Path(tmp_dir) / "sanitized-values.json"
+            prev_path.write_text(json.dumps(sanitized), encoding="utf-8")
+            extra_files.extend(["-f", str(prev_path)])
+        if config.profile_values:
+            extra_files.extend(["-f", config.profile_values])
+        cmd = [
+            "helm",
+            "upgrade",
+            "--install",
+            mode,
+            "xmc-profile",
+            str(chart_dir),
+            *extra_files,
+            "-n",
+            ns,
+            "--wait",
+        ]
+        log_info(f"Deploying default component profile (stable-2026a) into namespace '{ns}'...")
+        run_command(cmd)
     log_success("Default component profile (stable-2026a) deployed.")

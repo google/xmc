@@ -8,7 +8,7 @@
 
 This directory runs upstream [Open Source Vizier](https://github.com/google/vizier)'s
 `DefaultVizierServer` (`google-vizier==0.1.24`) on port 7077 so that KinD tests and GKE dev
-environments have an endpoint for the `stable-2026a` `vizier` component.
+environments have an endpoint for the experimental `vizier` wrapper component.
 
 | File | Purpose |
 | :--- | :--- |
@@ -32,9 +32,6 @@ KIND_CLUSTER="<kind_cluster_name>"
 kind load docker-image xmc-vizier:0.1.24 --name "${KIND_CLUSTER}"
 kubectl apply -n xmc -f test/e2e/testdata/vizier/vizier.yaml
 ```
-
-The manual suite `//test/e2e:vizier_kind_test` does this in a test namespace and checks that the
-`vizier` component becomes Ready; see [`test/e2e/README.md`](../../README.md).
 
 ## Run on a GKE Dev Slot
 

@@ -38,6 +38,9 @@ py_library(
 py_test(
     name = "tool_utils_test",
     srcs = ["tool_utils_test.py"],
+    data = [
+        "//deploy/profiles/stable-2026a:chart",
+    ],
     imports = ["../.."],
     deps = [
         ":tool_utils",
