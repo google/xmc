@@ -26,7 +26,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
-	v1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	"sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	"xmanager_cloud/cmd/actuator/k8s_client"
 	"xmanager_cloud/cmd/reconciler/clusterqueue"
 	"xmanager_cloud/cmd/reconciler/shared"

@@ -39,6 +39,14 @@ linters:
     - revive
     # Phase 5: Cyclomatic complexity enforcement
     - gocyclo
+    # Phase 6: Idiomatic hygiene & architectural boundary enforcement
+    - depguard
+    - dogsled
+    - dupword
+    - nolintlint
+    - nosprintfhostport
+    - predeclared
+    - usestdlibvars
 
 linters-settings:
   gofmt:
@@ -50,6 +58,46 @@ linters-settings:
       - cancelled
       - cancelling
       - labelled
+  dupword:
+    ignore:
+      - READ
+  nolintlint:
+    allow-unused: false
+    require-explanation: true
+    require-specific: true
+  usestdlibvars:
+    http-method: true
+    http-status-code: true
+    time-weekday: true
+    time-month: true
+    time-layout: true
+    crypto-hash: true
+    default-rpc-path: true
+  depguard:
+    rules:
+      postgres-no-spanner:
+        files:
+          - "**/internal/storage/postgres/**"
+        deny:
+          - pkg: "cloud.google.com/go/spanner"
+            desc: "Postgres storage packages must remain isolated from Spanner (internal/storage/AGENTS.md)"
+          - pkg: "xmanager_cloud/internal/storage/spanner"
+            desc: "Postgres storage packages must not import Spanner packages (internal/storage/AGENTS.md)"
+      spanner-no-postgres:
+        files:
+          - "**/internal/storage/spanner/**"
+        deny:
+          - pkg: "github.com/jackc/pgx"
+            desc: "Spanner storage packages must remain isolated from PostgreSQL (internal/storage/AGENTS.md)"
+          - pkg: "xmanager_cloud/internal/storage/postgres"
+            desc: "Spanner storage packages must not import PostgreSQL packages (internal/storage/AGENTS.md)"
+      pkg-and-internal-no-cmd:
+        files:
+          - "**/pkg/**"
+          - "**/internal/**"
+        deny:
+          - pkg: "xmanager_cloud/cmd"
+            desc: "Reusable pkg/ and internal/ libraries must not import service cmd/ packages"
   nestif:
     min-complexity: 4
   gocyclo:
@@ -84,8 +132,19 @@ linters-settings:
       - name: waitgroup-by-value
       - name: atomic
       - name: duplicated-imports
+      - name: deep-exit
+      - name: empty-block
+      - name: empty-lines
+      - name: identical-branches
+      - name: if-return
+      - name: modifies-value-receiver
+      - name: optimize-operands-order
+      - name: unnecessary-stmt
+      - name: unreachable-code
 
 issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
   exclude-dirs:
     - cmd/ui/node_modules
   exclude-rules:

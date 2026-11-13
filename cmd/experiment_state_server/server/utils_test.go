@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -652,14 +653,15 @@ func TestHandleEnqueueActionError(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
 			}
+			wantSubstr := "failed to enqueue"
 			if tc.wantValErr {
-				if !errors.Is(err, grpcerr.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
-				}
-			} else {
-				if !errors.Is(err, grpcerr.ErrInternal) {
-					t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
-				}
+				wantSubstr = "failed to validate work unit execution name"
+			}
+			if !strings.Contains(err.Error(), wantSubstr) {
+				t.Errorf("handleEnqueueActionError() error = %q, want substring %q", err.Error(), wantSubstr)
+			}
+			if !errors.Is(err, grpcerr.ErrInternal) {
+				t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
 			}
 		})
 	}

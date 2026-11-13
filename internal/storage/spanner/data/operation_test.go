@@ -35,11 +35,11 @@ var (
 
 func mustMarshalAny(t *testing.T, pb proto.Message) *anypb.Any {
 	t.Helper()
-	any, err := anypb.New(pb)
+	anyVal, err := anypb.New(pb)
 	if err != nil {
 		t.Fatalf("Failed to marshal proto to Any: %v", err)
 	}
-	return any
+	return anyVal
 }
 
 func TestOperationRowToProto(t *testing.T) {

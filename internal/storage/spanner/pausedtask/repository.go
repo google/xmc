@@ -75,7 +75,7 @@ func (r *Repository) WithTx(tx *spanner.ReadWriteTransaction) *TxRepository {
 // Create buffers the insert of a new paused task in the transaction. TaskID, Action, and CreateTime
 // must be provided by the caller. Constraint violations (e.g. a duplicate task) surface when the
 // transaction commits.
-func (r *TxRepository) Create(ctx context.Context, task *storage.PausedTask) error {
+func (r *TxRepository) Create(_ context.Context, task *storage.PausedTask) error {
 	if err := validateTask(task); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func (r *TxRepository) Create(ctx context.Context, task *storage.PausedTask) err
 
 // MarkProcessed buffers the soft-delete of a batch of paused tasks in the transaction.
 // Calling MarkProcessed on an already-processed task overwrites its resolution fields (last-write-wins).
-func (r *TxRepository) MarkProcessed(ctx context.Context, resolutions []storage.PausedTaskResolution) error {
+func (r *TxRepository) MarkProcessed(_ context.Context, resolutions []storage.PausedTaskResolution) error {
 	if len(resolutions) == 0 {
 		return nil
 	}

@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -79,7 +80,7 @@ func (c syncStateCache) WaitForCacheSync(context.Context) bool { return c.synced
 
 func TestCacheSyncedChecker(t *testing.T) {
 	for _, synced := range []bool{true, false} {
-		err := cacheSyncedChecker(syncStateCache{synced: synced})(httptest.NewRequest("GET", "/readyz", nil))
+		err := cacheSyncedChecker(syncStateCache{synced: synced})(httptest.NewRequest(http.MethodGet, "/readyz", nil))
 		if (err == nil) != synced {
 			t.Errorf("cacheSyncedChecker() with synced=%t: error = %v", synced, err)
 		}

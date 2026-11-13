@@ -56,7 +56,7 @@ func TestBuildHTTPServer(t *testing.T) {
 		t.Fatal("buildHTTPServer returned nil server")
 	}
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rec, req)
 

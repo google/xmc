@@ -68,9 +68,9 @@ func Lookup(name string) (Environment, bool) {
 
 // All returns all registered execution environments.
 func All() map[string]Environment {
-	copy := make(map[string]Environment)
+	copied := make(map[string]Environment)
 	for k, v := range executionEnvironments {
-		copy[k] = v
+		copied[k] = v
 	}
-	return copy
+	return copied
 }

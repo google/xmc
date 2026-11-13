@@ -36,7 +36,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	metricspb "xmanager_cloud/api/protos/metrics"
-	ingestiongateway "xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
+	"xmanager_cloud/cmd/ingestion_gateway/ingestiongateway"
 	"xmanager_cloud/test/metrics/infra"
 )
 

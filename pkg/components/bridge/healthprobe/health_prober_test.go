@@ -131,7 +131,7 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 	})
 	t.Run("bounded body drain", func(t *testing.T) {
 		largePayload := make([]byte, 128*1024)
-		tsLarge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tsLarge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(largePayload)
 		}))
@@ -150,7 +150,7 @@ func TestNetworkHealthProber_ProbeHTTP_And_TCP(t *testing.T) {
 	})
 	t.Run("body read error preserves status code", func(t *testing.T) {
 		client := &http.Client{
-			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
 				return &http.Response{
 					StatusCode: http.StatusTeapot,
 					Body:       &errReadCloser{err: errors.New("simulated body read error")},
@@ -179,7 +179,7 @@ type errReadCloser struct {
 	err error
 }
 
-func (e *errReadCloser) Read(p []byte) (n int, err error) {
+func (e *errReadCloser) Read(_ []byte) (n int, err error) {
 	return 0, e.err
 }
 
@@ -194,7 +194,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestNetworkHealthProber_DefaultProberHTTP_TCP(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
 	defer ts.Close()
 
 	p := healthprobe.NewNetworkHealthProber(
@@ -260,10 +260,10 @@ func TestFakeHealthProber(t *testing.T) {
 
 	// Preconfigured result
 	fake.SetResult("http://target:8080", &healthprobe.HealthProbeResult{
-		Healthy: false, StatusCode: 503, Message: "Service Unavailable",
+		Healthy: false, StatusCode: http.StatusServiceUnavailable, Message: "Service Unavailable",
 	})
 	res, err = fake.ProbeHTTP(ctx, "http://target:8080", time.Second)
-	if err != nil || res.Healthy || res.StatusCode != 503 {
+	if err != nil || res.Healthy || res.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("expected preconfigured unhealthy result, got res=%+v, err=%v", res, err)
 	}
 

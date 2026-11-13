@@ -498,7 +498,7 @@ func parseTimestampVal(val string) (time.Time, bool) {
 	if t, err := time.Parse(time.RFC3339, cleanVal); err == nil {
 		return t, true
 	}
-	if t, err := time.Parse("2006-01-02", cleanVal); err == nil {
+	if t, err := time.Parse(time.DateOnly, cleanVal); err == nil {
 		return t, true
 	}
 	return time.Time{}, false
@@ -629,7 +629,7 @@ func VisitValue(qfv QueryFilterVisitor, val string) (filtervisitor.PrimType, err
 		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
 			cleanVal = val[1 : len(val)-1]
 		}
-		_, err := time.Parse("2006-01-02", cleanVal)
+		_, err := time.Parse(time.DateOnly, cleanVal)
 		if err != nil {
 			goto fallbackString
 		}

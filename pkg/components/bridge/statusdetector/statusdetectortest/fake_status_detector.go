@@ -68,7 +68,7 @@ func (f *FakeStatusDetector) GetCalls() []statusdetector.WrapperRef {
 }
 
 // DetectStatus returns the preconfigured status or error for the requested resource.
-func (f *FakeStatusDetector) DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
+func (f *FakeStatusDetector) DetectStatus(_ context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, ref)

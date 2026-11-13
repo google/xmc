@@ -171,7 +171,7 @@ func runWorkerInBackground(ctx context.Context, workerID string, workerFunc func
 func testSuccess(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	logging.Info(ctx, "Testing successful message processing...")
 	// Setup: Mock function to succeed.
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
 	})
 
@@ -208,7 +208,7 @@ func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 	defer func() { consumer.ProcessTimeout = processTimeout }()
 	defer func() { consumer.AbandonedMessageTimeout = abandonedMessageTimeout }()
 
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		time.Sleep(8 * time.Second)
 		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
 	})
@@ -236,7 +236,7 @@ func testPending(ctx context.Context, consumer *redisclient.ConsumerClient, publ
 func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	logging.Info(ctx, "Testing message retry on function error if retryable...")
 	// Setup: Mock function to fail.
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		if data == "bad-no-retry" {
 			return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: errors.New("non-retryable error")}
 		}
@@ -319,7 +319,7 @@ func testRetryAndMoveToDLQ(ctx context.Context, consumer *redisclient.ConsumerCl
 func testCleanup(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	logging.Info(ctx, "Testing cleanup of abandoned messages...")
 	// Setup: Mock function to fail, so we can see it gets re-processed and retried.
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: true, Error: errors.New("error")}
 	})
 
@@ -369,7 +369,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 	var mu sync.Mutex
 	processedCount := make(map[string]int)
 
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		time.Sleep(200 * time.Millisecond) // Sleep to distribute work
 		mu.Lock()
 		processedCount[data]++
@@ -435,7 +435,7 @@ func testLoadBalancing(ctx context.Context, consumer *redisclient.ConsumerClient
 func testTimeout(ctx context.Context, consumer *redisclient.ConsumerClient, publisher redisclient.Publisher) (StreamStats, error) {
 	logging.Info(ctx, "Testing message timeout...")
 	// Setup: Mock function to timeout.
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		time.Sleep(processTimeout + 500*time.Millisecond)
 		return redisclient.TaskResult{WasRunSuccessful: true, ShouldBeRetried: false, Error: nil}
 	})
@@ -560,7 +560,7 @@ func testExtendClaim(ctx context.Context, consumer *redisclient.ConsumerClient, 
 	var mu sync.Mutex
 	runs := 0
 	var extendErrs []error
-	consumer.SetTaskHandler(func(ctx context.Context, workerID, data string) redisclient.TaskResult {
+	consumer.SetTaskHandler(func(ctx context.Context, _, data string) redisclient.TaskResult {
 		mu.Lock()
 		runs++
 		mu.Unlock()
