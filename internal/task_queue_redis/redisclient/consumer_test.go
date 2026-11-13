@@ -37,9 +37,11 @@ type fakeRedisClient struct {
 	addedArgs []*redis.XAddArgs
 	// settleCtxErrs records ctx.Err() of every XAck and XAdd call.
 	settleCtxErrs []error
-	// readErr and autoClaimErr are returned by XReadGroup and XAutoClaim.
+	// readErr and autoClaimErr are returned by XReadGroup and XAutoClaim; onAutoClaim, if set,
+	// runs before XAutoClaim returns.
 	readErr      error
 	autoClaimErr error
+	onAutoClaim  func()
 	// groupCreates counts XGroupCreateMkStream calls; onGroupCreate runs on each of them.
 	groupCreates  int
 	onGroupCreate func(n int)
@@ -73,6 +75,9 @@ func (f *fakeRedisClient) XReadGroup(context.Context, *redis.XReadGroupArgs) *re
 }
 
 func (f *fakeRedisClient) XAutoClaim(context.Context, *redis.XAutoClaimArgs) *redis.XAutoClaimCmd {
+	if f.onAutoClaim != nil {
+		f.onAutoClaim()
+	}
 	cmd := redis.NewXAutoClaimCmd(context.Background())
 	cmd.SetErr(f.autoClaimErr)
 	return cmd
@@ -392,26 +397,37 @@ func TestStartWorker_OtherReadErrorsKeepGroup(t *testing.T) {
 	}
 }
 
-func TestRunCleanup_RecreatesMissingGroup(t *testing.T) {
-	client, fake := newTestConsumer(time.Second)
-	fake.autoClaimErr = errNoGroup
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fake.onGroupCreate = func(int) { cancel() }
-
-	done := make(chan struct{})
-	go func() {
-		client.RunCleanup(ctx, "cleanup-1")
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("RunCleanup did not re-create the group after NOGROUP")
+func TestRunCleanup_AutoClaimError(t *testing.T) {
+	tests := []struct {
+		name        string
+		shutdown    bool // XAutoClaim fails because the worker is shutting down.
+		wantCreates int
+	}{
+		{name: "NOGROUP re-creates the group", wantCreates: 1},
+		{name: "error during shutdown keeps the group", shutdown: true},
 	}
-	if fake.groupCreates != 1 {
-		t.Errorf("XGroupCreateMkStream calls = %d, want 1", fake.groupCreates)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client, fake := newTestConsumer(time.Second)
+			fake.autoClaimErr = errNoGroup
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fake.onGroupCreate = func(int) { cancel() }
+			if tc.shutdown {
+				fake.onAutoClaim = cancel
+			}
+
+			done := make(chan struct{})
+			go func() { client.RunCleanup(ctx, "cleanup-1"); close(done) }()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("RunCleanup did not return")
+			}
+			if fake.groupCreates != tc.wantCreates {
+				t.Errorf("XGroupCreateMkStream calls = %d, want %d", fake.groupCreates, tc.wantCreates)
+			}
+		})
 	}
 }
 
@@ -423,7 +439,8 @@ func TestProcessMessage_SettlesAfterShutdown(t *testing.T) {
 		wantAcked []string
 	}{
 		{name: "success is acknowledged", result: TaskResult{WasRunSuccessful: true}, wantAcked: []string{"msg-1"}},
-		{name: "non-retryable failure is dead-lettered", result: TaskResult{Error: errors.New("fatal")}, wantAdds: 1, wantAcked: []string{"msg-1"}},
+		// The failure may only be the cancellation, so it is retried rather than dead-lettered.
+		{name: "non-retryable failure is re-added", result: TaskResult{Error: errors.New("fatal")}, wantAdds: 1, wantAcked: []string{"msg-1"}},
 		{name: "retryable failure is re-added", result: TaskResult{ShouldBeRetried: true, Error: errors.New("temporary")}, wantAdds: 1, wantAcked: []string{"msg-1"}},
 	}
 	for _, tc := range tests {
@@ -440,6 +457,11 @@ func TestProcessMessage_SettlesAfterShutdown(t *testing.T) {
 
 			if len(fake.addedArgs) != tc.wantAdds || !slices.Equal(fake.ackedIDs, tc.wantAcked) {
 				t.Errorf("after shutdown: %d XAdds, acked %v; want %d and %v", len(fake.addedArgs), fake.ackedIDs, tc.wantAdds, tc.wantAcked)
+			}
+			for _, a := range fake.addedArgs {
+				if a.Stream != client.StreamName {
+					t.Errorf("after shutdown: XAdd to %q, want a retry on %q", a.Stream, client.StreamName)
+				}
 			}
 			for i, err := range fake.settleCtxErrs {
 				if err != nil {

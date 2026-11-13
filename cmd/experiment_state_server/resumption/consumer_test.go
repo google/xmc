@@ -123,12 +123,3 @@ func TestConsumer_DrainTimeout(t *testing.T) {
 		t.Errorf("Close() elapsed = %v, want < 1s (drain timeout should be bounded)", elapsed)
 	}
 }
-
-func TestEssWorkerID(t *testing.T) {
-	t.Parallel()
-
-	id := essWorkerID("test-prefix")
-	if !strings.HasPrefix(id, "test-prefix-") {
-		t.Errorf("essWorkerID(\"test-prefix\") = %q, want prefix \"test-prefix-\"", id)
-	}
-}

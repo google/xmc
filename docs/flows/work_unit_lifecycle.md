@@ -330,6 +330,9 @@ sequenceDiagram
 | ESS crashes after committing but before enqueuing | Operation exists with no task; work unit stays in its pre-actuation state. | Client retries the RPC; the idempotency key prevents duplicate cluster mutations if a task did land. |
 | Actuator crashes mid-task | Message is unacknowledged in the Redis stream. | Reclaimed after the 5-minute abandoned-message timeout and redelivered to another consumer. |
 | Task fails repeatedly | Retried up to 5 times with a 2-minute processing timeout each. | After exhaustion, moved to `xmc-dlq-stream` for operator inspection. |
+| Task message has no `data` field | Cannot be handled, now or on a retry. | Moved to `xmc-dlq-stream` at once with reason `missing_data`, and acknowledged. |
+| Actuator shuts down while a task runs | The handler's context is cancelled, so the task may fail only because of the shutdown. | A failure seen during shutdown is treated as retryable: re-added to the stream unless its retries are exhausted. A success is still acknowledged. |
+| Redis loses the consumer group (`NOGROUP`) | Redis restarted without persistence, or was unreachable when the Actuator started. | The Actuator re-creates the stream and group (log: `Consumer group is missing; re-creating it`) and resumes; messages pending in the lost group are gone. |
 | Kubernetes rejects the JobSet | Actuator records the failure on the operation. | Surfaced to the user as a status message; requires a corrected resubmission. |
 | Kueue never admits the workload | Work unit sits in `SCHEDULING`. | The Workload reconciler surfaces the `Inadmissible` reason as a status message rather than leaving it silent. |
 | Pods fail to start | Work unit sits in `STARTING`. | The JobSet reconciler inspects the pods after a delay and reports image pull or scheduling errors. |

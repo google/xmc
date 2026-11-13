@@ -16,6 +16,7 @@ package redisclient
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -49,9 +50,20 @@ const (
 	DefaultBatchSize = 1
 	// cleanupInterval is the interval at which the cleanup goroutine checks for abandoned messages.
 	cleanupInterval = 500 * time.Millisecond
-	// settleTimeout bounds the Redis writes that acknowledge, retry or dead-letter a handled message.
-	settleTimeout = 5 * time.Second
+	// SettleTimeout bounds the Redis writes that acknowledge, retry or dead-letter a handled
+	// message. A consumer that drains its loops on shutdown should wait longer than this.
+	SettleTimeout = 5 * time.Second
 )
+
+// HostConsumerName returns "<prefix>-<hostname>", the name of this pod's consumer in a consumer
+// group. It falls back to "<prefix>-unknown" if the hostname is not available.
+func HostConsumerName(prefix string) string {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		hostname = "unknown"
+	}
+	return fmt.Sprintf("%s-%s", prefix, hostname)
+}
 
 // NewConsumer creates a new redis client and configures client settings for consumption.
 func NewConsumer(redisConfig Config, streamName, groupName, dlqStreamName string, maxRetries int, processTimeout, abandonedMessageTimeout time.Duration, readBatchSize int64) *ConsumerClient {
@@ -222,10 +234,10 @@ func sleepUnlessDone(ctx context.Context, d time.Duration) {
 }
 
 // settle runs write, which acknowledges, retries or dead-letters a message, on a context that is
-// not cancelled with ctx and is bounded by settleTimeout, so that a message handled during
+// not cancelled with ctx and is bounded by SettleTimeout, so that a message handled during
 // shutdown is still settled instead of being re-delivered.
 func settle(ctx context.Context, write func(context.Context)) {
-	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), SettleTimeout)
 	defer cancel()
 	write(settleCtx)
 }
@@ -267,6 +279,11 @@ func (c *ConsumerClient) processMessage(ctx context.Context, msg redis.XMessage,
 	for {
 		select {
 		case <-done:
+			if ctx.Err() != nil && !result.WasRunSuccessful {
+				// Shutdown cancelled the handler, which may be the only cause of the failure:
+				// retry the message instead of dead-lettering it.
+				result.ShouldBeRetried = true
+			}
 			settle(ctx, func(ctx context.Context) { c.handleResult(ctx, msg, result) })
 			return
 
@@ -375,6 +392,9 @@ func (c *ConsumerClient) RunCleanup(ctx context.Context, workerID string) {
 			}).Result()
 
 			if err != nil && err != redis.Nil {
+				if ctx.Err() != nil {
+					continue // Shutting down: the next select returns.
+				}
 				logging.Error(ctx, fmt.Sprintf("Cleanup worker %s XAutoClaim error: %v", workerID, err))
 				c.recreateGroupIfMissing(ctx, err)
 			} else if len(claimed) > 0 {

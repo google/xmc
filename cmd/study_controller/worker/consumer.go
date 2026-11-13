@@ -16,8 +16,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -26,9 +24,10 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 )
 
-// defaultDrainTimeout bounds how long Close waits for the worker and cleanup loops. It exceeds the
-// 2s XREADGROUP block of the worker loop.
-const defaultDrainTimeout = 5 * time.Second
+// defaultDrainTimeout bounds how long Close waits for the worker and cleanup loops. It covers the
+// 2s XREADGROUP block of the worker loop plus redisclient.SettleTimeout, so a tick being settled
+// when Close is called finishes before the client is closed.
+const defaultDrainTimeout = redisclient.SettleTimeout + 3*time.Second
 
 // NewRedisConsumer returns a Redis consumer of the study reconcile stream for the Redis server at
 // addr. It reads the password from REDIS_PASSWORD and connects lazily. Context deadlines bound its
@@ -64,8 +63,8 @@ func Start(ctx context.Context, client redisclient.Consumer) *Consumer {
 	client.SetTaskHandler(handleTask)
 	loopCtx, cancel := context.WithCancel(ctx)
 	c := &Consumer{client: client, cancel: cancel, drainTimeout: defaultDrainTimeout}
-	workerID := hostWorkerID(constants.StudyControllerWorkerID)
-	cleanupWorkerID := hostWorkerID(constants.StudyControllerCleanupWorkerID)
+	workerID := redisclient.HostConsumerName(constants.StudyControllerWorkerID)
+	cleanupWorkerID := redisclient.HostConsumerName(constants.StudyControllerCleanupWorkerID)
 	c.runLoop(func() { client.StartWorker(loopCtx, workerID) })
 	c.runLoop(func() { client.RunCleanup(loopCtx, cleanupWorkerID) })
 	logging.Info(ctx, "Started study reconcile consumer",
@@ -84,9 +83,9 @@ func (c *Consumer) runLoop(loop func()) {
 }
 
 // Close stops the loops and closes the Redis client. It waits for the loops to return, but at
-// most the drain timeout (5s) and only until ctx is done; after that it logs a warning and closes
+// most the drain timeout (8s) and only until ctx is done; after that it logs a warning and closes
 // the client anyway, leaving a stuck loop to fail on the closed client. A tick being handled when
-// Close is called is still acknowledged or dead-lettered. Calls after the first return nil.
+// Close is called is still acknowledged or retried. Calls after the first return nil.
 func (c *Consumer) Close(ctx context.Context) error {
 	var err error
 	c.once.Do(func() {
@@ -112,13 +111,4 @@ func (c *Consumer) waitForLoops(ctx context.Context) {
 	case <-time.After(c.drainTimeout):
 		logging.Warn(ctx, "Study reconcile consumer loops did not stop within the drain timeout", "timeout", c.drainTimeout)
 	}
-}
-
-// hostWorkerID returns "<prefix>-<hostname>", the consumer name of this pod in the consumer group.
-func hostWorkerID(prefix string) string {
-	hostname, err := os.Hostname()
-	if err != nil || hostname == "" {
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("%s-%s", prefix, hostname)
 }
