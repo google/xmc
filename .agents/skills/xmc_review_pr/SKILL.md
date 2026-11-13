@@ -102,7 +102,7 @@ To eliminate **stochastic omission variance** (where dynamic subagents might for
    - **Pillar 2: Single Responsibility Principle & Target Complexity Limit** (`core_engineering.md#1-srp`)
    - **Pillar 3: Defensive Input Validation & Boundary Checks** (`core_engineering.md`)
    - **Pillar 4: Concurrency & `context.Context` Propagation Safety** (`golang.md` / `python.md`)
-   - **Pillar 5: Test Double Fidelity & Deterministic Test Execution** (`core_engineering.md#4`)
+   - **Pillar 5: Test Double Fidelity, Deterministic Execution & Anti-Gaming Coverage** (`core_engineering.md#4`, `core_engineering.md#5`)
    - **Pillar 6: Backward Compatibility & Contract Protection** (`core_engineering.md`)
    - **Pillar 7: Dependency Graph & Build System Boundaries** (`core_engineering.md`)
    - **Pillar 8: Documentation & Contract Alignment** (`core_engineering.md#5`)

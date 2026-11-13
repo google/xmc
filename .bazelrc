@@ -30,4 +30,9 @@ test:ci --test_env=TESTCONTAINERS_RYUK_DISABLED=true
 test --test_env=PYTHONHASHSEED=0
 test --test_env=TZ=UTC
 
+# Deterministic coverage collection (LCOV combined report across workspace packages)
+coverage --combined_report=lcov
+coverage --experimental_fetch_all_coverage_outputs
+coverage --instrumentation_filter="^//(api|cmd|deploy|examples|internal|pkg|sdks|tools)[/:]"
+
 

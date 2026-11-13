@@ -86,6 +86,65 @@ runs:
           --bazel-flag=--experimental_repository_cache_hardlinks \
           --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300"
 
+    - name: 'Enforce Backend Diff Coverage (diff-cover)'
+      if: steps.classify.outputs.run_backend == 'true' && github.event_name == 'pull_request'
+      env:
+        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
+        TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
+      shell: bash
+      run: |
+        COMPARE_BRANCH="origin/${GITHUB_BASE_REF:-main}"
+        mapfile -t CHANGED_CODE < <(git diff --name-only --diff-filter=ACMR "${COMPARE_BRANCH}...HEAD" -- '*.go' '*.py')
+        if [[ "${#CHANGED_CODE[@]}" -eq 0 ]]; then
+          echo "NOTICE: No modified .go or .py files in diff; skipping backend diff-cover."
+          exit 0
+        fi
+        declare -A PKG_SET=()
+        for f in "${CHANGED_CODE[@]}"; do
+          [[ -e "${f}" ]] || continue
+          dir="$(dirname "${f}")"
+          while [[ "${dir}" != "." && ! -f "${dir}/BUILD.bazel" && ! -f "${dir}/BUILD" ]]; do
+            dir="$(dirname "${dir}")"
+          done
+          if [[ "${dir}" == "." ]]; then
+            if [[ -f "BUILD.bazel" || -f "BUILD" ]]; then
+              PKG_SET["//:all"]=1
+            fi
+          else
+            PKG_SET["//${dir}:all"]=1
+          fi
+        done
+        if [[ "${#PKG_SET[@]}" -eq 0 ]]; then
+          echo "NOTICE: No Bazel packages found for modified .go/.py files; skipping backend diff-cover."
+          exit 0
+        fi
+        PKG_EXPR="$(IFS='+'; echo "${!PKG_SET[*]}")"
+        mapfile -t COV_TARGETS < <(bazel query --noimplicit_deps \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
+          "kind('.*_test rule', ${PKG_EXPR}) except attr(tags, '\\b(e2e|integration|manual)\\b', ${PKG_EXPR})")
+        if [[ "${#COV_TARGETS[@]}" -eq 0 ]]; then
+          echo "NOTICE: No unit test targets in modified packages (${PKG_EXPR}); skipping backend diff-cover."
+          exit 0
+        fi
+        if ! command -v diff-cover &>/dev/null; then
+          pip install --no-cache-dir "diff-cover>=9.2.0"
+        fi
+        bazel coverage \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
+          --config=ci \
+          --remote_upload_local_results=false \
+          --experimental_repository_cache_hardlinks \
+          --test_output=errors \
+          --test_tag_filters=-e2e,-integration,-manual \
+          --test_timeout="${TEST_TIMEOUT},300,300,300" \
+          -- "${COV_TARGETS[@]}"
+        LCOV_REPORT="$(bazel info --repository_cache="${HOME}/.cache/bazel-repo" output_path)/_coverage/_coverage_report.dat"
+        if [[ -s "${LCOV_REPORT}" ]]; then
+          diff-cover "${LCOV_REPORT}" \
+            --compare-branch="${COMPARE_BRANCH}" \
+            --fail-under=80
+        fi
+
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
       # Only save repository cache on main branch pushes when external dependencies change.

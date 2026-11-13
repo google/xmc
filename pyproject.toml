@@ -60,6 +60,8 @@ select = [
     "RUF019",  # Ruff: Unnecessary key check before dictionary access
     "S506",    # Bandit: Probable use of unsafe yaml.load
     "C901",    # mccabe: Cyclomatic complexity enforcement
+    "PT015",   # flake8-pytest-style: Assertion always fails, replace with pytest.fail() or self.fail()
+    "PT018",   # flake8-pytest-style: Composite assertion should be broken into multiple parts
 ]
 ignore = ["B904", "SIM102", "SIM105", "SIM117", "E501", "PERF203"]
 
@@ -81,6 +83,7 @@ convention = "google"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "time.time".msg = "Use time.monotonic() for measuring intervals, deadlines, and elapsed time."
+"unittest.skip".msg = "Unconditional test skipping is forbidden; fix the test or use a conditional skipUnless with an explicit # noqa: TID251 - <reason> justification."
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

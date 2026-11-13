@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Lint enforcing UI template, UI test, and GitHub workflow test file naming."""
+"""Lint enforcing UI/workflow file naming, 1-to-1 unit test pairing, and Bazel test wiring."""
 
 from __future__ import annotations
 
@@ -33,6 +33,72 @@ ALLOWLIST: dict[str, str] = {
     "cmd/ui/index.html": "Angular SPA root entry HTML configured in cmd/ui/angular.json.",
 }
 
+# Downward-only ratchet of pre-existing source files that predated the 1-to-1 unit test
+# gate. Adding a paired *_test.* file (or deleting the source file) makes the entry stale
+# and requires removing it from this set. New files may NEVER be added here.
+LEGACY_UNPAIRED_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "api/filter/expression_helper.go",
+        "api/filter/go/filter/parser.go",
+        "api/filter/go/filtervisitor/visitor.go",
+        "api/filter/go/queryfilterbase/base.go",
+        "cmd/actuator/config.go",
+        "cmd/actuator/metadata.go",
+        "cmd/log_monitor/database.go",
+        "cmd/reconciler/config.go",
+        "cmd/reconciler/metadata.go",
+        "cmd/ui/app/common/components/artifact_card/artifact_card.ts",
+        "cmd/ui/app/common/components/artifacts_list/artifacts_column/artifacts_column.ts",
+        "cmd/ui/app/common/components/confirmation_dialog/confirmation_dialog.ts",
+        "cmd/ui/app/common/components/confirmation_dialog/confirmation_dialog_service.ts",
+        "cmd/ui/app/common/components/status_chip/status_chip.ts",
+        "cmd/ui/app/common/components/status_message/status_message.ts",
+        "cmd/ui/app/common/components/status_message_filter/status_message_filter.ts",
+        "cmd/ui/app/common/components/urls_widget/urls_widget.ts",
+        "cmd/ui/app/common/components/work_units_status_bar/work_units_status_bar.ts",
+        "cmd/ui/app/common/components/xid_badge/xid_badge.ts",
+        "cmd/ui/app/experiment_page/work_units_table/work_units_table_store.ts",
+        "cmd/ui/app/service/snackbar_service.ts",
+        "cmd/ui/app/work_unit_page/work_unit_page_store.ts",
+        "deploy/cli/launch.py",
+        "internal/broadcast/events.go",
+        "internal/common/health/spanner_health.go",
+        "internal/kubernetes/common/constants/constants.go",
+        "internal/query_generator/dialect/postgres/postgres.go",
+        "internal/query_generator/dialect/spanner/spanner.go",
+        "internal/query_generator/filter/statement.go",
+        "internal/query_generator/normalizer/lexer.go",
+        "internal/query_generator/predicate/predicate.go",
+        "internal/query_generator/querytools/unnest.go",
+        "internal/storage/pause.go",
+        "internal/storage/postgres/data/proto.go",
+        "internal/storage/spanner/artifact/repository.go",
+        "internal/storage/spanner/component/mutations.go",
+        "internal/storage/spanner/dashboard/repository.go",
+        "internal/storage/spanner/experiment/repository.go",
+        "internal/storage/spanner/migrations/version/generate_version.py",
+        "internal/storage/spanner/operation/repository.go",
+        "internal/storage/spanner/spanner.go",
+        "internal/storage/spanner/statusmessage/history.go",
+        "internal/storage/spanner/statusmessage/repository.go",
+        "internal/storage/spanner/workunit/createworkunit.go",
+        "internal/storage/spanner/xid/repository.go",
+        "internal/task_queue_redis/redisclient/common.go",
+        "internal/task_queue_redis/redisclient/publisher.go",
+        "internal/task_queue_redis/validator/validator.go",
+        "pkg/auth/oauth2/gateway.go",
+        "pkg/auth/oauth2/handlers.go",
+        "pkg/auth/oauth2/middleware.go",
+        "pkg/auth/oauth2/provider.go",
+        "pkg/components/bridge/component_rate_limiter.go",
+        "pkg/components/bridge/statusdetector/status_detector.go",
+        "pkg/components/store/ownership/ownership_metrics.go",
+        "scripts/validate_redpanda_setup.py",
+        "tools/common/workspace_status.py",
+        "tools/lint/dev_binary_guard.py",
+    }
+)
+
 _TS_EXT_RE = re.compile(r"\.[cm]?tsx?$")
 _SCREENSHOT_BAD_SPEC_RE = re.compile(r"(?:_test|_spec|\.test|\.spec)\.[cm]?tsx?$")
 _NON_SCREENSHOT_BAD_TS_RE = re.compile(r"(?:\.spec|_spec|\.test)\.[cm]?tsx?$")
@@ -41,6 +107,25 @@ _BAD_WORKFLOW_TEST_RE = re.compile(
     r"(?:_test|_spec|\.spec)\.[cm]?[jt]sx?$"
     r"|(?:\.test)\.(?:[cm]js|[cm]?tsx?)$"
     r"|(?:^|/)test_[^/]*\.[cm]?[jt]sx?$"
+)
+_GO_EXEMPT_DIRS = frozenset(
+    {
+        "vendor",
+        "third_party",
+        "node_modules",
+        "testing",
+        "testdata",
+        "securitytest",
+        "healthprobetest",
+        "profilecontract",
+    }
+)
+_GO_EXEMPT_NAMES = frozenset({"main.go", "test_utils.go", "test_mocks.go"})
+_GO_FUNC_RE = re.compile(r"^func\s+", re.MULTILINE)
+_PY_DEF_RE = re.compile(r"^\s*(?:async\s+)?def\s+\w+", re.MULTILINE)
+_TS_LOGIC_RE = re.compile(
+    r"@(?:Component|Injectable|Directive|Pipe)\b"
+    r"|\bexport\s+(?:(?:abstract\s+)?class|(?:async\s+)?function)\s+\w+"
 )
 
 
@@ -128,6 +213,177 @@ def classify_path_violation(path: str) -> str | None:
     return None
 
 
+def _expected_go_test(path: str) -> str | None:
+    """Return the expected *_test.go path for a Go source file, or None if exempt."""
+    if (
+        not path.endswith(".go")
+        or path.endswith("_test.go")
+        or path == "test/dataengine/harness.go"
+    ):
+        return None
+    p = Path(path)
+    if p.name in _GO_EXEMPT_NAMES or p.name.endswith("_test_utils.go"):
+        return None
+    if any(part in _GO_EXEMPT_DIRS for part in p.parts):
+        return None
+    return f"{path[:-3]}_test.go"
+
+
+def _expected_py_test(path: str) -> tuple[str, str] | None:
+    """Return candidate (*_test.py, test_*.py) paths for a Python module, or None if exempt."""
+    if not path.endswith(".py") or path.endswith("_test.py"):
+        return None
+    p = Path(path)
+    if p.name in {"__init__.py", "conftest.py"} or p.name.startswith("test_"):
+        return None
+    if path.startswith(("examples/", "test/")) or "/examples/" in path or "/testdata/" in path:
+        return None
+    return str(p.with_name(f"{p.stem}_test.py")), str(p.with_name(f"test_{p.name}"))
+
+
+def _expected_ui_ts_test(path: str) -> str | None:
+    """Return the expected *_test.ts path for a UI TypeScript module, or None if exempt."""
+    if not (path.startswith("cmd/ui/app/") and path.endswith(".ts")):
+        return None
+    if path.endswith(
+        ("_test.ts", ".spec.ts", "_spec.ts", ".test.ts", ".d.ts", "_harness.ts", "/mock_data.ts")
+    ):
+        return None
+    if "/testing/" in path or path in {
+        "cmd/ui/app/app_config.ts",
+        "cmd/ui/app/side_panel/side_panel_registry.ts",
+    }:
+        return None
+    return f"{path[:-3]}_test.ts"
+
+
+def _expected_github_script_test(path: str) -> str | None:
+    """Return the expected *.test.js path for a top-level .github/scripts/*.js module."""
+    if not (path.startswith(".github/scripts/") and path.endswith(".js")):
+        return None
+    rel = path.removeprefix(".github/scripts/")
+    if "/" in rel or rel.endswith(".test.js") or _BAD_WORKFLOW_TEST_RE.search(rel):
+        return None
+    return f"{path[:-3]}.test.js"
+
+
+def _has_executable_declarations(repo_root: Path, path: str, pattern: re.Pattern[str]) -> bool:
+    """Return True if repo_root/path exists on disk and matches pattern."""
+    file_path = repo_root / path
+    if not file_path.is_file():
+        return False
+    return bool(pattern.search(file_path.read_text(encoding="utf-8", errors="replace")))
+
+
+def _paired_test_spec(
+    path: str,
+) -> tuple[tuple[str, ...], re.Pattern[str] | None, str] | None:
+    """Return (candidate_tests, logic_pattern, error_message) for a source file, or None."""
+    if js_test := _expected_github_script_test(path):
+        msg = f"Node workflow scripts under .github/scripts/ must have a paired {js_test}."
+        return (js_test,), None, msg
+    if go_test := _expected_go_test(path):
+        msg = f"Go source files with executable functions must have a paired {go_test}."
+        return (go_test,), _GO_FUNC_RE, msg
+    if py_tests := _expected_py_test(path):
+        msg = f"Python modules with functions/methods must have a paired {py_tests[0]}."
+        return py_tests, _PY_DEF_RE, msg
+    if ts_test := _expected_ui_ts_test(path):
+        msg = f"Angular UI modules under cmd/ui/app/ must have a paired {ts_test}."
+        return (ts_test,), _TS_LOGIC_RE, msg
+    return None
+
+
+def _check_missing_paired_test(
+    path: str, tracked_set: set[str], repo_root: Path
+) -> str | None:
+    """Return a violation if a source file lacks its required 1-to-1 unit test file."""
+    if path in LEGACY_UNPAIRED_ALLOWLIST or (spec := _paired_test_spec(path)) is None:
+        return None
+    candidates, pattern, message = spec
+    if any(candidate in tracked_set for candidate in candidates):
+        return None
+    if pattern is not None and not _has_executable_declarations(repo_root, path, pattern):
+        return None
+    return message
+
+
+def _find_nearest_build_file(path: str, tracked_set: set[str]) -> tuple[str, str] | None:
+    """Return (build_file_rel_path, target_rel_to_build_dir) for path, or None."""
+    parent = Path(path).parent
+    while True:
+        for bname in ("BUILD.bazel", "BUILD"):
+            candidate = bname if parent == Path(".") else f"{parent.as_posix()}/{bname}"
+            if candidate in tracked_set:
+                rel = path if parent == Path(".") else str(Path(path).relative_to(parent))
+                return candidate, rel
+        if parent == Path("."):
+            return None
+        parent = parent.parent
+
+
+def _check_unwired_bazel_test(
+    path: str, tracked_set: set[str], repo_root: Path
+) -> str | None:
+    """Return a violation if a *_test.go or *_test.py file is not wired in BUILD.bazel."""
+    is_go_test = path.endswith("_test.go") and not path.startswith(("vendor/", "third_party/"))
+    is_py_test = path.endswith("_test.py") and not path.startswith(("test/e2e/", "test/regression/"))
+    if not (is_go_test or is_py_test):
+        return None
+    if "BUILD.bazel" not in tracked_set and "BUILD" not in tracked_set:
+        return None
+    found = _find_nearest_build_file(path, tracked_set)
+    if found is None:
+        return f"Test file {path} has no enclosing BUILD.bazel file."
+    build_rel, rel_target = found
+    build_file = repo_root / build_rel
+    if not build_file.is_file():
+        return None
+    content = build_file.read_text(encoding="utf-8", errors="replace")
+    fname = Path(path).name
+    if rel_target not in content and fname not in content and "glob(" not in content:
+        return f"Test file {path} is not registered in {build_rel} (add to go_test/py_test srcs)."
+    return None
+
+
+def _is_paired_in_tracked(path: str, tracked_set: set[str]) -> bool:
+    """Return True if a legacy allowlisted source file now has a paired unit test."""
+    if (go_test := _expected_go_test(path)) and go_test in tracked_set:
+        return True
+    if (py_tests := _expected_py_test(path)) and (
+        py_tests[0] in tracked_set or py_tests[1] in tracked_set
+    ):
+        return True
+    if (ts_test := _expected_ui_ts_test(path)) and ts_test in tracked_set:
+        return True
+    return bool((js_test := _expected_github_script_test(path)) and js_test in tracked_set)
+
+
+def _find_stale_allowlist_entries(tracked_set: set[str]) -> list[str]:
+    """Return sorted allowlist entries that no longer exist or now have paired unit tests."""
+    stale = [path for path in ALLOWLIST if path not in tracked_set]
+    if "MODULE.bazel" in tracked_set:
+        for path in LEGACY_UNPAIRED_ALLOWLIST:
+            if path not in tracked_set or _is_paired_in_tracked(path, tracked_set):
+                stale.append(path)
+    else:
+        for path in LEGACY_UNPAIRED_ALLOWLIST:
+            if path in tracked_set and _is_paired_in_tracked(path, tracked_set):
+                stale.append(path)
+    return sorted(set(stale))
+
+
+def _classify_repo_violation(
+    path: str, tracked_set: set[str], repo_root: Path
+) -> str | None:
+    """Validate path naming, 1-to-1 unit test pairing, and BUILD.bazel test registration."""
+    if (naming_error := classify_path_violation(path)) is not None:
+        return naming_error
+    if (pairing_error := _check_missing_paired_test(path, tracked_set, repo_root)) is not None:
+        return pairing_error
+    return _check_unwired_bazel_test(path, tracked_set, repo_root)
+
+
 def _list_tracked_paths(repo_root: Path) -> list[str]:
     """List git-tracked repository paths rooted at repo_root."""
     if not repo_root.is_dir() or not (repo_root / ".git").exists():
@@ -147,7 +403,7 @@ def _list_tracked_paths(repo_root: Path) -> list[str]:
 
 
 def check_file_naming(args: argparse.Namespace) -> dict[str, Any]:
-    """Validate UI and workflow file naming across tracked repository files.
+    """Validate UI/workflow file naming, 1-to-1 test pairing, and Bazel test wiring.
 
     Args:
         args: Parsed CLI namespace containing repo_root.
@@ -157,25 +413,25 @@ def check_file_naming(args: argparse.Namespace) -> dict[str, Any]:
 
     Raises:
         HandledError: If repo_root is invalid, allowlist entries are stale, or
-            any tracked file violates naming conventions.
+            any tracked file violates naming or test-pairing conventions.
     """
     repo_root = Path(args.repo_root).resolve()
     tracked_paths = _list_tracked_paths(repo_root)
     tracked_set = set(tracked_paths)
 
-    stale_allowlist = [path for path in sorted(ALLOWLIST) if path not in tracked_set]
+    stale_allowlist = _find_stale_allowlist_entries(tracked_set)
     violations = [
         {"path": path, "reason": reason}
         for path in tracked_paths
-        if (reason := classify_path_violation(path)) is not None
+        if (reason := _classify_repo_violation(path, tracked_set, repo_root)) is not None
     ]
     if stale_allowlist or violations:
         raise HandledError(
-            f"Found {len(violations)} file-naming violation(s) and "
+            f"Found {len(violations)} file-naming/test-cohesion violation(s) and "
             f"{len(stale_allowlist)} stale allowlist entry/entries.",
-            "Rename misnamed template/test files to match UI & workflow naming "
-            "conventions (.ng.html, *_test.ts, *.screenshot.spec.ts, *.test.js) "
-            "and prune stale ALLOWLIST entries.",
+            "Ensure templates and tests follow naming and 1-to-1 test-pairing conventions "
+            "(.ng.html, *_test.go, *_test.py, *_test.ts, *.screenshot.spec.ts, *.test.js), "
+            "register test files in BUILD.bazel, and prune stale ALLOWLIST entries.",
             details={
                 "violations": violations,
                 "stale_allowlist": stale_allowlist,

@@ -157,6 +157,17 @@ export default tseslint.config(
       '@angular-eslint/prefer-standalone': 'off',
       'max-lines-per-function': 'off',
       complexity: 'off',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CallExpression[callee.name=/^(fdescribe|fit|xdescribe|xit)$/]',
+          message: 'Focused (fdescribe, fit) and skipped (xdescribe, xit) tests are forbidden.',
+        },
+        {
+          selector: 'CallExpression[callee.property.name=/^(only|skip)$/]',
+          message: 'Focused (.only) and skipped (.skip) tests are forbidden in CI.',
+        },
+      ],
     },
   },
   {

@@ -116,10 +116,10 @@ Destinations by language, all reachable through `.githooks/pre-commit` and its `
 
 | Language | Destination |
 | :--- | :--- |
-| Python | [`pyproject.toml`](../../pyproject.toml) ruff `select` and banned-api config, mypy |
-| Go | [`.golangci.yml`](../../.golangci.yml), `nogo_config.json`, custom checks in `tools/lint/` |
-| TypeScript / UI | `cmd/ui/eslint.config.js`, prettier, `tools/lint/check_file_naming.py` (UI template/test and `.github/scripts/` test naming) |
-| Bazel | buildifier |
+| Python | [`pyproject.toml`](../../pyproject.toml) ruff `select` (`PT015`, `PT018`) and banned-api config (`unittest.skip`), mypy, `tools/lint/check_file_naming.py` (`*_test.py` pairing & `py_test` wiring), `diff-cover` via `tools/run_affected_tests.py --coverage` |
+| Go | [`.golangci.yml`](../../.golangci.yml), `nogo_config.json`, custom checks in `tools/lint/` (`check_go_determinism`, `check_file_naming.py` for `*_test.go` pairing & `go_test` wiring), `diff-cover` via `tools/run_affected_tests.py --coverage` |
+| TypeScript / UI | `cmd/ui/eslint.config.js` (including banned `fit`/`fdescribe`/`xit`/`xdescribe`), prettier, `tools/lint/check_file_naming.py` (UI template/test naming and 1-to-1 `*_test.ts` / `*.test.js` pairing), `diff-cover` on Karma/Node LCOV |
+| Bazel | buildifier, `tools/lint/check_file_naming.py` (`go_test`/`py_test` registration in `BUILD.bazel`) |
 | Terraform | [`.tflint.hcl`](../../.tflint.hcl) |
 | Agent docs (`.agents/**/*.md`, `AGENTS.md`) | `tools/lint/check_agent_doc_paths.py` (path references must exist) |
 
