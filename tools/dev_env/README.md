@@ -277,7 +277,7 @@ python3 tools/dev_env/dev_env.py gke-deploy \
 - `--profile-values`: Optional values YAML file passed to `helm -f` when deploying `xmc-profile` (requires `helm >= 3.14.0`).
 
 > [!NOTE]
-> The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy. It also passes a SHA-256 of `deploy/helm` as the `helm_chart_content_hash` blueprint variable (recorded in the umbrella Helm release description), so template-only chart changes trigger a real Helm upgrade that prunes removed objects.
+> The `compile` step (and the `app` step of `gke-upgrade`) deletes `ctk-out/<deployment_name>/.ghpc/staged/` before running `gcluster create --force`, so Helm templates removed from the repository are not re-deployed from a stale staged copy. It also passes a SHA-256 of `deploy/helm` as the `helm_chart_content_hash` blueprint variable (recorded in the umbrella Helm release description), so template-only chart changes trigger a real Helm upgrade that prunes removed objects. Avoid storing `terraform.tfstate` inside a Git checkout or worktree: configure a remote GCS backend (`terraform_backend_defaults`) or point `ctk-out` to an external directory outside the repository as documented in [Terraform State Storage (`terraform.tfstate`)](../../deploy/ctk_v2/README.md#terraform-state-storage-terraformtfstate).
 
 > [!NOTE]
 > For step-by-step developer verification workflows, port-forwarding, and manual testing procedures on developer clusters, see the [Developer Cluster Setup & Manual Testing Guide](../../deploy/local/README.md).

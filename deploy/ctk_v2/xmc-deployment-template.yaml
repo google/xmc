@@ -12,6 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Recommended: Store Terraform state in a versioned GCS bucket outside the Git
+# repository so code and infrastructure state are versioned separately and
+# deployments work across git worktrees without 409 conflict errors.
+# See deploy/ctk_v2/README.md#terraform-state-storage-terraformtfstate for options.
+# terraform_backend_defaults:
+#   type: gcs
+#   configuration:
+#     bucket: YOUR_TF_STATE_GCS_BUCKET
+
 vars:
   # Deployment name override to avoid name conflicts
   deployment_name: my-xmc-ctk

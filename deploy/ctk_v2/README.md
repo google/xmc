@@ -100,6 +100,54 @@ Enabling `Component/clickhouse` also makes ClickHouse a readiness dependency of 
 
 > **Note:** The `tools/dev_env` deploy and upgrade tooling skips Spanner schema migrations when `database_backend` is `postgres` (overridable via the `DB_BACKEND` environment variable).
 
+### Terraform State Storage (`terraform.tfstate`)
+
+> [!WARNING]
+> **Avoid Storing Terraform State Inside the Git Repository**: Storing `terraform.tfstate` files inside the repository checkout or any linked `git worktree` (such as `<repo>/ctk-out/<deployment_name>/<group>/terraform.tfstate`) is a bad practice. It mixes application source code with live infrastructure state—two concerns with independent lifecycles that **should be versioned separately**. In-repo state also stays isolated to a single working tree: running `gcluster deploy` from another `git worktree` starts with empty state and fails with GCP `409 Conflict` (`already exists`) errors, and removing a worktree (`git worktree remove`) permanently deletes the state stored inside it.
+
+Choose a state storage location outside the Git repository based on your environment:
+
+| Storage Option | Best For | State Versioning & Locking | Multi-Worktree / Multi-User Safe? |
+| :--- | :--- | :--- | :--- |
+| **1. Google Cloud Storage (`gcs` backend)** *(Recommended)* | Shared environments, CI/CD, staging/production, and developers using multiple `git worktree` checkouts | GCS Object Versioning & automatic GCS state lock files (`.tflock`) | Yes — shared across all worktrees, machines, and operators |
+| **2. External Host Directory (`local` outside repo)** | Single-developer personal sandbox on one workstation | Host filesystem backups (`terraform.tfstate.backup`); no remote lock | Across local worktrees on the same machine |
+| **3. Enterprise Remote Backend (`http`, `pg`, etc.)** | Organizations with an existing centralized Terraform state service | Managed by the remote backend | Yes |
+
+#### Option 1: Google Cloud Storage (`gcs`) Remote Backend (Recommended)
+
+1. Create a dedicated GCS bucket with **Object Versioning** enabled so infrastructure state history is versioned independently of Git:
+   ```bash
+   gcloud storage buckets create gs://YOUR_TF_STATE_GCS_BUCKET \
+     --project=YOUR_PROJECT_ID \
+     --location=YOUR_REGION \
+     --uniform-bucket-level-access
+   gcloud storage buckets update gs://YOUR_TF_STATE_GCS_BUCKET --versioning
+   ```
+2. Configure `terraform_backend_defaults` at the top of `deploy/ctk_v2/xmanager-cloud-deployment.yaml`:
+   ```yaml
+   terraform_backend_defaults:
+     type: gcs
+     configuration:
+       bucket: YOUR_TF_STATE_GCS_BUCKET
+   ```
+   Cluster Toolkit automatically configures each deployment group (`apis`, `primary`, `compute`, `kubernetes_prereqs`, `xmc_app`) to store its state in `gs://YOUR_TF_STATE_GCS_BUCKET` under a group-scoped prefix.
+
+#### Option 2: External Local Directory Outside the Git Repository (Single-Developer Env)
+
+For a single-developer environment without a GCS state bucket, keep the compiled Cluster Toolkit output and local `terraform.tfstate` files in a dedicated directory **outside** all Git worktrees (for example, `~/.local/share/xmc/ctk-out`):
+
+```bash
+mkdir -p "${HOME}/.local/share/xmc/ctk-out"
+
+# Pass the external directory to gcluster directly:
+./cluster-toolkit/gcluster create deploy/ctk_v2/xmanager-cloud.yaml \
+  -d deploy/ctk_v2/xmanager-cloud-deployment.yaml \
+  -o "${HOME}/.local/share/xmc/ctk-out" -l WARNING -w --force
+
+# Or, if using tools/dev_env (which reads ./ctk-out), point ./ctk-out in each worktree to the external directory:
+ln -s "${HOME}/.local/share/xmc/ctk-out" ctk-out
+```
+
 ---
 
 ## 🏁 Phase 2: How to Deploy
