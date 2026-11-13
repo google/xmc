@@ -25,7 +25,14 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.scss', '**/*.css'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/out-tsc/**',
+      '**/*.scss',
+      '**/*.css',
+    ],
   },
   {
     files: ['**/*.ts'],
@@ -102,6 +109,7 @@ export default tseslint.config(
           ],
         },
       ],
+      'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': ['error', { max: 35, skipComments: true }],
       complexity: ['error', { max: 10, variant: 'modified' }],
       'max-depth': ['error', 3],
@@ -151,12 +159,22 @@ export default tseslint.config(
       '**/screenshot_tests/**',
     ],
     rules: {
-      'unused-imports/no-unused-imports': 'off',
-      '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': 'off',
       '@angular-eslint/prefer-standalone': 'off',
+      'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': 'off',
       complexity: 'off',
+    },
+  },
+  {
+    files: ['**/app/testing/**', '**/*.d.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['**/*.d.ts'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'off',
     },
   },
   {
@@ -198,7 +216,7 @@ export default tseslint.config(
   },
   {
     files: ['**/*.html'],
-    ignores: ['index.html'],
+    ignores: ['**/index.html'],
     languageOptions: {
       parser: angularTemplateParser,
     },
@@ -220,6 +238,13 @@ export default tseslint.config(
       '@angular-eslint/template/valid-aria': 'error',
       '@angular-eslint/template/elements-content': 'error',
       '@angular-eslint/template/no-positive-tabindex': 'error',
+      'max-lines': ['error', { max: 300, skipBlankLines: true, skipComments: true }],
+      '@angular-eslint/template/cyclomatic-complexity': ['error', { maxComplexity: 10 }],
+      '@angular-eslint/template/conditional-complexity': ['error', { maxComplexity: 4 }],
+      '@angular-eslint/template/no-inline-styles': ['error', { allowBindToStyle: true }],
+      '@angular-eslint/template/no-any': 'error',
+      '@angular-eslint/template/prefer-at-else': 'error',
+      '@angular-eslint/template/no-interpolation-in-attributes': 'error',
     },
   },
   eslintConfigPrettier,

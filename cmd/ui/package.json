@@ -11,6 +11,7 @@
     "test:screenshot": "playwright test",
     "test:screenshot:update": "playwright test --update-snapshots",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.spec.json && tsc --noEmit -p tsconfig.e2e.json",
     "format": "prettier --write --ignore-path ../../.gitignore .",
     "format:check": "prettier --check --ignore-path ../../.gitignore ."
   },
