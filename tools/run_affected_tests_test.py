@@ -450,6 +450,86 @@ class RunAffectedTestsTest(unittest.TestCase):
         self.assertNotIn("passed_targets", details)
         self.assertEqual(details["exit_name"], "TESTS_FAILED")
 
+    @mock.patch.object(
+        rat,
+        "run_diff_cover",
+        return_value={"compare_branch": "origin/main", "fail_under": 85, "report": {}},
+    )
+    def test_coverage_mode_runs_bazel_coverage_and_diff_cover(
+        self, mock_diff_cover, mock_scope, mock_emulator, mock_bazel
+    ):
+        args = parse("--coverage", "--diff-cover-fail-under=85")
+        result, _ = self._run(args, {})
+        mock_bazel.assert_called_once_with(
+            ["//pkg/a:a_test", "//pkg/b:b_test"], [], {}, coverage=True
+        )
+        mock_diff_cover.assert_called_once_with("origin/main", 85, {})
+        self.assertEqual(result["diff_cover"]["fail_under"], 85)
+
+
+class DiffCoverTest(unittest.TestCase):
+    def test_build_bazel_test_command_with_coverage(self):
+        cmd = rat.build_bazel_test_command(["//pkg:t"], [], {}, Path("/tmp/b.json"), coverage=True)
+        self.assertEqual(cmd[:2], ["bazel", "coverage"])
+        self.assertIn("--combined_report=lcov", cmd)
+
+    def test_resolve_compare_branch_precedence(self):
+        self.assertEqual(rat.resolve_compare_branch(parse("--base-ref=dev"), {}), "dev")
+        self.assertEqual(
+            rat.resolve_compare_branch(parse("--ci"), {"GITHUB_BASE_REF": "release"}),
+            "origin/release",
+        )
+        self.assertEqual(
+            rat.resolve_compare_branch(parse("--ci"), {"GITHUB_BASE_REF": "origin/main"}),
+            "origin/main",
+        )
+        self.assertEqual(rat.resolve_compare_branch(parse(), {}), "origin/main")
+
+    def test_run_diff_cover_skips_when_disabled_or_missing_lcov(self):
+        res = rat.run_diff_cover("origin/main", 0, {})
+        self.assertTrue(res["skipped"])
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.dat"
+            res2 = rat.run_diff_cover("origin/main", 80, {}, lcov_path=missing)
+            self.assertTrue(res2["skipped"])
+
+    @mock.patch.object(rat, "run_command")
+    def test_run_diff_cover_passes_and_reads_report(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,1\nend_of_record\n", encoding="utf-8")
+
+            def fake_diff_cover(cmd, **_kwargs):
+                for arg in cmd:
+                    if arg.startswith("--json-report="):
+                        Path(arg.split("=", 1)[1]).write_text(
+                            json.dumps({"total_percent_covered": 100}), encoding="utf-8"
+                        )
+                return subprocess.CompletedProcess(cmd, 0)
+
+            mock_run.side_effect = fake_diff_cover
+            out = rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertEqual(out["report"]["total_percent_covered"], 100)
+
+    @mock.patch.object(rat, "run_command")
+    def test_run_diff_cover_raises_handled_error_when_below_threshold(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,0\nend_of_record\n", encoding="utf-8")
+            mock_run.return_value = subprocess.CompletedProcess(["diff-cover"], 1)
+            with self.assertRaises(HandledError) as ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertIn("below 80%", ctx.exception.message)
+
+    @mock.patch.object(rat, "run_command", side_effect=FileNotFoundError("diff-cover"))
+    def test_run_diff_cover_missing_binary_is_handled_error(self, _mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,1\nend_of_record\n", encoding="utf-8")
+            with self.assertRaises(HandledError) as ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertIn("diff-cover", ctx.exception.message)
+
 
 class MainTest(unittest.TestCase):
     def _main(self, *argv: str) -> tuple[int | str | None, str, str]:
