@@ -62,7 +62,7 @@ export function bootstrap(component: any, options?: any): any {
     for (const key of Object.keys(options)) {
       try {
         fixture.componentRef.setInput(key, options[key]);
-      } catch (e) {
+      } catch (_e) {
         (fixture.componentInstance as any)[key] = options[key];
       }
     }
@@ -74,7 +74,7 @@ export function bootstrap(component: any, options?: any): any {
     if (cmpDef && cmpDef.selectors && cmpDef.selectors[0]) {
       selector = cmpDef.selectors[0][0];
     }
-  } catch (e) {
+  } catch (_e) {
     // Fallback or ignore
   }
   if (selector) {
@@ -104,7 +104,7 @@ export async function getHarness(query: any): Promise<any> {
   if (isRootMatch) {
     try {
       return await TestbedHarnessEnvironment.harnessForFixture(currentFixture, query);
-    } catch (e) {
+    } catch (_e) {
       // Fallback to loader if harnessForFixture fails
     }
   }
@@ -281,7 +281,7 @@ export function setupObservableMatchers() {
         },
       };
     },
-    toHaveNeverEmitted(util: any, customEqualityTesters: any): any {
+    toHaveNeverEmitted(_util: any, _customEqualityTesters: any): any {
       return {
         compare(actual: any): any {
           return new Promise<any>(async (resolve) => {

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import { ResourceType } from 'app/common/components/resource_chip/resource_chip';
-import { ResourceChipData } from 'app/common/components/resource_chip/resource_set_to_resource_chips';
 import { StatusOption } from 'app/common/components/status_chip/status_chip';
 import { DashboardJob, Resource } from 'app/protos/rod';
 

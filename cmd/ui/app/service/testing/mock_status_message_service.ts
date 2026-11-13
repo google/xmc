@@ -28,7 +28,7 @@ import { StatusMessageService } from '../status_message_service';
 @Injectable({ providedIn: 'root' })
 export class MockStatusMessageService extends StatusMessageService {
   override listStatusMessages(
-    request: ListStatusMessagesRequest,
+    _request: ListStatusMessagesRequest,
   ): Observable<ListStatusMessagesResponse> {
     return of({
       statusMessages: MOCK_HISTORICAL_STATUS_MESSAGES,

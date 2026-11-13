@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
-import { TestBed } from '@angular/core/testing';
 
 import { cleanState, get, setupModule } from '../testing/test';
 import { AuthService, UserResponse } from './auth.service';

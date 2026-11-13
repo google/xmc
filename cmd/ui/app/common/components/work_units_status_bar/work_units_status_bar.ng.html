@@ -25,7 +25,10 @@ limitations under the License.
     <div class="states">
       @for (stateCount of sortedStateCounts(); track stateCount.state) {
         @if (stateCount.count && stateCount.count !== '0') {
-          <span class="state {{ stateCount.state }}" [style.width]="getWidth(stateCount.count)">
+          <span
+            [class]="'state ' + (stateCount.state ?? '')"
+            [style.width]="getWidth(stateCount.count)"
+          >
             {{ stateCount.count }}
           </span>
         }
@@ -39,7 +42,7 @@ limitations under the License.
         @if (stateCount.count && stateCount.count !== '0' && stateCount.state) {
           <div class="key-value-pair">
             <dt class="state-count-state-container">
-              <div class="square {{ stateCount.state }}"></div>
+              <div [class]="'square ' + stateCount.state"></div>
               {{ stateCount.state.toLowerCase() }}:
             </dt>
             <dd>{{ stateCount.count }}</dd>
