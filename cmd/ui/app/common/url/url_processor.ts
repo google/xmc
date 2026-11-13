@@ -77,11 +77,10 @@ function applyExecutionMetadata(
   replacements['NAMESPACE'] = metadata.namespace;
   replacements['SERVICE_ACCOUNT'] = metadata.serviceAccount;
   replacements['MGMT_PROJECT'] = metadata.managementCluster?.project;
-  if (metadata.executingCluster) {
-    replacements['PROJECT'] = metadata.executingCluster.project;
-    replacements['LOCATION'] = metadata.executingCluster.location;
-    replacements['CLUSTER'] = metadata.executingCluster.clusterName;
-  }
+  replacements['PROJECT'] = metadata.executingCluster?.project;
+  replacements['LOCATION'] = metadata.executingCluster?.location;
+  replacements['CLUSTER'] =
+    metadata.executingCluster?.clusterName || metadata.multiKueueClusterName;
 }
 
 function fillPlaceholders(

@@ -123,11 +123,17 @@ describe('UrlProcessor', () => {
         location: 'us-east1',
         clusterName: 'worker-cluster',
       },
+      multiKueueClusterName: 'worker-mkc',
     });
     const urls: Url[] = [
       {
-        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}',
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}?project=${PROJECT}',
         displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+      {
+        url: 'http://logs.com/query;location=${LOCATION};namespace=${NAMESPACE};cluster=${CLUSTER};jobset=${RESOURCE_NAME}?project=${PROJECT}',
+        displayName: 'Cloud Logs',
         priority: 1,
       },
       {
@@ -137,12 +143,48 @@ describe('UrlProcessor', () => {
       },
     ];
     const processedUrls = processUrls(urls, workUnit);
-    expect(processedUrls.length).toBe(2);
+    expect(processedUrls.length).toBe(3);
     expect(processedUrls[0].processedUrl).toBe(
-      'http://gke.com/worker-project/us-east1/worker-cluster/test-namespace/test-resource',
+      'http://gke.com/worker-project/us-east1/worker-cluster/test-namespace/test-resource?project=worker-project',
     );
     expect(processedUrls[0].disableReason).toBeUndefined();
-    expect(processedUrls[1].processedUrl).toBe('http://logs.com/1/1?project=mgmt-project');
+    expect(processedUrls[1].processedUrl).toBe(
+      'http://logs.com/query;location=us-east1;namespace=test-namespace;cluster=worker-cluster;jobset=test-resource?project=worker-project',
+    );
+    expect(processedUrls[1].disableReason).toBeUndefined();
+    expect(processedUrls[2].processedUrl).toBe('http://logs.com/1/1?project=mgmt-project');
+    expect(processedUrls[2].disableReason).toBeUndefined();
+  });
+
+  it('should fall back CLUSTER to multiKueueClusterName when executingCluster.clusterName is omitted', () => {
+    const workUnit = createWorkUnitWithMetadata({
+      executingCluster: {
+        project: 'worker-project',
+        location: 'us-east1',
+      },
+      multiKueueClusterName: 'worker-multikueue-cluster',
+    });
+    const urls: Url[] = [
+      {
+        url: 'http://gke.com/${PROJECT}/${LOCATION}/${CLUSTER}/${NAMESPACE}/${RESOURCE_NAME}?project=${PROJECT}',
+        displayName: 'GKE Dashboard',
+        priority: 1,
+      },
+      {
+        url: 'http://logs.com/query;location=${LOCATION};namespace=${NAMESPACE};cluster=${CLUSTER};jobset=${RESOURCE_NAME}?project=${PROJECT}',
+        displayName: 'Cloud Logs',
+        priority: 2,
+      },
+    ];
+    const processedUrls = processUrls(urls, workUnit);
+    expect(processedUrls.length).toBe(2);
+    expect(processedUrls[0].processedUrl).toBe(
+      'http://gke.com/worker-project/us-east1/worker-multikueue-cluster/test-namespace/test-resource?project=worker-project',
+    );
+    expect(processedUrls[0].disableReason).toBeUndefined();
+    expect(processedUrls[1].processedUrl).toBe(
+      'http://logs.com/query;location=us-east1;namespace=test-namespace;cluster=worker-multikueue-cluster;jobset=test-resource?project=worker-project',
+    );
     expect(processedUrls[1].disableReason).toBeUndefined();
   });
 

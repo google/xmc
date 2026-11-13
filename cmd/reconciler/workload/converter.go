@@ -96,10 +96,14 @@ func getMultiKueueClusterInfo(ctx context.Context, workload *v1beta1.Workload, m
 
 	var clusterInfo *spb.ClusterInfo
 	if mc.Labels != nil {
+		execClusterName := mc.Labels["xmc.google.com/cluster-name"]
+		if execClusterName == "" {
+			execClusterName = clusterName
+		}
 		clusterInfo = &spb.ClusterInfo{
 			Project:     mc.Labels["xmc.google.com/project"],
 			Location:    mc.Labels["xmc.google.com/location"],
-			ClusterName: mc.Labels["xmc.google.com/cluster-name"],
+			ClusterName: execClusterName,
 		}
 	}
 	return MultiKueueClusterResult{
