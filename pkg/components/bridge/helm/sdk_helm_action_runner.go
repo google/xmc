@@ -299,6 +299,7 @@ func defaultComponentChart(name string) *chart.Chart {
 	var files []*loader.BufferedFile
 	_ = fs.WalkDir(stable2026a.EmbeddedCharts, root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
+			//nolint:nilerr // Skip unreadable entries and directories while walking embedded default charts.
 			return nil
 		}
 		if data, readErr := stable2026a.EmbeddedCharts.ReadFile(p); readErr == nil {

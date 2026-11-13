@@ -96,7 +96,7 @@ func (m *K8sHelmManager) HydrateComponentState(ctx context.Context, ref Componen
 		return nil
 	}
 	if err := validateComponentRef(ref); err != nil {
-		return nil //nilerr: TODO: validateComponentRef failure returns nil instead of surfacing error; kept to preserve existing cold-start behavior
+		return nil //nolint:nilerr // TODO: validateComponentRef failure returns nil instead of surfacing error; kept to preserve existing cold-start behavior
 	}
 	key := componentStateKey(ref)
 	baseKey := componentKey(ref.Namespace, ref.Name)

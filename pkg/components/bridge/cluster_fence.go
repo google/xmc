@@ -146,6 +146,7 @@ func (f *ClusterFence) Start(ctx context.Context) error {
 		delay := f.opts.HeartbeatInterval
 		if err := f.declareWithTimeout(ctx); err != nil {
 			if ctx.Err() != nil {
+				//nolint:nilerr // Intentional graceful return when ctx is canceled during heartbeat shutdown.
 				return nil
 			}
 			delay = f.retryDelay(ctx, err)

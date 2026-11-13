@@ -487,7 +487,7 @@ func MemberExp(qfv QueryFilterVisitor, el *fpb.ExpressionList) (filtervisitor.Pr
 	if err != nil && qfv.GetIsRHS() {
 		joined := strings.Join(path, ".")
 		qfv.AppendBindingString(joined)
-		// nilerr: unknown RHS member path falls back to string literal binding
+		// Unknown RHS member path falls back to string literal binding.
 		return filtervisitor.String, nil
 	}
 	if err != nil {
@@ -591,7 +591,7 @@ func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val
 	case lastType.Equals(filtervisitor.Float):
 		f, err := strconv.ParseFloat(val, 64)
 		if err != nil {
-			// nilerr: handled=false falls through to default string binding
+			//nolint:nilerr // handled=false falls through to default string binding
 			return filtervisitor.Invalid, false, nil
 		}
 		qfv.AppendBindingFloat64(f)
@@ -599,7 +599,7 @@ func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val
 	case lastType.Equals(filtervisitor.Boolean):
 		b, err := strconv.ParseBool(val)
 		if err != nil {
-			// nilerr: handled=false falls through to default string binding
+			//nolint:nilerr // handled=false falls through to default string binding
 			return filtervisitor.Invalid, false, nil
 		}
 		qfv.AppendBindingBool(b)

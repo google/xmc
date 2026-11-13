@@ -654,6 +654,7 @@ func (env *controllerEnv) waitFor(t *testing.T, name, desc string, cond func(*un
 		case apierrors.IsNotFound(err):
 			last = nil
 		case err != nil:
+			//nolint:nilerr // Transient Get errors inside wait.PollUntilContextTimeout retry until deadline.
 			return false, nil
 		default:
 			last = u

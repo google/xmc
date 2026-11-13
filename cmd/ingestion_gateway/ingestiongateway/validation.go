@@ -115,6 +115,7 @@ func processNextRecord(dec *json.Decoder, idx int, consumer MetricConsumer) (*Fa
 
 	m := &metrics.Metric{Metric: &pbMetric}
 	if valErr := m.IsValid(); valErr != nil {
+		//nolint:nilerr // Record validation errors are reported in FailedRecord items rather than aborting batch processing.
 		return &FailedRecord{
 			Index:      idx,
 			MetricName: m.MetricName,
