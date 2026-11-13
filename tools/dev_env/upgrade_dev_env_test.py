@@ -222,6 +222,114 @@ class TestMigrationHelpers(unittest.TestCase):
         mock_status.assert_not_called()
         mock_run_mig.assert_not_called()
 
+    @mock.patch("tools.dev_env.upgrade_dev_env.verify_image_schema_labels")
+    @mock.patch("tools.dev_env.upgrade_dev_env.get_migration_status")
+    def test_verify_schema_version_alignment_success(self, mock_status, mock_verify_labels):
+        mock_status.side_effect = [(3, 3), (1, 1)]
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="v1",
+        )
+        upgrade_dev_env.verify_schema_version_alignment(config)
+        self.assertEqual(mock_status.call_count, 2)
+        mock_verify_labels.assert_called_once_with(config, {"ess": 3, "xid": 1})
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.get_migration_status")
+    def test_verify_schema_version_alignment_mismatch_exits(self, mock_status):
+        mock_status.side_effect = [(2, 3)]
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="v1",
+        )
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.verify_schema_version_alignment(config)
+        self.assertEqual(cm.exception.code, 1)
+
+    @mock.patch("tools.dev_env.upgrade_dev_env.get_migration_status")
+    def test_verify_schema_version_alignment_skips_postgres(self, mock_status):
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="v1",
+            database_backend="postgres",
+        )
+        upgrade_dev_env.verify_schema_version_alignment(config)
+        mock_status.assert_not_called()
+
+    @mock.patch("shutil.which", return_value="/usr/bin/docker")
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_verify_image_schema_labels_matching_and_unpulled(self, mock_run, _mock_which):
+        def side_effect(cmd, **_kwargs):
+            image_ref = cmd[3]
+            if "experiment-state-server" in image_ref:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout='{"xmc.google.com/ess-schema-version": "3"}\n',
+                    stderr="",
+                )
+            if "xid-service" in image_ref:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="null\n",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="no image")
+
+        mock_run.side_effect = side_effect
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="v1",
+        )
+        upgrade_dev_env.verify_image_schema_labels(config, {"ess": 3, "xid": 1})
+
+    @mock.patch("shutil.which", return_value="/usr/bin/docker")
+    @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
+    def test_verify_image_schema_labels_mismatch_exits(self, mock_run, _mock_which):
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"xmc.google.com/ess-schema-version": "2"}\n',
+            stderr="",
+        )
+        config = upgrade_dev_env.UpgradeConfig(
+            project_id="p",
+            deployment_name="d",
+            region="r",
+            environment="dev",
+            namespace="n",
+            config_path="cfg",
+            image_registry="us-docker.pkg.dev/p/xmc",
+            image_tag="v1",
+        )
+        with self.assertRaises(SystemExit) as cm:
+            upgrade_dev_env.verify_image_schema_labels(config, {"ess": 3, "xid": 1})
+        self.assertEqual(cm.exception.code, 1)
+
 
 class TestDeploymentResolution(unittest.TestCase):
     """Tests Kubernetes deployment name fallback resolution."""
@@ -305,14 +413,16 @@ class TestStepSubprocesses(unittest.TestCase):
         self.assertEqual(mock_run.call_count, 12)
 
     @mock.patch.object(Path, "is_dir", return_value=True)
+    @mock.patch("tools.dev_env.upgrade_dev_env.verify_schema_version_alignment")
     @mock.patch("tools.dev_env.upgrade_dev_env.deploy_component_profile")
     @mock.patch("tools.dev_env.upgrade_dev_env.compile_blueprint")
     @mock.patch("tools.dev_env.upgrade_dev_env.run_command")
-    def test_step_app(self, mock_run, mock_compile, mock_profile, _mock_dir):
+    def test_step_app(self, mock_run, mock_compile, mock_profile, mock_verify_schema, _mock_dir):
         mock_run.return_value = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
         upgrade_dev_env.step_app(self.config)
+        mock_verify_schema.assert_called_once_with(self.config)
         mock_compile.assert_called_once_with(
             "deploy/ctk_v2/xmanager-cloud-deployment.yaml", "deploy-456"
         )

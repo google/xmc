@@ -85,6 +85,73 @@ def detect_elf_architecture(binary_path: str):
     return None
 
 
+def extract_migration_version(migration_files: list[str] | None) -> int:
+    """Extracts the highest numeric migration version from SQL file paths.
+
+    Args:
+        migration_files: Optional list of SQL migration file paths.
+
+    Returns:
+        Highest integer prefix before '_' in the filenames, or 0 if none.
+    """
+    if not migration_files:
+        return 0
+    return max(
+        (
+            int(prefix)
+            for path in migration_files
+            if (prefix := Path(path).name.partition("_")[0]).isdigit()
+        ),
+        default=0,
+    )
+
+
+def _resolve_version_arg(explicit_version: object, migration_files: object) -> int:
+    """Resolves a positive integer schema version from an explicit value or file list.
+
+    Args:
+        explicit_version: Explicit version integer or numeric string, if provided.
+        migration_files: Sequence of migration file path strings, if provided.
+
+    Returns:
+        Resolved schema version integer, or 0 if neither is provided.
+    """
+    if isinstance(explicit_version, int) and not isinstance(explicit_version, bool):
+        return max(explicit_version, 0)
+    if isinstance(explicit_version, str) and explicit_version.isdigit():
+        return int(explicit_version)
+    if isinstance(migration_files, (list, tuple)):
+        return extract_migration_version([str(p) for p in migration_files])
+    return 0
+
+
+def build_schema_labels(args: argparse.Namespace) -> dict[str, str]:
+    """Builds OCI image schema version labels from CLI arguments.
+
+    Args:
+        args: Parsed CLI arguments containing optional migration paths or versions.
+
+    Returns:
+        Dictionary of OCI label keys to string schema versions.
+    """
+    labels: dict[str, str] = {}
+    ess_ver = _resolve_version_arg(
+        getattr(args, "ess_schema_version", None),
+        getattr(args, "ess_migrations", None),
+    )
+    if ess_ver > 0:
+        labels["xmc.google.com/ess-schema-version"] = str(ess_ver)
+
+    xid_ver = _resolve_version_arg(
+        getattr(args, "xid_schema_version", None),
+        getattr(args, "xid_migrations", None),
+    )
+    if xid_ver > 0:
+        labels["xmc.google.com/xid-schema-version"] = str(xid_ver)
+
+    return labels
+
+
 def build_oci(args):
     """Packages a binary into an OCI container image tarball."""
     binary_path = args.binary_path
@@ -150,12 +217,16 @@ def build_oci(args):
             )
 
         layer_sha = get_sha256(layer_tar_path)
+        labels = build_schema_labels(args)
+        container_config: dict[str, object] = {
+            "Entrypoint": [f"/app/{binary_name}"],
+            "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
+        }
+        if labels:
+            container_config["Labels"] = labels
 
         config = {
-            "config": {
-                "Entrypoint": [f"/app/{binary_name}"],
-                "Env": ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"],
-            },
+            "config": container_config,
             "created": "1970-01-01T00:00:00Z",
             "architecture": arch,
             "os": "linux",
@@ -211,6 +282,7 @@ def build_oci(args):
         "image_tag": image_tag,
         "layer_sha256": layer_sha,
         "config_sha256": config_sha,
+        "labels": labels,
     }
 
 
@@ -229,6 +301,36 @@ def main():
     )
     parser.add_argument("image_tag", help="OCI image tag to apply (e.g. 'my-image:latest').")
     parser.add_argument("output_tar", help="Path where the output OCI tarball should be saved.")
+    parser.add_argument(
+        "--ess-migrations",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional list of ESS SQL migration files used to compute"
+            " xmc.google.com/ess-schema-version."
+        ),
+    )
+    parser.add_argument(
+        "--xid-migrations",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional list of XID SQL migration files used to compute"
+            " xmc.google.com/xid-schema-version."
+        ),
+    )
+    parser.add_argument(
+        "--ess-schema-version",
+        type=int,
+        default=None,
+        help="Explicit ESS schema version to embed in OCI image labels.",
+    )
+    parser.add_argument(
+        "--xid-schema-version",
+        type=int,
+        default=None,
+        help="Explicit XID schema version to embed in OCI image labels.",
+    )
     run_tool(parser, build_oci)
 
 

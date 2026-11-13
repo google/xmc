@@ -584,6 +584,40 @@ class TestLocalRunner(unittest.TestCase):
             mock_detect.assert_called_once_with(files=["cmd/ui/main.ts"])
             mock_build_load.assert_not_called()
 
+    @patch("tools.dev_env.local_runner.run_command")
+    def test_reload_applies_spanner_migrations_when_sql_changed(self, mock_run: MagicMock) -> None:
+        """Verifies reload applies Spanner migrations before restarting services when SQL migrations change."""
+        from tools.dev_env.change_detector import ChangeDetectionResult
+
+        mock_result = ChangeDetectionResult(
+            services=["experiment_state_server"],
+            helm_upgrade_needed=False,
+            migrations_needed=True,
+            modified_files=["internal/storage/spanner/migrations/ess/002_new.up.sql"],
+            reasons={
+                "experiment_state_server": [
+                    "internal/storage/spanner/migrations/ess/002_new.up.sql"
+                ]
+            },
+        )
+        with (
+            patch.object(self.runner.kind_mgr, "exists", return_value=True),
+            patch.object(self.runner.change_detector, "detect_changes", return_value=mock_result),
+            patch.object(self.runner.spanner_mgr, "apply_migrations") as mock_apply_migrations,
+            patch.object(
+                self.runner.image_builder,
+                "build_images",
+                return_value=["experiment_state_server_image:latest"],
+            ),
+            patch.object(self.runner.image_builder, "load_images_into_kind"),
+        ):
+            reloaded = self.runner._reload_once(
+                changed_files=["internal/storage/spanner/migrations/ess/002_new.up.sql"]
+            )
+            self.assertTrue(reloaded)
+            mock_apply_migrations.assert_called_once_with()
+            self.assertTrue(mock_run.called)
+
     @patch("tools.dev_env.local_runner.time.sleep")
     def test_watch_loop_revert_workspace_triggers_reload(self, mock_sleep: MagicMock) -> None:
         """Verifies watch loop triggers reload with reverted files when workspace becomes clean."""

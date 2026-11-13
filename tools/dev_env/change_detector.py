@@ -33,6 +33,8 @@ __all__ = [
     "SERVICE_ALIASES",
     "SHARED_CODE_PREFIXES",
     "SHARED_ROOT_FILES",
+    "SPANNER_MIGRATION_PREFIXES",
+    "has_spanner_migration_changes",
     "resolve_service_name",
     "resolve_service_names",
 ]
@@ -55,6 +57,28 @@ SHARED_ROOT_FILES: frozenset[str] = frozenset(
     }
 )
 HELM_MANIFEST_PREFIXES: tuple[str, ...] = ("deploy/helm/", "deploy/local/", "test/e2e/manifests/")
+SPANNER_MIGRATION_PREFIXES: tuple[str, ...] = (
+    "internal/storage/spanner/migrations/",
+    "internal/storage/spanner/schema/",
+)
+
+
+def has_spanner_migration_changes(files: list[str]) -> bool:
+    """Returns True if any modified file path is a Spanner SQL migration or schema file.
+
+    Args:
+        files: List of modified repository-relative file paths.
+
+    Returns:
+        True if any path under SPANNER_MIGRATION_PREFIXES ends with '.sql'.
+    """
+    for f in files:
+        clean_f = f.strip().replace("\\", "/")
+        if clean_f.endswith(".sql") and any(
+            clean_f.startswith(p) for p in SPANNER_MIGRATION_PREFIXES
+        ):
+            return True
+    return False
 
 
 @dataclasses.dataclass(kw_only=True)
@@ -63,6 +87,7 @@ class ChangeDetectionResult:
 
     services: list[str] = dataclasses.field(default_factory=list)
     helm_upgrade_needed: bool = False
+    migrations_needed: bool = False
     modified_files: list[str] = dataclasses.field(default_factory=list)
     reasons: dict[str, list[str]] = dataclasses.field(default_factory=dict)
 
@@ -176,6 +201,7 @@ class ChangeDetector:
         result = ChangeDetectionResult(
             services=sorted(affected_services),
             helm_upgrade_needed=helm_upgrade_needed,
+            migrations_needed=has_spanner_migration_changes(modified),
             modified_files=modified,
             reasons=reasons,
         )
