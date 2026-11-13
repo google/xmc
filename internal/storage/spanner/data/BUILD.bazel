@@ -21,6 +21,7 @@ go_test(
         "component_test.go",
         "experiment_test.go",
         "operation_test.go",
+        "row_decoder_test.go",
         "statusmessage_test.go",
         "workunit_test.go",
         "workunitexecutions_test.go",
