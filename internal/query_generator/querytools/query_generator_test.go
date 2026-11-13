@@ -14,6 +14,7 @@
 package querytools
 
 import (
+	"maps"
 	"strings"
 	"sync"
 	"testing"
@@ -155,6 +156,15 @@ func TestGenerateQuery(t *testing.T) {
 			wantQuery:     spanner.NewStatement(`SELECT a.SingerId, s.SingerName FROM Albums a JOIN Singers s ON (a.SingerId = s.SingerId) WHERE (a.SingerId = @fb0) AND (a.AlbumId = @fb1) ORDER BY a.SingerId, a.AlbumId`),
 		},
 		{
+			desc:          "album table reuses existing singers join when selecting multiple fields from singers",
+			tables:        AllTables,
+			selectFields:  []TableField{AlbumSingerIDTableField, SingerNameTableField, SingerNameCountTableField},
+			userFilter:    `AlbumId = "1"`,
+			baseFilters:   []TableField{AlbumSingerIDTableField},
+			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(AlbumSingerIDTableField), Value: "1"}),
+			wantQuery:     spanner.NewStatement(`SELECT a.SingerId, s.SingerName, COUNT(s.SingerName) AS SingerNameCount FROM Albums a JOIN Singers s ON (a.SingerId = s.SingerId) WHERE (a.SingerId = @fb0) AND (a.AlbumId = @fb1) GROUP BY a.SingerId, s.SingerName, a.AlbumId ORDER BY a.SingerId, a.AlbumId`),
+		},
+		{
 			desc:   "members can be manually specified for user filters",
 			tables: AlbumsTables,
 			members: map[string]Member{"TheGreatestAlbumId": {
@@ -279,6 +289,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 		baseFilterExp           *fpb.Expression
 		userFilter              string
 		orderByFields           []UserOrderedIndex
+		ptFields                map[TableField]any
 		allowUnoptimizedOrderBy bool
 		wantErrCode             codes.Code
 	}{
@@ -371,6 +382,20 @@ func TestGenerateQueryErrors(t *testing.T) {
 			},
 			wantErrCode: codes.FailedPrecondition,
 		},
+		{
+			desc:         "page token contains unsupported or mismatched fields for candidate tables",
+			tables:       SingersTables,
+			selectFields: []TableField{SingerIDTableField},
+			ptFields:     map[TableField]any{AlbumTitleTableField: "Killer Queen"},
+			wantErrCode:  codes.InvalidArgument,
+		},
+		{
+			desc:         "null filtered candidate tables without filter on null filtered fields",
+			tables:       []TableView{AlbumsByTitleReleaseDateRating},
+			selectFields: []TableField{AlbumTitleTableField},
+			userFilter:   `AlbumTitle = "Killer Queen"`,
+			wantErrCode:  codes.FailedPrecondition,
+		},
 	}
 
 	for _, tt := range tests {
@@ -385,7 +410,7 @@ func TestGenerateQueryErrors(t *testing.T) {
 				t.Fatalf("Error parsing user filter expression %q: %v", tt.userFilter, err)
 			}
 
-			_, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, 0, 0, nil, nil)
+			_, _, err = qg.GenerateQuery(spannerdialect.NewStatement(nil), tt.selectFields, nil, tt.baseFilterExp, exp, tt.orderByFields, 0, 0, tt.ptFields, nil)
 			t.Logf("Got error: %v", err)
 			if c := status.Code(err); c != tt.wantErrCode {
 				t.Errorf("Generating query got err code %v, want %v", c, tt.wantErrCode)
@@ -1695,4 +1720,127 @@ func TestGenerateQueryConcurrent(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestGenerateQuery_Unnest(t *testing.T) {
+	const singerTagField = TableField("SingerTag")
+
+	fullUnnest := &Unnest{
+		Aggregator: safesql.New("ARRAY_AGG(t.Tag) AS SingerTags"),
+		Clause:     safesql.New("UNNEST(s.Tags) AS t"),
+		Where:      safesql.New(" AND (s.SingerId = t.SingerId)"),
+	}
+	clauseOnlyUnnest := &Unnest{
+		Clause: safesql.New("UNNEST(s.Tags) AS t"),
+	}
+
+	singersWithUnnest := func(unnest *Unnest) TableView {
+		tv := Singers
+		tv.Fields = maps.Clone(Singers.Fields)
+		tv.Fields[singerTagField] = Member{
+			Name:         singerTagField,
+			QueryLiteral: safesql.New("t.Tag"),
+			Type:         filtervisitor.String,
+			Selectable:   true,
+			UnnestClause: unnest,
+		}
+		return tv
+	}
+
+	tests := []struct {
+		desc          string
+		unnest        *Unnest
+		baseFilters   []TableField
+		baseFilterExp *fpb.Expression
+		userFilter    string
+		wantSQL       string
+		wantParams    map[string]any
+		wantSeen      []*Unnest
+	}{
+		{
+			desc:          "user filter with non-nil UnnestClause emits Aggregator, Clause, and Where",
+			unnest:        fullUnnest,
+			baseFilters:   []TableField{SingerIDTableField},
+			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
+			userFilter:    `SingerTag = "rock"`,
+			wantSQL:       `SELECT s.SingerId, ARRAY_AGG(t.Tag) AS SingerTags FROM Singers s, UNNEST(s.Tags) AS t WHERE (s.SingerId = @fb0) AND (t.Tag = @fb1) AND (s.SingerId = t.SingerId) ORDER BY s.SingerId`,
+			wantParams:    map[string]any{"fb0": "1", "fb1": "rock"},
+			wantSeen:      []*Unnest{fullUnnest},
+		},
+		{
+			desc:          "base filter with non-empty baseFilterExp and UnnestClause emits Aggregator, Clause, and Where",
+			unnest:        fullUnnest,
+			baseFilters:   []TableField{singerTagField},
+			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(singerTagField), Value: "jazz"}),
+			wantSQL:       `SELECT s.SingerId, ARRAY_AGG(t.Tag) AS SingerTags FROM Singers s, UNNEST(s.Tags) AS t WHERE (t.Tag = @fb0) AND (s.SingerId = t.SingerId) ORDER BY s.SingerId`,
+			wantParams:    map[string]any{"fb0": "jazz"},
+			wantSeen:      []*Unnest{fullUnnest},
+		},
+		{
+			desc:        "base filter with UnnestClause and empty baseFilterExp omits unnest",
+			unnest:      fullUnnest,
+			baseFilters: []TableField{singerTagField},
+			wantSQL:     `SELECT s.SingerId FROM Singers s ORDER BY s.SingerId`,
+			wantParams:  map[string]any{},
+		},
+		{
+			desc:       "UnnestClause with empty Aggregator and Where emits FROM UNNEST only",
+			unnest:     clauseOnlyUnnest,
+			userFilter: `SingerTag = "blues"`,
+			wantSQL:    `SELECT s.SingerId FROM Singers s, UNNEST(s.Tags) AS t WHERE (t.Tag = @fb0) ORDER BY s.SingerId`,
+			wantParams: map[string]any{"fb0": "blues"},
+			wantSeen:   []*Unnest{clauseOnlyUnnest},
+		},
+		{
+			desc:          "nil UnnestClause on base and user filters excludes nil keys from unnester",
+			unnest:        nil,
+			baseFilters:   []TableField{SingerIDTableField},
+			baseFilterExp: predicate.Conjunction(predicate.String{Field: string(SingerIDTableField), Value: "1"}),
+			userFilter:    `SingerName = "Marley"`,
+			wantSQL:       `SELECT s.SingerId FROM Singers s WHERE (s.SingerId = @fb0) AND (s.SingerName = @fb1) ORDER BY s.SingerId`,
+			wantParams:    map[string]any{"fb0": "1", "fb1": "Marley"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			qg, err := NewQueryGenerator([]TableView{singersWithUnnest(tt.unnest)}, nil, tt.baseFilters, nil)
+			if err != nil {
+				t.Fatalf("NewQueryGenerator() failed: %v", err)
+			}
+
+			exp, err := filter.ParseExpressionWithOptions(fpb.ExpressionParserOptions_builder{RejectLegacyOperatorPrecedence: false}.Build(), tt.userFilter)
+			if err != nil {
+				t.Fatalf("ParseExpressionWithOptions(%q) failed: %v", tt.userFilter, err)
+			}
+
+			stmt := spannerdialect.NewStatement(nil)
+			_, u, err := qg.GenerateQuery(stmt, []TableField{SingerIDTableField}, nil, tt.baseFilterExp, exp, nil, 0, 0, nil, nil)
+			if err != nil {
+				t.Fatalf("GenerateQuery() failed: %v", err)
+			}
+
+			if stmt.Spanner().SQL != tt.wantSQL {
+				t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.Spanner().SQL, tt.wantSQL)
+			}
+			if diff := cmp.Diff(tt.wantParams, stmt.Spanner().Params, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("GenerateQuery() params diff (-want +got):\n%s", diff)
+			}
+
+			unr, ok := u.(*unnester)
+			if !ok {
+				t.Fatalf("GenerateQuery() returned unnester %T, want *unnester", u)
+			}
+			if _, hasNil := unr.seen[nil]; hasNil {
+				t.Errorf("unr.seen contains nil key: %+v", unr.seen)
+			}
+			wantSeen := make(map[*Unnest]bool, len(tt.wantSeen))
+			for _, wantU := range tt.wantSeen {
+				wantSeen[wantU] = true
+			}
+			if diff := cmp.Diff(wantSeen, unr.seen, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("unr.seen diff (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
