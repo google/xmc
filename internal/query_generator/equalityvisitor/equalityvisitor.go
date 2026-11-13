@@ -70,7 +70,7 @@ func (ev *EqualityVisitor) ConjunctionExp(e *fpb.ExpressionList) (filtervisitor.
 // propagateError augments the given error with context for better diagnostics.
 func propagateError(err error, ctx string) error {
 	if err == nil {
-		return err
+		return nil
 	}
 	return fmt.Errorf("%v: %v", ctx, err)
 }

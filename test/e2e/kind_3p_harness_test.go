@@ -798,6 +798,7 @@ func (p *kindNodePortProber) ProbeTCP(ctx context.Context, endpoint string, time
 func (p *kindNodePortProber) translateHostPort(ctx context.Context, hostPort string) (string, error) {
 	host, portStr, err := net.SplitHostPort(hostPort)
 	if err != nil || !strings.HasSuffix(host, ".svc.cluster.local") {
+		//nolint:nilerr // Non-service host:port targets fall back verbatim without cluster DNS translation.
 		return hostPort, nil
 	}
 	parts := strings.Split(strings.TrimSuffix(host, ".svc.cluster.local"), ".")

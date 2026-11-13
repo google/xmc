@@ -293,7 +293,7 @@ func getEnvOrFile(key, defaultVal string) (string, error) {
 		return defaultVal, nil
 	}
 	if _, err := os.Stat(val); err != nil {
-		return val, nil // Treat as literal string
+		return val, nil //nolint:nilerr // TODO: os.Stat swallows permission/I/O errors and falls back to treating the path string as a literal secret; kept to preserve existing behavior (note: literal secrets >255B hit ENAMETOOLONG and slash literals can hit ENOTDIR)
 	}
 	content, readErr := os.ReadFile(val)
 	if readErr != nil {

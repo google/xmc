@@ -96,6 +96,16 @@ go_deps.module(
     version = "v1.54.2",
 )
 go_deps.module(
+    path = "github.com/gostaticanalysis/comment",
+    sum = "h1:X82FLl+TswsUMpMh17srGRuKaaXprTaytmEpgnKIDu8=",
+    version = "v1.5.0",
+)
+go_deps.module(
+    path = "github.com/gostaticanalysis/nilerr",
+    sum = "h1:S6nk8a9N8g062nsx63kUkF6AzbHGw7zzyHMcpu52xQU=",
+    version = "v0.1.2",
+)
+go_deps.module(
     path = "google.golang.org/grpc/cmd/protoc-gen-go-grpc",
     sum = "h1:F29+wU6Ee6qgu9TddPgooOdaqsxTMunOoj8KA5yuS5A=",
     version = "v1.5.1",
@@ -134,6 +144,8 @@ use_repo(
     "com_github_golang_migrate_migrate_v4",
     "com_github_google_go_cmp",
     "com_github_google_uuid",
+    "com_github_gostaticanalysis_comment",
+    "com_github_gostaticanalysis_nilerr",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_jackc_pgx_v5",
     "com_github_kylelemons_godebug",
