@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -652,8 +653,13 @@ func TestHandleEnqueueActionError(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("handleEnqueueActionError() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			// TODO: Review whether tc.wantValErr was intended to assert a distinct validation error instead of grpcerr.ErrInternal.
-			_ = tc.wantValErr
+			wantSubstr := "failed to enqueue"
+			if tc.wantValErr {
+				wantSubstr = "failed to validate work unit execution name"
+			}
+			if !strings.Contains(err.Error(), wantSubstr) {
+				t.Errorf("handleEnqueueActionError() error = %q, want substring %q", err.Error(), wantSubstr)
+			}
 			if !errors.Is(err, grpcerr.ErrInternal) {
 				t.Errorf("handleEnqueueActionError() error = %v, want grpcerr.ErrInternal", err)
 			}
