@@ -120,7 +120,7 @@ def _resolve_version_arg(explicit_version: object, migration_files: object) -> i
         return max(explicit_version, 0)
     if isinstance(explicit_version, str) and explicit_version.isdigit():
         return int(explicit_version)
-    if isinstance(migration_files, list | tuple):
+    if isinstance(migration_files, (list, tuple)):
         return extract_migration_version([str(p) for p in migration_files])
     return 0
 
