@@ -187,14 +187,24 @@ check_matrix_contract() {
 }
 
 check_agent_doc_paths() {
-  # In fix mode, only run when agent docs are staged, or when staged deletes or
-  # renames could orphan a path an agent doc references, to keep the hook fast.
-  if [ "${MODE}" = "fix" ] && ! staged_paths_match AM '^\.agents/.*\.md$|(^|/)AGENTS\.md$' && ! staged_paths_match D '.'; then
+  # In fix mode, only run when agent docs, its linter, or staged deletes/renames change.
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AM '^\.agents/.*\.md$|(^|/)AGENTS\.md$|^tools/lint/check_agent_doc_paths\.py$' && ! staged_paths_match D '.'; then
     return
   fi
   echo "--> Checking Agent Doc Path References..."
   if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_agent_doc_paths.py >/dev/null; then
     echo "❌ Agent docs reference non-existent repository paths (see JSON error above)."
+    FAILED=1
+  fi
+}
+
+check_doc_links() {
+  if [ "${MODE}" = "fix" ] && ! staged_paths_match AM '\.md$|^tools/lint/check_(doc_links|agent_doc_paths)\.py$' && ! staged_paths_match D '.'; then
+    return
+  fi
+  echo "--> Checking Documentation Links & OSS URLs..."
+  if ! XMC_BYPASS_VENV=1 python3 tools/lint/check_doc_links.py >/dev/null; then
+    echo "❌ Markdown docs contain broken relative links or forbidden internal URLs (see JSON error above)."
     FAILED=1
   fi
 }
@@ -756,6 +766,7 @@ main() {
   check_examples_coverage
   check_matrix_contract
   check_agent_doc_paths
+  check_doc_links
   check_file_naming
   check_ui_selector_contract
   check_ui
