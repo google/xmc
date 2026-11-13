@@ -445,9 +445,9 @@ jobs:
           cd "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}"
           export PYTHONPATH="${GITHUB_WORKSPACE}/${EXAMPLE_PATH}:${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
 
-          EVAL_ARGS=$(eval echo "${RAW_ARGS}")
+          eval "EVAL_ARGS=(${RAW_ARGS})"
 
-          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" ${EVAL_ARGS} | tee /dev/stderr)
+          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" "${EVAL_ARGS[@]}" | tee /dev/stderr)
 
           # Extract XID or Dashboard ID from output
           XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)

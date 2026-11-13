@@ -1,6 +1,6 @@
 # Nightly Examples E2E Verification Suite
 
-This directory contains the end-to-end (E2E) verification suite for runnable workloads under [`examples/`](../../examples/), Web UI Critical User Journeys (CUJs), and the weekly UI visual snapshot validator ([`weekly_visual_snapshot.py`](weekly_visual_snapshot.py), tested by [`weekly_visual_snapshot_test.py`](weekly_visual_snapshot_test.py), and report formatter [`format_visual_audit_summary.js`](format_visual_audit_summary.js)).
+This directory contains the end-to-end (E2E) verification suite for runnable workloads under [`examples/`](../../examples/), Web UI Critical User Journeys (CUJs), and the weekly UI visual snapshot validator ([`weekly_visual_snapshot.py`](weekly_visual_snapshot.py), tested by [`weekly_visual_snapshot_test.py`](weekly_visual_snapshot_test.py), and report formatter [`format_visual_audit_summary.js`](format_visual_audit_summary.js), tested by [`format_visual_audit_summary_test.js`](format_visual_audit_summary_test.js)).
 
 Every runnable example under [`examples/`](../../examples/) is executed nightly against a live XMC GKE environment by [`.github/workflows/nightly-examples-e2e.yml`](../../.github/workflows/nightly-examples-e2e.yml) and verified by a corresponding script in [`examples_verification/`](examples_verification/).
 

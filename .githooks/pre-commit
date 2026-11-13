@@ -508,6 +508,79 @@ check_security() {
   fi
 }
 
+check_workflows() {
+  if [ "${MODE}" = "check" ]; then
+    if [ -z "$(git ls-files '.github/workflows/*.yml' '.github/workflows/*.yaml')" ]; then return; fi
+  elif ! staged_paths_match AMD '^\.github/(workflows/|actions/)'; then
+    return
+  fi
+
+  local actionlint_bin="actionlint"
+  if ! command -v actionlint >/dev/null 2>&1; then
+    local go_bin_dir
+    go_bin_dir="$(go env GOBIN 2>/dev/null || true)"
+    if [ -z "${go_bin_dir}" ]; then
+      local gopath_raw
+      gopath_raw="$(go env GOPATH 2>/dev/null || true)"
+      if [ -n "${gopath_raw}" ]; then
+        go_bin_dir="${gopath_raw%%:*}/bin"
+      else
+        go_bin_dir="${HOME}/go/bin"
+      fi
+    fi
+    if [ -x "${go_bin_dir}/actionlint" ]; then
+      actionlint_bin="${go_bin_dir}/actionlint"
+    elif [ -x "${HOME}/go/bin/actionlint" ]; then
+      actionlint_bin="${HOME}/go/bin/actionlint"
+    else
+      echo "--> WARNING: actionlint not found. Workflow linting skipped."
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
+      return
+    fi
+  fi
+
+  echo "--> Running GitHub Actions Workflow Linter (actionlint)..."
+  if ! "${actionlint_bin}"; then
+    echo "❌ actionlint failed."
+    FAILED=1
+  fi
+}
+
+check_shell() {
+  local shell_files=()
+  local file
+  if [ "${MODE}" = "check" ]; then
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then shell_files+=("${file}"); fi
+    done < <(git -c core.quotePath=false ls-files '*.sh' '*.bash' 2>/dev/null || true)
+  else
+    while IFS= read -r file; do
+      if [ -n "${file}" ]; then shell_files+=("${file}"); fi
+    done < <(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|bash)$' || true)
+  fi
+
+  if [ "${#shell_files[@]}" -eq 0 ]; then
+    return
+  fi
+
+  local shellcheck_bin="shellcheck"
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    if [ -x "${HOME}/.local/bin/shellcheck" ]; then
+      shellcheck_bin="${HOME}/.local/bin/shellcheck"
+    else
+      echo "--> WARNING: shellcheck not found. Shell script linting skipped."
+      if [ "${MODE}" = "check" ]; then FAILED=1; fi
+      return
+    fi
+  fi
+
+  echo "--> Running Shell Script Linter (shellcheck)..."
+  if ! "${shellcheck_bin}" -S style -e SC1091 "${shell_files[@]}"; then
+    echo "❌ shellcheck failed."
+    FAILED=1
+  fi
+}
+
 check_affected_tests() {
   if ! command -v bazel >/dev/null 2>&1; then
     echo "--> WARNING: bazel not found. Affected Bazel unit tests skipped."
@@ -597,6 +670,8 @@ main() {
   check_tflint
   check_helm
   check_security
+  check_workflows
+  check_shell
 
   restage_fixes
 

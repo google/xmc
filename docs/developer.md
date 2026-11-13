@@ -277,6 +277,12 @@ Tracked UI templates, UI test specs, and GitHub Actions script tests are checked
 * Enforces `*.ng.html` for HTML files under `cmd/ui/` (requiring templates under `cmd/ui/app/` and allowing root `cmd/ui/index.html`), `*_test.ts` Karma unit test specs under `cmd/ui/app/` (rejecting `*.spec.ts`, `*_spec.ts`, and `*.test.ts` repo-wide outside `cmd/ui/screenshot_tests/`), `*.screenshot.spec.ts` Playwright specs under `cmd/ui/screenshot_tests/`, and top-level `*.test.js` Node workflow script tests under `.github/scripts/`.
 * Prevents misnamed test specs (such as `foo.spec.ts` or `.github/scripts/foo_test.js`) from silently compiling without executing in Karma or CI; runs in both the pre-commit hook and CI.
 
+### 8. GitHub Actions Workflows & Shell Scripts (`actionlint` & `shellcheck`)
+Workflows and tracked shell scripts are validated in CI ([`.github/workflows/lint.yml`](../.github/workflows/lint.yml)) and locally in `.githooks/pre-commit`:
+* **`actionlint`**: Validates `.github/workflows/*.{yml,yaml}` and integrates `shellcheck` across workflow `run:` blocks.
+* **`shellcheck`**: Validates tracked `*.sh` and `*.bash` scripts with `shellcheck -S style -e SC1091`.
+* **Node JS Script Tests**: Runs `node --test .github/scripts/*.test.js` and `node --test tools/nightly_tests/*_test.js` in CI when workflow scripts or nightly test utilities change.
+
 ---
 
 ### Local Pre-Commit Hook Usage
