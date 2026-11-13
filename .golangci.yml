@@ -43,6 +43,11 @@ linters:
     - depguard
     - dogsled
     - dupword
+    - gocheckcompilerdirectives
+    - gocognit
+    - gomoddirectives
+    - goprintffuncname
+    - inamedparam
     - nolintlint
     - nosprintfhostport
     - predeclared
@@ -51,6 +56,8 @@ linters:
 linters-settings:
   gofmt:
     simplify: true
+  gocognit:
+    min-complexity: 28
   misspell:
     locale: US
     ignore-words:
@@ -154,8 +161,5 @@ issues:
     - path: _test\.go
       linters:
         - gocyclo
-    # TODO(Phase 5): Refactor legacy Spanner row decoders exceeding cyclomatic complexity 15
-    - path: internal/storage/spanner
-      linters:
-        - gocyclo
+        - gocognit
 
