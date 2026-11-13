@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Breaking-change rules for //api:protos_breaking_test.
+# Breaking-change and lint rules for //api:protos_breaking_test and //api:protos_lint_test.
 version: v2
 breaking:
   # FILE, the strictest category, also protects generated code (e.g. moving types).
@@ -23,3 +23,49 @@ breaking:
   # Off on purpose: components v1alpha1 messages are persisted with proto.Marshal
   # (internal/storage/data/component.go), so unstable packages must stay compatible.
   ignore_unstable_packages: false
+lint:
+  use: [STANDARD]
+  # Proto sources are grouped by service directory with distinct go_package/java options
+  # even where messages share package cloud.xmanager.v1.
+  except:
+    - PACKAGE_DIRECTORY_MATCH
+    - PACKAGE_SAME_DIRECTORY
+    - PACKAGE_SAME_GO_PACKAGE
+    - PACKAGE_SAME_JAVA_MULTIPLE_FILES
+  # buf_lint_test lints FileDescriptorSet images via protoc-gen-buf-lint, so ignore_only paths
+  # must match compiled descriptor names (api/... and xmanager_cloud/...) rather than api/-relative paths.
+  ignore_only:
+    ENUM_VALUE_PREFIX:
+      - api/filter/filter_expression.proto
+      - api/protos/task_queue/task.proto
+      - xmanager_cloud/dashboard_service/proto/messages.proto
+      - xmanager_cloud/experiment_state_server/proto/artifact.proto
+      - xmanager_cloud/experiment_state_server/proto/experiment.proto
+      - xmanager_cloud/experiment_state_server/proto/operations.proto
+      - xmanager_cloud/experiment_state_server/proto/priority.proto
+      - xmanager_cloud/experiment_state_server/proto/status.proto
+      - xmanager_cloud/experiment_state_server/proto/structured_message.proto
+      - xmanager_cloud/experiment_state_server/proto/study.proto
+      - xmanager_cloud/experiment_state_server/proto/work_unit.proto
+      - xmanager_cloud/experiment_state_server/proto/work_unit_execution.proto
+      - xmanager_cloud/xid_service/proto/messages.proto
+    ENUM_ZERO_VALUE_SUFFIX:
+      - xmanager_cloud/dashboard_service/proto/messages.proto
+    # TODO: Remove unused structured_message.proto import from api/protos/experiment/api.proto
+    # when proto cleanup is scheduled (not modified here to preserve frozen API files).
+    IMPORT_USED:
+      - xmanager_cloud/experiment_state_server/proto/api.proto
+    PACKAGE_VERSION_SUFFIX:
+      - api/filter/filter_expression.proto
+    RPC_REQUEST_RESPONSE_UNIQUE:
+      - xmanager_cloud/dashboard_service/proto/dashboard_service.proto
+      - xmanager_cloud/experiment_state_server/proto/api.proto
+      - xmanager_cloud/xid_service/proto/api.proto
+    RPC_REQUEST_STANDARD_NAME:
+      - xmanager_cloud/experiment_state_server/proto/api.proto
+      - xmanager_cloud/xid_service/proto/api.proto
+    RPC_RESPONSE_STANDARD_NAME:
+      - api/protos/health/api.proto
+      - xmanager_cloud/dashboard_service/proto/dashboard_service.proto
+      - xmanager_cloud/experiment_state_server/proto/api.proto
+      - xmanager_cloud/xid_service/proto/api.proto

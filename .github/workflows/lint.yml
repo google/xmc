@@ -194,9 +194,18 @@ jobs:
             curl -sSfL https://github.com/bazelbuild/buildtools/releases/download/v8.0.3/buildifier-linux-amd64 -o "$GOPATH_BIN/buildifier"
             chmod +x "$GOPATH_BIN/buildifier"
           fi
-          mapfile -t BAZEL_FILES < <(find . -type f \( -name "BUILD" -o -name "BUILD.bazel" -o -name "*.bzl" -o -name "WORKSPACE" -o -name "MODULE.bazel" \) -not -path "*/node_modules/*" | sort)
+          mapfile -t BAZEL_FILES < <(git -c core.quotePath=false ls-files --cached --others --exclude-standard -- \
+            'BUILD' ':(glob)**/BUILD' 'BUILD.bazel' ':(glob)**/BUILD.bazel' '*.bzl' ':(glob)**/*.bzl' 'WORKSPACE' 'MODULE.bazel' \
+            | sort -u)
+          # LANG_proto_library-single-deps and inline-deps are Google-internal buildifier warnings
+          # (unrecognized by upstream OSS buildifier, e.g., CI v8.0.3), so only exclude them when supported.
+          BUILDIFIER_WARN_ARGS=()
+          GOOGLE_WARNINGS="-LANG_proto_library-single-deps,-inline-deps"
+          if buildifier -lint=warn -warnings="${GOOGLE_WARNINGS}" -mode=check -type=build </dev/null >/dev/null 2>&1; then
+            BUILDIFIER_WARN_ARGS=(-warnings="${GOOGLE_WARNINGS}")
+          fi
           if [ "${#BAZEL_FILES[@]}" -gt 0 ]; then
-            buildifier -lint=warn -warnings=unused-variable -mode=check "${BAZEL_FILES[@]}"
+            buildifier -lint=warn ${BUILDIFIER_WARN_ARGS[@]+"${BUILDIFIER_WARN_ARGS[@]}"} -mode=check "${BAZEL_FILES[@]}"
           fi
 
       - name: 'Install & Run addlicense'
