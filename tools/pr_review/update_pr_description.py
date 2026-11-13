@@ -118,12 +118,12 @@ def update_pr_description(args):
             str(e),
             "Please authenticate using 'gh auth login' or set the GITHUB_TOKEN"
             " environment variable.",
-        )
+        ) from e
     except GithubAPIError as e:
         raise HandledError(
             str(e),
             "Ensure the PR exists and your credentials have write access permissions.",
-        )
+        ) from e
 
 
 def main():

@@ -16,6 +16,7 @@
 """Runner script for discovering and validating XMC component manifests."""
 
 import argparse
+import contextlib
 import json
 import os
 import subprocess
@@ -136,13 +137,16 @@ def find_manifest_files(directory: Path) -> list[Path]:
     if not directory.is_dir():
         return []
     manifests: list[Path] = []
-    try:
-        for item in directory.iterdir():
-            if item.is_file() and item.suffix.lower() in (".yaml", ".yml"):
-                if item.name.lower() not in ("rules.yaml", "rules.yml"):
-                    manifests.append(item)
-    except OSError:
-        pass
+    with contextlib.suppress(OSError):
+        manifests.extend(
+            item
+            for item in directory.iterdir()
+            if (
+                item.is_file()
+                and item.suffix.lower() in (".yaml", ".yml")
+                and item.name.lower() not in ("rules.yaml", "rules.yml")
+            )
+        )
     return sorted(manifests)
 
 

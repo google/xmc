@@ -14,8 +14,11 @@
 
 """YAML boolean parsing and key flattening utilities."""
 
+import logging
 import re
 from typing import Any
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _flatten_yaml_dict(data: dict[str, Any], prefix: str = "") -> dict[str, bool]:
@@ -74,7 +77,7 @@ def parse_yaml_booleans(yaml_content: str) -> dict[str, bool]:
         data = yaml.safe_load(yaml_content)
         if isinstance(data, dict):
             return _flatten_yaml_dict(data)
-    except Exception:
-        pass
+    except Exception as e:
+        _LOGGER.debug("PyYAML unavailable or YAML parse fell back to line scan: %s", e)
 
     return _scan_yaml_lines(yaml_content)

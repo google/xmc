@@ -17,7 +17,7 @@ from typing import Any
 if str(_ROOT := Path(__file__).absolute().parents[3]) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.common import tool_utils as tu  # noqa: E402
+from tools.common import tool_utils as tu
 
 COMPONENT_RELEASE = "xmc-cmp-ingestion-gateway"
 DEFAULT_PROFILE_CHART = _ROOT / "deploy" / "profiles" / "stable-2026a"

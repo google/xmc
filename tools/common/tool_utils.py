@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, NoReturn, TextIO
 
 DEFAULT_BACKEND = "spanner"
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(kw_only=True)
@@ -99,7 +100,7 @@ def ensure_venv(venv_dir: Path | None = None) -> None:
         try:
             _bootstrap_venv(resolved_venv)
         except Exception:
-            logging.exception("Failed to bootstrap virtual environment")
+            _LOGGER.exception("Failed to bootstrap virtual environment")
             return
         venv_python = resolved_venv / "bin" / "python3"
         if not venv_python.exists():
@@ -357,8 +358,8 @@ def parse_yaml_vars(config_path: Path) -> dict[str, Any]:
         if isinstance(data, dict):
             vars_data = data.get("vars") or {}
             return {k: v for k, v in vars_data.items() if isinstance(v, (str, int, float, bool))}
-    except Exception:  # pylint: disable=broad-except
-        pass
+    except Exception as e:  # pylint: disable=broad-except
+        _LOGGER.debug("PyYAML unavailable or YAML parse fell back for %s: %s", config_path, e)
 
     return _parse_yaml_vars_line_fallback(content)
 

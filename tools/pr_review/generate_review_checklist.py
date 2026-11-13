@@ -137,13 +137,13 @@ def fetch_unresolved_comments(owner: str, repo: str, pr_number: int) -> list[dic
             str(e),
             "Please authenticate using the 'gh' CLI (run 'gh auth login') or"
             " set the GITHUB_TOKEN environment variable.",
-        )
+        ) from e
     except GithubAPIError as e:
         raise HandledError(
             str(e),
             "Ensure the repository and PR number exist and that your"
             " credentials have access to the pull request.",
-        )
+        ) from e
 
 
 def format_checklist_markdown(
@@ -188,11 +188,11 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
     """Orchestrates checklist generation from GitHub API and writes to file."""
     try:
         pr_num = int(args.pr_number)
-    except ValueError:
+    except ValueError as e:
         raise HandledError(
             f"Invalid PR number: {args.pr_number}",
             "Please provide a valid integer for the PR number.",
-        )
+        ) from e
 
     comments = fetch_unresolved_comments(args.owner, args.repo, pr_num)
     markdown_content = format_checklist_markdown(args.owner, args.repo, pr_num, comments)
@@ -204,7 +204,7 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
         raise HandledError(
             f"Failed to write output file '{output_path}': {str(e)}",
             "Ensure parent directories exist and you have write permissions.",
-        )
+        ) from e
 
     high_critical_count = sum(1 for c in comments if c.get("severity") in ("HIGH", "CRITICAL"))
     return {

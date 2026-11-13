@@ -54,12 +54,14 @@ def resolve_env_auth_token() -> str | None:
 
 def get_credentials_file_path() -> pathlib.Path:
     """Resolves the path to the XManager CLI credentials file."""
-    if custom := os.path.expanduser(os.environ.get("XMC_CREDENTIALS_FILE", "").strip()):
-        if os.path.isabs(custom):
-            return pathlib.Path(custom)
-    if xdg := os.path.expanduser(os.environ.get("XDG_CONFIG_HOME", "").strip()):
-        if os.path.isabs(xdg):
-            return pathlib.Path(xdg) / "xmc" / "credentials.json"
+    if (
+        custom := os.path.expanduser(os.environ.get("XMC_CREDENTIALS_FILE", "").strip())
+    ) and os.path.isabs(custom):
+        return pathlib.Path(custom)
+    if (xdg := os.path.expanduser(os.environ.get("XDG_CONFIG_HOME", "").strip())) and os.path.isabs(
+        xdg
+    ):
+        return pathlib.Path(xdg) / "xmc" / "credentials.json"
     return pathlib.Path.home() / ".config" / "xmc" / "credentials.json"
 
 

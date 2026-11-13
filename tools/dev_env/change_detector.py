@@ -158,9 +158,10 @@ class ChangeDetector:
             if not clean_f:
                 continue
 
-            if any(clean_f.startswith(p) for p in HELM_MANIFEST_PREFIXES):
-                if clean_f.endswith((".yaml", ".yml", ".tpl", ".json")):
-                    helm_upgrade_needed = True
+            if any(clean_f.startswith(p) for p in HELM_MANIFEST_PREFIXES) and clean_f.endswith(
+                (".yaml", ".yml", ".tpl", ".json")
+            ):
+                helm_upgrade_needed = True
 
             matched_service = self._match_service_for_file(clean_f)
             if matched_service:

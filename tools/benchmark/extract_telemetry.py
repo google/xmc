@@ -43,7 +43,7 @@ def _fetch_comments(owner: str, repo: str, since: str | None = None):
                 f"Failed to fetch repository comments: {str(e)}",
                 "Ensure the GITHUB_TOKEN environment variable is set and has"
                 " appropriate read permissions.",
-            )
+            ) from e
         if not batch:
             break
         comments.extend(batch)
@@ -94,7 +94,7 @@ def extract_telemetry(args):
             raise HandledError(
                 f"Failed to write output file: {str(e)}",
                 "Ensure the directory path exists and you have write permissions.",
-            )
+            ) from e
     return records
 
 

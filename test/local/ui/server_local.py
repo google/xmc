@@ -24,6 +24,7 @@ and unified as those parallel efforts converge.
 """
 
 import argparse
+import contextlib
 import glob
 import http.server
 import json
@@ -31,7 +32,7 @@ import logging
 import os
 import re
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,16 @@ def find_testdata_dirs() -> list[str]:
             ]
             for c in candidates:
                 norm = os.path.normpath(c)
-                if norm not in seen and os.path.isdir(norm):
-                    if glob.glob(os.path.join(norm, "*.json")) or glob.glob(
-                        os.path.join(norm, "*.golden.json")
-                    ):
-                        seen.add(norm)
-                        found.append(norm)
+                if (
+                    norm not in seen
+                    and os.path.isdir(norm)
+                    and (
+                        glob.glob(os.path.join(norm, "*.json"))
+                        or glob.glob(os.path.join(norm, "*.golden.json"))
+                    )
+                ):
+                    seen.add(norm)
+                    found.append(norm)
     return found
 
 
@@ -140,8 +145,8 @@ def load_golden_files() -> dict[str, Any]:
 class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
     """Custom request handler supporting SPA routing, config.js, and mock APIs."""
 
-    goldens: dict[str, Any] = {}
-    in_memory_dashboards: list[dict[str, Any]] = []
+    goldens: ClassVar[dict[str, Any]] = {}
+    in_memory_dashboards: ClassVar[list[dict[str, Any]]] = []
 
     @classmethod
     def initialize_mock_data(cls) -> None:
@@ -378,10 +383,8 @@ class SPAHandler(server.SPAHandler):  # type: ignore[misc, unused-ignore]
             xid = golden_data.get("xid")
             golden_xid: int | None = None
             if xid is not None:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     golden_xid = int(xid)
-                except (ValueError, TypeError):
-                    pass
             if golden_xid is None:
                 match = re.search(r"experiments/(\d+)", golden_name)
                 if match:

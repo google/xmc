@@ -15,6 +15,7 @@
 
 import io
 import os
+import shlex
 import sys
 import tempfile
 import unittest
@@ -82,7 +83,9 @@ class MainTest(unittest.TestCase):
 
         self.assertEqual(cm.exception.code, 3)
         mock_run.assert_called_once()
-        self.assertIn("ng test --watch=false", mock_run.call_args.args[0])
+        cmd_args = mock_run.call_args.args[0]
+        joined = cmd_args if isinstance(cmd_args, str) else shlex.join(cmd_args)
+        self.assertIn("ng test --watch=false", joined)
 
 
 if __name__ == "__main__":

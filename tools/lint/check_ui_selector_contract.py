@@ -245,9 +245,12 @@ def has_annotation(lines: list[str], first: int, last: int) -> bool:
 def _has_text_literals(tree: ast.AST) -> Iterator[tuple[ast.keyword, str]]:
     """Yield `has_text=` keywords whose value is a string or f-string."""
     for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and node.arg == "has_text":
-            if (text := _string_value(node.value)) is not None:
-                yield node, text
+        if (
+            isinstance(node, ast.keyword)
+            and node.arg == "has_text"
+            and (text := _string_value(node.value)) is not None
+        ):
+            yield node, text
 
 
 def find_copy_violations(

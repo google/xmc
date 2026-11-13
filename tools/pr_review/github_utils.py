@@ -149,10 +149,13 @@ def _raise_detailed_error(errors):
             if any(kw in stderr.lower() for kw in ["auth", "login", "credentials"]):
                 is_auth_failure = True
                 break
-        elif source == "unauthenticated" and isinstance(err, ValueError):
-            if "Unauthenticated requests not supported" in str(err):
-                is_auth_failure = True
-                break
+        elif (
+            source == "unauthenticated"
+            and isinstance(err, ValueError)
+            and "Unauthenticated requests not supported" in str(err)
+        ):
+            is_auth_failure = True
+            break
 
     err_msgs = []
     for source, err in errors:

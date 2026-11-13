@@ -165,8 +165,10 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
                 continue
             try:
                 xid_val = int(xid_str)
-            except ValueError:
-                raise ValueError(f"--xids must be a comma-separated list of integers: {xid_str}")
+            except ValueError as err:
+                raise ValueError(
+                    f"--xids must be a comma-separated list of integers: {xid_str}"
+                ) from err
             # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
             # with a clear message, rather than the dashboard silently losing a chart.
             charts.append(
