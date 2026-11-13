@@ -122,7 +122,18 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 	for k, v := range opts.RawValues {
 		compValues[k] = v
 	}
+	setBridgeRedisAddr(compValues)
 	return compValues
+}
+
+// setBridgeRedisAddr makes the bridge's REDIS_ADDR the only source of redisAddr: it replaces any
+// Component parameter or raw value, which could otherwise send the redis-secret password to
+// another host, and omits redisAddr when REDIS_ADDR is empty.
+func setBridgeRedisAddr(compValues map[string]any) {
+	delete(compValues, "redisAddr")
+	if addr := strings.TrimSpace(os.Getenv("REDIS_ADDR")); addr != "" {
+		compValues["redisAddr"] = addr
+	}
 }
 
 func defaultComponentEnvImageVar(componentName string) string {

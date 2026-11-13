@@ -27,6 +27,8 @@ const (
 	hpoDeploymentFile     = "hpo/templates/deployment.yaml"
 	hpoServiceAccountFile = "hpo/templates/serviceaccount.yaml"
 	hpoComponentFile      = "hpo/templates/component.yaml"
+	// testRedisAddr is the hpoDeployment.redisAddr that xmc-bridge passes in the tests.
+	testRedisAddr = "redis-service.xmc.svc.cluster.local:6379"
 )
 
 // studyControllerWorkload is the subset of the rendered xmc-study-controller Deployment that the
@@ -46,7 +48,18 @@ type studyControllerWorkload struct {
 				ServiceAccountName            string `yaml:"serviceAccountName"`
 				TerminationGracePeriodSeconds int    `yaml:"terminationGracePeriodSeconds"`
 				Containers                    []struct {
-					Image string `yaml:"image"`
+					Image string   `yaml:"image"`
+					Args  []string `yaml:"args"`
+					Env   []struct {
+						Name      string `yaml:"name"`
+						Value     string `yaml:"value"`
+						ValueFrom struct {
+							SecretKeyRef struct {
+								Name string `yaml:"name"`
+								Key  string `yaml:"key"`
+							} `yaml:"secretKeyRef"`
+						} `yaml:"valueFrom"`
+					} `yaml:"env"`
 				} `yaml:"containers"`
 			} `yaml:"spec"`
 		} `yaml:"template"`
@@ -58,11 +71,32 @@ type studyControllerSummary struct {
 	Replicas                          int
 	TerminationGracePeriodSeconds     int
 	PodLabels                         map[string]string
+	Args                              []string
+	// Env maps every container environment variable to its value, or to
+	// "secretKeyRef:<secret>/<key>" when it is read from a Secret.
+	Env map[string]string
 }
 
 func hpoChartDir(t *testing.T) string {
 	t.Helper()
 	return resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026a", "components", "hpo"))
+}
+
+// withBridgeRedisAddr returns a copy of values with hpoDeployment.redisAddr set to testRedisAddr,
+// as xmc-bridge sets it for every xmc-cmp-hpo release.
+func withBridgeRedisAddr(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values)+1)
+	for k, v := range values {
+		out[k] = v
+	}
+	hpo := map[string]any{"redisAddr": testRedisAddr}
+	if existing, ok := values["hpoDeployment"].(map[string]any); ok {
+		for k, v := range existing {
+			hpo[k] = v
+		}
+	}
+	out["hpoDeployment"] = hpo
+	return out
 }
 
 func summarizeStudyController(t *testing.T, manifest string) studyControllerSummary {
@@ -76,8 +110,19 @@ func summarizeStudyController(t *testing.T, manifest string) studyControllerSumm
 		Replicas: w.Spec.Replicas, PodLabels: w.Spec.Template.Metadata.Labels,
 		TerminationGracePeriodSeconds: w.Spec.Template.Spec.TerminationGracePeriodSeconds,
 	}
-	if len(w.Spec.Template.Spec.Containers) == 1 {
-		got.Image = w.Spec.Template.Spec.Containers[0].Image
+	if len(w.Spec.Template.Spec.Containers) != 1 {
+		return got
+	}
+	c := w.Spec.Template.Spec.Containers[0]
+	got.Image, got.Args = c.Image, c.Args
+	for _, e := range c.Env {
+		if got.Env == nil {
+			got.Env = map[string]string{}
+		}
+		got.Env[e.Name] = e.Value
+		if ref := e.ValueFrom.SecretKeyRef; ref.Name != "" {
+			got.Env[e.Name] = "secretKeyRef:" + ref.Name + "/" + ref.Key
+		}
 	}
 	return got
 }
@@ -88,7 +133,7 @@ func summarizeStudyController(t *testing.T, manifest string) studyControllerSumm
 func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	t.Parallel()
 	rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", map[string]any{
-		"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v7"},
+		"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v7", "redisAddr": testRedisAddr},
 	})
 	if err != nil {
 		t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
@@ -102,6 +147,8 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 			"app.kubernetes.io/name":       "xmc-study-controller",
 			"xmc.google.com/vizier-client": "true",
 		},
+		Args: []string{"-port=8080", "-redis_addr=" + testRedisAddr},
+		Env:  map[string]string{"REDIS_PASSWORD": "secretKeyRef:redis-secret/redis-password"},
 	}
 	if diff := cmp.Diff(want, summarizeStudyController(t, rendered[hpoDeploymentFile])); diff != "" {
 		t.Errorf("xmc-study-controller Deployment mismatch (-want +got):\n%s", diff)
@@ -163,7 +210,7 @@ func TestHPOChart_ImageResolution(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", tc.values)
+			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeRedisAddr(tc.values))
 			if err != nil {
 				t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
 			}
@@ -189,7 +236,7 @@ func TestHPOChart_TerminationGracePeriod(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", tc.values)
+			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeRedisAddr(tc.values))
 			if err != nil {
 				t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
 			}
@@ -205,8 +252,32 @@ func TestHPOChart_TerminationGracePeriod(t *testing.T) {
 	}
 }
 
+// TestHPOChart_BridgeReleaseRequiresRedisAddr checks that the xmc-cmp-hpo release fails to render,
+// rather than starting a Study Controller without Redis, when xmc-bridge passes no redisAddr.
+func TestHPOChart_BridgeReleaseRequiresRedisAddr(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		values map[string]any
+	}{
+		{name: "no hpoDeployment values", values: nil},
+		{name: "hpoDeployment without redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true}}},
+		{name: "empty redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": ""}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", tc.values)
+			if err == nil || !strings.Contains(err.Error(), "hpoDeployment.redisAddr is required") {
+				t.Errorf("renderChartWithValues(xmc-cmp-hpo) error = %v, want one containing %q", err, "hpoDeployment.redisAddr is required")
+			}
+		})
+	}
+}
+
 // TestHPOChart_ProfileReleaseRendersOnlyComponent renders the hpo chart outside an xmc-cmp-*
-// release: only the Component CR is rendered, with spec.imageTag from imageTag.
+// release: only the Component CR is rendered, with spec.imageTag from imageTag. It needs no
+// hpoDeployment.redisAddr.
 func TestHPOChart_ProfileReleaseRendersOnlyComponent(t *testing.T) {
 	t.Parallel()
 	rendered, err := renderChartWithValues(hpoChartDir(t), "hpo", map[string]any{"enabled": true, "imageTag": "v4"})

@@ -27,7 +27,9 @@ go_library(
     deps = [
         "//cmd/study_controller/config",
         "//internal/logging",
+        "//internal/task_queue_redis/redisclient",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
 
@@ -50,4 +52,9 @@ go_test(
         "main_test.go",
     ],
     embed = [":study_controller_lib"],
+    deps = [
+        "//cmd/study_controller/config",
+        "//internal/logging",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
 )

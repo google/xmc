@@ -45,6 +45,7 @@ data:
   COMPONENT_OWNERSHIP_EPOCH: {{ ternary 1 (int64 $comp.ownershipEpoch) (kindIs "invalid" $comp.ownershipEpoch) | quote }}
   HELM_CHART_PATH: {{ $comp.chartPath | default "" | quote }}
   PROJECT_ID: {{ .Values.projectId | default "" | quote }}
+  REDIS_ADDR: {{ .Values.redisAddr | default "" | quote }}
   DEFAULT_INGESTION_GATEWAY_IMAGE: {{ .Values.ingestion_gateway_custom_image | default "" | quote }}
   DEFAULT_HPO_IMAGE: {{ .Values.hpo_custom_image | default "" | quote }}
   PROBE_INTERVAL: {{ $comp.probeInterval | default "5s" | quote }}

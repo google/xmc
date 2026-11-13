@@ -375,9 +375,10 @@ func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 
 	// The second call changes the image, so Helm PATCHes the xmc-study-controller Deployment.
 	const studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
+	const redisAddr = "redis-service.xmc.svc.cluster.local:6379"
 	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-hpo", []map[string]any{
-		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1"}},
-		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1", "redisAddr": redisAddr}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage, "redisAddr": redisAddr}},
 	}, func() {
 		dep, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
 		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {

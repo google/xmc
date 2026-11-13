@@ -31,6 +31,7 @@ import (
 func TestBuildHelmValues(t *testing.T) {
 	t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", "")
 	t.Setenv("PROJECT_ID", "")
+	t.Setenv("REDIS_ADDR", "")
 
 	t.Run("basic 1p component with parameters and image tag", func(t *testing.T) {
 		opts := HelmComponentOptions{
@@ -433,6 +434,7 @@ func TestBuildHelmValues_DefaultEnvImageAndCustomNamespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
 			t.Setenv("PROJECT_ID", "")
+			t.Setenv("REDIS_ADDR", "")
 			opts := ParseHelmComponentOptions(
 				"ingestion-gateway",
 				tt.namespace,
@@ -442,6 +444,76 @@ func TestBuildHelmValues_DefaultEnvImageAndCustomNamespace(t *testing.T) {
 			got := BuildHelmValues(opts)
 			if diff := cmp.Diff(tt.want, got); diff != "" {
 				t.Errorf("BuildHelmValues() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
+	tests := []struct {
+		name       string
+		projectEnv string
+		redisEnv   string
+		opts       HelmComponentOptions
+		want       map[string]any
+	}{
+		{
+			name: "unset env vars are omitted",
+			opts: HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want: map[string]any{"enabled": true},
+		},
+		{
+			name:       "whitespace-only env vars are omitted",
+			projectEnv: "  ",
+			redisEnv:   "\t",
+			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:       map[string]any{"enabled": true},
+		},
+		{
+			name:       "env vars reach the hpo release trimmed",
+			projectEnv: " my-proj ",
+			redisEnv:   " redis-service.xmc.svc.cluster.local:6379 ",
+			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:       map[string]any{"enabled": true, "projectId": "my-proj", "redisAddr": "redis-service.xmc.svc.cluster.local:6379"},
+		},
+		{
+			name:     "env vars reach every 1P release",
+			redisEnv: "10.0.0.3:6379",
+			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "ingestion-gateway"}, Enabled: true},
+			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
+		},
+		{
+			name:     "component parameter does not override the env var",
+			redisEnv: "10.0.0.3:6379",
+			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"redisAddr": "10.0.0.4:6379"}},
+			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
+		},
+		{
+			name:     "raw value does not override the env var",
+			redisEnv: "10.0.0.3:6379",
+			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, RawValues: map[string]any{"redisAddr": "10.0.0.4:6379"}},
+			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
+		},
+		{
+			name: "component parameter is dropped when the env var is unset",
+			opts: HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"redisAddr": "10.0.0.4:6379"}},
+			want: map[string]any{"enabled": true},
+		},
+		{
+			name:       "component parameter still overrides projectId",
+			projectEnv: "my-proj",
+			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"projectId": "other-proj"}},
+			want:       map[string]any{"enabled": true, "projectId": "other-proj"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("PROJECT_ID", tt.projectEnv)
+			t.Setenv("REDIS_ADDR", tt.redisEnv)
+			t.Setenv(defaultComponentEnvImageVar(tt.opts.Ref.Name), "")
+			got := BuildHelmValues(tt.opts)[ComponentNameToHelmKey(tt.opts.Ref.Name)]
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("BuildHelmValues() component values mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

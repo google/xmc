@@ -38,6 +38,9 @@ type TaskResult struct {
 // Config holds all of the necessary pieces to connect to Redis instance.
 type Config struct {
 	Addr string
+	// ContextTimeoutEnabled makes socket reads and writes honor the deadline of the command's
+	// context instead of the client's fixed read and write timeouts. Off by default.
+	ContextTimeoutEnabled bool
 }
 
 // Publisher is an interface for publishing messages to Redis.
@@ -111,7 +114,7 @@ func (b *baseManager) Ping(ctx context.Context) error {
 }
 
 func getRedisOptions(redisConfig Config) *redis.Options {
-	options := &redis.Options{Addr: redisConfig.Addr}
+	options := &redis.Options{Addr: redisConfig.Addr, ContextTimeoutEnabled: redisConfig.ContextTimeoutEnabled}
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 	if redisPassword != "" {
 		options.Password = redisPassword
