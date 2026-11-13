@@ -23,80 +23,87 @@ import (
 	"xmanager_cloud/internal/query_generator/querytools"
 )
 
+type normalizerState struct {
+	schema          querytools.TableView
+	lastToken       Token
+	insideFieldExpr bool
+	activeType      filtervisitor.PrimType
+	sb              strings.Builder
+}
+
+func promoteLogicalKeyword(tok Token) Token {
+	if tok.Type != tokenIdent {
+		return tok
+	}
+	switch strings.ToUpper(tok.Literal) {
+	case "AND", "OR", "NOT":
+		tok.Raw = strings.ToUpper(tok.Raw)
+		tok.Type = tokenKeyword
+	}
+	return tok
+}
+
+func isArrayNegationPattern(schema querytools.TableView, i int, tokens []Token) bool {
+	if i+2 >= len(tokens) || tokens[i+1].Type != tokenIdent || tokens[i+2].Type != tokenOp || tokens[i+2].Literal != ":" {
+		return false
+	}
+	return findInTable(schema, tokens[i+1].Literal).Name == filtervisitor.Array
+}
+
+func (s *normalizerState) handleOpToken(tok Token, i int, tokens []Token) Token {
+	if tok.Literal == "-" {
+		s.insideFieldExpr = false
+		if isArrayNegationPattern(s.schema, i, tokens) {
+			s.sb.WriteString("NOT")
+			tok.Type = tokenKeyword
+			return tok
+		}
+		s.sb.WriteString(tok.Raw)
+		return tok
+	}
+
+	s.insideFieldExpr = true
+	if s.lastToken.Type == tokenIdent || s.lastToken.Type == tokenString {
+		s.activeType = findInTable(s.schema, s.lastToken.Literal)
+		nextIsLParen := i+1 < len(tokens) && tokens[i+1].Type == tokenLParen
+		if tok.Literal == ":" && s.activeType.Name != filtervisitor.Array && !nextIsLParen {
+			s.sb.WriteString("=")
+			return tok
+		}
+	}
+	s.sb.WriteString(tok.Raw)
+	return tok
+}
+
+func (s *normalizerState) processToken(i int, tokens []Token) {
+	tok := promoteLogicalKeyword(tokens[i])
+	if i > 0 && shouldAddSpace(s.lastToken, tok) {
+		s.sb.WriteString(" ")
+	}
+
+	switch tok.Type {
+	case tokenOp:
+		tok = s.handleOpToken(tok, i, tokens)
+	case tokenKeyword, tokenLParen, tokenRParen:
+		s.insideFieldExpr = false
+		s.sb.WriteString(tok.Raw)
+	case tokenIdent, tokenString, tokenNumber:
+		s.insideFieldExpr = handleIdentOrValueToken(tok, s.insideFieldExpr, s.activeType, i, tokens, &s.sb)
+	default:
+		s.sb.WriteString(tok.Raw)
+	}
+	s.lastToken = tok
+}
+
 // Normalize takes a semi-compliant AIP-160 string and enforces quoting rules
 // based on the provided schema.
 func Normalize(input string, schema querytools.TableView) (string, error) {
 	tokens := Tokenize(input)
-	var sb strings.Builder
-
-	var lastToken Token
-	var insideFieldExpr bool // Are we immediately after "field ="
-	var activeType filtervisitor.PrimType
-
-	for i := 0; i < len(tokens); i++ {
-		token := tokens[i]
-
-		// If we see "and", "or", "not" (in any casing), we treat them as Keywords
-		// so they are not quoted as search terms.
-		if token.Type == tokenIdent {
-			switch strings.ToUpper(token.Literal) {
-			case "AND", "OR", "NOT":
-				token.Raw = strings.ToUpper(token.Raw)
-				token.Type = tokenKeyword
-			}
-		}
-
-		// Add space between tokens unless tighter spacing is required.
-		if i > 0 && shouldAddSpace(lastToken, token) {
-			sb.WriteString(" ")
-		}
-
-		switch token.Type {
-		case tokenOp:
-			if token.Literal == "-" {
-				// Check for the pattern "- <identifier>:" which indicates a NOT operation on an array field.
-				if i+2 < len(tokens) && tokens[i+1].Type == tokenIdent && tokens[i+2].Type == tokenOp && tokens[i+2].Literal == ":" {
-					fieldName := tokens[i+1].Literal
-					fieldType := findInTable(schema, fieldName)
-					if fieldType.Name == filtervisitor.Array {
-						sb.WriteString("NOT")
-						token.Type = tokenKeyword
-						insideFieldExpr = false
-						break
-					}
-				}
-				// Unary negation, write token and don't set insideFieldExpr
-				sb.WriteString(token.Raw)
-				insideFieldExpr = false
-				break
-			}
-
-			insideFieldExpr = true
-			// The previous token is a field identifier, use it to determine the expected value type.
-			if lastToken.Type == tokenIdent || lastToken.Type == tokenString {
-				activeType = findInTable(schema, lastToken.Literal)
-				if token.Literal == ":" && activeType.Name != filtervisitor.Array &&
-					!(i+1 < len(tokens) && tokens[i+1].Type == tokenLParen) {
-					sb.WriteString("=")
-					break
-				}
-			}
-			sb.WriteString(token.Raw)
-
-		case tokenKeyword, tokenLParen, tokenRParen:
-			insideFieldExpr = false
-			sb.WriteString(token.Raw)
-
-		case tokenIdent, tokenString, tokenNumber:
-			insideFieldExpr = handleIdentOrValueToken(token, insideFieldExpr, activeType, i, tokens, &sb)
-		default:
-			sb.WriteString(token.Raw)
-		}
-
-		lastToken = token
+	state := normalizerState{schema: schema}
+	for i := range tokens {
+		state.processToken(i, tokens)
 	}
-
-	return sb.String(), nil
+	return state.sb.String(), nil
 }
 
 func fixValue(t Token, primType filtervisitor.PrimType) string {
