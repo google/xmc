@@ -134,11 +134,7 @@ func extractPathAndValue(expr *fpb.Expression) ([]string, string) {
 	if rhs.WhichExpression() == fpb.Expression_Phrase_case {
 		literalVal = strings.Join(rhs.GetPhrase().GetValues(), " ")
 	} else if rhs.WhichExpression() == fpb.Expression_Value_case {
-		val := rhs.GetValue()
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			val = val[1 : len(val)-1]
-		}
-		literalVal = val
+		literalVal, _ = stripQuotes(rhs.GetValue())
 	}
 	return path, literalVal
 }
@@ -169,22 +165,47 @@ func isExprOptimized(g *groupEntry, expr *fpb.Expression) bool {
 	return false
 }
 
-func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervisitor.PrimType, error) {
+func collectDisjunctionGroups(qfv QueryFilterVisitor, exprs []*fpb.Expression) map[string]*groupEntry {
 	groups := make(map[string]*groupEntry)
-
+	if !qfv.GetOptimizeDisjunction() {
+		return groups
+	}
 	for _, expr := range exprs {
 		path, literalVal := extractPathAndValue(expr)
-		if len(path) > 0 && literalVal != "" && qfv.GetOptimizeDisjunction() {
-			if optimizable, _, err := qfv.HandleDisjunction(path); err == nil && optimizable {
-				key := strings.Join(path, ".")
-				if _, ok := groups[key]; !ok {
-					groups[key] = &groupEntry{path: path}
-				}
-				groups[key].exprs = append(groups[key].exprs, expr)
-				groups[key].values = append(groups[key].values, literalVal)
-			}
+		if len(path) == 0 || literalVal == "" {
+			continue
 		}
+		if optimizable, _, err := qfv.HandleDisjunction(path); err != nil || !optimizable {
+			continue
+		}
+		key := strings.Join(path, ".")
+		if _, ok := groups[key]; !ok {
+			groups[key] = &groupEntry{path: path}
+		}
+		groups[key].exprs = append(groups[key].exprs, expr)
+		groups[key].values = append(groups[key].values, literalVal)
 	}
+	return groups
+}
+
+func appendOptimizedDisjunctionGroup(qfv QueryFilterVisitor, g *groupEntry) error {
+	_, colSQL, err := qfv.HandleDisjunction(g.path)
+	if err != nil {
+		return err
+	}
+	paramSQL, err := qfv.CaptureSQL(func() error {
+		qfv.AppendBindingStringArray(g.values)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	qfv.AppendTrustedSQL(qfv.Dialect().InArray(colSQL, paramSQL))
+	return nil
+}
+
+func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervisitor.PrimType, error) {
+	groups := collectDisjunctionGroups(qfv, exprs)
 
 	// Print the final combined OR list in the exact original order!
 	qfv.AppendTrustedSQL(safesql.New("("))
@@ -193,45 +214,29 @@ func VisitDisjunction(qfv QueryFilterVisitor, exprs []*fpb.Expression) (filtervi
 
 	for _, expr := range exprs {
 		path, _ := extractPathAndValue(expr)
-		isOptimized := false
-		var key string
-		if len(path) > 0 {
-			key = strings.Join(path, ".")
-			isOptimized = isExprOptimized(groups[key], expr)
-		}
-
-		if !isOptimized {
+		key := strings.Join(path, ".")
+		if len(path) > 0 && isExprOptimized(groups[key], expr) {
+			if processedGroups[key] {
+				continue
+			}
+			processedGroups[key] = true
 			if hasFirst {
 				qfv.AppendTrustedSQL(safesql.New(" OR "))
 			}
-			if _, err := filtervisitor.Visit(qfv, expr); err != nil {
+			if err := appendOptimizedDisjunctionGroup(qfv, groups[key]); err != nil {
 				return filtervisitor.Invalid, err
 			}
 			hasFirst = true
 			continue
 		}
 
-		if !processedGroups[key] {
-			processedGroups[key] = true
-			g := groups[key]
-			_, colSQL, err := qfv.HandleDisjunction(g.path)
-			if err != nil {
-				return filtervisitor.Invalid, err
-			}
-			paramSQL, err := qfv.CaptureSQL(func() error {
-				qfv.AppendBindingStringArray(g.values)
-				return nil
-			})
-			if err != nil {
-				return filtervisitor.Invalid, err
-			}
-
-			if hasFirst {
-				qfv.AppendTrustedSQL(safesql.New(" OR "))
-			}
-			qfv.AppendTrustedSQL(qfv.Dialect().InArray(colSQL, paramSQL))
-			hasFirst = true
+		if hasFirst {
+			qfv.AppendTrustedSQL(safesql.New(" OR "))
 		}
+		if _, err := filtervisitor.Visit(qfv, expr); err != nil {
+			return filtervisitor.Invalid, err
+		}
+		hasFirst = true
 	}
 	qfv.AppendTrustedSQL(safesql.New(")"))
 	return filtervisitor.Invalid, nil
@@ -269,13 +274,30 @@ func handleGlobalRestriction(qfv QueryFilterVisitor, rhs *fpb.Expression) (filte
 	return filtervisitor.Boolean, nil
 }
 
+func isNumericOrBoolType(name string) bool {
+	return name == "INTEGER" || name == "UNSIGNED" || name == "FLOAT" || name == "BOOLEAN"
+}
+
+func isNumericBoolOrTimeType(name string) bool {
+	return isNumericOrBoolType(name) || name == "TIMESTAMP" || name == "DATE" || name == "PROTO_TIMESTAMP"
+}
+
+func isStringyType(name string) bool {
+	return name == "STRING" || name == "ENUM" || name == "STR_CONST"
+}
+
+func stripQuotes(val string) (string, bool) {
+	if len(val) >= 2 && ((strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'"))) {
+		return val[1 : len(val)-1], true
+	}
+	return val, false
+}
+
 func checkArrayHasCompatibility(lhsElem, rhsType filtervisitor.PrimType) bool {
 	if lhsElem.Compatible(rhsType) {
 		return true
 	}
-	isNumericOrBool := func(n string) bool { return n == "INTEGER" || n == "UNSIGNED" || n == "FLOAT" || n == "BOOLEAN" }
-	isStringy := func(n string) bool { return n == "STRING" || n == "ENUM" || n == "STR_CONST" }
-	return isNumericOrBool(lhsElem.Name) && isStringy(rhsType.Name)
+	return isNumericOrBoolType(lhsElem.Name) && isStringyType(rhsType.Name)
 }
 
 func handleHasRestriction(qfv QueryFilterVisitor, lhs, rhs *fpb.Expression, lhsType, rhsType filtervisitor.PrimType, lhsSQL, rhsSQL safesql.TrustedSQLString) (filtervisitor.PrimType, error) {
@@ -339,6 +361,62 @@ func handleRegexpRestriction(qfv QueryFilterVisitor, op fpb.Restriction_Comparat
 	return filtervisitor.Invalid, nil
 }
 
+type restrictionSide struct {
+	typ filtervisitor.PrimType
+	sql safesql.TrustedSQLString
+}
+
+func validateRestrictionRHS(rhs *fpb.Expression) error {
+	if rhs == nil {
+		return nil
+	}
+	w := rhs.WhichExpression()
+	if w == fpb.Expression_Conjunction_case || w == fpb.Expression_Disjunction_case || w == fpb.Expression_Negation_case {
+		return fmt.Errorf("RHS cannot contain logical operators (AND/OR/NOT)")
+	}
+	return nil
+}
+
+func captureRestrictionSide(qfv QueryFilterVisitor, expr *fpb.Expression) (restrictionSide, error) {
+	var side restrictionSide
+	capturedSQL, err := qfv.CaptureSQL(func() error {
+		var visitErr error
+		side.typ, visitErr = filtervisitor.Visit(qfv, expr)
+		return visitErr
+	})
+	side.sql = capturedSQL
+	return side, err
+}
+
+func areComparisonTypesCompatible(op fpb.Restriction_Comparator, lhsType, rhsType filtervisitor.PrimType) bool {
+	if lhsType.Compatible(rhsType) {
+		return true
+	}
+	if op != fpb.Restriction_EQUALS && op != fpb.Restriction_NOT_EQUALS {
+		return false
+	}
+	return isNumericBoolOrTimeType(lhsType.Name) && isStringyType(rhsType.Name)
+}
+
+func comparisonOperatorSQL(op fpb.Restriction_Comparator) safesql.TrustedSQLString {
+	switch op {
+	case fpb.Restriction_EQUALS:
+		return safesql.New(" = ")
+	case fpb.Restriction_NOT_EQUALS:
+		return safesql.New(" != ")
+	case fpb.Restriction_LESS_THAN:
+		return safesql.New(" < ")
+	case fpb.Restriction_LESS_EQUALS:
+		return safesql.New(" <= ")
+	case fpb.Restriction_GREATER_THAN:
+		return safesql.New(" > ")
+	case fpb.Restriction_GREATER_EQUALS:
+		return safesql.New(" >= ")
+	default:
+		return safesql.New(" = ")
+	}
+}
+
 func RestrictionExp(qfv QueryFilterVisitor, r *fpb.Restriction) (filtervisitor.PrimType, error) {
 	if ok, rewritten := qfv.TranslateRestriction(r); ok && rewritten != r {
 		return filtervisitor.Visit(qfv, &fpb.Expression{
@@ -348,105 +426,44 @@ func RestrictionExp(qfv QueryFilterVisitor, r *fpb.Restriction) (filtervisitor.P
 		})
 	}
 
-	lhs := r.GetLhs()
-	rhs := r.GetRhs()
-	op := r.GetComparator()
-
-	if rhs != nil {
-		w := rhs.WhichExpression()
-		if w == fpb.Expression_Conjunction_case || w == fpb.Expression_Disjunction_case || w == fpb.Expression_Negation_case {
-			return filtervisitor.Invalid, fmt.Errorf("RHS cannot contain logical operators (AND/OR/NOT)")
-		}
+	lhs, rhs, op := r.GetLhs(), r.GetRhs(), r.GetComparator()
+	if err := validateRestrictionRHS(rhs); err != nil {
+		return filtervisitor.Invalid, err
 	}
-
 	if op == fpb.Restriction_GLOBAL {
 		return handleGlobalRestriction(qfv, rhs)
 	}
-
-	// Special full text search HAS case
 	if op == fpb.Restriction_HAS && isLhsTextSearch(lhs) {
 		return handleTextSearch(qfv, rhs)
 	}
-
 	if op == fpb.Restriction_HAS {
 		qfv.SetIsHAS(true)
+		defer qfv.SetIsHAS(false)
 	}
-	defer func() {
-		if op == fpb.Restriction_HAS {
-			qfv.SetIsHAS(false)
-		}
-	}()
 
-	// Capture LHS!
-	var lhsType filtervisitor.PrimType
-	lhsSQL, err := qfv.CaptureSQL(func() error {
-		var visitErr error
-		lhsType, visitErr = filtervisitor.Visit(qfv, lhs)
-		return visitErr
-	})
+	lhsSide, err := captureRestrictionSide(qfv, lhs)
 	if err != nil {
 		return filtervisitor.Invalid, err
 	}
-
-	// Propagate lastType and capture RHS!
-	qfv.SetLastType(lhsType)
+	qfv.SetLastType(lhsSide.typ)
 	qfv.SetIsRHS(true)
-	var rhsType filtervisitor.PrimType
-	rhsSQL, err := qfv.CaptureSQL(func() error {
-		var visitErr error
-		rhsType, visitErr = filtervisitor.Visit(qfv, rhs)
-		return visitErr
-	})
+	rhsSide, err := captureRestrictionSide(qfv, rhs)
 	qfv.SetIsRHS(false)
 	if err != nil {
 		return filtervisitor.Invalid, err
 	}
 
-	// Enforce strict/legacy-fallback type compatibility!
-	isCompatible := lhsType.Compatible(rhsType)
-
 	if op == fpb.Restriction_HAS {
-		return handleHasRestriction(qfv, lhs, rhs, lhsType, rhsType, lhsSQL, rhsSQL)
+		return handleHasRestriction(qfv, lhs, rhs, lhsSide.typ, rhsSide.typ, lhsSide.sql, rhsSide.sql)
 	}
-
 	if op == fpb.Restriction_REGEXP_MATCH || op == fpb.Restriction_REGEXP_NOT_MATCH {
-		return handleRegexpRestriction(qfv, op, lhsType, rhsType, lhsSQL, rhsSQL)
+		return handleRegexpRestriction(qfv, op, lhsSide.typ, rhsSide.typ, lhsSide.sql, rhsSide.sql)
+	}
+	if !areComparisonTypesCompatible(op, lhsSide.typ, rhsSide.typ) {
+		return filtervisitor.Invalid, fmt.Errorf("type mismatch: LHS is %v, RHS is %v", lhsSide.typ.Name, rhsSide.typ.Name)
 	}
 
-	// Standard comparison type safety verification!
-	if !isCompatible && (op == fpb.Restriction_EQUALS || op == fpb.Restriction_NOT_EQUALS) {
-		isNumericOrBool := func(n string) bool {
-			return n == "INTEGER" || n == "UNSIGNED" || n == "FLOAT" || n == "BOOLEAN" || n == "TIMESTAMP" || n == "DATE" || n == "PROTO_TIMESTAMP"
-		}
-		isStringy := func(n string) bool { return n == "STRING" || n == "ENUM" || n == "STR_CONST" }
-		if isNumericOrBool(lhsType.Name) && isStringy(rhsType.Name) {
-			isCompatible = true
-		}
-	}
-	if !isCompatible {
-		return filtervisitor.Invalid, fmt.Errorf("type mismatch: LHS is %v, RHS is %v", lhsType.Name, rhsType.Name)
-	}
-
-	// Format comparison operators
-	var opSQL safesql.TrustedSQLString
-	switch op {
-	case fpb.Restriction_EQUALS:
-		opSQL = safesql.New(" = ")
-	case fpb.Restriction_NOT_EQUALS:
-		opSQL = safesql.New(" != ")
-	case fpb.Restriction_LESS_THAN:
-		opSQL = safesql.New(" < ")
-	case fpb.Restriction_LESS_EQUALS:
-		opSQL = safesql.New(" <= ")
-	case fpb.Restriction_GREATER_THAN:
-		opSQL = safesql.New(" > ")
-	case fpb.Restriction_GREATER_EQUALS:
-		opSQL = safesql.New(" >= ")
-	default:
-		opSQL = safesql.New(" = ")
-	}
-
-	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), lhsSQL, opSQL, rhsSQL, safesql.New(")")))
+	qfv.AppendTrustedSQL(safesql.Concat(safesql.New("("), lhsSide.sql, comparisonOperatorSQL(op), rhsSide.sql, safesql.New(")")))
 	return filtervisitor.Invalid, nil
 }
 
@@ -490,11 +507,7 @@ func FunctionExp(qfv QueryFilterVisitor, f *fpb.Function) (filtervisitor.PrimTyp
 	return filtervisitor.Invalid, fmt.Errorf("unsupported function call %q", funcName)
 }
 
-func parseTimestampVal(val string) (time.Time, bool) {
-	cleanVal := val
-	if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-		cleanVal = val[1 : len(val)-1]
-	}
+func parseTimestampVal(cleanVal string) (time.Time, bool) {
 	if t, err := time.Parse(time.RFC3339, cleanVal); err == nil {
 		return t, true
 	}
@@ -526,8 +539,94 @@ func ValueExp(qfv QueryFilterVisitor, val string) (filtervisitor.PrimType, error
 	return VisitValue(qfv, val)
 }
 
+func resolveUnquotedRHSMember(qfv QueryFilterVisitor, val string, lastType filtervisitor.PrimType) (filtervisitor.PrimType, bool) {
+	if lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst) {
+		return filtervisitor.Invalid, false
+	}
+	sql, t, err := qfv.HandleMember([]string{val})
+	if err != nil {
+		return filtervisitor.Invalid, false
+	}
+	qfv.AppendTrustedSQL(sql)
+	return t, true
+}
+
+func checkStringyLiteralTypeMismatch(val string, isHAS bool, lastType filtervisitor.PrimType) (filtervisitor.PrimType, bool) {
+	if isHAS || (!isStringyType(lastType.Name) && !lastType.Equals(filtervisitor.Bytes)) {
+		return filtervisitor.Invalid, false
+	}
+	if _, err := strconv.ParseFloat(val, 64); err == nil {
+		return filtervisitor.Float, true // Returns numeric to trigger type mismatch!
+	}
+	if val == "true" || val == "false" {
+		return filtervisitor.Boolean, true // Returns boolean to trigger type mismatch!
+	}
+	return filtervisitor.Invalid, false
+}
+
+func bindTemporalValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, cleanVal string) (filtervisitor.PrimType, bool) {
+	if lastType.Equals(filtervisitor.Timestamp) || lastType.Equals(filtervisitor.ProtoTimestamp) {
+		t, ok := parseTimestampVal(cleanVal)
+		if !ok {
+			return filtervisitor.Invalid, false
+		}
+		qfv.AppendBindingTimestamp(t)
+		return lastType, true
+	}
+	if lastType.Equals(filtervisitor.Date) {
+		if _, err := time.Parse(time.DateOnly, cleanVal); err != nil {
+			return filtervisitor.Invalid, false
+		}
+		qfv.AppendBindingString(cleanVal)
+		return filtervisitor.Date, true
+	}
+	return filtervisitor.Invalid, false
+}
+
+func bindTypedValue(qfv QueryFilterVisitor, lastType filtervisitor.PrimType, val, cleanVal string, hasQuotes bool) (filtervisitor.PrimType, bool, error) {
+	switch {
+	case (lastType.Equals(filtervisitor.Integer) || lastType.Equals(filtervisitor.Unsigned)) && !hasQuotes:
+		return bindIntegerOrUnsigned(qfv, lastType, val)
+	case lastType.Equals(filtervisitor.Float):
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			return filtervisitor.Invalid, false, nil
+		}
+		qfv.AppendBindingFloat64(f)
+		return filtervisitor.Float, true, nil
+	case lastType.Equals(filtervisitor.Boolean):
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return filtervisitor.Invalid, false, nil
+		}
+		qfv.AppendBindingBool(b)
+		return filtervisitor.Boolean, true, nil
+	case lastType.Equals(filtervisitor.Timestamp) || lastType.Equals(filtervisitor.ProtoTimestamp) || lastType.Equals(filtervisitor.Date):
+		t, ok := bindTemporalValue(qfv, lastType, cleanVal)
+		return t, ok, nil
+	case lastType.Equals(filtervisitor.Bytes):
+		qfv.AppendBindingByteArray([]byte(cleanVal))
+		return filtervisitor.Bytes, true, nil
+	case lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst):
+		qfv.AppendBindingEnum(cleanVal)
+		return lastType, true, nil
+	default:
+		return filtervisitor.Invalid, false, nil
+	}
+}
+
+func resolveUnquotedValue(qfv QueryFilterVisitor, val string, lastType filtervisitor.PrimType) (filtervisitor.PrimType, bool) {
+	if qfv.GetIsRHS() {
+		if t, ok := resolveUnquotedRHSMember(qfv, val, lastType); ok {
+			return t, true
+		}
+	}
+	// Rule B: Flag unquoted numeric/boolean literals on stringy fields as mismatched types!
+	return checkStringyLiteralTypeMismatch(val, qfv.GetIsHAS(), lastType)
+}
+
 func VisitValue(qfv QueryFilterVisitor, val string) (filtervisitor.PrimType, error) {
-	hasQuotes := (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'"))
+	cleanVal, hasQuotes := stripQuotes(val)
 
 	if !qfv.GetIsRHS() && !hasQuotes {
 		sql, t, err := qfv.HandleMember([]string{val})
@@ -537,112 +636,21 @@ func VisitValue(qfv QueryFilterVisitor, val string) (filtervisitor.PrimType, err
 		qfv.AppendTrustedSQL(sql)
 		return t, nil
 	}
+
 	lastType := qfv.GetLastType()
-	if qfv.GetIsRHS() && !hasQuotes {
-		isEnumOrStrConst := lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst)
-		if !isEnumOrStrConst {
-			sql, t, err := qfv.HandleMember([]string{val})
-			if err == nil {
-				qfv.AppendTrustedSQL(sql)
-				return t, nil
-			}
-		}
-	}
-
-	// Rule B: Flag unquoted numeric/boolean literals on stringy fields as mismatched types!
-	if !hasQuotes && !qfv.GetIsHAS() && (lastType.Equals(filtervisitor.String) || lastType.Equals(filtervisitor.Bytes) || lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst)) {
-		if _, err := strconv.ParseFloat(val, 64); err == nil {
-			return filtervisitor.Float, nil // Returns numeric to trigger type mismatch!
-		}
-		if val == "true" || val == "false" {
-			return filtervisitor.Boolean, nil // Returns boolean to trigger type mismatch!
-		}
-	}
-
-	// Rule A: Quoted literals on numeric/boolean LHS go straight to fallbackString!
-	if hasQuotes {
-		isNumericOrBool := func(n string) bool {
-			return n == "INTEGER" || n == "UNSIGNED" || n == "FLOAT" || n == "BOOLEAN"
-		}
-		if isNumericOrBool(lastType.Name) {
-			goto fallbackString
-		}
-	}
-	// Typed Binding Parameter Dispatcher based on LHS type
-	if (lastType.Equals(filtervisitor.Integer) || lastType.Equals(filtervisitor.Unsigned)) && !hasQuotes {
-		t, ok, err := bindIntegerOrUnsigned(qfv, lastType, val)
-		if err != nil {
-			return filtervisitor.Invalid, err
-		}
-		if ok {
+	if !hasQuotes {
+		if t, ok := resolveUnquotedValue(qfv, val, lastType); ok {
 			return t, nil
 		}
-		goto fallbackString
 	}
 
-	if lastType.Equals(filtervisitor.Float) {
-		f, err := strconv.ParseFloat(val, 64)
-		if err != nil {
-			goto fallbackString
+	// Rule A: Quoted literals on numeric/boolean LHS go straight to default string binding!
+	if !(hasQuotes && isNumericOrBoolType(lastType.Name)) {
+		if t, handled, err := bindTypedValue(qfv, lastType, val, cleanVal, hasQuotes); err != nil || handled {
+			return t, err
 		}
-		qfv.AppendBindingFloat64(f)
-		return filtervisitor.Float, nil
 	}
 
-	if lastType.Equals(filtervisitor.Boolean) {
-		b, err := strconv.ParseBool(val)
-		if err != nil {
-			goto fallbackString
-		}
-		qfv.AppendBindingBool(b)
-		return filtervisitor.Boolean, nil
-	}
-
-	if lastType.Equals(filtervisitor.Timestamp) || lastType.Equals(filtervisitor.ProtoTimestamp) {
-		if t, ok := parseTimestampVal(val); ok {
-			qfv.AppendBindingTimestamp(t)
-			return lastType, nil
-		}
-		goto fallbackString
-	}
-
-	if lastType.Equals(filtervisitor.Bytes) {
-		cleanVal := val
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			cleanVal = val[1 : len(val)-1]
-		}
-		qfv.AppendBindingByteArray([]byte(cleanVal))
-		return filtervisitor.Bytes, nil
-	}
-
-	if lastType.Equals(filtervisitor.Enum) || lastType.Equals(filtervisitor.StrConst) {
-		cleanVal := val
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			cleanVal = val[1 : len(val)-1]
-		}
-		qfv.AppendBindingEnum(cleanVal)
-		return lastType, nil
-	}
-
-	if lastType.Equals(filtervisitor.Date) {
-		cleanVal := val
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			cleanVal = val[1 : len(val)-1]
-		}
-		_, err := time.Parse(time.DateOnly, cleanVal)
-		if err != nil {
-			goto fallbackString
-		}
-		qfv.AppendBindingString(cleanVal)
-		return filtervisitor.Date, nil
-	}
-
-fallbackString:
-	// Default/String binding
-	cleanVal := val
-	if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-		cleanVal = val[1 : len(val)-1]
-	}
 	qfv.AppendBindingString(cleanVal)
 	return filtervisitor.String, nil
 }
@@ -671,10 +679,7 @@ func handleTextSearch(qfv QueryFilterVisitor, rhs *fpb.Expression) (filtervisito
 	}
 	valStr := ""
 	if rhs.WhichExpression() == fpb.Expression_Value_case {
-		valStr = rhs.GetValue()
-		if (strings.HasPrefix(valStr, "\"") && strings.HasSuffix(valStr, "\"")) || (strings.HasPrefix(valStr, "'") && strings.HasSuffix(valStr, "'")) {
-			valStr = valStr[1 : len(valStr)-1]
-		}
+		valStr, _ = stripQuotes(rhs.GetValue())
 	} else if rhs.WhichExpression() == fpb.Expression_Phrase_case {
 		valStr = strings.Join(rhs.GetPhrase().GetValues(), " ")
 	}
@@ -709,10 +714,7 @@ func RegexpLiteral(r *fpb.Restriction) (string, error) {
 	if rhs.WhichExpression() == fpb.Expression_Phrase_case {
 		val = strings.Join(rhs.GetPhrase().GetValues(), " ")
 	} else if rhs.WhichExpression() == fpb.Expression_Value_case {
-		val = rhs.GetValue()
-		if (strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"")) || (strings.HasPrefix(val, "'") && strings.HasSuffix(val, "'")) {
-			val = val[1 : len(val)-1]
-		}
+		val, _ = stripQuotes(rhs.GetValue())
 	} else {
 		return "", fmt.Errorf("RHS must be a string literal, got %v", rhs.WhichExpression())
 	}
