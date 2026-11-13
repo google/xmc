@@ -339,7 +339,8 @@ def _check_unwired_bazel_test(path: str, tracked_set: set[str], repo_root: Path)
         return None
     content = build_file.read_text(encoding="utf-8", errors="replace")
     fname = Path(path).name
-    if rel_target not in content and fname not in content and "glob(" not in content:
+    quoted_targets = (f'"{rel_target}"', f"'{rel_target}'", f'"{fname}"', f"'{fname}'")
+    if not any(q in content for q in quoted_targets) and "glob(" not in content:
         return f"Test file {path} is not registered in {build_rel} (add to go_test/py_test srcs)."
     return None
 

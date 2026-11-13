@@ -145,7 +145,7 @@ runs:
           exit 0
         fi
         if ! command -v diff-cover &>/dev/null; then
-          pip install --no-cache-dir "diff-cover>=9.2.0"
+          pip install --no-cache-dir --break-system-packages "diff-cover>=9.2.0"
         fi
         bazel coverage \
           --repository_cache="${HOME}/.cache/bazel-repo" \

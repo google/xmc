@@ -63,7 +63,7 @@ runs:
         LCOV_FILE="${UI_DIR}/coverage/xmc-ui/lcov.info"
         if [ -s "${LCOV_FILE}" ]; then
           if ! command -v diff-cover &>/dev/null; then
-            pip install --no-cache-dir "diff-cover>=9.2.0"
+            pip install --no-cache-dir --break-system-packages "diff-cover>=9.2.0"
           fi
           diff-cover "${LCOV_FILE}" \
             --src-roots . "${UI_DIR}" \
