@@ -74,11 +74,11 @@ The Study Controller connects to the XMC Redis server:
 
 The Study Controller consumes the `xmc-study-reconcile-stream` Redis stream as the `study-controller-group` consumer group, sharing a single Redis connection pool across stream consumption, per-study locking, and `/readyz`. Each message is a protojson `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`) that names a study; ticks are unsigned hints, delivered at least once.
 
-Each delivered tick is classified by outcome (`xmc_study_controller_reconcile_ticks_total{outcome}`); for valid payloads, the controller acquires a distributed per-study lease at `xmc:study-reconcile-lock:{xid}` (`SET ... NX PX` with a random 16-byte token, 15s lease TTL up to a 60s reconcile timeout, and token-checked Lua `DEL`):
+Each delivered tick is classified by outcome (`xmc_study_controller_reconcile_ticks_total{outcome}`); for valid payloads, the controller acquires a distributed per-study lease at `xmc:study-reconcile-lock:{xid}` (`SET ... NX PX` with a random 16-byte token, 15s TTL renewed every 5s up to a 60s reconcile timeout, and token-checked Lua `PEXPIRE`/`DEL`):
 
 - **Acquired (`reconciled`)**: reconciles the study (currently a stub), releases the lease, logs `Processed study reconcile tick` at info level with the study's XID, and acknowledges the tick.
 - **Already held (`contended`)**: logs `Skipped contended study reconcile tick` at info level and acknowledges the tick without reconciling so multi-replica deployments never reconcile the same study concurrently.
-- **Lock or reconcile failure (`retry_error`)**: releases any acquired lease if still owned and retries the tick via stream redelivery.
+- **Lock or reconcile failure (`retry_error`)**: cancels in-flight work immediately if lease renewal fails, releases the lease if still owned, and retries the tick via stream redelivery.
 - **Malformed payload (`invalid_payload`)**: a payload whose `data` does not decode to a valid `experiments/{xid}` resource name goes to the `xmc-study-reconcile-dlq-stream` dead-letter stream without acquiring the lock or retrying (raw stream entries missing a `data` field are dead-lettered directly by the stream consumer before the handler runs).
 
 The controller re-creates the consumer group when Redis loses it, for example after a restart without persistence.

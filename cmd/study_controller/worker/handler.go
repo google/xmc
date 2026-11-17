@@ -19,6 +19,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,6 +34,7 @@ import (
 
 const (
 	defaultLeaseTTL         = 15 * time.Second
+	defaultRenewInterval    = defaultLeaseTTL / 3
 	defaultReconcileTimeout = 60 * time.Second
 	defaultReleaseTimeout   = 2 * time.Second
 	studyLockKeyPrefix      = "xmc:study-reconcile-lock:"
@@ -54,6 +57,7 @@ func init() {
 
 // Lease represents an acquired per-study reconcile lock. *redislock.Lease satisfies it.
 type Lease interface {
+	Extend(ctx context.Context) error
 	Release(ctx context.Context) error
 }
 
@@ -82,16 +86,16 @@ func studyLockKey(xid int64) string              { return fmt.Sprintf("%s%d", st
 
 // HandlerParams configures a study reconcile Handler.
 type HandlerParams struct {
-	Locker                           Locker
-	Reconcile                        ReconcileFunc
-	ReconcileTimeout, ReleaseTimeout time.Duration
+	Locker                                          Locker
+	Reconcile                                       ReconcileFunc
+	RenewInterval, ReconcileTimeout, ReleaseTimeout time.Duration
 }
 
 // Handler processes study reconcile ticks under a distributed per-study lease lock.
 type Handler struct {
-	locker                           Locker
-	reconcile                        ReconcileFunc
-	reconcileTimeout, releaseTimeout time.Duration
+	locker                                          Locker
+	reconcile                                       ReconcileFunc
+	renewInterval, reconcileTimeout, releaseTimeout time.Duration
 }
 
 // NewRedisHandler constructs a Handler sharing consumer's underlying *redis.Client pool.
@@ -118,23 +122,24 @@ func NewHandler(p HandlerParams) (*Handler, error) {
 	if p.Reconcile == nil {
 		p.Reconcile = noopReconcile
 	}
+	if p.RenewInterval == 0 {
+		p.RenewInterval = defaultRenewInterval
+	}
 	if p.ReconcileTimeout == 0 {
 		p.ReconcileTimeout = defaultReconcileTimeout
 	}
 	if p.ReleaseTimeout == 0 {
 		p.ReleaseTimeout = defaultReleaseTimeout
 	}
-	if p.ReconcileTimeout < 0 || p.ReleaseTimeout < 0 {
+	if p.RenewInterval < 0 || p.ReconcileTimeout < 0 || p.ReleaseTimeout < 0 {
 		return nil, errors.New("study reconcile handler durations must be positive")
 	}
 	if p.ReconcileTimeout >= constants.RedisProcessTimeout {
 		return nil, fmt.Errorf("reconcile timeout (%v) must be less than redis process timeout (%v)", p.ReconcileTimeout, constants.RedisProcessTimeout)
 	}
 	return &Handler{
-		locker:           p.Locker,
-		reconcile:        p.Reconcile,
-		reconcileTimeout: p.ReconcileTimeout,
-		releaseTimeout:   p.ReleaseTimeout,
+		locker: p.Locker, reconcile: p.Reconcile,
+		renewInterval: p.RenewInterval, reconcileTimeout: p.ReconcileTimeout, releaseTimeout: p.ReleaseTimeout,
 	}, nil
 }
 
@@ -169,13 +174,63 @@ func (h *Handler) HandleTask(ctx context.Context, workerID, data string) rediscl
 }
 
 func (h *Handler) reconcileWithLease(ctx context.Context, workerID string, xid int64, lease Lease) error {
-	reconcileCtx, cancel := context.WithTimeout(ctx, h.reconcileTimeout)
-	defer h.releaseLease(ctx, workerID, lease)
-	defer cancel()
-	if err := h.reconcile(reconcileCtx, xid); err != nil {
-		return err
+	reconcileCtx, stopTimeout := context.WithTimeout(ctx, h.reconcileTimeout)
+	defer stopTimeout()
+	reconcileCtx, cancelReconcile := context.WithCancelCause(reconcileCtx)
+	defer cancelReconcile(nil)
+
+	renewCtx, stopRenew := context.WithCancel(reconcileCtx)
+	var stopping atomic.Bool
+	var renewErr error
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		renewErr = h.renewLoop(ctx, renewCtx, workerID, lease, &stopping, cancelReconcile)
+	}()
+
+	reconcileErr := h.reconcile(reconcileCtx, xid)
+	stopping.Store(true)
+	stopRenew()
+	wg.Wait()
+	if !errors.Is(renewErr, redislock.ErrLeaseLost) {
+		h.releaseLease(ctx, workerID, lease)
+	}
+	if renewErr != nil {
+		return errors.Join(reconcileErr, renewErr)
+	}
+	if reconcileErr != nil {
+		return reconcileErr
 	}
 	return reconcileCtx.Err()
+}
+
+func (h *Handler) renewLoop(logCtx, renewCtx context.Context, workerID string, lease Lease, stopping *atomic.Bool, cancelReconcile context.CancelCauseFunc) error {
+	ticker := time.NewTicker(h.renewInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-renewCtx.Done():
+			return nil
+		case <-ticker.C:
+			extendCtx, cancel := context.WithTimeout(renewCtx, h.renewInterval)
+			err := lease.Extend(extendCtx)
+			cancel()
+			if err == nil {
+				continue
+			}
+			if stopping.Load() && errors.Is(err, context.Canceled) {
+				return nil
+			}
+			msg := "Failed to extend study reconcile lock lease"
+			if errors.Is(err, redislock.ErrLeaseLost) {
+				msg = "Lost study reconcile lock lease during renewal"
+			}
+			logging.Warn(logCtx, msg, "worker_id", workerID, "error", err)
+			cancelReconcile(err)
+			return err
+		}
+	}
 }
 
 func (h *Handler) releaseLease(ctx context.Context, workerID string, lease Lease) {

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package redislock provides single-instance distributed Redis lease locks backed by SET NX PX
-// acquisition and a token-checked Lua release script.
+// acquisition and token-checked Lua renewal and release scripts.
 package redislock
 
 import (
@@ -32,9 +32,10 @@ const tokenBytes = 16
 var (
 	// ErrNotAcquired is returned by Locker.Acquire when the lock key is already held.
 	ErrNotAcquired = errors.New("redis lock not acquired")
-	// ErrLeaseLost is returned by Lease.Release when the lock key expired or changed owner.
+	// ErrLeaseLost is returned by Lease.Extend and Lease.Release when the lock key expired or changed owner.
 	ErrLeaseLost = errors.New("redis lock lease lost")
 
+	extendScript  = redis.NewScript(`if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) else return 0 end`)
 	releaseScript = redis.NewScript(`if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`)
 )
 
@@ -53,7 +54,7 @@ type Locker struct {
 	randRead func([]byte) (int, error)
 }
 
-// New validates client and ttl and returns a Locker whose leases expire after ttl.
+// New validates client and ttl and returns a Locker whose leases start with and extend by ttl.
 func New(client Client, ttl time.Duration) (*Locker, error) {
 	if isNilClient(client) {
 		return nil, errors.New("redis lock client must not be nil")
@@ -88,7 +89,7 @@ func (l *Locker) Acquire(ctx context.Context, key string) (*Lease, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire redis lock %q: %w", key, err)
 	}
-	return &Lease{client: l.client, key: key, token: token}, nil
+	return &Lease{client: l.client, key: key, token: token, ttlMillis: l.ttl.Milliseconds()}, nil
 }
 
 func (l *Locker) generateToken() (string, error) {
@@ -101,9 +102,22 @@ func (l *Locker) generateToken() (string, error) {
 
 // Lease represents an acquired lock on a single Redis key.
 type Lease struct {
-	client Client
-	key    string
-	token  string
+	client    Client
+	key       string
+	token     string
+	ttlMillis int64
+}
+
+// Extend resets the lease TTL if and only if the lease token still owns the key.
+func (l *Lease) Extend(ctx context.Context) error {
+	updated, err := extendScript.Run(ctx, l.client, []string{l.key}, l.token, l.ttlMillis).Int64()
+	if err != nil {
+		return fmt.Errorf("failed to extend redis lock %q: %w", l.key, err)
+	}
+	if updated == 0 {
+		return ErrLeaseLost
+	}
+	return nil
 }
 
 // Release deletes the lock key if and only if the lease token still owns it.

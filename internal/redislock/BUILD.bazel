@@ -31,3 +31,14 @@ go_test(
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
+
+go_test(
+    name = "redislock_redis_test",
+    srcs = ["redislock_redis_test.go"],
+    tags = ["local"],
+    deps = [
+        ":redislock",
+        "//internal/redistest",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
+)

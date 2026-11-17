@@ -34,11 +34,25 @@ import (
 )
 
 type fakeLease struct {
-	mu                 sync.Mutex
-	releaseFn          func(ctx context.Context) error
-	releaseCalls       int
-	releaseCtxErr      error
-	releaseHasDeadline bool
+	mu                        sync.Mutex
+	extendFn                  func(ctx context.Context, call int) error
+	releaseFn                 func(ctx context.Context) error
+	extendCalls, releaseCalls int
+	extendAfterRelease        bool
+	releaseCtxErr             error
+	releaseHasDeadline        bool
+}
+
+func (l *fakeLease) Extend(ctx context.Context) error {
+	l.mu.Lock()
+	l.extendCalls++
+	call, fn := l.extendCalls, l.extendFn
+	l.extendAfterRelease = l.extendAfterRelease || l.releaseCalls > 0
+	l.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, call)
+	}
+	return nil
 }
 
 func (l *fakeLease) Release(ctx context.Context) error {
@@ -123,6 +137,7 @@ func TestNewHandler_ValidationAndRedisWiring(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "nil locker", params: HandlerParams{}, wantErr: true},
+		{name: "negative renew", params: HandlerParams{Locker: valid, RenewInterval: -time.Second}, wantErr: true},
 		{name: "negative reconcile timeout", params: HandlerParams{Locker: valid, ReconcileTimeout: -time.Second}, wantErr: true},
 		{name: "negative release timeout", params: HandlerParams{Locker: valid, ReleaseTimeout: -time.Second}, wantErr: true},
 		{name: "reconcile timeout at process timeout", params: HandlerParams{Locker: valid, ReconcileTimeout: constants.RedisProcessTimeout}, wantErr: true},
@@ -236,18 +251,92 @@ func TestHandleTask_OutcomesAndLockAcquisition(t *testing.T) {
 	}
 }
 
-func TestHandleTask_DeadlineAndShutdownTransitions(t *testing.T) {
+func TestHandleTask_MultiRenewAndTeardownRace(t *testing.T) {
+	thirdExtend := make(chan struct{})
+	lease := &fakeLease{extendFn: func(_ context.Context, call int) error {
+		if call == 3 {
+			close(thirdExtend)
+		}
+		return nil
+	}}
+	h, _ := NewHandler(HandlerParams{
+		Locker: &fakeLocker{lease: lease}, RenewInterval: 5 * time.Millisecond,
+		Reconcile: func(ctx context.Context, _ int64) error {
+			select {
+			case <-thirdExtend:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
+	got := h.HandleTask(context.Background(), "worker-1", `{"experiment":"experiments/9"}`)
+	if !got.WasRunSuccessful || lease.extendCalls < 3 || lease.extendAfterRelease || lease.releaseCalls != 1 {
+		t.Fatalf("got=%+v extend=%d afterRel=%v release=%d", got, lease.extendCalls, lease.extendAfterRelease, lease.releaseCalls)
+	}
+
+	// In-flight Extend cancelled by normal reconcile completion must not fail the tick.
+	extendStarted := make(chan struct{})
+	raceLease := &fakeLease{extendFn: func(ctx context.Context, call int) error {
+		if call == 1 {
+			close(extendStarted)
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return nil
+	}}
+	hRace, _ := NewHandler(HandlerParams{
+		Locker: &fakeLocker{lease: raceLease}, RenewInterval: 5 * time.Millisecond,
+		Reconcile: func(context.Context, int64) error { <-extendStarted; return nil },
+	})
+	if got := hRace.HandleTask(context.Background(), "worker-1", `{"experiment":"experiments/13"}`); !got.WasRunSuccessful || raceLease.releaseCalls != 1 {
+		t.Fatalf("in-flight Extend teardown race got=%+v releaseCalls=%d, want success and 1", got, raceLease.releaseCalls)
+	}
+
+	// Genuine ErrLeaseLost racing with reconcile returning nil must NOT be swallowed by teardown.
+	lostStarted := make(chan struct{})
+	lostLease := &fakeLease{extendFn: func(ctx context.Context, call int) error {
+		if call == 1 {
+			close(lostStarted)
+			<-ctx.Done()
+			return redislock.ErrLeaseLost
+		}
+		return nil
+	}}
+	hLostRace, _ := NewHandler(HandlerParams{
+		Locker: &fakeLocker{lease: lostLease}, RenewInterval: 5 * time.Millisecond,
+		Reconcile: func(context.Context, int64) error { <-lostStarted; return nil },
+	})
+	gotLost := hLostRace.HandleTask(context.Background(), "worker-1", `{"experiment":"experiments/14"}`)
+	if gotLost.WasRunSuccessful || !gotLost.ShouldBeRetried || !errors.Is(gotLost.Error, redislock.ErrLeaseLost) || lostLease.releaseCalls != 0 {
+		t.Fatalf("in-flight ErrLeaseLost teardown race got=%+v releaseCalls=%d, want retryable ErrLeaseLost and 0 releases", gotLost, lostLease.releaseCalls)
+	}
+}
+
+func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
+	transportErr := errors.New("broken pipe")
 	tests := []struct {
 		name             string
+		extendFn         func(context.Context, int) error
 		reconcileTimeout time.Duration
 		ignoreCancel     bool
 		cancelParent     bool
+		wantReleaseCalls int
 		wantErrIs        error
+		wantLog          string
 	}{
-		{name: "reconcile timeout deadline", reconcileTimeout: 15 * time.Millisecond, wantErrIs: context.DeadlineExceeded},
+		{name: "lease lost cancels reconcile", extendFn: func(context.Context, int) error { return redislock.ErrLeaseLost },
+			wantReleaseCalls: 0, wantErrIs: redislock.ErrLeaseLost, wantLog: "Lost study reconcile lock lease during renewal"},
+		{name: "lease lost fails tick even if reconcile returns nil", extendFn: func(context.Context, int) error { return redislock.ErrLeaseLost },
+			ignoreCancel: true, wantReleaseCalls: 0, wantErrIs: redislock.ErrLeaseLost, wantLog: "Lost study reconcile lock lease during renewal"},
+		{name: "transport error cancels reconcile and releases", extendFn: func(context.Context, int) error { return transportErr },
+			wantReleaseCalls: 1, wantErrIs: transportErr, wantLog: "Failed to extend study reconcile lock lease"},
+		{name: "hung extend aborts at renew deadline", extendFn: func(ctx context.Context, _ int) error { <-ctx.Done(); return ctx.Err() },
+			reconcileTimeout: 5 * time.Second, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
+		{name: "reconcile timeout deadline", reconcileTimeout: 15 * time.Millisecond, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
 		{name: "reconcile timeout exact boundary when reconcile returns nil", reconcileTimeout: 15 * time.Millisecond,
-			ignoreCancel: true, wantErrIs: context.DeadlineExceeded},
-		{name: "parent shutdown cancels reconcile and releases on detached ctx", cancelParent: true, wantErrIs: context.Canceled},
+			ignoreCancel: true, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
+		{name: "parent shutdown cancels reconcile and releases on detached ctx", cancelParent: true, wantReleaseCalls: 1, wantErrIs: context.Canceled},
 	}
 
 	for _, tc := range tests {
@@ -258,10 +347,13 @@ func TestHandleTask_DeadlineAndShutdownTransitions(t *testing.T) {
 			if tc.cancelParent {
 				go func() { <-started; cancelParent() }()
 			}
-			lease := &fakeLease{}
+			renewInterval := 5 * time.Millisecond
+			if tc.reconcileTimeout == 15*time.Millisecond || tc.cancelParent {
+				renewInterval = time.Second
+			}
+			lease := &fakeLease{extendFn: tc.extendFn}
 			h, _ := NewHandler(HandlerParams{
-				Locker:           &fakeLocker{lease: lease},
-				ReconcileTimeout: tc.reconcileTimeout,
+				Locker: &fakeLocker{lease: lease}, RenewInterval: renewInterval, ReconcileTimeout: tc.reconcileTimeout,
 				Reconcile: func(ctx context.Context, _ int64) error {
 					close(started)
 					<-ctx.Done()
@@ -272,17 +364,22 @@ func TestHandleTask_DeadlineAndShutdownTransitions(t *testing.T) {
 				},
 			})
 
+			var logs bytes.Buffer
+			ctx := logging.WithLogger(parentCtx, slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 			before := snapshotOutcomes()
-			got := h.HandleTask(parentCtx, "worker-1", `{"experiment":"experiments/14"}`)
+			got := h.HandleTask(ctx, "worker-1", `{"experiment":"experiments/14"}`)
 
 			if got.WasRunSuccessful || !got.ShouldBeRetried || !errors.Is(got.Error, tc.wantErrIs) {
 				t.Fatalf("got = %+v, want retryable %v", got, tc.wantErrIs)
 			}
-			if lease.releaseCalls != 1 || lease.releaseCtxErr != nil || !lease.releaseHasDeadline {
+			if lease.releaseCalls != tc.wantReleaseCalls || (tc.wantReleaseCalls == 1 && (lease.releaseCtxErr != nil || !lease.releaseHasDeadline)) {
 				t.Errorf("releaseCalls=%d ctxErr=%v hasDeadline=%v", lease.releaseCalls, lease.releaseCtxErr, lease.releaseHasDeadline)
 			}
 			if diff := cmp.Diff(map[string]float64{outcomeRetryError: 1}, diffOutcomes(before)); diff != "" {
 				t.Errorf("metric deltas mismatch (-want +got):\n%s", diff)
+			}
+			if tc.wantLog != "" && !strings.Contains(logs.String(), tc.wantLog) {
+				t.Errorf("logs = %q, want %q", logs.String(), tc.wantLog)
 			}
 		})
 	}

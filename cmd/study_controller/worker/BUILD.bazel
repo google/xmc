@@ -55,3 +55,17 @@ go_test(
         "@com_github_redis_go_redis_v9//:go-redis",
     ],
 )
+
+go_test(
+    name = "worker_redis_test",
+    srcs = ["worker_redis_test.go"],
+    embed = [":worker"],
+    tags = ["local"],
+    deps = [
+        "//internal/kubernetes/common/constants",
+        "//internal/redislock",
+        "//internal/redistest",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_github_redis_go_redis_v9//:go-redis",
+    ],
+)

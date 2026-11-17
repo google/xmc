@@ -146,18 +146,25 @@ func TestLocker_Acquire(t *testing.T) {
 	}
 }
 
-func TestLease_Release(t *testing.T) {
+func TestLease_ExtendAndRelease(t *testing.T) {
 	t.Parallel()
 	transportErr := errors.New("broken pipe")
+	withTTL := func(tok string) []any { return []any{tok, int64(15000)} }
+	onlyTok := func(tok string) []any { return []any{tok} }
 	tests := []struct {
-		name    string
-		evalVal int64
-		evalErr error
-		wantErr error
+		name     string
+		extend   bool
+		evalVal  int64
+		evalErr  error
+		wantArgs func(string) []any
+		wantErr  error
 	}{
-		{name: "release succeeds", evalVal: 1},
-		{name: "release detects lost lease", evalVal: 0, wantErr: ErrLeaseLost},
-		{name: "release wraps transport error", evalErr: transportErr, wantErr: transportErr},
+		{name: "extend succeeds", extend: true, evalVal: 1, wantArgs: withTTL},
+		{name: "extend detects lost lease", extend: true, evalVal: 0, wantArgs: withTTL, wantErr: ErrLeaseLost},
+		{name: "extend wraps transport error", extend: true, evalErr: transportErr, wantArgs: withTTL, wantErr: transportErr},
+		{name: "release succeeds", evalVal: 1, wantArgs: onlyTok},
+		{name: "release detects lost lease", evalVal: 0, wantArgs: onlyTok, wantErr: ErrLeaseLost},
+		{name: "release wraps transport error", evalErr: transportErr, wantArgs: onlyTok, wantErr: transportErr},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,10 +173,13 @@ func TestLease_Release(t *testing.T) {
 			locker, _ := New(fc, 15*time.Second)
 			lease, _ := locker.Acquire(context.Background(), "xmc:study-reconcile-lock:99")
 			opErr := lease.Release(context.Background())
-			if (tc.wantErr != nil && !errors.Is(opErr, tc.wantErr)) || (tc.wantErr == nil && opErr != nil) {
-				t.Fatalf("Release() error = %v, want %v", opErr, tc.wantErr)
+			if tc.extend {
+				opErr = lease.Extend(context.Background())
 			}
-			if diff := cmp.Diff(evalCall{Keys: []string{"xmc:study-reconcile-lock:99"}, Args: []any{lease.token}}, fc.lastEval); diff != "" {
+			if (tc.wantErr != nil && !errors.Is(opErr, tc.wantErr)) || (tc.wantErr == nil && opErr != nil) {
+				t.Fatalf("op error = %v, want %v", opErr, tc.wantErr)
+			}
+			if diff := cmp.Diff(evalCall{Keys: []string{"xmc:study-reconcile-lock:99"}, Args: tc.wantArgs(lease.token)}, fc.lastEval); diff != "" {
 				t.Errorf("script call mismatch (-want +got):\n%s", diff)
 			}
 		})
