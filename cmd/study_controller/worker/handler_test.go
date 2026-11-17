@@ -275,7 +275,7 @@ func TestHandleTask_MultiRenewAndTeardownRace(t *testing.T) {
 		t.Fatalf("got=%+v extend=%d afterRel=%v release=%d", got, lease.extendCalls, lease.extendAfterRelease, lease.releaseCalls)
 	}
 
-	// In-flight Extend cancelled by normal reconcile completion must not fail the tick.
+	// In-flight Extend cancelled by normal reconcile completion must not fail the tick or log renewal warnings.
 	extendStarted := make(chan struct{})
 	raceLease := &fakeLease{extendFn: func(ctx context.Context, call int) error {
 		if call == 1 {
@@ -289,8 +289,12 @@ func TestHandleTask_MultiRenewAndTeardownRace(t *testing.T) {
 		Locker: &fakeLocker{lease: raceLease}, RenewInterval: 5 * time.Millisecond,
 		Reconcile: func(context.Context, int64) error { <-extendStarted; return nil },
 	})
-	if got := hRace.HandleTask(context.Background(), "worker-1", `{"experiment":"experiments/13"}`); !got.WasRunSuccessful || raceLease.releaseCalls != 1 {
+	var raceLogs bytes.Buffer
+	if got := hRace.HandleTask(newLogContext(&raceLogs), "worker-1", `{"experiment":"experiments/13"}`); !got.WasRunSuccessful || raceLease.releaseCalls != 1 {
 		t.Fatalf("in-flight Extend teardown race got=%+v releaseCalls=%d, want success and 1", got, raceLease.releaseCalls)
+	}
+	if strings.Contains(raceLogs.String(), "Failed to extend study reconcile lock lease") || strings.Contains(raceLogs.String(), "Lost study reconcile lock lease") {
+		t.Fatalf("in-flight Extend teardown race logs = %q, want zero renewal warnings", raceLogs.String())
 	}
 
 	// Genuine ErrLeaseLost racing with reconcile returning nil must NOT be swallowed by teardown.
@@ -318,9 +322,12 @@ func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
 	tests := []struct {
 		name             string
 		extendFn         func(context.Context, int) error
+		renewInterval    time.Duration
 		reconcileTimeout time.Duration
 		ignoreCancel     bool
 		cancelParent     bool
+		cancelOnExtend   bool
+		wantExtendCalls  int
 		wantReleaseCalls int
 		wantErrIs        error
 		wantLog          string
@@ -332,11 +339,21 @@ func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
 		{name: "transport error cancels reconcile and releases", extendFn: func(context.Context, int) error { return transportErr },
 			wantReleaseCalls: 1, wantErrIs: transportErr, wantLog: "Failed to extend study reconcile lock lease"},
 		{name: "hung extend aborts at renew deadline", extendFn: func(ctx context.Context, _ int) error { <-ctx.Done(); return ctx.Err() },
-			reconcileTimeout: 5 * time.Second, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
-		{name: "reconcile timeout deadline", reconcileTimeout: 15 * time.Millisecond, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
-		{name: "reconcile timeout exact boundary when reconcile returns nil", reconcileTimeout: 15 * time.Millisecond,
+			reconcileTimeout: 5 * time.Second, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded, wantLog: "Failed to extend study reconcile lock lease"},
+		{name: "reconcile timeout deadline", renewInterval: time.Second, reconcileTimeout: 15 * time.Millisecond,
+			wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
+		{name: "reconcile timeout while extend in flight suppresses renewal warning",
+			extendFn:      func(ctx context.Context, _ int) error { <-ctx.Done(); return ctx.Err() },
+			renewInterval: 80 * time.Millisecond, reconcileTimeout: 150 * time.Millisecond,
+			wantExtendCalls: 1, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
+		{name: "reconcile timeout exact boundary when reconcile returns nil", renewInterval: time.Second, reconcileTimeout: 15 * time.Millisecond,
 			ignoreCancel: true, wantReleaseCalls: 1, wantErrIs: context.DeadlineExceeded},
-		{name: "parent shutdown cancels reconcile and releases on detached ctx", cancelParent: true, wantReleaseCalls: 1, wantErrIs: context.Canceled},
+		{name: "parent shutdown cancels reconcile and releases on detached ctx", renewInterval: time.Second,
+			cancelParent: true, wantReleaseCalls: 1, wantErrIs: context.Canceled},
+		{name: "parent shutdown while extend in flight suppresses renewal warning",
+			extendFn:         func(ctx context.Context, _ int) error { <-ctx.Done(); return ctx.Err() },
+			reconcileTimeout: 5 * time.Second, cancelOnExtend: true,
+			wantExtendCalls: 1, wantReleaseCalls: 1, wantErrIs: context.Canceled},
 	}
 
 	for _, tc := range tests {
@@ -344,14 +361,27 @@ func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
 			parentCtx, cancelParent := context.WithCancel(context.Background())
 			defer cancelParent()
 			started := make(chan struct{})
+			extendStarted := make(chan struct{})
 			if tc.cancelParent {
 				go func() { <-started; cancelParent() }()
 			}
-			renewInterval := 5 * time.Millisecond
-			if tc.reconcileTimeout == 15*time.Millisecond || tc.cancelParent {
-				renewInterval = time.Second
+			if tc.cancelOnExtend {
+				go func() { <-extendStarted; cancelParent() }()
 			}
-			lease := &fakeLease{extendFn: tc.extendFn}
+			renewInterval := tc.renewInterval
+			if renewInterval == 0 {
+				renewInterval = 5 * time.Millisecond
+			}
+			extendFn := tc.extendFn
+			if tc.cancelOnExtend {
+				extendFn = func(ctx context.Context, call int) error {
+					if call == 1 {
+						close(extendStarted)
+					}
+					return tc.extendFn(ctx, call)
+				}
+			}
+			lease := &fakeLease{extendFn: extendFn}
 			h, _ := NewHandler(HandlerParams{
 				Locker: &fakeLocker{lease: lease}, RenewInterval: renewInterval, ReconcileTimeout: tc.reconcileTimeout,
 				Reconcile: func(ctx context.Context, _ int64) error {
@@ -372,6 +402,9 @@ func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
 			if got.WasRunSuccessful || !got.ShouldBeRetried || !errors.Is(got.Error, tc.wantErrIs) {
 				t.Fatalf("got = %+v, want retryable %v", got, tc.wantErrIs)
 			}
+			if tc.wantExtendCalls > 0 && lease.extendCalls != tc.wantExtendCalls {
+				t.Errorf("extendCalls=%d, want %d", lease.extendCalls, tc.wantExtendCalls)
+			}
 			if lease.releaseCalls != tc.wantReleaseCalls || (tc.wantReleaseCalls == 1 && (lease.releaseCtxErr != nil || !lease.releaseHasDeadline)) {
 				t.Errorf("releaseCalls=%d ctxErr=%v hasDeadline=%v", lease.releaseCalls, lease.releaseCtxErr, lease.releaseHasDeadline)
 			}
@@ -380,6 +413,9 @@ func TestHandleTask_RenewalDeadlineAndShutdownTransitions(t *testing.T) {
 			}
 			if tc.wantLog != "" && !strings.Contains(logs.String(), tc.wantLog) {
 				t.Errorf("logs = %q, want %q", logs.String(), tc.wantLog)
+			}
+			if tc.wantLog == "" && (strings.Contains(logs.String(), "Failed to extend study reconcile lock lease") || strings.Contains(logs.String(), "Lost study reconcile lock lease")) {
+				t.Errorf("logs = %q, want zero lease renewal warnings", logs.String())
 			}
 		})
 	}

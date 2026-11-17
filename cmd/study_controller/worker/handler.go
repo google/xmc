@@ -20,7 +20,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -180,17 +179,15 @@ func (h *Handler) reconcileWithLease(ctx context.Context, workerID string, xid i
 	defer cancelReconcile(nil)
 
 	renewCtx, stopRenew := context.WithCancel(reconcileCtx)
-	var stopping atomic.Bool
 	var renewErr error
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		renewErr = h.renewLoop(ctx, renewCtx, workerID, lease, &stopping, cancelReconcile)
+		renewErr = h.renewLoop(ctx, renewCtx, workerID, lease, cancelReconcile)
 	}()
 
 	reconcileErr := h.reconcile(reconcileCtx, xid)
-	stopping.Store(true)
 	stopRenew()
 	wg.Wait()
 	if !errors.Is(renewErr, redislock.ErrLeaseLost) {
@@ -205,7 +202,7 @@ func (h *Handler) reconcileWithLease(ctx context.Context, workerID string, xid i
 	return reconcileCtx.Err()
 }
 
-func (h *Handler) renewLoop(logCtx, renewCtx context.Context, workerID string, lease Lease, stopping *atomic.Bool, cancelReconcile context.CancelCauseFunc) error {
+func (h *Handler) renewLoop(logCtx, renewCtx context.Context, workerID string, lease Lease, cancelReconcile context.CancelCauseFunc) error {
 	ticker := time.NewTicker(h.renewInterval)
 	defer ticker.Stop()
 	for {
@@ -219,7 +216,7 @@ func (h *Handler) renewLoop(logCtx, renewCtx context.Context, workerID string, l
 			if err == nil {
 				continue
 			}
-			if stopping.Load() && errors.Is(err, context.Canceled) {
+			if renewCtx.Err() != nil && errors.Is(err, renewCtx.Err()) {
 				return nil
 			}
 			msg := "Failed to extend study reconcile lock lease"
