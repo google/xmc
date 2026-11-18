@@ -14,25 +14,14 @@
 
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { catchError, map, of } from 'rxjs';
+import { map } from 'rxjs';
 
 import { AuthService } from './service/auth.service';
 
-export const authGuard: CanActivateFn = () => {
+export const authGuard: CanActivateFn = (_route, state) => {
   const authService = inject(AuthService);
   const router = inject(Router);
+  const loginUrl = router.createUrlTree(['/'], { queryParams: { return_to: state.url } });
 
-  return authService.getUser().pipe(
-    map((user) => {
-      if (user && user.email) {
-        return true;
-      }
-      router.navigate(['/']);
-      return false;
-    }),
-    catchError(() => {
-      router.navigate(['/']);
-      return of(false);
-    }),
-  );
+  return authService.getUser().pipe(map((user) => (user?.email ? true : loginUrl)));
 };
