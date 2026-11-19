@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 
 from tools.common.tool_utils import log_error, log_info, log_success, run_command
-from tools.dev_env.change_detector import ChangeDetector
+from tools.dev_env.change_detector import ChangeDetector, has_spanner_migration_changes
 from tools.dev_env.config import LocalDevConfig
 from tools.dev_env.helm_deployer import HelmDeployer
 from tools.dev_env.image_builder import ImageBuilder
@@ -50,6 +50,7 @@ class LocalRunner:
             repo_root=self.repo_root,
             enabled_services=self.config.enabled_services,
         )
+        self._migrations_needed = False
 
     def up(
         self,
@@ -257,6 +258,13 @@ class LocalRunner:
         except KeyboardInterrupt:
             log_info("\n🛑 Stopped watching workspace.")
 
+    def _record_migration_changes(self, det: object) -> None:
+        """Records whether detected file changes require Spanner schema migrations."""
+        if getattr(det, "migrations_needed", False) or has_spanner_migration_changes(
+            list(getattr(det, "modified_files", []) or [])
+        ):
+            self._migrations_needed = True
+
     def _resolve_target_services(
         self,
         services: list[str] | None = None,
@@ -265,6 +273,7 @@ class LocalRunner:
         base_ref: str | None = None,
     ) -> tuple[set[str], bool]:
         """Resolves target services and Helm requirement from args and git status."""
+        self._migrations_needed = False
         target_services: set[str] = set()
         helm_needed = helm
         raw_services = services or []
@@ -277,6 +286,7 @@ class LocalRunner:
                 if changed_files is None
                 else self.change_detector.detect_changes(files=changed_files)
             )
+            self._record_migration_changes(det)
             target_services.update(det.services)
             if det.helm_upgrade_needed:
                 helm_needed = True
@@ -295,6 +305,7 @@ class LocalRunner:
             )
             if changed_files is not None:
                 det = self.change_detector.detect_changes(files=changed_files)
+                self._record_migration_changes(det)
                 if det.helm_upgrade_needed:
                     helm_needed = True
                 target_services.update(s for s in explicit_targets if s in det.services)
@@ -416,6 +427,10 @@ class LocalRunner:
             return False
         start_time = time.perf_counter()
         sorted_targets = sorted(target_services)
+
+        if self._migrations_needed:
+            log_info("=== [Spanner] Applying updated Spanner schema migrations before rollout ===")
+            self.spanner_mgr.apply_migrations()
 
         if sorted_targets:
             self._rebuild_and_load_services(sorted_targets)

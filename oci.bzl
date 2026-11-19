@@ -72,12 +72,26 @@ def oci_image_for_service(name, binary):
         service_name = service_name[:-6]
     service_name = service_name.replace("_", "-")
 
+    ess_migrations = "//internal/storage/spanner/migrations:ess_migrations"
+    xid_migrations = "//internal/storage/spanner/migrations:xid_migrations"
+
     # 1. Build the loadable OCI tarball!
     native.genrule(
         name = tarball_target,
-        srcs = [binary],
+        srcs = [
+            binary,
+            ess_migrations,
+            xid_migrations,
+        ],
         outs = [tarball_file],
-        cmd = "python3 $(location //tools/common:build_oci.py) $< " + binary_name + " " + name + ":latest $@",
+        cmd = (
+            "python3 $(location //tools/common:build_oci.py) " +
+            "$(location " + binary + ") " +
+            binary_name + " " +
+            name + ":latest $@ " +
+            "--ess-migrations $(locations " + ess_migrations + ") " +
+            "--xid-migrations $(locations " + xid_migrations + ")"
+        ),
         tools = ["//tools/common:build_oci.py"],
         visibility = ["//visibility:public"],
     )
@@ -131,7 +145,7 @@ echo "$$LOAD_OUT"
 # Parse loaded image tag
 IMAGE_ID=$$(echo "$$LOAD_OUT" | sed -n 's/^Loaded image: //p')
 if [[ -z "$$IMAGE_ID" ]]; then
-  IMAGE_ID="{service_name}:latest"
+  IMAGE_ID="{name}:latest"
 fi
 
 echo "Tagging image: $$IMAGE_ID -> $${{REPO}}:$${{TAG}}"
@@ -142,6 +156,7 @@ $${{CONTAINER_CMD}} push "$${{REPO}}:$${{TAG}}"
 EOF
 chmod +x $@
 """.format(
+            name = name,
             service_name = service_name,
             tarball_file = tarball_file,
         ),

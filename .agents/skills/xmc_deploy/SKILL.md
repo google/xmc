@@ -200,6 +200,7 @@ Before deploying the application Helm chart, build and push all service Docker i
 ```bash
 export XMC_ACR_TARGET="us-docker.pkg.dev/<project_id>/<xmc_registry_name>"
 export XMC_ENV="<environment>"
+export BUILD_TAG="<image_tag>"
 
 bazel run //cmd/actuator:actuator_image_push
 bazel run //cmd/experiment_state_server:experiment_state_server_image_push
@@ -212,6 +213,7 @@ bazel run //cmd/dashboard_service:dashboard_service_image_push
 bazel run //cmd/rod_data_provider:rod_data_provider_image_push
 bazel run //cmd/ingestion_gateway:ingestion_gateway_image_push
 bazel run //cmd/xmc_bridge:xmc_bridge_image_push
+bazel run //cmd/study_controller:study_controller_image_push
 ```
 
 ### Step 9: Deploy XMC Application (`xmc_app` group)

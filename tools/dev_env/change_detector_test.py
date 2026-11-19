@@ -242,6 +242,10 @@ class ChangeDetectorTest(unittest.TestCase):
                 set(self.detector.enabled_services),
             )
             self.assertFalse(result.helm_upgrade_needed)
+            self.assertEqual(
+                result.migrations_needed,
+                f.endswith(".sql") and f.startswith("internal/storage/spanner/"),
+            )
 
     def test_detect_changes_shared_root_files(self) -> None:
         """Verifies changes to root and shared build files trigger all enabled services."""

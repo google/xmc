@@ -39,6 +39,7 @@ import (
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 	"xmanager_cloud/cmd/rod_data_provider/reconciler"
+	commonhealth "xmanager_cloud/internal/common/health"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/dbconfig"
@@ -86,7 +87,7 @@ func run(ctx context.Context, cfg *Config) error {
 	}
 	lis, grpcServer := grpcComp.Listener, grpcComp.Server
 
-	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr)
+	httpServer, err := buildHTTPServer(ctx, cfg, kueueCache, mgr, dbStorage)
 	if err != nil {
 		return fmt.Errorf("failed to build HTTP server: %w", err)
 	}
@@ -156,7 +157,27 @@ func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore Wo
 	}, nil
 }
 
-func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager) (*http.Server, error) {
+func newReadinessHandler(mgr ctrl.Manager, db commonhealth.ReadinessChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if db == nil {
+			http.Error(w, "Unhealthy: database readiness checker is not initialized", http.StatusServiceUnavailable)
+			return
+		}
+		if err := db.CheckReady(r.Context()); err != nil {
+			http.Error(w, fmt.Sprintf("Unhealthy: %v", err), http.StatusServiceUnavailable)
+			return
+		}
+		if mgr != nil && mgr.GetCache() != nil && !mgr.GetCache().WaitForCacheSync(r.Context()) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Kueue cache sync pending"))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}
+}
+
+func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCache, mgr ctrl.Manager, db commonhealth.ReadinessChecker) (*http.Server, error) {
 	oauthCfg, err := oauth2.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OAuth config: %w", err)
@@ -181,17 +202,7 @@ func buildHTTPServer(ctx context.Context, cfg *Config, kueueCache *cache.KueueCa
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if mgr != nil && mgr.GetCache() != nil {
-			if !mgr.GetCache().WaitForCacheSync(r.Context()) {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Kueue cache sync pending"))
-				return
-			}
-		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
+	mux.HandleFunc("/readyz", newReadinessHandler(mgr, db))
 
 	authenticatedGwmux := authenticator.Authenticate(gwmux)
 
