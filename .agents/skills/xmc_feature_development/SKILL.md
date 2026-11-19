@@ -75,17 +75,20 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
 
 ---
 
-## 4. Code Coverage Measurement
+## 4. Code Coverage Measurement & Test Cohesion Verification
 
-1. **Execute Bazel Coverage**:
-   Run coverage evaluation for the target package:
+1. **Execute Affected Tests with Diff Coverage (`diff-cover` $\ge 80\%$ Gate)**:
+   Run `bazel coverage` and evaluate `diff-cover` against `origin/main` in a single command:
    ```bash
-   bazel coverage --combined_report=lcov //pkg/auth/oauth2/...
+   python3 ./tools/run_affected_tests.py --coverage
    ```
-2. **Parse & Verify Coverage**:
-   - Locate the coverage output at `bazel-out/_coverage/_coverage_report.dat`.
-   - Verify that 100% of newly added or modified lines of business logic are covered by unit tests.
-   - Ensure 1-to-1 test file cohesion (each source file must have a dedicated `*_test.go` or `*_test.py` file).
+   - `.bazelrc` configures `coverage --combined_report=lcov`, `coverage --experimental_fetch_all_coverage_outputs`, and `coverage --instrumentation_filter="^//(api|cmd|deploy|examples|internal|pkg|sdks|tools)[/:]"`.
+   - `run_affected_tests.py --coverage` automatically invokes `diff-cover bazel-out/_coverage/_coverage_report.dat --compare-branch=origin/main --fail-under=80` and reports any uncovered diff lines in `details["diff_cover"]`.
+2. **Verify 1-to-1 Test File Cohesion & Bazel Test Wiring**:
+   ```bash
+   python3 ./tools/lint/check_file_naming.py
+   ```
+   - Verifies that every non-exempt `.go`, `.py`, `cmd/ui/app/**/*.ts`, and `.github/scripts/*.js` file with executable functions/classes has a paired unit test file (`*_test.go`, `*_test.py`, `*_test.ts`, `*.test.js`) and that every `*_test.go` / `*_test.py` file is registered in `BUILD.bazel`.
 
 ---
 

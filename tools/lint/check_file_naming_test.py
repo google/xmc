@@ -108,6 +108,9 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
         self.root = Path(self._tmp.name)
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         self._write_and_stage("cmd/ui/index.html", "<!doctype html>\n")
+        patcher = mock.patch.object(cli, "LEGACY_UNPAIRED_ALLOWLIST", frozenset())
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _write_and_stage(self, rel_path: str, content: str = "// ok\n") -> Path:
         full_path = self.root / rel_path
@@ -229,6 +232,143 @@ class CheckFileNamingEndToEndTest(unittest.TestCase):
             [v["path"] for v in payload["details"]["violations"]],
             ["cmd/ui/app/banner/banner.html"],
         )
+
+    def test_enforces_one_to_one_unit_test_pairing_across_languages(self) -> None:
+        self._write_and_stage("internal/pkg/service.go", "package pkg\nfunc Run() {}\n")
+        self._write_and_stage("tools/helper.py", "def compute() -> int:\n    return 1\n")
+        self._write_and_stage(
+            "cmd/ui/app/banner/banner.ts",
+            "@Component({selector: 'xmc-banner'})\nexport class Banner {}\n",
+        )
+        self._write_and_stage(
+            "cmd/ui/app/auth.guard.ts",
+            "export const authGuard: CanActivateFn = () => true;\n",
+        )
+        self._write_and_stage(".github/scripts/deploy.js", "module.exports = {};\n")
+
+        with self.assertRaises(HandledError) as ctx:
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+
+        assert ctx.exception.details is not None
+        violation_paths = [v["path"] for v in ctx.exception.details["violations"]]
+        self.assertEqual(
+            violation_paths,
+            [
+                ".github/scripts/deploy.js",
+                "cmd/ui/app/auth.guard.ts",
+                "cmd/ui/app/banner/banner.ts",
+                "internal/pkg/service.go",
+                "tools/helper.py",
+            ],
+        )
+
+        # Adding the 1-to-1 unit tests clears all violations.
+        self._write_and_stage("internal/pkg/service_test.go", "package pkg\n")
+        self._write_and_stage("tools/helper_test.py", "import unittest\n")
+        self._write_and_stage("cmd/ui/app/banner/banner_test.ts", "// test\n")
+        self._write_and_stage("cmd/ui/app/auth.guard_test.ts", "// test\n")
+        self._write_and_stage(".github/scripts/deploy.test.js", "// test\n")
+
+        result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        self.assertEqual(result["violations"], 0)
+
+    def test_exempts_entrypoints_pure_declarations_harnesses_and_examples(self) -> None:
+        self._write_and_stage("cmd/server/main.go", "package main\nfunc main() {}\n")
+        self._write_and_stage("internal/pkg/types.go", "package pkg\ntype Config struct{}\n")
+        self._write_and_stage("vendor/lib/lib.go", "package lib\nfunc Run() {}\n")
+        self._write_and_stage("internal/pkg/testdata/fixture.go", "package testdata\nfunc F() {}\n")
+        self._write_and_stage("sdks/python/xmc/constants.py", "TIMEOUT = 30\n")
+        self._write_and_stage("tools/__init__.py", "def init_pkg() -> None:\n    pass\n")
+        self._write_and_stage("tools/conftest.py", "def pytest_configure() -> None:\n    pass\n")
+        self._write_and_stage(
+            "cmd/ui/app/banner/banner.model.ts",
+            "export interface BannerModel { id: string; }\n",
+        )
+        self._write_and_stage("cmd/ui/app/banner/banner_harness.ts", "export class Harness {}\n")
+        self._write_and_stage("examples/demo/train.py", "def train() -> None:\n    pass\n")
+
+        result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        self.assertEqual(result["violations"], 0)
+
+    def test_detects_unwired_bazel_test_files_when_build_bazel_tracked(self) -> None:
+        self._write_and_stage("other/BUILD.bazel", "# unrelated package build\n")
+        self._write_and_stage("internal/pkg/service.go", "package pkg\nfunc Run() {}\n")
+        self._write_and_stage("internal/pkg/service_test.go", "package pkg\n")
+        self._write_and_stage("tools/helper.py", "def compute() -> int:\n    return 1\n")
+        self._write_and_stage("tools/test_helper.py", "import unittest\n")
+        self._write_and_stage("test/e2e/flow_test.py", "import unittest\n")
+
+        # Without a root or parent BUILD.bazel, tests report missing enclosing BUILD.bazel.
+        with self.assertRaises(HandledError) as ctx:
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        assert ctx.exception.details is not None
+        reasons = {v["path"]: v["reason"] for v in ctx.exception.details["violations"]}
+        self.assertEqual(
+            set(reasons.keys()), {"internal/pkg/service_test.go", "tools/test_helper.py"}
+        )
+        self.assertIn("has no enclosing BUILD.bazel file", reasons["internal/pkg/service_test.go"])
+
+        # Substring matches, comments, non-test rules, and non-test globs do not satisfy wiring.
+        self._write_and_stage(
+            "internal/pkg/BUILD.bazel",
+            '# "service_test.go"\n'
+            'filegroup(name = "data", srcs = glob(["*.sql"]) + ["service_test.go"])\n'
+            'go_library(name = "pkg", srcs = ["service_test.go"])\n'
+            'go_test(name = "pkg_test", srcs = glob(["*_test.go"], '
+            'exclude = ["service_test.go"]))\n',
+        )
+        self._write_and_stage(
+            "tools/BUILD.bazel",
+            'py_library(name = "helper", srcs = ["test_helper.py"])\n',
+        )
+        with self.assertRaises(HandledError) as ctx:
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        assert ctx.exception.details is not None
+        violation_paths = [v["path"] for v in ctx.exception.details["violations"]]
+        self.assertEqual(violation_paths, ["internal/pkg/service_test.go", "tools/test_helper.py"])
+
+        # Registering via go_test glob (without excluding service_test.go) and py_test srcs passes.
+        self._write_and_stage(
+            "internal/pkg/BUILD.bazel",
+            'go_test(name = "pkg_test", srcs = glob(["*_test.go"]))\n',
+        )
+        self._write_and_stage(
+            "tools/BUILD.bazel",
+            'py_test(name = "helper_test", srcs = ["test_helper.py"])\n',
+        )
+        result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        self.assertEqual(result["violations"], 0)
+
+    def test_reads_staged_blob_when_tracked_source_deleted_from_worktree(self) -> None:
+        src = self._write_and_stage("internal/pkg/service.go", "package pkg\nfunc Run() {}\n")
+        src.unlink()
+        with self.assertRaises(HandledError) as ctx:
+            cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+        assert ctx.exception.details is not None
+        self.assertEqual(
+            [v["path"] for v in ctx.exception.details["violations"]], ["internal/pkg/service.go"]
+        )
+
+    def test_ratchets_stale_legacy_unpaired_allowlist_entry(self) -> None:
+        legacy_go = "internal/broadcast/events.go"
+        with mock.patch.object(cli, "LEGACY_UNPAIRED_ALLOWLIST", frozenset({legacy_go})):
+            # When the allowlisted file does not exist in tracked_set, it is flagged as stale.
+            with self.assertRaises(HandledError) as missing_ctx:
+                cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+            assert missing_ctx.exception.details is not None
+            self.assertEqual(missing_ctx.exception.details["stale_allowlist"], [legacy_go])
+
+            # When present without a paired test, the legacy allowlist permits the file.
+            self._write_and_stage(legacy_go, "package broadcast\nfunc Emit() {}\n")
+            result = cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+            self.assertEqual(result["violations"], 0)
+
+            # Once a paired test is added, keeping the entry in LEGACY_UNPAIRED_ALLOWLIST fails.
+            self._write_and_stage("internal/broadcast/events_test.go", "package broadcast\n")
+            with self.assertRaises(HandledError) as paired_ctx:
+                cli.check_file_naming(argparse.Namespace(repo_root=str(self.root)))
+            assert paired_ctx.exception.details is not None
+            self.assertEqual(paired_ctx.exception.details["stale_allowlist"], [legacy_go])
 
 
 if __name__ == "__main__":

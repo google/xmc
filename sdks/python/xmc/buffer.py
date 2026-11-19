@@ -149,7 +149,7 @@ class BoundedMetricsBuffer:
             timestamp: Timestamp in seconds (coerced to float/int). Defaults to current time.
         """
         c_name, c_value, c_step = _validate_and_coerce_inputs(name, value, step)
-        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)
+        c_timestamp = time.time() if timestamp is None else _coerce_float(timestamp)  # noqa: TID251
 
         item: MetricTuple = (c_name, c_value, c_step, c_timestamp)
 
@@ -167,7 +167,7 @@ class BoundedMetricsBuffer:
         Each element in metrics should be a tuple of (name, value, step[, timestamp]).
         """
         coerced_items = []
-        now = time.time()
+        now = time.time()  # noqa: TID251
         for metric in metrics:
             try:
                 name, value, step = metric[0], metric[1], metric[2]
