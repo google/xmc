@@ -37,35 +37,64 @@ const (
 // units of a STUDY experiment, including when no study controller service account is configured.
 var ErrNotStudyController = status.Error(codes.PermissionDenied, "work units of a study experiment may only be created by the study controller")
 
-// componentReader reads active component records by canonical name.
-type componentReader interface {
+// ComponentReader reads active component records by canonical name.
+type ComponentReader interface {
 	GetActiveComponent(ctx context.Context, canonicalName string) (*store.ComponentRecord, error)
+}
+
+// IsStudyController reports whether caller is the studyControllerServiceAccount parameter of the
+// active hpo component read from components. It fails closed, returning (false, nil) when
+// components is nil, the hpo component is missing, or the parameter is empty or invalid. Any
+// non-NotFound catalog read error is returned to the caller.
+func IsStudyController(ctx context.Context, components ComponentReader, caller string) (bool, error) {
+	if components == nil {
+		return false, nil
+	}
+	want, err := readStudyControllerPrincipal(ctx, components)
+	if errors.Is(err, ErrNotStudyController) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return principal.Normalize(caller) == want, nil
 }
 
 // AuthorizeStudyController returns nil when caller, a canonical email as returned by
 // auth.AuthenticateUserFromContext, is the studyControllerServiceAccount parameter of the active hpo
 // component read from components. It fails closed with ErrNotStudyController when the component is
 // missing or the parameter is empty or not a plain email address.
-func AuthorizeStudyController(ctx context.Context, components componentReader, caller string) error {
+func AuthorizeStudyController(ctx context.Context, components ComponentReader, caller string) error {
 	if components == nil {
 		return fmt.Errorf("component catalog is not available")
 	}
-	rec, err := components.GetActiveComponent(ctx, hpoComponentName)
-	if errors.Is(err, store.ErrComponentNotFound) {
-		return fmt.Errorf("component %q not found: %w", hpoComponentName, ErrNotStudyController)
-	}
+	want, err := readStudyControllerPrincipal(ctx, components)
 	if err != nil {
-		return fmt.Errorf("failed to read component %q: %w", hpoComponentName, err)
+		return err
 	}
-	if rec == nil {
-		return fmt.Errorf("component %q record is missing: %w", hpoComponentName, ErrNotStudyController)
-	}
-	want, err := principal.CanonicalEmail(rec.Spec.GetParameters()[studyControllerServiceAccountParameter])
-	if err != nil {
-		return fmt.Errorf("component %q has no valid %s parameter: %w", hpoComponentName, studyControllerServiceAccountParameter, ErrNotStudyController)
-	}
-	if caller != want {
+	if principal.Normalize(caller) != want {
 		return fmt.Errorf("caller %s is not the study controller: %w", caller, ErrNotStudyController)
 	}
 	return nil
+}
+
+// readStudyControllerPrincipal loads the active hpo component and returns the canonical email
+// configured in studyControllerServiceAccount. Missing or invalid configuration wraps
+// ErrNotStudyController; other catalog read errors are returned wrapped directly.
+func readStudyControllerPrincipal(ctx context.Context, components ComponentReader) (string, error) {
+	rec, err := components.GetActiveComponent(ctx, hpoComponentName)
+	if errors.Is(err, store.ErrComponentNotFound) {
+		return "", fmt.Errorf("component %q not found: %w", hpoComponentName, ErrNotStudyController)
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to read component %q: %w", hpoComponentName, err)
+	}
+	if rec == nil {
+		return "", fmt.Errorf("component %q record is missing: %w", hpoComponentName, ErrNotStudyController)
+	}
+	want, err := principal.CanonicalEmail(rec.Spec.GetParameters()[studyControllerServiceAccountParameter])
+	if err != nil {
+		return "", fmt.Errorf("component %q has no valid %s parameter: %w", hpoComponentName, studyControllerServiceAccountParameter, ErrNotStudyController)
+	}
+	return want, nil
 }

@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -22,8 +23,10 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/internal/workunit"
 
 	msgpb "xmanager_cloud/api/protos/experiment"
+	xidmsgpb "xmanager_cloud/api/protos/xid"
 )
 
 // GetExperiment orchestrates the retrieval of a single experiment by its ID.
@@ -33,7 +36,7 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *msgpb.GetExp
 
 	// 1. Authenticate the user.
 	logging.Debug(ctx, "Extracting user identity from context")
-	_, _, err := h.auth.AuthenticateUserFromContext(ctx)
+	email, _, err := h.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -47,45 +50,88 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *msgpb.GetExp
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 
-	// 3. Retrieve the XID entry from the XID service. This is for authorization purposes and to get
-	// the ACLs.
-	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
+	// 3. Retrieve the XID entry from the XID service for authorization purposes and to get ACLs.
+	// Only fall back to the study controller check on PermissionDenied so normal user reads incur
+	// zero component-catalog lookups.
+	xidEntry, err := h.fetchXidForExperiment(ctx, name, xid)
 	if err != nil {
-		if status.Code(err) == codes.PermissionDenied {
-			logging.Warn(ctx, "User not authorized to get experiment", "error", err)
-			return nil, fmt.Errorf("user not authorized to get experiment %s: %w (%v)", name, grpcerr.ErrPermissionDenied, err)
+		if !errors.Is(err, grpcerr.ErrPermissionDenied) {
+			return nil, err
 		}
-		if status.Code(err) == codes.NotFound {
-			logging.Warn(ctx, "Experiment not found in XID service")
-			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
+		isCtrl, ctrlErr := workunit.IsStudyController(ctx, h.storage.Components(), email)
+		if ctrlErr != nil {
+			logging.Error(ctx, "Failed to check study controller identity", "error", ctrlErr)
+			return nil, fmt.Errorf("failed to check study controller identity: %w (%v)", grpcerr.ErrInternal, ctrlErr)
 		}
-
-		logging.Error(ctx, "XID lookup failed", "error", err)
-		return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
+		if isCtrl {
+			return h.getExperimentForStudyController(ctx, name, xid)
+		}
+		logging.Warn(ctx, "User not authorized to get experiment", "email", email, "error", err)
+		return nil, err
 	}
 
-	// 4. Retrieve the experiment from the storage layer.
+	// 4. Retrieve the experiment from storage, attach ACLs, and evaluate component drift.
+	exp, err := h.fetchExperiment(ctx, name, xid)
+	if err != nil {
+		return nil, err
+	}
+	exp.Acls = xidEntry.GetAcls()
+	return h.finalizeGetExperiment(ctx, xid, exp), nil
+}
+
+func (h *ExperimentHandler) getExperimentForStudyController(ctx context.Context, name string, xid int64) (*msgpb.Experiment, error) {
+	exp, err := h.fetchExperiment(ctx, name, xid)
+	if err != nil {
+		return nil, err
+	}
+	if exp.GetExperimentType() != msgpb.Experiment_STUDY {
+		logging.Warn(ctx, "Study controller denied access to non-STUDY experiment", "experiment_type", exp.GetExperimentType())
+		return nil, fmt.Errorf("study controller is only authorized to get STUDY experiments: %w", grpcerr.ErrPermissionDenied)
+	}
+	exp.Acls = nil
+	return h.finalizeGetExperiment(ctx, xid, exp), nil
+}
+
+func (h *ExperimentHandler) fetchXidForExperiment(ctx context.Context, name string, xid int64) (*xidmsgpb.XidEntry, error) {
+	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
+	if err == nil {
+		if xidEntry == nil {
+			return nil, fmt.Errorf("XID entry for %d is nil: %w", xid, grpcerr.ErrInternal)
+		}
+		return xidEntry, nil
+	}
+	if status.Code(err) == codes.PermissionDenied {
+		return nil, fmt.Errorf("user not authorized to get experiment %s: %w (%v)", name, grpcerr.ErrPermissionDenied, err)
+	}
+	if status.Code(err) == codes.NotFound {
+		logging.Warn(ctx, "Experiment not found in XID service")
+		return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
+	}
+	logging.Error(ctx, "XID lookup failed", "error", err)
+	return nil, fmt.Errorf("XID lookup failed for XID %d: %w (%v)", xid, grpcerr.ErrInternal, err)
+}
+
+func (h *ExperimentHandler) fetchExperiment(ctx context.Context, name string, xid int64) (*msgpb.Experiment, error) {
 	logging.Debug(ctx, "Fetching experiment from storage")
 	exp, err := h.storage.FetchExperiment(ctx, xid)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			logging.Warn(ctx, "Experiment not found in storage")
-			return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
+	if err == nil {
+		if exp == nil {
+			return nil, fmt.Errorf("experiment %s fetched from storage is nil: %w", name, grpcerr.ErrInternal)
 		}
-
-		logging.Error(ctx, "Failed to retrieve experiment from storage", "error", err)
-		return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
+		return exp, nil
 	}
+	if status.Code(err) == codes.NotFound {
+		logging.Warn(ctx, "Experiment not found in storage")
+		return nil, fmt.Errorf("experiment with name %s not found: %w (%v)", name, grpcerr.ErrNotFound, err)
+	}
+	logging.Error(ctx, "Failed to retrieve experiment from storage", "error", err)
+	return nil, fmt.Errorf("failed to retrieve experiment %s from storage: %w (%v)", name, grpcerr.ErrInternal, err)
+}
 
-	// 4.1. Attach the ACLs from the XID entry to the experiment.
-	exp.Acls = xidEntry.GetAcls()
-
-	// 4.2. Evaluate component drift for the experiment status.
+func (h *ExperimentHandler) finalizeGetExperiment(ctx context.Context, xid int64, exp *msgpb.Experiment) *msgpb.Experiment {
 	if err := h.driftEvaluator.Evaluate(ctx, xid, exp.GetStatus()); err != nil {
 		logging.Warn(ctx, "Failed to evaluate experiment drift", "xid", xid, "error", err)
 	}
-
-	// 5. Return the successful response.
 	logging.Info(ctx, "Fetched experiment", "experiment", exp)
-	return exp, nil
+	return exp
 }

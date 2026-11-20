@@ -247,7 +247,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, storageCleanup)
 
-	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
+	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, studyControllerAdmission(admission, st.Components()))
 	if err != nil {
 		return nil, err
 	}

@@ -67,3 +67,38 @@ func TestAuthorizeStudyController_NoCatalog(t *testing.T) {
 		t.Errorf("AuthorizeStudyController(nil catalog) = %v, want a non-authorization error", err)
 	}
 }
+
+func TestIsStudyController(t *testing.T) {
+	errRead := errors.New("catalog unavailable")
+	tests := []struct {
+		name       string
+		components workunit.ComponentReader
+		caller     string
+		want       bool
+		wantErr    error
+	}{
+		{name: "matching study controller", components: hpoCatalog(studyControllerGSA), caller: studyControllerGSA, want: true},
+		{name: "caller compared case-insensitively", components: hpoCatalog(studyControllerGSA), caller: "XMC-Study-Controller@My-Project.iam.gserviceaccount.com", want: true},
+		{name: "parameter compared case-insensitively", components: hpoCatalog("XMC-Study-Controller@My-Project.iam.gserviceaccount.com"), caller: studyControllerGSA, want: true},
+		{name: "other caller", components: hpoCatalog(studyControllerGSA), caller: "alice@example.com", want: false},
+		{name: "empty caller", components: hpoCatalog(studyControllerGSA), caller: "", want: false},
+		{name: "nil components fails closed", components: nil, caller: studyControllerGSA, want: false},
+		{name: "hpo component absent fails closed", components: &storage.MockComponentRepository{}, caller: studyControllerGSA, want: false},
+		{name: "nil hpo record fails closed", components: &storage.MockComponentRepository{Records: map[string]*store.ComponentRecord{"hpo": nil}}, caller: studyControllerGSA, want: false},
+		{name: "hpo record without spec fails closed", components: &storage.MockComponentRepository{Records: map[string]*store.ComponentRecord{"hpo": {}}}, caller: studyControllerGSA, want: false},
+		{name: "empty parameter fails closed", components: hpoCatalog(""), caller: studyControllerGSA, want: false},
+		{name: "invalid parameter fails closed", components: hpoCatalog("SC <" + studyControllerGSA + ">"), caller: studyControllerGSA, want: false},
+		{name: "catalog read failure propagated", components: &storage.MockComponentRepository{GetActiveComponentErr: errRead}, caller: studyControllerGSA, want: false, wantErr: errRead},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := workunit.IsStudyController(context.Background(), tt.components, tt.caller)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("IsStudyController() err = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("IsStudyController() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
