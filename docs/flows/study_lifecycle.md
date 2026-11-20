@@ -21,7 +21,7 @@ profile values and actuation details.
 ## 1. Runtime Topology
 
 The diagram below shows every live runtime edge involved in actuating `hpo`, submitting a `STUDY`
-experiment, and consuming study reconcile ticks. Solid arrows are synchronous requests or
+experiment, consuming study reconcile ticks, and reading the study's parallel-coordinates chart. Solid arrows are synchronous requests or
 in-transaction writes; dashed arrows are asynchronous probes or Redis stream operations.
 
 ```mermaid
@@ -50,6 +50,8 @@ flowchart LR
         SC["xmc-study-controller<br/>(:8080 /healthz, /readyz, /metrics)"]
     end
 
+    DS["Dashboard Service"]
+
     Prof -->|"Component CRs:<br/>hpo, vizier, clickhouse"| Bridge
     Bridge -.->|"TCP :7077 readiness probe"| Viz
     Bridge -.->|"Readiness check"| CH
@@ -63,6 +65,10 @@ flowchart LR
     Stream -.->|"XREADGROUP / XAUTOCLAIM"| SC
     SC <-->|"SET NX PX 70s / Lua DEL<br/>& /readyz PING"| Lock
     SC -.->|"Invalid payload / exhausted retries"| DLQ
+
+    Client -->|"CreateChart(experiments/{xid})<br/>/ getData"| DS
+    DS -->|"CheckUserAuthorization"| XID
+    DS -->|"read StudyConfig + WorkUnits"| DB
 ```
 
 Key boundaries in this topology:
@@ -81,6 +87,10 @@ Key boundaries in this topology:
   [`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) with at-least-once
   delivery; see [Architecture Overview §7.2](../architecture/overview.md#72-signed-task-payloads)
   for the trust-boundary exception.
+- **Study chart reads**: the Dashboard Service serves the experiment-level parallel-coordinates
+  chart from the experiment database it already opens (the `StudyConfig` and the study's work units)
+  after the same XID ACL check as ESS; it never calls `xmc-study-controller` or Vizier (see
+  [§3](#3-study-visualization-parallel-coordinates-chart)).
 
 ---
 
@@ -132,3 +142,47 @@ flowchart TD
 - **`invalid_payload`**: `data` failed protojson decoding or did not carry a valid
   `experiments/{xid}` resource name; routed straight to `xmc-study-reconcile-dlq-stream` without
   acquiring the lock or retrying.
+
+---
+
+## 3. Study Visualization (Parallel-Coordinates Chart)
+
+The Dashboard Service serves an experiment-level `PARALLEL_COORDINATES` chart for a `STUDY`
+experiment through the dashboard API
+([`dashboard_service.proto`](../../api/protos/dashboard/dashboard_service.proto)). Today a client
+creates the chart itself; `ESS` does not provision it on `CreateExperiment(STUDY)` yet.
+
+```mermaid
+sequenceDiagram
+    participant Client as SDK / CLI / UI
+    participant DS as Dashboard Service
+    participant XID as XID Service
+    participant DB as Spanner / Postgres
+
+    Client->>DS: CreateChart(parent=experiments/{xid}, PARALLEL_COORDINATES plot)
+    DS->>XID: CheckUserAuthorization(xids/{xid}, WRITER)
+    DS->>DB: insert Charts row (Wid NULL)
+    Client->>DS: GET /v1/experiments/{xid}/charts/{chart}:getData
+    DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
+    DS->>DB: read the experiment's StudyConfig and page through all work units
+    DS-->>Client: ParallelCoordinatesData (axes, objective, trajectories)
+```
+
+- **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created under
+  the parent `experiments/{xid}`, with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
+  They may only hold `PARALLEL_COORDINATES` plots, and work unit charts may not hold any
+  (`INVALID_ARGUMENT`). Access follows the experiment's XID ACL, like work unit charts.
+- **Axes**: one axis per `StudyConfig` parameter (double or integer range, categorical values in
+  configuration order, discrete values ascending, plus the parameter's scale), followed by the
+  objective metric and its goal.
+- **Trajectories**: one per work unit in ascending ID order, with the state of its current
+  execution, its creation time, and the time it completed (unset while it runs). Trajectories do not
+  carry parameter values or the objective value yet.
+- **Failure modes**: `GetChartData` returns `FAILED_PRECONDITION` when the experiment is not a
+  `STUDY` with a `StudyConfig`, and, like every chart, when no metrics store (ClickHouse or BigQuery)
+  is configured; it also fails while a configured metrics store is unreachable, because the chart
+  data engine is built on it. A missing experiment-level chart, or an experiment-level name that
+  points at a work unit chart or another experiment's chart, returns `NOT_FOUND` (unlike work unit
+  charts, no default chart is synthesized).
+- **Other chart RPCs**: `GetChart`, `UpdateChart`, and `DeleteChart` accept only `charts/{chart}`
+  names, for experiment-level and work unit charts alike.
