@@ -42,6 +42,7 @@ import {
   DEFAULT_SPLIT_RATIO_PERCENT,
   ResizeDividerComponent,
 } from './components/resize_divider/resize_divider';
+import { ResourceAvailabilityComponent } from './components/resource_availability/resource_availability';
 import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
@@ -79,6 +80,7 @@ import { mapPeriodToRangePreset } from './resource_velocity';
     ResizeDividerComponent,
     QueueJobsTable,
     WipBannerComponent,
+    ResourceAvailabilityComponent,
   ],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {

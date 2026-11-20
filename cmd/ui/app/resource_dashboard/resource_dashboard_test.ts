@@ -74,6 +74,7 @@ describe('ResourceDashboard Container', () => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getClusterQueues',
       'getQueueJobs',
+      'getResourceAvailability',
       'getQueueSecondaryData',
     ]);
     resourceService.getClusterQueues.and.returnValue(
@@ -81,6 +82,9 @@ describe('ResourceDashboard Container', () => {
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
     resourceService.getQueueSecondaryData.and.returnValue(of({ queuePredictability: {} }));
+    resourceService.getResourceAvailability = jasmine
+      .createSpy()
+      .and.returnValue(of({ summaries: [] }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
@@ -210,9 +214,7 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getQueueJobsTable()).toBeNull();
-    const wipBanner = await dashboard.getWipBanner();
-    expect(wipBanner).not.toBeNull();
-    expect(await wipBanner!.getText()).toBe('Work in Progress');
+    expect(await dashboard.hasResourceAvailability()).toBeTrue();
 
     await tabsHarness.clickTab(0);
     await flush();

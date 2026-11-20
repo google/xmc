@@ -36,7 +36,7 @@ func TestInitStorage_EmptyDBName(t *testing.T) {
 }
 
 func TestSetupKueueReconcilers_NilCache(t *testing.T) {
-	err := SetupKueueReconcilers(nil, nil, nil)
+	err := SetupKueueReconcilers(nil, nil, nil, nil)
 	if err == nil {
 		t.Error("SetupKueueReconcilers(nil) expected error, got nil")
 	}

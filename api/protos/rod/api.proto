@@ -26,6 +26,13 @@ option go_package = "xmanager_cloud/api/protos/rod";
 service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
+
+  // Get physical resource availability (Screen 3).
+  rpc GetResourceAvailability(GetResourceAvailabilityRequest) returns (GetResourceAvailabilityResponse) {
+    option (google.api.http) = {
+      get: "/v1/availability"
+    };
+  }
   // List all cluster queues.
   rpc ListClusterQueues(ListClusterQueuesRequest) returns (ListClusterQueuesResponse) {
     option (google.api.http) = {
@@ -111,6 +118,35 @@ message ClusterQueueSecondaryMetrics {
 // ListClusterQueuesResponse contains the list of ClusterQueues.
 message ListClusterQueuesResponse {
   repeated QueueOverview queues = 1;
+}
+
+
+// GetResourceAvailabilityRequest represents parameters for retrieving physical inventory.
+message GetResourceAvailabilityRequest {}
+
+// AcceleratorSummary represents the aggregated availability of a specific accelerator in a zone and reservation.
+message AcceleratorSummary {
+  string accelerator_type = 1;
+  string zone = 2;
+  // GKE reservation name, or empty if not reserved.
+  string reservation = 3;
+  // Total physical accelerators matching this zone/reservation/type.
+  int32 total_accelerators = 4;
+  // Accelerators on allocatable nodes (not cordoned, Ready).
+  int32 active_accelerators = 5;
+  // Accelerators requested by running pods.
+  int32 allocated_accelerators = 6;
+  // Total physical nodes.
+  int32 total_nodes = 7;
+  // Allocatable nodes.
+  int32 active_nodes = 8;
+  // Correlated Kueue ClusterQueue names serving these nodes, if any.
+  repeated string cluster_queues = 9;
+}
+
+// GetResourceAvailabilityResponse contains the aggregated physical resource availability.
+message GetResourceAvailabilityResponse {
+  repeated AcceleratorSummary summaries = 1;
 }
 
 // GetRunningAndPendingJobsRequest represents query parameters for fetching active jobs of a queue.

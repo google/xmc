@@ -57,7 +57,7 @@ func (s *server) BatchGetQueueSecondaryData(ctx context.Context, req *spb.BatchG
 
 	if s.velocityStore != nil && len(req.GetQueueNames()) > 0 {
 		var targetQueues []string
-		targetQueues, queueMapping = s.cache.GetLocalQueuesForClusterQueues(req.GetQueueNames())
+		targetQueues, queueMapping = s.kueueCache.GetLocalQueuesForClusterQueues(req.GetQueueNames())
 
 		var err error
 		rawVelocity, err = fetchBatchVelocity(ctx, s.velocityStore, targetQueues, windowDuration)
