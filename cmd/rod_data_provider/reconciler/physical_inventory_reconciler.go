@@ -16,8 +16,6 @@ package reconciler
 
 import (
 	"context"
-	"strconv"
-
 	"xmanager_cloud/cmd/rod_data_provider/cache"
 
 	corev1 "k8s.io/api/core/v1"
@@ -47,7 +45,7 @@ func (r *PhysicalInventoryReconciler) ReconcileNode(ctx context.Context, req ctr
 	}
 
 	gpuQty := node.Status.Capacity["nvidia.com/gpu"]
-	if gpuQty.Cmp(resource.MustParse("0")) <= 0 {
+	if gpuQty.Sign() <= 0 {
 		// Not a GPU node, ignore.
 		r.Cache.Nodes.Delete(req.Name)
 		return ctrl.Result{}, nil
@@ -88,13 +86,6 @@ func (r *PhysicalInventoryReconciler) ReconcilePod(ctx context.Context, req ctrl
 		return ctrl.Result{}, nil
 	}
 
-	// Clone pod and annotate to avoid re-calculating on the hot path.
-	podCopy := pod.DeepCopy()
-	if podCopy.Annotations == nil {
-		podCopy.Annotations = make(map[string]string)
-	}
-	podCopy.Annotations["xmc-effective-gpus-requested"] = strconv.FormatInt(gpuCount, 10)
-
-	r.Cache.Pods.Set(req.String(), podCopy)
+	r.Cache.Pods.Set(req.String(), &pod)
 	return ctrl.Result{}, nil
 }

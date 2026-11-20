@@ -114,16 +114,8 @@ go_test(
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/resource",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
-        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -134,10 +126,6 @@ go_test(
     ],
     embed = [":rod_data_provider_lib"],
     deps = [
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/resource",
-        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )
 
@@ -156,14 +144,5 @@ go_test(
         "//cmd/rod_data_provider/cache",
         "//internal/storage",
         "//internal/storage/testing",
-        "@com_github_google_go_cmp//cmp",
-        "@com_github_google_go_cmp//cmp/cmpopts",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/resource",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

@@ -17,32 +17,48 @@ package main
 import (
 	"context"
 	"sort"
-	"strconv"
 
-	rodpb "xmanager_cloud/api/protos/rod"
-
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
+	rodpb "xmanager_cloud/api/protos/rod"
 )
 
 // GetResourceAvailability aggregates physical GPU availability from the cache.
 func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetResourceAvailabilityRequest) (*rodpb.GetResourceAvailabilityResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
+	}
+	if s.physCache == nil || s.physCache.Nodes == nil || s.physCache.Pods == nil {
+		return nil, status.Error(codes.Unavailable, "physical inventory cache is uninitialized")
+	}
+	if s.kueueCache == nil || s.kueueCache.ClusterQueues == nil || s.kueueCache.ResourceFlavors == nil {
+		return nil, status.Error(codes.Unavailable, "kueue cache is uninitialized")
+	}
+
 	resp := &rodpb.GetResourceAvailabilityResponse{}
 
 	nodes := s.physCache.Nodes.List()
 	pods := s.physCache.Pods.List()
 	queues := s.kueueCache.ClusterQueues.List()
+	flavors := s.kueueCache.ResourceFlavors.List()
 
-	// Map of accelType -> zone -> reservation -> AcceleratorSummary
+	flavorMap := make(map[string]*kueuev1beta1.ResourceFlavor, len(flavors))
+	for _, f := range flavors {
+		flavorMap[f.Name] = f
+	}
+
 	agg := make(map[string]map[string]map[string]*rodpb.AcceleratorSummary)
+	nodeMap := make(map[string]*corev1.Node, len(nodes))
 
-	// Step 1: Process Nodes
 	for _, node := range nodes {
 		qty, ok := node.Status.Capacity["nvidia.com/gpu"]
-		if !ok || qty.Cmp(resource.MustParse("0")) <= 0 {
+		if !ok || qty.Sign() <= 0 {
 			continue
 		}
-		gpuCount, _ := qty.AsInt64()
+		nodeMap[node.Name] = node
+		gpuCount := qty.Value()
 
 		zone := node.Labels["topology.kubernetes.io/zone"]
 		accelType := node.Labels["cloud.google.com/gke-accelerator"]
@@ -69,7 +85,6 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 		summary.TotalNodes++
 		summary.TotalAccelerators += int32(gpuCount)
 
-		// Check if node is allocatable (not cordoned, Ready)
 		active := true
 		if node.Spec.Unschedulable {
 			active = false
@@ -91,22 +106,23 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 		}
 	}
 
-	// Step 2: Process Pods and attribute allocated GPUs
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if nodeName == "" {
 			continue
 		}
-		val, ok := pod.Annotations["xmc-effective-gpus-requested"]
-		if !ok {
-			continue
+
+		var gpuCount int64
+		for _, container := range pod.Spec.Containers {
+			if qty, ok := container.Resources.Requests["nvidia.com/gpu"]; ok {
+				gpuCount += qty.Value()
+			}
 		}
-		requestedGpus, err := strconv.ParseInt(val, 10, 32)
-		if err != nil || requestedGpus <= 0 {
+		if gpuCount <= 0 {
 			continue
 		}
 
-		node, ok := s.physCache.Nodes.Get(nodeName)
+		node, ok := nodeMap[nodeName]
 		if !ok {
 			continue
 		}
@@ -119,11 +135,10 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 		reservation := node.Labels["cloud.google.com/reservation-name"]
 
 		if agg[accelType] != nil && agg[accelType][zone] != nil && agg[accelType][zone][reservation] != nil {
-			agg[accelType][zone][reservation].AllocatedAccelerators += int32(requestedGpus)
+			agg[accelType][zone][reservation].AllocatedAccelerators += int32(gpuCount)
 		}
 	}
 
-	// Step 3: Correlate with Kueue ClusterQueues and populate Response
 	for accelType, zones := range agg {
 		for _, reservations := range zones {
 			for reservation, summary := range reservations {
@@ -131,7 +146,7 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 				for _, cq := range queues {
 					for _, rf := range cq.Spec.ResourceGroups {
 						for _, flavor := range rf.Flavors {
-							f, ok := s.kueueCache.ResourceFlavors.Get(string(flavor.Name))
+							f, ok := flavorMap[string(flavor.Name)]
 							if !ok {
 								continue
 							}
@@ -163,7 +178,6 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 		}
 	}
 
-	// Sort summaries to ensure deterministic output
 	sort.Slice(resp.Summaries, func(i, j int) bool {
 		if resp.Summaries[i].AcceleratorType != resp.Summaries[j].AcceleratorType {
 			return resp.Summaries[i].AcceleratorType < resp.Summaries[j].AcceleratorType

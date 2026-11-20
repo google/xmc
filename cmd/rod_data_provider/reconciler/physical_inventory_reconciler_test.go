@@ -83,7 +83,7 @@ func TestReconcilePod(t *testing.T) {
 		t.Fatalf("Expected pod to be cached")
 	}
 
-	if val := gotPod.Annotations["xmc-effective-gpus-requested"]; val != "2" {
-		t.Errorf("Expected annotation xmc-effective-gpus-requested=2, got %q", val)
+	if gotPod.Name != "gpu-pod" {
+		t.Errorf("Expected cached pod name to be 'gpu-pod', got %q", gotPod.Name)
 	}
 }

@@ -54,10 +54,20 @@ func TestGetResourceAvailability(t *testing.T) {
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "pod-1",
-			Annotations: map[string]string{"xmc-effective-gpus-requested": "1"},
+			Name: "pod-1",
 		},
-		Spec: corev1.PodSpec{NodeName: "node-1"},
+		Spec: corev1.PodSpec{
+			NodeName: "node-1",
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("1"),
+						},
+					},
+				},
+			},
+		},
 	}
 	s.physCache.Pods.Set(pod.Name, pod)
 
