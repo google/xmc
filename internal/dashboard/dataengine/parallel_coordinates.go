@@ -28,6 +28,10 @@ import (
 // workUnitPageSize is the page size used to read every work unit of a study.
 const workUnitPageSize = 500
 
+// workUnitOrderBy lists work units in ascending work unit ID order on both storage backends, so
+// trajectories come back in trial order without relying on a backend's default ordering.
+const workUnitOrderBy = "work_unit_id"
+
 // StudyReader reads the study experiments and work units that PARALLEL_COORDINATES plots are drawn
 // from. It is the subset of the experiment store (storage.Storage) that the engine needs.
 type StudyReader interface {
@@ -82,7 +86,7 @@ func listRunTrajectories(ctx context.Context, studies StudyReader, xid int64) ([
 	trajectories := []*dpb.ParallelCoordinatesData_RunTrajectory{}
 	pageToken := ""
 	for {
-		workUnits, nextPageToken, err := studies.ListWorkUnits(ctx, parent, workUnitPageSize, pageToken, "", "", 0)
+		workUnits, nextPageToken, err := studies.ListWorkUnits(ctx, parent, workUnitPageSize, pageToken, "", workUnitOrderBy, 0)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list the work units of experiment %d: %w", xid, err)
 		}

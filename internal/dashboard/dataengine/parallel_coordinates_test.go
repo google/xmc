@@ -42,6 +42,7 @@ type fakeStudyReader struct {
 	workUnits    []*essmsgpb.WorkUnit
 	listErr      error
 	listedParent string
+	listedOrder  string
 	listCalls    int
 }
 
@@ -55,9 +56,10 @@ func (f *fakeStudyReader) FetchExperiment(_ context.Context, xid int64) (*essmsg
 	return f.experiment, nil
 }
 
-func (f *fakeStudyReader) ListWorkUnits(_ context.Context, parent string, pageSize int32, pageToken, _, _ string, _ time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
+func (f *fakeStudyReader) ListWorkUnits(_ context.Context, parent string, pageSize int32, pageToken, _, orderBy string, _ time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
 	f.listCalls++
 	f.listedParent = parent
+	f.listedOrder = orderBy
 	if f.listErr != nil {
 		return nil, "", f.listErr
 	}
@@ -156,6 +158,9 @@ func TestFetchParallelCoordinatesData(t *testing.T) {
 	}
 	if reader.listedParent != "experiments/1001" {
 		t.Errorf("ListWorkUnits parent = %q, want %q", reader.listedParent, "experiments/1001")
+	}
+	if reader.listedOrder != "work_unit_id" {
+		t.Errorf("ListWorkUnits orderBy = %q, want %q", reader.listedOrder, "work_unit_id")
 	}
 }
 
