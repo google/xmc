@@ -50,8 +50,25 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 	}
 
 	agg := make(map[string]map[string]map[string]*rodpb.AcceleratorSummary)
-	nodeMap := make(map[string]*corev1.Node, len(nodes))
+	nodeMap := processNodes(nodes, agg)
+	processPods(pods, nodeMap, agg)
+	populateCorrelatedQueues(queues, flavorMap, agg, resp)
 
+	sort.Slice(resp.Summaries, func(i, j int) bool {
+		if resp.Summaries[i].AcceleratorType != resp.Summaries[j].AcceleratorType {
+			return resp.Summaries[i].AcceleratorType < resp.Summaries[j].AcceleratorType
+		}
+		if resp.Summaries[i].Zone != resp.Summaries[j].Zone {
+			return resp.Summaries[i].Zone < resp.Summaries[j].Zone
+		}
+		return resp.Summaries[i].Reservation < resp.Summaries[j].Reservation
+	})
+
+	return resp, nil
+}
+
+func processNodes(nodes [](*corev1.Node), agg map[string]map[string]map[string]*rodpb.AcceleratorSummary) map[string]*corev1.Node {
+	nodeMap := make(map[string]*corev1.Node, len(nodes))
 	for _, node := range nodes {
 		qty, ok := node.Status.Capacity["nvidia.com/gpu"]
 		if !ok || qty.Sign() <= 0 {
@@ -105,25 +122,28 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 			summary.ActiveAccelerators += int32(gpuCount)
 		}
 	}
+	return nodeMap
+}
 
+func processPods(pods [](*corev1.Pod), nodeMap map[string]*corev1.Node, agg map[string]map[string]map[string]*rodpb.AcceleratorSummary) {
 	for _, pod := range pods {
 		nodeName := pod.Spec.NodeName
 		if nodeName == "" {
 			continue
 		}
 
-		node, ok := nodeMap[nodeName]
-		if !ok {
+		var gpuCount int64
+		for _, container := range pod.Spec.Containers {
+			if qty, ok := container.Resources.Requests["nvidia.com/gpu"]; ok {
+				gpuCount += qty.Value()
+			}
+		}
+		if gpuCount <= 0 {
 			continue
 		}
 
-		var requestedGpus int64
-		for _, container := range pod.Spec.Containers {
-			if qty, ok := container.Resources.Requests["nvidia.com/gpu"]; ok {
-				requestedGpus += qty.Value()
-			}
-		}
-		if requestedGpus <= 0 {
+		node, ok := nodeMap[nodeName]
+		if !ok {
 			continue
 		}
 
@@ -135,58 +155,52 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 		reservation := node.Labels["cloud.google.com/reservation-name"]
 
 		if agg[accelType] != nil && agg[accelType][zone] != nil && agg[accelType][zone][reservation] != nil {
-			agg[accelType][zone][reservation].AllocatedAccelerators += int32(requestedGpus)
+			agg[accelType][zone][reservation].AllocatedAccelerators += int32(gpuCount)
 		}
 	}
+}
 
+func getCorrelatedQueues(accelType string, reservation string, queues [](*kueuev1beta1.ClusterQueue), flavorMap map[string]*kueuev1beta1.ResourceFlavor) []string {
+	var correlated []string
+	for _, cq := range queues {
+		for _, rf := range cq.Spec.ResourceGroups {
+			for _, flavor := range rf.Flavors {
+				f, ok := flavorMap[string(flavor.Name)]
+				if !ok {
+					continue
+				}
+				labels := f.Spec.NodeLabels
+				match := true
+				if expectedAccel, ok := labels["cloud.google.com/gke-accelerator"]; ok && expectedAccel != accelType {
+					match = false
+				}
+				if resLabel, ok := labels["cloud.google.com/reservation-name"]; ok && resLabel != reservation {
+					match = false
+				}
+				if match {
+					correlated = append(correlated, cq.Name)
+					break
+				}
+			}
+		}
+	}
+	sort.Strings(correlated)
+	var unique []string
+	for i, name := range correlated {
+		if i == 0 || name != correlated[i-1] {
+			unique = append(unique, name)
+		}
+	}
+	return unique
+}
+
+func populateCorrelatedQueues(queues [](*kueuev1beta1.ClusterQueue), flavorMap map[string]*kueuev1beta1.ResourceFlavor, agg map[string]map[string]map[string]*rodpb.AcceleratorSummary, resp *rodpb.GetResourceAvailabilityResponse) {
 	for accelType, zones := range agg {
 		for _, reservations := range zones {
 			for reservation, summary := range reservations {
-				var correlated []string
-				for _, cq := range queues {
-					for _, rf := range cq.Spec.ResourceGroups {
-						for _, flavor := range rf.Flavors {
-							f, ok := flavorMap[string(flavor.Name)]
-							if !ok {
-								continue
-							}
-							labels := f.Spec.NodeLabels
-							match := true
-							if expectedAccel, ok := labels["cloud.google.com/gke-accelerator"]; ok && expectedAccel != accelType {
-								match = false
-							}
-							if resLabel, ok := labels["cloud.google.com/reservation-name"]; ok && resLabel != reservation {
-								match = false
-							}
-							if match {
-								correlated = append(correlated, cq.Name)
-								break
-							}
-						}
-					}
-				}
-				sort.Strings(correlated)
-				var unique []string
-				for i, name := range correlated {
-					if i == 0 || name != correlated[i-1] {
-						unique = append(unique, name)
-					}
-				}
-				summary.ClusterQueues = unique
+				summary.ClusterQueues = getCorrelatedQueues(accelType, reservation, queues, flavorMap)
 				resp.Summaries = append(resp.Summaries, summary)
 			}
 		}
 	}
-
-	sort.Slice(resp.Summaries, func(i, j int) bool {
-		if resp.Summaries[i].AcceleratorType != resp.Summaries[j].AcceleratorType {
-			return resp.Summaries[i].AcceleratorType < resp.Summaries[j].AcceleratorType
-		}
-		if resp.Summaries[i].Zone != resp.Summaries[j].Zone {
-			return resp.Summaries[i].Zone < resp.Summaries[j].Zone
-		}
-		return resp.Summaries[i].Reservation < resp.Summaries[j].Reservation
-	})
-
-	return resp, nil
 }
