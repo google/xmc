@@ -27,6 +27,7 @@ Before starting the teardown, verify you are operating on the correct environmen
     *   Present a clear plan to the user listing exactly what will be deleted:
         *   **Cloud Spanner**: The instance `xmc-<environment>`, all databases, and **all active backups** (backups must be deleted first to allow instance teardown).
         *   **GKE Cluster**: The GKE cluster and all running applications.
+        *   **GCP Load Balancer**: Orphaned GKE Gateway global forwarding rules (gkegw1-*) holding the static IP.
         *   **VPC Network**: VPC network, subnetworks, routers, and static IPs.
         *   **Local Config / Deployment Directory** (e.g., `ctk-out/<deployment_name>` and Kubeconfig contexts)
     *   Ask for explicit user approval on this plan using the `ask_question` tool before executing any destructive commands.
@@ -66,9 +67,19 @@ Attempt to run the standard Toolkit destroy command:
 ./cluster-toolkit/gcluster destroy ctk-out/<deployment_name> --auto-approve
 ```
 
-Wait until the command completes successfully. If it succeeds, proceed to **Step 3 (Delete Cloud DNS Records)**. If it fails, follow the mitigations in **Section 3 (Mitigations for Teardown Failures)**.
+Wait until the command completes successfully. If it succeeds, proceed to **Step 3 (Cleanup Orphaned Gateway Forwarding Rules)**. If it fails, follow the mitigations in **Section 3 (Mitigations for Teardown Failures)**.
 
-### Step 3: Delete Cloud DNS Records (Mandatory for Automated Setup)
+### Step 3: Cleanup Orphaned Gateway Forwarding Rules
+
+When the GKE cluster is destroyed abruptly by the toolkit, the Gateway controller cannot clean up the GCP load balancer forwarding rules it created. These stale `gkegw1-*` rules will retain the static IP and block future redeployments to the same environment.
+
+1.  Run the automated cleanup command using the deployment configuration:
+    ```bash
+    python3 tools/dev_env/dev_env.py cleanup-gateway -c deploy/ctk_v2/xmanager-cloud-deployment.yaml
+    ```
+    This script automatically finds the static IP for the environment and deletes any orphaned `gkegw1-*` global forwarding rules holding it.
+
+### Step 4: Delete Cloud DNS Records (Mandatory for Automated Setup)
 
 The automated deployment script (`deploy_dev_env.py`) creates Cloud DNS A records using `gcloud dns` CLI transactions. These are not managed by Terraform. To prevent resource leakage, you must delete them manually after destroying the cluster.
 
@@ -89,7 +100,7 @@ The automated deployment script (`deploy_dev_env.py`) creates Cloud DNS A record
     gcloud dns record-sets delete grpc.<environment>.<domain_name>. --type=A --zone=<dns_zone_name> --project=<dns_project_id> --quiet
     ```
 
-### Step 4: Local Configurations & Files Cleanup
+### Step 5: Local Configurations & Files Cleanup
 
 1.  **Kubeconfig Contexts**: The local kubeconfig will still have the context entry for the deleted cluster. Clean it up:
     ```bash
