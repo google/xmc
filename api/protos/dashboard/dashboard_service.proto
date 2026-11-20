@@ -109,6 +109,9 @@ service DashboardService {
       additional_bindings {
         get: "/v1/{parent=experiments/*/workUnits/*}/charts"
       }
+      additional_bindings {
+        get: "/v1/{parent=experiments/*}/charts"
+      }
     };
     option (google.api.method_signature) = "parent";
   }
@@ -227,7 +230,8 @@ message GetChartDataRequest {
 }
 
 message ListChartsRequest {
-  // Either "dashboards/{dashboard_id}" or "experiments/{xid}/workUnits/{wid}".
+  // "dashboards/{dashboard_id}", "experiments/{xid}/workUnits/{wid}", or "experiments/{xid}" (the
+  // experiment-level charts only).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {

@@ -1280,9 +1280,23 @@ func TestValidateListChartsRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name: "experiment_parent_without_work_unit",
+			name: "valid_experiment_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "experiments/42",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "experiment_parent_with_zero_xid",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/0",
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_chart_name_is_not_a_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/42/charts/chart-1",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
