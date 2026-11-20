@@ -171,7 +171,7 @@ sequenceDiagram
     DS-->>Client: ParallelCoordinatesData (axes, objective, trajectories)
 ```
 
-- **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created under
+- **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created and listed under
   the parent `experiments/{xid}`, with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
   They may only hold `PARALLEL_COORDINATES` plots, and work unit charts may not hold any
   (`INVALID_ARGUMENT`). Access follows the experiment's XID ACL, like work unit charts.

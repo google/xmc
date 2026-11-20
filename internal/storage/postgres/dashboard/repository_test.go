@@ -469,6 +469,30 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 	assertWidNull()
 }
 
+func TestListCharts_ParentExperiment(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := setupDashboardRepository(ctx, t)
+
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
+	e2 := storagetest.ExperimentChartProto("study-b", 100)
+	other := storagetest.ExperimentChartProto("study-c", 200)
+	workUnitChart := blankChartProto(chartID1, 100, 1)
+	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
+		}
+	}
+
+	got := storagetest.CollectChartPages(ctx, t, repo, "experiments/100", 1, "", "")
+	if diff := cmp.Diff([]string{e1.GetName(), e2.GetName()}, got); diff != "" {
+		t.Errorf("ListCharts experiment parent mismatch (-want +got):\n%s", diff)
+	}
+	wuCharts, _, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
+	if err != nil || len(wuCharts) != 1 || wuCharts[0].GetName() != workUnitChart.GetName() {
+		t.Errorf("ListCharts work unit parent = (%+v, %v), want [%s]", wuCharts, err, workUnitChart.GetName())
+	}
+}
+
 func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
 	repo, _ := setupDashboardRepository(context.Background(), t)
 	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, repo)
@@ -533,8 +557,8 @@ func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {
 	if _, _, err := repo.ListCharts(ctx, "", 0, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListCharts(pageSize=0) = %v, want ErrInvalidArgument", err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", 0); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts(experiment-only parent) = %v, want work unit parent error", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", 0); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
+		t.Errorf("ListCharts(zero xid experiment parent) = %v, want parent validation error", err)
 	}
 	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); err == nil {
 		t.Error("ListCharts(bad parent) = nil, want error")

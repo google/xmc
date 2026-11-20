@@ -485,8 +485,19 @@ func TestBuildListChartsFilter(t *testing.T) {
 			want:   "xid = 100",
 		},
 		{
-			name:    "experiment-only parent rejected",
-			parent:  "experiments/100",
+			name:   "experiment parent selects its experiment-level charts",
+			parent: "experiments/100",
+			filter: `title = "Study"`,
+			want:   `(xid = 100 AND wid = 0) AND (title = "Study")`,
+		},
+		{
+			name:    "experiment parent with zero xid rejected",
+			parent:  "experiments/0",
+			wantErr: true,
+		},
+		{
+			name:    "experiment parent with trailing slash rejected",
+			parent:  "experiments/100/",
 			wantErr: true,
 		},
 		{
@@ -537,9 +548,9 @@ func TestExtractChartCursor(t *testing.T) {
 			want:  map[string]any{"chart_id": "c1", "wid": int64(1)},
 		},
 		{
-			name:  "experiment-level chart returns nil wid cursor",
+			name:  "experiment-level chart returns zero wid cursor",
 			chart: &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
-			want:  map[string]any{"chart_id": "c1", "wid": nil},
+			want:  map[string]any{"chart_id": "c1", "wid": int64(0)},
 		},
 	}
 

@@ -237,7 +237,9 @@ func CombineFilters(parentFilter, filter string) string {
 }
 
 // BuildChartParentFilter translates a chart collection parent into a filter expression.
-// The only two parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
+// ListCharts serves three parents: "dashboards/{dashboard_id}", "experiments/{xid}/workUnits/{wid}"
+// and "experiments/{xid}". The chart schemas expose a NULL Charts.Wid as wid 0, which no work unit
+// has, so "wid = 0" selects the experiment-level charts.
 func BuildChartParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
@@ -249,6 +251,9 @@ func BuildChartParentFilter(parent string) (string, error) {
 			return "", fmt.Errorf("invalid dashboard parent name: %w", err)
 		}
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
+	}
+	if xid, err := validator.ValidateExperimentName(parent); err == nil {
+		return fmt.Sprintf("xid = %d AND wid = 0", xid), nil
 	}
 	if strings.HasPrefix(parent, "experiments/") {
 		xid, wid, err := validator.ValidateWorkUnitName(parent)
@@ -300,13 +305,9 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
 	}
-	var wid any
-	if chart.GetWid() > 0 {
-		wid = chart.GetWid()
-	}
 	return map[string]any{
 		"chart_id": chartID,
-		"wid":      wid,
+		"wid":      chart.GetWid(),
 	}, nil
 }
 

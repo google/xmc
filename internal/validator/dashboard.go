@@ -364,7 +364,8 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	return nil
 }
 
-// ValidateChartParentName validates a chart collection parent, which may be a dashboard or a work unit.
+// ValidateChartParentName validates a chart collection parent, which may be a dashboard, a work unit,
+// or an experiment (for its experiment-level charts).
 func ValidateChartParentName(parent string) error {
 	if _, err := ValidateDashboardName(parent); err == nil {
 		return nil
@@ -372,7 +373,10 @@ func ValidateChartParentName(parent string) error {
 	if _, _, err := ValidateWorkUnitName(parent); err == nil {
 		return nil
 	}
-	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}' or 'experiments/{xid}/workUnits/{wid}': %w", grpcerr.ErrInvalidArgument)
+	if _, err := ValidateExperimentName(parent); err == nil {
+		return nil
+	}
+	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}', 'experiments/{xid}/workUnits/{wid}', or 'experiments/{xid}': %w", grpcerr.ErrInvalidArgument)
 }
 
 // ValidateUpdateChartRequest validates the given UpdateChartRequest.
