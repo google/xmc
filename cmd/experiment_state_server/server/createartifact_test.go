@@ -475,6 +475,27 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	}
 }
 
+func TestCreateArtifact_RejectsUserExperimentLevelChartArtifact(t *testing.T) {
+	xidClient := &mockXidClient{
+		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+		createXidEntryResp:         &xidmsgpb.XidEntry{Name: proto.String("xids/999")},
+	}
+	server := newTestServer(t, withStorage(&storage.MockStorage{}), withXidClient(xidClient))
+	req := &msgpb.CreateArtifactRequest{
+		Parent: "experiments/123",
+		Artifact: &msgpb.Artifact{
+			Url:     &msgpb.Url{Url: "http://example.com/chart"},
+			Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Chart{Chart: &msgpb.ChartArtifact{Title: "Parallel Coordinates", MetricNames: []string{"accuracy"}}}},
+		},
+	}
+	if _, err := server.CreateArtifact(context.Background(), req); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("CreateArtifact(experiment-level ChartArtifact) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
+	}
+	if xidClient.createXidEntryCalls != 0 {
+		t.Errorf("CreateArtifact(experiment-level ChartArtifact) made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
+	}
+}
+
 func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)

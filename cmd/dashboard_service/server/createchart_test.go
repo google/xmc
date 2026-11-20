@@ -236,6 +236,16 @@ func TestCreateChart(t *testing.T) {
 				Parent: "experiments/100",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1, Plots: []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
 			}},
+			{name: "foreign study chart ID rejected", req: &dpb.CreateChartRequest{
+				Parent:  "experiments/100",
+				ChartId: "study-999-parallel-coordinates",
+				Chart:   &dpb.Chart{Title: "Title", Xid: 100, Plots: []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
+			}},
+			{name: "study chart ID under work unit parent rejected", req: &dpb.CreateChartRequest{
+				Parent:  "experiments/100/workUnits/1",
+				ChartId: "study-100-parallel-coordinates",
+				Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
+			}},
 		}
 
 		for _, tc := range tests {

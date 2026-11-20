@@ -122,6 +122,25 @@ the RPC: ESS logs it and increments the `xmc_ess_study_reconcile_enqueue_failure
 and the study stays created without a reconcile tick until a future sweeper recovers it (see
 [Create Experiment](../../docs/flows/experiment_lifecycle.md#1-create-experiment)).
 
+When `ess_dashboard_service_addr` is configured (via environment variable or the `ess-config`
+ConfigMap), `CreateExperiment` also provisions the study's
+parallel-coordinates chart post-commit ([`server/studychart.go`](server/studychart.go)). Using a
+cancellation-detached context bounded at 10s that preserves the caller's incoming auth metadata, it
+creates a server-provisioned experiment-level `ChartArtifact` under `experiments/{xid}` (title and
+display name `"Parallel Coordinates"`, `metric_names` set to the study's objective metric ID,
+status `PROVISIONING`; external `CreateArtifact` calls continue to reject experiment-level
+`ChartArtifact` payloads with `INVALID_ARGUMENT`). The Dashboard artifact observer then
+asynchronously calls `DashboardService.CreateChart` with the creating user's forwarded credentials,
+`parent = experiments/{xid}`, deterministic `chart_id = study-{xid}-parallel-coordinates` (reserved
+by [`internal/validator/studychart.go`](../../internal/validator/studychart.go) for that experiment
+parent), and a single `PARALLEL_COORDINATES` plot, writing `SUCCESS` and the created `Chart` (or
+`FAILED` and `error_message`) back to the artifact. Provisioning failures never fail
+`CreateExperiment`: ESS logs the error and increments
+`xmc_ess_study_chart_provisioning_failures_total` with `stage="artifact"` (artifact XID or storage
+creation failure) or `stage="chart"` (`CreateChart` or artifact status write-back failure). When
+`ess_dashboard_service_addr` is empty, ESS skips provisioning without incrementing the counter (see
+[Study Lifecycle §3](../../docs/flows/study_lifecycle.md#3-study-visualization-parallel-coordinates-chart)).
+
 A study's work units are its trials, which only the study controller creates. `CreateWorkUnit` on a
 `STUDY` experiment returns `FAILED_PRECONDITION` without writing anything
 ([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)), and rejects

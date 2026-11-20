@@ -140,6 +140,12 @@ func withStudyReconcilePublisher(publisher StudyReconcilePublisher) testServerOp
 	}
 }
 
+func withArtifactObservers(observers ...ArtifactObserver) testServerOpt {
+	return func(p *Params) {
+		p.ArtifactObservers = observers
+	}
+}
+
 func newTestServer(t *testing.T, opts ...testServerOpt) *Server {
 	t.Helper()
 	p := Params{}

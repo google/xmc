@@ -305,6 +305,9 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetWid() != wuWid {
 		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
 	}
+	if err := validateStudyChartID(in.GetChartId(), expXid, wuWid); err != nil {
+		return err
+	}
 	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
 }
 

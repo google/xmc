@@ -68,6 +68,7 @@ type ExperimentHandler struct {
 	baseHandler
 	driftEvaluator          *experiment.DriftEvaluator
 	studyReconcilePublisher StudyReconcilePublisher
+	studyCharts             *studyChartProvisioner
 	server                  apipb.ExperimentStateServiceServer
 }
 
@@ -165,6 +166,7 @@ func New(p Params) (*Server, error) {
 	s.ExperimentHandler = newExperimentHandler(base, p.StudyReconcilePublisher, s)
 	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
 	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
+	s.ExperimentHandler.studyCharts = newStudyChartProvisioner(s.ArtifactHandler)
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
 }
