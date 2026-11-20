@@ -34,6 +34,9 @@ class VerifierCliTest(unittest.TestCase):
         )
         self.assertEqual(verifier_cli.get_flag(flags_mock, "nonexistent", "fallback"), "fallback")
         self.assertEqual(verifier_cli.get_flag(None, "xid", "fallback"), "fallback")
+        unparsed_flags = verifier_cli.flags.FlagValues()
+        verifier_cli.flags.DEFINE_string("sample_flag", "def", "help", flag_values=unparsed_flags)
+        self.assertEqual(verifier_cli.get_flag(unparsed_flags, "sample_flag", "def"), "def")
 
     def test_validate_argv(self) -> None:
         verifier_cli.validate_argv(["script.py"])
