@@ -135,7 +135,7 @@ func processPods(pods [](*corev1.Pod), nodeMap map[string]*corev1.Node, agg map[
 		if !ok {
 			continue
 		}
-		
+
 		var gpuCount int64
 		for _, container := range pod.Spec.Containers {
 			if qty, ok := container.Resources.Requests["nvidia.com/gpu"]; ok {
