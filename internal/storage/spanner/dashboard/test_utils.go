@@ -94,3 +94,13 @@ func blankChartProto(chartID string, xid, wid int64) *dpb.Chart {
 		},
 	}
 }
+
+// experimentChartProto returns an experiment-level chart, which has no wid.
+func experimentChartProto(chartID string, xid int64) *dpb.Chart {
+	return &dpb.Chart{
+		Name:  validator.ConstructExperimentChartName(xid, chartID),
+		Title: "Study " + chartID,
+		Xid:   xid,
+		Plots: []*dpb.PlotSpec{{PlotId: "study", Title: "Study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+	}
+}

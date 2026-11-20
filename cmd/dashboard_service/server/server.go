@@ -184,14 +184,17 @@ func createDefaultPlotSpecs() []*dpb.PlotSpec {
 // resolveChart loads a chart from storage, falling back to a synthesized default
 // specification for work unit charts that have never been persisted.
 func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
-	_, _, chartID, err := validator.ValidateChartName(name)
+	parsed, err := validator.ParseChartName(name)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name %q: %v", name, err)
 	}
-	chart, err := s.repo.GetChart(ctx, chartID)
+	chart, err := s.repo.GetChart(ctx, parsed.ChartID)
 	if err == nil {
 		if chart == nil {
 			return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", name)
+		}
+		if !chartMatchesName(parsed, chart) {
+			return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
 		}
 		if xid := s.resolveChartXID(chart, name); xid > 0 {
 			chart.Xid = xid
@@ -201,8 +204,9 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 	if !isNotFoundError(err) {
 		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", name, err)
 	}
-	parsed, parseErr := validator.ParseChartName(name)
-	if parseErr != nil || parsed.XID <= 0 {
+	// Only work unit charts fall back to the default specification; experiment-level charts are
+	// always persisted.
+	if parsed.XID <= 0 || parsed.IsExperimentLevel() {
 		return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
 	}
 	return &dpb.Chart{
@@ -212,6 +216,16 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 		Wid:   parsed.WID,
 		Plots: createDefaultPlotSpecs(),
 	}, nil
+}
+
+// chartMatchesName reports whether a stored chart may be served under the name it was requested
+// by. An experiment-level name must not reach a work unit chart or a chart of another experiment;
+// other name shapes keep resolving by chart ID alone.
+func chartMatchesName(parsed validator.ParsedChartName, chart *dpb.Chart) bool {
+	if !parsed.IsExperimentLevel() {
+		return true
+	}
+	return chart.GetWid() == 0 && chart.GetXid() == parsed.XID
 }
 
 // resolveChartXID returns the chart's persisted experiment XID, falling back to the
