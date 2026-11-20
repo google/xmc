@@ -175,6 +175,12 @@ jobs:
         run: |
           python3 tools/lint/check_doc_links.py
 
+      - name: 'Check US Spelling on Added Markdown Lines'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_markdown_spelling.py
+
       - name: 'Check UI & Workflow File Naming'
         env:
           XMC_BYPASS_VENV: '1'

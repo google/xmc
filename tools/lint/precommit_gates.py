@@ -78,6 +78,12 @@ PYTHON_GATES: tuple[PythonGate, ...] = (
         check_deletes=True,
     ),
     PythonGate(
+        banner="--> Checking US Spelling on Added Markdown Lines...",
+        script="tools/lint/check_markdown_spelling.py",
+        failure_msg="Added Markdown lines use British spellings (see JSON error above).",
+        staged_am_pattern=r"\.md$|^tools/lint/check_markdown_spelling\.py$",
+    ),
+    PythonGate(
         banner="--> Checking UI & Workflow File Naming Conventions...",
         script="tools/lint/check_file_naming.py",
         failure_msg="UI or workflow file naming check failed (see JSON error above).",

@@ -123,6 +123,7 @@ Destinations by language, all reachable through `.githooks/pre-commit` and its `
 | Bazel | buildifier |
 | Terraform | [`.tflint.hcl`](../../.tflint.hcl) |
 | Agent docs (`.agents/**/*.md`, `AGENTS.md`) | `tools/lint/check_agent_doc_paths.py` (path references must exist) |
+| Markdown prose (all tracked `*.md`) | `tools/lint/check_markdown_spelling.py` (US spelling on added lines; word lists in the script) |
 
 ---
 
