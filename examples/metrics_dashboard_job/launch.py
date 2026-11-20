@@ -73,6 +73,8 @@ def build_charts(xid: int, wid: int) -> list[dashboard_messages_pb2.Chart]:
 
     Two charts rather than one, so the dashboard demonstrates composition: quality
     metrics and throughput answer different questions and are read at different times.
+    The charts are created without an explicit chart_id: the server assigns their IDs
+    when they are created.
 
     Args:
         xid: Experiment ID the charts query.
@@ -82,7 +84,7 @@ def build_charts(xid: int, wid: int) -> list[dashboard_messages_pb2.Chart]:
         Chart protobuf messages, not yet created on the server.
     """
     training = (
-        ChartBuilder(name=f"experiments/{xid}/workUnits/{wid}/charts/training_progress")
+        ChartBuilder()
         .for_experiment(xid=xid, wid=wid)
         .set_title("Training Progress")
         .set_description(f"Loss and accuracy for Experiment {xid} WorkUnit {wid}.")
@@ -99,7 +101,7 @@ def build_charts(xid: int, wid: int) -> list[dashboard_messages_pb2.Chart]:
     )
 
     throughput = (
-        ChartBuilder(name=f"experiments/{xid}/workUnits/{wid}/charts/throughput")
+        ChartBuilder()
         .for_experiment(xid=xid, wid=wid)
         .set_title("Throughput")
         .set_description(f"Step execution time for Experiment {xid} WorkUnit {wid}.")
@@ -125,9 +127,8 @@ def create_experiment_dashboard(dashboard_endpoint: str, xid: int, wid: int) -> 
         charts = build_charts(xid=xid, wid=wid)
 
         # Charts first: a Dashboard references charts by ID and never creates them, so
-        # they have to exist before CreateDashboard runs. The server's copies are what
-        # the dashboard must reference, because their names carry the authoritative
-        # chart IDs, which need not match the ones requested here.
+        # they have to exist before CreateDashboard runs. The server assigns each chart
+        # its ID, so the dashboard references the returned copies, whose names carry it.
         print(f"--> Creating {len(charts)} Charts...")
         created_charts = client.create_charts(charts)
         for chart in created_charts:

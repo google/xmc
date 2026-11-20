@@ -16,9 +16,14 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 func TestCreateDashboard_Success(t *testing.T) {
@@ -118,5 +123,22 @@ func TestCreateDashboard_InlineChartsRolledBackOnFailure(t *testing.T) {
 
 	if _, err := repo.GetChart(ctx, chartID); err == nil {
 		t.Errorf("GetChart found chart %q, want the inline chart to be rolled back with the dashboard", chartID)
+	}
+}
+
+func TestCreateDashboard_DuplicateInlineChartIDReturnsAlreadyExists(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	const chartID = "2a3b4c5d-6e7f-4a8b-9c0d-1e2f3a4b5c6d"
+	if err := repo.CreateChart(ctx, blankChartProto(chartID, 100, 1)); err != nil {
+		t.Fatalf("CreateChart(original) failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/test-dup-inline-chart")
+	dash.ChartIds = []string{chartID}
+	err := repo.CreateDashboard(ctx, dash, []*dpb.Chart{blankChartProto(chartID, 100, 1)})
+	if !errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("CreateDashboard(duplicate inline chart) error = %v (code %v), want %v", err, status.Code(err), grpcerr.ErrAlreadyExists)
 	}
 }

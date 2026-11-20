@@ -49,6 +49,16 @@ class DetaillessRpcError(FakeRpcError):
         return ""
 
 
+class AlreadyExistsRpcError(FakeRpcError):
+    """An RPC failure for a create whose explicit ID is already taken."""
+
+    def code(self) -> str:
+        return "ALREADY_EXISTS"
+
+    def details(self) -> str:
+        return "chart already exists"
+
+
 class DashboardClientTest(unittest.TestCase):
     """Tests for DashboardClient RPC method calls."""
 
@@ -210,33 +220,76 @@ class DashboardClientTest(unittest.TestCase):
         self.assertEqual(req.chart_id, "c1")
         self.assertEqual((req.chart.xid, req.chart.wid), (1001, 1))
 
-    def test_create_chart_derives_the_id_from_the_resource_name(self) -> None:
-        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/derived", xid=1001)
-        self.mock_stub.CreateChart.return_value = chart
+    def test_create_chart_leaves_the_id_to_the_server_unless_passed(self) -> None:
+        # ChartBuilder names every chart, so a name is no evidence the caller chose an ID.
+        for name in (
+            "experiments/1001/workUnits/1/charts/derived",
+            "experiments/1001/workUnits/1/charts/derived/",
+            "",
+        ):
+            with self.subTest(name=name):
+                self.mock_stub.CreateChart.reset_mock()
+                server_name = "experiments/1001/workUnits/1/charts/0b5e7c4a-server-assigned"
+                self.mock_stub.CreateChart.return_value = messages_pb2.Chart(name=server_name)
+                chart = messages_pb2.Chart(name=name, xid=1001, wid=1)
 
-        self.client.create_chart(parent="experiments/1001/workUnits/1", chart=chart)
-        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "derived")
+                result = self.client.create_chart(
+                    parent="experiments/1001/workUnits/1", chart=chart
+                )
 
-    def test_create_chart_ignores_a_trailing_slash_when_deriving_the_id(self) -> None:
-        chart = messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/derived/", xid=1001)
-        self.mock_stub.CreateChart.return_value = chart
+                self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "")
+                self.assertEqual(result.name, server_name)
 
-        self.client.create_chart(parent="experiments/1001/workUnits/1", chart=chart)
-        # A trailing slash used to derive "", which the server rejects with an opaque error.
-        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "derived")
+    def test_create_chart_validates_explicit_chart_id(self) -> None:
+        chart = messages_pb2.Chart(title="C1", xid=1001, wid=1)
+        for bad_id in ("", "   ", "\t\n", "experiments/1001/workUnits/1/charts/c1", "a/b"):
+            with self.subTest(chart_id=bad_id), self.assertRaises(ValueError):
+                self.client.create_chart(
+                    parent="experiments/1001/workUnits/1", chart=chart, chart_id=bad_id
+                )
+        self.mock_stub.CreateChart.assert_not_called()
+
+        self.mock_stub.CreateChart.return_value = messages_pb2.Chart(
+            name="experiments/1001/workUnits/1/charts/c1"
+        )
+        self.client.create_chart(
+            parent="experiments/1001/workUnits/1", chart=chart, chart_id="  c1  "
+        )
+        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "c1")
+
+    def test_create_chart_surfaces_already_exists_for_a_taken_id(self) -> None:
+        self.mock_stub.CreateChart.side_effect = AlreadyExistsRpcError()
+        chart = messages_pb2.Chart(title="C1", xid=1001, wid=1)
+
+        with patch("xdash.client.grpc") as mock_grpc:
+            mock_grpc.RpcError = FakeRpcError
+            with self.assertRaises(XDashRPCError) as cm:
+                self.client.create_chart(
+                    parent="experiments/1001/workUnits/1", chart=chart, chart_id="c1"
+                )
+        self.assertEqual(cm.exception.code, "ALREADY_EXISTS")
+        self.assertEqual(self.mock_stub.CreateChart.call_args[0][0].chart_id, "c1")
 
     def test_create_charts_derives_each_parent_from_the_chart(self) -> None:
         charts = [
             messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/a", xid=1001, wid=1),
             messages_pb2.Chart(name="experiments/1002/workUnits/7/charts/b", xid=1002, wid=7),
         ]
-        self.mock_stub.CreateChart.side_effect = charts
+        server_charts = [
+            messages_pb2.Chart(name="experiments/1001/workUnits/1/charts/uuid-a"),
+            messages_pb2.Chart(name="experiments/1002/workUnits/7/charts/uuid-b"),
+        ]
+        self.mock_stub.CreateChart.side_effect = server_charts
 
         results = self.client.create_charts(charts)
-        self.assertEqual([c.name for c in results], [charts[0].name, charts[1].name])
-        parents = [call[0][0].parent for call in self.mock_stub.CreateChart.call_args_list]
+        self.assertEqual([c.name for c in results], [c.name for c in server_charts])
+        requests = [call[0][0] for call in self.mock_stub.CreateChart.call_args_list]
         # The wid varies between the two charts, so a hardcoded parent would fail here.
-        self.assertEqual(parents, ["experiments/1001/workUnits/1", "experiments/1002/workUnits/7"])
+        self.assertEqual(
+            [r.parent for r in requests],
+            ["experiments/1001/workUnits/1", "experiments/1002/workUnits/7"],
+        )
+        self.assertEqual([r.chart_id for r in requests], ["", ""])
 
     def test_create_charts_rejects_a_chart_without_an_experiment(self) -> None:
         # Without xid/wid there is no parent to send, and the derived

@@ -55,7 +55,9 @@ var (
 	deleteDashboardChartsByDashSQL = safesql.New("DELETE FROM DashboardCharts WHERE DashboardId = $1")
 	deleteDashboardSQL             = safesql.New("DELETE FROM Dashboards WHERE DashboardId = $1")
 
-	insertChartSQL                  = safesql.New("INSERT INTO Charts (ChartId, Title, Description, Xid, Wid, PlotLayout, Owner, CreatedAt, UpdatedAt) VALUES (@chartid, @title, @description, @xid, @wid, @plotlayout, @owner, @createdat, @updatedat) ON CONFLICT (ChartId) DO UPDATE SET Title = EXCLUDED.Title, Description = EXCLUDED.Description, Xid = EXCLUDED.Xid, Wid = EXCLUDED.Wid, PlotLayout = EXCLUDED.PlotLayout, Owner = EXCLUDED.Owner, CreatedAt = EXCLUDED.CreatedAt, UpdatedAt = EXCLUDED.UpdatedAt")
+	// insertChartSQL is a strict insert: a duplicate ChartId fails with a unique violation, which
+	// TranslateError maps to ErrAlreadyExists, instead of overwriting the existing chart.
+	insertChartSQL                  = safesql.New("INSERT INTO Charts (ChartId, Title, Description, Xid, Wid, PlotLayout, Owner, CreatedAt, UpdatedAt) VALUES (@chartid, @title, @description, @xid, @wid, @plotlayout, @owner, @createdat, @updatedat)")
 	insertChartPlotSQL              = safesql.New("INSERT INTO ChartPlots (ChartId, PlotId, Title, PlotType, PlotSpec) VALUES (@chartid, @plotid, @title, @plottype, @plotspec) ON CONFLICT (ChartId, PlotId) DO UPDATE SET Title = EXCLUDED.Title, PlotType = EXCLUDED.PlotType, PlotSpec = EXCLUDED.PlotSpec")
 	selectChartSQL                  = safesql.New("SELECT c.ChartId, c.Title, c.Description, c.Xid, c.Wid, c.PlotLayout, c.Owner, c.CreatedAt, c.UpdatedAt, ARRAY(SELECT cp.PlotSpec FROM ChartPlots cp WHERE cp.ChartId = c.ChartId ORDER BY cp.PlotId ASC) AS plotspecs FROM Charts c WHERE c.ChartId = $1")
 	lockChartForNoKeyUpdateSQL      = safesql.New("SELECT c.ChartId, c.Title, c.Description, c.Xid, c.Wid, c.PlotLayout, c.Owner, c.CreatedAt, c.UpdatedAt FROM Charts c WHERE c.ChartId = $1 FOR NO KEY UPDATE")
@@ -186,7 +188,8 @@ func (r *Repository) DeleteDashboard(ctx context.Context, dashboardID string) er
 	return nil
 }
 
-// CreateChart creates a new chart and its plot specifications in a single transaction.
+// CreateChart creates a new chart and its plot specifications in a single transaction. It never
+// overwrites an existing chart: a duplicate chart ID returns ErrAlreadyExists and writes nothing.
 func (r *Repository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
 	if _, _, err := postgresdata.ChartProtoToRow(chart, time.Time{}); err != nil {
 		return err

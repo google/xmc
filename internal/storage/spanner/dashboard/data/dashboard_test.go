@@ -76,6 +76,7 @@ func TestDashboardWithChartsToInsertMutations_Success(t *testing.T) {
 				Title:  "Loss",
 				Type:   dpb.PlotType_SCATTER,
 			},
+			nil,
 		},
 	}
 
@@ -141,6 +142,7 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 				Title:  "Loss",
 				Type:   dpb.PlotType_SCATTER,
 			},
+			nil,
 		},
 		PlotLayout: &dpb.LayoutSpec{
 			Type:    dpb.LayoutSpec_GRID,

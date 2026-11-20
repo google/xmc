@@ -142,8 +142,8 @@ Simulated Steps    : 100
 [3/3] Creating Charts and Dashboard...
 --> Connecting to Dashboard Service at localhost:50051...
 --> Creating 2 Charts...
-    created experiments/234911125/workUnits/1/charts/training_progress
-    created experiments/234911125/workUnits/1/charts/throughput
+    created experiments/234911125/workUnits/1/charts/3f1c9a52-7b0e-4d6a-9c1e-2a8f5d4b6e10
+    created experiments/234911125/workUnits/1/charts/b7e2d4c8-1a3f-4e5b-8d6c-9f0a2b4c6d81
 --> Creating Dashboard (ID: exp_234911125_overview)...
 --> Created Dashboard successfully: dashboards/exp_234911125_overview
 
@@ -186,8 +186,10 @@ perf/step_time_ms   100
 
 ```bash
 python3 -m xdash get dashboards/exp_<XID>_overview
-python3 -m xdash get-data experiments/<XID>/workUnits/1/charts/training_progress
+python3 -m xdash get-data experiments/<XID>/workUnits/1/charts/<CHART_ID>
 ```
+
+Chart IDs are assigned by the server: take `<CHART_ID>` from the `created ...` lines `launch.py` prints, or from the `chart_ids` that `get` lists for the dashboard.
 
 Both take the Dashboard Service address from `XMC_DASHBOARD_ENDPOINT`, or from `--endpoint`. TLS is the default for anything but a local address, so add `--insecure` when port-forwarding.
 

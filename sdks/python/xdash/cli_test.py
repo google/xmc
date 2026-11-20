@@ -21,7 +21,24 @@ from unittest.mock import MagicMock, patch
 from xdash._protos import messages_pb2
 from xdash.cli import run_cli
 from xdash.client import XDashConnectionError, XDashRPCError
-from xdash.presets import create_vcc_comparison_dashboard
+from xdash.presets import (
+    VCC_BASELINE_XID,
+    VCC_TUNED_V1_XID,
+    VCC_TUNED_V2_XID,
+    create_vcc_comparison_dashboard,
+)
+
+
+def _assign_server_ids(charts: list[messages_pb2.Chart]) -> list[messages_pb2.Chart]:
+    """Mimics CreateChart: the server names each chart with an ID it generates."""
+    return [
+        messages_pb2.Chart(
+            name=f"experiments/{chart.xid}/workUnits/{chart.wid}/charts/server-{chart.xid}",
+            xid=chart.xid,
+            wid=chart.wid,
+        )
+        for chart in charts
+    ]
 
 
 class CliTest(unittest.TestCase):
@@ -29,9 +46,8 @@ class CliTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.mock_client = MagicMock()
-        # A real CreateChart echoes the chart back with its resolved resource name, and
-        # the CLI derives the dashboard's chart IDs from those names.
-        self.mock_client.create_charts.side_effect = lambda charts: list(charts)
+        # The CLI must reference the IDs the server assigned, never ones it chose itself.
+        self.mock_client.create_charts.side_effect = _assign_server_ids
 
     def _run(self, argv: list[str]) -> tuple[int, str, str]:
         """Runs the CLI with a mock client, capturing its exit code, stdout and stderr."""
@@ -46,7 +62,9 @@ class CliTest(unittest.TestCase):
         self.assertIn("usage: xdash", out)
 
     def test_create_preset(self) -> None:
-        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard()
+        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard(
+            chart_ids=["a", "b", "c"]
+        )
 
         ret, out, _ = self._run(
             ["create-preset", "--dashboard-id", "test_dash", "--title", "Test Title"]
@@ -56,14 +74,19 @@ class CliTest(unittest.TestCase):
         args, kwargs = self.mock_client.create_dashboard.call_args
         self.assertEqual(args[0].name, "dashboards/test_dash")
         self.assertEqual(args[0].title, "Test Title")
-        self.assertEqual(list(args[0].chart_ids), ["baseline", "tuned_v1", "tuned_v2"])
+        self.assertEqual(
+            list(args[0].chart_ids),
+            [f"server-{xid}" for xid in (VCC_BASELINE_XID, VCC_TUNED_V1_XID, VCC_TUNED_V2_XID)],
+        )
         self.assertEqual(kwargs["dashboard_id"], "test_dash")
         self.assertIn("3 charts", out)
         # Charts must be created before the dashboard that references them.
         self.mock_client.create_charts.assert_called_once()
 
     def test_create_preset_defaults(self) -> None:
-        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard()
+        self.mock_client.create_dashboard.return_value = create_vcc_comparison_dashboard(
+            chart_ids=["a", "b", "c"]
+        )
 
         ret, _, _ = self._run(["create-preset"])
         self.assertEqual(ret, 0)
@@ -91,16 +114,9 @@ class CliTest(unittest.TestCase):
         self.mock_client.create_dashboard.assert_called_once()
         built = self.mock_client.create_dashboard.call_args[0][0]
         # Whitespace trimmed and the trailing empty element dropped, not turned into a chart.
-        self.assertEqual(list(built.chart_ids), ["exp_234911122", "exp_234911123"])
+        self.assertEqual(list(built.chart_ids), ["server-234911122", "server-234911123"])
         created_charts = self.mock_client.create_charts.call_args[0][0]
         self.assertEqual([chart.xid for chart in created_charts], [234911122, 234911123])
-        self.assertEqual(
-            [chart.name for chart in created_charts],
-            [
-                "experiments/234911122/workUnits/1/charts/exp_234911122",
-                "experiments/234911123/workUnits/1/charts/exp_234911123",
-            ],
-        )
 
     def test_create_dashboard_rejects_invalid_xids(self) -> None:
         for bad in ("0", "-5", "not-a-number"):
@@ -282,7 +298,7 @@ class CliTest(unittest.TestCase):
             name="dashboards/d1",
             title="D1",
             description="First dashboard",
-            chart_ids=["c1"],
+            chart_ids=["c1", "c2"],
         )
 
         ret, out, _ = self._run(["get", "dashboards/d1"])
@@ -291,7 +307,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("Dashboard: dashboards/d1", out)
         self.assertIn("Title:       D1", out)
         self.assertIn("Description: First dashboard", out)
-        self.assertIn("Charts:      1", out)
+        self.assertIn("Charts:      2", out)
+        self.assertIn("Chart IDs:   c1, c2", out)
 
     def test_get_chart(self) -> None:
         self.mock_client.get_chart.return_value = messages_pb2.Chart(
@@ -321,9 +338,10 @@ class CliTest(unittest.TestCase):
 
     def test_get_strips_surrounding_whitespace(self) -> None:
         self.mock_client.get_dashboard.return_value = messages_pb2.Dashboard(name="dashboards/d1")
-        ret, _, _ = self._run(["get", "  dashboards/d1  "])
+        ret, out, _ = self._run(["get", "  dashboards/d1  "])
         self.assertEqual(ret, 0)
         self.mock_client.get_dashboard.assert_called_once_with("dashboards/d1")
+        self.assertNotIn("Chart IDs:", out)
 
     def test_get_rejects_blank_name_without_calling_the_service(self) -> None:
         ret, _, err = self._run(["get", "   "])

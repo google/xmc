@@ -81,7 +81,7 @@ from xdash import (
 
 # Build a chart for Experiment 1001, Work Unit 1
 chart = (
-    ChartBuilder(name="experiments/1001/workUnits/1/charts/val_metrics")
+    ChartBuilder()
     .for_experiment(xid=1001, wid=1)
     .set_title("Validation Overview")
     .set_grid_layout(columns=2)
@@ -109,6 +109,11 @@ with DashboardClient() as client:
 which is the only parent the `CreateChart` RPC accepts. `create_charts` is the batch convenience
 wrapper: it derives each parent from the chart's own `xid`/`wid`, so `for_experiment()` must have
 been called on every chart it is given.
+
+The server assigns every chart its ID. `create_chart` never derives one from the chart's `name`;
+send your own only by passing `chart_id=` explicitly. `CreateChart` never overwrites an existing
+chart, so an ID that is already taken fails with `ALREADY_EXISTS` (raised as `XDashRPCError`).
+Always reference a chart through the name of the chart returned by `create_chart`/`create_charts`.
 
 ### Referencing Charts from a Dashboard
 
@@ -156,9 +161,8 @@ with DashboardClient(endpoint="localhost:8080") as client:
     print(f"Created: {created_dashboard.name}")
 ```
 
-`create_vcc_comparison_dashboard()` defaults `chart_ids` to the preset slugs (`baseline`,
-`tuned_v1`, `tuned_v2`), which is only correct if the charts were created under exactly those IDs.
-Pass the IDs back from `create_charts()` whenever the server may assign them itself.
+`create_vcc_comparison_dashboard()` requires `chart_ids`: pass the IDs the server assigned to the
+charts returned by `create_charts()`.
 
 A runnable end-to-end version of this, including a virtualenv installer, lives in
 [`examples/xdash_dashboard/`](../../../examples/xdash_dashboard/).

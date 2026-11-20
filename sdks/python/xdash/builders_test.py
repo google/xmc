@@ -182,6 +182,7 @@ class BuildersTest(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             DashboardBuilder().set_title("D1").add_chart(messages_pb2.Chart(title="No name"))
         self.assertIn("chart.name", str(cm.exception))
+        self.assertIn("create_charts()", str(cm.exception))
 
     def test_add_chart_id_rejects_resource_names_and_blanks(self) -> None:
         builder = DashboardBuilder().set_title("D1")

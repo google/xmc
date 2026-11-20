@@ -171,11 +171,9 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
                 ) from err
             # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
             # with a clear message, rather than the dashboard silently losing a chart.
-            charts.append(
-                create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
-            )
+            charts.append(create_standard_experiment_chart(xid=xid_val, wid=1))
 
-    # Charts must exist before the dashboard can reference them by ID.
+    # Charts must exist before the dashboard can reference them, by the IDs the server assigned.
     for created_chart in client.create_charts(charts):
         builder.add_chart_id(chart_id_from_name(created_chart.name))
 
@@ -257,6 +255,8 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
             f"Description: {dash.description}\n"
             f"Charts:      {len(dash.chart_ids)}\n"
         )
+        if dash.chart_ids:
+            sys.stdout.write(f"Chart IDs:   {', '.join(dash.chart_ids)}\n")
         return 0
 
     chart = client.get_chart(name)

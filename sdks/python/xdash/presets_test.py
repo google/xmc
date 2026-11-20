@@ -33,9 +33,6 @@ class PresetsTest(unittest.TestCase):
         self.assertEqual(chart.xid, VCC_BASELINE_XID)
         self.assertEqual(chart.wid, 1)
         self.assertEqual(chart.title, f"Experiment {VCC_BASELINE_XID} Overview")
-        self.assertEqual(
-            chart.name, f"experiments/{VCC_BASELINE_XID}/workUnits/1/charts/metrics_overview"
-        )
         self.assertEqual(len(chart.plots), 4)
         plot_ids = [p.plot_id for p in chart.plots]
         self.assertEqual(
@@ -48,15 +45,10 @@ class PresetsTest(unittest.TestCase):
         )
 
     def test_create_standard_experiment_chart_honours_overrides(self) -> None:
-        chart = create_standard_experiment_chart(
-            xid=VCC_TUNED_V1_XID, wid=7, chart_id="custom_slug", title="Custom Title"
-        )
+        chart = create_standard_experiment_chart(xid=VCC_TUNED_V1_XID, wid=7, title="Custom Title")
         self.assertEqual(chart.title, "Custom Title")
-        self.assertEqual(
-            chart.name, f"experiments/{VCC_TUNED_V1_XID}/workUnits/7/charts/custom_slug"
-        )
         self.assertEqual((chart.xid, chart.wid), (VCC_TUNED_V1_XID, 7))
-        # The overrides change identity and title only; the plot set is the preset's.
+        # The overrides change the work unit and title only; the plot set is the preset's.
         self.assertEqual(
             [p.plot_id for p in chart.plots],
             ["val_loss_kpi", "train_acc_kpi", "loss_vs_steps", "acc_vs_steps"],
@@ -79,29 +71,26 @@ class PresetsTest(unittest.TestCase):
             [chart.title for chart in charts],
             ["VCC Baseline", "VCC tuned_v1", "VCC tuned_v2"],
         )
-        self.assertEqual(
-            [chart.name.rsplit("/", 1)[-1] for chart in charts],
-            ["baseline", "tuned_v1", "tuned_v2"],
-        )
 
     def test_create_vcc_comparison_dashboard(self) -> None:
-        dash = create_vcc_comparison_dashboard(dashboard_id="vcc_test", title="VCC Comparison Test")
-        self.assertEqual(dash.name, "dashboards/vcc_test")
-        self.assertEqual(dash.title, "VCC Comparison Test")
-        # The dashboard references charts by bare ID; the preset slugs match what
-        # create_chart() assigns for the charts from create_vcc_comparison_charts().
-        self.assertEqual(list(dash.chart_ids), ["baseline", "tuned_v1", "tuned_v2"])
-
-    def test_create_vcc_comparison_dashboard_accepts_server_assigned_ids(self) -> None:
         server_ids = [
             "f47ac10b-58cc-4372-a567-0e02b2c3d479",
             "9f8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
         ]
-        dash = create_vcc_comparison_dashboard(chart_ids=server_ids)
+        dash = create_vcc_comparison_dashboard(
+            dashboard_id="vcc_test", title="VCC Comparison Test", chart_ids=server_ids
+        )
+        self.assertEqual(dash.name, "dashboards/vcc_test")
+        self.assertEqual(dash.title, "VCC Comparison Test")
         self.assertEqual(list(dash.chart_ids), server_ids)
 
+    def test_create_vcc_comparison_dashboard_requires_chart_ids(self) -> None:
+        # Chart IDs are server-assigned, so there is no preset default to fall back on.
+        with self.assertRaises(TypeError):
+            create_vcc_comparison_dashboard()
+
     def test_create_vcc_comparison_dashboard_defaults(self) -> None:
-        dash = create_vcc_comparison_dashboard()
+        dash = create_vcc_comparison_dashboard(chart_ids=["a", "b", "c"])
         self.assertEqual(dash.name, "dashboards/vcc_comparison")
         self.assertEqual(dash.title, "VCC baseline tune comparison")
         self.assertEqual(len(dash.chart_ids), 3)

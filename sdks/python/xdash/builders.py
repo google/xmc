@@ -376,8 +376,8 @@ class DashboardBuilder:
         """References a chart by deriving its raw ID from the Chart message's name.
 
         Convenience wrapper over add_chart_id() for the common case of holding the
-        Chart returned by create_chart(). Only the ID is stored — a Dashboard no longer
-        carries embedded Chart messages.
+        Chart returned by create_chart() or create_charts(). Only the ID is stored —
+        a Dashboard no longer carries embedded Chart messages.
 
         Raises:
             ValueError: If chart is None, its name is unset, or the derived ID is
@@ -387,8 +387,8 @@ class DashboardBuilder:
             raise ValueError("chart is required and cannot be None")
         if not chart.name:
             raise ValueError(
-                "chart.name must be set to reference it from a dashboard. Build the chart "
-                "with ChartBuilder(name=...) or use the Chart returned by create_chart()."
+                "chart.name must be set to reference it from a dashboard. Pass a Chart "
+                "returned by DashboardClient.create_chart() or create_charts()."
             )
         return self.add_chart_id(chart_id_from_name(chart.name))
 

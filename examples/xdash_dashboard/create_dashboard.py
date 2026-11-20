@@ -40,9 +40,9 @@ from xdash._protos import messages_pb2
 
 # Standard test experiment IDs available in UI and DataEngine golden test datasets.
 EXPERIMENT_RUNS = [
-    (VCC_BASELINE_XID, "baseline", "VCC Baseline Run"),
-    (VCC_TUNED_V1_XID, "tuned_v1", "VCC Tuned Run (lr=0.01)"),
-    (VCC_TUNED_V2_XID, "tuned_v2", "VCC Tuned Run (lr=0.005)"),
+    (VCC_BASELINE_XID, "VCC Baseline Run"),
+    (VCC_TUNED_V1_XID, "VCC Tuned Run (lr=0.01)"),
+    (VCC_TUNED_V2_XID, "VCC Tuned Run (lr=0.005)"),
 ]
 
 # Default CLI configurations.
@@ -54,7 +54,7 @@ DEFAULT_CREATE_EXPERIMENTS = False
 
 def _resolve_experiment_runs(
     create_experiments: bool = DEFAULT_CREATE_EXPERIMENTS,
-) -> list[tuple[int, str, str]]:
+) -> list[tuple[int, str]]:
     """Resolves experiment IDs, creating live experiments when create_experiments is True."""
     if not create_experiments:
         return list(EXPERIMENT_RUNS)
@@ -67,32 +67,33 @@ def _resolve_experiment_runs(
     acls = xid_messages_pb2.XidAcls(
         owners=[xid_messages_pb2.XidAcls.Role(all_authenticated_users=True)]
     )
-    resolved: list[tuple[int, str, str]] = []
-    for _, slug, run_title in EXPERIMENT_RUNS:
+    resolved: list[tuple[int, str]] = []
+    for _, run_title in EXPERIMENT_RUNS:
         exp = api.create_experiment(
             api_pb2.CreateExperimentRequest(
                 experiment=experiment_pb2.Experiment(title=run_title, acls=acls)
             )
         )
         xid = int(exp.name.split("/")[-1])
-        resolved.append((xid, f"{slug}_{xid}", run_title))
+        resolved.append((xid, run_title))
     return resolved
 
 
-def build_experiment_chart(xid: int, chart_slug: str, title: str) -> messages_pb2.Chart:
+def build_experiment_chart(xid: int, title: str) -> messages_pb2.Chart:
     """Builds a customized 4-plot chart for an experiment work unit.
+
+    The chart is created without an explicit chart_id: the server assigns its ID when
+    it is created.
 
     Args:
         xid: Experiment ID.
-        chart_slug: Unique identifier slug for the chart.
         title: Human-readable chart title.
 
     Returns:
-        A messages_pb2.Chart protobuf message ready to be added to a dashboard.
+        A messages_pb2.Chart protobuf message ready to be created.
     """
-    chart_name = f"experiments/{xid}/workUnits/1/charts/{chart_slug}"
     builder = (
-        ChartBuilder(name=chart_name)
+        ChartBuilder()
         .for_experiment(xid=xid, wid=1)
         .set_title(title)
         .set_description(f"Evaluation metrics for experiment {xid}")
@@ -131,9 +132,9 @@ def create_example_dashboard(
     sys.stdout.write(f"--> Building dashboard '{title}' (ID: {dashboard_id})...\n")
 
     charts = []
-    for xid, slug, run_title in runs:
+    for xid, run_title in runs:
         sys.stdout.write(f"    - Building chart for Experiment {xid} ({run_title})...\n")
-        charts.append(build_experiment_chart(xid, slug, run_title))
+        charts.append(build_experiment_chart(xid, run_title))
 
     sys.stdout.write("--> Sending CreateChart requests to DashboardService...\n")
     created_charts = client.create_charts(charts)
