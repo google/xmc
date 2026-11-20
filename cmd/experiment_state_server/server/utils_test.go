@@ -48,6 +48,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/validator"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -441,6 +442,7 @@ func TestStopOperationOnError(t *testing.T) {
 		wantUpdateWorkUnitOperation bool
 		wantDone                    bool
 		wantCode                    codes.Code
+		wantMessage                 string
 	}{
 		{
 			name:                        "no_error",
@@ -461,6 +463,15 @@ func TestStopOperationOnError(t *testing.T) {
 			op:                          &lropb.Operation{Name: "invalid/op/name"},
 			err:                         grpcerr.ErrInternal,
 			wantUpdateWorkUnitOperation: false,
+		},
+		{
+			name:                        "error_without_status",
+			op:                          &lropb.Operation{Name: opName},
+			err:                         errors.New("failed to add message to redis"),
+			wantUpdateWorkUnitOperation: true,
+			wantDone:                    true,
+			wantCode:                    codes.Internal,
+			wantMessage:                 "failed to add message to redis",
 		},
 		{
 			name:                        "update_op_error",
@@ -498,11 +509,104 @@ func TestStopOperationOnError(t *testing.T) {
 			if codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
 				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
 			}
+			if tc.wantMessage != "" {
+				if got := storage.GotOperationUpdate.Operation.GetError().GetMessage(); got != tc.wantMessage {
+					t.Errorf("stopOperationOnError() updated operation with message = %q, want %q", got, tc.wantMessage)
+				}
+			}
 			wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
 			if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
 				t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// checkOperationStopped checks that st recorded the work unit operation for xid and wid as done
+// with an INTERNAL error, which is how stopOperationOnError closes an operation after a failure.
+func checkOperationStopped(t *testing.T, st *storage.MockStorage, xid, wid int64) {
+	t.Helper()
+	got := st.GotOperationUpdate
+	if got == nil {
+		t.Fatalf("UpdateWorkUnitOperation() was not called, want the operation of experiments/%d/workUnits/%d stopped", xid, wid)
+	}
+	if got.XID != xid || got.WID != wid {
+		t.Errorf("stopped operation of XID %d, WID %d, want XID %d, WID %d", got.XID, got.WID, xid, wid)
+	}
+	if !got.Operation.GetDone() {
+		t.Error("stopped operation done = false, want true")
+	}
+	if code := codes.Code(got.Operation.GetError().GetCode()); code != codes.Internal {
+		t.Errorf("stopped operation error code = %v, want %v", code, codes.Internal)
+	}
+	wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
+	if diff := cmp.Diff(wantMask, got.UpdateMask, protocmp.Transform()); diff != "" {
+		t.Errorf("stopped operation update mask mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// checkSystemMessage checks that the last execution st recorded for wid is wantExecution and
+// carries the want system message. The message's create time is ignored.
+func checkSystemMessage(t *testing.T, st *storage.MockStorage, wid int64, wantExecution string, want *essmsgpb.StructuredMessage) {
+	t.Helper()
+	got, ok := st.UpdatedWorkUnitExecutions[wid]
+	if !ok {
+		t.Fatalf("no work unit execution was written for WID %d, want %s with system message %v", wid, wantExecution, want)
+	}
+	if got.GetName() != wantExecution {
+		t.Errorf("written work unit execution = %s, want %s", got.GetName(), wantExecution)
+	}
+	opts := []cmp.Option{protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")}
+	if diff := cmp.Diff(want, got.GetStatus().GetSystemMessage(), opts...); diff != "" {
+		t.Errorf("written system message mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// fetchRecordedOperation parses opName and fetches the corresponding operation from st.
+func fetchRecordedOperation(ctx context.Context, t *testing.T, st storage.Storage, opName string) (int64, *lropb.Operation) {
+	t.Helper()
+	xid, wid, oid, err := validator.ValidateOperationName(opName)
+	if err != nil {
+		t.Fatalf("ValidateOperationName(%q) failed: %v", opName, err)
+	}
+	op, err := st.FetchWorkUnitOperation(ctx, xid, wid, oid)
+	if err != nil {
+		t.Fatalf("FetchWorkUnitOperation(%q) failed: %v", opName, err)
+	}
+	return wid, op
+}
+
+// checkPartialEnqueueOperations verifies that after a 2-task batch where tasks[0] succeeded and
+// tasks[1] failed to enqueue, only tasks[1] closed its operation and recorded wantFailSeverity.
+func checkPartialEnqueueOperations(ctx context.Context, t *testing.T, st storage.Storage, xid int64, tasks []tq.EnqueuedTask, action string, wantFailSeverity essmsgpb.StructuredMessage_Severity) {
+	t.Helper()
+	okWID, okOp := fetchRecordedOperation(ctx, t, st, tasks[0].OperationName)
+	if okOp.GetDone() || okOp.GetError() != nil {
+		t.Errorf("succeeded %s operation %s = (done=%v, error=%v), want pending with nil error", action, okOp.GetName(), okOp.GetDone(), okOp.GetError())
+	}
+	okExec, err := st.FetchCurrentWorkUnitExecution(ctx, xid, okWID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution(%d) failed: %v", okWID, err)
+	}
+	if sev := okExec.GetStatus().GetSystemMessage().GetSeverity(); sev == wantFailSeverity {
+		t.Errorf("succeeded work unit %d execution system message severity = %v, want non-%v", okWID, sev, wantFailSeverity)
+	}
+	failWID, failOp := fetchRecordedOperation(ctx, t, st, tasks[1].OperationName)
+	if !failOp.GetDone() || codes.Code(failOp.GetError().GetCode()) != codes.Internal {
+		t.Errorf("failed %s operation %s = (done=%v, code=%v), want (done=true, code=%v)", action, failOp.GetName(), failOp.GetDone(), codes.Code(failOp.GetError().GetCode()), codes.Internal)
+	}
+	failExec, err := st.FetchCurrentWorkUnitExecution(ctx, xid, failWID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution(%d) failed: %v", failWID, err)
+	}
+	wantMsg := &essmsgpb.StructuredMessage{
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		Severity:       wantFailSeverity,
+		UserFacingText: fmt.Sprintf("Failed to %s work unit. Please try again.", action),
+		Parent:         validator.ConstructWorkUnitName(xid, failWID),
+	}
+	if diff := cmp.Diff(wantMsg, failExec.GetStatus().GetSystemMessage(), protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+		t.Errorf("failed work unit %d system message mismatch (-want +got):\n%s", failWID, diff)
 	}
 }
 

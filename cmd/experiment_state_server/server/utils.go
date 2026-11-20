@@ -20,6 +20,7 @@ import (
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/uuid"
 	rpcstatuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -120,10 +121,11 @@ func (h *WorkUnitHandler) stopOperationOnError(ctx context.Context, operation *l
 		return
 	}
 
+	// An error without a gRPC status, such as a raw task queue error, is an internal failure. The
+	// operation must still be closed, or clients polling it wait forever.
 	st, ok := status.FromError(err)
 	if !ok {
-		logging.Error(ctx, "Failed to convert error to status", "error", err)
-		return
+		st = status.New(codes.Internal, err.Error())
 	}
 	// The error field in lropb.Operation expects a google.rpc.Status,
 	// while status.FromError returns a gRPC Status. We need to convert.
