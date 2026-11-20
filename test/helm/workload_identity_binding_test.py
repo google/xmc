@@ -22,6 +22,7 @@ calls reached Google with no identity attached and came back PermissionDenied at
 in either file makes that omission visible, which is what this suite is for.
 """
 
+import os
 import re
 import unittest
 
@@ -40,6 +41,15 @@ ALL_SERVICES_ENABLED = {
     "logMonitor.gcpServiceAccount": "xmc-lm-sa@example.iam.gserviceaccount.com",
     "rodDeployment.enabled": "true",
     "ui.enabled": "true",
+}
+
+HPO_COMPONENT_CHART_PATH = os.path.join("deploy", "profiles", "stable-2026b", "components", "hpo")
+HPO_COMPONENT_VALUES = {
+    "hpoDeployment.enabled": "true",
+    "hpoDeployment.redisAddr": "redis-service.xmc.svc.cluster.local:6379",
+    "hpoDeployment.essAddr": "grpc-service:50051",
+    "hpoDeployment.essAudience": "test-ess-audience",
+    "hpoDeployment.studyControllerServiceAccount": "xmc-sc-sa@example.iam.gserviceaccount.com",
 }
 
 # Manifests are matched with regexes rather than parsed, because the chart suites run under the
@@ -88,13 +98,25 @@ class WorkloadIdentityBindingTest(unittest.TestCase):
         require_helm()
         with open(find_repo_file(BLUEPRINT_PATH), encoding="utf-8") as blueprint:
             cls.bound = bound_service_accounts(blueprint.read())
-        cls.annotated = annotated_service_accounts(render_chart(ALL_SERVICES_ENABLED))
+        hpo_chart_dir = os.path.dirname(
+            find_repo_file(os.path.join(HPO_COMPONENT_CHART_PATH, "Chart.yaml"))
+        )
+        cls.annotated = annotated_service_accounts(
+            render_chart(ALL_SERVICES_ENABLED)
+        ) | annotated_service_accounts(
+            render_chart(
+                HPO_COMPONENT_VALUES,
+                chart_dir=hpo_chart_dir,
+                release_name="xmc-cmp-hpo",
+            )
+        )
 
     def test_the_chart_annotates_service_accounts(self) -> None:
         """Guards the two set comparisons below from passing on an empty rendering."""
         self.assertIn("experiment-server", self.annotated)
         self.assertIn("dashboard-service-account", self.annotated)
         self.assertIn("xmc-bridge-sa", self.annotated)
+        self.assertIn("xmc-study-controller", self.annotated)
 
     def test_every_annotated_service_account_is_bound(self) -> None:
         """An annotation without a binding is what made the dashboard service unauthenticated."""

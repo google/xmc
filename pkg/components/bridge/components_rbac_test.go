@@ -389,11 +389,15 @@ func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 		t.Fatalf("failed to load the stable-2026b hpo chart: %v", err)
 	}
 	// The second call changes the image, so Helm PATCHes the xmc-study-controller Deployment.
-	const studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
-	const redisAddr = "redis-service.xmc.svc.cluster.local:6379"
+	const (
+		studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
+		redisAddr            = "redis-service.xmc.svc.cluster.local:6379"
+		essAddr              = "grpc-service:50051"
+		essAudience          = "test-ess-audience"
+	)
 	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-hpo", hpoChart, []map[string]any{
-		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1", "redisAddr": redisAddr}},
-		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage, "redisAddr": redisAddr}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1", "redisAddr": redisAddr, "essAddr": essAddr, "essAudience": essAudience}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage, "redisAddr": redisAddr, "essAddr": essAddr, "essAudience": essAudience}},
 	}, func() {
 		dep, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
 		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {

@@ -177,6 +177,13 @@ deployment_groups:
       - iam.securityReviewer
       - serviceusage.serviceUsageConsumer
 
+  # Dedicated Google service account for xmc-study-controller (hpo 1P component). Holds no project
+  # IAM roles: ESS admits it dynamically when configured in hpo parameters.studyControllerServiceAccount.
+  - id: study_controller_service_account
+    source: modules/project/service-account
+    settings:
+      name: xmc-sc-sa
+
   - id: db_spanner
     source: ./deploy/ctk_v2/modules/spanner
     settings:
@@ -327,6 +334,15 @@ deployment_groups:
     settings:
       service_account_email: $(workload_service_account.service_account_email)
       k8s_service_account_name: xmc-bridge-sa
+
+  # Created unconditionally alongside the other optional workload bindings so operators enabling
+  # the experimental hpo component in xmc-profile can configure studyControllerServiceAccount
+  # without editing the blueprint.
+  - id: xmc_wi_binding_study_controller
+    source: modules/project/workload_identity_binding
+    settings:
+      service_account_email: $(study_controller_service_account.service_account_email)
+      k8s_service_account_name: xmc-study-controller
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster

@@ -26,6 +26,7 @@ go_library(
     importpath = "xmanager_cloud/cmd/study_controller",
     deps = [
         "//cmd/study_controller/config",
+        "//cmd/study_controller/essclient",
         "//cmd/study_controller/worker",
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
