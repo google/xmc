@@ -81,17 +81,13 @@ class _FakeRoutePage:
     def __init__(
         self,
         routes: Mapping[str, Callable[[], Mapping[str, list[_FakeElement]]]],
-        on_screenshot: Callable[[str], None] | None = None,
     ) -> None:
         self._routes = dict(routes)
-        self._on_screenshot = on_screenshot
         self.url = ""
-        self.visited_urls: list[str] = []
 
     def goto(self, url: str, wait_until: str = "networkidle", timeout: int = 60000) -> None:
         del wait_until, timeout
         self.url = url
-        self.visited_urls.append(url)
 
     def locator(self, selector: str) -> _FakeLocator:
         path = re.sub(r"^https?://[^/]+", "", self.url)
@@ -110,24 +106,15 @@ class _FakeRoutePage:
     def wait_for_load_state(self, state: str = "networkidle", timeout: int = 30000) -> None:
         del state, timeout
 
-    def screenshot(self, path: str, full_page: bool = True) -> None:
-        del full_page
-        if self._on_screenshot is not None:
-            self._on_screenshot(path)
 
-
-def _experiment_row(
-    xid: str, *, has_work_units: bool, use_badge_classes: bool = True
-) -> _FakeElement:
+def _experiment_row(xid: str, *, has_work_units: bool) -> _FakeElement:
     """Builds a fake /experiments table row element."""
+    badge_sel = ".status-bar" if has_work_units else ".no-work-units"
     children: dict[str, list[_FakeElement]] = {
         'a[href*="/experiments/"]': [_FakeElement(attrs={"href": f"/experiments/{xid}"})],
+        badge_sel: [_FakeElement(text="1" if has_work_units else "No Work Units")],
     }
-    if use_badge_classes:
-        badge_sel = ".status-bar" if has_work_units else ".no-work-units"
-        children[badge_sel] = [_FakeElement(text="1" if has_work_units else "No Work Units")]
-    text = f"{xid} Exp {xid}" if has_work_units else f"{xid} Exp {xid} No Work Units"
-    return _FakeElement(text=text, children=children)
+    return _FakeElement(text=f"{xid} Exp {xid}", children=children)
 
 
 class WeeklyVisualSnapshotTest(unittest.TestCase):
@@ -182,7 +169,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
     def test_discover_candidate_xids_skips_no_work_units_rows(self) -> None:
         rows = [
             _experiment_row("101", has_work_units=False),
-            _experiment_row("102", has_work_units=False, use_badge_classes=False),
+            _experiment_row("102", has_work_units=False),
             _experiment_row("103", has_work_units=True),
             _experiment_row("104", has_work_units=True),
             _experiment_row("103", has_work_units=True),
@@ -194,20 +181,21 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             weekly_visual_snapshot.discover_candidate_xids_from_page(page),
             ["103", "104"],
         )
-        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page), "103")
 
-    def test_discover_xid_from_page_link_fallback_and_empty(self) -> None:
+    def test_discover_candidate_xids_link_fallback_and_empty(self) -> None:
         page_with_link = mock.MagicMock()
         links = mock.MagicMock(count=mock.MagicMock(return_value=1))
         links.nth.return_value.get_attribute.return_value = "/experiments/108"
         page_with_link.locator.side_effect = lambda sel: (
             mock.MagicMock(count=mock.MagicMock(return_value=0)) if "tbody" in sel else links
         )
-        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_with_link), "108")
+        self.assertEqual(
+            weekly_visual_snapshot.discover_candidate_xids_from_page(page_with_link), ["108"]
+        )
 
         page_empty = mock.MagicMock()
         page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
-        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_empty), "")
+        self.assertEqual(weekly_visual_snapshot.discover_candidate_xids_from_page(page_empty), [])
 
     def test_discover_workunit_ids_from_page(self) -> None:
         links = [

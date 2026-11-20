@@ -78,10 +78,8 @@ GOLDEN_ROUTES: tuple[GoldenRoute, ...] = (
 _EXPERIMENTS_NEXT_PAGE_SEL = 'button[data-test-id="next-page-button"]:not([disabled])'
 # ui-contract: experiments_table.ng.html marks expandable status sub-rows with .detail-row.
 _EXPERIMENTS_ROW_SEL = "tbody tr:not(.detail-row)"
-# ui-contract: work_units_status_bar.ng.html renders .no-work-units / .status-bar without data-testid.
+# ui-contract: work_units_status_bar.ng.html renders .no-work-units when an experiment has 0 work units.
 _NO_WORK_UNITS_BADGE_SEL = ".no-work-units"
-# ui-contract: work_units_status_bar.ng.html renders .status-bar when work units exist.
-_WORK_UNITS_STATUS_BAR_SEL = ".status-bar"
 # ui-contract: experiment_page.ng.html renders the experiment title as h1.experiment-title.
 _EXPERIMENT_TITLE_SEL = "h1.experiment-title, .experiment-title"
 # ui-contract: experiment_page.ng.html renders h1.experiment-title; errors surface in mat-snack-bar-container.
@@ -90,10 +88,7 @@ _EXPERIMENT_LOAD_SEL = "h1.experiment-title, .experiment-title, mat-snack-bar-co
 _WORKUNITS_TAB_SEL = (
     'mat-tab-header .mdc-tab:has-text("Work Units"), .mat-tab-label:has-text("Work Units")'
 )
-# ui-contract: work_units_table.ng.html renders a.work-unit-id links inside xmc-work-units-table.
-_WORKUNIT_LINK_SEL = (
-    'xmc-work-units-table a.work-unit-id, xmc-work-units-table a[href*="/workUnits/"]'
-)
+_WORKUNIT_LINK_SEL = 'xmc-work-units-table a[href*="/workUnits/"]'
 # ui-contract: work_units_table.ng.html renders .no-work-units-message and .error-message on empty/error.
 _WORKUNIT_TABLE_READY_SEL = (
     'xmc-work-units-table a[href*="/workUnits/"], '
@@ -150,15 +145,6 @@ def _wait_for_selector_best_effort(page: Any, selector: str, timeout_ms: int) ->
         page.wait_for_selector(selector, timeout=timeout_ms)
 
 
-def _row_has_no_work_units(row: Any) -> bool:
-    """Returns True when an experiments list row explicitly shows zero work units."""
-    if _locator_count(row.locator(_NO_WORK_UNITS_BADGE_SEL)) > 0:
-        return True
-    if _locator_count(row.locator(_WORK_UNITS_STATUS_BAR_SEL)) > 0:
-        return False
-    return "no work units" in _safe_inner_text(row).lower()
-
-
 def _extract_xid_from_row(row: Any) -> str:
     """Extracts an experiment XID from a table row link or cell text."""
     links = row.locator('a[href*="/experiments/"]')
@@ -180,7 +166,7 @@ def discover_candidate_xids_from_page(page: Any) -> list[str]:
         row_count = _locator_count(rows)
         for i in range(row_count):
             row = rows.nth(i)
-            if _row_has_no_work_units(row):
+            if _locator_count(row.locator(_NO_WORK_UNITS_BADGE_SEL)) > 0:
                 continue
             xid = _extract_xid_from_row(row)
             if xid and xid not in seen:
@@ -197,12 +183,6 @@ def discover_candidate_xids_from_page(page: Any) -> list[str]:
     except Exception:
         return []
     return candidates
-
-
-def discover_xid_from_page(page: Any) -> str:
-    """Discovers the first candidate experiment XID from the rendered /experiments page DOM."""
-    candidates = discover_candidate_xids_from_page(page)
-    return candidates[0] if candidates else ""
 
 
 def _extract_workunit_id_from_href(href: str, xid: str | int = "") -> str:
@@ -226,13 +206,8 @@ def discover_workunit_ids_from_page(page: Any, xid: str | int = "") -> list[str]
         if _locator_count(links) == 0:
             links = page.locator('a[href*="/workUnits/"]')
         for i in range(_locator_count(links)):
-            link = links.nth(i)
-            href = _safe_get_attribute(link, "href")
+            href = _safe_get_attribute(links.nth(i), "href")
             wid = _extract_workunit_id_from_href(href, xid=xid) if href else ""
-            if not href:
-                text = _safe_inner_text(link).strip()
-                if re.fullmatch(r"[A-Za-z0-9_-]+", text):
-                    wid = text
             if wid and wid not in seen:
                 seen.add(wid)
                 wids.append(wid)
@@ -269,11 +244,10 @@ def _verify_workunit_details_loads(
 ) -> bool:
     """Returns True when /experiments/{xid}/workUnits/{wid} renders WorkUnit details."""
     _navigate_to_path(session, f"/experiments/{xid}/workUnits/{wid}", timeout_ms=timeout_ms)
-    if _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) > 0:
-        return True
-    _wait_for_selector_best_effort(
-        session.page, _WORKUNIT_DETAILS_SEL, timeout_ms=min(timeout_ms, 5000)
-    )
+    if _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) == 0:
+        _wait_for_selector_best_effort(
+            session.page, _WORKUNIT_DETAILS_SEL, timeout_ms=min(timeout_ms, 5000)
+        )
     return _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) > 0
 
 
