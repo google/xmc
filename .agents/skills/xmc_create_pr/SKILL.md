@@ -132,6 +132,10 @@ When creating a new PR or populating its description:
    TAG=agy
    CONV=<conversation_id>
    ```
+   Then validate the body and fix every reported violation (missing sections or `TAG=agy`, assumption bullets lacking the `<assumption> — <why> — <impact if wrong>` form) before the confirmation gate:
+   ```bash
+   ./tools/pr_review/check_pr_body.py --body-file pr_body.md
+   ```
 
 7. **Mandatory User Confirmation Gate Before PR Creation**:
    NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
@@ -157,7 +161,7 @@ When creating a new PR or populating its description:
 
 When updating an existing Pull Request description:
 
-1. **Format Updated Body**: Prepare the updated body markdown in a temporary file (e.g., `updated_pr_body.md`).
+1. **Format Updated Body**: Prepare the updated body markdown in a temporary file (e.g., `updated_pr_body.md`), then run `./tools/pr_review/check_pr_body.py --body-file updated_pr_body.md` and fix every reported violation.
 2. **User Edit Gate**: Present the updated PR description preview to the user and pause for confirmation/edits.
 3. **Execute Update Tool**:
    ```bash
