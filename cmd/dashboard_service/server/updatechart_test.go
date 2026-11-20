@@ -463,3 +463,83 @@ func TestUpdateChart(t *testing.T) {
 		}
 	})
 }
+
+func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
+	ctx := context.Background()
+	parallel := []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}
+	scatter := []*dpb.PlotSpec{{PlotId: "loss", Type: dpb.PlotType_SCATTER}}
+	experimentChart := &dpb.Chart{Name: "experiments/100/charts/c", Xid: 100, Plots: parallel}
+	workUnitChart := &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c", Xid: 100, Wid: 1, Plots: scatter}
+
+	tests := []struct {
+		name     string
+		stored   *dpb.Chart
+		plots    []*dpb.PlotSpec
+		mask     []string
+		wantCode codes.Code
+	}{
+		{name: "experiment-level chart keeps parallel coordinates", stored: experimentChart, plots: parallel, wantCode: codes.OK},
+		{name: "experiment-level chart rejects scatter", stored: experimentChart, plots: scatter, wantCode: codes.InvalidArgument},
+		{name: "experiment-level chart rejects scatter in plots mask", stored: experimentChart, plots: scatter, mask: []string{"title", "plots"}, wantCode: codes.InvalidArgument},
+		{name: "mask without plots skips the check", stored: experimentChart, plots: scatter, mask: []string{"title"}, wantCode: codes.OK},
+		{name: "work unit chart rejects parallel coordinates", stored: workUnitChart, plots: parallel, wantCode: codes.InvalidArgument},
+		{name: "work unit chart keeps scatter", stored: workUnitChart, plots: scatter, wantCode: codes.OK},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			updated := false
+			repo := &mockRepository{
+				getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+					return tc.stored, nil
+				},
+				updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+					updated = true
+					return chart, nil
+				},
+			}
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+			req := &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c", Title: "Title", Plots: tc.plots}}
+			if tc.mask != nil {
+				req.UpdateMask = &fieldmaskpb.FieldMask{Paths: tc.mask}
+			}
+
+			_, err := s.UpdateChart(ctx, req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("UpdateChart() code = %v, want %v (err: %v)", status.Code(err), tc.wantCode, err)
+			}
+			if updated != (tc.wantCode == codes.OK) {
+				t.Errorf("repository UpdateChart called = %v, want %v", updated, tc.wantCode == codes.OK)
+			}
+		})
+	}
+}
+
+// TestUpdateChartRejectsExperimentLevelNames pins that UpdateChart only addresses charts by
+// "charts/{chart}": an experiment-level name can therefore never reach a work unit chart or a chart
+// of another experiment, and the stored chart is not even read.
+func TestUpdateChartRejectsExperimentLevelNames(t *testing.T) {
+	stored := map[string]*dpb.Chart{
+		"work unit chart":             {Name: "experiments/100/workUnits/1/charts/c", Xid: 100, Wid: 1},
+		"chart of another experiment": {Name: "experiments/7/charts/c", Xid: 7},
+	}
+	for name, chart := range stored {
+		t.Run(name, func(t *testing.T) {
+			read := false
+			repo := &mockRepository{
+				getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+					read = true
+					return chart, nil
+				},
+			}
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+			_, err := s.UpdateChart(context.Background(), &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "experiments/100/charts/c", Title: "Title"}})
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("UpdateChart() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+			}
+			if read {
+				t.Error("UpdateChart read the stored chart for a non-root name")
+			}
+		})
+	}
+}
