@@ -32,6 +32,9 @@ const (
 // DataEngine orchestrates analytics queries against the configured metrics backend.
 type DataEngine struct {
 	querier *metricsquery.Querier
+	// studies reads the study experiments of PARALLEL_COORDINATES plots. The Provider supplies it
+	// per request, so engines rebuilt for a new metrics backend configuration keep it.
+	studies StudyReader
 }
 
 // Option configures DataEngine settings.
@@ -65,6 +68,17 @@ func (e *DataEngine) activeQuerier() *metricsquery.Querier {
 		return nil
 	}
 	return e.querier
+}
+
+// withStudyReader returns a copy of the engine that reads studies through studies. The copy shares
+// the metrics querier, so it is cheap enough to make per request.
+func (e *DataEngine) withStudyReader(studies StudyReader) *DataEngine {
+	if e == nil {
+		return nil
+	}
+	cp := *e
+	cp.studies = studies
+	return &cp
 }
 
 // Ping checks that the database connection behind the engine is still usable.
@@ -155,6 +169,12 @@ func (e *DataEngine) fetchPlotData(ctx context.Context, xid, wid int64, plot *dp
 		pd, err := e.fetchSeriesData(ctx, xid, wid, plot, widthPixels)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch series data for plot %q: %w", plot.GetPlotId(), err)
+		}
+		return pd, nil
+	case dpb.PlotType_PARALLEL_COORDINATES:
+		pd, err := e.fetchParallelCoordinatesData(ctx, xid, plot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch parallel coordinates for plot %q: %w", plot.GetPlotId(), err)
 		}
 		return pd, nil
 	default:
