@@ -72,6 +72,16 @@ func blankChartProto(chartID string, xid, wid int64) *dpb.Chart {
 	}
 }
 
+// experimentChartProto returns an experiment-level chart, which has no wid.
+func experimentChartProto(chartID string, xid int64) *dpb.Chart {
+	return &dpb.Chart{
+		Name:  validator.ConstructExperimentChartName(xid, chartID),
+		Title: "Study " + chartID,
+		Xid:   xid,
+		Plots: []*dpb.PlotSpec{{PlotId: "study", Title: "Study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+	}
+}
+
 func seedArtifactWithChart(ctx context.Context, t *testing.T, pool *pgxpool.Pool, xid, wid, artifactID int64, chartID string) {
 	t.Helper()
 	now := time.Now().UTC()
@@ -445,6 +455,41 @@ func TestListCharts_ParentsFiltersAndPagination(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repo, pool := setupDashboardRepository(ctx, t)
+
+	e1 := experimentChartProto("study-a", 100)
+	e2 := experimentChartProto("study-b", 100)
+	other := experimentChartProto("study-c", 200)
+	workUnitChart := blankChartProto(chartID1, 100, 1)
+	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
+		}
+	}
+
+	var widIsNull bool
+	if err := pool.QueryRow(ctx, `SELECT Wid IS NULL FROM Charts WHERE ChartId = $1`, "study-a").Scan(&widIsNull); err != nil || !widIsNull {
+		t.Fatalf("Charts.Wid IS NULL for an experiment-level chart = (%v, %v), want (true, nil)", widIsNull, err)
+	}
+	got, err := repo.GetChart(ctx, "study-a")
+	if err != nil {
+		t.Fatalf("GetChart failed: %v", err)
+	}
+	if diff := cmp.Diff(e1, got, protocmp.Transform(), protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")); diff != "" {
+		t.Errorf("GetChart round-trip mismatch (-want +got):\n%s", diff)
+	}
+
+	updated, err := repo.UpdateChart(ctx, &dpb.Chart{Name: e1.GetName(), Title: "Renamed"}, &fmpb.FieldMask{Paths: []string{"title"}})
+	if err != nil {
+		t.Fatalf("UpdateChart failed: %v", err)
+	}
+	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
+		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
 	}
 }
 

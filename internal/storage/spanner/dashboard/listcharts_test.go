@@ -20,6 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
+
 	dpb "xmanager_cloud/api/protos/dashboard"
 )
 
@@ -419,5 +424,44 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	}
 	if token2 != "" {
 		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
+	}
+}
+
+func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	e1 := experimentChartProto("study-a", 100)
+	e2 := experimentChartProto("study-b", 100)
+	other := experimentChartProto("study-c", 200)
+	workUnitChart := blankChartProto("wu-chart", 100, 1)
+	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
+		if err := repo.CreateChart(ctx, c); err != nil {
+			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
+		}
+	}
+
+	row, err := repo.client.Single().ReadRow(ctx, "Charts", spanner.Key{"study-a"}, []string{"Wid"})
+	if err != nil {
+		t.Fatalf("ReadRow failed: %v", err)
+	}
+	var wid spanner.NullInt64
+	if err := row.Columns(&wid); err != nil || wid.Valid {
+		t.Fatalf("Charts.Wid for an experiment-level chart = (%v, %v), want NULL", wid, err)
+	}
+	got, err := repo.GetChart(ctx, "study-a")
+	if err != nil {
+		t.Fatalf("GetChart failed: %v", err)
+	}
+	if diff := cmp.Diff(e1, got, protocmp.Transform(), protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")); diff != "" {
+		t.Errorf("GetChart round-trip mismatch (-want +got):\n%s", diff)
+	}
+
+	updated, err := repo.UpdateChart(ctx, &dpb.Chart{Name: e1.GetName(), Title: "Renamed"}, &fieldmaskpb.FieldMask{Paths: []string{"title"}})
+	if err != nil {
+		t.Fatalf("UpdateChart failed: %v", err)
+	}
+	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
+		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
 	}
 }

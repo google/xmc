@@ -295,7 +295,7 @@ path. The effective table (from [`deploy/helm/templates`](../../deploy/helm/temp
 | :--- | :--- | :--- |
 | `/v1/health` | `health-service` | 8080 |
 | `/v1/clusterqueues` | `rod-data-provider-service` | 8080 |
-| `/v1/dashboards`, `/v1/charts`, `/v1/experiments/*/workUnits/*/charts*` | `dashboard-service` | 8080 |
+| `/v1/dashboards`, `/v1/charts`, `/v1/experiments/*/workUnits/*/charts*`, `/v1/experiments/*/charts*` | `dashboard-service` | 8080 |
 | `/api`, `/v1` | ESS `http-service` (gRPC-Gateway transcoding) | 8080 |
 | `/` (catch-all) | `ui-service` | 80 |
 | gRPC (dedicated hostname) | ESS `grpc-service` | 50051 |

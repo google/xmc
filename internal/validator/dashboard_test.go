@@ -759,10 +759,17 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "invalid_request_experiment_chart_without_wid",
+			name: "valid_request_experiment_level_chart",
 			req: &spb.GetChartDataRequest{
 				Name:             "experiments/1001/charts/chart-1",
 				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_request_experiment_chart_with_zero_xid",
+			req: &spb.GetChartDataRequest{
+				Name: "experiments/0/charts/chart-1",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -966,6 +973,36 @@ func TestValidateCreateChartParent(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "valid_parent_experiment",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100",
+			},
+			wantXid: 100,
+			wantWid: 0,
+			wantErr: nil,
+		},
+		{
+			name: "invalid_parent_experiment_zero_xid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/0",
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_experiment_trailing_slash",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100/",
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_parent_experiment_chart_name",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/100/charts/c1",
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
 			name: "invalid_parent_zero_wid",
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/0",
@@ -1129,6 +1166,63 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			req: &spb.CreateChartRequest{
 				Parent: "experiments/1/workUnits/2",
 				Chart:  nil,
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "valid_experiment_level_parallel_coordinates",
+			req: &spb.CreateChartRequest{
+				Parent:  "experiments/1",
+				ChartId: "hpo-parallel-coord",
+				Chart:   &spb.Chart{Title: "Study", Xid: 1, Plots: parallelCoordinatesPlots()},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "valid_experiment_level_without_plots",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1",
+				Chart:  &spb.Chart{Title: "Study", Xid: 1},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "experiment_level_with_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1",
+				Chart:  &spb.Chart{Title: "Study", Xid: 1, Wid: 3, Plots: parallelCoordinatesPlots()},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_level_with_mismatched_xid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1",
+				Chart:  &spb.Chart{Title: "Study", Xid: 2, Plots: parallelCoordinatesPlots()},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_level_with_scatter_plot",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1",
+				Chart:  &spb.Chart{Title: "Study", Xid: 1, Plots: []*spb.PlotSpec{{PlotId: "loss", Type: spb.PlotType_SCATTER}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "work_unit_level_with_parallel_coordinates_plot",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &spb.Chart{Title: "Study", Xid: 1, Wid: 2, Plots: parallelCoordinatesPlots()},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "work_unit_level_without_wid",
+			req: &spb.CreateChartRequest{
+				Parent: "experiments/1/workUnits/2",
+				Chart:  &spb.Chart{Title: "My Chart", Xid: 1},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1484,6 +1578,37 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 			err := ValidateDeleteChartRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateDeleteChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func parallelCoordinatesPlots() []*spb.PlotSpec {
+	return []*spb.PlotSpec{{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}}
+}
+
+func TestValidateChartPlotTypes(t *testing.T) {
+	scatter := &spb.PlotSpec{PlotId: "loss", Type: spb.PlotType_SCATTER}
+	parallel := &spb.PlotSpec{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}
+	tests := []struct {
+		name            string
+		plots           []*spb.PlotSpec
+		experimentLevel bool
+		wantErr         error
+	}{
+		{name: "experiment level without plots", experimentLevel: true},
+		{name: "experiment level with parallel coordinates", plots: []*spb.PlotSpec{parallel, parallel}, experimentLevel: true},
+		{name: "experiment level with scatter", plots: []*spb.PlotSpec{parallel, scatter}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with unspecified plot type", plots: []*spb.PlotSpec{{PlotId: "p"}}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with nil plot", plots: []*spb.PlotSpec{nil}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with scatter", plots: []*spb.PlotSpec{scatter}},
+		{name: "work unit level with parallel coordinates", plots: []*spb.PlotSpec{scatter, parallel}, wantErr: grpcerr.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateChartPlotTypes(tc.plots, tc.experimentLevel)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotTypes() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

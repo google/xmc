@@ -20,11 +20,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
@@ -112,6 +114,44 @@ func TestCreateChart(t *testing.T) {
 		}
 	})
 
+	t.Run("experiment-level parallel coordinates chart under experiment parent", func(t *testing.T) {
+		var savedChart *dpb.Chart
+		repo := &mockRepository{
+			createChartFn: func(ctx context.Context, chart *dpb.Chart) error {
+				savedChart = chart
+				return nil
+			},
+		}
+		var checkedXID string
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				checkedXID = in.GetName()
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+		plots := []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}
+
+		resp, err := s.CreateChart(ctx, &dpb.CreateChartRequest{
+			Parent:  "experiments/100",
+			ChartId: "hpo-parallel-coord",
+			Chart:   &dpb.Chart{Title: "Study", Xid: 100, Plots: plots},
+		})
+		if err != nil {
+			t.Fatalf("CreateChart failed: %v", err)
+		}
+		want := &dpb.Chart{Name: "experiments/100/charts/hpo-parallel-coord", Title: "Study", Xid: 100, Plots: plots}
+		if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
+			t.Errorf("CreateChart() mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(want, savedChart, protocmp.Transform()); diff != "" {
+			t.Errorf("saved chart mismatch (-want +got):\n%s", diff)
+		}
+		if checkedXID != "xids/100" {
+			t.Errorf("CheckUserAuthorization name = %q, want %q", checkedXID, "xids/100")
+		}
+	})
+
 	t.Run("unauthenticated caller returns Unauthenticated", func(t *testing.T) {
 		repo := &mockRepository{}
 		authMock := &mockAuthorizer{
@@ -183,6 +223,18 @@ func TestCreateChart(t *testing.T) {
 			{name: "mismatched chart wid", req: &dpb.CreateChartRequest{
 				Parent: "experiments/100/workUnits/1",
 				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 999},
+			}},
+			{name: "parallel coordinates under work unit parent", req: &dpb.CreateChartRequest{
+				Parent: "experiments/100/workUnits/1",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1, Plots: []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
+			}},
+			{name: "scatter under experiment parent", req: &dpb.CreateChartRequest{
+				Parent: "experiments/100",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Plots: []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_SCATTER}}},
+			}},
+			{name: "wid set under experiment parent", req: &dpb.CreateChartRequest{
+				Parent: "experiments/100",
+				Chart:  &dpb.Chart{Title: "Title", Xid: 100, Wid: 1, Plots: []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
 			}},
 		}
 
