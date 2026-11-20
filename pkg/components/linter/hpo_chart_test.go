@@ -27,8 +27,10 @@ const (
 	hpoDeploymentFile     = "hpo/templates/deployment.yaml"
 	hpoServiceAccountFile = "hpo/templates/serviceaccount.yaml"
 	hpoComponentFile      = "hpo/templates/component.yaml"
-	// testRedisAddr is the hpoDeployment.redisAddr that xmc-bridge passes in the tests.
-	testRedisAddr = "redis-service.xmc.svc.cluster.local:6379"
+	// testRedisAddr, testESSAddr, and testESSAudience are the bridge-injected hpoDeployment values.
+	testRedisAddr   = "redis-service.xmc.svc.cluster.local:6379"
+	testESSAddr     = "grpc-service:50051"
+	testESSAudience = "test-ess-audience.apps.googleusercontent.com"
 )
 
 // studyControllerWorkload is the subset of the rendered xmc-study-controller Deployment that the
@@ -82,14 +84,18 @@ func hpoChartDir(t *testing.T) string {
 	return resolveRepoPath(t, filepath.Join("deploy", "profiles", "stable-2026b", "components", "hpo"))
 }
 
-// withBridgeRedisAddr returns a copy of values with hpoDeployment.redisAddr set to testRedisAddr,
-// as xmc-bridge sets it for every xmc-cmp-hpo release.
-func withBridgeRedisAddr(values map[string]any) map[string]any {
+// withBridgeValues returns a copy of values with the required bridge-injected hpoDeployment keys
+// (redisAddr, essAddr, essAudience) populated, preserving any caller overrides.
+func withBridgeValues(values map[string]any) map[string]any {
 	out := make(map[string]any, len(values)+1)
 	for k, v := range values {
 		out[k] = v
 	}
-	hpo := map[string]any{"redisAddr": testRedisAddr}
+	hpo := map[string]any{
+		"redisAddr":   testRedisAddr,
+		"essAddr":     testESSAddr,
+		"essAudience": testESSAudience,
+	}
 	if existing, ok := values["hpoDeployment"].(map[string]any); ok {
 		for k, v := range existing {
 			hpo[k] = v
@@ -133,7 +139,13 @@ func summarizeStudyController(t *testing.T, manifest string) studyControllerSumm
 func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	t.Parallel()
 	rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", map[string]any{
-		"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v7", "redisAddr": testRedisAddr},
+		"hpoDeployment": map[string]any{
+			"enabled":     true,
+			"image":       "registry.example.com/xmc/study-controller-dev:v7",
+			"redisAddr":   testRedisAddr,
+			"essAddr":     testESSAddr,
+			"essAudience": testESSAudience,
+		},
 	})
 	if err != nil {
 		t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
@@ -147,7 +159,7 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 			"app.kubernetes.io/name":       "xmc-study-controller",
 			"xmc.google.com/vizier-client": "true",
 		},
-		Args: []string{"-port=8080", "-redis_addr=" + testRedisAddr},
+		Args: []string{"-port=8080", "-redis_addr=" + testRedisAddr, "-ess_addr=" + testESSAddr, "-ess_audience=" + testESSAudience},
 		Env:  map[string]string{"REDIS_PASSWORD": "secretKeyRef:redis-secret/redis-password"},
 	}
 	if diff := cmp.Diff(want, summarizeStudyController(t, rendered[hpoDeploymentFile])); diff != "" {
@@ -210,7 +222,7 @@ func TestHPOChart_ImageResolution(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeRedisAddr(tc.values))
+			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeValues(tc.values))
 			if err != nil {
 				t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
 			}
@@ -236,7 +248,7 @@ func TestHPOChart_TerminationGracePeriod(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeRedisAddr(tc.values))
+			rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeValues(tc.values))
 			if err != nil {
 				t.Fatalf("renderChartWithValues(xmc-cmp-hpo) failed: %v", err)
 			}
@@ -252,24 +264,29 @@ func TestHPOChart_TerminationGracePeriod(t *testing.T) {
 	}
 }
 
-// TestHPOChart_BridgeReleaseRequiresRedisAddr checks that the xmc-cmp-hpo release fails to render,
-// rather than starting a Study Controller without Redis, when xmc-bridge passes no redisAddr.
-func TestHPOChart_BridgeReleaseRequiresRedisAddr(t *testing.T) {
+// TestHPOChart_BridgeReleaseRequiresBridgeConfig checks that the xmc-cmp-hpo release fails to
+// render when xmc-bridge omits any required connection value (redisAddr, essAddr, or essAudience).
+func TestHPOChart_BridgeReleaseRequiresBridgeConfig(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		values map[string]any
+		name    string
+		values  map[string]any
+		wantErr string
 	}{
-		{name: "no hpoDeployment values", values: nil},
-		{name: "hpoDeployment without redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true}}},
-		{name: "empty redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": ""}}},
+		{name: "no hpoDeployment values", values: nil, wantErr: "hpoDeployment.redisAddr is required"},
+		{name: "hpoDeployment without redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true}}, wantErr: "hpoDeployment.redisAddr is required"},
+		{name: "empty redisAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": ""}}, wantErr: "hpoDeployment.redisAddr is required"},
+		{name: "hpoDeployment without essAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": testRedisAddr}}, wantErr: "hpoDeployment.essAddr is required"},
+		{name: "empty essAddr", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": testRedisAddr, "essAddr": ""}}, wantErr: "hpoDeployment.essAddr is required"},
+		{name: "hpoDeployment without essAudience", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": testRedisAddr, "essAddr": testESSAddr}}, wantErr: "hpoDeployment.essAudience is required"},
+		{name: "empty essAudience", values: map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": testRedisAddr, "essAddr": testESSAddr, "essAudience": ""}}, wantErr: "hpoDeployment.essAudience is required"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			_, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", tc.values)
-			if err == nil || !strings.Contains(err.Error(), "hpoDeployment.redisAddr is required") {
-				t.Errorf("renderChartWithValues(xmc-cmp-hpo) error = %v, want one containing %q", err, "hpoDeployment.redisAddr is required")
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("renderChartWithValues(xmc-cmp-hpo) error = %v, want one containing %q", err, tc.wantErr)
 			}
 		})
 	}
@@ -350,8 +367,8 @@ func TestHPOChart_StudyControllerServiceAccount(t *testing.T) {
 	}{
 		{name: "component parameter", release: "hpo", values: map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": gsa}}, file: hpoComponentFile, want: `studyControllerServiceAccount: "` + gsa + `"`, wantOut: true},
 		{name: "empty component parameter omitted", release: "hpo", values: map[string]any{"parameters": map[string]any{"studyControllerServiceAccount": ""}}, file: hpoComponentFile, want: "studyControllerServiceAccount", wantOut: false},
-		{name: "workload identity annotation", release: "xmc-cmp-hpo", values: withBridgeRedisAddr(map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": gsa}}), file: hpoServiceAccountFile, want: annotation, wantOut: true},
-		{name: "empty bridge value omits annotation", release: "xmc-cmp-hpo", values: withBridgeRedisAddr(map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": ""}}), file: hpoServiceAccountFile, want: "iam.gke.io/gcp-service-account", wantOut: false},
+		{name: "workload identity annotation", release: "xmc-cmp-hpo", values: withBridgeValues(map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": gsa}}), file: hpoServiceAccountFile, want: annotation, wantOut: true},
+		{name: "empty bridge value omits annotation", release: "xmc-cmp-hpo", values: withBridgeValues(map[string]any{"hpoDeployment": map[string]any{"studyControllerServiceAccount": ""}}), file: hpoServiceAccountFile, want: "iam.gke.io/gcp-service-account", wantOut: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

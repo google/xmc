@@ -29,6 +29,7 @@ import (
 const (
 	// terminationGracePeriodBufferSeconds provides a 5s buffer beyond drain timeout before force killing.
 	terminationGracePeriodBufferSeconds = 5
+	placeholderGRPCAudience             = "placeholder-grpc-audience"
 )
 
 // ComponentRef uniquely identifies a component within a Kubernetes cluster by its namespace, name, and optional CR UID.
@@ -129,6 +130,7 @@ func buildComponentDeploymentValues(opts HelmComponentOptions, effectiveTag, def
 		compValues[k] = v
 	}
 	setBridgeRedisAddr(compValues)
+	setBridgeESSConfig(compValues)
 	return compValues
 }
 
@@ -140,6 +142,40 @@ func setBridgeRedisAddr(compValues map[string]any) {
 	if addr := strings.TrimSpace(os.Getenv("REDIS_ADDR")); addr != "" {
 		compValues["redisAddr"] = addr
 	}
+}
+
+// setBridgeESSConfig makes the bridge environment the only source of essAddr and essAudience: it
+// strips any Component parameter or raw value so a CR override cannot redirect a 1P workload's
+// Google ID token to another host or audience.
+func setBridgeESSConfig(compValues map[string]any) {
+	delete(compValues, "essAddr")
+	delete(compValues, "essAudience")
+	if addr := firstNonEmptyEnv("ESS_ADDR", "CMS_ADDRESS"); addr != "" {
+		compValues["essAddr"] = addr
+	}
+	if aud := resolveBridgeESSAudience(); aud != "" {
+		compValues["essAudience"] = aud
+	}
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func resolveBridgeESSAudience() string {
+	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
+	if iapAud != "" && iapAud != placeholderGRPCAudience {
+		return iapAud
+	}
+	if clientID := strings.TrimSpace(os.Getenv("CLIENT_ID")); clientID != "" {
+		return clientID
+	}
+	return iapAud
 }
 
 func defaultComponentEnvImageVar(componentName string) string {
