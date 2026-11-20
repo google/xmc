@@ -14,6 +14,8 @@
 
 """Unit tests for generate_review_checklist tool."""
 
+import re
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,8 @@ from tools.pr_review.generate_review_checklist import (
     fetch_unresolved_comments,
     format_checklist_markdown,
     generate_review_checklist,
+    parse_since,
+    split_by_since,
 )
 from tools.pr_review.github_utils import GithubAPIError, GithubAuthError
 
@@ -328,6 +332,7 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         args.repo = "xmc"
         args.pr_number = "145"
         args.output = "pr_review_checklist.md"
+        args.since = None
 
         result = generate_review_checklist(args)
         self.assertEqual(result["owner"], "google")
@@ -349,10 +354,90 @@ class TestGenerateReviewChecklist(unittest.TestCase):
         args.repo = "xmc"
         args.pr_number = "145"
         args.output = "/read_only/pr_review_checklist.md"
+        args.since = None
 
         with self.assertRaises(HandledError) as ctx:
             generate_review_checklist(args)
         self.assertIn("Failed to write output file", ctx.exception.message)
+
+
+def _comment(cid: int, created_at: str) -> dict[str, Any]:
+    """Returns a parsed checklist comment opened at created_at."""
+    return {
+        "comment_id": cid,
+        "author": "gemini-code-assist",
+        "file_path": "a.go",
+        "line": cid,
+        "body": "Fix",
+        "url": f"https://github.com/google/xmc/pull/1#discussion_r{cid}",
+        "created_at": created_at,
+        "severity": None,
+    }
+
+
+class TestSinceFilter(unittest.TestCase):
+    """Tests the --since split between new and carried-over threads."""
+
+    def test_parse_since_accepts_z_and_offsets(self):
+        self.assertEqual(
+            parse_since("2026-11-09T10:00:00Z"), parse_since("2026-11-09T12:00:00+02:00")
+        )
+        self.assertIsNone(parse_since(None))
+        self.assertIsNone(parse_since(""))
+
+    def test_parse_since_rejects_malformed_and_naive(self):
+        for raw in ("yesterday", "2026-11-09T10:00:00"):
+            with self.subTest(raw=raw), self.assertRaises(HandledError):
+                parse_since(raw)
+
+    def test_split_boundary_and_unparseable_times(self):
+        since = parse_since("2026-11-09T10:00:00Z")
+        comments = [
+            _comment(1, "2026-11-09T09:59:59Z"),  # pushback thread from an earlier pass
+            _comment(2, "2026-11-09T10:00:00Z"),  # exactly at the boundary counts as new
+            _comment(3, ""),  # unknown time is never hidden
+        ]
+        new, carried = split_by_since(comments, since)
+        self.assertEqual([c["comment_id"] for c in new], [2, 3])
+        self.assertEqual([c["comment_id"] for c in carried], [1])
+
+    def test_split_without_since_keeps_everything(self):
+        comments = [_comment(1, "2020-01-01T00:00:00Z")]
+        self.assertEqual(split_by_since(comments, None), (comments, []))
+
+    @patch("tools.pr_review.generate_review_checklist.fetch_unresolved_comments")
+    def test_carried_over_threads_are_not_verification_items(self, mock_fetch):
+        mock_fetch.return_value = [
+            _comment(11, "2026-11-08T00:00:00Z"),
+            _comment(12, "2026-11-09T10:05:00Z"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "checklist.md"
+            args = MagicMock(
+                owner="google",
+                repo="xmc",
+                pr_number="1",
+                output=str(out),
+                since="2026-11-09T10:00:00Z",
+            )
+            result = generate_review_checklist(args)
+            content = out.read_text(encoding="utf-8")
+        self.assertEqual((result["unresolved_comment_count"], result["carried_over_count"]), (1, 1))
+        # verify_pr_comment_resolution.py collects IDs from "Comment ID <n>" only.
+        self.assertEqual(re.findall(r"Comment ID [`'\"]?(\d+)", content), ["12"])
+        self.assertIn("## Carried Over (still open, opened before 2026-11-09T10:00:00Z)", content)
+        self.assertIn("id 11", content)
+
+    def test_parse_graphql_nodes_keeps_created_at(self):
+        node = {
+            "isResolved": False,
+            "path": "a.go",
+            "line": 1,
+            "comments": {
+                "nodes": [{"databaseId": 5, "body": "x", "createdAt": "2026-11-09T10:00:00Z"}]
+            },
+        }
+        self.assertEqual(_parse_graphql_nodes([node])[0]["created_at"], "2026-11-09T10:00:00Z")
 
 
 if __name__ == "__main__":

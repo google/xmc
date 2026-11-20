@@ -55,7 +55,7 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`fetch_pr_comment.py`](pr_review/fetch_pr_comment.py): Fetches review comments and discussion threads by URL or PR number.
 - [`reply_pr_comment.py`](pr_review/reply_pr_comment.py): Posts inline replies to specific PR review comments with telemetry tags, optionally resolving the thread (`--resolve`). Outputs only the reply `id`, `html_url`, `in_reply_to`, and `resolved` status.
 - [`review_threads.py`](pr_review/review_threads.py): Lists PR review threads with resolution and reply state, and resolves unresolved threads the authenticated user has replied to.
-- [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
+- [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist; `--since <iso_timestamp>` lists older still-open threads separately as carried over.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist, counting only replies by the authenticated user across all comment pages.
 - [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
 - [`wait_for_ci.py`](pr_review/wait_for_ci.py): Polls a PR's CI checks with backoff until they complete, judging only the newest run of each check; on failure, reports failed checks, workflow run/job IDs, and bounded, error-anchored job log tails.

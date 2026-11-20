@@ -61,8 +61,10 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
 
 ### Execution Command
 ```bash
-./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md]
+./tools/pr_review/generate_review_checklist.py <owner> <repo> <pr_number> [-o pr_review_checklist.md] [--since <iso_timestamp>]
 ```
+
+On a re-review pass, pass `--since` with the time the new review was requested. Threads opened earlier that are still open (for example, pushback awaiting the reviewer) then appear under **Carried Over**, without checkboxes or `Comment ID` tags, so they are not treated as new and `verify_pr_comment_resolution.py` does not ask for another reply.
 
 ### Result Output Schema
 ```json
@@ -73,7 +75,8 @@ When addressing PR review feedback or starting a review pass on a Pull Request, 
     "repo": "xmc",
     "pr_number": 145,
     "output_file": "pr_review_checklist.md",
-    "unresolved_comment_count": 3
+    "unresolved_comment_count": 3,
+    "carried_over_count": 0
   }
 }
 ```

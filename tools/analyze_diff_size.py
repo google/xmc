@@ -158,6 +158,44 @@ def _run_numstat(diff_spec: str | None, repo_root: Path) -> str:
     return res.stdout
 
 
+def _git_output(args: list[str], repo_root: Path) -> str:
+    """Returns the stripped stdout of `git <args>` run in repo_root.
+
+    Raises:
+        HandledError: If git exits non-zero.
+    """
+    try:
+        res = subprocess.run(
+            ["git", *args], capture_output=True, text=True, check=True, cwd=repo_root
+        )
+    except subprocess.CalledProcessError as e:
+        raise HandledError(
+            f"Failed to execute git {args[0]}: {e.stderr.strip()}",
+            "Verify that the base ref exists and shares history with HEAD (run `git fetch`).",
+        ) from e
+    return res.stdout.strip()
+
+
+def resolve_base_ref(base_ref: str | None, repo_root: Path) -> tuple[str | None, list[str]]:
+    """Returns the diff spec to use and any warnings about the requested base ref.
+
+    A plain ref (no `..`) diffs the working tree against that commit, so commits that landed on
+    the ref after the branch point would count as added lines. When the ref is not an ancestor of
+    HEAD, the merge base is substituted, which keeps uncommitted edits counted.
+    """
+    if not base_ref or ".." in base_ref:
+        return base_ref, []
+    ref_sha = _git_output(["rev-parse", "--verify", f"{base_ref}^{{commit}}"], repo_root)
+    merge_base = _git_output(["merge-base", base_ref, "HEAD"], repo_root)
+    if merge_base == ref_sha:
+        return base_ref, []
+    warning = (
+        f"--base-ref {base_ref} is ahead of the merge base with HEAD; diffed against the merge "
+        f"base {merge_base[:12]} instead so commits that landed on {base_ref} are not counted."
+    )
+    return merge_base, [warning]
+
+
 def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
     """Extracts added line counts and filepaths from git diff plus untracked files.
 
@@ -182,7 +220,8 @@ def get_diff_entries(diff_spec: str | None = None) -> list[tuple[int, str]]:
 
 def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
     """Evaluates diff size against mandatory PR sizing thresholds."""
-    entries = get_diff_entries(args.base_ref)
+    diff_spec, warnings = resolve_base_ref(args.base_ref, _find_repo_root())
+    entries = get_diff_entries(diff_spec)
 
     prod, test, doc, gen = 0, 0, 0, 0
     for added, path in entries:
@@ -228,6 +267,8 @@ def analyze_diff_size(args: argparse.Namespace) -> dict[str, Any]:
         "threshold_exceeded": should_split,
         "exceeded_reasons": exceeded_reasons,
         "should_trigger_split_verifier": should_split,
+        "diff_spec": diff_spec,
+        "warnings": warnings,
     }
 
 
@@ -239,7 +280,11 @@ def main() -> None:
     parser.add_argument(
         "--base-ref",
         default="origin/main...",
-        help="Git diff base reference (default: 'origin/main...').",
+        help=(
+            "Git diff base reference (default: 'origin/main...'). A plain ref also counts "
+            "uncommitted edits; if it has moved ahead of HEAD's merge base, the merge base is "
+            "used instead and reported under 'warnings'."
+        ),
     )
     run_tool(parser, analyze_diff_size)
 

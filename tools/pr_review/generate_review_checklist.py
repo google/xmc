@@ -18,6 +18,7 @@
 import argparse
 import sys
 from collections.abc import Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +75,7 @@ def _parse_graphql_nodes(nodes: Sequence[dict[str, Any] | None]) -> list[dict[st
                 "line": line,
                 "body": body,
                 "url": first_comment.get("url") or "",
+                "created_at": first_comment.get("createdAt") or "",
                 "severity": extract_severity(body),
             }
         )
@@ -101,6 +103,7 @@ def _parse_rest_comment(comment: dict[str, Any]) -> dict[str, Any]:
         "line": line,
         "body": body,
         "url": comment.get("html_url") or "",
+        "created_at": comment.get("created_at") or "",
         "severity": extract_severity(body),
     }
 
@@ -184,6 +187,73 @@ def format_checklist_markdown(
     return "\n".join(lines)
 
 
+def parse_since(raw: str | None) -> datetime | None:
+    """Parses the `--since` ISO 8601 timestamp (a trailing `Z` is accepted).
+
+    Raises:
+        HandledError: If the value is not a timezone-aware ISO 8601 timestamp.
+    """
+    if not raw:
+        return None
+    try:
+        since = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise HandledError(
+            f"Invalid --since timestamp: {raw}",
+            "Pass an ISO 8601 timestamp such as 2026-11-09T10:00:00Z (e.g. the waiter's `since`).",
+        ) from e
+    if since.tzinfo is None:
+        raise HandledError(
+            f"--since timestamp has no timezone: {raw}",
+            "Append `Z` or an explicit UTC offset.",
+        )
+    return since
+
+
+def split_by_since(
+    comments: list[dict[str, Any]], since: datetime | None
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Splits comments into (opened at or after since, opened before since).
+
+    Comments without a parseable creation time stay in the first list so nothing is hidden.
+    """
+    if since is None:
+        return comments, []
+    new: list[dict[str, Any]] = []
+    carried: list[dict[str, Any]] = []
+    for comment in comments:
+        try:
+            created = datetime.fromisoformat(
+                (comment.get("created_at") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            new.append(comment)
+            continue
+        (carried if created < since else new).append(comment)
+    return new, carried
+
+
+def format_carried_over(carried: list[dict[str, Any]], since: str) -> str:
+    """Lists still-open threads that predate `since`, without checkboxes or `Comment ID` tags.
+
+    They were handled in an earlier pass (e.g. pushback awaiting the reviewer), so
+    `verify_pr_comment_resolution.py` must not require a new reply to them.
+    """
+    if not carried:
+        return ""
+    lines = [f"## Carried Over (still open, opened before {since})", ""]
+    for comment in carried:
+        path = comment.get("file_path") or "Unknown"
+        line = comment.get("line")
+        location = f"{path}:{line}" if line is not None else path
+        lines.append(
+            f"- [{location}]({comment.get('url') or '#'}) "
+            f"(@{comment.get('author') or 'unknown'}, id {comment.get('comment_id')})"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
     """Orchestrates checklist generation from GitHub API and writes to file."""
     try:
@@ -194,8 +264,13 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
             "Please provide a valid integer for the PR number.",
         ) from e
 
-    comments = fetch_unresolved_comments(args.owner, args.repo, pr_num)
+    since = parse_since(args.since)
+    comments, carried = split_by_since(
+        fetch_unresolved_comments(args.owner, args.repo, pr_num), since
+    )
     markdown_content = format_checklist_markdown(args.owner, args.repo, pr_num, comments)
+    if carried:
+        markdown_content += "\n" + format_carried_over(carried, args.since)
 
     output_path = args.output
     try:
@@ -213,6 +288,7 @@ def generate_review_checklist(args: argparse.Namespace) -> dict[str, Any]:
         "pr_number": pr_num,
         "output_file": output_path,
         "unresolved_comment_count": len(comments),
+        "carried_over_count": len(carried),
         "high_critical_count": high_critical_count,
         "needs_rereview": high_critical_count > 0 or len(comments) >= 3,
     }
@@ -231,6 +307,13 @@ def main() -> None:
         "--output",
         default="pr_review_checklist.md",
         help="Output markdown file path (default: pr_review_checklist.md).",
+    )
+    parser.add_argument(
+        "--since",
+        help=(
+            "ISO 8601 timestamp (e.g. a review request time). Only threads opened at or after "
+            "it become checklist items; older still-open threads are listed as carried over."
+        ),
     )
     run_tool(parser, generate_review_checklist)
 

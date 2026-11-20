@@ -360,5 +360,83 @@ class AnalyzeDiffSizeThresholdTest(unittest.TestCase):
         self.assertTrue(any("Documentation diff" in r for r in res["exceeded_reasons"]))
 
 
+class ResolveBaseRefTest(unittest.TestCase):
+    """Tests merge-base substitution for plain base refs."""
+
+    def test_range_specs_and_empty_ref_pass_through_without_git(self):
+        with mock.patch.object(analyze_diff_size, "_git_output") as mock_git:
+            for spec in ("origin/main...", "origin/main..HEAD", None, ""):
+                with self.subTest(spec=spec):
+                    self.assertEqual(
+                        analyze_diff_size.resolve_base_ref(spec, _FAKE_ROOT), (spec, [])
+                    )
+        mock_git.assert_not_called()
+
+    @mock.patch.object(analyze_diff_size, "_git_output", side_effect=["abc123", "abc123"])
+    def test_ancestor_ref_is_kept(self, _):
+        self.assertEqual(
+            analyze_diff_size.resolve_base_ref("origin/main", _FAKE_ROOT), ("origin/main", [])
+        )
+
+    @mock.patch.object(
+        analyze_diff_size, "_git_output", side_effect=["f" * 40, "0123456789abcdef" * 2]
+    )
+    def test_moved_ahead_ref_uses_merge_base_and_warns(self, _):
+        spec, warnings = analyze_diff_size.resolve_base_ref("origin/main", _FAKE_ROOT)
+        self.assertEqual(spec, "0123456789abcdef" * 2)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("origin/main", warnings[0])
+        self.assertIn("0123456789ab", warnings[0])
+
+    @mock.patch.object(analyze_diff_size.subprocess, "run")
+    def test_unknown_ref_raises_handled_error(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(
+            128, ["git", "rev-parse"], stderr="fatal: Needed a single revision"
+        )
+        with self.assertRaises(HandledError) as ctx:
+            analyze_diff_size.resolve_base_ref("no-such-ref", _FAKE_ROOT)
+        self.assertIn("Needed a single revision", str(ctx.exception))
+
+
+class MovedAheadBaseRefIntegrationTest(unittest.TestCase):
+    """Runs the tool against a real repository whose base branch moved after the branch point."""
+
+    def _git(self, *args: str) -> None:
+        subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True)
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name)
+        self._git("init", "-q", "-b", "main")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        self._git("config", "commit.gpgsign", "false")  # isolate from global signing config
+        _write_file(self.repo, "pkg/a.go", b"package a\n")
+        self._git("add", ".")
+        self._git("commit", "-qm", "base")
+        self._git("checkout", "-qb", "feature")
+        _write_file(self.repo, "pkg/b.go", b"package b\n")
+        self._git("add", ".")
+        self._git("commit", "-qm", "feature")
+        self._git("checkout", "-q", "main")
+        _write_file(self.repo, "pkg/main_only.go", b"x\n" * 500)
+        self._git("add", ".")
+        self._git("commit", "-qm", "main moved")
+        self._git("checkout", "-q", "feature")
+        _write_file(self.repo, "pkg/b.go", b"package b\n\nvar X = 1\n")  # uncommitted edit
+        cwd = os.getcwd()
+        os.chdir(self.repo)
+        self.addCleanup(os.chdir, cwd)
+
+    def test_counts_only_branch_changes_including_uncommitted(self):
+        res = analyze_diff_size.analyze_diff_size(argparse.Namespace(base_ref="main"))
+
+        self.assertEqual(res["metrics"]["prod_code_lines"], 3)
+        self.assertEqual(len(res["warnings"]), 1)
+        self.assertNotEqual(res["diff_spec"], "main")
+
+
 if __name__ == "__main__":
     unittest.main()

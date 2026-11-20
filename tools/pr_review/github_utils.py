@@ -250,6 +250,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
               databaseId
               body
               url
+              createdAt
               author {
                 login
               }
@@ -279,7 +280,7 @@ def list_review_threads(
 
     Returns:
         Raw GraphQL thread nodes (`id`, `isResolved`, `path`, `line`, and
-        `comments.nodes` with `databaseId`, `body`, `url`, `author.login`), in
+        `comments.nodes` with `databaseId`, `body`, `url`, `createdAt`, `author.login`), in
         GitHub's thread order, with null thread nodes dropped. Only the first
         100 comments of each thread are returned; comment nodes may be null.
 
