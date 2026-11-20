@@ -2,9 +2,11 @@
 
 This directory contains an XManager Cloud launch example demonstrating **work-unit-level profiling** with `ManagedXprof` artifacts. It supports both **programmatic profiling** (capturing a JAX profile using native framework tooling directly to Cloud Storage) and **on-demand profiling** (via the live JAX profiler server).
 
+For the full end-to-end walkthrough—including platform cluster setup, `ManagedXprof` artifact usage, and inspecting profile data in the XMC UI and Google Cloud Console—see the [Managed XProf User Guide](../../docs/managed_xprof.md).
+
 The worker (`worker.py`) reads the per-work-unit GCS destination from the `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` environment variable — which the XMC Actuator injects into every container — and calls `jax.profiler.start_trace()` / `jax.profiler.stop_trace()` to write the programmatic profile directly to that GCS folder. It also runs a live JAX profiler server on port `9999` for on-demand profiling.
 
-`launch.py` creates an `EXECUTION`-phase work-unit-level `ManagedXprof` artifact (`experiments/{xid}/workUnits/{wid}`) immediately before submitting each WorkUnit with an explicit `work_unit_id`. Pre-registering the artifact ensures both the Actuator and the Diagon Reconciler find `display_name` and `run_group` on the very first schedule and reconcile pass, with zero startup race. Diagon then discovers and loads profiles from the GCS folder using the ManagedXprof labels.
+`launch.py` creates an `EXECUTION`-phase work-unit-level `ManagedXprof` artifact (`experiments/{xid}/workUnits/{wid}`) immediately before submitting each WorkUnit with an explicit `work_unit_id`. (The Actuator injects `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` independently whenever `managed_xprof_gcs_bucket` is configured, and the Reconciler looks up the artifact on every reconcile pass; pre-creating it saves one reconcile cycle.) Diagon then discovers and loads profiles from the GCS folder using the ManagedXprof labels.
 
 ## Prerequisites
 
@@ -48,7 +50,7 @@ The script will:
 ## How the Worker Profiles
 
 `worker.py`:
-1. Resolves the trace destination from `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER` (automatically injected by the XMC Actuator when Managed XProf is configured), falling back to `/tmp/xprof` for local standalone testing.
+1. Resolves the destination from `XMC_MANAGED_XPROF_GCS_OBJECT_FOLDER`, falling back to a local `/tmp/xprof` directory when unset (traces then never reach GCS or ML Diagnostics).
 2. Warms up a JAX matmul so the trace captures steady-state execution.
 3. Captures the first `--programmatic_steps` steps inside `jax.profiler.start_trace(profile_dir)` / `jax.profiler.stop_trace()`, writing the programmatic profile directly to the GCS folder.
 4. Starts a JAX profiler server on port `9999` after the programmatic trace finishes so on-demand profile captures cannot collide with an active programmatic trace.

@@ -75,7 +75,8 @@ mandatory identity logs once, silences itself, and lets the job run), and in a d
 envelopes — a million-step run renders honestly without transferring a million points.
 
 **Read more.** [Metrics & Observability §1](../flows/metrics_and_observability.md#1-the-metrics-pipeline),
-[Python SDK README](../../sdks/python/xmc/README.md).
+[Python SDK README](../../sdks/python/xmc/README.md),
+[Managed XProf User Guide](../managed_xprof.md).
 
 ### 1.4 Diagnose a work unit that is not running
 
