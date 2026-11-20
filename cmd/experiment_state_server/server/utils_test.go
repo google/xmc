@@ -34,9 +34,11 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	xidconfig "xmanager_cloud/cmd/xid_service/config"
@@ -465,6 +467,14 @@ func TestStopOperationOnError(t *testing.T) {
 			wantUpdateWorkUnitOperation: false,
 		},
 		{
+			// The generated GetName getter is nil-safe, so a nil operation fails name validation
+			// instead of panicking.
+			name:                        "nil_operation",
+			op:                          nil,
+			err:                         grpcerr.ErrInternal,
+			wantUpdateWorkUnitOperation: false,
+		},
+		{
 			name:                        "error_without_status",
 			op:                          &lropb.Operation{Name: opName},
 			err:                         errors.New("failed to add message to redis"),
@@ -607,6 +617,187 @@ func checkPartialEnqueueOperations(ctx context.Context, t *testing.T, st storage
 	}
 	if diff := cmp.Diff(wantMsg, failExec.GetStatus().GetSystemMessage(), protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
 		t.Errorf("failed work unit %d system message mismatch (-want +got):\n%s", failWID, diff)
+	}
+}
+
+// ctxHonoringStorage fails writes on a done context, as real storage does, so a test can tell
+// whether compensation ran on the caller's context. It also records the deadline of each
+// operation update.
+type ctxHonoringStorage struct {
+	*storage.MockStorage
+	operationUpdateDeadlines *[]time.Time
+}
+
+func (s ctxHonoringStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.MockStorage.RunInTransaction(ctx, fn)
+}
+
+func (s ctxHonoringStorage) UpdateWorkUnitOperation(ctx context.Context, update *storage.OperationUpdate) (*lropb.Operation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
+	*s.operationUpdateDeadlines = append(*s.operationUpdateDeadlines, deadline)
+	return s.MockStorage.UpdateWorkUnitOperation(ctx, update)
+}
+
+// TestEnqueueFailureCompensation_CallerCancelled checks that when the caller cancels while the
+// task is enqueued and the enqueue fails, the compensation still lands: the operation is closed
+// and the status message is written, under a bounded context.
+func TestEnqueueFailureCompensation_CallerCancelled(t *testing.T) {
+	storedWorkUnit := &essmsgpb.WorkUnit{
+		Name:                     "experiments/123/workUnits/456",
+		WorkUnitType:             essmsgpb.WorkUnit_STANDARD,
+		Executable:               testExecutable,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+	}
+	testCases := []struct {
+		name           string
+		storedWorkUnit *essmsgpb.WorkUnit
+		call           func(ctx context.Context, s *Server) error
+		wid            int64
+		wantExecution  string
+		wantSeverity   essmsgpb.StructuredMessage_Severity
+		wantText       string
+	}{
+		{
+			name: "create",
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.CreateWorkUnit(ctx, &essmsgpb.CreateWorkUnitRequest{
+					Parent:     "experiments/123",
+					WorkUnitId: 1,
+					WorkUnit:   &essmsgpb.WorkUnit{WorkUnitType: essmsgpb.WorkUnit_STANDARD, Executable: testExecutable},
+				})
+				return err
+			},
+			wid:           1,
+			wantExecution: "experiments/123/workUnits/1/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Work unit was created but could not be scheduled for execution. Please restart the work unit.",
+		},
+		{
+			name:           "restart",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.RestartWorkUnit(ctx, &essmsgpb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/2",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Failed to restart work unit. Please try again.",
+		},
+		{
+			name:           "stop",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.StopWorkUnit(ctx, &essmsgpb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_ERROR,
+			wantText:      "Failed to stop work unit. Please try again.",
+		},
+		{
+			name:           "batch_restart",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.BatchRestartWorkUnits(ctx, &essmsgpb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/2",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Failed to restart work unit. Please try again.",
+		},
+		{
+			name:           "batch_stop",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.BatchStopWorkUnits(ctx, &essmsgpb.BatchStopWorkUnitsRequest{Parent: "experiments/123"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_ERROR,
+			wantText:      "Failed to stop work unit. Please try again.",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			st := &storage.MockStorage{
+				Experiment: &essmsgpb.Experiment{Name: "experiments/123"},
+				WorkUnit:   tc.storedWorkUnit,
+			}
+			if tc.storedWorkUnit != nil {
+				st.ListWorkUnitsResp = []*essmsgpb.WorkUnit{tc.storedWorkUnit}
+			}
+			var deadlines []time.Time
+			actuator := &tq.FakeClient{
+				EnqueueFunc: func(context.Context, string, *essmsgpb.WorkUnit, *actuatortaskpb.Action, string) error {
+					cancel()
+					return errors.New("task enqueue failed")
+				},
+			}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(&mockXidClient{
+					checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				}),
+				withStorage(ctxHonoringStorage{MockStorage: st, operationUpdateDeadlines: &deadlines}),
+				withWorkUnitActuator(actuator),
+			)
+
+			if err := tc.call(ctx, server); !errors.Is(err, grpcerr.ErrInternal) {
+				t.Errorf("%s returned error %v, want %v", tc.name, err, grpcerr.ErrInternal)
+			}
+			latestDeadline := time.Now().Add(compensationTimeout)
+
+			checkOperationStopped(t, st, 123, tc.wid)
+			checkSystemMessage(t, st, tc.wid, tc.wantExecution, &essmsgpb.StructuredMessage{
+				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+				Severity:       tc.wantSeverity,
+				UserFacingText: tc.wantText,
+				Parent:         validator.ConstructWorkUnitName(123, tc.wid),
+			})
+			for _, deadline := range deadlines {
+				if deadline.IsZero() || deadline.After(latestDeadline) {
+					t.Errorf("operation update deadline = %v, want a deadline of at most %v", deadline, compensationTimeout)
+				}
+			}
+		})
+	}
+}
+
+// TestCompensationContext_NestedSharesOuterBudget checks that compensation outlives the caller's
+// cancellation, and that compensation nested in a bounded one, such as closing each operation of a
+// failed batch, keeps the outer deadline instead of starting a new compensationTimeout.
+func TestCompensationContext_NestedSharesOuterBudget(t *testing.T) {
+	callerCtx, cancelCaller := context.WithCancel(context.Background())
+	cancelCaller()
+	const outerTimeout = time.Second
+
+	outerCtx, cancelOuter := boundedCompensationContext(callerCtx, outerTimeout)
+	defer cancelOuter()
+	innerCtx, cancelInner := compensationContext(outerCtx)
+	defer cancelInner()
+
+	if err := outerCtx.Err(); err != nil {
+		t.Fatalf("outer compensation context error = %v, want nil after the caller is cancelled", err)
+	}
+	outerDeadline, ok := outerCtx.Deadline()
+	if !ok || outerDeadline.After(time.Now().Add(outerTimeout)) {
+		t.Fatalf("outer compensation deadline = %v (set %t), want at most %v from now", outerDeadline, ok, outerTimeout)
+	}
+	if innerDeadline, ok := innerCtx.Deadline(); !ok || !innerDeadline.Equal(outerDeadline) {
+		t.Errorf("nested compensation deadline = %v (set %t), want the outer deadline %v", innerDeadline, ok, outerDeadline)
 	}
 }
 
