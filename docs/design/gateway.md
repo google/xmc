@@ -29,6 +29,9 @@ graph TD
         
         ESSSvc["experiment-state-server (Service)"]
         ESSPod["ESS Pod <br/>(Go gRPC & HTTP APIs)"]
+
+        IngestSvc["ingestion-gateway (Service)"]
+        IngestPod["Ingestion Gateway Pod <br/>(Go HTTP API)"]
         
         XIDSvc["xid-service (Service)"]
         XIDPod["XID Pod <br/>(Monotonic ID Gen)"]
@@ -48,7 +51,9 @@ graph TD
     CLI -->|"gRPC / HTTPS (path: /v1/*)"| Gateway
     
     Gateway -->|"/ (Routing)"| UISvc
+    Gateway -->|"/api/v1/metrics"| IngestSvc
     UISvc --> UIPod
+    IngestSvc --> IngestPod
     
     Gateway -->|"/v1/* & gRPC"| ESSSvc
     ESSSvc --> ESSPod
@@ -113,6 +118,7 @@ All standard stateless services and in-cluster caching workloads run on GKE:
 2. **TLS Termination**: GKE Gateway terminates TLS using certificates managed by Google Managed Certificates or private GTS/Let's Encrypt issuers.
 3. **Path-Based Routing**:
    - Path `/` and other UI routes are matched against `HTTPRoute` rules and forwarded to `ui-service`, which serves the static Angular UI files from the Nginx server in the UI Pod.
+   - Path `/api/v1/metrics` mapped to `metrics-ingest.<domain>` routes to `ingestion-gateway-service`, accepting telemetry from dispatched workers in distributed environments (e.g. MultiKueue).
    - Path `/v1/*` routes API requests to `experiment-state-server-service` (ESS HTTP API) for fetching dynamic experiment lists, user profiles, etc.
 4. **Authentication**:
    - Unauthenticated users are redirected to **Google Accounts** for OAuth2 consent.

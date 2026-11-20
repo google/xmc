@@ -76,6 +76,7 @@ vars:
   health_service_deployment_enabled: true
   admin_panel_observability_url: "" # External dashboard URL displayed on the admin panel to redirect to custom monitoring tool
   dashboard_service_deployment_enabled: false
+  gateway_metrics_ingest_enabled: false
   rod_deployment_enabled: true
   log_monitor_deployment_enabled: true
   health_status_cache_ttl: 15s
@@ -248,10 +249,11 @@ deployment_groups:
     settings:
       project_id: $(vars.project_id)
       environment: $(vars.environment)
-      domains:
-      - "$(vars.environment).$(vars.domain_name)"
-      - "api.$(vars.environment).$(vars.domain_name)"
-      - "grpc.$(vars.environment).$(vars.domain_name)"
+      domains: '$(concat([
+        "$(vars.environment).$(vars.domain_name)",
+        "api.$(vars.environment).$(vars.domain_name)",
+        "grpc.$(vars.environment).$(vars.domain_name)"
+      ], vars.gateway_metrics_ingest_enabled ? ["metrics-ingest.$(vars.environment).$(vars.domain_name)"] : []))'
 
 - group: compute
   modules:

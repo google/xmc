@@ -107,6 +107,14 @@ Get the gRPC hostname.
 {{- end -}}
 {{- end -}}
 
+{{- define "xmanager-cloud.metricsIngestHostname" -}}
+{{- if .Values.xmcUrl -}}
+{{- printf "metrics-ingest.%s" .Values.xmcUrl -}}
+{{- else -}}
+{{- .Values.gateway.metricsIngestHostname -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Get the UI API URL.
 */}}

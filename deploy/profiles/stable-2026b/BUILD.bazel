@@ -33,6 +33,7 @@ go_library(
     srcs = ["charts.go"],
     embedsrcs = [
         "//deploy/profiles/stable-2026b/components/hpo:chart",
+        "//deploy/profiles/stable-2026b/components/ingestion-gateway:chart",
     ],
     importpath = "xmanager_cloud/deploy/profiles/stable-2026b",
     visibility = ["//visibility:public"],

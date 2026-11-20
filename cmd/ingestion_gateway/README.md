@@ -66,6 +66,7 @@ HTTP status mapping in section 3 is identical regardless of which bus is in use.
 
 - `X-Job-Name` *(Optional)*: Fallback job name identifier if `job_name` is omitted in individual JSON metric records.
 - `X-Replica-ID` *(Optional)*: Fallback worker rank identifier if `replica_id` is omitted in individual JSON metric records.
+- `Authorization: Bearer <token>` *(Required if auth enabled)*: Used by distributed workers to authenticate telemetry.
 
 #### Forward & Backward Compatibility
 - Uses `protojson.UnmarshalOptions{DiscardUnknown: true}` to gracefully discard unknown or newly introduced schema fields without rejecting client requests with `400 Bad Request`.

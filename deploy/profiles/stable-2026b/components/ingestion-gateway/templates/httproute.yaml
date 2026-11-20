@@ -1,0 +1,95 @@
+{{- /*
+Copyright 2026 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/}}
+{{- $ig := .Values.ingestionGatewayDeployment | default dict -}}
+{{- $params := .Values.parameters | default dict -}}
+{{- $port := $ig.port | default $params.port | default 8080 -}}
+{{- $ns := ((.Values.namespace | toString | trim) | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default")))) | toString }}
+{{- $gateway := .Values.gateway | default dict -}}
+{{- $gatewayEnabledRaw := ($ig.gatewayEnabled | default $params.gatewayEnabled | default $gateway.enabled | default false) | toString | lower | trim -}}
+{{- $gatewayEnabled := or (eq $gatewayEnabledRaw "true") (eq $gatewayEnabledRaw "1") -}}
+{{- $gatewayName := ($ig.gatewayName | default $params.gatewayName | default $gateway.name | default "xmc-gateway") | toString -}}
+{{- $gatewayHostname := ($ig.gatewayHostname | default $params.gatewayHostname | default $gateway.hostname | default "") | toString -}}
+{{- if $gatewayEnabled }}
+{{- $requireAuthRaw := ($ig.requireAuth | default $params.requireAuth | default false) | toString | lower | trim -}}
+{{- $requireAuth := or (eq $requireAuthRaw "true") (eq $requireAuthRaw "1") -}}
+{{- if not $requireAuth }}
+{{- fail "ingestion-gateway: gatewayEnabled=true requires requireAuth=true to prevent unauthenticated public metrics ingestion" }}
+{{- end }}
+{{- if eq $gatewayHostname "" }}
+{{- fail "ingestion-gateway: gatewayEnabled=true requires a valid gatewayHostname to prevent exposing the route on all gateway domains" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: metrics-ingest-route
+  namespace: {{ $ns }}
+spec:
+  parentRefs:
+    - name: {{ $gatewayName }}
+      sectionName: https
+  {{- if ne $gatewayHostname "" }}
+  hostnames:
+    - {{ $gatewayHostname | quote }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/metrics
+      backendRefs:
+        - name: ingestion-gateway-service
+          port: {{ $port }}
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: ingestion-gateway-hc-policy
+  namespace: {{ $ns }}
+spec:
+  default:
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: {{ $port }}
+        requestPath: /readyz
+  targetRef:
+    group: ""
+    kind: Service
+    name: ingestion-gateway-service
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingestion-gateway-external-lb-network-policy
+  namespace: {{ $ns }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- $cidrStr := ($ig.gatewayLbProxyCidrs | default $params.gatewayLbProxyCidrs | default "130.211.0.0/22,35.191.0.0/16") | toString }}
+        {{- $lbProxyCidrs := splitList "," $cidrStr }}
+        {{- range $cidr := $lbProxyCidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | trim | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $port }}
+{{- end }}

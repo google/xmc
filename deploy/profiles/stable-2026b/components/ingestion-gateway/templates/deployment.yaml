@@ -1,0 +1,341 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Forked from stable-2026a 0.1.0; delta: requireAuth support
+
+{{- $ig := .Values.ingestionGatewayDeployment | default dict -}}
+{{- if or .Values.deployWorkload $ig.enabled -}}
+{{- $params := .Values.parameters | default dict -}}
+{{- $port := $ig.port | default $params.port | default 8080 -}}
+{{- $sasl := $ig.sasl | default .Values.sasl | default dict -}}
+{{- $saslRaw := "false" -}}
+{{- if and (hasKey $ig "saslEnabled") (not (kindIs "invalid" $ig.saslEnabled)) (ne ($ig.saslEnabled | toString | trim) "") -}}
+  {{- $saslRaw = ($ig.saslEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $params "saslEnabled") (not (kindIs "invalid" $params.saslEnabled)) (ne ($params.saslEnabled | toString | trim) "") -}}
+  {{- $saslRaw = ($params.saslEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $sasl "enabled") (not (kindIs "invalid" $sasl.enabled)) (ne ($sasl.enabled | toString | trim) "") -}}
+  {{- $saslRaw = ($sasl.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $saslEnabled := or (eq $saslRaw "true") (eq $saslRaw "1") -}}
+{{- $saslSecretName := ($ig.saslSecretName | default $params.saslSecretName | default $sasl.secretName | default "") | toString -}}
+{{- $saslMechanism := ($ig.saslMechanism | default $params.saslMechanism | default $sasl.mechanism | default "SCRAM-SHA-256") | toString -}}
+{{- $useSasl := and $saslEnabled (ne $saslSecretName "") -}}
+{{- $tls := $ig.tls | default .Values.tls | default dict -}}
+{{- $tlsRaw := "false" -}}
+{{- if and (hasKey $ig "tlsEnabled") (not (kindIs "invalid" $ig.tlsEnabled)) (ne ($ig.tlsEnabled | toString | trim) "") -}}
+  {{- $tlsRaw = ($ig.tlsEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $params "tlsEnabled") (not (kindIs "invalid" $params.tlsEnabled)) (ne ($params.tlsEnabled | toString | trim) "") -}}
+  {{- $tlsRaw = ($params.tlsEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $tls "enabled") (not (kindIs "invalid" $tls.enabled)) (ne ($tls.enabled | toString | trim) "") -}}
+  {{- $tlsRaw = ($tls.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $tlsEnabled := or (eq $tlsRaw "true") (eq $tlsRaw "1") -}}
+{{- $tlsSecretName := ($ig.tlsSecretName | default $params.tlsSecretName | default $tls.secretName | default "") | toString -}}
+{{- $tlsCaFile := ($ig.tlsCaFile | default $params.tlsCaFile | default $tls.caFile | default "") | toString -}}
+{{- $tlsCertFile := ($ig.tlsCertFile | default $params.tlsCertFile | default $tls.certFile | default "") | toString -}}
+{{- $tlsKeyFile := ($ig.tlsKeyFile | default $params.tlsKeyFile | default $tls.keyFile | default "") | toString -}}
+{{- $useTls := and $tlsEnabled (ne $tlsSecretName "") -}}
+{{- $hpaMap := $ig.hpa | default dict -}}
+{{- $hpaCandidate := "" -}}
+{{- if and (hasKey $ig "hpaEnabled") (not (kindIs "invalid" $ig.hpaEnabled)) (ne ($ig.hpaEnabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($ig.hpaEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $params "hpaEnabled") (not (kindIs "invalid" $params.hpaEnabled)) (ne ($params.hpaEnabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($params.hpaEnabled | toString | lower | trim) -}}
+{{- else if and (hasKey $hpaMap "enabled") (not (kindIs "invalid" $hpaMap.enabled)) (ne ($hpaMap.enabled | toString | trim) "") -}}
+  {{- $hpaCandidate = ($hpaMap.enabled | toString | lower | trim) -}}
+{{- end -}}
+{{- $hpaRaw := $hpaCandidate | default "true" -}}
+{{- $hpaEnabled := or (eq $hpaRaw "true") (eq $hpaRaw "1") -}}
+{{- $requireAuthRaw := ($ig.requireAuth | default $params.requireAuth | default false) | toString | lower | trim -}}
+{{- $requireAuth := or (eq $requireAuthRaw "true") (eq $requireAuthRaw "1") -}}
+{{- $jwtSecretName := ($ig.jwtSecretName | default $params.jwtSecretName | default "xmc-jwt-secret") | toString -}}
+{{- $replicas := 1 -}}
+{{- if and (hasKey $ig "replicas") (not (kindIs "invalid" $ig.replicas)) (ne ($ig.replicas | toString | trim) "") -}}
+  {{- $replicas = ($ig.replicas | toString | trim | int) -}}
+{{- else if and (hasKey $params "replicas") (not (kindIs "invalid" $params.replicas)) (ne ($params.replicas | toString | trim) "") -}}
+  {{- $replicas = ($params.replicas | toString | trim | int) -}}
+{{- end -}}
+{{- $managedBy := .Release.Service | default "Helm" | quote -}}
+{{- $saName := ($ig.serviceAccountName | default $params.serviceAccountName | default .Values.serviceAccountName | default "default") | toString -}}
+{{- $ns := ((.Values.namespace | toString | trim) | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default")))) | toString }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingestion-gateway-deployment
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  {{- if not $hpaEnabled }}
+  replicas: {{ $replicas }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: ingestion-gateway
+  template:
+    metadata:
+      labels:
+        app: ingestion-gateway
+    spec:
+      serviceAccountName: {{ $saName | quote }}
+      {{- $tgp := $ig.terminationGracePeriodSeconds | default $params.terminationGracePeriodSeconds | default .Values.terminationGracePeriodSeconds -}}
+      {{- if $tgp }}
+      terminationGracePeriodSeconds: {{ $tgp }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      {{- if or $useSasl $useTls $requireAuth }}
+      volumes:
+      {{- if $useSasl }}
+      - name: kafka-sasl-credentials
+        secret:
+          secretName: {{ $saslSecretName | quote }}
+      {{- end }}
+      {{- if $useTls }}
+      - name: kafka-tls-credentials
+        secret:
+          secretName: {{ $tlsSecretName | quote }}
+      {{- end }}
+      {{- if $requireAuth }}
+      - name: auth-secrets
+        secret:
+          secretName: {{ $jwtSecretName | quote }}
+      {{- end }}
+      {{- end }}
+      containers:
+      - name: ingestion-gateway
+        image: {{ include "ingestion-gateway.image" . | quote }}
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          capabilities:
+            drop: ["ALL"]
+        {{- if or $useSasl $useTls $requireAuth }}
+        volumeMounts:
+        {{- if $useSasl }}
+        - name: kafka-sasl-credentials
+          mountPath: /etc/kafka/credentials
+          readOnly: true
+        {{- end }}
+        {{- if $useTls }}
+        - name: kafka-tls-credentials
+          mountPath: /etc/kafka/tls
+          readOnly: true
+        {{- end }}
+        {{- if $requireAuth }}
+        - name: auth-secrets
+          mountPath: /etc/auth-secrets
+          readOnly: true
+        {{- end }}
+        {{- end }}
+        ports:
+        - containerPort: {{ $port }}
+          name: http-port
+        {{- if $requireAuth }}
+        env:
+        - name: INGESTION_REQUIRE_AUTH
+          value: "true"
+        - name: JWT_SECRET_FILE
+          value: "/etc/auth-secrets/jwt-secret"
+        {{- end }}
+        args:
+        - "-port={{ $port }}"
+        - "-enable_components=true"
+        - "-components_namespace={{ $ns }}"
+        - "-redpanda_brokers={{ $ig.redpandaBrokers | default $params.redpandaBrokers | default "redpanda-0.redpanda.xmc.svc.cluster.local:9092" }}"
+        - "-topic_name={{ $ig.topicName | default $params.topicName | default "xmc-metrics" }}"
+        - "-min_partitions={{ $ig.minPartitions | default $params.minPartitions | default 128 }}"
+        - "-min_replicas={{ $ig.minReplicas | default $params.minReplicas | default 1 }}"
+        - "-project_id={{ $ig.projectId | default $params.projectId | default .Values.projectId }}"
+        {{- if or $sasl (hasKey $ig "saslEnabled") (hasKey $params "saslEnabled") }}
+        - "-sasl_enabled={{ $saslEnabled }}"
+        {{- if $useSasl }}
+        - "-sasl_mechanism={{ $saslMechanism }}"
+        - "-sasl_credentials_dir=/etc/kafka/credentials"
+        {{- end }}
+        {{- end }}
+        {{- if or $tls (hasKey $ig "tlsEnabled") (hasKey $params "tlsEnabled") }}
+        - "-tls_enabled={{ $tlsEnabled }}"
+        {{- if $tlsEnabled }}
+        {{- if ne $tlsCaFile "" }}
+        - "-tls_ca_file={{ $tlsCaFile }}"
+        {{- end }}
+        {{- if ne $tlsCertFile "" }}
+        - "-tls_cert_file={{ $tlsCertFile }}"
+        {{- end }}
+        {{- if ne $tlsKeyFile "" }}
+        - "-tls_key_file={{ $tlsKeyFile }}"
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: {{ $port }}
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: {{ $port }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        {{- $baseRes := deepCopy ($ig.resources | default .Values.resources | default dict) }}
+        {{- $cpuReq := $ig.cpuRequest | default $params.cpuRequest }}
+        {{- $memReq := $ig.memoryRequest | default $params.memoryRequest }}
+        {{- if or $cpuReq $memReq }}
+          {{- $reqs := deepCopy ($baseRes.requests | default dict) }}
+          {{- if $cpuReq }}{{- $_ := set $reqs "cpu" ($cpuReq | toString) }}{{- end }}
+          {{- if $memReq }}{{- $_ := set $reqs "memory" ($memReq | toString) }}{{- end }}
+          {{- $_ := set $baseRes "requests" $reqs }}
+        {{- end }}
+        {{- $cpuLim := $ig.cpuLimit | default $params.cpuLimit }}
+        {{- $memLim := $ig.memoryLimit | default $params.memoryLimit }}
+        {{- if or $cpuLim $memLim }}
+          {{- $lims := deepCopy ($baseRes.limits | default dict) }}
+          {{- if $cpuLim }}{{- $_ := set $lims "cpu" ($cpuLim | toString) }}{{- end }}
+          {{- if $memLim }}{{- $_ := set $lims "memory" ($memLim | toString) }}{{- end }}
+          {{- $_ := set $baseRes "limits" $lims }}
+        {{- end }}
+        {{- if $baseRes }}
+        resources:
+          {{- toYaml $baseRes | nindent 10 }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingestion-gateway-service
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  type: ClusterIP
+  selector:
+    app: ingestion-gateway
+  ports:
+  - port: {{ $port }}
+    name: http-port
+    targetPort: http-port
+{{- if $hpaEnabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ingestion-gateway-hpa
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ingestion-gateway-deployment
+  minReplicas: {{ $ig.hpaMinReplicas | default $params.hpaMinReplicas | default $hpaMap.minReplicas | default .Values.minReplicas | default 2 }}
+  maxReplicas: {{ $ig.hpaMaxReplicas | default $params.hpaMaxReplicas | default $hpaMap.maxReplicas | default .Values.maxReplicas | default 10 }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ingestion-gateway-components-reader
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/part-of: xmanager-cloud
+rules:
+- apiGroups: ["xmc.dev"]
+  resources: ["components"]
+  resourceNames: ["redpanda"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ingestion-gateway-components-reader-binding
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/part-of: xmanager-cloud
+subjects:
+- kind: ServiceAccount
+  name: {{ $saName | quote }}
+  namespace: {{ $ns | quote }}
+roleRef:
+  kind: Role
+  name: ingestion-gateway-components-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# Restricts ingress to pods labeled xmc.google.com/metrics-client=true and egress to DNS, HTTPS, and Kafka.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingestion-gateway-network-policy
+  labels:
+    app: ingestion-gateway
+    app.kubernetes.io/name: ingestion-gateway
+    app.kubernetes.io/managed-by: {{ $managedBy }}
+spec:
+  podSelector:
+    matchLabels:
+      app: ingestion-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              xmc.google.com/metrics-client: "true"
+      ports:
+        - protocol: TCP
+          port: {{ $port }}
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9094
+        - protocol: TCP
+          port: 9644
+{{- end }}

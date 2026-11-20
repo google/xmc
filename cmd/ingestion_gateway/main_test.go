@@ -46,7 +46,8 @@ func (s *stubProducer) Close() {}
 
 func TestStartHTTPServerWithProducer(t *testing.T) {
 	mp := &stubProducer{}
-	srv := startHTTPServer(context.Background(), "0", "xmc-metrics", nil, mp)
+	cfg := &ingestiongateway.Config{Port: "0", TopicName: "xmc-metrics"}
+	srv := startHTTPServer(context.Background(), cfg, nil, mp)
 	defer srv.Close()
 
 	if srv == nil {
