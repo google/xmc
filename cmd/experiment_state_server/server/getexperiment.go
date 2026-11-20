@@ -66,6 +66,7 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *msgpb.GetExp
 		if isCtrl {
 			return h.getExperimentForStudyController(ctx, name, xid)
 		}
+		logging.Warn(ctx, "User not authorized to get experiment", "email", email, "error", err)
 		return nil, err
 	}
 
@@ -94,10 +95,12 @@ func (h *ExperimentHandler) getExperimentForStudyController(ctx context.Context,
 func (h *ExperimentHandler) fetchXidForExperiment(ctx context.Context, name string, xid int64) (*xidmsgpb.XidEntry, error) {
 	xidEntry, err := h.getXid(ctx, validator.ConstructXIDName(xid))
 	if err == nil {
+		if xidEntry == nil {
+			return nil, fmt.Errorf("XID entry for %d is nil: %w", xid, grpcerr.ErrInternal)
+		}
 		return xidEntry, nil
 	}
 	if status.Code(err) == codes.PermissionDenied {
-		logging.Warn(ctx, "User not authorized to get experiment", "error", err)
 		return nil, fmt.Errorf("user not authorized to get experiment %s: %w (%v)", name, grpcerr.ErrPermissionDenied, err)
 	}
 	if status.Code(err) == codes.NotFound {
@@ -112,6 +115,9 @@ func (h *ExperimentHandler) fetchExperiment(ctx context.Context, name string, xi
 	logging.Debug(ctx, "Fetching experiment from storage")
 	exp, err := h.storage.FetchExperiment(ctx, xid)
 	if err == nil {
+		if exp == nil {
+			return nil, fmt.Errorf("experiment %s fetched from storage is nil: %w", name, grpcerr.ErrInternal)
+		}
 		return exp, nil
 	}
 	if status.Code(err) == codes.NotFound {
