@@ -50,7 +50,8 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 	}
 
 	agg := make(map[string]map[string]map[string]*rodpb.AcceleratorSummary)
-	nodeMap := processNodes(nodes, agg)
+	nodeMap := make(map[string]*corev1.Node, len(nodes))
+	processNodes(nodes, agg, nodeMap)
 	processPods(pods, nodeMap, agg)
 	populateCorrelatedQueues(queues, flavorMap, agg, resp)
 
@@ -67,8 +68,7 @@ func (s *server) GetResourceAvailability(ctx context.Context, req *rodpb.GetReso
 	return resp, nil
 }
 
-func processNodes(nodes [](*corev1.Node), agg map[string]map[string]map[string]*rodpb.AcceleratorSummary) map[string]*corev1.Node {
-	nodeMap := make(map[string]*corev1.Node, len(nodes))
+func processNodes(nodes [](*corev1.Node), agg map[string]map[string]map[string]*rodpb.AcceleratorSummary, nodeMap map[string]*corev1.Node) {
 	for _, node := range nodes {
 		qty, ok := node.Status.Capacity["nvidia.com/gpu"]
 		if !ok || qty.Sign() <= 0 {
@@ -122,7 +122,6 @@ func processNodes(nodes [](*corev1.Node), agg map[string]map[string]map[string]*
 			summary.ActiveAccelerators += int32(gpuCount)
 		}
 	}
-	return nodeMap
 }
 
 func processPods(pods [](*corev1.Pod), nodeMap map[string]*corev1.Node, agg map[string]map[string]map[string]*rodpb.AcceleratorSummary) {
@@ -132,6 +131,11 @@ func processPods(pods [](*corev1.Pod), nodeMap map[string]*corev1.Node, agg map[
 			continue
 		}
 
+		node, ok := nodeMap[nodeName]
+		if !ok {
+			continue
+		}
+		
 		var gpuCount int64
 		for _, container := range pod.Spec.Containers {
 			if qty, ok := container.Resources.Requests["nvidia.com/gpu"]; ok {
@@ -139,11 +143,6 @@ func processPods(pods [](*corev1.Pod), nodeMap map[string]*corev1.Node, agg map[
 			}
 		}
 		if gpuCount <= 0 {
-			continue
-		}
-
-		node, ok := nodeMap[nodeName]
-		if !ok {
 			continue
 		}
 
