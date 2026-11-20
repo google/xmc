@@ -28,6 +28,7 @@ import (
 	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/pkg/components/store"
 )
 
 func TestGetExperiment_HappyPath(t *testing.T) {
@@ -204,6 +205,16 @@ func TestGetExperiment_DriftWarningPropagation(t *testing.T) {
 	}
 }
 
+type countingComponentRepository struct {
+	storage.ComponentRepository
+	calls int
+}
+
+func (c *countingComponentRepository) GetActiveComponent(ctx context.Context, name string) (*store.ComponentRecord, error) {
+	c.calls++
+	return c.ComponentRepository.GetActiveComponent(ctx, name)
+}
+
 func TestGetExperiment_StudyControllerAuthz(t *testing.T) {
 	ctx := context.Background()
 	req := &msgpb.GetExperimentRequest{Name: "experiments/123"}
@@ -233,82 +244,94 @@ func TestGetExperiment_StudyControllerAuthz(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name         string
-		caller       string
-		components   storage.ComponentRepository
-		exp          *msgpb.Experiment
-		fetchErr     error
-		xidErr       error
-		wantErr      error
-		wantXidCalls int
-		wantAcls     *xidmsgpb.XidAcls
+		name             string
+		caller           string
+		components       storage.ComponentRepository
+		exp              *msgpb.Experiment
+		fetchErr         error
+		xidErr           error
+		wantErr          error
+		wantXidCalls     int
+		wantCatalogCalls int
+		wantAcls         *xidmsgpb.XidAcls
 	}{
 		{
-			name:         "controller_gets_study_bypasses_xid_with_nil_acls",
-			caller:       testStudyControllerSA,
-			components:   hpoRepo(testStudyControllerSA),
-			exp:          studyExp(),
-			xidErr:       grpcerr.ErrPermissionDenied,
-			wantXidCalls: 0,
-			wantAcls:     nil,
+			name:             "controller_gets_study_after_xid_denied_with_nil_acls",
+			caller:           testStudyControllerSA,
+			components:       hpoRepo(testStudyControllerSA),
+			exp:              studyExp(),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
+			wantAcls:         nil,
 		},
 		{
-			name:         "controller_denied_standard_experiment",
-			caller:       testStudyControllerSA,
-			components:   hpoRepo(testStudyControllerSA),
-			exp:          standardExp(),
-			wantErr:      grpcerr.ErrPermissionDenied,
-			wantXidCalls: 0,
+			name:             "controller_denied_standard_experiment",
+			caller:           testStudyControllerSA,
+			components:       hpoRepo(testStudyControllerSA),
+			exp:              standardExp(),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			wantErr:          grpcerr.ErrPermissionDenied,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
 		},
 		{
-			name:         "controller_study_not_found",
-			caller:       testStudyControllerSA,
-			components:   hpoRepo(testStudyControllerSA),
-			fetchErr:     grpcerr.ErrNotFound,
-			wantErr:      grpcerr.ErrNotFound,
-			wantXidCalls: 0,
+			name:             "controller_study_not_found",
+			caller:           testStudyControllerSA,
+			components:       hpoRepo(testStudyControllerSA),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			fetchErr:         grpcerr.ErrNotFound,
+			wantErr:          grpcerr.ErrNotFound,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
 		},
 		{
-			name:         "controller_with_empty_sa_falls_through_to_xid",
-			caller:       testStudyControllerSA,
-			components:   hpoRepo(""),
-			exp:          studyExp(),
-			xidErr:       grpcerr.ErrPermissionDenied,
-			wantErr:      grpcerr.ErrPermissionDenied,
-			wantXidCalls: 1,
+			name:             "controller_with_empty_sa_fails_closed",
+			caller:           testStudyControllerSA,
+			components:       hpoRepo(""),
+			exp:              studyExp(),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			wantErr:          grpcerr.ErrPermissionDenied,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
 		},
 		{
-			name:         "controller_with_missing_hpo_component_falls_through_to_xid",
-			caller:       testStudyControllerSA,
-			components:   &storage.MockComponentRepository{},
-			exp:          studyExp(),
-			xidErr:       grpcerr.ErrPermissionDenied,
-			wantErr:      grpcerr.ErrPermissionDenied,
-			wantXidCalls: 1,
+			name:             "controller_with_missing_hpo_component_fails_closed",
+			caller:           testStudyControllerSA,
+			components:       &storage.MockComponentRepository{},
+			exp:              studyExp(),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			wantErr:          grpcerr.ErrPermissionDenied,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
 		},
 		{
-			name:         "normal_user_gets_study_via_xid",
-			caller:       "alice@example.com",
-			components:   hpoRepo(testStudyControllerSA),
-			exp:          studyExp(),
-			wantXidCalls: 1,
-			wantAcls:     xidAcls,
+			name:             "normal_user_gets_study_via_xid_with_zero_catalog_lookups",
+			caller:           "alice@example.com",
+			components:       hpoRepo(testStudyControllerSA),
+			exp:              studyExp(),
+			wantXidCalls:     1,
+			wantCatalogCalls: 0,
+			wantAcls:         xidAcls,
 		},
 		{
-			name:         "normal_user_gets_standard_via_xid",
-			caller:       "alice@example.com",
-			components:   hpoRepo(testStudyControllerSA),
-			exp:          standardExp(),
-			wantXidCalls: 1,
-			wantAcls:     xidAcls,
+			name:             "normal_user_gets_standard_via_xid_with_zero_catalog_lookups",
+			caller:           "alice@example.com",
+			components:       hpoRepo(testStudyControllerSA),
+			exp:              standardExp(),
+			wantXidCalls:     1,
+			wantCatalogCalls: 0,
+			wantAcls:         xidAcls,
 		},
 		{
-			name:         "component_store_error_returns_internal",
-			caller:       testStudyControllerSA,
-			components:   &storage.MockComponentRepository{GetActiveComponentErr: errors.New("db outage")},
-			exp:          studyExp(),
-			wantErr:      grpcerr.ErrInternal,
-			wantXidCalls: 0,
+			name:             "component_store_error_returns_internal_on_xid_denied",
+			caller:           testStudyControllerSA,
+			components:       &storage.MockComponentRepository{GetActiveComponentErr: errors.New("db outage")},
+			exp:              studyExp(),
+			xidErr:           grpcerr.ErrPermissionDenied,
+			wantErr:          grpcerr.ErrInternal,
+			wantXidCalls:     1,
+			wantCatalogCalls: 1,
 		},
 	}
 
@@ -318,10 +341,11 @@ func TestGetExperiment_StudyControllerAuthz(t *testing.T) {
 				getXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/123"), Acls: xidAcls},
 				getXidEntryErr:  tc.xidErr,
 			}
+			counting := &countingComponentRepository{ComponentRepository: tc.components}
 			mockStorage := &storage.MockStorage{
 				Experiment:          tc.exp,
 				FetchExperimentErr:  tc.fetchErr,
-				ComponentRepository: tc.components,
+				ComponentRepository: counting,
 			}
 			srv := newTestServer(t,
 				withStorage(mockStorage),
@@ -332,6 +356,9 @@ func TestGetExperiment_StudyControllerAuthz(t *testing.T) {
 			got, err := srv.GetExperiment(ctx, req)
 			if xidClient.getXidEntryCalls != tc.wantXidCalls {
 				t.Errorf("GetXidEntry calls = %d, want %d", xidClient.getXidEntryCalls, tc.wantXidCalls)
+			}
+			if counting.calls != tc.wantCatalogCalls {
+				t.Errorf("catalog lookups = %d, want %d", counting.calls, tc.wantCatalogCalls)
 			}
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {

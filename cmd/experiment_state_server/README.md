@@ -136,12 +136,14 @@ need broad deployment admission. Normal user traffic checks the deployment admis
 (zero component-catalog overhead); on delegate denial or error, ESS falls back to checking the
 active `hpo` component record.
 
-In `GetExperiment` ([`server/getexperiment.go`](server/getexperiment.go)), a caller whose verified
-email matches `parameters.studyControllerServiceAccount` (ASCII case-insensitive) bypasses XID ACLs
-and reads the experiment from storage directly. ESS returns the experiment (with `acls` unset) only
-when `experiment_type == STUDY`, and rejects non-`STUDY` experiments with `PERMISSION_DENIED`
-(`NOT_FOUND` if the experiment does not exist). When the `hpo` component is missing or the parameter
-is empty, callers fall through to the normal XID ACL path (fail closed).
+In `GetExperiment` ([`server/getexperiment.go`](server/getexperiment.go)), normal user traffic
+checks XID ACLs first (zero component-catalog lookups). Only when the XID service returns
+`PERMISSION_DENIED` does ESS check whether the caller's verified email matches
+`parameters.studyControllerServiceAccount` (ASCII case-insensitive); if so, it reads the experiment
+from storage directly and returns it (with `acls` unset) only when `experiment_type == STUDY`,
+rejecting non-`STUDY` experiments with `PERMISSION_DENIED` (`NOT_FOUND` if the experiment does not
+exist). When the `hpo` component is missing or the parameter is empty, the XID `PERMISSION_DENIED`
+error is returned (fail closed).
 
 #### Creating Trials: `BatchCreateWorkUnits`
 

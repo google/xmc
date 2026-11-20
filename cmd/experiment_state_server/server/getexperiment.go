@@ -15,6 +15,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
@@ -49,24 +50,26 @@ func (h *ExperimentHandler) GetExperiment(ctx context.Context, req *msgpb.GetExp
 	}
 	ctx = logging.WithExperimentName(ctx, name)
 
-	// 3. Check if the caller is the configured study controller; it bypasses XID ACLs for STUDY
-	// experiments only.
-	isCtrl, err := workunit.IsStudyController(ctx, h.storage.Components(), email)
-	if err != nil {
-		logging.Error(ctx, "Failed to check study controller identity", "error", err)
-		return nil, fmt.Errorf("failed to check study controller identity: %w (%v)", grpcerr.ErrInternal, err)
-	}
-	if isCtrl {
-		return h.getExperimentForStudyController(ctx, name, xid)
-	}
-
-	// 4. Retrieve the XID entry from the XID service for authorization purposes and to get ACLs.
+	// 3. Retrieve the XID entry from the XID service for authorization purposes and to get ACLs.
+	// Only fall back to the study controller check on PermissionDenied so normal user reads incur
+	// zero component-catalog lookups.
 	xidEntry, err := h.fetchXidForExperiment(ctx, name, xid)
 	if err != nil {
+		if !errors.Is(err, grpcerr.ErrPermissionDenied) {
+			return nil, err
+		}
+		isCtrl, ctrlErr := workunit.IsStudyController(ctx, h.storage.Components(), email)
+		if ctrlErr != nil {
+			logging.Error(ctx, "Failed to check study controller identity", "error", ctrlErr)
+			return nil, fmt.Errorf("failed to check study controller identity: %w (%v)", grpcerr.ErrInternal, ctrlErr)
+		}
+		if isCtrl {
+			return h.getExperimentForStudyController(ctx, name, xid)
+		}
 		return nil, err
 	}
 
-	// 5. Retrieve the experiment from storage, attach ACLs, and evaluate component drift.
+	// 4. Retrieve the experiment from storage, attach ACLs, and evaluate component drift.
 	exp, err := h.fetchExperiment(ctx, name, xid)
 	if err != nil {
 		return nil, err
