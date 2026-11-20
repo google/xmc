@@ -30,11 +30,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
@@ -69,7 +71,8 @@ func main() {
 
 func run(ctx context.Context, cfg *Config) error {
 	kueueCache := cache.NewKueueCache()
-	mgr, err := setupKueueManager(ctx, kueueCache)
+	physCache := cache.NewPhysicalInventoryCache()
+	mgr, err := setupKueueManager(ctx, kueueCache, physCache)
 	if err != nil {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
@@ -80,7 +83,7 @@ func run(ctx context.Context, cfg *Config) error {
 	}
 	defer dbStorage.Close()
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, dbStorage, dbStorage)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, physCache, dbStorage, dbStorage)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -142,13 +145,13 @@ type GRPCServerComponents struct {
 	Server   *grpc.Server
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher, velocityStore QueueVelocityFetcher) (GRPCServerComponents, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, physCache *cache.PhysicalInventoryCache, workUnitStore WorkUnitFetcher, velocityStore QueueVelocityFetcher) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore, velocityStore))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, physCache, workUnitStore, velocityStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,
@@ -240,7 +243,7 @@ func performShutdown(ctx context.Context, httpServer *http.Server, grpcServer *g
 	logging.Info(ctx, "ROD data provider service stopped")
 }
 
-func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.Manager, error) {
+func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache, physCache *cache.PhysicalInventoryCache) (ctrl.Manager, error) {
 	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get k8s config for KueueCache reconciler: %w", err)
@@ -266,7 +269,7 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 		return nil, fmt.Errorf("failed to create controller-runtime manager: %w", err)
 	}
 
-	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache); err != nil {
+	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache, physCache); err != nil {
 		return nil, fmt.Errorf("failed to setup Kueue reconcilers: %w", err)
 	}
 
@@ -275,7 +278,7 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 
 // SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
 // to collect and sync Kueue entity information into the in-memory cache.
-func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache) error {
+func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache, physCache *cache.PhysicalInventoryCache) error {
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
 	}
@@ -290,6 +293,18 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 	rfRec := reconciler.NewResourceFlavorReconciler(client, cache.ResourceFlavors)
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
+	}
+
+	physRec := &reconciler.PhysicalInventoryReconciler{
+		Client: client,
+		Scheme: mgr.GetScheme(),
+		Cache:  physCache,
+	}
+	if err := ctrl.NewControllerManagedBy(mgr).For(&corev1.Node{}).Complete(reconcile.Func(physRec.ReconcileNode)); err != nil {
+		return fmt.Errorf("failed to setup PhysicalInventoryReconciler nodes: %w", err)
+	}
+	if err := ctrl.NewControllerManagedBy(mgr).For(&corev1.Pod{}).Complete(reconcile.Func(physRec.ReconcilePod)); err != nil {
+		return fmt.Errorf("failed to setup PhysicalInventoryReconciler pods: %w", err)
 	}
 	return nil
 }

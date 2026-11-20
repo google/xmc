@@ -18,6 +18,7 @@ import { catchError, Observable, of, throwError } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
+  GetResourceAvailabilityResponse,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
@@ -34,6 +35,23 @@ import { XMC_API_DOMAIN } from './constants';
   providedIn: 'root',
 })
 export class ResourceService {
+
+  /**
+   * Fetches the physical resource availability (Screen 3).
+   */
+  getResourceAvailability(): Observable<GetResourceAvailabilityResponse> {
+    return this.http
+      .get<GetResourceAvailabilityResponse>(`${XMC_API_DOMAIN}/availability`, {
+        withCredentials: true,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch resource availability:', error);
+          return of({ summaries: [] });
+        }),
+      );
+  }
+
   private readonly http = inject(HttpClient);
 
   /**
