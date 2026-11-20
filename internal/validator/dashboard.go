@@ -127,6 +127,9 @@ func validateInlineCharts(charts []*spb.Chart) error {
 		if chart.GetWid() <= 0 {
 			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), grpcerr.ErrInvalidArgument)
 		}
+		if err := ValidateChartPlotTypes(chart.GetPlots(), false); err != nil {
+			return fmt.Errorf("charts[%d]: %w", i, err)
+		}
 	}
 	return nil
 }

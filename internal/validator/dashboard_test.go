@@ -348,6 +348,14 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{
+			name: "invalid_request_inline_chart_parallel_coordinates",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Study", Xid: 4321, Wid: 1, Plots: parallelCoordinatesPlots()}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
