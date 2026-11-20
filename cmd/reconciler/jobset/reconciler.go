@@ -25,6 +25,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -407,33 +408,84 @@ func (r *Reconciler) syncJobSetStatus(ctx context.Context, jobSet *v1alpha2.JobS
 // kueueJobUIDLabel is the label Kueue sets on a Workload to the UID of the job that owns it.
 const kueueJobUIDLabel = "kueue.x-k8s.io/job-uid"
 
-func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (*spb.ClusterInfo, bool) {
+// executionCluster is the cluster a JobSet runs on and the creation time of the
+// JobSet object there, which together identify the GKE workload an MLRun tracks.
+type executionCluster struct {
+	cluster     *spb.ClusterInfo
+	createdTime metav1.Time
+}
+
+// resolveExecution returns the cluster the JobSet runs on and the creation time
+// of the JobSet there. For a JobSet dispatched by MultiKueue, the time is when
+// the MultiKueue admission check became Ready: Kueue sets that just after it
+// creates the JobSet on the worker, whose own creationTimestamp the manager
+// cannot see. This lets the MLRun ID match the one GKE ML Diagnostics derives
+// on the worker, so both producers write to a single MLRun.
+func (r *Reconciler) resolveExecution(ctx context.Context, jobSet *v1alpha2.JobSet) (executionCluster, bool) {
+	cluster, wl, ok := r.resolveExecutionCluster(ctx, jobSet)
+	if !ok {
+		return executionCluster{}, false
+	}
+	if wl == nil {
+		return executionCluster{cluster: cluster, createdTime: jobSet.CreationTimestamp}, true
+	}
+	readyTime, ok := r.multiKueueCheckReadyTime(ctx, wl)
+	if !ok {
+		return executionCluster{}, false
+	}
+	return executionCluster{cluster: cluster, createdTime: readyTime}, true
+}
+
+// multiKueueCheckReadyTime returns when the Workload's MultiKueue admission check
+// last became Ready, or false if it has none or it is not Ready.
+func (r *Reconciler) multiKueueCheckReadyTime(ctx context.Context, wl *v1beta1.Workload) (metav1.Time, bool) {
+	for _, state := range wl.Status.AdmissionChecks {
+		var ac v1beta1.AdmissionCheck
+		if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: string(state.Name)}, &ac); err != nil {
+			logging.Warn(ctx, "multiKueueCheckReadyTime: failed to get AdmissionCheck; skipping MLRun sync", "admissionCheck", state.Name, "error", err)
+			return metav1.Time{}, false
+		}
+		if ac.Spec.ControllerName != v1beta1.MultiKueueControllerName {
+			continue
+		}
+		if state.State != v1beta1.CheckStateReady {
+			return metav1.Time{}, false
+		}
+		return state.LastTransitionTime, true
+	}
+	logging.Warn(ctx, "multiKueueCheckReadyTime: Workload has a cluster name but no MultiKueue admission check; skipping MLRun sync", "workload", wl.Name)
+	return metav1.Time{}, false
+}
+
+// resolveExecutionCluster returns the cluster the JobSet runs on and, when
+// MultiKueue dispatched it to a worker, the Workload that records the dispatch.
+func (r *Reconciler) resolveExecutionCluster(ctx context.Context, jobSet *v1alpha2.JobSet) (*spb.ClusterInfo, *v1beta1.Workload, bool) {
 	if r.Client == nil || jobSet == nil {
-		return r.managerClusterInfo(), true
+		return r.managerClusterInfo(), nil, true
 	}
 	var wlList v1beta1.WorkloadList
 	if err := r.List(logging.Strip(ctx), &wlList, client.InNamespace(jobSet.Namespace), client.MatchingLabels{kueueJobUIDLabel: string(jobSet.UID)}); err != nil {
 		logging.Warn(ctx, "resolveExecutionCluster: failed to list workloads; skipping MLRun sync", "error", err)
-		return nil, false
+		return nil, nil, false
 	}
 	wl := findJobSetWorkload(wlList.Items, jobSet.Name)
 	if wl == nil || wl.Status.ClusterName == nil || *wl.Status.ClusterName == "" {
 		if awaitingAdmission(jobSet, wl) {
-			return nil, false
+			return nil, nil, false
 		}
-		return r.managerClusterInfo(), true
+		return r.managerClusterInfo(), nil, true
 	}
 	var mc v1beta1.MultiKueueCluster
 	if err := r.Get(logging.Strip(ctx), types.NamespacedName{Name: *wl.Status.ClusterName}, &mc); err != nil {
 		logging.Warn(ctx, "resolveExecutionCluster: failed to get MultiKueueCluster; skipping MLRun sync", "cluster", *wl.Status.ClusterName, "error", err)
-		return nil, false
+		return nil, nil, false
 	}
 	info := shared.ClusterInfoFromMultiKueueCluster(&mc)
 	if info.GetProject() == "" || info.GetLocation() == "" || info.GetClusterName() == "" {
 		logging.Warn(ctx, "resolveExecutionCluster: MultiKueueCluster is missing XMC cluster labels; skipping MLRun sync", "cluster", *wl.Status.ClusterName)
-		return nil, false
+		return nil, nil, false
 	}
-	return info, true
+	return info, wl, true
 }
 
 func (r *Reconciler) managerClusterInfo() *spb.ClusterInfo {
@@ -442,12 +494,14 @@ func (r *Reconciler) managerClusterInfo() *spb.ClusterInfo {
 
 // awaitingAdmission reports whether a JobSet without an assigned MultiKueue
 // cluster may still get one: it is queued but its Workload does not exist yet,
-// or its Workload is not admitted while the JobSet is suspended.
+// or it is still suspended. Kueue reserves quota (status.admission) before
+// MultiKueue picks a worker (status.clusterName) and unsuspends the JobSet, so
+// an admitted Workload alone does not mean the JobSet runs on the manager.
 func awaitingAdmission(jobSet *v1alpha2.JobSet, wl *v1beta1.Workload) bool {
 	if wl == nil {
 		return jobSet.Labels["kueue.x-k8s.io/queue-name"] != ""
 	}
-	return wl.Status.Admission == nil && jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend
+	return jobSet.Spec.Suspend != nil && *jobSet.Spec.Suspend
 }
 
 func findJobSetWorkload(workloads []v1beta1.Workload, jobSetName string) *v1beta1.Workload {

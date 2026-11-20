@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/reconciler/hypercomputeclient"
@@ -126,7 +127,7 @@ func resolveClusterPath(clusterName, project, location string) string {
 	return clusterName
 }
 
-func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup string, labels, artifacts map[string]string) *hypercomputeclient.CreateMLRunOptions {
+func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup string, createdTime metav1.Time, labels, artifacts map[string]string) *hypercomputeclient.CreateMLRunOptions {
 	return &hypercomputeclient.CreateMLRunOptions{
 		RunGroup:     runGroup,
 		Tools:        []map[string]any{{"xprof": map[string]any{}}},
@@ -138,7 +139,7 @@ func buildCreateMLRunOptions(jobSet *v1alpha2.JobSet, clusterPath, runGroup stri
 			Cluster:    clusterPath,
 			Namespace:  jobSet.Namespace,
 			ID:         jobSet.Name,
-			CreateTime: formatCreationTime(jobSet.CreationTimestamp),
+			CreateTime: formatCreationTime(createdTime),
 		},
 	}
 }
@@ -162,22 +163,24 @@ func (r *Reconciler) ensureMLRunCreated(ctx context.Context, jobSet *v1alpha2.Jo
 	// manager. JobSets not managed by MultiKueue use the manager values. While the
 	// execution cluster cannot be determined yet (for example, before Kueue admits
 	// the Workload), report the MLRun as unconfirmed so nothing is cached and a
-	// later reconcile retries.
+	// later reconcile retries. The ID and workloadDetails.createTime use the
+	// JobSet's creation time on the execution cluster (see resolveExecution), so
+	// they match the MLRun GKE ML Diagnostics creates there.
 	//
 	// The MLRun itself is still created under MLRunProject/MLRunLocation (the
 	// client is built once in manager.go), so only workloadDetails.cluster follows
 	// the worker. MultiKueue workers must therefore be in MLRunLocation, and in
 	// MLRunProject unless it is set to the worker's project.
-	cluster, ok := r.resolveExecutionCluster(ctx, jobSet)
+	exec, ok := r.resolveExecution(ctx, jobSet)
 	if !ok {
 		return "", false
 	}
-	project, location, clusterName := cluster.GetProject(), cluster.GetLocation(), cluster.GetClusterName()
-	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, jobSet.CreationTimestamp.Time)
+	project, location, clusterName := exec.cluster.GetProject(), exec.cluster.GetLocation(), exec.cluster.GetClusterName()
+	mlRunID := ConstructMLRunID(clusterName, jobSet.Namespace, "JobSet", jobSet.Name, exec.createdTime.Time)
 	clusterPath := resolveClusterPath(clusterName, project, location)
 	labels := buildMLRunLabels(xid, wid)
 	artifacts := map[string]string{"gcs_path": gcsPath}
-	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, labels, artifacts)
+	opts := buildCreateMLRunOptions(jobSet, clusterPath, runGroup, exec.createdTime, labels, artifacts)
 
 	logging.Info(ctx, "Creating MLRun for ManagedXprof execution", "mlRunID", mlRunID, "displayName", displayName, "runGroup", runGroup)
 	if _, err := r.MLRunClient.CreateMLRun(ctx, mlRunID, displayName, "ACTIVE", opts); err != nil {

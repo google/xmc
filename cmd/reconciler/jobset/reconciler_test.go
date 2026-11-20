@@ -1022,6 +1022,7 @@ func TestResolveExecutionCluster(t *testing.T) {
 		{name: "not queued in Kueue uses manager", jobSet: newJobSet(false, false), want: manager, wantOK: true},
 		{name: "queued workload not created yet skips", jobSet: newJobSet(true, true), want: unresolved},
 		{name: "workload not admitted and suspended skips", jobSet: newJobSet(true, true), objs: []client.Object{workload(nil, false)}, want: unresolved},
+		{name: "workload admitted but not yet dispatched skips", jobSet: newJobSet(true, true), objs: []client.Object{workload(nil, true)}, want: unresolved},
 		{name: "admitted locally uses manager", jobSet: newJobSet(true, false), objs: []client.Object{workload(nil, true)}, want: manager, wantOK: true},
 		{name: "admitted with empty cluster name uses manager", jobSet: newJobSet(true, false), objs: []client.Object{workload(&empty, true)}, want: manager, wantOK: true},
 		{name: "MultiKueueCluster not found skips", jobSet: newJobSet(true, false), objs: []client.Object{workload(&worker, true)}, want: unresolved},
@@ -1048,7 +1049,7 @@ func TestResolveExecutionCluster(t *testing.T) {
 				Location:    "us-central1",
 				ClusterName: "mgr-gke",
 			}
-			cluster, ok := r.resolveExecutionCluster(t.Context(), tc.jobSet)
+			cluster, _, ok := r.resolveExecutionCluster(t.Context(), tc.jobSet)
 			if diff := cmp.Diff(tc.want, []string{cluster.GetProject(), cluster.GetLocation(), cluster.GetClusterName()}); diff != "" {
 				t.Errorf("resolveExecutionCluster() cluster mismatch (-want +got):\n%s", diff)
 			}
@@ -1065,20 +1066,42 @@ func TestEnsureMLRunCreatedUsesExecutionCluster(t *testing.T) {
 		t.Fatalf("newScheme() error: %v", err)
 	}
 	created := metav1.NewTime(time.UnixMilli(1680000000000))
+	// The MultiKueue check turns Ready when Kueue creates the JobSet on the worker,
+	// after the manager JobSet was created.
+	dispatched := metav1.NewTime(created.Add(47 * time.Second))
 	jobSet := &v1alpha2.JobSet{ObjectMeta: metav1.ObjectMeta{
 		Name: "js", Namespace: "default", UID: "js-uid", CreationTimestamp: created,
 		Labels: map[string]string{"kueue.x-k8s.io/queue-name": "q"},
 	}}
 	worker := "worker-1"
-	wl := &v1beta1.Workload{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "jobset-js-abc",
-			Namespace:       "default",
-			Labels:          map[string]string{kueueJobUIDLabel: "js-uid"},
-			OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
-		},
-		Status: v1beta1.WorkloadStatus{ClusterName: &worker, Admission: &v1beta1.Admission{ClusterQueue: "cq"}},
+	multiKueueCheck := &v1beta1.AdmissionCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "mk-check"},
+		Spec:       v1beta1.AdmissionCheckSpec{ControllerName: v1beta1.MultiKueueControllerName},
 	}
+	provisioningCheck := &v1beta1.AdmissionCheck{
+		ObjectMeta: metav1.ObjectMeta{Name: "prov-check"},
+		Spec:       v1beta1.AdmissionCheckSpec{ControllerName: "kueue.x-k8s.io/provisioning-request"},
+	}
+	newWorkload := func(checks ...v1beta1.AdmissionCheckState) *v1beta1.Workload {
+		return &v1beta1.Workload{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:            "jobset-js-abc",
+				Namespace:       "default",
+				Labels:          map[string]string{kueueJobUIDLabel: "js-uid"},
+				OwnerReferences: []metav1.OwnerReference{{Kind: "JobSet", Name: "js", APIVersion: "jobset.x-k8s.io/v1alpha2", UID: "js-uid"}},
+			},
+			Status: v1beta1.WorkloadStatus{
+				ClusterName:     &worker,
+				Admission:       &v1beta1.Admission{ClusterQueue: "cq"},
+				AdmissionChecks: checks,
+			},
+		}
+	}
+	readyCheck := v1beta1.AdmissionCheckState{Name: "mk-check", State: v1beta1.CheckStateReady, LastTransitionTime: dispatched}
+	wl := newWorkload(
+		v1beta1.AdmissionCheckState{Name: "prov-check", State: v1beta1.CheckStateReady, LastTransitionTime: created},
+		readyCheck,
+	)
 	mc := &v1beta1.MultiKueueCluster{ObjectMeta: metav1.ObjectMeta{Name: worker, Labels: map[string]string{
 		"xmc.google.com/project":      "worker-proj",
 		"xmc.google.com/location":     "us-east4",
@@ -1096,23 +1119,41 @@ func TestEnsureMLRunCreatedUsesExecutionCluster(t *testing.T) {
 
 	t.Run("dispatched to worker", func(t *testing.T) {
 		mock := &mockMLRunCreator{}
-		newReconciler(mock, wl, mc).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+		newReconciler(mock, wl, mc, multiKueueCheck, provisioningCheck).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
 		if mock.createCalls != 1 {
 			t.Fatalf("CreateMLRun calls = %d, want 1", mock.createCalls)
 		}
-		if want := ConstructMLRunID("worker-gke", "default", "JobSet", "js", created.Time); mock.lastID != want {
-			t.Errorf("MLRun ID = %q, want worker-cluster ID %q", mock.lastID, want)
+		if want := ConstructMLRunID("worker-gke", "default", "JobSet", "js", dispatched.Time); mock.lastID != want {
+			t.Errorf("MLRun ID = %q, want ID from worker cluster and MultiKueue check time %q", mock.lastID, want)
 		}
 		if got, want := mock.lastOpts.WorkloadDetails.Cluster, resolveClusterPath("worker-gke", "worker-proj", "us-east4"); got != want {
 			t.Errorf("WorkloadDetails.Cluster = %q, want %q", got, want)
 		}
-	})
-
-	t.Run("execution cluster unresolved", func(t *testing.T) {
-		mock := &mockMLRunCreator{}
-		gotURL, gotConfirmed := newReconciler(mock, wl).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
-		if mock.createCalls != 0 || gotURL != "" || gotConfirmed {
-			t.Errorf("ensureMLRunCreated() = (%q, %v) with %d CreateMLRun calls, want (\"\", false) with 0", gotURL, gotConfirmed, mock.createCalls)
+		if got, want := mock.lastOpts.WorkloadDetails.CreateTime, formatCreationTime(dispatched); got != want {
+			t.Errorf("WorkloadDetails.CreateTime = %q, want MultiKueue check time %q", got, want)
 		}
 	})
+
+	unconfirmed := []struct {
+		name string
+		objs []client.Object
+	}{
+		{name: "execution cluster unresolved", objs: []client.Object{wl}},
+		{name: "MultiKueue check not ready", objs: []client.Object{
+			newWorkload(v1beta1.AdmissionCheckState{Name: "mk-check", State: v1beta1.CheckStatePending, LastTransitionTime: dispatched}), mc, multiKueueCheck,
+		}},
+		{name: "no MultiKueue check", objs: []client.Object{
+			newWorkload(v1beta1.AdmissionCheckState{Name: "prov-check", State: v1beta1.CheckStateReady, LastTransitionTime: created}), mc, provisioningCheck,
+		}},
+		{name: "AdmissionCheck not found", objs: []client.Object{wl, mc, provisioningCheck}},
+	}
+	for _, tc := range unconfirmed {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockMLRunCreator{}
+			gotURL, gotConfirmed := newReconciler(mock, tc.objs...).ensureMLRunCreated(t.Context(), jobSet, 10, 20, 30, "display-name", "group-abc", "gs://bucket/folder")
+			if mock.createCalls != 0 || gotURL != "" || gotConfirmed {
+				t.Errorf("ensureMLRunCreated() = (%q, %v) with %d CreateMLRun calls, want (\"\", false) with 0", gotURL, gotConfirmed, mock.createCalls)
+			}
+		})
+	}
 }
