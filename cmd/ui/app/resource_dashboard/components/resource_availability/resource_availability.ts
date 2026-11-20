@@ -28,13 +28,13 @@ import { ResourceService } from 'app/service/resource_service';
 })
 export class ResourceAvailabilityComponent implements OnInit {
   private readonly resourceService = inject(ResourceService);
-  
+
   protected readonly response = toSignal(this.resourceService.getResourceAvailability());
-  
+
   protected summariesCount() {
     return this.response()?.summaries?.length ?? 0;
   }
-  
+
   ngOnInit() {
     // Force API call
   }

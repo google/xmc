@@ -119,19 +119,18 @@ export interface GetSubmitQueueResponse {
   submitQueue?: string;
 }
 
-
 export declare interface AcceleratorSummary {
-    acceleratorType: string;
-    zone: string;
-    reservation: string;
-    totalAccelerators: number;
-    activeAccelerators: number;
-    allocatedAccelerators: number;
-    totalNodes: number;
-    activeNodes: number;
-    clusterQueues: string[];
+  acceleratorType: string;
+  zone: string;
+  reservation: string;
+  totalAccelerators: number;
+  activeAccelerators: number;
+  allocatedAccelerators: number;
+  totalNodes: number;
+  activeNodes: number;
+  clusterQueues: string[];
 }
 
 export declare interface GetResourceAvailabilityResponse {
-    summaries: AcceleratorSummary[];
+  summaries: AcceleratorSummary[];
 }

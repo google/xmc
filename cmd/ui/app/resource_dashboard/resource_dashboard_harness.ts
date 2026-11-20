@@ -15,7 +15,6 @@
 import { ComponentHarness, ElementDimensions } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 
-
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
 import { QueueListHarness } from './components/queue_list/queue_list_harness';
 import { ResizeDividerHarness } from './components/resize_divider/resize_divider_harness';

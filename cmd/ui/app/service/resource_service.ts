@@ -35,7 +35,6 @@ import { XMC_API_DOMAIN } from './constants';
   providedIn: 'root',
 })
 export class ResourceService {
-
   /**
    * Fetches the physical resource availability (Screen 3).
    */
