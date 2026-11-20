@@ -69,6 +69,8 @@ type Provider struct {
 	resolveEngine    EngineResolver
 	retryInterval    time.Duration
 	closeGracePeriod time.Duration
+	// studies is handed to every engine the Provider serves, for PARALLEL_COORDINATES plots.
+	studies StudyReader
 
 	// engine is read on every call and that read must never block. A reader lock would not do:
 	// it queues behind an in-flight dial, which is precisely the wait Engine promises callers it
@@ -106,6 +108,14 @@ func WithRetryInterval(interval time.Duration) ProviderOption {
 func WithCloseGracePeriod(gracePeriod time.Duration) ProviderOption {
 	return func(p *Provider) {
 		p.closeGracePeriod = gracePeriod
+	}
+}
+
+// WithStudyReader sets the reader of the study experiments that PARALLEL_COORDINATES plots are
+// drawn from. Without it, such plots fail with FailedPrecondition.
+func WithStudyReader(studies StudyReader) ProviderOption {
+	return func(p *Provider) {
+		p.studies = studies
 	}
 }
 
@@ -501,5 +511,5 @@ func (p *Provider) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dp
 	if err != nil {
 		return nil, err
 	}
-	return engine.FetchChartData(ctx, chart, req)
+	return engine.withStudyReader(p.studies).FetchChartData(ctx, chart, req)
 }
