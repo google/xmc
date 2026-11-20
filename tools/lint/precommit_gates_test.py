@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -489,6 +490,26 @@ class PythonGateTest(unittest.TestCase):
             by_script["tools/lint/check_agent_doc_paths.py"].staged_am_pattern,
             r"^\.agents/.*\.md$|(^|/)AGENTS\.md$|^tools/lint/check_agent_doc_paths\.py$",
         )
+
+    def test_workflow_inputs_gate_runs_only_for_workflow_or_linter_changes(self):
+        gate = {g.script: g for g in gates.PYTHON_GATES}["tools/lint/check_workflow_inputs.py"]
+        assert gate.staged_am_pattern is not None
+        pattern = re.compile(gate.staged_am_pattern)
+        for path in (
+            ".github/workflows/unit-tests.yml",
+            ".github/workflows/x.yaml",
+            "tools/lint/check_workflow_inputs.py",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNotNone(pattern.search(path))
+        for path in (
+            ".github/actions/setup/action.yml",
+            ".github/workflows/nested/x.yml",
+            ".github/scripts/x.js",
+            "tools/lint/check_workflow_inputs_test.py",
+        ):
+            with self.subTest(path=path):
+                self.assertIsNone(pattern.search(path))
 
 
 if __name__ == "__main__":

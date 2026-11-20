@@ -83,6 +83,14 @@ PYTHON_GATES: tuple[PythonGate, ...] = (
         failure_msg="UI or workflow file naming check failed (see JSON error above).",
     ),
     PythonGate(
+        banner="--> Checking GitHub Actions Workflow Input Comparisons...",
+        script="tools/lint/check_workflow_inputs.py",
+        failure_msg=(
+            "Workflows compare nullable inputs to boolean literals (see JSON error above)."
+        ),
+        staged_am_pattern=r"^\.github/workflows/[^/]+\.ya?ml$|^tools/lint/check_workflow_inputs\.py$",
+    ),
+    PythonGate(
         banner="--> Checking Nightly UI Selector Contract...",
         script="tools/lint/check_ui_selector_contract.py",
         failure_msg=(

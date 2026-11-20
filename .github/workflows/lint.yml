@@ -181,6 +181,12 @@ jobs:
         run: |
           python3 tools/lint/check_file_naming.py
 
+      - name: 'Check Workflow Input Boolean Comparisons'
+        env:
+          XMC_BYPASS_VENV: '1'
+        run: |
+          python3 tools/lint/check_workflow_inputs.py
+
       - name: 'Check Nightly UI Selector Contract'
         env:
           XMC_BYPASS_VENV: '1'

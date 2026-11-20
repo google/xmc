@@ -111,6 +111,23 @@ py_test(
 )
 
 py_library(
+    name = "check_workflow_inputs_lib",
+    srcs = ["check_workflow_inputs.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_workflow_inputs_test",
+    srcs = ["check_workflow_inputs_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_workflow_inputs_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "precommit_autostage_lib",
     srcs = ["precommit_autostage.py"],
     imports = ["../.."],

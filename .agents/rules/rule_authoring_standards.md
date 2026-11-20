@@ -122,6 +122,7 @@ Destinations by language, all reachable through `.githooks/pre-commit` and its `
 | Non-UI JavaScript | [`tools/lint/eslint.nonui.config.mjs`](../../tools/lint/eslint.nonui.config.mjs) (`.github/scripts/`, `tools/nightly_tests/`, `cmd/experiment_state_server/static/`) |
 | Bazel | buildifier |
 | Terraform | [`.tflint.hcl`](../../.tflint.hcl) |
+| GitHub Actions workflows | actionlint, `tools/lint/check_workflow_inputs.py` (null-unsafe boolean comparisons on `inputs`) |
 | Agent docs (`.agents/**/*.md`, `AGENTS.md`) | `tools/lint/check_agent_doc_paths.py` (path references must exist) |
 
 ---
