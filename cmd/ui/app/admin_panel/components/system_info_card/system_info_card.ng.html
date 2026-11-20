@@ -30,6 +30,15 @@
           }}</span>
         </div>
         <div class="info-group">
+          <span class="info-label">Image Tag</span>
+          <span
+            class="info-value image-tag-value"
+            data-testid="image-tag-value"
+            [class.is-placeholder]="isImageTagPlaceholder()"
+            >{{ imageTag() }}</span
+          >
+        </div>
+        <div class="info-group">
           <span class="info-label">ESS DB Schema</span>
           <span
             class="info-value ess-schema-value"

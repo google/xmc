@@ -93,6 +93,7 @@ message SystemInfo {
   bool is_scheduling_paused = 5;
   string build_version = 6;
   string scheduling_pause_error = 7;
+  string image_tag = 8;
 }
 
 message ComponentHealth {

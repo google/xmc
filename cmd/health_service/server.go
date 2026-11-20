@@ -189,14 +189,19 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 		xidDbSchemaVersionStr = "UNAVAILABLE"
 	}
 
-	appVersionStr := s.cfg.AppVersion
-	if appVersionStr == "" {
-		appVersionStr = "unknown"
-	}
-
 	buildVersionStr := s.cfg.BuildVersion
 	if buildVersionStr == "" {
 		buildVersionStr = "unknown"
+	}
+
+	appVersionStr := s.cfg.AppVersion
+	if appVersionStr == "" {
+		appVersionStr = buildVersionStr
+	}
+
+	imageTagStr := s.cfg.ImageTag
+	if imageTagStr == "" {
+		imageTagStr = "unknown"
 	}
 
 	return &spb.HealthStatusResponse{
@@ -204,6 +209,7 @@ func (s *server) calculateHealthStatus(ctx context.Context) *spb.HealthStatusRes
 		SystemInfo: &spb.SystemInfo{
 			AppVersion:         appVersionStr,
 			BuildVersion:       buildVersionStr,
+			ImageTag:           imageTagStr,
 			EssDbSchemaVersion: essDbSchemaVersionStr,
 			XidDbSchemaVersion: xidDbSchemaVersionStr,
 			ObservabilityUrl:   s.cfg.ObservabilityURL,

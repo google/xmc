@@ -30,7 +30,7 @@ Centralized utilities and build helpers used across tools:
 - [`tool_utils.py`](common/tool_utils.py): Shared virtual environment isolation, handled exception formatting, and unified CLI execution runners.
 - [`build_oci.py`](common/build_oci.py): Docker/OCI container image building and registry push automation.
 - [`setup_venv.py`](common/setup_venv.py): Automated local virtual environment initialization from `requirements.txt`.
-- [`workspace_status.py`](common/workspace_status.py): Git workspace and branch status inspection.
+- [`workspace_status.py`](common/workspace_status.py): Bazel workspace status script reading the root `VERSION` file to emit `STABLE_APP_VERSION`.
 - [`requirements.txt`](common/requirements.txt): Pinned third-party Python dependencies for developer tools.
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)

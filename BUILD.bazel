@@ -17,6 +17,8 @@ load("@io_bazel_rules_go//go:def.bzl", "TOOLS_NOGO", "nogo")
 
 # gazelle:prefix xmanager_cloud
 
+exports_files(["VERSION"])
+
 nogo(
     name = "xmc_nogo",
     config = "nogo_config.json",

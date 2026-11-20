@@ -274,7 +274,7 @@ Spanner. Definitions live in
 
 | Key | Kind | Purpose |
 | :--- | :--- | :--- |
-| `app.kubernetes.io/managed-by: xmc` | label | Marks the object as XMC-managed. Also drives the Cloud Logging sink filter. |
+| `app.kubernetes.io/managed-by` | label | Marks the object as XMC-managed (`xmc` on JobSet/Job; `xmc-<version>` or `xmc` on workload Pods). Also drives the Cloud Logging sink filter (`=~ "^xmc(-|$)"`). |
 | `xmc.google.com/experiment-id` | label | `xid` |
 | `xmc.google.com/work-unit-id` | label | `wid` |
 | `xmc.google.com/execution-id` | label | `eid` |

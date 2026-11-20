@@ -19,6 +19,7 @@ export interface SystemInfo {
   observabilityUrl?: string;
   isSchedulingPaused?: boolean;
   buildVersion?: string;
+  imageTag?: string;
   schedulingPauseError?: string;
   [key: string]: any;
 }

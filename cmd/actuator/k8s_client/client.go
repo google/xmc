@@ -56,6 +56,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether pods can run with host networking when requested.
 	AllowHostNetwork bool
+
+	// XMC release version stamped onto workload pod managed-by labels.
+	AppVersion string
 }
 
 // Priorities holds experiment and work unit priorities.

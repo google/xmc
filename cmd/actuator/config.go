@@ -53,6 +53,7 @@ type Config struct {
 }
 
 var (
+	buildVersion                string
 	port                        string
 	createNewNamespaces         bool
 	xmanagerServiceAccount      string
@@ -119,6 +120,14 @@ func validate() error {
 	return nil
 }
 
+func resolveBuildVersion(stamped string) string {
+	trimmed := strings.TrimSpace(stamped)
+	if trimmed == "" || trimmed == "redacted" || trimmed == "{STABLE_APP_VERSION}" {
+		return ""
+	}
+	return trimmed
+}
+
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
 func Load() Config {
 	ctx := context.Background()
@@ -152,6 +161,7 @@ func Load() Config {
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
+			AppVersion:                  resolveBuildVersion(buildVersion),
 		},
 		Audience:               aud,
 		XManagerServiceAccount: xmanagerServiceAccount,

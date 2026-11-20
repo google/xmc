@@ -36,6 +36,7 @@ export class MockHealthService extends HealthService {
       healthState: 'HEALTH_STATE_HEALTHY',
       systemInfo: {
         appVersion: 'mock-app-version-1.0.0',
+        imageTag: 'latest',
         essDbSchemaVersion: '6',
         xidDbSchemaVersion: '1',
         observabilityUrl: 'http://mock-observability-url',

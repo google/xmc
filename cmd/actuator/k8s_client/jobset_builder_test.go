@@ -468,3 +468,59 @@ func TestConstructJobSet_NoExecutable(t *testing.T) {
 		t.Errorf("constructJobSet() with no executable succeeded, want error")
 	}
 }
+
+func TestFormatManagedByPodLabel(t *testing.T) {
+	tests := []struct {
+		name       string
+		appVersion string
+		want       string
+	}{
+		{name: "empty_uses_bare_xmc", appVersion: "", want: "xmc"},
+		{name: "clean_semver", appVersion: "1.0.0", want: "xmc-1.0.0"},
+		{name: "clean_semver_with_v_prefix", appVersion: "v1.2.3", want: "xmc-v1.2.3"},
+		{name: "nightly_tag", appVersion: "nightly-2026-11-13.123", want: "xmc-nightly-2026-11-13.123"},
+		{name: "numeric_version", appVersion: "20261113", want: "xmc-20261113"},
+		{name: "invalid_k8s_label_chars_falls_back", appVersion: "1.0.0/bad", want: "xmc"},
+		{name: "exceeds_63_chars_falls_back", appVersion: "1.0.0-012345678901234567890123456789012345678901234567890123456789", want: "xmc"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatManagedByPodLabel(tc.appVersion); got != tc.want {
+				t.Errorf("formatManagedByPodLabel(%q) = %q, want %q", tc.appVersion, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_PodManagedByVersion(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	client.RuntimeConfig.AppVersion = "1.0.0"
+
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Labels = map[string]string{
+			constants.ManagedByLabel: "spoofed-value",
+			"user-label":             "kept",
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() returned unexpected error: %v", err)
+	}
+
+	if gotLabel := got.ObjectMeta.Labels[constants.ManagedByLabel]; gotLabel != constants.XmcLabelValue {
+		t.Errorf("JobSet label %q = %q, want %q", constants.ManagedByLabel, gotLabel, constants.XmcLabelValue)
+	}
+	jobTemplate := got.Spec.ReplicatedJobs[0].Template
+	if gotLabel := jobTemplate.ObjectMeta.Labels[constants.ManagedByLabel]; gotLabel != constants.XmcLabelValue {
+		t.Errorf("Job template label %q = %q, want %q", constants.ManagedByLabel, gotLabel, constants.XmcLabelValue)
+	}
+	podLabels := jobTemplate.Spec.Template.ObjectMeta.Labels
+	if gotLabel := podLabels[constants.ManagedByLabel]; gotLabel != "xmc-1.0.0" {
+		t.Errorf("Pod template label %q = %q, want %q", constants.ManagedByLabel, gotLabel, "xmc-1.0.0")
+	}
+	if gotUser := podLabels["user-label"]; gotUser != "kept" {
+		t.Errorf("Pod template user-label = %q, want %q", gotUser, "kept")
+	}
+}

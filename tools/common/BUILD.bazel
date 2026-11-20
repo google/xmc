@@ -125,12 +125,22 @@ py_test(
 py_library(
     name = "workspace_status_lib",
     srcs = ["workspace_status.py"],
+    data = ["//:VERSION"],
     imports = ["../.."],
 )
 
 py_binary(
     name = "workspace_status",
     srcs = ["workspace_status.py"],
+    imports = ["../.."],
+    deps = [
+        ":workspace_status_lib",
+    ],
+)
+
+py_test(
+    name = "workspace_status_test",
+    srcs = ["workspace_status_test.py"],
     imports = ["../.."],
     deps = [
         ":workspace_status_lib",

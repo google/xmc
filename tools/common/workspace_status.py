@@ -12,26 +12,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Workspace status script for Bazel to extract Git version info."""
+"""Workspace status script for Bazel to emit the repository XMC version."""
 
-import subprocess
+from __future__ import annotations
+
 import sys
+from pathlib import Path
 
 
-def main() -> None:
+def _default_version_file() -> Path:
+    logical = Path(__file__).parent.parent.parent / "VERSION"
+    if logical.is_file():
+        return logical
+    return Path(__file__).resolve().parents[2] / "VERSION"
+
+
+DEFAULT_VERSION_FILE = _default_version_file()
+FALLBACK_VERSION = "developer-build"
+
+
+def read_version(version_file: Path = DEFAULT_VERSION_FILE) -> str:
+    """Reads and returns the trimmed XMC version from the repository VERSION file.
+
+    Args:
+        version_file: Path to the VERSION file.
+
+    Returns:
+        The trimmed version string.
+
+    Raises:
+        OSError: If the file cannot be read.
+        ValueError: If the file is empty or contains whitespace.
+    """
+    raw = version_file.read_text(encoding="utf-8").strip()
+    if not raw or any(ch.isspace() for ch in raw):
+        raise ValueError(f"Invalid version in '{version_file}': {raw!r}")
+    return raw
+
+
+def main(version_file: Path = DEFAULT_VERSION_FILE) -> None:
+    """Emits STABLE_APP_VERSION for Bazel workspace status stamping."""
     try:
-        # Run git describe to get the tag, commits since tag, and commit hash
-        res = subprocess.run(
-            ["git", "describe", "--tags", "--always", "--dirty"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        version = res.stdout.strip()
+        version = read_version(version_file)
     except Exception as e:
-        # Fallback if git is not available or fails
-        print(f"Error getting git version: {e}", file=sys.stderr)
-        version = "developer-build"
+        print(f"Error reading version file '{version_file}': {e}", file=sys.stderr)
+        version = FALLBACK_VERSION
 
     print(f"STABLE_APP_VERSION {version}")
 

@@ -144,7 +144,7 @@ resource "google_logging_project_sink" "log_monitor_sink" {
   project                = google_project_service.logging_api.project
   name                   = "${var.logging_sink_name}-${var.environment}"
   destination            = "pubsub.googleapis.com/${google_pubsub_topic.log_monitor_topic.id}"
-  filter                 = "resource.type=\"k8s_container\" AND labels.\"k8s-pod/app_kubernetes_io/managed-by\"=\"xmc\" AND labels.\"k8s-pod/xmc_google_com/experiment-id\":* AND labels.\"k8s-pod/xmc_google_com/work-unit-id\":* AND labels.\"k8s-pod/xmc_google_com/execution-id\":* AND (SEARCH(\"Traceback\") OR textPayload =~ \"${var.logging_sink_custom_keyword}\" OR jsonPayload.message =~ \"${var.logging_sink_custom_keyword}\")"
+  filter                 = "resource.type=\"k8s_container\" AND labels.\"k8s-pod/app_kubernetes_io/managed-by\"=~\"^xmc(-|$)\" AND labels.\"k8s-pod/xmc_google_com/experiment-id\":* AND labels.\"k8s-pod/xmc_google_com/work-unit-id\":* AND labels.\"k8s-pod/xmc_google_com/execution-id\":* AND (SEARCH(\"Traceback\") OR textPayload =~ \"${var.logging_sink_custom_keyword}\" OR jsonPayload.message =~ \"${var.logging_sink_custom_keyword}\")"
   unique_writer_identity = true
 }
 

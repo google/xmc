@@ -24,6 +24,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/kubernetes/common/jobsetutil"
@@ -40,8 +41,19 @@ var defaultLabels = map[string]string{
 	constants.ManagedByLabel: constants.XmcLabelValue,
 }
 
+func formatManagedByPodLabel(appVersion string) string {
+	if appVersion == "" {
+		return constants.XmcLabelValue
+	}
+	candidate := constants.XmcLabelValue + "-" + appVersion
+	if len(validation.IsValidLabelValue(candidate)) > 0 {
+		return constants.XmcLabelValue
+	}
+	return candidate
+}
+
 func (c *Client) k8sJobToReplicatedJob(ctx context.Context, job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobsetv1alpha2.ReplicatedJob {
-	jobMeta := buildJobMetadata(job, jobLabels, jobAnnotations)
+	jobMeta := buildJobMetadata(job, jobLabels, jobAnnotations, formatManagedByPodLabel(c.RuntimeConfig.AppVersion))
 	retryLimit, restartPolicy, pfp := resolveJobRetryAndFailurePolicy(job)
 
 	return jobsetv1alpha2.ReplicatedJob{
@@ -142,7 +154,7 @@ type jobMetadata struct {
 	podAnnotations map[string]string
 }
 
-func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string) jobMetadata {
+func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, jobAnnotations map[string]string, podManagedBy string) jobMetadata {
 	annotations := maps.Clone(jobAnnotations)
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -155,10 +167,13 @@ func buildJobMetadata(job *esspb.KubernetesJob, jobLabels map[string]string, job
 	}
 	mergeEntriesPreservingExisting(labels, job.GetLabels())
 
+	podLabels := maps.Clone(labels)
+	podLabels[constants.ManagedByLabel] = podManagedBy
+
 	return jobMetadata{
 		labels:         labels,
 		annotations:    annotations,
-		podLabels:      maps.Clone(labels),
+		podLabels:      podLabels,
 		podAnnotations: maps.Clone(annotations),
 	}
 }

@@ -42,6 +42,7 @@ type Config struct {
 	RedisAddr                  string
 	AppVersion                 string
 	BuildVersion               string
+	ImageTag                   string
 	ObservabilityURL           string
 	CacheTTL                   time.Duration
 	ForceRefreshMaxRequests    int
@@ -72,6 +73,7 @@ func init() {
 	configutil.StringEnv(&cfg.LogMonitorResourceName, "health_log_monitor_resource_name", "")
 	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
 	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
+	configutil.StringEnv(&cfg.ImageTag, "health_image_tag", "")
 	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
 	cfg.BuildVersion = getBuildVersion()
 	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
