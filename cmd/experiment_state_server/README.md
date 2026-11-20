@@ -127,6 +127,22 @@ A study's work units are its trials, which only the study controller creates. `C
 ([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)), and rejects
 `parameters` and `trial_id` with `INVALID_ARGUMENT`.
 
+#### Reading Studies & Deployment Admission: `GetExperiment`
+
+ESS's gRPC authorizer (`server.NewProd` / `studyControllerAdmission`) admits the active `hpo`
+component's `parameters.studyControllerServiceAccount` in addition to the deployment admission
+allowlist (`allowed_emails` / `authorized_iam_role`), so the dedicated study controller GSA does not
+need broad deployment admission. Normal user traffic checks the deployment admission delegate first
+(zero component-catalog overhead); on delegate denial or error, ESS falls back to checking the
+active `hpo` component record.
+
+In `GetExperiment` ([`server/getexperiment.go`](server/getexperiment.go)), a caller whose verified
+email matches `parameters.studyControllerServiceAccount` (ASCII case-insensitive) bypasses XID ACLs
+and reads the experiment from storage directly. ESS returns the experiment (with `acls` unset) only
+when `experiment_type == STUDY`, and rejects non-`STUDY` experiments with `PERMISSION_DENIED`
+(`NOT_FOUND` if the experiment does not exist). When the `hpo` component is missing or the parameter
+is empty, callers fall through to the normal XID ACL path (fail closed).
+
 #### Creating Trials: `BatchCreateWorkUnits`
 
 The study controller creates trials with `BatchCreateWorkUnits` (AIP-233, `POST
@@ -167,8 +183,10 @@ and `ListWorkUnits`.
 Owning or writing to a study does not let a user create its trials. The experiment creator, like
 every other user, calls with their own identity. The email comes from the Google-signed ID token
 that ESS verifies (the `x-goog-user-email` header is not trusted), so it never matches the
-configured study controller, and the call fails with `PERMISSION_DENIED`. XID ACLs grant nothing
-here.
+configured study controller, and `BatchCreateWorkUnits` fails with `PERMISSION_DENIED`. XID ACLs
+grant nothing there. Conversely, the configured `parameters.studyControllerServiceAccount` identity
+bypasses deployment admission and XID ACLs to call `GetExperiment` and `BatchCreateWorkUnits` on all
+`STUDY` experiments (non-`STUDY` experiments remain denied).
 
 The check is only as strong as control over the configured identity. These principals can pass it:
 

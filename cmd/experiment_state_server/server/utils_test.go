@@ -350,6 +350,7 @@ type mockXidClient struct {
 	xidmsgpb.XidServiceClient
 	getXidEntryErr             error
 	getXidEntryResp            *xidmsgpb.XidEntry
+	getXidEntryCalls           int
 	createXidEntryErr          error
 	createXidEntryResp         *xidmsgpb.XidEntry
 	createXidEntryCalls        int
@@ -364,6 +365,7 @@ type mockXidClient struct {
 }
 
 func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
+	m.getXidEntryCalls++
 	return m.getXidEntryResp, m.getXidEntryErr
 }
 func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
@@ -383,7 +385,8 @@ func (m *mockXidClient) ListXidEntries(ctx context.Context, in *xidmsgpb.ListXid
 }
 
 type mockAuthenticator struct {
-	err error
+	email string
+	err   error
 	// denyAuthorization makes IsUserAuthorized report the user as unauthorized.
 	denyAuthorization   bool
 	isUserAuthorizedErr error
@@ -394,6 +397,9 @@ type mockAuthenticator struct {
 func (m *mockAuthenticator) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	if m.err != nil {
 		return "", "", m.err
+	}
+	if m.email != "" {
+		return m.email, "user_id", nil
 	}
 	return "test@example.com", "user_id", nil
 }
