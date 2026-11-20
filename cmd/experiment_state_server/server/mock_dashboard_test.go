@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -24,20 +25,36 @@ import (
 
 type mockDashboardClient struct {
 	dashboard_pb.DashboardServiceClient
+	mu              sync.Mutex
 	createChartResp *dashboard_pb.Chart
 	createChartErr  error
+	createChartFn   func(ctx context.Context, in *dashboard_pb.CreateChartRequest) (*dashboard_pb.Chart, error)
 	reqs            []*dashboard_pb.CreateChartRequest
 	// outgoingMD records the metadata each call carried, so tests can assert that the caller's
 	// credentials were forwarded.
 	outgoingMD []metadata.MD
+	ctxErrs    []error
 }
 
 func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, opts ...grpc.CallOption) (*dashboard_pb.Chart, error) {
-	m.reqs = append(m.reqs, in)
 	md, _ := metadata.FromOutgoingContext(ctx)
-	m.outgoingMD = append(m.outgoingMD, md)
-	if m.createChartErr != nil {
-		return nil, m.createChartErr
+	m.mu.Lock()
+	fn := m.createChartFn
+	err := m.createChartErr
+	resp := m.createChartResp
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.reqs = append(m.reqs, in)
+		m.outgoingMD = append(m.outgoingMD, md)
+		m.ctxErrs = append(m.ctxErrs, ctx.Err())
+		m.mu.Unlock()
+	}()
+	if fn != nil {
+		return fn(ctx, in)
 	}
-	return m.createChartResp, nil
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
