@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -253,7 +254,7 @@ func (o *dashboardObserver) handleProvisionPanic(ctxBg context.Context, artifact
 		studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart).Inc()
 	}
 	cArtifact := artifactToProvision.GetPayload().GetChart()
-	if o.storage == nil || cArtifact == nil || cArtifact.GetStatus() == essmsgpb.ChartArtifact_SUCCESS {
+	if cArtifact == nil || cArtifact.GetStatus() == essmsgpb.ChartArtifact_SUCCESS {
 		return
 	}
 	defer func() {
@@ -300,6 +301,11 @@ func (o *dashboardObserver) createDashboardChart(ctxBg context.Context, xid, wid
 }
 
 func (o *dashboardObserver) persistProvisionedArtifact(ctxBg context.Context, artifactToProvision *essmsgpb.Artifact) error {
+	if o.storage == nil {
+		logging.Error(ctxBg, "Storage is nil; cannot persist provisioned artifact", "artifact_name", artifactToProvision.GetName())
+		return errors.New("storage is nil")
+	}
+
 	aid, err := validator.ValidateArtifactName(artifactToProvision.GetName())
 	if err != nil {
 		logging.Error(ctxBg, "Invalid ChartArtifact name", "artifact_name", artifactToProvision.GetName(), "error", err)

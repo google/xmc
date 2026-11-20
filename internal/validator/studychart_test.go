@@ -31,11 +31,9 @@ func TestStudyChartID(t *testing.T) {
 
 func TestValidateStudyChartID(t *testing.T) {
 	tests := []struct {
-		name    string
-		chartID string
-		xid     int64
-		wid     int64
-		wantErr error
+		name, chartID string
+		xid, wid      int64
+		wantErr       error
 	}{
 		{name: "own_study_chart_id", chartID: "study-123-parallel-coordinates", xid: 123},
 		{name: "unreserved_id", chartID: "my-chart", xid: 123},
@@ -70,22 +68,17 @@ func TestValidateStudyChartID(t *testing.T) {
 
 func TestValidateCreateChartRequest_StudyChartID(t *testing.T) {
 	baseReq := &spb.CreateChartRequest{
-		Parent:  "experiments/123",
-		ChartId: "study-123-parallel-coordinates",
-		Chart: &spb.Chart{
-			Title: "Parallel Coordinates",
-			Xid:   123,
-			Plots: []*spb.PlotSpec{{PlotId: "parallel_coordinates", Type: spb.PlotType_PARALLEL_COORDINATES}},
-		},
+		Parent: "experiments/123", ChartId: "study-123-parallel-coordinates",
+		Chart: &spb.Chart{Title: "Parallel Coordinates", Xid: 123, Plots: []*spb.PlotSpec{{PlotId: "parallel_coordinates", Type: spb.PlotType_PARALLEL_COORDINATES}}},
 	}
-	modify := func(fn func(*spb.CreateChartRequest)) *spb.CreateChartRequest {
-		return prototest.Modify(baseReq, fn)
+	withID := func(id string) *spb.CreateChartRequest {
+		return prototest.Modify(baseReq, func(r *spb.CreateChartRequest) { r.ChartId = id })
+	}
+	withExp := func(parent string, xid int64, id string) *spb.CreateChartRequest {
+		return prototest.Modify(baseReq, func(r *spb.CreateChartRequest) { r.Parent, r.Chart.Xid, r.ChartId = parent, xid, id })
 	}
 	wuReq := func(chartID string) *spb.CreateChartRequest {
-		return &spb.CreateChartRequest{
-			Parent: "experiments/123/workUnits/1", ChartId: chartID,
-			Chart: &spb.Chart{Title: "Loss", Xid: 123, Wid: 1},
-		}
+		return &spb.CreateChartRequest{Parent: "experiments/123/workUnits/1", ChartId: chartID, Chart: &spb.Chart{Title: "Loss", Xid: 123, Wid: 1}}
 	}
 	tests := []struct {
 		name    string
@@ -93,30 +86,18 @@ func TestValidateCreateChartRequest_StudyChartID(t *testing.T) {
 		wantErr error
 	}{
 		{name: "valid_matching_experiment_parent", req: baseReq},
-		{name: "unrelated_chart_id_on_experiment", req: modify(func(r *spb.CreateChartRequest) { r.ChartId = "custom-parallel-coords" })},
+		{name: "unrelated_chart_id_on_experiment", req: withID("custom-parallel-coords")},
 		{name: "unrelated_chart_id_on_work_unit", req: wuReq("loss-chart")},
-		{name: "malformed_non_digit_study_id_unaffected", req: modify(func(r *spb.CreateChartRequest) {
-			r.Parent, r.Chart.Xid, r.ChartId = "experiments/456", 456, "study-12a-parallel-coordinates"
-		})},
-		{name: "multibyte_digits_unaffected", req: modify(func(r *spb.CreateChartRequest) {
-			r.Parent, r.Chart.Xid, r.ChartId = "experiments/456", 456, "study-１２３-parallel-coordinates"
-		})},
-		{name: "wrong_experiment_parent", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) {
-			r.Parent, r.Chart.Xid = "experiments/456", 456
-		})},
+		{name: "malformed_non_digit_study_id_unaffected", req: withExp("experiments/456", 456, "study-12a-parallel-coordinates")},
+		{name: "multibyte_digits_unaffected", req: withExp("experiments/456", 456, "study-１２３-parallel-coordinates")},
+		{name: "wrong_experiment_parent", req: withExp("experiments/456", 456, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
 		{name: "work_unit_parent", req: wuReq("study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "dashboard_parent", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) { r.Parent = "dashboards/dash-1" })},
-		{name: "empty_parent", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) { r.Parent = "" })},
-		{name: "leading_zero_in_chart_id", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) {
-			r.Parent, r.Chart.Xid, r.ChartId = "experiments/1", 1, "study-01-parallel-coordinates"
-		})},
-		{name: "zero_in_chart_id", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) { r.ChartId = "study-0-parallel-coordinates" })},
-		{name: "overflowing_number_in_chart_id", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) {
-			r.ChartId = "study-99999999999999999999999-parallel-coordinates"
-		})},
-		{name: "whitespace_padded_study_chart_id", wantErr: grpcerr.ErrInvalidArgument, req: modify(func(r *spb.CreateChartRequest) {
-			r.ChartId = " study-123-parallel-coordinates "
-		})},
+		{name: "dashboard_parent", req: withExp("dashboards/dash-1", 123, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_parent", req: withExp("", 123, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "leading_zero_in_chart_id", req: withExp("experiments/1", 1, "study-01-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "zero_in_chart_id", req: withID("study-0-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "overflowing_number_in_chart_id", req: withID("study-99999999999999999999999-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace_padded_study_chart_id", req: withID(" study-123-parallel-coordinates "), wantErr: grpcerr.ErrInvalidArgument},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

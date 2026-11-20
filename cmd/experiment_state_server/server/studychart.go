@@ -69,10 +69,13 @@ func newStudyChartProvisioner(artifacts *ArtifactHandler) *studyChartProvisioner
 // would make the client retry and create a duplicate study. The creation is not cancelled with the
 // request, since the study exists either way, and is bounded by studyChartProvisionTimeout.
 func (p *studyChartProvisioner) provision(ctx context.Context, creator string, exp *msgpb.Experiment) {
+	if p == nil {
+		return
+	}
 	if exp.GetExperimentType() != msgpb.Experiment_STUDY {
 		return
 	}
-	if p == nil || p.artifacts == nil || len(p.artifacts.artifactObservers) == 0 {
+	if p.artifacts == nil || len(p.artifacts.artifactObservers) == 0 {
 		// Without an observer nothing creates the chart, so the artifact would stay PROVISIONING.
 		logging.Info(ctx, "No Dashboard Service configured; skipping study chart provisioning", "experiment_name", exp.GetName())
 		return

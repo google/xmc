@@ -721,6 +721,7 @@ func TestDashboardObserver_StudyChartFailureCounter(t *testing.T) {
 		name                string
 		artifactName        string
 		parent              string
+		nilStorage          bool
 		createChartErr      error
 		panicCreateChart    bool
 		updateArtifactErr   error
@@ -737,6 +738,8 @@ func TestDashboardObserver_StudyChartFailureCounter(t *testing.T) {
 			createChartErr: dashErr, updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
 		{name: "study_invalid_artifact_name_counts_write_back_failure", artifactName: "invalid-artifact-name", parent: "experiments/100",
 			wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_nil_storage_counts_write_back_failure_without_panic", artifactName: "artifacts/300", parent: "experiments/100",
+			nilStorage: true, wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
 		{name: "study_chart_panic_increments_chart_failure_counter", artifactName: "artifacts/300", parent: "experiments/100",
 			panicCreateChart: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
 		{name: "work_unit_create_chart_fails_does_not_count", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200",
@@ -759,7 +762,11 @@ func TestDashboardObserver_StudyChartFailureCounter(t *testing.T) {
 			}
 			var wg sync.WaitGroup
 			recStorage := &recordingStorage{MockStorage: &storage.MockStorage{UpdateArtifactErr: tc.updateArtifactErr}}
-			obs := NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), recStorage, &wg)
+			var st storage.Storage = recStorage
+			if tc.nilStorage {
+				st = nil
+			}
+			obs := NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), st, &wg)
 			artifact := &essmsgpb.Artifact{
 				Name: tc.artifactName, Parent: tc.parent,
 				Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{Chart: &essmsgpb.ChartArtifact{
