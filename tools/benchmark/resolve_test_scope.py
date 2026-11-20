@@ -74,6 +74,7 @@ HELM_SUITE_FILES: set[str] = {
     # The suite also asserts the chart agrees with the deployment blueprint, so a
     # blueprint-only edit can break it just as a chart-only edit can.
     "deploy/ctk_v2/xmanager-cloud.yaml",
+    "deploy/ctk_v2/xmc-deployment-template.yaml",
     ".github/workflows/unit-tests.yml",
     # The chart job gates on this resolver's run_helm output.
     "tools/benchmark/resolve_test_scope.py",

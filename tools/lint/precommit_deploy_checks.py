@@ -21,6 +21,7 @@ import argparse
 import os
 import shutil
 import sys
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -34,7 +35,10 @@ from tools.lint import precommit_gates as gates  # noqa: E402
 def check_terraform(ctx: gates.RunContext) -> None:
     """Runs `terraform fmt` locally or via Docker across `deploy/`."""
     files = gates.collect_target_files(
-        ctx.mode, staged_regex=r"\.tf$", roots=("deploy",), suffixes=(".tf",)
+        ctx.mode,
+        staged_regex=r"\.(tf|tftest\.hcl)$",
+        roots=("deploy",),
+        suffixes=(".tf", ".tftest.hcl"),
     )
     if not files:
         return
@@ -57,6 +61,48 @@ def check_terraform(ctx: gates.RunContext) -> None:
         ignore_fix_error=True,
         cwd=gates.REPO_ROOT,
     )
+
+
+def _discover_terraform_test_modules(repo_root: Path) -> list[str]:
+    deploy_dir = repo_root / "deploy"
+    if not deploy_dir.is_dir():
+        return []
+    return sorted(
+        {
+            p.parent.parent.relative_to(repo_root).as_posix()
+            for p in deploy_dir.rglob("tests/*.tftest.hcl")
+        }
+    )
+
+
+def check_terraform_test(ctx: gates.RunContext) -> None:
+    """Runs `terraform test` in an isolated temp copy for `deploy/` modules with `.tftest.hcl`."""
+    if not gates.should_run_scope(
+        ctx.mode,
+        roots=("deploy",),
+        suffixes=(".tf", ".tftest.hcl"),
+        fix_pattern=r"^deploy/.*\.(tf|tftest\.hcl)$",
+    ):
+        return
+    modules = _discover_terraform_test_modules(gates.REPO_ROOT)
+    if not modules:
+        return
+    tf_bin = shutil.which("terraform")
+    if not tf_bin:
+        ctx.warn_missing("terraform not found. Terraform module tests skipped.")
+        return
+    print("--> Running Terraform Module Tests (terraform test)...")
+    for module_dir in modules:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            work_dir = Path(tmp_dir) / "module"
+            shutil.copytree(gates.REPO_ROOT / module_dir, work_dir)
+            init_cmd = [tf_bin, f"-chdir={work_dir}", "init", "-backend=false", "-input=false"]
+            test_cmd = [tf_bin, f"-chdir={work_dir}", "test"]
+            if (
+                gates.exec_cmd(init_cmd, cwd=gates.REPO_ROOT, quiet_out=True).returncode != 0
+                or gates.exec_cmd(test_cmd, cwd=gates.REPO_ROOT).returncode != 0
+            ):
+                ctx.fail(f"Terraform module tests failed in {module_dir}.")
 
 
 def check_tflint(ctx: gates.RunContext) -> None:
@@ -123,7 +169,7 @@ def check_helm(ctx: gates.RunContext) -> None:
         ctx.mode,
         roots=("deploy/helm", "test/helm"),
         suffixes=(".yaml", ".yml", "_test.py"),
-        fix_pattern=r"^(deploy/helm/|deploy/ctk_v2/xmanager-cloud\.yaml$|test/helm/)",
+        fix_pattern=r"^(deploy/helm/|deploy/ctk_v2/[^/]+\.ya?ml$|test/helm/)",
     ):
         return
     if ctx.mode == "check" or gates.staged_paths_match("AMD", r"^deploy/helm/"):
@@ -159,6 +205,7 @@ def check_security(ctx: gates.RunContext) -> None:
 def check_deploy(ctx: gates.RunContext) -> None:
     """Runs all infrastructure, Helm, and security pre-commit gates."""
     check_terraform(ctx)
+    check_terraform_test(ctx)
     check_tflint(ctx)
     check_helm(ctx)
     check_security(ctx)

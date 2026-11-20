@@ -1021,6 +1021,7 @@ class TestHelmSuiteScope(unittest.TestCase):
             "deploy/helm/values.yaml",
             "deploy/helm/templates/reconciler/deployment.yaml",
             "deploy/ctk_v2/xmanager-cloud.yaml",
+            "deploy/ctk_v2/xmc-deployment-template.yaml",
             "test/helm/session_ttl_test.py",
             ".github/workflows/unit-tests.yml",
             ".github/actions/run-chart-tests/action.yml",
