@@ -37,13 +37,12 @@ import {
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
 import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
-import { ResourceAvailabilityComponent } from './components/resource_availability/resource_availability';
-
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
   DEFAULT_SPLIT_RATIO_PERCENT,
   ResizeDividerComponent,
 } from './components/resize_divider/resize_divider';
+import { ResourceAvailabilityComponent } from './components/resource_availability/resource_availability';
 import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
