@@ -76,7 +76,7 @@ func TestGetResourceAvailability(t *testing.T) {
 		Spec: kueuev1beta1.ClusterQueueSpec{
 			ResourceGroups: []kueuev1beta1.ResourceGroup{
 				{
-					Flavors: []kueuev1beta1.FlavorReference{kueuev1beta1.FlavorReference("flavor-1")},
+					Flavors: []kueuev1beta1.FlavorQuotas{{Name: kueuev1beta1.ResourceFlavorReference("flavor-1")}},
 				},
 			},
 		},
