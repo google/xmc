@@ -75,7 +75,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 	})
 
 	srv := &server{
-		kueueCache:         c,
+		kueueCache:    c,
 		velocityStore: mockFetcher,
 	}
 
