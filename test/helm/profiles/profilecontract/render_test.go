@@ -54,6 +54,9 @@ func TestChartDir(t *testing.T) {
 			if err != nil || got != tt.want {
 				t.Errorf("chartDir(%q) = %q, %v, want %q", tt.rel, got, err, tt.want)
 			}
+			if gotDir := ChartDir(t, Spec{ChartRelPath: tt.rel}); gotDir != tt.want {
+				t.Errorf("ChartDir(%q) = %q, want %q", tt.rel, gotDir, tt.want)
+			}
 		})
 	}
 	t.Run("not found", func(t *testing.T) {

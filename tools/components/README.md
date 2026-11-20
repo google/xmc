@@ -117,10 +117,33 @@ Aggregates structured JSON reports for CI/CD pipelines:
 
 ---
 
-## 5. Testing & Verification
+## 5. Profile Release Lock Gate (`check_profile_lock.py`)
 
-Run the hermetic unit test suite via Bazel:
+[`check_profile_lock.py`](check_profile_lock.py) guards GA-locked component profiles listed in [`deploy/profiles/locked_profiles.yaml`](../../deploy/profiles/locked_profiles.yaml) (such as `stable-2026a`, locked since XMC `1.0.0`). It fails whenever staged files (`.githooks/pre-commit`) or branch diffs (`.github/workflows/lint.yml`) add, modify, rename, or delete any file under `deploy/profiles/<locked-profile>/`.
+
+### Usage
 
 ```bash
-bazel test //tools/components:run_linter_test
+# Check staged changes (used by .githooks/pre-commit)
+python3 tools/components/check_profile_lock.py --staged
+
+# Check branch diff against PR base (used by CI)
+python3 tools/components/check_profile_lock.py --base-ref origin/main
+```
+
+### Patch Release Override Procedure
+
+New components and feature changes belong in a new profile under `deploy/profiles/`. For a legitimate patch release permitted by a locked profile's `README.md`:
+1. Include the commit trailer `PROFILE-LOCK-OVERRIDE: <profile> <reason>` in your commit message (and set `PROFILE_LOCK_OVERRIDE="<profile> <reason>"` when running local pre-commit hooks).
+2. Update the pinned `chart_digest` / `embedded_charts_digest` values in [`deploy/profiles/locked_profiles.yaml`](../../deploy/profiles/locked_profiles.yaml).
+3. Obtain code-owner approval (`CODEOWNERS`).
+
+---
+
+## 6. Testing & Verification
+
+Run the hermetic unit test suites via Bazel:
+
+```bash
+bazel test //tools/components:check_profile_lock_test //tools/components:run_linter_test
 ```

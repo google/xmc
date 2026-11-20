@@ -64,13 +64,18 @@ class TestResolveTestScope(unittest.TestCase):
     def test_is_non_code_file(self):
         self.assertTrue(is_non_code_file("README.md"))
         self.assertTrue(is_non_code_file("docs/architecture.md"))
+        self.assertTrue(is_non_code_file("OWNERS"))
+        self.assertTrue(is_non_code_file("CODEOWNERS"))
         self.assertTrue(is_non_code_file("deploy/helm/templates/ui.yaml"))
+        self.assertTrue(is_non_code_file("deploy/profiles/README.md"))
         self.assertTrue(is_non_code_file(".githooks/pre-commit"))
         self.assertFalse(is_non_code_file("pkg/auth/oauth2/handlers.go"))
         self.assertFalse(is_non_code_file("cmd/ui/src/app/app.component.ts"))
         self.assertFalse(is_non_code_file("services/billing/v1/billing.go"))
         self.assertFalse(is_non_code_file("deploy/ctk_v2/verify_xmc.py"))
         self.assertFalse(is_non_code_file("deploy/ctk_v2/BUILD.bazel"))
+        self.assertFalse(is_non_code_file("deploy/profiles/locked_profiles.yaml"))
+        self.assertFalse(is_non_code_file("deploy/profiles/stable-2026a/Chart.yaml"))
         self.assertFalse(is_non_code_file("deploy/clickhouse/schema.sql"))
         self.assertFalse(is_non_code_file("deploy/deploy_dev_env.sh"))
 

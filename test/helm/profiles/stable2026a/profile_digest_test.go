@@ -20,35 +20,61 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	stable2026acharts "xmanager_cloud/deploy/profiles/stable-2026a"
 	"xmanager_cloud/test/helm/profiles/profilecontract"
 )
 
-// stable2026aChartDigest pins the content of the stable-2026a profile chart (the
-// //deploy/profiles/stable-2026a:chart filegroup, including the embedded ingestion-gateway workload chart).
-const stable2026aChartDigest = "59c128fd1e389c1db43096ad2c9816fcee133c319ef43fbe724c400ff462581d"
+// lockedProfile Entry in deploy/profiles/locked_profiles.yaml.
+type lockedProfile struct {
+	LockedSince          string `yaml:"locked_since"`
+	ChartDigest          string `yaml:"chart_digest"`
+	EmbeddedChartsDigest string `yaml:"embedded_charts_digest"`
+}
 
-// stable2026aEmbeddedChartsDigest pins the files that xmc-bridge embeds for stable-2026a (the //go:embed set in
-// deploy/profiles/stable-2026a/charts.go), which the chart digest skips because it ignores Go files.
-const stable2026aEmbeddedChartsDigest = "771be1a5cfec78f7168a99ccf237c0fc373d8d37570278f062f81d0cef990301"
+// loadLockedProfile reads the stable-2026a entry from deploy/profiles/locked_profiles.yaml.
+func loadLockedProfile(t *testing.T, s profilecontract.Spec) lockedProfile {
+	t.Helper()
+	lockPath := filepath.Join(filepath.Dir(profilecontract.ChartDir(t, s)), "locked_profiles.yaml")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", lockPath, err)
+	}
+	var locks map[string]lockedProfile
+	if err := yaml.Unmarshal(data, &locks); err != nil {
+		t.Fatalf("failed to decode %s: %v", lockPath, err)
+	}
+	entry, ok := locks[s.ProfileName]
+	if !ok {
+		t.Fatalf("%s is missing locked profile entry %q", lockPath, s.ProfileName)
+	}
+	if entry.LockedSince == "" || entry.ChartDigest == "" || entry.EmbeddedChartsDigest == "" {
+		t.Fatalf("%s entry %q has empty fields: %+v", lockPath, s.ProfileName, entry)
+	}
+	return entry
+}
 
 // TestStable2026a_ChartIsImmutable fails on any change to the stable-2026a chart files. stable-2026a shipped with
 // XMC 1.0.0 and is GA-locked: clusters that installed it must keep getting exactly the same components, so changes
 // go into a new profile under deploy/profiles instead.
 func TestStable2026a_ChartIsImmutable(t *testing.T) {
 	t.Parallel()
-	got, err := chartDigest(os.DirFS(profilecontract.ChartDir(t, stable2026a())), isChartFile)
+	s := stable2026a()
+	lock := loadLockedProfile(t, s)
+	got, err := chartDigest(os.DirFS(profilecontract.ChartDir(t, s)), isChartFile)
 	if err != nil {
 		t.Fatalf("chartDigest() failed: %v", err)
 	}
-	if got != stable2026aChartDigest {
-		t.Errorf("stable-2026a chart digest = %s, want %s.\n"+
-			"deploy/profiles/stable-2026a is GA-locked for XMC 1.0.0 and must not change. Revert the edit and make the "+
-			"change in a new profile under deploy/profiles instead.", got, stable2026aChartDigest)
+	if got != lock.ChartDigest {
+		t.Errorf("stable-2026a chart digest = %s, want %s (from deploy/profiles/locked_profiles.yaml, locked_since %s).\n"+
+			"deploy/profiles/stable-2026a is GA-locked for XMC %s and must not change. Revert the edit and make the "+
+			"change in a new profile under deploy/profiles instead.", got, lock.ChartDigest, lock.LockedSince, lock.LockedSince)
 	}
 }
 
@@ -56,14 +82,16 @@ func TestStable2026a_ChartIsImmutable(t *testing.T) {
 // stable-2026a, including a change of the //go:embed patterns that select them.
 func TestStable2026a_EmbeddedChartsAreImmutable(t *testing.T) {
 	t.Parallel()
+	s := stable2026a()
+	lock := loadLockedProfile(t, s)
 	got, err := chartDigest(stable2026acharts.EmbeddedCharts, func(string) bool { return true })
 	if err != nil {
 		t.Fatalf("chartDigest() failed: %v", err)
 	}
-	if got != stable2026aEmbeddedChartsDigest {
-		t.Errorf("stable-2026a embedded charts digest = %s, want %s.\n"+
-			"The charts xmc-bridge embeds for stable-2026a are GA-locked for XMC 1.0.0 and must not change. Revert the "+
-			"edit and make the change in a new profile under deploy/profiles instead.", got, stable2026aEmbeddedChartsDigest)
+	if got != lock.EmbeddedChartsDigest {
+		t.Errorf("stable-2026a embedded charts digest = %s, want %s (from deploy/profiles/locked_profiles.yaml, locked_since %s).\n"+
+			"The charts xmc-bridge embeds for stable-2026a are GA-locked for XMC %s and must not change. Revert the "+
+			"edit and make the change in a new profile under deploy/profiles instead.", got, lock.EmbeddedChartsDigest, lock.LockedSince, lock.LockedSince)
 	}
 }
 

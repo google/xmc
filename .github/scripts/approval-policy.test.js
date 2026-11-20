@@ -63,6 +63,26 @@ test('isProtectedFile protects the protobuf breaking-check configuration but not
   assert.strictEqual(isProtectedFile('api/buf.yaml.orig'), false);
 });
 
+test('isProtectedFile protects CODEOWNERS and GA-locked component profile governance surfaces', () => {
+  assert.strictEqual(isProtectedFile('CODEOWNERS'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/locked_profiles.yaml'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/locked_profiles.yml'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/BUILD.bazel'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/BUILD'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/stable-2026a/Chart.yaml'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/stable-2026a/charts/rod/values.yaml'), true);
+  assert.strictEqual(isProtectedFile('tools/components/check_profile_lock.py'), true);
+  assert.strictEqual(isProtectedFile('tools/components/BUILD.bazel'), true);
+  assert.strictEqual(isProtectedFile('tools/lint/check_codeowners_alignment.py'), true);
+  assert.strictEqual(isProtectedFile('tools/lint/BUILD.bazel'), true);
+  assert.strictEqual(isProtectedFile('test/helm/profiles/profilecontract/render.go'), true);
+  assert.strictEqual(isProtectedFile('test/helm/profiles/stable2026a/profile_digest_test.go'), true);
+  assert.strictEqual(isProtectedFile('test/helm/profiles/stable2026a/BUILD.bazel'), true);
+  assert.strictEqual(isProtectedFile('deploy/profiles/experimental-2026b/Chart.yaml'), false);
+  assert.strictEqual(isProtectedFile('tools/components/run_linter.py'), false);
+  assert.strictEqual(isProtectedFile('tools/lint/check_file_naming.py'), false);
+});
+
 test('hasProtectedFile checks arrays of paths and handles null/undefined inputs safely', () => {
   assert.strictEqual(hasProtectedFile(['pkg/main.go', '.github/workflows/test.yml']), true);
   assert.strictEqual(hasProtectedFile(['pkg/main.go', 'README.md']), false);

@@ -20,8 +20,44 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "BUILD.bazel",
+    "check_profile_lock.py",
     "run_linter.py",
 ])
+
+py_library(
+    name = "check_profile_lock_lib",
+    srcs = ["check_profile_lock.py"],
+    data = ["//deploy/profiles:locked_profiles"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_binary(
+    name = "check_profile_lock",
+    srcs = ["check_profile_lock.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":check_profile_lock_lib",
+    ],
+)
+
+py_test(
+    name = "check_profile_lock_test",
+    srcs = ["check_profile_lock_test.py"],
+    data = [
+        "//deploy/profiles:locked_profiles",
+        "//deploy/profiles/stable-2026a:rules",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":check_profile_lock_lib",
+        "//tools/common:tool_utils",
+    ],
+)
 
 py_library(
     name = "run_linter_lib",

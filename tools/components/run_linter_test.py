@@ -65,6 +65,7 @@ class RunLinterTest(unittest.TestCase):
         self.create_file("profile/logging.yml", "apiVersion: v1")
         self.create_file("profile/rules.yaml", "staticChecks: {}")
         self.create_file("profile/rules.yml", "staticChecks: {}")
+        self.create_file("profile/locked_profiles.yaml", "stable-2026a: {locked_since: '1.0.0'}")
         self.create_file("profile/readme.txt", "notes")
 
         manifests = run_linter.find_manifest_files(sub)
@@ -99,6 +100,7 @@ class RunLinterTest(unittest.TestCase):
         self.create_file("root1/prof1/comp.yaml", "kind: Component")
         self.create_file("root1/prof1/rules.yaml", "staticChecks: {}")
         self.create_file("root1/empty_dir/rules.yaml", "staticChecks: {}")
+        self.create_file("root1/locked_profiles.yaml", "stable-2026a: {locked_since: '1.0.0'}")
         self.create_file("root2/comp2.yml", "kind: Component")
 
         scan_roots = [self.temp_dir / "root1", self.temp_dir / "root2"]

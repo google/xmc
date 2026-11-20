@@ -32,6 +32,13 @@ DEFAULT_SCAN_ROOTS = (
     "examples/components/profiles",
 )
 
+NON_MANIFEST_YAML_FILES = (
+    "rules.yaml",
+    "rules.yml",
+    "locked_profiles.yaml",
+    "locked_profiles.yml",
+)
+
 
 @dataclass(frozen=True)
 class LintTarget:
@@ -144,7 +151,7 @@ def find_manifest_files(directory: Path) -> list[Path]:
             if (
                 item.is_file()
                 and item.suffix.lower() in (".yaml", ".yml")
-                and item.name.lower() not in ("rules.yaml", "rules.yml")
+                and item.name.lower() not in NON_MANIFEST_YAML_FILES
             )
         )
     return sorted(manifests)
@@ -181,7 +188,7 @@ def discover_lint_targets(scan_roots: Sequence[Path]) -> list[LintTarget]:
                 or is_profile_with_rules
                 or any(
                     f.lower().endswith((".yaml", ".yml"))
-                    and f.lower() not in ("rules.yaml", "rules.yml")
+                    and f.lower() not in NON_MANIFEST_YAML_FILES
                     for f in filenames
                 )
             )
