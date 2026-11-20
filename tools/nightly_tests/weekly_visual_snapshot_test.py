@@ -22,99 +22,20 @@ import re
 import tempfile
 import types
 import unittest
-from collections.abc import Callable, Mapping
 from unittest import mock
 
 from tools.nightly_tests import weekly_visual_snapshot
 
 
-class _FakeLocator:
-    """Minimal Playwright Locator test double for table, link, and state queries."""
-
-    def __init__(self, items: list[_FakeElement] | None = None) -> None:
-        self._items = items or []
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def nth(self, index: int) -> _FakeElement:
-        return self._items[index]
-
-    @property
-    def first(self) -> _FakeElement:
-        return self._items[0]
-
-
-class _FakeElement:
-    """Minimal Playwright element test double supporting nested locator queries."""
-
-    def __init__(
-        self,
-        *,
-        text: str = "",
-        attrs: Mapping[str, str] | None = None,
-        children: Mapping[str, list[_FakeElement]] | None = None,
-        on_click: Callable[[], None] | None = None,
-    ) -> None:
-        self._text = text
-        self._attrs = dict(attrs or {})
-        self._children = dict(children or {})
-        self._on_click = on_click
-
-    def inner_text(self) -> str:
-        return self._text
-
-    def get_attribute(self, name: str) -> str | None:
-        return self._attrs.get(name)
-
-    def locator(self, selector: str) -> _FakeLocator:
-        return _FakeLocator(self._children.get(selector, []))
-
-    def click(self) -> None:
-        if self._on_click is not None:
-            self._on_click()
-
-
-class _FakeRoutePage:
-    """Playwright Page test double routing URLs to preconfigured DOM element maps."""
-
-    def __init__(
-        self,
-        routes: Mapping[str, Callable[[], Mapping[str, list[_FakeElement]]]],
-    ) -> None:
-        self._routes = dict(routes)
-        self.url = ""
-
-    def goto(self, url: str, wait_until: str = "networkidle", timeout: int = 60000) -> None:
-        del wait_until, timeout
-        self.url = url
-
-    def locator(self, selector: str) -> _FakeLocator:
-        path = re.sub(r"^https?://[^/]+", "", self.url)
-        dom_factory = self._routes.get(path)
-        if dom_factory is None:
-            return _FakeLocator([])
-        dom = dom_factory()
-        for candidate in (selector, *(part.strip() for part in selector.split(","))):
-            if candidate in dom:
-                return _FakeLocator(dom[candidate])
-        return _FakeLocator([])
-
-    def wait_for_selector(self, selector: str, timeout: int = 30000) -> None:
-        del selector, timeout
-
-    def wait_for_load_state(self, state: str = "networkidle", timeout: int = 30000) -> None:
-        del state, timeout
-
-
-def _experiment_row(xid: str, *, has_work_units: bool) -> _FakeElement:
-    """Builds a fake /experiments table row element."""
-    badge_sel = ".status-bar" if has_work_units else ".no-work-units"
-    children: dict[str, list[_FakeElement]] = {
-        'a[href*="/experiments/"]': [_FakeElement(attrs={"href": f"/experiments/{xid}"})],
-        badge_sel: [_FakeElement(text="1" if has_work_units else "No Work Units")],
-    }
-    return _FakeElement(text=f"{xid} Exp {xid}", children=children)
+def _mock_row(xid: str, *, has_work_units: bool) -> mock.MagicMock:
+    """Builds a mock /experiments table row."""
+    row = mock.MagicMock()
+    row.inner_text.return_value = f"{xid} Experiment {xid}"
+    no_wu = mock.MagicMock(count=mock.MagicMock(return_value=0 if has_work_units else 1))
+    link = mock.MagicMock(count=mock.MagicMock(return_value=1))
+    link.nth.return_value.get_attribute.return_value = f"/experiments/{xid}"
+    row.locator.side_effect = lambda sel: no_wu if "no-work-units" in sel else link
+    return row
 
 
 class WeeklyVisualSnapshotTest(unittest.TestCase):
@@ -142,13 +63,6 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         )
         return session
 
-    def _route_session(self, page: _FakeRoutePage) -> mock.MagicMock:
-        session = mock.MagicMock()
-        session.__enter__.return_value = session
-        session.ui_base_url = "https://xmc.example.com"
-        session.page = page
-        return session
-
     def test_golden_routes_definitions(self) -> None:
         route_ids = [r.id for r in weekly_visual_snapshot.GOLDEN_ROUTES]
         self.assertEqual(
@@ -166,175 +80,43 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             "/experiments/{xid}/workUnits/{wid}",
         )
 
-    def test_discover_candidate_xids_skips_no_work_units_rows(self) -> None:
-        rows = [
-            _experiment_row("101", has_work_units=False),
-            _experiment_row("102", has_work_units=False),
-            _experiment_row("103", has_work_units=True),
-            _experiment_row("104", has_work_units=True),
-            _experiment_row("103", has_work_units=True),
+    def test_discover_xid_from_page_skips_no_work_units_rows(self) -> None:
+        row_items = [
+            _mock_row("101", has_work_units=False),
+            _mock_row("102", has_work_units=True),
         ]
-        page = _FakeRoutePage({"/experiments": lambda: {"tbody tr:not(.detail-row)": rows}})
-        page.goto("https://xmc.example.com/experiments")
+        rows = mock.MagicMock(count=mock.MagicMock(return_value=len(row_items)))
+        rows.nth.side_effect = lambda i: row_items[i]
+        page = mock.MagicMock()
+        page.locator.return_value = rows
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page), "102")
 
-        self.assertEqual(
-            weekly_visual_snapshot.discover_candidate_xids_from_page(page),
-            ["103", "104"],
-        )
-
-    def test_discover_candidate_xids_link_fallback_and_empty(self) -> None:
         page_with_link = mock.MagicMock()
         links = mock.MagicMock(count=mock.MagicMock(return_value=1))
         links.nth.return_value.get_attribute.return_value = "/experiments/108"
         page_with_link.locator.side_effect = lambda sel: (
             mock.MagicMock(count=mock.MagicMock(return_value=0)) if "tbody" in sel else links
         )
-        self.assertEqual(
-            weekly_visual_snapshot.discover_candidate_xids_from_page(page_with_link), ["108"]
-        )
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_with_link), "108")
 
         page_empty = mock.MagicMock()
         page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
-        self.assertEqual(weekly_visual_snapshot.discover_candidate_xids_from_page(page_empty), [])
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_empty), "")
 
-    def test_discover_workunit_ids_from_page(self) -> None:
-        links = [
-            _FakeElement(attrs={"href": "/experiments/99/workUnits/1"}, text="1"),
-            _FakeElement(attrs={"href": "/experiments/42/workUnits/7"}, text="7"),
-            _FakeElement(attrs={"href": "/experiments/42/workUnits/12"}, text="12"),
-            _FakeElement(attrs={"href": "/experiments/42/workUnits/7"}, text="7"),
-        ]
-        page = _FakeRoutePage(
-            {
-                "/experiments/42": lambda: {
-                    'xmc-work-units-table a[href*="/workUnits/"]': links,
-                }
-            }
-        )
-        page.goto("https://xmc.example.com/experiments/42")
+    def test_discover_wid_from_page(self) -> None:
+        links = mock.MagicMock(count=mock.MagicMock(return_value=1))
+        links.nth.return_value.get_attribute.return_value = "/experiments/42/workUnits/7"
+        page = mock.MagicMock()
+        page.locator.return_value = links
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page), "7")
 
-        self.assertEqual(
-            weekly_visual_snapshot.discover_workunit_ids_from_page(page, xid="42"),
-            ["7", "12"],
-        )
-        self.assertEqual(weekly_visual_snapshot.discover_workunit_id_from_page(page, xid="42"), "7")
+        page_empty = mock.MagicMock()
+        page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_empty), "")
 
-    def test_probe_experiment_workunit_handles_acl_403_empty_and_valid(self) -> None:
-        routes: dict[str, Callable[[], Mapping[str, list[_FakeElement]]]] = {
-            # 403 ACL mismatch on GetExperiment -> no title rendered
-            "/experiments/201": lambda: {},
-            # Experiment loads, but 0 work units or 403 on ListWorkUnits -> no workUnit links
-            "/experiments/202": lambda: {
-                "h1.experiment-title": [_FakeElement(text="Empty Or Forbidden WorkUnits")],
-                "xmc-work-units-table .no-work-units-message": [
-                    _FakeElement(text="This experiment has no work units.")
-                ],
-            },
-            # Experiment loads with workUnit 3 (empty details) and workUnit 9 (valid details)
-            "/experiments/203": lambda: {
-                "h1.experiment-title": [_FakeElement(text="Valid Experiment")],
-                'mat-tab-header .mdc-tab:has-text("Work Units")': [_FakeElement(text="Work Units")],
-                'xmc-work-units-table a[href*="/workUnits/"]': [
-                    _FakeElement(attrs={"href": "/experiments/203/workUnits/3"}, text="3"),
-                    _FakeElement(attrs={"href": "/experiments/203/workUnits/9"}, text="9"),
-                ],
-            },
-            "/experiments/203/workUnits/3": lambda: {},
-            "/experiments/203/workUnits/9": lambda: {
-                "xmc-work-unit-details": [_FakeElement(text="Metadata")],
-            },
-        }
-        session = self._route_session(_FakeRoutePage(routes))
-
-        self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "201"), "")
-        self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "202"), "")
-        self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "203"), "9")
-        session.switch_tab.assert_called_once_with("Work Units", timeout_ms=15000)
-
-    def test_probe_experiment_workunit_recovers_from_navigation_errors(self) -> None:
+    def test_capture_all_routes_saves_screenshots(self) -> None:
         session = self._mock_session()
-        session.page.goto.side_effect = TimeoutError("navigation timeout")
-        self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "204"), "")
-
-        routes: dict[str, Callable[[], Mapping[str, list[_FakeElement]]]] = {
-            "/experiments/205": lambda: {
-                "h1.experiment-title": [_FakeElement(text="Flaky First WU")],
-                'xmc-work-units-table a[href*="/workUnits/"]': [
-                    _FakeElement(attrs={"href": "/experiments/205/workUnits/1"}, text="1"),
-                    _FakeElement(attrs={"href": "/experiments/205/workUnits/2"}, text="2"),
-                ],
-            },
-            "/experiments/205/workUnits/2": lambda: {
-                "xmc-work-unit-details": [_FakeElement(text="Details")],
-            },
-        }
-        flaky_page = _FakeRoutePage(routes)
-        orig_goto = flaky_page.goto
-
-        def goto_with_wu1_timeout(
-            url: str, wait_until: str = "networkidle", timeout: int = 60000
-        ) -> None:
-            if url.endswith("/workUnits/1"):
-                raise TimeoutError("wu1 timeout")
-            orig_goto(url, wait_until=wait_until, timeout=timeout)
-
-        flaky_page.goto = goto_with_wu1_timeout  # type: ignore[method-assign]
-        flaky_session = self._route_session(flaky_page)
-        self.assertEqual(
-            weekly_visual_snapshot.probe_experiment_workunit(flaky_session, "205"), "2"
-        )
-
-    def test_discover_experiment_and_workunit_paginates_on_exhausted_page(self) -> None:
-        current_page = 0
-
-        def next_page() -> None:
-            nonlocal current_page
-            current_page += 1
-
-        def experiments_dom() -> Mapping[str, list[_FakeElement]]:
-            if current_page == 0:
-                return {
-                    "tbody tr:not(.detail-row)": [
-                        _experiment_row("301", has_work_units=False),
-                        _experiment_row("302", has_work_units=True),
-                    ],
-                    'button[data-test-id="next-page-button"]:not([disabled])': [
-                        _FakeElement(on_click=next_page)
-                    ],
-                }
-            return {
-                "tbody tr:not(.detail-row)": [
-                    _experiment_row("303", has_work_units=True),
-                ],
-            }
-
-        routes: dict[str, Callable[[], Mapping[str, list[_FakeElement]]]] = {
-            "/experiments": experiments_dom,
-            "/experiments/302": lambda: {},  # 403 ACL mismatch
-            "/experiments/303": lambda: {
-                "h1.experiment-title": [_FakeElement(text="Accessible Exp")],
-                'xmc-work-units-table a[href*="/workUnits/"]': [
-                    _FakeElement(attrs={"href": "/experiments/303/workUnits/4"}, text="4"),
-                ],
-            },
-            "/experiments/303/workUnits/4": lambda: {
-                "xmc-work-unit-details": [_FakeElement(text="Details")],
-            },
-        }
-        page = _FakeRoutePage(routes)
-        page.goto("https://xmc.example.com/experiments")
-        session = self._route_session(page)
-
-        self.assertEqual(
-            weekly_visual_snapshot.discover_experiment_and_workunit(session, max_pages=3),
-            ("303", "4"),
-        )
-
-    def test_capture_all_routes_saves_screenshots_with_discovered_wid(self) -> None:
-        session = self._mock_session()
-        with mock.patch.object(
-            weekly_visual_snapshot, "discover_workunit_id_from_page", return_value="7"
-        ):
+        with mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="7"):
             caps = weekly_visual_snapshot.capture_all_routes(
                 session, output_dir=self.out_dir, xid=42
             )
@@ -346,22 +128,6 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         self.assertEqual(caps[1]["route"], "/experiments/42")
         self.assertEqual(caps[2]["route"], "/experiments/42/workUnits/7")
         session.switch_tab.assert_called_once_with("Work Units", timeout_ms=60000)
-
-    def test_capture_all_routes_skips_workunit_details_when_no_workunits(self) -> None:
-        session = self._mock_session()
-        with (
-            mock.patch.object(
-                weekly_visual_snapshot, "discover_workunit_id_from_page", return_value=""
-            ),
-            mock.patch.object(weekly_visual_snapshot, "probe_experiment_workunit", return_value=""),
-        ):
-            caps = weekly_visual_snapshot.capture_all_routes(
-                session, output_dir=self.out_dir, xid=42
-            )
-        self.assertEqual(
-            [c["id"] for c in caps],
-            ["01_experiments_list", "03_experiment_workunits", "06_resource_dashboard"],
-        )
 
     def test_capture_single_route_normalizes_trailing_slash_and_relative_route(self) -> None:
         session = self._mock_session()
@@ -382,12 +148,11 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             timeout=60000,
         )
 
-    def test_capture_all_routes_auto_discovers_or_skips_xid_routes(self) -> None:
+    def test_capture_all_routes_auto_discovers_or_skips_xid_and_wid_routes(self) -> None:
         session = self._mock_session()
-        with mock.patch.object(
-            weekly_visual_snapshot,
-            "discover_experiment_and_workunit",
-            return_value=("88", "3"),
+        with (
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="3"),
         ):
             caps_found = weekly_visual_snapshot.capture_all_routes(
                 session, output_dir=self.out_dir, xid=""
@@ -395,11 +160,19 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         self.assertEqual(caps_found[1]["route"], "/experiments/88")
         self.assertEqual(caps_found[2]["route"], "/experiments/88/workUnits/3")
 
-        with mock.patch.object(
-            weekly_visual_snapshot,
-            "discover_experiment_and_workunit",
-            return_value=("", ""),
+        with (
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value=""),
         ):
+            caps_no_wid = weekly_visual_snapshot.capture_all_routes(
+                session, output_dir=self.out_dir, xid=""
+            )
+        self.assertEqual(
+            [c["id"] for c in caps_no_wid],
+            ["01_experiments_list", "03_experiment_workunits", "06_resource_dashboard"],
+        )
+
+        with mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value=""):
             caps_skipped = weekly_visual_snapshot.capture_all_routes(
                 session, output_dir=self.out_dir, xid=""
             )
@@ -454,9 +227,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
                 weekly_visual_snapshot.ui_entities_validator,
                 "XMCUIBrowserSession",
             ) as mock_session_cls,
-            mock.patch.object(
-                weekly_visual_snapshot, "discover_workunit_id_from_page", return_value="2"
-            ),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="2"),
         ):
 
             def create_session(**kwargs):
@@ -501,11 +272,8 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
                 return_value=mock_session,
             ),
             mock.patch.object(weekly_visual_snapshot, "FLAGS", fake_flags),
-            mock.patch.object(
-                weekly_visual_snapshot,
-                "discover_experiment_and_workunit",
-                return_value=("77", "4"),
-            ),
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="77"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="4"),
         ):
             weekly_visual_snapshot.main(["weekly_visual_snapshot.py"])
         with open(os.path.join(self.out_dir, "manifest.json"), encoding="utf-8") as f_man:
@@ -531,12 +299,8 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
                 return_value=mock_session,
             ),
             mock.patch.object(weekly_visual_snapshot, "FLAGS", fake_flags),
-            mock.patch.object(
-                weekly_visual_snapshot, "discover_experiment_and_workunit"
-            ) as mock_discover,
-            mock.patch.object(
-                weekly_visual_snapshot, "discover_workunit_id_from_page", return_value="8"
-            ),
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page") as mock_discover,
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="8"),
         ):
             weekly_visual_snapshot.main(["weekly_visual_snapshot.py"])
         mock_discover.assert_not_called()
