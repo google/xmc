@@ -27,13 +27,19 @@ from unittest import mock
 from tools.nightly_tests import weekly_visual_snapshot
 
 
+def _mock_link(href: str) -> mock.MagicMock:
+    """Builds a mock Playwright locator yielding a single link with the given href."""
+    links = mock.MagicMock(count=mock.MagicMock(return_value=1))
+    links.nth.return_value.get_attribute.return_value = href
+    return links
+
+
 def _mock_row(xid: str, *, has_work_units: bool) -> mock.MagicMock:
     """Builds a mock /experiments table row."""
     row = mock.MagicMock()
     row.inner_text.return_value = f"{xid} Experiment {xid}"
     no_wu = mock.MagicMock(count=mock.MagicMock(return_value=0 if has_work_units else 1))
-    link = mock.MagicMock(count=mock.MagicMock(return_value=1))
-    link.nth.return_value.get_attribute.return_value = f"/experiments/{xid}"
+    link = _mock_link(f"/experiments/{xid}")
     row.locator.side_effect = lambda sel: no_wu if "no-work-units" in sel else link
     return row
 
@@ -81,6 +87,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         )
 
     def test_discover_xid_from_page_skips_no_work_units_rows(self) -> None:
+        empty_loc = mock.MagicMock(count=mock.MagicMock(return_value=0))
         row_items = [
             _mock_row("101", has_work_units=False),
             _mock_row("102", has_work_units=True),
@@ -91,27 +98,41 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         page.locator.return_value = rows
         self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page), "102")
 
+        links = _mock_link("/experiments/108")
+        all_no_wu_rows = [_mock_row("101", has_work_units=False)]
+        all_no_wu_loc = mock.MagicMock(count=mock.MagicMock(return_value=1))
+        all_no_wu_loc.nth.side_effect = lambda i: all_no_wu_rows[i]
+        page_all_no_wu = mock.MagicMock()
+        page_all_no_wu.locator.side_effect = lambda sel: all_no_wu_loc if "tbody" in sel else links
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_all_no_wu), "")
+
         page_with_link = mock.MagicMock()
-        links = mock.MagicMock(count=mock.MagicMock(return_value=1))
-        links.nth.return_value.get_attribute.return_value = "/experiments/108"
-        page_with_link.locator.side_effect = lambda sel: (
-            mock.MagicMock(count=mock.MagicMock(return_value=0)) if "tbody" in sel else links
-        )
+        page_with_link.locator.side_effect = lambda sel: empty_loc if "tbody" in sel else links
         self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_with_link), "108")
 
         page_empty = mock.MagicMock()
-        page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        page_empty.locator.return_value = empty_loc
         self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_empty), "")
 
     def test_discover_wid_from_page(self) -> None:
-        links = mock.MagicMock(count=mock.MagicMock(return_value=1))
-        links.nth.return_value.get_attribute.return_value = "/experiments/42/workUnits/7"
-        page = mock.MagicMock()
-        page.locator.return_value = links
-        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page), "7")
+        empty_loc = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        scoped_links = _mock_link("/experiments/42/workUnits/7")
+        fallback_links = _mock_link("/experiments/42/workUnits/9")
+
+        page_scoped = mock.MagicMock()
+        page_scoped.locator.side_effect = lambda sel: (
+            scoped_links if "xmc-work-units-table" in sel else fallback_links
+        )
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_scoped), "7")
+
+        page_fallback = mock.MagicMock()
+        page_fallback.locator.side_effect = lambda sel: (
+            empty_loc if "xmc-work-units-table" in sel else fallback_links
+        )
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_fallback), "9")
 
         page_empty = mock.MagicMock()
-        page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        page_empty.locator.return_value = empty_loc
         self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_empty), "")
 
     def test_capture_all_routes_saves_screenshots(self) -> None:
