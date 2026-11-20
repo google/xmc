@@ -1601,6 +1601,7 @@ func TestValidateChartPlotTypes(t *testing.T) {
 		{name: "experiment level with scatter", plots: []*spb.PlotSpec{parallel, scatter}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
 		{name: "experiment level with unspecified plot type", plots: []*spb.PlotSpec{{PlotId: "p"}}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
 		{name: "experiment level with nil plot", plots: []*spb.PlotSpec{nil}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with nil plot", plots: []*spb.PlotSpec{scatter, nil}, wantErr: grpcerr.ErrInvalidArgument},
 		{name: "work unit level with scatter", plots: []*spb.PlotSpec{scatter}},
 		{name: "work unit level with parallel coordinates", plots: []*spb.PlotSpec{scatter, parallel}, wantErr: grpcerr.ErrInvalidArgument},
 	}

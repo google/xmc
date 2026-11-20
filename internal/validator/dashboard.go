@@ -311,6 +311,9 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 // metrics of a single work unit.
 func ValidateChartPlotTypes(plots []*spb.PlotSpec, experimentLevel bool) error {
 	for i, plot := range plots {
+		if plot == nil {
+			return fmt.Errorf("plots[%d] cannot be nil: %w", i, grpcerr.ErrInvalidArgument)
+		}
 		isParallelCoordinates := plot.GetType() == spb.PlotType_PARALLEL_COORDINATES
 		if experimentLevel && !isParallelCoordinates {
 			return fmt.Errorf("plots[%d].type %s is not allowed on an experiment-level chart, which only allows PARALLEL_COORDINATES: %w", i, plot.GetType(), grpcerr.ErrInvalidArgument)
