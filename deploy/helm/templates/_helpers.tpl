@@ -303,6 +303,100 @@ templates/postgres-secret.yaml out of a Helm value.
 {{- end -}}
 
 {{/*
+Reports whether in-cluster PostgreSQL deployment is enabled (database.backend is "postgres" and
+database.postgres.deploy is true).
+*/}}
+{{- define "xmanager-cloud.postgresDeploy" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if and (eq (include "xmanager-cloud.dbBackend" .) "postgres") (include "xmanager-cloud.authFlagEnabled" $pg.deploy) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+PostgreSQL host: defaults to the in-cluster Service DNS name when database.postgres.deploy is true,
+or requires database.postgres.host for BYO PostgreSQL.
+*/}}
+{{- define "xmanager-cloud.postgresHost" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if include "xmanager-cloud.postgresDeploy" . -}}
+{{- default (printf "postgres.%s.svc.cluster.local" .Release.Namespace) $pg.host -}}
+{{- else -}}
+{{- required "database.postgres.host is required when database.backend is postgres" $pg.host -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+PostgreSQL port: defaults to 5432 when unset.
+*/}}
+{{- define "xmanager-cloud.postgresPort" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- default 5432 $pg.port | toString -}}
+{{- end -}}
+
+{{/*
+PostgreSQL user: defaults to "xmc" (validated as a safe SQL/shell identifier) when
+database.postgres.deploy is true, or requires database.postgres.user for BYO PostgreSQL.
+*/}}
+{{- define "xmanager-cloud.postgresUser" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if include "xmanager-cloud.postgresDeploy" . -}}
+{{- $user := default "xmc" $pg.user -}}
+{{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" $user) -}}
+{{- fail (printf "database.postgres.user %q must match ^[A-Za-z_][A-Za-z0-9_]*$ when database.postgres.deploy is true" $user) -}}
+{{- end -}}
+{{- $user -}}
+{{- else -}}
+{{- required "database.postgres.user is required when database.backend is postgres" $pg.user -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+PostgreSQL ESS database name: defaults to "xmc_ess" (validated as a safe SQL/shell identifier) when
+database.postgres.deploy is true, or requires database.postgres.essDatabase for BYO PostgreSQL.
+*/}}
+{{- define "xmanager-cloud.postgresEssDatabase" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if include "xmanager-cloud.postgresDeploy" . -}}
+{{- $dbName := default "xmc_ess" $pg.essDatabase -}}
+{{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" $dbName) -}}
+{{- fail (printf "database.postgres.essDatabase %q must match ^[A-Za-z_][A-Za-z0-9_]*$ when database.postgres.deploy is true" $dbName) -}}
+{{- end -}}
+{{- $dbName -}}
+{{- else -}}
+{{- required "database.postgres.essDatabase is required when database.backend is postgres" $pg.essDatabase -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+PostgreSQL XID database name: defaults to "xmc_xid" (validated as a safe SQL/shell identifier) when
+database.postgres.deploy is true, or requires database.postgres.xidDatabase for BYO PostgreSQL.
+*/}}
+{{- define "xmanager-cloud.postgresXidDatabase" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if include "xmanager-cloud.postgresDeploy" . -}}
+{{- $dbName := default "xmc_xid" $pg.xidDatabase -}}
+{{- if not (regexMatch "^[A-Za-z_][A-Za-z0-9_]*$" $dbName) -}}
+{{- fail (printf "database.postgres.xidDatabase %q must match ^[A-Za-z_][A-Za-z0-9_]*$ when database.postgres.deploy is true" $dbName) -}}
+{{- end -}}
+{{- $dbName -}}
+{{- else -}}
+{{- required "database.postgres.xidDatabase is required when database.backend is postgres" $pg.xidDatabase -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+PostgreSQL SSL mode: defaults to "disable" when database.postgres.deploy is true, or "verify-full"
+for BYO PostgreSQL, unless database.postgres.sslMode is explicitly set.
+*/}}
+{{- define "xmanager-cloud.postgresSslMode" -}}
+{{- $pg := default (dict) (default (dict) .Values.database).postgres -}}
+{{- if include "xmanager-cloud.postgresDeploy" . -}}
+{{- default "disable" $pg.sslMode -}}
+{{- else -}}
+{{- default "verify-full" $pg.sslMode -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Common GCP Secrets Volume definition.
 */}}
 {{- define "xmanager-cloud.gcpSecretsVolume" -}}

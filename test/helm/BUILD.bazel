@@ -253,6 +253,22 @@ py_test(
 )
 
 py_test(
+    name = "postgres_deploy_test",
+    srcs = ["postgres_deploy_test.py"],
+    data = ["//deploy/helm:chart"],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "postgres_deploy_test.py",
+    tags = [
+        "local",
+        "manual",
+    ],
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "components_rollout_checksum_test",
     srcs = ["components_rollout_checksum_test.py"],
     data = ["//deploy/helm:chart"],
