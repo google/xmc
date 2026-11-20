@@ -29,7 +29,6 @@ import (
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/validator"
 
-	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	apipb "xmanager_cloud/api/protos/experiment"
 	xidapipb "xmanager_cloud/api/protos/xid"
 )
@@ -138,31 +137,8 @@ func TestStopWorkUnit_SchedulingPausedTransitionsDirectlyToStopped(t *testing.T)
 	if err != nil {
 		t.Fatalf("ValidateWorkUnitName() returned an unexpected error: %v", err)
 	}
-	initialExec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, workUnitID)
-	if err != nil {
-		t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
-	}
-	_, _, eid, err := validator.ValidateWorkUnitExecutionName(initialExec.GetName())
-	if err != nil {
-		t.Fatalf("ValidateWorkUnitExecutionName() returned an unexpected error: %v", err)
-	}
-
 	// Transition the work unit to SCHEDULING_PAUSED first.
-	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
-		{
-			WID: workUnitID,
-			EID: eid,
-			WorkUnitExecution: &apipb.WorkUnitExecution{
-				Status: &apipb.WorkUnitStatus{
-					State:           apipb.WorkUnitStatus_SCHEDULING_PAUSED,
-					StateUpdateTime: initialExec.GetStatus().GetStateUpdateTime(),
-				},
-			},
-			UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
-		},
-	}); err != nil {
-		t.Fatalf("UpdateWorkUnitExecutions() to SCHEDULING_PAUSED failed: %v", err)
-	}
+	mustSetWorkUnitState(ctx, t, server, xid, workUnitID, apipb.WorkUnitStatus_SCHEDULING_PAUSED)
 	taskQueueClient.LastEnqueuedAction = nil
 
 	if _, err := server.StopWorkUnit(ctx, &apipb.StopWorkUnitRequest{Name: workUnitName}); err != nil {
@@ -347,5 +323,159 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 	_, err := server.StopWorkUnit(ctx, req)
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("StopWorkUnit() got error %v, want %v", err, grpcerr.ErrInternal)
+	}
+}
+
+func TestStopWorkUnit_ByCurrentState(t *testing.T) {
+	ctx := context.Background()
+	server, taskQueueClient := createExperimentStateServer(ctx, t)
+
+	exp := &apipb.Experiment{
+		Title: "test experiment for stopworkunit by state",
+		Acls: &xidapipb.XidAcls{
+			Owners: []*xidapipb.XidAcls_Role{{Principal: &xidapipb.XidAcls_Role_User{User: "test@example.com"}}},
+		},
+	}
+	createdExp := mustCreateExperiment(ctx, t, server, exp)
+	xid, err := validator.ValidateExperimentName(createdExp.GetName())
+	if err != nil {
+		t.Fatalf("ValidateExperimentName() returned an unexpected error: %v", err)
+	}
+
+	testCases := []struct {
+		name            string
+		wid             int64
+		state           apipb.WorkUnitStatus_WorkUnitState
+		wantDone        bool
+		wantEmptyOpName bool
+		wantEnqueued    bool
+		wantFinalState  apipb.WorkUnitStatus_WorkUnitState
+	}{
+		{
+			name:            "completed_is_noop",
+			wid:             1,
+			state:           apipb.WorkUnitStatus_COMPLETED,
+			wantDone:        true,
+			wantEmptyOpName: true,
+			wantEnqueued:    false,
+			wantFinalState:  apipb.WorkUnitStatus_COMPLETED,
+		},
+		{
+			name:            "failed_enqueues_delete_and_preserves_failed_state",
+			wid:             2,
+			state:           apipb.WorkUnitStatus_FAILED,
+			wantDone:        false,
+			wantEmptyOpName: false,
+			wantEnqueued:    true,
+			wantFinalState:  apipb.WorkUnitStatus_FAILED,
+		},
+		{
+			name:            "stopped_is_noop",
+			wid:             3,
+			state:           apipb.WorkUnitStatus_STOPPED,
+			wantDone:        true,
+			wantEmptyOpName: true,
+			wantEnqueued:    false,
+			wantFinalState:  apipb.WorkUnitStatus_STOPPED,
+		},
+		{
+			name:            "stopping_re_enqueues_delete",
+			wid:             4,
+			state:           apipb.WorkUnitStatus_STOPPING,
+			wantDone:        false,
+			wantEmptyOpName: false,
+			wantEnqueued:    true,
+			wantFinalState:  apipb.WorkUnitStatus_STOPPING,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			workUnit := &apipb.WorkUnit{
+				WorkUnitType: apipb.WorkUnit_STANDARD,
+				Executable:   testExecutable,
+			}
+			workUnitName := fmt.Sprintf("%s/workUnits/%d", createdExp.GetName(), tc.wid)
+			_ = mustCreateWorkUnit(ctx, t, server, createdExp.GetName(), tc.wid, workUnit)
+			mustSetWorkUnitState(ctx, t, server, xid, tc.wid, tc.state)
+			taskQueueClient.LastEnqueuedAction = nil
+			taskQueueClient.EnqueuedTasks = nil
+
+			op, err := server.StopWorkUnit(ctx, &apipb.StopWorkUnitRequest{Name: workUnitName})
+			if err != nil {
+				t.Fatalf("StopWorkUnit() returned an unexpected error: %v", err)
+			}
+			if op.GetDone() != tc.wantDone {
+				t.Errorf("StopWorkUnit() returned op.GetDone()=%v, want %v", op.GetDone(), tc.wantDone)
+			}
+			if (op.GetName() == "") != tc.wantEmptyOpName {
+				t.Errorf("StopWorkUnit() returned op.GetName()=%q, wantEmptyOpName=%v", op.GetName(), tc.wantEmptyOpName)
+			}
+			if tc.wantEnqueued {
+				if taskQueueClient.LastEnqueuedAction == nil || taskQueueClient.LastEnqueuedAction.GetDelete() == nil {
+					t.Errorf("StopWorkUnit() did not enqueue DeleteAction for state %v: %v", tc.state, taskQueueClient.LastEnqueuedAction)
+				}
+			} else if taskQueueClient.LastEnqueuedAction != nil || len(taskQueueClient.EnqueuedTasks) != 0 {
+				t.Errorf("StopWorkUnit() enqueued task for state %v, want no task enqueued", tc.state)
+			}
+
+			gotExec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, tc.wid)
+			if err != nil {
+				t.Fatalf("FetchCurrentWorkUnitExecution() returned an unexpected error: %v", err)
+			}
+			if gotExec.GetStatus().GetState() != tc.wantFinalState {
+				t.Errorf("Work unit execution state got %v, want %v", gotExec.GetStatus().GetState(), tc.wantFinalState)
+			}
+		})
+	}
+}
+
+func TestStopWorkUnit_SkippedStateDoesNotAddOperation(t *testing.T) {
+	ctx := context.Background()
+
+	for _, state := range []apipb.WorkUnitStatus_WorkUnitState{
+		apipb.WorkUnitStatus_COMPLETED,
+		apipb.WorkUnitStatus_STOPPED,
+	} {
+		t.Run(state.String(), func(t *testing.T) {
+			workUnit := &apipb.WorkUnit{
+				Name:         "experiments/123/workUnits/456",
+				WorkUnitType: apipb.WorkUnit_STANDARD,
+				Executable:   testExecutable,
+				CurrentWorkUnitExecution: &apipb.WorkUnitExecution{
+					Name:   "experiments/123/workUnits/456/executions/1",
+					Status: &apipb.WorkUnitStatus{State: state},
+				},
+			}
+			xidClient := &mockXidClient{
+				checkUserAuthorizationResp: &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+			}
+			mockStore := &storage.MockStorage{
+				WorkUnit:                workUnit,
+				Experiment:              &apipb.Experiment{Name: "experiments/123"},
+				AddWorkUnitOperationErr: fmt.Errorf("unexpected AddWorkUnitOperation call"),
+			}
+			taskQueueClient := &tq.FakeClient{}
+
+			server := newTestServer(t,
+				withStorage(mockStore),
+				withXidClient(xidClient),
+				withWorkUnitActuator(taskQueueClient),
+			)
+
+			op, err := server.StopWorkUnit(ctx, &apipb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"})
+			if err != nil {
+				t.Fatalf("StopWorkUnit() returned unexpected error: %v", err)
+			}
+			if !op.GetDone() {
+				t.Errorf("StopWorkUnit() returned op.GetDone()=false, want true")
+			}
+			if op.GetName() != "" {
+				t.Errorf("StopWorkUnit() returned op.GetName()=%q, want empty", op.GetName())
+			}
+			if len(taskQueueClient.EnqueuedTasks) != 0 {
+				t.Errorf("StopWorkUnit() enqueued %d tasks, want 0", len(taskQueueClient.EnqueuedTasks))
+			}
+		})
 	}
 }

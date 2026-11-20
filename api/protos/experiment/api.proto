@@ -197,7 +197,9 @@ service ExperimentStateService {
     option (google.api.method_signature) = "parent";
   }
 
-  // Stops the specified work unit.
+  // Stops the specified work unit. Work units already in COMPLETED or STOPPED
+  // state (or with no current execution) are skipped and return an unnamed
+  // Operation with done = true.
   // AIP-136 compliant.
   rpc StopWorkUnit(StopWorkUnitRequest) returns (google.longrunning.Operation) {
     option (google.api.http) = {
@@ -211,7 +213,9 @@ service ExperimentStateService {
     option (google.api.method_signature) = "name";
   }
 
-  // Stops the specified work units in batch.
+  // Stops the specified work units in batch. Work units already in COMPLETED or
+  // STOPPED state (or with no current execution) are skipped; if no matched
+  // work units are stoppable, returns an unnamed Operation with done = true.
   // AIP-136 compliant.
   rpc BatchStopWorkUnits(BatchStopWorkUnitsRequest)
       returns (google.longrunning.Operation) {
@@ -591,8 +595,8 @@ message BatchStopWorkUnitsRequest {
     }
   ];
 
-  // AIP-160 compliant filter expression. If the filter is empty, all work
-  // units will be stopped (as the filter matches all work units).
+  // AIP-160 compliant filter expression. If the filter is empty, all stoppable
+  // work units (excluding COMPLETED and STOPPED) will be stopped.
   string filter = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 

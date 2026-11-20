@@ -182,19 +182,26 @@ sequenceDiagram
     Actuator->>Spanner: 12. UpdateOperation(Done=true)
 ```
 
-Stopping is implemented as JobSet **deletion**, not suspension. The work unit enters `STOPPING`
-immediately (step 7) so the UI reflects the user's intent without waiting for the cluster, and
-reaches `STOPPED` once the Reconciler observes the deletion. (If the work unit is currently in
-`SCHEDULING_PAUSED`, step 7 transitions it directly to `STOPPED`, because its task is buffered in
-Spanner and no JobSet exists in the cluster to emit a deletion watch event.)
+Stopping is implemented as JobSet **deletion**, not suspension. Work units already in `COMPLETED` or
+`STOPPED` (or with no current execution) are skipped before steps 5–7: `StopWorkUnit` (and
+`BatchStopWorkUnits` when no matched work unit is stoppable) returns an unnamed `Operation` with
+`done = true` without persisting a `STOP` operation or enqueuing a `Delete` task. `FAILED` and
+`STOPPING` work units are still enqueued for deletion so live Kueue-admitted JobSets from startup
+failures (such as `ImagePullBackOff`) are cleaned up and lost or out-of-order `Delete` tasks can be
+retried (`ShouldUpdateWorkUnitExecutionState` preserves `FAILED` in Spanner). Otherwise, the work
+unit enters `STOPPING` immediately (step 7) so the UI reflects the user's intent without waiting for
+the cluster, and reaches `STOPPED` once the Reconciler observes the deletion. (If the work unit is
+currently in `SCHEDULING_PAUSED`, step 7 transitions it directly to `STOPPED`, because its task is
+buffered in Spanner and no JobSet exists in the cluster to emit a deletion watch event.)
 
 The XMC finalizer (`jobset.xmanager.cloud/finalizer`) is what makes that observation reliable: the
 JobSet cannot vanish before the Reconciler has recorded its terminal state and removed the
 finalizer. See [Reconciliation §2](reconciliation.md#2-jobset-reconciler).
 
-`BatchStopWorkUnits` runs the same flow per work unit, enqueuing one task each. Because the RPC
-returns after enqueuing rather than after deletion, stopping a large experiment is a fast call
-followed by gradual convergence.
+`BatchStopWorkUnits` filters out `COMPLETED` and `STOPPED` work units and runs the same flow per
+remaining work unit, enqueuing one task each (or returning an unnamed `done = true` `Operation` if
+none remain). Because the RPC returns after enqueuing rather than after deletion, stopping a large
+experiment is a fast call followed by gradual convergence.
 
 ---
 

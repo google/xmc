@@ -48,6 +48,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/validator"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -314,6 +315,33 @@ func mustCreateWorkUnit(ctx context.Context, t *testing.T, server *Server, paren
 		t.Fatalf("CreateWorkUnit() returned an operation that was already done")
 	}
 	return op
+}
+
+func mustSetWorkUnitState(ctx context.Context, t *testing.T, server *Server, xid, wid int64, state essmsgpb.WorkUnitStatus_WorkUnitState) {
+	t.Helper()
+	exec, err := server.WorkUnitHandler.storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution() for work unit %d returned error: %v", wid, err)
+	}
+	_, _, eid, err := validator.ValidateWorkUnitExecutionName(exec.GetName())
+	if err != nil {
+		t.Fatalf("ValidateWorkUnitExecutionName() for work unit %d returned error: %v", wid, err)
+	}
+	if _, err := server.WorkUnitHandler.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{
+		{
+			WID: wid,
+			EID: eid,
+			WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+				Status: &essmsgpb.WorkUnitStatus{
+					State:           state,
+					StateUpdateTime: exec.GetStatus().GetStateUpdateTime(),
+				},
+			},
+			UpdateMask: &fmpb.FieldMask{Paths: []string{"status.state"}},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateWorkUnitExecutions() to %v for work unit %d failed: %v", state, wid, err)
+	}
 }
 
 func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, parent string, artifact *essmsgpb.Artifact) *essmsgpb.Artifact {
