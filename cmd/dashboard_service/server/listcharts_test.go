@@ -119,6 +119,48 @@ func TestListCharts(t *testing.T) {
 		}
 	})
 
+	t.Run("experiment parent lists its experiment-level charts after experiment READER check", func(t *testing.T) {
+		var gotParent, gotXidName string
+		repo := &mockRepository{
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
+				gotParent = parent
+				return []*spb.Chart{{Name: "experiments/42/charts/study", Xid: 42}}, "", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				gotXidName = in.GetName()
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetRoleType() == xidapipb.XidAcls_READER)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42"})
+		if err != nil {
+			t.Fatalf("ListCharts failed: %v", err)
+		}
+		if gotParent != "experiments/42" || gotXidName != "xids/42" {
+			t.Errorf("ListCharts forwarded parent %q and checked %q, want %q and %q", gotParent, gotXidName, "experiments/42", "xids/42")
+		}
+		if len(resp.GetCharts()) != 1 || resp.GetCharts()[0].GetName() != "experiments/42/charts/study" {
+			t.Errorf("Expected the experiment-level chart, got %v", resp.GetCharts())
+		}
+	})
+
+	t.Run("experiment parent denied without experiment READER access", func(t *testing.T) {
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
+			},
+		}
+		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42"})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("Expected code PermissionDenied, got %v", status.Code(err))
+		}
+	})
+
 	t.Run("dashboard parent is not authorized as a whole", func(t *testing.T) {
 		called := false
 		xidMock := &mockXidClient{
@@ -287,9 +329,10 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("unsupported parent shapes return InvalidArgument", func(t *testing.T) {
 		for _, parent := range []string{
-			"experiments/123",             // experiment is not a chart collection parent
+			"experiments/0",               // zero xid
 			"experiments/123/workUnits",   // truncated work unit name
 			"experiments/abc/workUnits/1", // non-numeric xid
+			"experiments/123/charts/c",    // chart name, not a parent
 			"dashboards/1/charts/2",       // chart name, not a parent
 			"charts/1",
 		} {

@@ -170,10 +170,10 @@ func TestListCharts_ParentDashboard_Empty(t *testing.T) {
 	}
 }
 
-// TestListCharts_ParentExperimentRejected pins that an experiment name without a work unit is not a
-// chart collection parent. Charts are keyed by xid and wid, and ListCharts serves only
-// "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
-func TestListCharts_ParentExperimentRejected(t *testing.T) {
+// TestListCharts_ParentExperimentExcludesWorkUnitCharts pins that an experiment parent lists only the
+// experiment-level charts (NULL Wid), never the charts of the experiment's work units, and that a
+// malformed experiment parent is rejected.
+func TestListCharts_ParentExperimentExcludesWorkUnitCharts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
@@ -183,11 +183,11 @@ func TestListCharts_ParentExperimentRejected(t *testing.T) {
 	}
 
 	charts, token, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", time.Duration(0))
-	if err == nil {
-		t.Fatalf("ListCharts with experiment-only parent succeeded, want error: got %d charts, token %q", len(charts), token)
+	if err != nil || len(charts) != 0 || token != "" {
+		t.Fatalf("ListCharts experiment parent = (%d charts, token %q, %v), want no charts", len(charts), token, err)
 	}
-	if !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts experiment-only parent error = %v, want it to mention the work unit parent", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", time.Duration(0)); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
+		t.Errorf("ListCharts zero xid experiment parent error = %v, want a parent validation error", err)
 	}
 }
 
@@ -427,7 +427,7 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	}
 }
 
-func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+func TestExperimentLevelChart_NullWidRoundTripAndList(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
@@ -463,5 +463,30 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 	}
 	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
 		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
+	}
+
+	// The experiment parent lists only that experiment's experiment-level charts, across pages.
+	var listed []string
+	pageToken := ""
+	for page := 0; page < 3; page++ {
+		charts, next, err := repo.ListCharts(ctx, "experiments/100", 1, pageToken, "", "", 0)
+		if err != nil {
+			t.Fatalf("ListCharts experiment parent page %d failed: %v", page, err)
+		}
+		for _, c := range charts {
+			listed = append(listed, c.GetName())
+		}
+		if next == "" {
+			break
+		}
+		pageToken = next
+	}
+	if diff := cmp.Diff([]string{e1.GetName(), e2.GetName()}, listed); diff != "" {
+		t.Errorf("ListCharts experiment parent mismatch (-want +got):\n%s", diff)
+	}
+
+	wuCharts, _, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
+	if err != nil || len(wuCharts) != 1 || wuCharts[0].GetName() != workUnitChart.GetName() {
+		t.Errorf("ListCharts work unit parent = (%+v, %v), want [%s]", wuCharts, err, workUnitChart.GetName())
 	}
 }
