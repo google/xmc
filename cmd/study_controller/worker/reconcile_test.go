@@ -17,6 +17,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -100,6 +101,8 @@ func TestESSReconciler_GateMatrix(t *testing.T) {
 			wantLogs: []string{"Skipping study reconcile tick: study is not active", "active_state=ACTIVE_STATE_UNSPECIFIED"},
 		},
 		{name: "NotFound is skipped and ACKed", err: status.Error(codes.NotFound, "not found"), wantLogs: []string{"Skipping study reconcile tick: experiment not found"}},
+		{name: "wrapped NotFound is skipped and ACKed", err: fmt.Errorf("wrap: %w", status.Error(codes.NotFound, "not found")), wantLogs: []string{"Skipping study reconcile tick: experiment not found"}},
+		{name: "nil experiment without error is retried", exp: nil, wantRetry: true},
 		{name: "Unavailable is retried", err: status.Error(codes.Unavailable, "ess restarting"), wantRetry: true, wantErrCode: codes.Unavailable},
 		{name: "Internal is retried", err: status.Error(codes.Internal, "db error"), wantRetry: true, wantErrCode: codes.Internal},
 		{name: "PermissionDenied is retried", err: status.Error(codes.PermissionDenied, "not authorized"), wantRetry: true, wantErrCode: codes.PermissionDenied},

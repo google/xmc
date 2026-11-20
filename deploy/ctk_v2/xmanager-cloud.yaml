@@ -183,6 +183,7 @@ deployment_groups:
     source: modules/project/service-account
     settings:
       name: xmc-sc-sa
+      project_roles: []
 
   - id: db_spanner
     source: ./deploy/ctk_v2/modules/spanner

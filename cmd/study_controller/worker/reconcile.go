@@ -40,12 +40,15 @@ func NewESSReconciler(reader ExperimentReader) (ReconcileFunc, error) {
 	return func(ctx context.Context, xid int64) error {
 		name := validator.ConstructExperimentName(xid)
 		exp, err := reader.GetExperiment(ctx, name)
-		if status.Code(err) == codes.NotFound {
+		if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
 			logging.Info(ctx, "Skipping study reconcile tick: experiment not found")
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("get experiment %s: %w", name, err)
+		}
+		if exp == nil {
+			return fmt.Errorf("get experiment %s: received nil experiment", name)
 		}
 		if exp.GetExperimentType() != spb.Experiment_STUDY {
 			logging.Info(ctx, "Skipping study reconcile tick: experiment is not a STUDY",

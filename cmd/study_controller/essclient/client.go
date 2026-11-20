@@ -68,6 +68,9 @@ func newWithFactory(ctx context.Context, addr, audience string, factory tokenSou
 
 // GetExperiment fetches the named experiment ("experiments/{xid}") from ESS.
 func (c *Client) GetExperiment(ctx context.Context, name string) (*spb.Experiment, error) {
+	if c == nil || c.ess == nil {
+		return nil, errors.New("ess client is not initialized")
+	}
 	return c.ess.GetExperiment(ctx, &spb.GetExperimentRequest{Name: name})
 }
 
@@ -129,6 +132,9 @@ func (c *idTokenCredentials) tokenSource() (oauth2.TokenSource, error) {
 	source, err := c.factory(c.baseCtx, c.audience)
 	if err != nil {
 		return nil, err
+	}
+	if source == nil {
+		return nil, errors.New("id token source factory returned nil source")
 	}
 	c.ts = source
 	return c.ts, nil

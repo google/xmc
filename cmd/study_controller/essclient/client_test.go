@@ -138,17 +138,17 @@ func TestIDTokenCredentials(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects empty or nil access token", func(t *testing.T) {
+	t.Run("rejects nil token source or empty/nil access token", func(t *testing.T) {
 		t.Parallel()
-		for _, tok := range []*oauth2.Token{nil, {AccessToken: ""}} {
+		for _, ts := range []oauth2.TokenSource{nil, stubTokenSource{tok: nil}, stubTokenSource{tok: &oauth2.Token{AccessToken: ""}}} {
 			creds, err := newIDTokenCredentials(context.Background(), "aud", func(context.Context, string, ...idtoken.ClientOption) (oauth2.TokenSource, error) {
-				return stubTokenSource{tok: tok}, nil
+				return ts, nil
 			})
 			if err != nil {
 				t.Fatalf("newIDTokenCredentials() error = %v", err)
 			}
 			if _, err := creds.GetRequestMetadata(context.Background()); err == nil {
-				t.Fatalf("GetRequestMetadata() with tok=%v error = nil, want error", tok)
+				t.Fatalf("GetRequestMetadata() with ts=%#v error = nil, want error", ts)
 			}
 		}
 	})
@@ -165,6 +165,9 @@ func TestClient_NewValidationAndGetExperiment(t *testing.T) {
 	}
 	if err := (*Client)(nil).Close(); err != nil {
 		t.Fatalf("(*Client)(nil).Close() error = %v, want nil", err)
+	}
+	if _, err := (*Client)(nil).GetExperiment(context.Background(), "experiments/1"); err == nil {
+		t.Fatal("(*Client)(nil).GetExperiment() error = nil, want error")
 	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
