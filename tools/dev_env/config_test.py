@@ -372,7 +372,47 @@ class ConfigResolutionTest(unittest.TestCase):
         args_default = argparse.Namespace(project_id="my-proj")
         cfg_default = config.load_config(args_default, repo_root=self.root)
         self.assertFalse(cfg_default.enable_managed_mldiagnostics)
+        self.assertFalse(cfg_default.deploy_mldiagnostics_operator)
+        self.assertEqual(
+            cfg_default.mldiagnostics_operator_chart_version,
+            config.DEFAULT_MLDIAGNOSTICS_OPERATOR_CHART_VERSION,
+        )
         self.assertEqual(cfg_default.managed_xprof_gcs_bucket, "")
+
+    def test_pinned_mldiagnostics_operator_resolution_and_validation(self) -> None:
+        """Verifies pinned Helm operator settings resolve and reject conflicts or 'latest'."""
+        cfg_file = self.root / "mldiag_operator_config.yaml"
+        cfg_file.write_text(
+            "vars:\n"
+            "  project_id: my-proj\n"
+            "  deploy_mldiagnostics_operator: true\n"
+            '  mldiagnostics_operator_chart_version: "0.24.0"\n',
+            encoding="utf-8",
+        )
+        cfg_yaml = config.load_config(
+            argparse.Namespace(config=str(cfg_file)),
+            repo_root=self.root,
+        )
+        self.assertTrue(cfg_yaml.deploy_mldiagnostics_operator)
+        self.assertEqual(cfg_yaml.mldiagnostics_operator_chart_version, "0.24.0")
+
+        with self.assertRaisesRegex(ValueError, "Cannot enable both"):
+            config.LocalDevConfig(
+                project_id="my-proj",
+                enable_managed_mldiagnostics=True,
+                deploy_mldiagnostics_operator=True,
+            )
+
+        for bad_ver in ("", "   ", "latest", "LATEST"):
+            with self.subTest(bad_ver=bad_ver):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "Invalid mldiagnostics_operator_chart_version",
+                ):
+                    config.LocalDevConfig(
+                        project_id="my-proj",
+                        mldiagnostics_operator_chart_version=bad_ver,
+                    )
 
 
 class LocalDevConfigDataClassTest(unittest.TestCase):

@@ -67,6 +67,11 @@ vars:
   # Enable Google Cloud Managed ML Diagnostics (Hypercompute Cluster ML Runs & GKE Connection Operator)
   # Requires GKE cluster version 1.35.0-gke.3065000 or later.
   enable_managed_mldiagnostics: false
+  # Install the ML Diagnostics Connection Operator via Helm (for clusters without GKE Managed ML Diagnostics,
+  # e.g. GKE < 1.35.0-gke.3065000). Mutually exclusive with enable_managed_mldiagnostics.
+  deploy_mldiagnostics_operator: false
+  # Pinned OCI Helm chart version for mldiagnostics-connection-operator.
+  mldiagnostics_operator_chart_version: "0.24.0"
   # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
   # Empty (default) leaves managed-xprof GCS wiring disabled on the actuator.
   managed_xprof_gcs_bucket: ""
@@ -103,7 +108,7 @@ deployment_groups:
         "cloudresourcemanager.googleapis.com",
         "servicenetworking.googleapis.com",
         "certificatemanager.googleapis.com"
-      ], vars.database_backend == "spanner" ? ["spanner.googleapis.com"] : [], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.googleapis.com"] : []))'
+      ], vars.database_backend == "spanner" ? ["spanner.googleapis.com"] : [], (vars.enable_managed_mldiagnostics || vars.deploy_mldiagnostics_operator) ? ["hypercomputecluster.googleapis.com"] : []))'
 
 - group: primary
   modules:
@@ -149,7 +154,7 @@ deployment_groups:
         "artifactregistry.reader",
         "serviceusage.serviceUsageConsumer",
         "browser"
-      ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.editor"] : []))'
+      ], (vars.enable_managed_mldiagnostics || vars.deploy_mldiagnostics_operator) ? ["hypercomputecluster.editor"] : []))'
 
   - id: workload_sa_token_creator
     source: ./deploy/ctk_v2/modules/self-token-creator
@@ -266,7 +271,7 @@ deployment_groups:
         "stackdriver.resourceMetadata.writer",
         "storage.objectViewer",
         "artifactregistry.reader"
-      ], vars.enable_managed_mldiagnostics ? ["storage.objectAdmin"] : []))'
+      ], (vars.enable_managed_mldiagnostics || vars.deploy_mldiagnostics_operator) ? ["storage.objectAdmin"] : []))'
 
   - id: xmc_wi_binding_ess
     source: modules/project/workload_identity_binding
@@ -396,6 +401,18 @@ deployment_groups:
       set_values:
       - name: certs.certManager.enabled
         value: "true"
+
+  - id: install_mldiagnostics_operator
+    source: ./deploy/ctk_v2/modules/mldiagnostics-operator
+    use: [compute_cluster]
+    settings:
+      enabled: $(vars.deploy_mldiagnostics_operator)
+      enable_managed_mldiagnostics: $(vars.enable_managed_mldiagnostics)
+      release_name: mldiagnostics-connection-operator
+      chart_version: $(vars.mldiagnostics_operator_chart_version)
+      namespace: gke-mldiagnostics
+      create_namespace: true
+      dependencies: [$(install_cert_manager.release_completion_id)]
 
 - group: xmc_app
   modules:

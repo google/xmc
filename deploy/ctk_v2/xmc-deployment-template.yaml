@@ -81,6 +81,12 @@ vars:
   # Requires GKE cluster version 1.35.0-gke.3065000 or later.
   enable_managed_mldiagnostics: false
 
+  # Install the ML Diagnostics Connection Operator via Helm at a pinned chart version
+  # (for clusters without GKE Managed ML Diagnostics, e.g. GKE < 1.35.0-gke.3065000).
+  # Mutually exclusive with enable_managed_mldiagnostics.
+  deploy_mldiagnostics_operator: false
+  mldiagnostics_operator_chart_version: "0.24.0"
+
   # GCS bucket for Managed XProf profiling data, e.g. gs://<project>-mlruns.
   # When set, the actuator injects the GCS destination into workload JobSets so
   # Managed ML Diagnostics (xprof) traces are written to GCS. Requires a GKE

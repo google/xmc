@@ -44,8 +44,10 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
 *   **`pause_scheduling_enabled`**: Boolean flag (`true`/`false`, default: `true`). Set to `true` to enable the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS (`XMC_PAUSE_SCHEDULING_ENABLED`). Resumption batch size and backlog throttling can be tuned via `health_scheduling_resume_batch_size` (default: `100`) and `health_scheduling_resume_max_backlog` (default: `500`).
 *   **`log_monitor_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Controls whether the Log Monitor runs as a GKE Deployment (`true`) or as a Cloud Run service (`false`).
-*   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster, enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads.
-*   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires Managed ML Diagnostics enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
+*   **`enable_managed_mldiagnostics`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to enable Google Cloud Managed ML Diagnostics on the GKE cluster (`1.35.0-gke.3065000+`), enable the Hypercompute Cluster API, and configure IAM roles for MLRun management and GCS trace uploads. Mutually exclusive with `deploy_mldiagnostics_operator`.
+*   **`deploy_mldiagnostics_operator`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` on clusters without GKE Managed ML Diagnostics (for example GKE `< 1.35.0-gke.3065000`) to install the `mldiagnostics-connection-operator` OCI Helm chart in `gke-mldiagnostics` at a pinned chart version, enable the Hypercompute Cluster API, and configure IAM roles. Mutually exclusive with `enable_managed_mldiagnostics`.
+*   **`mldiagnostics_operator_chart_version`**: Pinned semantic version of the `mldiagnostics-connection-operator` OCI Helm chart installed when `deploy_mldiagnostics_operator: true` (default: `"0.24.0"`; `"latest"` is rejected).
+*   **`managed_xprof_gcs_bucket`**: GCS bucket for Managed XProf profiling data (e.g. `gs://<project>-mlruns`). When set, the actuator injects the GCS destination into workload JobSets so Managed ML Diagnostics (xprof) captures land in GCS. Requires either `enable_managed_mldiagnostics` or `deploy_mldiagnostics_operator` enabled on the cluster (see [Managed ML Diagnostics (Managed XProf)](#managed-ml-diagnostics-managed-xprof)).
 
 > [!IMPORTANT]
 > **Metrics Dashboards Requirement**: Metrics remain opt-in and disabled by default out-of-the-box (`dashboard_service_deployment_enabled` defaults to `false`, and `redpanda`, `clickhouse`, and `ingestion-gateway` all default to `enabled: false` in `stable-2026a`), so standard XMC deployments do not require BYO ClickHouse or Redpanda. `xmc-bridge` is always deployed by the umbrella chart; to enable end-to-end "Metrics dashboards" and chart visualization functionality:
@@ -55,27 +57,35 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 > 4. If `dashboard-service` was already running before step 3, wait until `xmc-bridge` has reconciled the component and then restart it once so it picks up the new data engine (it decides at startup whether `Component/clickhouse` is enabled, and treats a CR still in `COMPONENT_STATE_DISABLED` as disabled): `kubectl wait component.xmc.dev/clickhouse -n xmc --for=condition=Ready --timeout=120s && kubectl rollout restart deployment/dashboard-service-deployment -n xmc`.
 
 ### Managed ML Diagnostics (Managed XProf)
-Managed XProf uses the native GKE Managed ML Diagnostics feature, available on GKE clusters running version **`1.35.0-gke.3065000` or later**.
+Managed XProf supports two mutually exclusive operator deployment modes:
 
-Enable it in your deployment blueprint by setting the variables in `deploy/ctk_v2/xmanager-cloud-deployment.yaml`:
-```yaml
-vars:
-  enable_managed_mldiagnostics: true
-  managed_xprof_gcs_bucket: "gs://<project>-mlruns"
-```
+1. **GKE Managed ML Diagnostics (Recommended on GKE `1.35.0-gke.3065000+`)**: Uses the native GKE Managed ML Diagnostics addon (`enable_managed_mldiagnostics: true`), where GKE manages the in-cluster `mldiagnostics-connection-operator` automatically:
+   ```yaml
+   vars:
+     enable_managed_mldiagnostics: true
+     managed_xprof_gcs_bucket: "gs://<project>-mlruns"
+   ```
+   For existing `1.35.0-gke.3065000+` clusters not provisioned with `enable_managed_mldiagnostics: true`, enable the feature flag on the GKE cluster via:
+   ```bash
+   gcloud container clusters update <CLUSTER_NAME> \
+     --project <PROJECT_ID> --location <REGION> \
+     --enable-managed-mldiagnostics
+   ```
+
+2. **Pinned Helm Operator (`deploy_mldiagnostics_operator: true` for clusters without GKE Managed ML Diagnostics)**: Installs `mldiagnostics-connection-operator` in `gke-mldiagnostics` from `oci://us-docker.pkg.dev/ai-on-gke/mldiagnostics-webhook-and-operator-helm/mldiagnostics-connection-operator` during the `kubernetes_prereqs` stage at a pinned chart version (`0.24.0` by default; `"latest"` is rejected):
+   ```yaml
+   vars:
+     deploy_mldiagnostics_operator: true
+     mldiagnostics_operator_chart_version: "0.24.0"
+     managed_xprof_gcs_bucket: "gs://<project>-mlruns"
+   ```
+
 Then run deployment normally:
 ```bash
 python3 tools/dev_env/dev_env.py gke-deploy --config deploy/ctk_v2/xmanager-cloud-deployment.yaml ...
 ```
 
-For existing clusters not provisioned with `enable_managed_mldiagnostics: true`, enable the feature flag on the GKE cluster via:
-```bash
-gcloud container clusters update <CLUSTER_NAME> \
-  --project <PROJECT_ID> --location <REGION> \
-  --enable-managed-mldiagnostics
-```
-
-> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
+> **Note:** Do not enable both `enable_managed_mldiagnostics: true` and `deploy_mldiagnostics_operator: true` at the same time—both manage `mldiagnostics-connection-operator` in the `gke-mldiagnostics` namespace, and configuration/Terraform validation rejects enabling both simultaneously.
 
 ### ClickHouse Connection & Credentials (Metrics Pipeline)
 ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled at pod startup, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on subsequent CR or Secret updates without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, wait for `xmc-bridge` to reconcile it (a CR still in `COMPONENT_STATE_DISABLED` counts as disabled at startup) and then restart the service once so it initializes its dynamic chart data engine:
