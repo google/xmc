@@ -97,7 +97,7 @@ When invoking helper tools under `tools/` (e.g., `run_affected_tests.py`):
    git add <changed_paths>
    ./.githooks/pre-commit
    ```
-2. **Verify Linter & Affected Test Status**:
-   Ensure all linters and affected unit tests pass without errors or warnings.
+2. **Verify Linter, Affected Test & Doc-Sync Status**:
+   Ensure all linters and affected unit tests pass without errors or warnings. Run `./tools/analyze_diff_size.py --base-ref origin/main...`. If its `warnings` list reports production changes without docs, update the locations listed under [Documentation Alignment](../../rules/core_engineering.md#5-strict-testing-coverage--pr-granularity) in this PR. If no docs apply, record why in the PR body.
 3. **Proceed to PR Creation**:
    Refer to the [XMC Create PR Skill](../xmc_create_pr/SKILL.md) to format the commit message and submit a Pull Request.
