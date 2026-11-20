@@ -1,0 +1,7 @@
+fix(rod): mock getResourceAvailability in resource_dashboard_test
+
+- Add getResourceAvailability to ResourceService mock
+- Make it return empty observable to satisfy init component tests
+
+TAG=agy
+CONV=d423f974-f0ca-4beb-be3f-fc35cb98d499
