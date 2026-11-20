@@ -243,12 +243,15 @@ def _verify_workunit_details_loads(
     timeout_ms: int = 60000,
 ) -> bool:
     """Returns True when /experiments/{xid}/workUnits/{wid} renders WorkUnit details."""
-    _navigate_to_path(session, f"/experiments/{xid}/workUnits/{wid}", timeout_ms=timeout_ms)
-    if _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) == 0:
-        _wait_for_selector_best_effort(
-            session.page, _WORKUNIT_DETAILS_SEL, timeout_ms=min(timeout_ms, 5000)
-        )
-    return _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) > 0
+    try:
+        _navigate_to_path(session, f"/experiments/{xid}/workUnits/{wid}", timeout_ms=timeout_ms)
+        if _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) == 0:
+            _wait_for_selector_best_effort(
+                session.page, _WORKUNIT_DETAILS_SEL, timeout_ms=min(timeout_ms, 5000)
+            )
+        return _locator_count(session.page.locator(_WORKUNIT_DETAILS_SEL)) > 0
+    except Exception:
+        return False
 
 
 def probe_experiment_workunit(
@@ -259,20 +262,23 @@ def probe_experiment_workunit(
     """Verifies an experiment has accessible work units and returns a valid workUnit ID."""
     if not str(xid or "").strip():
         return ""
-    _navigate_to_path(session, f"/experiments/{xid}", timeout_ms=timeout_ms)
-    _wait_for_selector_best_effort(
-        session.page, _EXPERIMENT_LOAD_SEL, timeout_ms=min(timeout_ms, 5000)
-    )
-    if _locator_count(session.page.locator(_EXPERIMENT_TITLE_SEL)) == 0:
+    try:
+        _navigate_to_path(session, f"/experiments/{xid}", timeout_ms=timeout_ms)
+        _wait_for_selector_best_effort(
+            session.page, _EXPERIMENT_LOAD_SEL, timeout_ms=min(timeout_ms, 5000)
+        )
+        if _locator_count(session.page.locator(_EXPERIMENT_TITLE_SEL)) == 0:
+            return ""
+        if _locator_count(session.page.locator(_WORKUNITS_TAB_SEL)) > 0:
+            session.switch_tab("Work Units", timeout_ms=min(timeout_ms, 15000))
+        _wait_for_selector_best_effort(
+            session.page, _WORKUNIT_TABLE_READY_SEL, timeout_ms=min(timeout_ms, 10000)
+        )
+        for wid in discover_workunit_ids_from_page(session.page, xid=xid):
+            if _verify_workunit_details_loads(session, xid, wid, timeout_ms=timeout_ms):
+                return wid
+    except Exception:
         return ""
-    if _locator_count(session.page.locator(_WORKUNITS_TAB_SEL)) > 0:
-        session.switch_tab("Work Units", timeout_ms=min(timeout_ms, 15000))
-    _wait_for_selector_best_effort(
-        session.page, _WORKUNIT_TABLE_READY_SEL, timeout_ms=min(timeout_ms, 10000)
-    )
-    for wid in discover_workunit_ids_from_page(session.page, xid=xid):
-        if _verify_workunit_details_loads(session, xid, wid, timeout_ms=timeout_ms):
-            return wid
     return ""
 
 

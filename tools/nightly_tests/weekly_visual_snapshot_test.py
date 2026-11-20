@@ -251,6 +251,39 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "203"), "9")
         session.switch_tab.assert_called_once_with("Work Units", timeout_ms=15000)
 
+    def test_probe_experiment_workunit_recovers_from_navigation_errors(self) -> None:
+        session = self._mock_session()
+        session.page.goto.side_effect = TimeoutError("navigation timeout")
+        self.assertEqual(weekly_visual_snapshot.probe_experiment_workunit(session, "204"), "")
+
+        routes: dict[str, Callable[[], Mapping[str, list[_FakeElement]]]] = {
+            "/experiments/205": lambda: {
+                "h1.experiment-title": [_FakeElement(text="Flaky First WU")],
+                'xmc-work-units-table a[href*="/workUnits/"]': [
+                    _FakeElement(attrs={"href": "/experiments/205/workUnits/1"}, text="1"),
+                    _FakeElement(attrs={"href": "/experiments/205/workUnits/2"}, text="2"),
+                ],
+            },
+            "/experiments/205/workUnits/2": lambda: {
+                "xmc-work-unit-details": [_FakeElement(text="Details")],
+            },
+        }
+        flaky_page = _FakeRoutePage(routes)
+        orig_goto = flaky_page.goto
+
+        def goto_with_wu1_timeout(
+            url: str, wait_until: str = "networkidle", timeout: int = 60000
+        ) -> None:
+            if url.endswith("/workUnits/1"):
+                raise TimeoutError("wu1 timeout")
+            orig_goto(url, wait_until=wait_until, timeout=timeout)
+
+        flaky_page.goto = goto_with_wu1_timeout  # type: ignore[method-assign]
+        flaky_session = self._route_session(flaky_page)
+        self.assertEqual(
+            weekly_visual_snapshot.probe_experiment_workunit(flaky_session, "205"), "2"
+        )
+
     def test_discover_experiment_and_workunit_paginates_on_exhausted_page(self) -> None:
         current_page = 0
 
