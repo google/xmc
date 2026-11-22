@@ -292,6 +292,13 @@ queues:
     flavors:
       - name: gpu-flavor
         nodeLabels: {}
+        # Added to pods admitted in this flavor, and copied into the
+        # ProvisioningRequest's PodTemplate. A flavor whose nodes carry an
+        # accelerator taint needs this before `admissionCheck` is set.
+        tolerations: []
+        # An AdmissionCheck the queue consults for this flavor alone. Empty
+        # leaves the flavor admitting on quota.
+        admissionCheck: ""
         resources:
           nvidia.com/gpu: "100000000"
           cpu: "100000000"

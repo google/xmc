@@ -33,6 +33,13 @@ spec:
 {{- else }}
   nodeLabels: {}
 {{- end }}
+{{- if .tolerations }}
+  # Kueue copies these into the ProvisioningRequest's PodTemplate, which is built
+  # from the podset and so never passes through the admission controller that
+  # tolerates a node's accelerator taint for a real pod.
+  tolerations:
+    {{- toYaml .tolerations | nindent 4 }}
+{{- end }}
 ---
 {{- end }}
 apiVersion: kueue.x-k8s.io/v1beta2
@@ -43,13 +50,32 @@ spec:
   namespaceSelector: {}
   preemption:
     withinClusterQueue: {{ ($queue.preemption).withinClusterQueue | default "Never" }}
+{{- $checks := list }}
 {{- if ($queue.multikueue).clusters }}
-  # Everything this queue admits runs on a worker, so the quota below describes
-  # the workers' capacity rather than this cluster's.
+{{- /* Carries no `onFlavors`, so it runs for every workload, and the queue then
+       runs nothing locally: the quota becomes a claim about the workers. */}}
+{{- $checks = append $checks (dict "name" "multikueue-gpu") }}
+{{- end }}
+{{- /* Kueue keys `admissionChecks` by name, so every flavor naming the same
+       check has to arrive as one entry listing them all. */}}
+{{- $checkOrder := list }}
+{{- $checkFlavors := dict }}
+{{- range $flavors }}
+{{- if .admissionCheck }}
+{{- if not (hasKey $checkFlavors .admissionCheck) }}
+{{- $checkOrder = append $checkOrder .admissionCheck }}
+{{- $_ := set $checkFlavors .admissionCheck list }}
+{{- end }}
+{{- $_ := set $checkFlavors .admissionCheck (append (index $checkFlavors .admissionCheck) .name) }}
+{{- end }}
+{{- end }}
+{{- range $checkOrder }}
+{{- $checks = append $checks (dict "name" . "onFlavors" (index $checkFlavors .)) }}
+{{- end }}
+{{- if $checks }}
   admissionChecksStrategy:
     admissionChecks:
-    # No `onFlavors`, so the check runs for every workload in the queue.
-    - name: multikueue-gpu
+      {{- toYaml $checks | nindent 6 }}
 {{- end }}
 {{- if $flavors }}
   resourceGroups:
