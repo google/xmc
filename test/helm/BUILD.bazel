@@ -43,6 +43,21 @@ py_test(
 )
 
 py_test(
+    name = "mldiagnostics_operator_blueprint_test",
+    srcs = ["mldiagnostics_operator_blueprint_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/ctk_v2:mldiagnostics_operator_module",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "mldiagnostics_operator_blueprint_test.py",
+    deps = [":chart_test_lib"],
+)
+
+py_test(
     name = "chart_test_lib_test",
     srcs = ["chart_test_lib_test.py"],
     data = ["//deploy/helm:chart"],

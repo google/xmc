@@ -44,6 +44,9 @@ BASE_SERVICES: list[str] = [
 ]
 
 ENABLE_MANAGED_MLDIAGNOSTICS_ENV: str = "ENABLE_MANAGED_MLDIAGNOSTICS"
+DEPLOY_MLDIAGNOSTICS_OPERATOR_ENV: str = "DEPLOY_MLDIAGNOSTICS_OPERATOR"
+MLDIAGNOSTICS_OPERATOR_CHART_VERSION_ENV: str = "MLDIAGNOSTICS_OPERATOR_CHART_VERSION"
+DEFAULT_MLDIAGNOSTICS_OPERATOR_CHART_VERSION: str = "0.24.0"
 MANAGED_XPROF_GCS_BUCKET_ENV: str = "MANAGED_XPROF_GCS_BUCKET"
 
 
@@ -59,6 +62,8 @@ class LocalDevConfig:
     cluster_name: str = ""
     auto_migrate: bool = True
     enable_managed_mldiagnostics: bool = False
+    deploy_mldiagnostics_operator: bool = False
+    mldiagnostics_operator_chart_version: str = DEFAULT_MLDIAGNOSTICS_OPERATOR_CHART_VERSION
     managed_xprof_gcs_bucket: str = ""
     enabled_services: list[str] = field(default_factory=lambda: list(BASE_SERVICES))
     config_path: Path | None = None
@@ -66,6 +71,31 @@ class LocalDevConfig:
     remote_k8s_namespace: str = "xmc"
     remote_k8s_service_account: str = "actuator-service-account"
     gcp_service_account: str = ""
+
+    def _validate_mldiagnostics_fields(self) -> None:
+        """Validates ML Diagnostics operator pinning, exclusivity, and GCS bucket URI."""
+        if self.enable_managed_mldiagnostics and self.deploy_mldiagnostics_operator:
+            raise ValueError(
+                "Cannot enable both 'enable_managed_mldiagnostics' and "
+                "'deploy_mldiagnostics_operator': both manage "
+                "mldiagnostics-connection-operator in namespace gke-mldiagnostics."
+            )
+        pinned_ver = (self.mldiagnostics_operator_chart_version or "").strip()
+        if not pinned_ver or pinned_ver.lower() == "latest":
+            raise ValueError(
+                "Invalid mldiagnostics_operator_chart_version: "
+                f"'{self.mldiagnostics_operator_chart_version}'. "
+                "Specify a pinned semantic version (for example '0.24.0'), never empty or 'latest'."
+            )
+        self.mldiagnostics_operator_chart_version = pinned_ver
+        if self.managed_xprof_gcs_bucket:
+            cleaned = self.managed_xprof_gcs_bucket.strip().rstrip("/")
+            if not cleaned.startswith("gs://") or cleaned == "gs:":
+                raise ValueError(
+                    f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
+                    "The bucket URI must start with 'gs://' and specify a bucket name."
+                )
+            self.managed_xprof_gcs_bucket = cleaned
 
     def __post_init__(self) -> None:
         """Applies dynamic defaults and validates required configuration fields."""
@@ -75,14 +105,7 @@ class LocalDevConfig:
                 "Specify it via --project-id / -p, PROJECT_ID / GCP_PROJECT_ID "
                 "environment variable, or in your configuration YAML file."
             )
-        if self.managed_xprof_gcs_bucket:
-            cleaned = self.managed_xprof_gcs_bucket.strip().rstrip("/")
-            if not cleaned.startswith("gs://") or cleaned == "gs:":
-                raise ValueError(
-                    f"Invalid GCS bucket URI: '{self.managed_xprof_gcs_bucket}'. "
-                    "The bucket URI must start with 'gs://' and specify a bucket name."
-                )
-            self.managed_xprof_gcs_bucket = cleaned
+        self._validate_mldiagnostics_fields()
         if not self.spanner_instance:
             self.spanner_instance = f"xmc-{self.environment}"
         if not self.ess_database:
@@ -279,6 +302,41 @@ def _resolve_enabled_services(
     return services
 
 
+def _resolve_mldiagnostics_settings(
+    yaml_vars: dict[str, Any],
+) -> tuple[bool, bool, str, str]:
+    """Resolves ML Diagnostics and Managed XProf settings from env and YAML."""
+    enable_managed = _resolve_bool_flag(
+        None,
+        os.environ.get(ENABLE_MANAGED_MLDIAGNOSTICS_ENV),
+        yaml_vars.get("enable_managed_mldiagnostics"),
+        default=False,
+    )
+    deploy_operator = _resolve_bool_flag(
+        None,
+        os.environ.get(DEPLOY_MLDIAGNOSTICS_OPERATOR_ENV),
+        yaml_vars.get("deploy_mldiagnostics_operator"),
+        default=False,
+    )
+    raw_chart_ver = (
+        os.environ.get(MLDIAGNOSTICS_OPERATOR_CHART_VERSION_ENV)
+        if os.environ.get(MLDIAGNOSTICS_OPERATOR_CHART_VERSION_ENV) is not None
+        else yaml_vars.get("mldiagnostics_operator_chart_version")
+    )
+    chart_ver = (
+        DEFAULT_MLDIAGNOSTICS_OPERATOR_CHART_VERSION
+        if raw_chart_ver is None
+        else str(raw_chart_ver)
+    )
+    gcs_bucket = _resolve_str_flag(
+        None,
+        os.environ.get(MANAGED_XPROF_GCS_BUCKET_ENV),
+        yaml_vars.get("managed_xprof_gcs_bucket"),
+        default="",
+    )
+    return enable_managed, deploy_operator, chart_ver, gcs_bucket
+
+
 def load_config(
     args: argparse.Namespace | None = None,
     config_path: str | Path | None = None,
@@ -344,19 +402,12 @@ def load_config(
         default=True,
     )
 
-    enable_managed_mldiagnostics = _resolve_bool_flag(
-        None,
-        os.environ.get(ENABLE_MANAGED_MLDIAGNOSTICS_ENV),
-        yaml_vars.get("enable_managed_mldiagnostics"),
-        default=False,
-    )
-
-    managed_xprof_gcs_bucket = _resolve_str_flag(
-        None,
-        os.environ.get(MANAGED_XPROF_GCS_BUCKET_ENV),
-        yaml_vars.get("managed_xprof_gcs_bucket"),
-        default="",
-    )
+    (
+        enable_managed_mldiagnostics,
+        deploy_mldiagnostics_operator,
+        mldiagnostics_operator_chart_version,
+        managed_xprof_gcs_bucket,
+    ) = _resolve_mldiagnostics_settings(yaml_vars)
 
     enabled_services = _resolve_enabled_services(args, yaml_vars)
 
@@ -423,6 +474,8 @@ def load_config(
         cluster_name=cluster_name,
         auto_migrate=auto_migrate,
         enable_managed_mldiagnostics=enable_managed_mldiagnostics,
+        deploy_mldiagnostics_operator=deploy_mldiagnostics_operator,
+        mldiagnostics_operator_chart_version=mldiagnostics_operator_chart_version,
         managed_xprof_gcs_bucket=managed_xprof_gcs_bucket,
         enabled_services=enabled_services,
         config_path=resolved_path,

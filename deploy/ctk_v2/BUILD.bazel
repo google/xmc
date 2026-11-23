@@ -25,6 +25,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "mldiagnostics_operator_module",
+    srcs = glob(["modules/mldiagnostics-operator/*.tf"]),
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "verify_xmc_lib",
     srcs = ["verify_xmc.py"],
