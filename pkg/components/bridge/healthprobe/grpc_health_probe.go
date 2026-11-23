@@ -39,9 +39,10 @@ const (
 	// maxGRPCStatusMessageBytes bounds the server-supplied status text copied into probe messages.
 	maxGRPCStatusMessageBytes = 256
 
-	// GRPCHealthUnimplementedMessage reports that the server answered Health/Check with
-	// UNIMPLEMENTED: it speaks gRPC but does not serve grpc.health.v1, so the probe falls back
-	// to transport reachability, which already proves more than a TCP dial.
+	// GRPCHealthUnimplementedMessage reports that Health/Check returned UNIMPLEMENTED: typically a
+	// gRPC server without grpc.health.v1, but grpc-go also maps a plain HTTP/2 404 to UNIMPLEMENTED.
+	// Either way an HTTP/2 server answered, which proves at least what a TCP dial proves, so the
+	// probe falls back to reachability.
 	GRPCHealthUnimplementedMessage = "gRPC health service not implemented; server reachable (TCP-equivalent fallback)"
 )
 
@@ -51,8 +52,8 @@ var ErrGRPCSNotSupported = errors.New("grpcs:// health probes are not supported;
 // ProbeGRPC calls grpc.health.v1.Health/Check for the overall server (empty service name) over a
 // plaintext connection to address (host:port, with or without the grpc:// prefix).
 //
-// SERVING is healthy. UNIMPLEMENTED is healthy with GRPCHealthUnimplementedMessage, because the
-// server answered with a real gRPC status. Any other serving status, RPC error, or timeout is an
+// SERVING is healthy. UNIMPLEMENTED is healthy with GRPCHealthUnimplementedMessage, because an
+// HTTP/2 server answered (see the constant). Any other serving status, RPC error, or timeout is an
 // unhealthy result. Cancellation of ctx itself returns ctx's error. Malformed addresses return an
 // error that never echoes the address, so credentials in a misconfigured target are not logged.
 func (p *NetworkHealthProber) ProbeGRPC(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error) {

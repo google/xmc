@@ -54,7 +54,7 @@ A TCP probe only proves that the port accepts connections. With `healthCheckEndp
 | Health/Check outcome | `vizier` readiness |
 | :--- | :--- |
 | `SERVING` | Ready, with the condition message `Static endpoint is reachable and healthy: gRPC health SERVING`. |
-| `UNIMPLEMENTED` (the server does not register `grpc.health.v1`) | Ready, with the condition message `Static endpoint is reachable and healthy: gRPC health service not implemented; server reachable (TCP-equivalent fallback)`. The server answered with a real gRPC status, which proves at least what the TCP probe proves. |
+| `UNIMPLEMENTED` (the server does not register `grpc.health.v1`) | Ready, with the condition message `Static endpoint is reachable and healthy: gRPC health service not implemented; server reachable (TCP-equivalent fallback)`. The server answered over HTTP/2, which proves at least what the TCP probe proves. (gRPC clients also report a plain HTTP/2 `404` as `UNIMPLEMENTED`, so this does not prove the listener is Vizier.) |
 | `NOT_SERVING`, `SERVICE_UNKNOWN`, any other gRPC error, or timeout | Not Ready (`Reconciling=True`) with the status in the message. |
 
 - Upstream Open Source Vizier (`DefaultVizierServer`, including the dev fixture) does not register the health service, so it reports `UNIMPLEMENTED`. To get a real `SERVING` / `NOT_SERVING` signal, register a `grpc.health.v1` servicer in your Vizier server. What `SERVING` means (for example, whether it covers the Vizier database) is up to that servicer.

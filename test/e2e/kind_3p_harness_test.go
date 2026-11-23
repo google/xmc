@@ -889,7 +889,7 @@ func TestKind3PHarnessUnit(t *testing.T) {
 }
 
 // verifyKindGRPCProbeRewrite checks that grpc:// targets reach the delegate rewritten to the NodePort
-// and that grpcs:// reaches it unchanged, so the delegate reports it as unsupported.
+// and that grpcs:// reaches it unchanged, so the production delegate reports it as unsupported.
 func verifyKindGRPCProbeRewrite(t *testing.T, node *corev1.Node) {
 	t.Helper()
 	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "vizier-service", Namespace: "xmc-test"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Ports: []corev1.ServicePort{{Name: "grpc", Port: 7077, NodePort: 31077}}}}
@@ -907,9 +907,11 @@ func verifyKindGRPCProbeRewrite(t *testing.T, node *corev1.Node) {
 			t.Errorf("%s(%q) = (%+v, %v), want the delegate result for grpc://172.18.0.2:31077", name, target, got, err)
 		}
 	}
-	delegate.ProbeErr = healthprobe.ErrGRPCSNotSupported
-	if _, err := prober.Probe(ctx, "grpcs://vizier-service.xmc-test.svc.cluster.local:7077", time.Second); !errors.Is(err, healthprobe.ErrGRPCSNotSupported) {
-		t.Errorf("Probe(grpcs://) error = %v, want the delegate's ErrGRPCSNotSupported", err)
+	const grpcsTarget = "grpcs://vizier-service.xmc-test.svc.cluster.local:7077"
+	wantGRPCS := &healthprobe.HealthProbeResult{Message: "grpcs target passed through unchanged"}
+	delegate.SetResult(grpcsTarget, wantGRPCS)
+	if got, err := prober.Probe(ctx, grpcsTarget, time.Second); err != nil || got != wantGRPCS {
+		t.Errorf("Probe(%q) = (%+v, %v), want the delegate result for the unchanged target", grpcsTarget, got, err)
 	}
 }
 
