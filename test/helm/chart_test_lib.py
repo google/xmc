@@ -124,6 +124,15 @@ def render_chart(
     return _render(values, chart_dir=chart_dir, release_name=release_name)
 
 
+def _resolve_chart_dir(chart_dir: str | None) -> str:
+    """Resolves a chart directory path: defaults to deploy/helm, resolves repo-relative paths."""
+    if not chart_dir:
+        return find_chart_dir()
+    if os.path.isabs(chart_dir):
+        return chart_dir
+    return os.path.dirname(find_repo_file(os.path.join(chart_dir, "Chart.yaml")))
+
+
 def _render(
     values: dict[str, str],
     *args: str,
@@ -136,7 +145,7 @@ def _render(
         "helm",
         "template",
         release_name,
-        chart_dir or find_chart_dir(),
+        _resolve_chart_dir(chart_dir),
         *args,
         *overrides,
     ]

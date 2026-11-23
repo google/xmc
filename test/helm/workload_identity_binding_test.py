@@ -98,15 +98,12 @@ class WorkloadIdentityBindingTest(unittest.TestCase):
         require_helm()
         with open(find_repo_file(BLUEPRINT_PATH), encoding="utf-8") as blueprint:
             cls.bound = bound_service_accounts(blueprint.read())
-        hpo_chart_dir = os.path.dirname(
-            find_repo_file(os.path.join(HPO_COMPONENT_CHART_PATH, "Chart.yaml"))
-        )
         cls.annotated = annotated_service_accounts(
             render_chart(ALL_SERVICES_ENABLED)
         ) | annotated_service_accounts(
             render_chart(
                 HPO_COMPONENT_VALUES,
-                chart_dir=hpo_chart_dir,
+                chart_dir=HPO_COMPONENT_CHART_PATH,
                 release_name="xmc-cmp-hpo",
             )
         )
