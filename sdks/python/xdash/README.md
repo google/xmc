@@ -105,10 +105,10 @@ with DashboardClient() as client:
     created = client.create_dashboard(builder.build())
 ```
 
-`create_chart` attaches a chart to a **WorkUnit** parent — `experiments/{xid}/workUnits/{wid}` —
-which is the only parent the `CreateChart` RPC accepts. `create_charts` is the batch convenience
-wrapper: it derives each parent from the chart's own `xid`/`wid`, so `for_experiment()` must have
-been called on every chart it is given.
+`create_chart` attaches a chart to either a **WorkUnit** parent (`experiments/{xid}/workUnits/{wid}`)
+or an **Experiment** parent (`experiments/{xid}`, for experiment-level charts). `create_charts` is
+the work-unit batch convenience wrapper: it derives `experiments/{xid}/workUnits/{wid}` from each
+chart's positive `xid` and `wid`, so `for_experiment()` must have been called on every chart it is given.
 
 ### Referencing Charts from a Dashboard
 

@@ -300,8 +300,13 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
 	}
+	var wid any
+	if chart.GetWid() > 0 {
+		wid = chart.GetWid()
+	}
 	return map[string]any{
 		"chart_id": chartID,
+		"wid":      wid,
 	}, nil
 }
 

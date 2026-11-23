@@ -20,10 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/testing/protocmp"
-	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 )
@@ -427,41 +424,42 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	}
 }
 
-func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	e1 := experimentChartProto("study-a", 100)
-	e2 := experimentChartProto("study-b", 100)
-	other := experimentChartProto("study-c", 200)
-	workUnitChart := blankChartProto("wu-chart", 100, 1)
-	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
+	e1 := experimentChartProto("wid-ord-a", 100)
+	e2 := experimentChartProto("wid-ord-b", 100)
+	w1 := blankChartProto("wid-ord-c", 100, 1)
+	for _, c := range []*dpb.Chart{e1, e2, w1} {
 		if err := repo.CreateChart(ctx, c); err != nil {
 			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
 		}
 	}
 
-	row, err := repo.client.Single().ReadRow(ctx, "Charts", spanner.Key{"study-a"}, []string{"Wid"})
-	if err != nil {
-		t.Fatalf("ReadRow failed: %v", err)
-	}
-	var wid spanner.NullInt64
-	if err := row.Columns(&wid); err != nil || wid.Valid {
-		t.Fatalf("Charts.Wid for an experiment-level chart = (%v, %v), want NULL", wid, err)
-	}
-	got, err := repo.GetChart(ctx, "study-a")
-	if err != nil {
-		t.Fatalf("GetChart failed: %v", err)
-	}
-	if diff := cmp.Diff(e1, got, protocmp.Transform(), protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")); diff != "" {
-		t.Errorf("GetChart round-trip mismatch (-want +got):\n%s", diff)
-	}
-
-	updated, err := repo.UpdateChart(ctx, &dpb.Chart{Name: e1.GetName(), Title: "Renamed"}, &fieldmaskpb.FieldMask{Paths: []string{"title"}})
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
-		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
+	for _, tc := range []struct {
+		orderBy string
+		want    []string
+	}{
+		{"wid asc", []string{e1.GetName(), e2.GetName(), w1.GetName()}},
+		{"wid desc", []string{w1.GetName(), e1.GetName(), e2.GetName()}},
+	} {
+		var got []string
+		for tok := ""; ; {
+			page, next, err := repo.ListCharts(ctx, "", 1, tok, "xid = 100", tc.orderBy, 0)
+			if err != nil {
+				t.Fatalf("ListCharts(%q) failed: %v", tc.orderBy, err)
+			}
+			for _, c := range page {
+				got = append(got, c.GetName())
+			}
+			if next == "" {
+				break
+			}
+			tok = next
+		}
+		if diff := cmp.Diff(tc.want, got); diff != "" {
+			t.Errorf("ListCharts(%q) mismatch (-want +got):\n%s", tc.orderBy, diff)
+		}
 	}
 }

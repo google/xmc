@@ -1026,132 +1026,27 @@ func TestParseChartName(t *testing.T) {
 		want      ParsedChartName
 		wantErr   error
 	}{
-		{
-			name:      "experiment_chart",
-			chartName: "experiments/1001/charts/chart-1",
-			want: ParsedChartName{
-				XID:     1001,
-				ChartID: "chart-1",
-				Parent:  "experiments/1001",
-			},
-		},
-		{
-			name:      "experiment_chart_multibyte_chart_id",
-			chartName: "experiments/1001/charts/グラフ-📈",
-			want: ParsedChartName{
-				XID:     1001,
-				ChartID: "グラフ-📈",
-				Parent:  "experiments/1001",
-			},
-		},
-		{
-			name:      "experiment_chart_max_int64_xid",
-			chartName: "experiments/9223372036854775807/charts/c",
-			want: ParsedChartName{
-				XID:     9223372036854775807,
-				ChartID: "c",
-				Parent:  "experiments/9223372036854775807",
-			},
-		},
-		{
-			name:      "experiment_chart_overlong_chart_id",
-			chartName: "experiments/1001/charts/" + strings.Repeat("c", 4096),
-			want: ParsedChartName{
-				XID:     1001,
-				ChartID: strings.Repeat("c", 4096),
-				Parent:  "experiments/1001",
-			},
-		},
-		{
-			name:      "work_unit_chart_multibyte_chart_id",
-			chartName: "experiments/1001/workUnits/2/charts/グラフ-📈",
-			want: ParsedChartName{
-				XID:     1001,
-				WID:     2,
-				ChartID: "グラフ-📈",
-				Parent:  "experiments/1001/workUnits/2",
-			},
-		},
-		{
-			name:      "work_unit_chart_empty_chart_id",
-			chartName: "experiments/1001/workUnits/2/charts/",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "work_unit_chart_whitespace_chart_id",
-			chartName: "experiments/1001/workUnits/2/charts/ \t",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_overflowing_xid",
-			chartName: "experiments/9223372036854775808/charts/c",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_zero_xid",
-			chartName: "experiments/0/charts/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_negative_xid",
-			chartName: "experiments/-1/charts/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_non_numeric_xid",
-			chartName: "experiments/abc/charts/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_multibyte_xid",
-			chartName: "experiments/１２/charts/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_empty_xid",
-			chartName: "experiments//charts/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_empty_chart_id",
-			chartName: "experiments/1001/charts/",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_whitespace_chart_id",
-			chartName: "experiments/1001/charts/  ",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_trailing_slash",
-			chartName: "experiments/1001/charts/chart-1/",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_extra_segments",
-			chartName: "experiments/1001/charts/chart-1/plots/p",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_missing_collection",
-			chartName: "experiments/1001/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_chart_wrong_collection",
-			chartName: "experiments/1001/dashboards/chart-1",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "experiment_name_without_chart",
-			chartName: "experiments/1001",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
-		{
-			name:      "empty_name",
-			chartName: "",
-			wantErr:   grpcerr.ErrInvalidArgument,
-		},
+		{name: "experiment_chart", chartName: "experiments/1001/charts/chart-1", want: ParsedChartName{XID: 1001, ChartID: "chart-1", Parent: "experiments/1001"}},
+		{name: "experiment_chart_multibyte_chart_id", chartName: "experiments/1001/charts/グラフ-📈", want: ParsedChartName{XID: 1001, ChartID: "グラフ-📈", Parent: "experiments/1001"}},
+		{name: "experiment_chart_max_int64_xid", chartName: "experiments/9223372036854775807/charts/c", want: ParsedChartName{XID: 9223372036854775807, ChartID: "c", Parent: "experiments/9223372036854775807"}},
+		{name: "experiment_chart_overlong_chart_id", chartName: "experiments/1001/charts/" + strings.Repeat("c", 4096), want: ParsedChartName{XID: 1001, ChartID: strings.Repeat("c", 4096), Parent: "experiments/1001"}},
+		{name: "work_unit_chart_multibyte_chart_id", chartName: "experiments/1001/workUnits/2/charts/グラフ-📈", want: ParsedChartName{XID: 1001, WID: 2, ChartID: "グラフ-📈", Parent: "experiments/1001/workUnits/2"}},
+		{name: "work_unit_chart_empty_chart_id", chartName: "experiments/1001/workUnits/2/charts/", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_chart_whitespace_chart_id", chartName: "experiments/1001/workUnits/2/charts/ \t", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_overflowing_xid", chartName: "experiments/9223372036854775808/charts/c", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_zero_xid", chartName: "experiments/0/charts/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_negative_xid", chartName: "experiments/-1/charts/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_non_numeric_xid", chartName: "experiments/abc/charts/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_multibyte_xid", chartName: "experiments/１２/charts/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_empty_xid", chartName: "experiments//charts/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_empty_chart_id", chartName: "experiments/1001/charts/", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_whitespace_chart_id", chartName: "experiments/1001/charts/  ", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_trailing_slash", chartName: "experiments/1001/charts/chart-1/", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_extra_segments", chartName: "experiments/1001/charts/chart-1/plots/p", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_missing_collection", chartName: "experiments/1001/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_chart_wrong_collection", chartName: "experiments/1001/dashboards/chart-1", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_name_without_chart", chartName: "experiments/1001", wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_name", chartName: "", wantErr: grpcerr.ErrInvalidArgument},
 		{
 			name:      "work_unit_chart",
 			chartName: "experiments/1001/workUnits/2002/charts/chart-1",

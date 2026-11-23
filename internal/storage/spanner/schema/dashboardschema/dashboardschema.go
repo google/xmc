@@ -175,6 +175,7 @@ var (
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
+				Nullable:     true,
 			},
 			PlotLayoutTableField: {
 				Name:         PlotLayoutTableField,
@@ -375,6 +376,7 @@ var (
 				Type:         filtervisitor.Integer,
 				Selectable:   true,
 				Indexed:      false,
+				Nullable:     true,
 			},
 			PlotLayoutTableField: {
 				Name:         PlotLayoutTableField,

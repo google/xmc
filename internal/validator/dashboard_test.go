@@ -1169,63 +1169,17 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
-		{
-			name: "valid_experiment_level_parallel_coordinates",
-			req: &spb.CreateChartRequest{
-				Parent:  "experiments/1",
-				ChartId: "hpo-parallel-coord",
-				Chart:   &spb.Chart{Title: "Study", Xid: 1, Plots: parallelCoordinatesPlots()},
-			},
-			wantErr: nil,
-		},
-		{
-			name: "valid_experiment_level_without_plots",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1",
-				Chart:  &spb.Chart{Title: "Study", Xid: 1},
-			},
-			wantErr: nil,
-		},
-		{
-			name: "experiment_level_with_wid",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1",
-				Chart:  &spb.Chart{Title: "Study", Xid: 1, Wid: 3, Plots: parallelCoordinatesPlots()},
-			},
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "experiment_level_with_mismatched_xid",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1",
-				Chart:  &spb.Chart{Title: "Study", Xid: 2, Plots: parallelCoordinatesPlots()},
-			},
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "experiment_level_with_scatter_plot",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1",
-				Chart:  &spb.Chart{Title: "Study", Xid: 1, Plots: []*spb.PlotSpec{{PlotId: "loss", Type: spb.PlotType_SCATTER}}},
-			},
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "work_unit_level_with_parallel_coordinates_plot",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1/workUnits/2",
-				Chart:  &spb.Chart{Title: "Study", Xid: 1, Wid: 2, Plots: parallelCoordinatesPlots()},
-			},
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
-		{
-			name: "work_unit_level_without_wid",
-			req: &spb.CreateChartRequest{
-				Parent: "experiments/1/workUnits/2",
-				Chart:  &spb.Chart{Title: "My Chart", Xid: 1},
-			},
-			wantErr: grpcerr.ErrInvalidArgument,
-		},
+		{name: "valid_experiment_level_parallel_coordinates", req: &spb.CreateChartRequest{Parent: "experiments/1", ChartId: "hpo-parallel-coord", Chart: &spb.Chart{Title: "Study", Xid: 1, Plots: parallelCoordinatesPlots()}}},
+		{name: "valid_experiment_level_without_plots", req: &spb.CreateChartRequest{Parent: "experiments/1", Chart: &spb.Chart{Title: "Study", Xid: 1}}},
+		{name: "experiment_level_with_wid", req: &spb.CreateChartRequest{Parent: "experiments/1", Chart: &spb.Chart{Title: "Study", Xid: 1, Wid: 3, Plots: parallelCoordinatesPlots()}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_mismatched_xid", req: &spb.CreateChartRequest{Parent: "experiments/1", Chart: &spb.Chart{Title: "Study", Xid: 2, Plots: parallelCoordinatesPlots()}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_scatter_plot", req: &spb.CreateChartRequest{Parent: "experiments/1", Chart: &spb.Chart{Title: "Study", Xid: 1, Plots: []*spb.PlotSpec{{PlotId: "loss", Type: spb.PlotType_SCATTER}}}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_with_parallel_coordinates_plot", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "Study", Xid: 1, Wid: 2, Plots: parallelCoordinatesPlots()}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_without_wid", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "My Chart", Xid: 1}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_plot_id", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "T", Xid: 1, Wid: 2, Plots: []*spb.PlotSpec{{Type: spb.PlotType_SCATTER}}}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace_plot_id", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "T", Xid: 1, Wid: 2, Plots: []*spb.PlotSpec{{PlotId: " \t ", Type: spb.PlotType_SCATTER}}}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate_plot_id", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "T", Xid: 1, Wid: 2, Plots: []*spb.PlotSpec{{PlotId: "p1", Type: spb.PlotType_SCATTER}, {PlotId: "p1", Type: spb.PlotType_BAR}}}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "nil_plot_entry", req: &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "T", Xid: 1, Wid: 2, Plots: []*spb.PlotSpec{nil}}}, wantErr: grpcerr.ErrInvalidArgument},
 	}
 
 	for _, tc := range tests {

@@ -532,11 +532,14 @@ func TestExtractChartCursor(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name:  "valid chart returns chart_id cursor",
-			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"},
-			want: map[string]any{
-				"chart_id": "c1",
-			},
+			name:  "work unit chart returns chart_id and wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1", Wid: 1},
+			want:  map[string]any{"chart_id": "c1", "wid": int64(1)},
+		},
+		{
+			name:  "experiment-level chart returns nil wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
+			want:  map[string]any{"chart_id": "c1", "wid": nil},
 		},
 	}
 

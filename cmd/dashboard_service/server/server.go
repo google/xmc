@@ -219,13 +219,16 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 }
 
 // chartMatchesName reports whether a stored chart may be served under the name it was requested
-// by. An experiment-level name must not reach a work unit chart or a chart of another experiment;
-// other name shapes keep resolving by chart ID alone.
+// by. An experiment-level name only resolves experiment-level charts of that experiment, and a
+// work-unit-scoped name only resolves work unit charts; root and dashboard names resolve by chart ID.
 func chartMatchesName(parsed validator.ParsedChartName, chart *dpb.Chart) bool {
-	if !parsed.IsExperimentLevel() {
-		return true
+	if parsed.IsExperimentLevel() {
+		return chart.GetWid() == 0 && chart.GetXid() == parsed.XID
 	}
-	return chart.GetWid() == 0 && chart.GetXid() == parsed.XID
+	if parsed.WID > 0 {
+		return chart.GetWid() > 0
+	}
+	return true
 }
 
 // resolveChartXID returns the chart's persisted experiment XID, falling back to the
@@ -310,12 +313,21 @@ func (s *Server) GetChartData(ctx context.Context, req *dpb.GetChartDataRequest)
 	if err := s.validateDataEngineDependencies(); err != nil {
 		return nil, err
 	}
+	var preAuthorizedXID int64
+	if parsed, err := validator.ParseChartName(req.GetName()); err == nil && parsed.XID > 0 {
+		if err := s.authorizeExperimentRead(ctx, user, parsed.XID); err != nil {
+			return nil, err
+		}
+		preAuthorizedXID = parsed.XID
+	}
 	chart, err := s.resolveChart(ctx, req.GetName())
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
-		return nil, err
+	if preAuthorizedXID == 0 || chart.GetXid() != preAuthorizedXID {
+		if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)

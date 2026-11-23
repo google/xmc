@@ -302,7 +302,29 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetWid() != wuWid {
 		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
 	}
+	if err := validateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
+		return err
+	}
 	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
+}
+
+// validateChartPlotIDs checks that every non-nil plot carries a non-whitespace, unique plot_id.
+func validateChartPlotIDs(plots []*spb.PlotSpec) error {
+	seen := make(map[string]bool, len(plots))
+	for i, plot := range plots {
+		if plot == nil {
+			continue
+		}
+		id := plot.GetPlotId()
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("plots[%d].plot_id cannot be empty or whitespace: %w", i, grpcerr.ErrInvalidArgument)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate plots[%d].plot_id %q: %w", i, id, grpcerr.ErrInvalidArgument)
+		}
+		seen[id] = true
+	}
+	return nil
 }
 
 // ValidateChartPlotTypes checks that the plot types fit the level of their chart. A

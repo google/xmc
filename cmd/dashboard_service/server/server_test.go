@@ -525,6 +525,7 @@ func TestGetChartData(t *testing.T) {
 				return &dpb.Chart{
 					Name: "experiments/1001/workUnits/2002/charts/chart-loss",
 					Xid:  0,
+					Wid:  2002,
 				}, nil
 			},
 		}
@@ -566,27 +567,46 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("experiment-level name only resolves experiment-level charts of that experiment", func(t *testing.T) {
+	t.Run("scoped chart names reject mismatched stored chart levels", func(t *testing.T) {
 		tests := []struct {
-			name   string
-			stored *dpb.Chart
+			name    string
+			reqName string
+			stored  *dpb.Chart
 		}{
-			{name: "work unit chart", stored: &dpb.Chart{Name: "experiments/1001/workUnits/2/charts/c", Xid: 1001, Wid: 2}},
-			{name: "chart of another experiment", stored: &dpb.Chart{Name: "experiments/7/charts/c", Xid: 7}},
+			{name: "experiment URL for work unit chart", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/1001/workUnits/2/charts/c", Xid: 1001, Wid: 2}},
+			{name: "experiment URL for another experiment", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/7/charts/c", Xid: 7}},
+			{name: "work unit URL for experiment-level chart", reqName: "experiments/1001/workUnits/2002/charts/c", stored: &dpb.Chart{Name: "experiments/1001/charts/c", Xid: 1001}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				repo := &mockRepository{
-					getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-						return tc.stored, nil
-					},
+					getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) { return tc.stored, nil },
 				}
 				s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
-				_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/charts/c"})
-				if status.Code(err) != codes.NotFound {
-					t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
+				if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: tc.reqName}); status.Code(err) != codes.NotFound {
+					t.Errorf("GetChartData(%q) code = %v, want %v", tc.reqName, status.Code(err), codes.NotFound)
 				}
 			})
+		}
+	})
+
+	t.Run("authorizes experiment XID before querying repository", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				t.Fatalf("GetChart(%q) must not be called before XID authorization", chartId)
+				return nil, nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
+		for _, name := range []string{"experiments/1001/charts/missing-chart", "experiments/1001/workUnits/1/charts/missing-chart"} {
+			if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: name}); status.Code(err) != codes.PermissionDenied {
+				t.Errorf("GetChartData(%q) code = %v, want %v", name, status.Code(err), codes.PermissionDenied)
+			}
 		}
 	})
 
@@ -799,6 +819,7 @@ func TestChartMatchesName(t *testing.T) {
 		{name: "experiment name, experiment-level chart of that experiment", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 100}, want: true},
 		{name: "experiment name, work unit chart", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 1}, want: false},
 		{name: "experiment name, chart of another experiment", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 7}, want: false},
+		{name: "work unit name rejects experiment-level chart", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100}, want: false},
 		{name: "work unit name keeps resolving by chart ID", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 3}, want: true},
 		{name: "root name keeps resolving by chart ID", chartName: "charts/c", chart: &dpb.Chart{Xid: 7}, want: true},
 	}
