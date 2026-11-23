@@ -78,7 +78,7 @@ func WithHealthHTTPClient(c *http.Client) HealthProberOption {
 	}
 }
 
-// WithHealthDialer sets a custom net.Dialer for TCP health probing.
+// WithHealthDialer sets a custom net.Dialer for TCP and gRPC health probing.
 func WithHealthDialer(d *net.Dialer) HealthProberOption {
 	return func(p *NetworkHealthProber) {
 		if p != nil && d != nil {

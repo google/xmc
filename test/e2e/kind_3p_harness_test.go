@@ -60,6 +60,7 @@ import (
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	"xmanager_cloud/pkg/components/bridge"
 	"xmanager_cloud/pkg/components/bridge/healthprobe"
+	"xmanager_cloud/pkg/components/bridge/healthprobe/healthprobetest"
 	"xmanager_cloud/pkg/components/bridge/helm"
 	"xmanager_cloud/pkg/components/bridge/statusdetector"
 	"xmanager_cloud/pkg/components/cms"
@@ -772,19 +773,20 @@ func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout t
 	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return p.ProbeHTTP(ctx, trimmed, timeout)
 	}
-	if strings.HasPrefix(lower, "grpc://") {
+	if strings.HasPrefix(lower, "grpc://") || strings.HasPrefix(lower, "grpcs://") {
 		return p.ProbeGRPC(ctx, trimmed, timeout)
 	}
 	return p.ProbeTCP(ctx, trimmed, timeout)
 }
 
-// ProbeGRPC rewrites an in-cluster grpc://host:port target to its NodePort before probing.
+// ProbeGRPC rewrites an in-cluster grpc://host:port target to its NodePort before probing. Other
+// targets (e.g. the unsupported grpcs://) go to the delegate unchanged, so it reports their errors.
 func (p *kindNodePortProber) ProbeGRPC(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	trimmed := strings.TrimSpace(endpoint)
-	if strings.HasPrefix(strings.ToLower(trimmed), "grpc://") {
-		trimmed = trimmed[len("grpc://"):]
+	if !strings.HasPrefix(strings.ToLower(trimmed), "grpc://") {
+		return p.delegate.ProbeGRPC(ctx, trimmed, timeout)
 	}
-	rewritten, err := p.translateHostPort(ctx, trimmed)
+	rewritten, err := p.translateHostPort(ctx, trimmed[len("grpc://"):])
 	if err != nil {
 		return nil, err
 	}
@@ -875,6 +877,7 @@ func TestKind3PHarnessUnit(t *testing.T) {
 	if got, err := prober.translateHostPort(context.Background(), "clickhouse.xmc-test.svc.cluster.local:8123"); err != nil || got != "172.18.0.2:31123" {
 		t.Errorf("translateHostPort = (%q, %v), want (\"172.18.0.2:31123\", nil)", got, err)
 	}
+	verifyKindGRPCProbeRewrite(t, node)
 	comp := &unstructured.Unstructured{Object: map[string]any{
 		"metadata": map[string]any{"generation": int64(2)},
 		"status":   map[string]any{"observedGeneration": int64(2), "state": "COMPONENT_STATE_ENABLED", "conditions": []any{map[string]any{"type": "Ready", "status": "True"}}},
@@ -883,6 +886,31 @@ func TestKind3PHarnessUnit(t *testing.T) {
 		t.Error("expected isComponentReady and locateHelmComponentCRDPath to succeed")
 	}
 	verifyHarnessCMSAuth(t)
+}
+
+// verifyKindGRPCProbeRewrite checks that grpc:// targets reach the delegate rewritten to the NodePort
+// and that grpcs:// reaches it unchanged, so the delegate reports it as unsupported.
+func verifyKindGRPCProbeRewrite(t *testing.T, node *corev1.Node) {
+	t.Helper()
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "vizier-service", Namespace: "xmc-test"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort, Ports: []corev1.ServicePort{{Name: "grpc", Port: 7077, NodePort: 31077}}}}
+	delegate := healthprobetest.NewFakeHealthProber()
+	want := &healthprobe.HealthProbeResult{Healthy: true, Message: "rewritten target probed"}
+	delegate.SetResult("grpc://172.18.0.2:31077", want)
+	prober := &kindNodePortProber{clientset: fake.NewSimpleClientset(node, svc), delegate: delegate}
+	ctx := context.Background()
+	const target = "grpc://vizier-service.xmc-test.svc.cluster.local:7077"
+	for name, probe := range map[string]func() (*healthprobe.HealthProbeResult, error){
+		"Probe":     func() (*healthprobe.HealthProbeResult, error) { return prober.Probe(ctx, target, time.Second) },
+		"ProbeGRPC": func() (*healthprobe.HealthProbeResult, error) { return prober.ProbeGRPC(ctx, target, time.Second) },
+	} {
+		if got, err := probe(); err != nil || got != want {
+			t.Errorf("%s(%q) = (%+v, %v), want the delegate result for grpc://172.18.0.2:31077", name, target, got, err)
+		}
+	}
+	delegate.ProbeErr = healthprobe.ErrGRPCSNotSupported
+	if _, err := prober.Probe(ctx, "grpcs://vizier-service.xmc-test.svc.cluster.local:7077", time.Second); !errors.Is(err, healthprobe.ErrGRPCSNotSupported) {
+		t.Errorf("Probe(grpcs://) error = %v, want the delegate's ErrGRPCSNotSupported", err)
+	}
 }
 
 func verifyHarnessCMSAuth(t *testing.T) {

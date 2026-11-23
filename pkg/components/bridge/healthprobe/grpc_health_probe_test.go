@@ -145,11 +145,28 @@ func TestNetworkHealthProber_ProbeGRPC_BoundsServerStatusMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProbeGRPC() error = %v", err)
 	}
-	if got.Healthy {
-		t.Errorf("ProbeGRPC() Healthy = true, want false")
+	// 'é' is 2 bytes, so the 256-byte cap keeps exactly 128 of them.
+	want := &healthprobe.HealthProbeResult{Message: "gRPC health check failed: Internal: " + strings.Repeat("é", 128) + "…"}
+	if diff := cmp.Diff(want, got, ignoreLatency); diff != "" {
+		t.Errorf("ProbeGRPC() mismatch (-want +got):\n%s", diff)
 	}
-	if !utf8.ValidString(got.Message) || !strings.HasSuffix(got.Message, "…") || len(got.Message) > 400 {
-		t.Errorf("ProbeGRPC() Message = %q (%d bytes), want valid UTF-8, truncated with an ellipsis, at most 400 bytes", got.Message, len(got.Message))
+	if !utf8.ValidString(got.Message) {
+		t.Errorf("ProbeGRPC() Message is not valid UTF-8: %q", got.Message)
+	}
+}
+
+func TestNetworkHealthProber_ProbeGRPC_BoundsTruncatesAtRuneBoundary(t *testing.T) {
+	// 255 ASCII bytes followed by a 2-byte rune: the cap splits the rune, which must be dropped.
+	msg := strings.Repeat("a", 255) + "é" + "tail"
+	addr := startGRPCServer(t, "tcp", "127.0.0.1", stubServer(&stubHealthServer{err: status.Error(codes.Internal, msg)}))
+
+	got, err := healthprobe.NewNetworkHealthProber().ProbeGRPC(context.Background(), addr, 5*time.Second)
+	if err != nil {
+		t.Fatalf("ProbeGRPC() error = %v", err)
+	}
+	want := "gRPC health check failed: Internal: " + strings.Repeat("a", 255) + "…"
+	if got.Message != want {
+		t.Errorf("ProbeGRPC() Message = %q, want %q", got.Message, want)
 	}
 }
 
