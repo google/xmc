@@ -58,7 +58,7 @@ A TCP probe only proves that the port accepts connections. With `healthCheckEndp
 | `NOT_SERVING`, `SERVICE_UNKNOWN`, any other gRPC error, or timeout | Not Ready (`Reconciling=True`) with the status in the message. |
 
 - Upstream Open Source Vizier (`DefaultVizierServer`, including the dev fixture) does not register the health service, so it reports `UNIMPLEMENTED`. To get a real `SERVING` / `NOT_SERVING` signal, register a `grpc.health.v1` servicer in your Vizier server. What `SERVING` means (for example, whether it covers the Vizier database) is up to that servicer.
-- The probe is plaintext (in-cluster). `grpcs://`, paths (named services), queries, and user info are rejected, and `vizier` stays not Ready with the parse error. To return to the TCP probe, leave `healthCheckEndpoint` empty or set it to `tcp://<host>:<port>`.
+- The probe is plaintext (in-cluster). `grpcs://`, paths (named services), queries, fragments, and user info are rejected, and `vizier` stays not Ready with the parse error. To return to the TCP probe, leave `healthCheckEndpoint` empty or set it to `tcp://<host>:<port>`.
 - If you restrict ingress to Vizier with a NetworkPolicy, keep admitting `app: xmc-bridge` pods on the Vizier port for the probe.
 
 ---
