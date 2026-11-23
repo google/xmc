@@ -483,13 +483,40 @@ func TestListCharts_ParentExperiment(t *testing.T) {
 		}
 	}
 
-	got := storagetest.CollectChartPages(ctx, t, repo, "experiments/100", 1, "", "")
-	if diff := cmp.Diff([]string{e1.GetName(), e2.GetName()}, got); diff != "" {
+	// The experiment parent lists only that experiment's experiment-level charts, across pages.
+	var listed []*dpb.Chart
+	pageToken := ""
+	for page := 0; page < 3; page++ {
+		charts, next, err := repo.ListCharts(ctx, "experiments/100", 1, pageToken, "", "", 0)
+		if err != nil {
+			t.Fatalf("ListCharts experiment parent page %d failed: %v", page, err)
+		}
+		if page < 2 && len(charts) != 1 {
+			t.Fatalf("page %d returned %d charts, want 1", page, len(charts))
+		}
+		if page == 0 && next == "" {
+			t.Fatal("page 0 returned empty nextPageToken, want cursor for page 1")
+		}
+		listed = append(listed, charts...)
+		pageToken = next
+		if next == "" {
+			break
+		}
+	}
+	if pageToken != "" {
+		t.Errorf("pagination did not terminate cleanly; trailing nextPageToken = %q", pageToken)
+	}
+	ignoreTimestamps := protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")
+	if diff := cmp.Diff([]*dpb.Chart{e1, e2}, listed, protocmp.Transform(), ignoreTimestamps); diff != "" {
 		t.Errorf("ListCharts experiment parent mismatch (-want +got):\n%s", diff)
 	}
-	wuCharts, _, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
-	if err != nil || len(wuCharts) != 1 || wuCharts[0].GetName() != workUnitChart.GetName() {
-		t.Errorf("ListCharts work unit parent = (%+v, %v), want [%s]", wuCharts, err, workUnitChart.GetName())
+
+	wuCharts, wuNext, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
+	if err != nil || wuNext != "" {
+		t.Fatalf("ListCharts work unit parent err=%v next=%q, want nil and empty token", err, wuNext)
+	}
+	if diff := cmp.Diff([]*dpb.Chart{workUnitChart}, wuCharts, protocmp.Transform(), ignoreTimestamps); diff != "" {
+		t.Errorf("ListCharts work unit parent mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -557,8 +584,8 @@ func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {
 	if _, _, err := repo.ListCharts(ctx, "", 0, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListCharts(pageSize=0) = %v, want ErrInvalidArgument", err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", 0); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts(zero xid experiment parent) = %v, want parent validation error", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "experiment parent name") {
+		t.Errorf("ListCharts(zero xid experiment parent) = %v, want ErrInvalidArgument with experiment parent context", err)
 	}
 	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); err == nil {
 		t.Error("ListCharts(bad parent) = nil, want error")

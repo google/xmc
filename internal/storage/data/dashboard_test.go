@@ -16,6 +16,7 @@ package data
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -517,6 +518,9 @@ func TestBuildListChartsFilter(t *testing.T) {
 			got, err := BuildListChartsFilter(tc.parent, tc.filter)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("BuildListChartsFilter(%q, %q) error = %v, wantErr %v", tc.parent, tc.filter, err, tc.wantErr)
+			}
+			if tc.parent == "experiments/0" && !strings.Contains(err.Error(), "experiment parent name") {
+				t.Errorf("BuildListChartsFilter(%q) error = %q, want experiment parent context", tc.parent, err)
 			}
 			if !tc.wantErr && got != tc.want {
 				t.Errorf("BuildListChartsFilter(%q, %q) = %q, want %q", tc.parent, tc.filter, got, tc.want)

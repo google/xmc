@@ -16,11 +16,16 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/protobuf/testing/protocmp"
+
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
 	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
@@ -182,8 +187,8 @@ func TestListCharts_ParentExperimentExcludesWorkUnitCharts(t *testing.T) {
 	if err != nil || len(charts) != 0 || token != "" {
 		t.Fatalf("ListCharts experiment parent = (%d charts, token %q, %v), want no charts", len(charts), token, err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", time.Duration(0)); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts zero xid experiment parent error = %v, want a parent validation error", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", time.Duration(0)); !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "experiment parent name") {
+		t.Errorf("ListCharts zero xid experiment parent error = %v, want ErrInvalidArgument with experiment parent context", err)
 	}
 }
 
@@ -431,9 +436,9 @@ func TestListCharts_ParentExperiment(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	e1 := experimentChartProto("study-a", 100)
-	e2 := experimentChartProto("study-b", 100)
-	other := experimentChartProto("study-c", 200)
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
+	e2 := storagetest.ExperimentChartProto("study-b", 100)
+	other := storagetest.ExperimentChartProto("study-c", 200)
 	workUnitChart := blankChartProto("wu-chart", 100, 1)
 	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
 		if err := repo.CreateChart(ctx, c); err != nil {
@@ -442,27 +447,38 @@ func TestListCharts_ParentExperiment(t *testing.T) {
 	}
 
 	// The experiment parent lists only that experiment's experiment-level charts, across pages.
-	var listed []string
+	var listed []*dpb.Chart
 	pageToken := ""
 	for page := 0; page < 3; page++ {
 		charts, next, err := repo.ListCharts(ctx, "experiments/100", 1, pageToken, "", "", 0)
 		if err != nil {
 			t.Fatalf("ListCharts experiment parent page %d failed: %v", page, err)
 		}
-		for _, c := range charts {
-			listed = append(listed, c.GetName())
+		if page < 2 && len(charts) != 1 {
+			t.Fatalf("page %d returned %d charts, want 1", page, len(charts))
 		}
+		if page == 0 && next == "" {
+			t.Fatal("page 0 returned empty nextPageToken, want cursor for page 1")
+		}
+		listed = append(listed, charts...)
+		pageToken = next
 		if next == "" {
 			break
 		}
-		pageToken = next
 	}
-	if diff := cmp.Diff([]string{e1.GetName(), e2.GetName()}, listed); diff != "" {
+	if pageToken != "" {
+		t.Errorf("pagination did not terminate cleanly; trailing nextPageToken = %q", pageToken)
+	}
+	ignoreTimestamps := protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")
+	if diff := cmp.Diff([]*dpb.Chart{e1, e2}, listed, protocmp.Transform(), ignoreTimestamps); diff != "" {
 		t.Errorf("ListCharts experiment parent mismatch (-want +got):\n%s", diff)
 	}
 
-	wuCharts, _, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
-	if err != nil || len(wuCharts) != 1 || wuCharts[0].GetName() != workUnitChart.GetName() {
-		t.Errorf("ListCharts work unit parent = (%+v, %v), want [%s]", wuCharts, err, workUnitChart.GetName())
+	wuCharts, wuNext, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
+	if err != nil || wuNext != "" {
+		t.Fatalf("ListCharts work unit parent err=%v next=%q, want nil and empty token", err, wuNext)
+	}
+	if diff := cmp.Diff([]*dpb.Chart{workUnitChart}, wuCharts, protocmp.Transform(), ignoreTimestamps); diff != "" {
+		t.Errorf("ListCharts work unit parent mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -252,17 +252,21 @@ func BuildChartParentFilter(parent string) (string, error) {
 		}
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
 	}
-	if xid, err := validator.ValidateExperimentName(parent); err == nil {
-		return fmt.Sprintf("xid = %d AND wid = 0", xid), nil
+	if !strings.HasPrefix(parent, "experiments/") {
+		return "", fmt.Errorf("unsupported parent format: %q", parent)
 	}
-	if strings.HasPrefix(parent, "experiments/") {
+	if strings.Contains(parent, "/workUnits/") {
 		xid, wid, err := validator.ValidateWorkUnitName(parent)
 		if err != nil {
 			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
 		}
 		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
 	}
-	return "", fmt.Errorf("unsupported parent format: %q", parent)
+	xid, err := validator.ValidateExperimentName(parent)
+	if err != nil {
+		return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
+	}
+	return fmt.Sprintf("xid = %d AND wid = %d", xid, 0), nil
 }
 
 // ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
