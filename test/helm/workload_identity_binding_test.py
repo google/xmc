@@ -120,8 +120,8 @@ class WorkloadIdentityBindingTest(unittest.TestCase):
         self.assertEqual(
             set(),
             self.annotated - self.bound,
-            "these service accounts are annotated in deploy/helm but have no "
-            f"workload_identity_binding in {BLUEPRINT_PATH}",
+            f"these service accounts are annotated in deploy/helm or {HPO_COMPONENT_CHART_PATH} "
+            f"but have no workload_identity_binding in {BLUEPRINT_PATH}",
         )
 
     def test_every_binding_names_an_annotated_service_account(self) -> None:
@@ -129,8 +129,9 @@ class WorkloadIdentityBindingTest(unittest.TestCase):
         self.assertEqual(
             set(),
             self.bound - self.annotated,
-            f"{BLUEPRINT_PATH} binds these service accounts, but no template in deploy/helm "
-            "renders a service account by that name carrying the annotation",
+            f"{BLUEPRINT_PATH} binds these service accounts, but no template in deploy/helm or "
+            f"{HPO_COMPONENT_CHART_PATH} renders a service account by that name carrying the "
+            "annotation",
         )
 
 

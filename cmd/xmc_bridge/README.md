@@ -69,6 +69,8 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | `--ownership-epoch` / `COMPONENT_OWNERSHIP_EPOCH` | `1` | Monotonic positive integer (`>= 1`) declared to CMS via `DeclareClusterEpoch` to fence stale clusters. The chart sets it from `componentsDeployment.ownershipEpoch`. |
 | `--kubeconfig` / `KUBECONFIG` | `""` | Optional explicit path to kubeconfig file (defaults to in-cluster or `KUBECONFIG` env). |
 | `REDIS_ADDR` (environment only) | `""` | Redis `host:port`, set by the chart from the umbrella `redisAddr`. Passed to every 1P release as `<component>Deployment.redisAddr`, overriding Component parameters and values; omitted when empty, which makes the `hpo` chart fail to render. See [Bridge README](../../pkg/components/bridge/README.md). |
+| `ESS_ADDR` (environment only) | `"grpc-service:50051"` | In-cluster ESS gRPC `host:port`, set by the chart from `componentsDeployment.essAddress` (falling back to `cmsAddress` and `"grpc-service:50051"`). Passed to every 1P release as `<component>Deployment.essAddr` (falling back to `CMS_ADDRESS` env var, not `--cms-address`), overriding Component parameters and values. |
+| `IAP_EXPECTED_GRPC_AUDIENCE` / `CLIENT_ID` (environment only) | `""` | ESS ID-token audience passed to every 1P release as `<component>Deployment.essAudience`, preferring non-placeholder `IAP_EXPECTED_GRPC_AUDIENCE` over `CLIENT_ID` and stripping Component overrides so a CR cannot redirect Google ID tokens. |
 
 Once elected, `xmc-bridge` invokes `HydrateFromCluster` to restore active 1P component states from the `xmc-component-values` ConfigMap, preventing redundant Helm release revision increments and ensuring post-restart deactivations execute cleanly. It runs concurrently with the first reconciles: each 1P Component also hydrates its own state before its Helm actuation, and a reconcile whose dependency gate runs before any hydration falls back to the Component's `DependenciesReady` and `Ready` conditions, so at worst one pass reports `DependenciesNotReady` instead of `HelmUpgradePending` without touching the workload. A torn-down component stays recorded as inactive, so no namespace hydration re-activates a purged or orphaned component from the ConfigMap.
 
@@ -110,6 +112,7 @@ Only one `xmc-bridge` process reconciles at a time. Each process competes for th
 ```yaml
 componentsDeployment:
   cmsAddress: "grpc-service:50051"                # In-cluster gRPC endpoint for ESS/CMS
+  essAddress: ""                                  # Optional ESS gRPC endpoint override for 1P releases (defaults to cmsAddress)
   clusterName: ""                                 # Cluster label in CMS fence declarations (defaults to release name)
   ownershipEpoch: 1                               # Monotonic CMS ownership fencing epoch (>= 1)
   chartPath: ""                                   # Optional base Helm chart directory or fallback chart path

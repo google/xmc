@@ -120,6 +120,12 @@ def render_chart(
 
     Suites asserting on one resource should use render_template. This is for the ones whose
     subject is the set of resources the chart produces rather than any single one of them.
+
+    Args:
+        values: Helm `--set` overrides keyed by dotted value path.
+        chart_dir: Optional chart directory (absolute path or repo-relative path containing
+            `Chart.yaml`). Defaults to `deploy/helm`.
+        release_name: Helm release name passed to `helm template`. Defaults to `"xmc"`.
     """
     return _render(values, chart_dir=chart_dir, release_name=release_name)
 
