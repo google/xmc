@@ -282,12 +282,9 @@ func TestProviderFetchChartDataServesParallelCoordinates(t *testing.T) {
 	t.Cleanup(func() { _ = provider.Close() })
 	chart := &dpb.Chart{Name: "experiments/1001/charts/study", Xid: 1001, Plots: []*dpb.PlotSpec{parallelCoordinatesPlot}}
 	want := &dpb.ChartData{
-		Name: "experiments/1001/charts/study",
-		Xid:  1001,
-		Wid:  0,
+		Name: "experiments/1001/charts/study", Xid: 1001, Wid: 0,
 		PlotsData: []*dpb.ChartData_PlotData{{
-			PlotId: "study",
-			Type:   dpb.PlotType_PARALLEL_COORDINATES,
+			PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES,
 			Content: &dpb.ChartData_PlotData_ParallelCoordinatesData{ParallelCoordinatesData: &dpb.ParallelCoordinatesData{
 				Axes: []*dpb.ParallelCoordinatesData_Axis{{
 					ParameterId: "learning_rate",

@@ -721,12 +721,10 @@ func TestInitDataEngine_ForwardsProviderOptionsAcrossBranches(t *testing.T) {
 	}
 	_ = direct.Close()
 
-	enabledCR := func(name string) *unstructured.Unstructured {
-		return &unstructured.Unstructured{Object: map[string]any{
-			"spec":   map[string]any{"enabled": true},
-			"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
-		}}
-	}
+	enabledCR := &unstructured.Unstructured{Object: map[string]any{
+		"spec":   map[string]any{"enabled": true},
+		"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
+	}}
 	for _, tc := range []struct {
 		name, store, target string
 	}{
@@ -741,7 +739,7 @@ func TestInitDataEngine_ForwardsProviderOptionsAcrossBranches(t *testing.T) {
 			t.Setenv("GOOGLE_CLOUD_PROJECT", "")
 			t.Setenv("METRICS_STORE", "")
 			getter := &countingComponentGetter{
-				inner: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{tc.target: enabledCR(tc.target)}},
+				inner: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{tc.target: enabledCR}},
 			}
 			var gotTarget *dataengine.Provider
 			provider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", MetricsStore: tc.store}, getter,
