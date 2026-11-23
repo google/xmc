@@ -44,7 +44,7 @@ class TestE2EConfig(unittest.TestCase):
         )
         self.assertEqual(ui_cfg.tier, E2ETier.UI)
         self.assertEqual(ui_cfg.venv_dependencies, E2E_UI_VENV_DEPENDENCIES)
-        self.assertNotIn("xmanager", ui_cfg.venv_dependencies)
+        self.assertFalse(any(dep.startswith("xmanager") for dep in ui_cfg.venv_dependencies))
 
         workload_cfg = E2EConfig(
             project_id="test-proj",
@@ -57,6 +57,8 @@ class TestE2EConfig(unittest.TestCase):
         )
         self.assertEqual(workload_cfg.tier, E2ETier.WORKLOAD)
         self.assertEqual(workload_cfg.venv_dependencies, E2E_WORKLOAD_VENV_DEPENDENCIES)
+        self.assertIn("xmanager>=0.8.5.post1,<0.9.0", workload_cfg.venv_dependencies)
+        self.assertNotIn("xmanager", workload_cfg.venv_dependencies)
 
     def test_post_init_coerces_string_tier_to_enum(self) -> None:
         kwargs: dict[str, Any] = {

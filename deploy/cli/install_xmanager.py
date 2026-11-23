@@ -33,7 +33,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.5.post1"
+DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.5.post1,<0.9.0"
 
 # Upper bounds keep proto descriptor registration and protobuf runtime compatible:
 # - googleapis-common-protos<1.75.4 avoids the 1.75.4 operations_proto.proto /
@@ -121,7 +121,8 @@ def resolve_xmanager_spec(version: str) -> str:
             or full PEP 508 requirement string.
 
     Returns:
-        A pip requirement string such as 'xmanager==0.8.5.post1' or 'xmanager>=0.8.5.post1'.
+        A pip requirement string such as 'xmanager==0.8.5.post1' or
+        'xmanager>=0.8.5.post1,<0.9.0'.
     """
     cleaned = version.strip()
     if not cleaned:

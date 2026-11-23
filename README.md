@@ -49,7 +49,7 @@ You can deploy XMC to GKE or evaluate it locally on KinD in three steps:
 2. **Install the XManager launcher and sign in**
    The launcher and `xmanager` CLI come from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager), published on PyPI:
    ```bash
-   pip install 'xmanager>=0.8.5.post1'
+   pip install 'xmanager>=0.8.5.post1,<0.9.0'
    export XMC_DOMAIN=<your-xmc-domain>
    xmanager login
    ```
