@@ -21,6 +21,7 @@ import {
   SystemInfo,
   SystemInfoCardComponent,
   UNAVAILABLE_SCHEMA_VERSION,
+  UNKNOWN_VALUE,
 } from './system_info_card';
 import { SystemInfoCardHarness } from './testing/system_info_card_harness';
 
@@ -46,7 +47,8 @@ describe('SystemInfoCardComponent', () => {
 
   it('should display version info correctly', async () => {
     const mockSystemInfo: SystemInfo = {
-      appVersion: 'test-version',
+      appVersion: '1.0.0',
+      imageTag: 'latest',
       essDbSchemaVersion: '12',
       xidDbSchemaVersion: '34',
     };
@@ -56,16 +58,19 @@ describe('SystemInfoCardComponent', () => {
     await flush();
 
     const harness = await getHarness(SystemInfoCardHarness);
-    expect(await harness.getAppVersionText()).toBe('test-version');
+    expect(await harness.getAppVersionText()).toBe('1.0.0');
+    expect(await harness.getImageTagText()).toBe('latest');
+    expect(await harness.isImageTagPlaceholder()).toBeFalse();
     expect(await harness.getEssSchemaText()).toBe('12');
     expect(await harness.getXidSchemaText()).toBe('34');
     expect(await harness.isEssSchemaPlaceholder()).toBeFalse();
     expect(await harness.isXidSchemaPlaceholder()).toBeFalse();
   });
 
-  it('should display - with is-placeholder class for UNAVAILABLE schema versions', async () => {
+  it('should display - with is-placeholder class for UNAVAILABLE schema versions and unknown image tag', async () => {
     const mockSystemInfo: SystemInfo = {
-      appVersion: 'test-version',
+      appVersion: '1.0.0',
+      imageTag: UNKNOWN_VALUE,
       essDbSchemaVersion: UNAVAILABLE_SCHEMA_VERSION,
       xidDbSchemaVersion: UNAVAILABLE_SCHEMA_VERSION,
     };
@@ -75,7 +80,9 @@ describe('SystemInfoCardComponent', () => {
     await flush();
 
     const harness = await getHarness(SystemInfoCardHarness);
-    expect(await harness.getAppVersionText()).toBe('test-version');
+    expect(await harness.getAppVersionText()).toBe('1.0.0');
+    expect(await harness.getImageTagText()).toBe('-');
+    expect(await harness.isImageTagPlaceholder()).toBeTrue();
     expect(await harness.getEssSchemaText()).toBe('-');
     expect(await harness.getXidSchemaText()).toBe('-');
     expect(await harness.isEssSchemaPlaceholder()).toBeTrue();
@@ -111,5 +118,21 @@ describe('SystemInfoCardComponent', () => {
 
     const harness = await getHarness(SystemInfoCardHarness);
     expect(await harness.getObservabilityLinkHref()).toBeNull();
+  });
+
+  it('should display - with is-placeholder class when imageTag is absent', async () => {
+    const mockSystemInfo: SystemInfo = {
+      appVersion: '1.0.0',
+      essDbSchemaVersion: '12',
+      xidDbSchemaVersion: '34',
+    };
+
+    const host = bootstrap(TestHostComponent);
+    host.info.set(mockSystemInfo);
+    await flush();
+
+    const harness = await getHarness(SystemInfoCardHarness);
+    expect(await harness.getImageTagText()).toBe('-');
+    expect(await harness.isImageTagPlaceholder()).toBeTrue();
   });
 });

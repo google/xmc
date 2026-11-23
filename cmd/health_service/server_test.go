@@ -173,6 +173,7 @@ func TestGetHealthStatus(t *testing.T) {
 				ProjectID:        "test-project",
 				AppVersion:       "test-version-1.2.3",
 				BuildVersion:     "test-build-version-4.5.6",
+				ImageTag:         "v1.2.3",
 				ObservabilityURL: "http://test-observability-url",
 			},
 			mockResult: RunChecksResult{
@@ -193,6 +194,7 @@ func TestGetHealthStatus(t *testing.T) {
 			expectedSystemInfo: &spb.SystemInfo{
 				AppVersion:         "test-version-1.2.3",
 				BuildVersion:       "test-build-version-4.5.6",
+				ImageTag:           "v1.2.3",
 				ObservabilityUrl:   "http://test-observability-url",
 				EssDbSchemaVersion: "6",
 				XidDbSchemaVersion: "1",
@@ -233,6 +235,7 @@ func TestGetHealthStatus(t *testing.T) {
 			expectedSystemInfo: &spb.SystemInfo{
 				AppVersion:         "unknown",
 				BuildVersion:       "unknown",
+				ImageTag:           "unknown",
 				ObservabilityUrl:   "",
 				EssDbSchemaVersion: "UNAVAILABLE",
 				XidDbSchemaVersion: "UNAVAILABLE",
@@ -246,6 +249,34 @@ func TestGetHealthStatus(t *testing.T) {
 				"Spanner ESS": spb.HealthState_HEALTH_STATE_UNHEALTHY,
 				"Spanner XID": spb.HealthState_HEALTH_STATE_UNHEALTHY,
 				"Redis":       spb.HealthState_HEALTH_STATE_HEALTHY,
+			},
+		},
+		{
+			name: "AppVersionFallsBackToBuildVersion",
+			cfg: &Config{
+				Port:         "8080",
+				GRPCPort:     "50051",
+				ProjectID:    "test-project",
+				BuildVersion: "1.0.0",
+				ImageTag:     "latest",
+			},
+			mockResult: RunChecksResult{
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+				Components: []*spb.ComponentHealth{
+					{Name: "ESS", HealthState: spb.HealthState_HEALTH_STATE_HEALTHY},
+				},
+			},
+			expectedState: spb.HealthState_HEALTH_STATE_HEALTHY,
+			expectedSystemInfo: &spb.SystemInfo{
+				AppVersion:         "1.0.0",
+				BuildVersion:       "1.0.0",
+				ImageTag:           "latest",
+				EssDbSchemaVersion: "6",
+				XidDbSchemaVersion: "1",
+			},
+			expectedComponents: map[string]spb.HealthState{
+				"ESS": spb.HealthState_HEALTH_STATE_HEALTHY,
 			},
 		},
 	}
@@ -270,6 +301,9 @@ func TestGetHealthStatus(t *testing.T) {
 			}
 			if resp.SystemInfo.BuildVersion != tt.expectedSystemInfo.BuildVersion {
 				t.Errorf("Expected BuildVersion %q, got %q", tt.expectedSystemInfo.BuildVersion, resp.SystemInfo.BuildVersion)
+			}
+			if resp.SystemInfo.ImageTag != tt.expectedSystemInfo.ImageTag {
+				t.Errorf("Expected ImageTag %q, got %q", tt.expectedSystemInfo.ImageTag, resp.SystemInfo.ImageTag)
 			}
 			if resp.SystemInfo.ObservabilityUrl != tt.expectedSystemInfo.ObservabilityUrl {
 				t.Errorf("Expected ObservabilityUrl %q, got %q", tt.expectedSystemInfo.ObservabilityUrl, resp.SystemInfo.ObservabilityUrl)

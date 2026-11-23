@@ -19,6 +19,7 @@ export class SystemInfoCardHarness extends ComponentHarness {
   static hostSelector = 'xmc-system-info-card';
 
   private readonly _appVersion = this.locatorForOptional('.app-version-value');
+  private readonly _imageTag = this.locatorForOptional('.image-tag-value');
   private readonly _essSchema = this.locatorForOptional('.ess-schema-value');
   private readonly _xidSchema = this.locatorForOptional('.xid-schema-value');
   private readonly _observabilityLink = this.locatorForOptional('.observability-link');
@@ -26,6 +27,16 @@ export class SystemInfoCardHarness extends ComponentHarness {
   async getAppVersionText(): Promise<string | null> {
     const el = await this._appVersion();
     return el ? el.text() : null;
+  }
+
+  async getImageTagText(): Promise<string | null> {
+    const el = await this._imageTag();
+    return el ? el.text() : null;
+  }
+
+  async isImageTagPlaceholder(): Promise<boolean> {
+    const el = await this._imageTag();
+    return el ? el.hasClass('is-placeholder') : false;
   }
 
   async getEssSchemaText(): Promise<string | null> {

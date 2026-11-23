@@ -20,6 +20,7 @@ import { HealthStatusResponse } from 'app/protos/health_service';
 export type SystemInfo = NonNullable<HealthStatusResponse['systemInfo']>;
 
 export const UNAVAILABLE_SCHEMA_VERSION = 'UNAVAILABLE';
+export const UNKNOWN_VALUE = 'unknown';
 const PLACEHOLDER_VERSION = '-';
 
 /** A component showing system version info and external monitoring links. */
@@ -34,25 +35,32 @@ const PLACEHOLDER_VERSION = '-';
 export class SystemInfoCardComponent {
   systemInfo = input.required<SystemInfo>();
 
+  protected readonly imageTag = computed(() =>
+    this.formatValue(this.systemInfo().imageTag, UNKNOWN_VALUE),
+  );
+  protected readonly isImageTagPlaceholder = computed(
+    () => !this.isValueAvailable(this.systemInfo().imageTag, UNKNOWN_VALUE),
+  );
+
   protected readonly essDbSchemaVersion = computed(() =>
-    this.formatSchemaVersion(this.systemInfo().essDbSchemaVersion),
+    this.formatValue(this.systemInfo().essDbSchemaVersion, UNAVAILABLE_SCHEMA_VERSION),
   );
   protected readonly xidDbSchemaVersion = computed(() =>
-    this.formatSchemaVersion(this.systemInfo().xidDbSchemaVersion),
+    this.formatValue(this.systemInfo().xidDbSchemaVersion, UNAVAILABLE_SCHEMA_VERSION),
   );
 
   protected readonly isEssUnavailable = computed(
-    () => !this.isSchemaAvailable(this.systemInfo().essDbSchemaVersion),
+    () => !this.isValueAvailable(this.systemInfo().essDbSchemaVersion, UNAVAILABLE_SCHEMA_VERSION),
   );
   protected readonly isXidUnavailable = computed(
-    () => !this.isSchemaAvailable(this.systemInfo().xidDbSchemaVersion),
+    () => !this.isValueAvailable(this.systemInfo().xidDbSchemaVersion, UNAVAILABLE_SCHEMA_VERSION),
   );
 
-  private formatSchemaVersion(version: string | undefined | null): string {
-    return this.isSchemaAvailable(version) ? version : PLACEHOLDER_VERSION;
+  private formatValue(value: string | undefined | null, sentinel: string): string {
+    return this.isValueAvailable(value, sentinel) ? value : PLACEHOLDER_VERSION;
   }
 
-  private isSchemaAvailable(version: string | undefined | null): version is string {
-    return Boolean(version) && version !== UNAVAILABLE_SCHEMA_VERSION;
+  private isValueAvailable(value: string | undefined | null, sentinel: string): value is string {
+    return Boolean(value) && value !== sentinel;
   }
 }
