@@ -708,6 +708,57 @@ func TestInitDataEngineWithGetter_AutoDetectBigQueryComponentCR(t *testing.T) {
 	}
 }
 
+func TestInitDataEngine_ForwardsProviderOptionsAcrossBranches(t *testing.T) {
+	ctx := context.Background()
+	t.Setenv("CLICKHOUSE_DSN", "")
+	t.Setenv("CLICKHOUSE_HOST", "127.0.0.1")
+	t.Setenv("CLICKHOUSE_PORT", "1")
+	crreadertest.IsolateInvalidKubeconfig(t)
+	var directOpt *dataengine.Provider
+	direct := initDataEngine(ctx, &server.Config{}, func(p *dataengine.Provider) { directOpt = p })
+	if direct == nil || directOpt != direct {
+		t.Fatalf("initDataEngine() = %p (opt target %p), want same non-nil provider", direct, directOpt)
+	}
+	_ = direct.Close()
+
+	enabledCR := func(name string) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"spec":   map[string]any{"enabled": true},
+			"status": map[string]any{"state": "COMPONENT_STATE_ENABLED"},
+		}}
+	}
+	for _, tc := range []struct {
+		name, store, target string
+	}{
+		{"clickhouse", "", "clickhouse"},
+		{"explicit bigquery", "bigquery", "bigquery"},
+		{"auto-detect bigquery", "", "bigquery"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CLICKHOUSE_HOST", "")
+			t.Setenv("BIGQUERY_DATASET", "")
+			t.Setenv("BIGQUERY_PROJECT_ID", "")
+			t.Setenv("GOOGLE_CLOUD_PROJECT", "")
+			t.Setenv("METRICS_STORE", "")
+			getter := &countingComponentGetter{
+				inner: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{tc.target: enabledCR(tc.target)}},
+			}
+			var gotTarget *dataengine.Provider
+			provider := initDataEngineWithGetter(ctx, &server.Config{ComponentsNamespace: "xmc", MetricsStore: tc.store}, getter,
+				dataengine.WithRetryInterval(0), func(p *dataengine.Provider) { gotTarget = p })
+			if provider == nil || gotTarget != provider {
+				t.Fatalf("initDataEngineWithGetter() = %p (opt target %p), want same non-nil provider", provider, gotTarget)
+			}
+			defer provider.Close()
+			before := getter.Calls()[tc.target]
+			_, _ = provider.Engine(ctx)
+			if after := getter.Calls()[tc.target]; after <= before {
+				t.Errorf("Engine() GetComponent(%q) calls = %d after %d, want retry via forwarded WithRetryInterval(0)", tc.target, after, before)
+			}
+		})
+	}
+}
+
 type stubBigQueryConn struct{ tableRef string }
 
 func (s stubBigQueryConn) Query(context.Context, string, ...any) (xmcbigquery.Rows, error) {

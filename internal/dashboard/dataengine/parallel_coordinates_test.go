@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,6 +35,8 @@ import (
 	"xmanager_cloud/internal/prototest"
 )
 
+type ctxMarkerKey struct{}
+
 // fakeStudyReader serves one experiment and pages through its work units like the experiment store:
 // page tokens are the offset of the next page.
 type fakeStudyReader struct {
@@ -41,12 +44,15 @@ type fakeStudyReader struct {
 	fetchErr     error
 	workUnits    []*essmsgpb.WorkUnit
 	listErr      error
+	fetchCtx     context.Context
+	listCtx      context.Context
 	listedParent string
 	listedOrder  string
 	listCalls    int
 }
 
-func (f *fakeStudyReader) FetchExperiment(_ context.Context, xid int64) (*essmsgpb.Experiment, error) {
+func (f *fakeStudyReader) FetchExperiment(ctx context.Context, xid int64) (*essmsgpb.Experiment, error) {
+	f.fetchCtx = ctx
 	if f.fetchErr != nil {
 		return nil, f.fetchErr
 	}
@@ -56,7 +62,8 @@ func (f *fakeStudyReader) FetchExperiment(_ context.Context, xid int64) (*essmsg
 	return f.experiment, nil
 }
 
-func (f *fakeStudyReader) ListWorkUnits(_ context.Context, parent string, pageSize int32, pageToken, _, orderBy string, _ time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
+func (f *fakeStudyReader) ListWorkUnits(ctx context.Context, parent string, pageSize int32, pageToken, _, orderBy string, _ time.Duration) ([]*essmsgpb.WorkUnit, string, error) {
+	f.listCtx = ctx
 	f.listCalls++
 	f.listedParent = parent
 	f.listedOrder = orderBy
@@ -131,8 +138,9 @@ func TestFetchParallelCoordinatesData(t *testing.T) {
 		},
 	}
 	engine := &DataEngine{studies: reader}
+	ctx := context.WithValue(context.Background(), ctxMarkerKey{}, "req-1")
 
-	got, err := engine.fetchParallelCoordinatesData(context.Background(), 1001, parallelCoordinatesPlot)
+	got, err := engine.fetchParallelCoordinatesData(ctx, 1001, parallelCoordinatesPlot)
 	if err != nil {
 		t.Fatalf("fetchParallelCoordinatesData() error = %v", err)
 	}
@@ -161,6 +169,9 @@ func TestFetchParallelCoordinatesData(t *testing.T) {
 	}
 	if reader.listedOrder != "work_unit_id" {
 		t.Errorf("ListWorkUnits orderBy = %q, want %q", reader.listedOrder, "work_unit_id")
+	}
+	if reader.fetchCtx.Value(ctxMarkerKey{}) != "req-1" || reader.listCtx.Value(ctxMarkerKey{}) != "req-1" {
+		t.Errorf("ctx propagation = (%v, %v), want req-1 on both FetchExperiment and ListWorkUnits", reader.fetchCtx.Value(ctxMarkerKey{}), reader.listCtx.Value(ctxMarkerKey{}))
 	}
 }
 
@@ -263,19 +274,62 @@ func TestProviderFetchChartDataServesParallelCoordinates(t *testing.T) {
 		experiment: baseStudyExperiment(),
 		workUnits:  []*essmsgpb.WorkUnit{testWorkUnit(1, essmsgpb.WorkUnitStatus_RUNNING, nil)},
 	}
-	provider := NewProvider((&countingConnector{results: []func() (ClickHouseConn, error){succeeds}}).connect, WithStudyReader(reader))
+	fp := "fp-v1"
+	connector := &countingConnector{results: []func() (ClickHouseConn, error){succeeds}}
+	provider := NewDynamicProvider(func(context.Context) (string, Connector, error) {
+		return fp, connector.connect, nil
+	}, WithStudyReader(reader), WithRetryInterval(0), WithCloseGracePeriod(0))
+	t.Cleanup(func() { _ = provider.Close() })
 	chart := &dpb.Chart{Name: "experiments/1001/charts/study", Xid: 1001, Plots: []*dpb.PlotSpec{parallelCoordinatesPlot}}
+	want := &dpb.ChartData{
+		Name: "experiments/1001/charts/study",
+		Xid:  1001,
+		Wid:  0,
+		PlotsData: []*dpb.ChartData_PlotData{{
+			PlotId: "study",
+			Type:   dpb.PlotType_PARALLEL_COORDINATES,
+			Content: &dpb.ChartData_PlotData_ParallelCoordinatesData{ParallelCoordinatesData: &dpb.ParallelCoordinatesData{
+				Axes: []*dpb.ParallelCoordinatesData_Axis{{
+					ParameterId: "learning_rate",
+					Values:      &dpb.ParallelCoordinatesData_Axis_DoubleRange_{DoubleRange: &dpb.ParallelCoordinatesData_Axis_DoubleRange{MinValue: 1e-5, MaxValue: 1e-1}},
+					ScaleType:   dpb.ParallelCoordinatesData_Axis_LOG,
+				}},
+				Objective:    &dpb.ParallelCoordinatesData_Objective{MetricId: "val/loss", Goal: dpb.ParallelCoordinatesData_Objective_MINIMIZE},
+				Trajectories: []*dpb.ParallelCoordinatesData_RunTrajectory{testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil)},
+			}},
+		}},
+	}
 
+	firstEngine, err := provider.Engine(context.Background())
+	if err != nil {
+		t.Fatalf("Engine() initial error = %v", err)
+	}
 	data, err := provider.FetchChartData(context.Background(), chart, nil)
 	if err != nil {
 		t.Fatalf("FetchChartData() error = %v", err)
 	}
-	if data.GetWid() != 0 {
-		t.Errorf("FetchChartData().Wid = %d, want 0 for an experiment-level chart", data.GetWid())
+	if diff := cmp.Diff(want, data, protocmp.Transform()); diff != "" {
+		t.Errorf("FetchChartData() mismatch (-want +got):\n%s", diff)
 	}
-	trajectories := data.GetPlotsData()[0].GetParallelCoordinatesData().GetTrajectories()
-	if diff := cmp.Diff([]*dpb.ParallelCoordinatesData_RunTrajectory{testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil)}, trajectories, protocmp.Transform()); diff != "" {
-		t.Errorf("trajectories mismatch (-want +got):\n%s", diff)
+
+	// Trigger a dynamic fingerprint rebuild and verify both Engine() and FetchChartData() keep StudyReader.
+	fp = "fp-v2"
+	if err := provider.Ping(context.Background()); err != nil {
+		t.Fatalf("Ping() rebuild error = %v", err)
+	}
+	rebuiltEngine, err := provider.Engine(context.Background())
+	if err != nil {
+		t.Fatalf("Engine() rebuilt error = %v", err)
+	}
+	if rebuiltEngine == firstEngine {
+		t.Fatal("Engine() after fingerprint change returned initial pointer, want rebuilt engine")
+	}
+	rebuiltData, err := rebuiltEngine.FetchChartData(context.Background(), chart, nil)
+	if err != nil {
+		t.Fatalf("rebuilt Engine().FetchChartData() error = %v", err)
+	}
+	if diff := cmp.Diff(want, rebuiltData, protocmp.Transform()); diff != "" {
+		t.Errorf("rebuilt Engine().FetchChartData() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -287,11 +341,18 @@ func TestProviderFetchChartDataWrapsParallelCoordinatesErrors(t *testing.T) {
 	if status.Code(err) != codes.NotFound {
 		t.Errorf("FetchChartData() code = %v, want %v (err: %v)", status.Code(err), codes.NotFound, err)
 	}
+	if !strings.Contains(err.Error(), `failed to fetch parallel coordinates for plot "study"`) {
+		t.Errorf("FetchChartData() err = %q, want outer plot wrapper context", err)
+	}
 }
 
 func TestWithStudyReaderOnNilEngine(t *testing.T) {
 	var engine *DataEngine
 	if got := engine.withStudyReader(&fakeStudyReader{}); got != nil {
 		t.Errorf("withStudyReader() on a nil engine = %v, want nil", got)
+	}
+	nonNil := &DataEngine{}
+	if got := nonNil.withStudyReader(nil); got != nonNil {
+		t.Errorf("withStudyReader(nil) = %p, want original pointer %p", got, nonNil)
 	}
 }

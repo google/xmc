@@ -312,6 +312,7 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine 
 		closeEngine(engine)
 		return fmt.Errorf("failed to ping data engine: %w", err)
 	}
+	engine = engine.withStudyReader(p.studies)
 	old, stored := p.storeEngine(engine, fingerprint)
 	if !stored {
 		closeEngine(engine)
@@ -356,6 +357,7 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 	if engine == nil {
 		return nil, p.recordAttempt(fmt.Errorf("engine builder returned nil engine"))
 	}
+	engine = engine.withStudyReader(p.studies)
 
 	if _, stored := p.storeEngine(engine, fp); !stored {
 		closeEngine(engine)
@@ -511,5 +513,5 @@ func (p *Provider) FetchChartData(ctx context.Context, chart *dpb.Chart, req *dp
 	if err != nil {
 		return nil, err
 	}
-	return engine.withStudyReader(p.studies).FetchChartData(ctx, chart, req)
+	return engine.FetchChartData(ctx, chart, req)
 }

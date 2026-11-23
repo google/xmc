@@ -193,8 +193,9 @@ bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 # Retrieve a single chart (GetChart accepts charts/{chart_id}; hierarchical patterns work with get-data below)
 bazel run //sdks/python/xdash:xdash_bin -- get charts/baseline
 
-# Fetch evaluated ChartData for a specific chart
+# Fetch evaluated ChartData for a work-unit or experiment-level chart
 bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline
+bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/charts/study
 ```
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see

@@ -32,8 +32,8 @@ const (
 // DataEngine orchestrates analytics queries against the configured metrics backend.
 type DataEngine struct {
 	querier *metricsquery.Querier
-	// studies reads the study experiments of PARALLEL_COORDINATES plots. The Provider supplies it
-	// per request, so engines rebuilt for a new metrics backend configuration keep it.
+	// studies reads the study experiments of PARALLEL_COORDINATES plots. The Provider attaches it
+	// whenever an engine is built or rebuilt, so dynamic backend swaps keep it.
 	studies StudyReader
 }
 
@@ -70,11 +70,11 @@ func (e *DataEngine) activeQuerier() *metricsquery.Querier {
 	return e.querier
 }
 
-// withStudyReader returns a copy of the engine that reads studies through studies. The copy shares
-// the metrics querier, so it is cheap enough to make per request.
+// withStudyReader returns a copy of the engine that reads studies through studies, or e unchanged
+// when either e or studies is nil.
 func (e *DataEngine) withStudyReader(studies StudyReader) *DataEngine {
-	if e == nil {
-		return nil
+	if e == nil || studies == nil {
+		return e
 	}
 	cp := *e
 	cp.studies = studies
