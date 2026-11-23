@@ -253,7 +253,7 @@ func BuildChartParentFilter(parent string) (string, error) {
 		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
 	}
 	if !strings.HasPrefix(parent, "experiments/") {
-		return "", fmt.Errorf("unsupported parent format: %q", parent)
+		return "", fmt.Errorf("unsupported parent format %q: %w", parent, grpcerr.ErrInvalidArgument)
 	}
 	if strings.Contains(parent, "/workUnits/") {
 		xid, wid, err := validator.ValidateWorkUnitName(parent)

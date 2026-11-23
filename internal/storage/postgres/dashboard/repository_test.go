@@ -587,8 +587,8 @@ func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {
 	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "experiment parent name") {
 		t.Errorf("ListCharts(zero xid experiment parent) = %v, want ErrInvalidArgument with experiment parent context", err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); err == nil {
-		t.Error("ListCharts(bad parent) = nil, want error")
+	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListCharts(bad parent) = %v, want ErrInvalidArgument", err)
 	}
 	if _, _, err := repo.ListCharts(ctx, "", 10, "invalid-token-!@#", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListCharts(bad pageToken) = %v, want ErrInvalidArgument", err)
