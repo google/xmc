@@ -22,7 +22,7 @@ import (
 
 // EndpointProber is the active-probe capability shared by HealthProber and StatusDetectorHealthProber.
 type EndpointProber interface {
-	// Probe executes an active HTTP/TCP probe against target.
+	// Probe executes an active HTTP/TCP/gRPC probe against target.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 }
 

@@ -34,7 +34,8 @@ const (
 
 // HealthProbeResult contains health probe telemetry and outcome.
 type HealthProbeResult struct {
-	// Healthy indicates whether the network probe succeeded (HTTP 2xx/3xx or TCP connection established).
+	// Healthy indicates whether the network probe succeeded (HTTP 2xx/3xx, TCP connection established,
+	// or gRPC health SERVING / UNIMPLEMENTED).
 	Healthy bool `json:"healthy"`
 	// StatusCode is the HTTP response status code (if an HTTP probe was executed).
 	StatusCode int `json:"statusCode,omitempty"`
@@ -44,17 +45,19 @@ type HealthProbeResult struct {
 	Message string `json:"message,omitempty"`
 }
 
-// HealthProber performs active HTTP and TCP network probes against component endpoints.
+// HealthProber performs active HTTP, TCP, and gRPC network probes against component endpoints.
 type HealthProber interface {
-	// Probe dispatches a health probe to target, automatically inferring HTTP vs TCP based on protocol prefix.
+	// Probe dispatches a health probe to target, inferring HTTP, gRPC, or TCP from its scheme prefix.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 	// ProbeHTTP executes an HTTP GET health check against targetURL.
 	ProbeHTTP(ctx context.Context, targetURL string, timeout time.Duration) (*HealthProbeResult, error)
 	// ProbeTCP verifies TCP network socket establishment against address (host:port).
 	ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error)
+	// ProbeGRPC calls grpc.health.v1.Health/Check against address ([grpc://]host:port).
+	ProbeGRPC(ctx context.Context, address string, timeout time.Duration) (*HealthProbeResult, error)
 }
 
-// NetworkHealthProber implements HealthProber for HTTP and TCP network connectivity.
+// NetworkHealthProber implements HealthProber for HTTP, TCP, and gRPC network connectivity.
 type NetworkHealthProber struct {
 	httpClient   *http.Client
 	dialer       *net.Dialer
@@ -108,21 +111,35 @@ func NewNetworkHealthProber(opts ...HealthProberOption) *NetworkHealthProber {
 	return p
 }
 
-// Probe dispatches a health probe by protocol prefix (http://, https://, tcp://, or bare host:port).
+// Probe dispatches a health probe by protocol prefix (http://, https://, grpc://, tcp://, or bare
+// host:port for TCP). grpcs:// is rejected with ErrGRPCSNotSupported.
 func (p *NetworkHealthProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
 	if p == nil {
 		return nil, errors.New("network health prober is nil")
 	}
 	trimmed := strings.TrimSpace(target)
 	lower := strings.ToLower(trimmed)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+	switch {
+	case strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://"):
 		return p.ProbeHTTP(ctx, trimmed, timeout)
+	case strings.HasPrefix(lower, grpcScheme) || strings.HasPrefix(lower, grpcsScheme):
+		return p.ProbeGRPC(ctx, trimmed, timeout)
+	case strings.HasPrefix(lower, "tcp://"):
+		return p.ProbeTCP(ctx, trimmed[6:], timeout)
+	default:
+		return p.ProbeTCP(ctx, trimmed, timeout)
 	}
-	tcpTrimmed := trimmed
-	if strings.HasPrefix(lower, "tcp://") {
-		tcpTrimmed = trimmed[6:]
+}
+
+// effectiveTimeout returns timeout, or the prober's default when timeout is not positive.
+func (p *NetworkHealthProber) effectiveTimeout(timeout time.Duration) time.Duration {
+	if timeout > 0 {
+		return timeout
 	}
-	return p.ProbeTCP(ctx, tcpTrimmed, timeout)
+	if p.probeTimeout > 0 {
+		return p.probeTimeout
+	}
+	return defaultHealthProbeTimeout
 }
 
 // ProbeHTTP executes a bounded HTTP GET probe against targetURL, reading up to 64KB of the response body.
@@ -137,13 +154,7 @@ func (p *NetworkHealthProber) ProbeHTTP(ctx context.Context, targetURL string, t
 	if _, err := url.ParseRequestURI(targetURL); err != nil {
 		return nil, fmt.Errorf("invalid probe URL %q: %w", targetURL, err)
 	}
-	if timeout <= 0 {
-		timeout = p.probeTimeout
-		if timeout <= 0 {
-			timeout = defaultHealthProbeTimeout
-		}
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	probeCtx, cancel := context.WithTimeout(ctx, p.effectiveTimeout(timeout))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, targetURL, nil)
@@ -196,21 +207,11 @@ func (p *NetworkHealthProber) ProbeTCP(ctx context.Context, address string, time
 	if _, _, err := net.SplitHostPort(trimmed); err != nil {
 		return nil, fmt.Errorf("invalid TCP address %q: %w", address, err)
 	}
-	if timeout <= 0 {
-		timeout = p.probeTimeout
-		if timeout <= 0 {
-			timeout = defaultHealthProbeTimeout
-		}
-	}
-	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	probeCtx, cancel := context.WithTimeout(ctx, p.effectiveTimeout(timeout))
 	defer cancel()
 
-	dialer := p.dialer
-	if dialer == nil {
-		dialer = &net.Dialer{}
-	}
 	start := time.Now()
-	conn, err := dialer.DialContext(probeCtx, "tcp", trimmed)
+	conn, err := p.dialContext(probeCtx, trimmed)
 	latency := time.Since(start)
 	if err != nil {
 		if ctx.Err() != nil {

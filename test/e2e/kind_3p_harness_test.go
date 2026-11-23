@@ -768,10 +768,27 @@ type kindNodePortProber struct {
 
 func (p *kindNodePortProber) Probe(ctx context.Context, target string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	trimmed := strings.TrimSpace(target)
-	if lower := strings.ToLower(trimmed); strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 		return p.ProbeHTTP(ctx, trimmed, timeout)
 	}
+	if strings.HasPrefix(lower, "grpc://") {
+		return p.ProbeGRPC(ctx, trimmed, timeout)
+	}
 	return p.ProbeTCP(ctx, trimmed, timeout)
+}
+
+// ProbeGRPC rewrites an in-cluster grpc://host:port target to its NodePort before probing.
+func (p *kindNodePortProber) ProbeGRPC(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
+	trimmed := strings.TrimSpace(endpoint)
+	if strings.HasPrefix(strings.ToLower(trimmed), "grpc://") {
+		trimmed = trimmed[len("grpc://"):]
+	}
+	rewritten, err := p.translateHostPort(ctx, trimmed)
+	if err != nil {
+		return nil, err
+	}
+	return p.delegate.ProbeGRPC(ctx, "grpc://"+rewritten, timeout)
 }
 
 func (p *kindNodePortProber) ProbeHTTP(ctx context.Context, endpoint string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {

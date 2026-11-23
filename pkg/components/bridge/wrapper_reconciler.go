@@ -114,7 +114,7 @@ func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in Reco
 }
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
-// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
+// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP/gRPC health probes.
 func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, probeEndpoint string) (*ReconcileResult, error) {
 	if ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint); !ok {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)

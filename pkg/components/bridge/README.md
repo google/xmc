@@ -290,8 +290,9 @@ To supplement Kubernetes CR condition checks with real data plane health verific
 
 - **Bounded HTTP GET Probing (`ProbeHTTP`)**: Executes HTTP/HTTPS health checks with context timeouts, closing connections cleanly and draining response bodies up to a bounded 64KB limit. Supports custom clients via `WithHealthHTTPClient`.
 - **TCP Socket Probing (`ProbeTCP`)**: Dials target socket addresses with deadline enforcement and closes sockets immediately upon connect.
-- **Protocol-Agnostic Probing (`Probe`)**: Automatically sniffs URL schemes (`http://`, `https://`, `tcp://`, or bare `host:port`) and dispatches to HTTP vs TCP probe implementations.
-- **`HealthProber` Interface & `FakeHealthProber` (`healthprobetest/fake_health_prober.go`)**: Enables dependency injection and deterministic health simulation in reconciler unit tests.
+- **gRPC Health Probing (`ProbeGRPC`)**: Calls `grpc.health.v1.Health/Check` for the overall server (empty service name) over a plaintext connection to `grpc://host:port`, sharing the TCP dialer and the probe deadline, with the response capped at 64KB. `SERVING` is healthy. `UNIMPLEMENTED` (the server speaks gRPC but does not register the health service) is also healthy, with a message saying it fell back to transport reachability, because a real gRPC status proves at least what a TCP dial proves. `NOT_SERVING`, `SERVICE_UNKNOWN`, other gRPC errors, and timeouts are unhealthy, with the server's status text bounded to 256 bytes. `grpcs://`, paths (named services), queries, fragments, and user info are rejected, and parse errors never echo the target. Operator-less wrappers opt in through `parameters.healthCheckEndpoint` (e.g. the `stable-2026b` `vizier` component), which only changes the probe target; `status.access` is still derived from the connection parameters.
+- **Protocol-Agnostic Probing (`Probe`)**: Automatically sniffs URL schemes (`http://`, `https://`, `grpc://`, `tcp://`, or bare `host:port` for TCP) and dispatches to the HTTP, gRPC, or TCP probe implementation.
+- **`HealthProber` Interface & `FakeHealthProber` (`healthprobetest/fake_health_prober.go`)**: Enables dependency injection and deterministic health simulation in reconciler unit tests. The fake's `ProbeHTTP`, `ProbeTCP`, and `ProbeGRPC` all return the result configured for the target via `SetResult`.
 
 ---
 

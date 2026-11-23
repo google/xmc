@@ -51,7 +51,7 @@ flowchart LR
     end
 
     Prof -->|"Component CRs:<br/>hpo, vizier, clickhouse"| Bridge
-    Bridge -.->|"TCP :7077 readiness probe"| Viz
+    Bridge -.->|"Readiness probe :7077<br/>(TCP, or gRPC health opt-in)"| Viz
     Bridge -.->|"Readiness check"| CH
     Bridge -.->|"Helm install when<br/>vizier & clickhouse Ready"| SC
 
