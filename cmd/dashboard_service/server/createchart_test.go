@@ -142,6 +142,11 @@ func TestCreateChart(t *testing.T) {
 		if checkedXID != "xids/100" {
 			t.Errorf("CheckUserAuthorization name = %q, want %q", checkedXID, "xids/100")
 		}
+		respStudy, err := s.CreateChart(ctx, prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-100-parallel-coordinates" }))
+		wantStudy := prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/100/charts/study-100-parallel-coordinates" })
+		if err != nil || cmp.Diff(wantStudy, respStudy, protocmp.Transform()) != "" || cmp.Diff(wantStudy, savedChart, protocmp.Transform()) != "" {
+			t.Errorf("CreateChart(study-100-parallel-coordinates) = (%v, %v), saved = %v, want %v", respStudy, err, savedChart, wantStudy)
+		}
 	})
 
 	t.Run("unauthenticated caller returns Unauthenticated", func(t *testing.T) {
@@ -222,6 +227,8 @@ func TestCreateChart(t *testing.T) {
 				r.Chart.Plots = []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_SCATTER}}
 			})},
 			{name: "wid set under experiment parent", req: prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = ""; r.Chart.Wid = 1 })},
+			{name: "foreign study chart ID rejected", req: prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-999-parallel-coordinates" })},
+			{name: "study chart ID under work unit parent rejected", req: prototest.Modify(baseWuReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-100-parallel-coordinates" })},
 		}
 
 		for _, tc := range tests {
