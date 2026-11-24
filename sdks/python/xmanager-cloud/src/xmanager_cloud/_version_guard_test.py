@@ -71,6 +71,20 @@ class CheckXmanagerCompatibilityTest(unittest.TestCase):
         with self.assertWarnsRegex(RuntimeWarning, r"'not-a-version'"):
             _version_guard.check_xmanager_compatibility()
 
+    def test_missing_version_metadata_warns_and_is_allowed(self) -> None:
+        # Python 3.11-3.13 return None for a dist-info without a Version field.
+        self._patch_installed_version(return_value=None)
+
+        with self.assertWarnsRegex(RuntimeWarning, r"version None"):
+            _version_guard.check_xmanager_compatibility()
+
+    def test_missing_version_key_warns_and_is_allowed(self) -> None:
+        # Python 3.14+ raises KeyError for a dist-info without a Version field.
+        self._patch_installed_version(side_effect=KeyError)
+
+        with self.assertWarnsRegex(RuntimeWarning, r"version None"):
+            _version_guard.check_xmanager_compatibility()
+
 
 if __name__ == "__main__":
     unittest.main()
