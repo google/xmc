@@ -28,6 +28,22 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
+func TestMockStorage_CreateArtifact(t *testing.T) {
+	in, override, boom := &essmsgpb.Artifact{Name: "artifacts/10", Parent: "experiments/1"}, &essmsgpb.Artifact{Name: "artifacts/99"}, errors.New("boom")
+	if got, err := (&MockStorage{}).CreateArtifact(context.Background(), in); err != nil || got == nil || got == in || got.GetName() != "artifacts/10" {
+		t.Fatalf("CreateArtifact(default) = (%p, %v, %v), want cloned artifacts/10", got, got, err)
+	}
+	if got, err := (&MockStorage{}).CreateArtifact(context.Background(), nil); err != nil || got != nil {
+		t.Errorf("CreateArtifact(nil) = (%v, %v), want (nil, nil)", got, err)
+	}
+	if got, err := (&MockStorage{Artifact: override}).CreateArtifact(context.Background(), in); err != nil || got != override {
+		t.Errorf("CreateArtifact(override) = (%v, %v), want (%v, nil)", got, err, override)
+	}
+	if got, err := (&MockStorage{CreateArtifactErr: boom}).CreateArtifact(context.Background(), in); !errors.Is(err, boom) || got != nil {
+		t.Errorf("CreateArtifact(err) = (%v, %v), want (nil, %v)", got, err, boom)
+	}
+}
+
 func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 	ctx := context.Background()
 	fixedTime := time.Date(2026, time.October, 29, 10, 0, 0, 0, time.UTC)

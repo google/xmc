@@ -22,6 +22,32 @@ import (
 	"xmanager_cloud/pkg/components/store/lifecycle"
 )
 
+func TestOrderedHPOCatalog(t *testing.T) {
+	params := map[string]string{"maxTrialBudget": "7"}
+	recs := OrderedHPOCatalog(params)
+	if len(recs) != 3 {
+		t.Fatalf("len(OrderedHPOCatalog()) = %d, want 3", len(recs))
+	}
+	type item struct {
+		Name, Stability string
+		Deps            []string
+		Params          map[string]string
+	}
+	got := []item{
+		{recs[0].Name, recs[0].Spec.GetStability().String(), recs[0].Dependencies, recs[0].Spec.GetParameters()},
+		{recs[1].Name, recs[1].Spec.GetStability().String(), recs[1].Dependencies, recs[1].Spec.GetParameters()},
+		{recs[2].Name, recs[2].Spec.GetStability().String(), recs[2].Dependencies, recs[2].Spec.GetParameters()},
+	}
+	want := []item{
+		{"clickhouse", "COMPONENT_STABILITY_STABLE", nil, nil},
+		{"vizier", "COMPONENT_STABILITY_EXPERIMENTAL", nil, nil},
+		{"hpo", "COMPONENT_STABILITY_EXPERIMENTAL", []string{"vizier", "clickhouse"}, params},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("OrderedHPOCatalog() mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestHPOCatalog_IsReady(t *testing.T) {
 	params := map[string]string{"maxTrialBudget": "5"}
 	catalog := HPOCatalog(params)

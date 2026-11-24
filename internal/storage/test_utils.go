@@ -378,7 +378,10 @@ func (s *MockStorage) CreateArtifact(ctx context.Context, artifact *essmsgpb.Art
 	if s.CreateArtifactErr != nil {
 		return nil, s.CreateArtifactErr
 	}
-	return s.Artifact, nil
+	if s.Artifact != nil || artifact == nil {
+		return s.Artifact, nil
+	}
+	return proto.Clone(artifact).(*essmsgpb.Artifact), nil
 }
 
 // FetchArtifact mocks artifact fetching.

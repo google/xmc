@@ -20,6 +20,17 @@ import (
 	"xmanager_cloud/pkg/components/store"
 )
 
+// OrderedHPOCatalog returns ready clickhouse (STABLE), vizier (EXPERIMENTAL), and hpo
+// (EXPERIMENTAL) records in dependency order with ComponentRecord.Dependencies populated.
+func OrderedHPOCatalog(hpoParams map[string]string) []*store.ComponentRecord {
+	c := HPOCatalog(hpoParams)
+	c["clickhouse"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_STABLE
+	c["vizier"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
+	c["hpo"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
+	c["hpo"].Dependencies = c["hpo"].Spec.GetDependencies()
+	return []*store.ComponentRecord{c["clickhouse"], c["vizier"], c["hpo"]}
+}
+
 // HPOCatalog returns new ready catalog records, keyed by name, that satisfy the components a study
 // requires: an hpo component with hpoParams as its parameters, which depends on vizier and
 // clickhouse components. Every record is ENABLED and has observed its generation.
