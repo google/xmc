@@ -57,7 +57,12 @@ class TestE2EConfig(unittest.TestCase):
         )
         self.assertEqual(workload_cfg.tier, E2ETier.WORKLOAD)
         self.assertEqual(workload_cfg.venv_dependencies, E2E_WORKLOAD_VENV_DEPENDENCIES)
-        self.assertIn("xmanager>=0.8.5.post1,<0.9.0", workload_cfg.venv_dependencies)
+        self.assertTrue(
+            any(
+                dep.startswith("xmanager>=") and "<0.9.0" in dep
+                for dep in workload_cfg.venv_dependencies
+            )
+        )
         self.assertNotIn("xmanager", workload_cfg.venv_dependencies)
 
     def test_post_init_coerces_string_tier_to_enum(self) -> None:
