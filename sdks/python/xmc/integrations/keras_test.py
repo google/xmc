@@ -48,6 +48,8 @@ class KerasIntegrationTest(unittest.TestCase):
             with self.assertRaises(ImportError) as ctx:
                 importlib.import_module("xmc.integrations.keras")
             self.assertIn("Keras is required to use XmcKerasCallback", str(ctx.exception))
+            self.assertIn('pip install "xmc-metrics[keras]"', str(ctx.exception))
+            self.assertIn('pip install "keras>=3.0.0"', str(ctx.exception))
 
     def test_import_fails_when_keras_version_incompatible(self) -> None:
         """Verifies eager import fails fast when Keras version < 3.0.0."""
@@ -56,6 +58,8 @@ class KerasIntegrationTest(unittest.TestCase):
             with self.assertRaises(ImportError) as ctx:
                 importlib.import_module("xmc.integrations.keras")
             self.assertIn("Keras version >= 3.0.0 is required", str(ctx.exception))
+            self.assertIn('pip install --upgrade "xmc-metrics[keras]"', str(ctx.exception))
+            self.assertIn('pip install --upgrade "keras>=3.0.0"', str(ctx.exception))
 
     def test_import_succeeds_with_valid_keras(self) -> None:
         """Verifies eager import succeeds when Keras >= 3.0.0 is present."""

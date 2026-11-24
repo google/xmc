@@ -14,9 +14,80 @@
 
 """Unit tests for xmc.types module using proto."""
 
+import importlib.abc
+import importlib.util
+import sys
+import types
 import unittest
+from unittest import mock
 
+from xmc import types as xmc_types
 from xmc.types import Metric, format_metric_batch_payload, is_valid_metric_name
+
+
+def _exec_fresh_types_module() -> types.ModuleType:
+    """Executes xmc/types.py into a new module object, leaving sys.modules intact."""
+    spec = importlib.util.find_spec("xmc.types")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestMetricsProtoImport(unittest.TestCase):
+    def test_bazel_build_falls_back_to_api_protos(self):
+        self.assertEqual(xmc_types.metrics_pb2.__name__, "api.protos.metrics.metrics_pb2")
+
+    def test_descriptor_name_matches_packaged_build(self):
+        # setup.py compiles with -I <repo_root>, so both copies share this name and can
+        # be loaded in one process.
+        self.assertEqual(Metric.DESCRIPTOR.file.name, "api/protos/metrics/metrics.proto")
+
+    def test_prefers_package_local_module(self):
+        packaged = types.ModuleType("xmc._protos.metrics_pb2")
+        packaged.Metric = type("Metric", (), {})  # type: ignore[attr-defined]
+
+        with mock.patch.dict(sys.modules, {"xmc._protos.metrics_pb2": packaged}):
+            module = _exec_fresh_types_module()
+
+        self.assertIs(module.metrics_pb2, packaged)
+        self.assertIs(module.Metric, packaged.Metric)
+
+    def test_errors_inside_packaged_module_propagate(self):
+        errors = {
+            "protobuf missing": ModuleNotFoundError("No module named 'google'", name="google"),
+            "protobuf too old": ImportError("cannot import name 'runtime_version'"),
+        }
+        for label, error in errors.items():
+            with self.subTest(label), self.assertRaises(type(error)) as raised:
+                with mock.patch.object(sys, "meta_path", [_FailingFinder(error), *sys.meta_path]):
+                    _exec_fresh_types_module()
+            self.assertIs(raised.exception, error)
+
+
+class _FailingLoader(importlib.abc.Loader):
+    """Loader whose module body raises the given error, like a broken generated module."""
+
+    def __init__(self, error: ImportError) -> None:
+        self._error = error
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        raise self._error
+
+
+class _FailingFinder(importlib.abc.MetaPathFinder):
+    """Resolves xmc._protos.metrics_pb2 to a module that fails while executing."""
+
+    def __init__(self, error: ImportError) -> None:
+        self._error = error
+
+    def find_spec(self, fullname, path, target=None):
+        if fullname != "xmc._protos.metrics_pb2":
+            return None
+        return importlib.util.spec_from_loader(fullname, _FailingLoader(self._error))
 
 
 class TestMetricValidation(unittest.TestCase):
