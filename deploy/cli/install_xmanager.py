@@ -54,6 +54,7 @@ RUNTIME_DEPENDENCIES = (
     "requests>=2.32.0",
 )
 
+# Keep in sync with PROTO_PACKAGES in sdks/python/xmanager-cloud/build_staging.py.
 PROTO_PACKAGE_DIRS = (
     ("experiment", "experiment_state_server"),
     ("xid", "xid_service"),
