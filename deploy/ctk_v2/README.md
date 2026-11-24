@@ -75,7 +75,7 @@ gcloud container clusters update <CLUSTER_NAME> \
   --enable-managed-mldiagnostics
 ```
 
-> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
+> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path. For a complete end-to-end walkthrough of cluster configuration, workload instrumentation, and viewing profile data in the XMC UI, see the [Managed XProf User Guide](../../docs/managed_xprof.md).
 
 ### ClickHouse Connection & Credentials (Metrics Pipeline)
 ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled at pod startup, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on subsequent CR or Secret updates without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, wait for `xmc-bridge` to reconcile it (a CR still in `COMPONENT_STATE_DISABLED` counts as disabled at startup) and then restart the service once so it initializes its dynamic chart data engine:
