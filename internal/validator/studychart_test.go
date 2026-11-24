@@ -16,6 +16,7 @@ package validator
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	spb "xmanager_cloud/api/protos/dashboard"
@@ -76,27 +77,33 @@ func TestValidateCreateChartRequest_StudyChartID(t *testing.T) {
 		return &spb.CreateChartRequest{Parent: "experiments/123/workUnits/1", ChartId: chartID, Chart: &spb.Chart{Title: "Loss", Xid: 123, Wid: 1}}
 	}
 	for _, tc := range []struct {
-		name    string
-		req     *spb.CreateChartRequest
-		wantErr error
+		name         string
+		req          *spb.CreateChartRequest
+		wantReserved bool
 	}{
 		{name: "valid_matching_experiment_parent", req: baseReq},
 		{name: "unrelated_chart_id_on_experiment", req: withID("custom-parallel-coords")},
 		{name: "unrelated_chart_id_on_work_unit", req: wuReq("loss-chart")},
 		{name: "malformed_non_digit_study_id_unaffected", req: withExp("experiments/456", 456, "study-12a-parallel-coordinates")},
 		{name: "multibyte_digits_unaffected", req: withExp("experiments/456", 456, "study-１２３-parallel-coordinates")},
-		{name: "wrong_experiment_parent", req: withExp("experiments/456", 456, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "work_unit_parent", req: wuReq("study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "dashboard_parent", req: withExp("dashboards/dash-1", 123, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "empty_parent", req: withExp("", 123, "study-123-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "leading_zero_in_chart_id", req: withExp("experiments/1", 1, "study-01-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "zero_in_chart_id", req: withID("study-0-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "overflowing_number_in_chart_id", req: withID("study-99999999999999999999999-parallel-coordinates"), wantErr: grpcerr.ErrInvalidArgument},
-		{name: "whitespace_padded_study_chart_id", req: withID(" study-123-parallel-coordinates "), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "wrong_experiment_parent", req: withExp("experiments/456", 456, "study-123-parallel-coordinates"), wantReserved: true},
+		{name: "work_unit_parent", req: wuReq("study-123-parallel-coordinates"), wantReserved: true},
+		{name: "leading_zero_in_chart_id", req: withExp("experiments/1", 1, "study-01-parallel-coordinates"), wantReserved: true},
+		{name: "zero_in_chart_id", req: withID("study-0-parallel-coordinates"), wantReserved: true},
+		{name: "overflowing_number_in_chart_id", req: withID("study-99999999999999999999999-parallel-coordinates"), wantReserved: true},
+		{name: "whitespace_padded_study_chart_id", req: withID(" study-123-parallel-coordinates "), wantReserved: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := ValidateCreateChartRequest(tc.req); !errors.Is(err, tc.wantErr) {
-				t.Errorf("ValidateCreateChartRequest() error = %v, want %v", err, tc.wantErr)
+			err := ValidateCreateChartRequest(tc.req)
+			if !tc.wantReserved {
+				if err != nil {
+					t.Errorf("ValidateCreateChartRequest() error = %v, want nil", err)
+				}
+				return
+			}
+			// The rejection must come from the reservation itself, not from an earlier check.
+			if !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "is reserved") {
+				t.Errorf("ValidateCreateChartRequest() error = %v, want the reserved chart ID error", err)
 			}
 		})
 	}

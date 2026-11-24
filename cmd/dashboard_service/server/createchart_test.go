@@ -143,9 +143,15 @@ func TestCreateChart(t *testing.T) {
 			t.Errorf("CheckUserAuthorization name = %q, want %q", checkedXID, "xids/100")
 		}
 		respStudy, err := s.CreateChart(ctx, prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-100-parallel-coordinates" }))
+		if err != nil {
+			t.Fatalf("CreateChart(study-100-parallel-coordinates) failed: %v", err)
+		}
 		wantStudy := prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/100/charts/study-100-parallel-coordinates" })
-		if err != nil || cmp.Diff(wantStudy, respStudy, protocmp.Transform()) != "" || cmp.Diff(wantStudy, savedChart, protocmp.Transform()) != "" {
-			t.Errorf("CreateChart(study-100-parallel-coordinates) = (%v, %v), saved = %v, want %v", respStudy, err, savedChart, wantStudy)
+		if diff := cmp.Diff(wantStudy, respStudy, protocmp.Transform()); diff != "" {
+			t.Errorf("CreateChart(study-100-parallel-coordinates) mismatch (-want +got):\n%s", diff)
+		}
+		if diff := cmp.Diff(wantStudy, savedChart, protocmp.Transform()); diff != "" {
+			t.Errorf("saved study chart mismatch (-want +got):\n%s", diff)
 		}
 	})
 

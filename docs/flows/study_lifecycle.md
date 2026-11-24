@@ -179,7 +179,11 @@ sequenceDiagram
   the parent `experiments/{xid}` (`ListCharts` returns only that experiment's experiment-level charts
   and never its work unit charts), with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
   They may only hold `PARALLEL_COORDINATES` plots, and work unit charts may not hold any
-  (`INVALID_ARGUMENT`). Access follows the experiment's XID ACL, like work unit charts.
+  (`INVALID_ARGUMENT`). Chart IDs matching `^study-\d+-parallel-coordinates$` (after trimming
+  whitespace) are reserved: `CreateChart` accepts one only as exactly `study-{xid}-parallel-coordinates`
+  under `experiments/{xid}`, and rejects any other experiment or work unit parent, a padded ID, a
+  leading zero, or an overflowing number with `INVALID_ARGUMENT`. Access follows the experiment's
+  XID ACL, like work unit charts.
 - **Axes**: one axis per `StudyConfig` parameter (double or integer range, categorical values in
   configuration order, discrete values ascending, plus the parameter's scale), followed by the
   objective metric and its goal.

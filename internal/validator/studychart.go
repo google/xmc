@@ -34,5 +34,5 @@ func validateStudyChartID(chartID string, xid, wid int64) error {
 	if !studyChartIDPattern.MatchString(strings.TrimSpace(chartID)) || (xid > 0 && wid == 0 && chartID == StudyChartID(xid)) {
 		return nil
 	}
-	return fmt.Errorf("chart IDs of the form study-{xid}-parallel-coordinates are reserved for the parent experiments/{xid}: %w", grpcerr.ErrInvalidArgument)
+	return fmt.Errorf("chart ID %q is reserved: study-{xid}-parallel-coordinates IDs must exactly match the parent experiments/{xid} (got parent xid %d, wid %d): %w", chartID, xid, wid, grpcerr.ErrInvalidArgument)
 }
