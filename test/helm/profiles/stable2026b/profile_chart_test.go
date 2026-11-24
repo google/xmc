@@ -90,6 +90,8 @@ func TestStable2026b_OverridesMatchStandalone(t *testing.T) {
 			"dependencies": []any{"redpanda"}, "parameters": map[string]any{"topicName": "custom", "extraKey": "extra"}}},
 		{name: "vizier overrides", component: "vizier", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
 			"parameters": map[string]any{"endpoint": "vizier-custom.xmc.svc.cluster.local:8088"}}},
+		{name: "vizier gRPC healthCheckEndpoint override", component: "vizier", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
+			"parameters": map[string]any{"healthCheckEndpoint": "grpc://vizier-service.xmc.svc.cluster.local:7077"}}},
 		{name: "hpo overrides", component: "hpo", overrides: map[string]any{"enabled": true, "namespace": "hpo-ns", "imageTag": "v9",
 			"deletionProtection": false, "deletionPolicy": "Orphan", "acknowledgeExperimental": true, "dependencies": []any{"vizier"}}},
 		{name: "hpo maxTrialBudget override", component: "hpo", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
@@ -132,6 +134,39 @@ func TestStable2026b_ExperimentalComponentDefaults(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStable2026b_VizierHealthCheckEndpoint checks that the gRPC health probe is opt-in: by default
+// vizier renders only endpoint (TCP probe), and healthCheckEndpoint is rendered only when set.
+func TestStable2026b_VizierHealthCheckEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const endpoint = "vizier-service.xmc.svc.cluster.local:7077"
+	tests := []struct {
+		name      string
+		overrides map[string]any
+		want      map[string]any
+	}{
+		{name: "default probes endpoint over TCP", overrides: nil, want: map[string]any{"endpoint": endpoint}},
+		{name: "empty healthCheckEndpoint is omitted", overrides: vizierParameters(map[string]any{"healthCheckEndpoint": ""}),
+			want: map[string]any{"endpoint": endpoint}},
+		{name: "gRPC healthCheckEndpoint opt-in", overrides: vizierParameters(map[string]any{"healthCheckEndpoint": "grpc://" + endpoint}),
+			want: map[string]any{"endpoint": endpoint, "healthCheckEndpoint": "grpc://" + endpoint}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			docs := profilecontract.RenderDocs(t, profilecontract.LoadProfile(t, stable2026b()), tt.overrides)
+			got := profilecontract.Lookup(profilecontract.DocByName(t, docs, "vizier"), "spec", "parameters")
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("vizier spec.parameters mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func vizierParameters(params map[string]any) map[string]any {
+	return profilecontract.ComponentOverrides("vizier", map[string]any{"enabled": true, "acknowledgeExperimental": true, "parameters": params})
 }
 
 func hpoMaxTrialBudget(value any) map[string]any {

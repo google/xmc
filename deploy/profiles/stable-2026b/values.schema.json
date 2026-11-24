@@ -76,7 +76,8 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "endpoint": { "$ref": "#/definitions/parameterValue" }
+                "endpoint": { "$ref": "#/definitions/parameterValue" },
+                "healthCheckEndpoint": { "$ref": "#/definitions/parameterValue" }
               }
             }
           },
