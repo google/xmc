@@ -381,6 +381,8 @@ deployment_groups:
       chart_version: 0.18.2
       namespace: kueue-system
       create_namespace: true
+      values_yaml:
+      - $(ghpc_stage("./kueue-values.yaml"))
       dependencies: [$(install_cert_manager.release_completion_id)]
 
   - id: install_jobset
