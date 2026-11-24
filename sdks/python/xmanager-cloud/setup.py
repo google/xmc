@@ -47,6 +47,8 @@ class BuildPyWithProtos(build_py):  # type: ignore[misc]
 
     def run(self) -> None:
         super().run()
+        # Resolve include paths first: it reports a missing grpcio-tools clearly.
+        include_dirs = build_staging.protoc_include_dirs()
         from grpc_tools import protoc
 
         layout = build_staging.resolve_source_layout(_PROJECT_DIR)
@@ -59,7 +61,7 @@ class BuildPyWithProtos(build_py):  # type: ignore[misc]
             build_staging.compile_protos(
                 proto_tree=Path(proto_tree),
                 proto_files=[relative for _, relative in proto_plan],
-                include_dirs=build_staging.protoc_include_dirs(),
+                include_dirs=include_dirs,
                 output_dir=build_lib,
                 protoc_main=protoc.main,
             )
