@@ -243,6 +243,16 @@ class GeneratedNamesTest(BuildStagingTestCase):
             ],
         )
 
+    def test_expected_proto_modules(self) -> None:
+        layout = _make_sources(self.root)
+
+        modules = build_staging.expected_proto_modules(layout)
+
+        self.assertEqual(len(modules), 12)
+        self.assertIn("xmanager_cloud.experiment_state_server.proto.api_pb2", modules)
+        self.assertIn("xmanager_cloud.xid_service.proto.messages_pb2_grpc", modules)
+        self.assertIn("xmanager_cloud.dashboard_service.proto.dashboard_service_pb2", modules)
+
     def test_is_test_module(self) -> None:
         self.assertTrue(build_staging.is_test_module("cli_test"))
         self.assertFalse(build_staging.is_test_module("cli"))

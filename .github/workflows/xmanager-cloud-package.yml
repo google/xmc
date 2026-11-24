@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Builds the xmanager-cloud sdist, then the wheel from the unpacked sdist, which
-# exercises the proto staging and compile hooks outside the repository tree.
-# Nothing is published.
+# Builds the xmanager-cloud wheel and sdist once, then installs each into clean
+# virtualenvs (without xmanager) across Python 3.11-3.14 and the protobuf runtime
+# floor and ceiling, and import-checks the installed package. Nothing is published.
 name: 'xmanager-cloud Package'
 
 on:
@@ -101,3 +101,72 @@ jobs:
           set -euo pipefail
           python3 -m pip install --no-cache-dir build==1.6.1
           python3 -m build --outdir dist sdks/python/xmanager-cloud
+
+      - name: 'Upload Distributions'
+        uses: 'actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1' # v4.6.1
+        with:
+          name: 'xmanager-cloud-dist'
+          path: 'dist/'
+          if-no-files-found: error
+          retention-days: 7
+
+  install-smoke:
+    name: 'Install ${{ matrix.artifact }} (py${{ matrix.python-version }}, ${{ matrix.protobuf }})'
+    needs: build
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13', '3.14']
+        protobuf: ['protobuf==5.29.6', 'protobuf>=5.29.6,<7.0.0']
+        artifact: ['wheel', 'sdist']
+        exclude:
+          # grpcio-tools==1.70.0 (the build floor pin) has no Python 3.14 wheel, so a
+          # 3.14 sdist build would compile it from source. The pure-Python wheel
+          # still covers 3.14.
+          - python-version: '3.14'
+            artifact: 'sdist'
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38' # v5.4.0
+        with:
+          python-version: '${{ matrix.python-version }}'
+
+      - name: 'Download Distributions'
+        uses: 'actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806' # v4.1.9
+        with:
+          name: 'xmanager-cloud-dist'
+          path: 'dist/'
+
+      - name: 'Install Into Clean Virtualenv'
+        env:
+          ARTIFACT: '${{ matrix.artifact }}'
+          PROTOBUF_SPEC: '${{ matrix.protobuf }}'
+          VENV_DIR: '${{ runner.temp }}/xmanager-cloud-venv'
+        run: |
+          set -euo pipefail
+          python3 -m venv "${VENV_DIR}"
+          "${VENV_DIR}/bin/python" -m pip install --no-cache-dir --upgrade pip
+          if [ "${ARTIFACT}" = "sdist" ]; then
+            # Builds only xmanager-cloud from source, in an isolated build env outside
+            # the repository, which fails if the sdist is missing staged sources.
+            "${VENV_DIR}/bin/python" -m pip install --no-cache-dir \
+              --no-binary xmanager-cloud dist/xmanager_cloud-*.tar.gz "${PROTOBUF_SPEC}"
+          else
+            "${VENV_DIR}/bin/python" -m pip install --no-cache-dir \
+              dist/xmanager_cloud-*.whl "${PROTOBUF_SPEC}"
+          fi
+          "${VENV_DIR}/bin/python" -m pip list
+
+      - name: 'Import-Check Installed Package'
+        env:
+          VENV_DIR: '${{ runner.temp }}/xmanager-cloud-venv'
+        run: |
+          set -euo pipefail
+          "${VENV_DIR}/bin/python" sdks/python/xmanager-cloud/install_smoke_check.py
