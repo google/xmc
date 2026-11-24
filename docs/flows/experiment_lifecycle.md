@@ -134,7 +134,11 @@ sequenceDiagram
 
 `GetXidEntry` serves double duty: it authorizes the read (a caller who cannot see the entry cannot
 see the experiment) and supplies the ACL data attached to the response, so the UI can decide
-whether to render stop/restart controls without a second round trip.
+whether to render stop/restart controls without a second round trip. When `GetXidEntry` returns
+`PERMISSION_DENIED` or `INTERNAL`, ESS checks whether the caller matches the active `hpo`
+component's `parameters.studyControllerServiceAccount`; if so, it reads directly from storage and
+returns `STUDY` experiments with `acls` omitted (rejecting non-`STUDY` experiments with
+`PERMISSION_DENIED`).
 
 ### List or search experiments
 

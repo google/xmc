@@ -30,14 +30,17 @@ class TestInstallXmanager(unittest.TestCase):
     """Test cases for install_xmanager functions."""
 
     def test_resolve_xmanager_spec_default(self) -> None:
-        """Test resolve_xmanager_spec returns default specifier when empty."""
+        """Test resolve_xmanager_spec returns the pinned pre-cutover default when empty."""
+        expected_default = install_xmanager.DEFAULT_XMANAGER_SPEC
+        self.assertTrue(expected_default.startswith("xmanager>="))
+        self.assertIn("<0.9.0", expected_default)
         self.assertEqual(
             install_xmanager.resolve_xmanager_spec(""),
-            install_xmanager.DEFAULT_XMANAGER_SPEC,
+            expected_default,
         )
         self.assertEqual(
             install_xmanager.resolve_xmanager_spec("   "),
-            install_xmanager.DEFAULT_XMANAGER_SPEC,
+            expected_default,
         )
 
     def test_resolve_xmanager_spec_version_tag(self) -> None:

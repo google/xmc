@@ -98,7 +98,7 @@ When creating a new PR or populating its description:
    - **Verify Blueprint & Downstream Component Settings Before Repeating Task Claims**: For changes under `deploy/` or `test/helm/`, inspect the target blueprint/chart files (e.g., whether [`deploy/ctk_v2/xmanager-cloud.yaml`](../../../deploy/ctk_v2/xmanager-cloud.yaml) provisions GKE Standard vs. Autopilot, which components consume a `global.*` Helm setting, and which downstream modules actually opt into a dependency via `set_values`) before repeating symptom or impact statements from an issue/task prompt in inline comments or `## Motivation & Context`.
    - **Operational & Upgrade Assumptions on Deployment PRs**: Infrastructure, Helm chart, and blueprint changes carry operational and upgrade assumptions (target cluster policies/versions, upstream chart behavior, in-place `helm upgrade` rollout and orphaned resource semantics) that must be listed as `<assumption> — <why it was assumed> — <impact if wrong>` rather than writing `None — requirements were fully specified.`.
    - **Stacked / Non-`main` Base Branch Disclosure**: When a PR targets a base branch other than `main`, state the stacked base branch and rationale explicitly in `## Motivation & Context`.
-6. **Format PR Body Template**: Write the PR body to a temporary markdown file (e.g., `pr_body.md`):
+6. **Format PR Body Template**: Write the PR body to a temporary markdown file (e.g., `pr_body.md`), matching [`.github/PULL_REQUEST_TEMPLATE.md`](../../../.github/PULL_REQUEST_TEMPLATE.md) plus the agent tags:
    ```markdown
    ## Summary
    <Concise 2-3 sentence overview of what this PR introduces or fixes.>
@@ -132,6 +132,10 @@ When creating a new PR or populating its description:
    TAG=agy
    CONV=<conversation_id>
    ```
+   Then validate the body and fix every reported violation (missing sections or `TAG=agy`, assumption bullets lacking the `<assumption> — <why> — <impact if wrong>` form) before the confirmation gate:
+   ```bash
+   ./tools/pr_review/check_pr_body.py --body-file pr_body.md
+   ```
 
 7. **Mandatory User Confirmation Gate Before PR Creation**:
    NEVER execute `gh pr create` (draft or non-draft) without explicit, affirmative user confirmation in the current conversation turn. Phrases like "proceed with next phase" authorize local work and verification, but DO NOT authorize opening a remote Pull Request. The agent MUST present `pr_body.md`, the planned PR title, body preview, and list of changes to the user for review and explicitly ask:
@@ -157,7 +161,7 @@ When creating a new PR or populating its description:
 
 When updating an existing Pull Request description:
 
-1. **Format Updated Body**: Prepare the updated body markdown in a temporary file (e.g., `updated_pr_body.md`).
+1. **Format Updated Body**: Prepare the updated body markdown in a temporary file (e.g., `updated_pr_body.md`), then run `./tools/pr_review/check_pr_body.py --body-file updated_pr_body.md` and fix every reported violation.
 2. **User Edit Gate**: Present the updated PR description preview to the user and pause for confirmation/edits.
 3. **Execute Update Tool**:
    ```bash

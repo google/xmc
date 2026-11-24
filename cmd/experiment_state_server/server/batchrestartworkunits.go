@@ -139,7 +139,9 @@ func (h *WorkUnitHandler) processWorkUnitRestartItem(ctx context.Context, workUn
 			return nil, fmt.Errorf("failed to validate work unit execution name: %w: %w", grpcerr.ErrInternal, err)
 		}
 
-		if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+		compensationCtx, cancel := compensationContext(ctx)
+		defer cancel()
+		if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(compensationCtx, xid, wid, eid, &msgpb.StructuredMessage{
 			UserFacingText: "Failed to restart work unit. Please try again.",
 			Severity:       msgpb.StructuredMessage_FATAL,
 			Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,

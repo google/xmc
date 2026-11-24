@@ -127,6 +127,25 @@ A study's work units are its trials, which only the study controller creates. `C
 ([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)), and rejects
 `parameters` and `trial_id` with `INVALID_ARGUMENT`.
 
+#### Reading Studies & Deployment Admission: `GetExperiment`
+
+ESS's gRPC authorizer (`server.NewProd` / `studyControllerAdmission`) admits the active `hpo`
+component's `parameters.studyControllerServiceAccount` in addition to the deployment admission
+allowlist (`allowed_emails` / `authorized_iam_role`), so the dedicated study controller GSA does not
+need broad deployment admission. Normal user traffic checks the deployment admission delegate first
+(zero component-catalog overhead); on delegate denial or error, ESS falls back to checking the
+active `hpo` component record.
+
+In `GetExperiment` ([`server/getexperiment.go`](server/getexperiment.go)), normal user traffic
+checks XID ACLs first (zero component-catalog lookups). When the XID service returns
+`PERMISSION_DENIED` or `INTERNAL` (e.g. during a CRM outage), ESS checks whether the caller's
+verified email matches `parameters.studyControllerServiceAccount` (ASCII case-insensitive) of an
+enabled or pending-reconciliation (and experimentally acknowledged) `hpo` component; if so, it reads
+the experiment from storage directly and returns it (with `acls` unset) only when
+`experiment_type == STUDY`, rejecting non-`STUDY` experiments with `PERMISSION_DENIED` (`NOT_FOUND`
+if the experiment does not exist). When the `hpo` component is missing, disabled, unacknowledged, or
+the parameter is empty, the XID error is returned (fail closed).
+
 #### Creating Trials: `BatchCreateWorkUnits`
 
 The study controller creates trials with `BatchCreateWorkUnits` (AIP-233, `POST
@@ -140,7 +159,7 @@ experiment's largest work unit ID. ESS checks, in order
 | :--- | :--- |
 | The caller is authenticated. | `UNAUTHENTICATED` |
 | `parent` is an experiment name. | `INVALID_ARGUMENT` |
-| The caller's verified email equals the `hpo` component parameter `studyControllerServiceAccount` (ASCII case-insensitive). XID ACLs are not consulted. A missing `hpo` component or an empty parameter rejects every caller. This check runs before the experiment is read or the payload is validated. | `PERMISSION_DENIED` |
+| The caller's verified email equals the `hpo` component parameter `studyControllerServiceAccount` (ASCII case-insensitive). XID ACLs are not consulted. A missing, disabled, or unacknowledged `hpo` component or an empty parameter rejects every caller. This check runs before the experiment is read or the payload is validated. | `PERMISSION_DENIED` |
 | The experiment exists. | `NOT_FOUND` |
 | The experiment is a `STUDY`; other types are not supported yet. | `UNIMPLEMENTED` |
 | The request holds 1 to 500 requests, each work unit is valid, as for `CreateWorkUnit`, and trial IDs are unique in the batch. | `INVALID_ARGUMENT` |
@@ -167,8 +186,11 @@ and `ListWorkUnits`.
 Owning or writing to a study does not let a user create its trials. The experiment creator, like
 every other user, calls with their own identity. The email comes from the Google-signed ID token
 that ESS verifies (the `x-goog-user-email` header is not trusted), so it never matches the
-configured study controller, and the call fails with `PERMISSION_DENIED`. XID ACLs grant nothing
-here.
+configured study controller, and `BatchCreateWorkUnits` fails with `PERMISSION_DENIED`. XID ACLs
+grant nothing there. Conversely, the configured `parameters.studyControllerServiceAccount` identity
+bypasses deployment admission and XID ACLs to call `GetExperiment` and `BatchCreateWorkUnits` on all
+`STUDY` experiments (on non-`STUDY` experiments, `GetExperiment` returns `PERMISSION_DENIED` and
+`BatchCreateWorkUnits` returns `UNIMPLEMENTED`).
 
 The check is only as strong as control over the configured identity. These principals can pass it:
 

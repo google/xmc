@@ -58,6 +58,7 @@ Utilities supporting multi-agent PR review and authoring workflows:
 - [`generate_review_checklist.py`](pr_review/generate_review_checklist.py): Extracts unresolved review comments into a Markdown action checklist.
 - [`verify_pr_comment_resolution.py`](pr_review/verify_pr_comment_resolution.py): Verifies 1-to-1 thread resolution for all comments in a review checklist, counting only replies by the authenticated user across all comment pages.
 - [`update_pr_description.py`](pr_review/update_pr_description.py): Updates GitHub PR title and/or description from text or Markdown files.
+- [`check_pr_body.py`](pr_review/check_pr_body.py): Validates a PR body file (`--body-file <path>` or `-` for stdin) against the [XMC Create PR](../.agents/skills/xmc_create_pr/SKILL.md) template: the required `##` sections, the `TAG=agy` line, and that every top-level `## Assumptions` bullet is `<assumption> — <why> — <impact if wrong>` (em dashes inside code spans and fenced blocks are ignored) or exactly `None — requirements were fully specified.`. Reports violations with line numbers.
 - [`wait_for_ci.py`](pr_review/wait_for_ci.py): Polls a PR's CI checks with backoff until they complete, judging only the newest run of each check; on failure, reports failed checks, workflow run/job IDs, and bounded, error-anchored job log tails.
 
 ### 4. [`tools/benchmark/`](benchmark/README.md) (Skills & Rules Benchmark Suite)

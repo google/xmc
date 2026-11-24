@@ -4,7 +4,7 @@
 
 [XManager CLI](https://github.com/google-deepmind/xmanager) is a Python library for interacting with XManager on Cloud (`xm_cloud`) and other XManager execution backends.
 
-The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
+The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1,<0.9.0`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
 
 ---
 
@@ -46,7 +46,7 @@ Options:
   --xmanager-version <spec>      Optional xmanager version (e.g. 0.8.5.post1), specifier
                                  (e.g. '>=0.8.5.post1,<0.9'), or full PEP 508 requirement
                                  (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@main')
-                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.5.post1)
+                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.5.post1,<0.9.0)
   -r, --requirements <path>      Optional requirements file to install before applying
                                  xmanager and runtime dependency pins (repeatable)
   -h, --help                     Show usage information
@@ -65,7 +65,7 @@ If you do not need unreleased local `.proto` changes from `api/protos`, you can 
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install "xmanager>=0.8.5.post1"
+pip install "xmanager>=0.8.5.post1,<0.9.0"
 ```
 
 ### Verification

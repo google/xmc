@@ -179,14 +179,17 @@ func (h *WorkUnitHandler) enqueueWorkUnitOnCreation(ctx context.Context, xid, wi
 }
 
 // markWorkUnitUnschedulable records a FATAL system message on the current execution of wu, a
-// created work unit whose creation operation or task could not be scheduled. It fails only when wu
-// has an invalid execution name; a failed status update is logged.
+// created work unit whose creation operation or task could not be scheduled. The write runs under
+// compensationContext, so a cancelled caller still records it. It fails only when wu has an
+// invalid execution name; a failed status update is logged.
 func (h *WorkUnitHandler) markWorkUnitUnschedulable(ctx context.Context, xid, wid int64, wu *msgpb.WorkUnit) error {
 	update, err := newUnschedulableUpdate(wid, wu)
 	if err != nil {
 		return err
 	}
-	if _, err := h.workUnitUpdater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{update}); err != nil {
+	compensationCtx, cancel := compensationContext(ctx)
+	defer cancel()
+	if _, err := h.workUnitUpdater.UpdateWorkUnitExecutions(compensationCtx, xid, []*storage.WorkUnitExecutionUpdate{update}); err != nil {
 		logging.Error(ctx, "Failed to update work unit execution status message after failed create attempt", "error", err)
 	}
 	return nil

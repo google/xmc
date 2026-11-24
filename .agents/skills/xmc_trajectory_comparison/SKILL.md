@@ -87,6 +87,8 @@ has already produced, so this costs no additional analysis:
   Negative regression is mandatory whenever the negative set is non-empty; an empty negative set on a
   non-trivial change is itself a finding worth surfacing, because a predicate that excludes nothing
   was never falsified.
+- **Size-gated skills need added lines.** `tools/analyze_diff_size.py` counts added lines only, so a
+  pure deletion never trips the threshold and cannot serve as a negative for a size-gated skill.
 - **Pre-register each pass predicate into `/tmp/benchmark_assertions.json` before launching.** State
   every scenario's pass condition as a mechanical assertion (`file_exists`, `file_absent`,
   `file_contains`, or `file_omits`) in `/tmp/benchmark_assertions.json` during Phase 1b — **before**
@@ -126,7 +128,9 @@ If the task involves Tier 2 or Tier 3 side effects, present the teardown contrac
 > subagent's system prompt at spawn time, sourced from the **parent** worktree. A `git reset` issued
 > *inside* the subagent changes its disk but not its already-injected prompt, so a baseline arm spawned
 > from a candidate parent silently receives a summary of the very change under test. Never rely on an
-> in-subagent reset to produce a clean baseline.
+> in-subagent reset to produce a clean baseline. Likewise, a checkout of a scenario diff's head commit
+> (e.g. a temporary `git worktree add` used for sizing) carries a stale `.agents/` snapshot: tell arms
+> to read skills and rules only from their own worktree, never from such a checkout.
 
 1. **Origin Baseline Subagent (`1` arm)** — commit all candidate edits to the candidate branch first, then
    park the parent worktree on `<baseline_ref>` *before* spawning. Never stash or leave edits uncommitted:
