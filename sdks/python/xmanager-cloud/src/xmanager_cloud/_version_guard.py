@@ -42,11 +42,15 @@ def check_xmanager_compatibility() -> None:
         ImportError: If `xmanager` older than 0.9.0rc1 is installed.
     """
     try:
-        installed = metadata.version("xmanager")
+        installed: str | None = metadata.version("xmanager")
     except metadata.PackageNotFoundError:
         return
+    except KeyError:
+        # A dist-info without a Version field: Python 3.14+ raises KeyError, while
+        # older versions return None.
+        installed = None
     try:
-        version = Version(installed)
+        version = Version(installed or "")
     except InvalidVersion:
         warnings.warn(
             f"Cannot parse the installed xmanager version {installed!r}; skipping the "

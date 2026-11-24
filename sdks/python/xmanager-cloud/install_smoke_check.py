@@ -20,9 +20,10 @@ installed and no `xmanager`:
     <venv>/bin/python sdks/python/xmanager-cloud/install_smoke_check.py
 
 It imports every generated proto module, the bundled xdash SDK, and the xdash
-console script, and requires each to load from the virtualenv rather than the
-repository. Prints a JSON summary and exits 0 on success, 1 when a check fails,
-and 2 when the repository's proto or xdash sources cannot be found.
+console script, requires each to load from the virtualenv rather than the
+repository, and checks that no `*_test.py` module was packaged. Prints a JSON
+summary and exits 0 on success, 1 when a check fails, and 2 when the
+repository's proto or xdash sources cannot be found.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from pathlib import Path
 import build_staging
 
 _PROJECT_DIR = Path(__file__).resolve().parent
+_DISTRIBUTION = "xmanager-cloud"
 # Importing xmanager_cloud runs the legacy xmanager guard.
 _SDK_MODULES = ("xmanager_cloud", "xdash", "xdash.auth", "xdash.cli", "xdash.client")
 
@@ -90,6 +92,14 @@ def environment_failures() -> dict[str, str]:
     return failures
 
 
+def packaging_failures() -> dict[str, str]:
+    """Checks that the installed distribution ships no `*_test.py` modules."""
+    shipped = sorted(
+        str(path) for path in metadata.files(_DISTRIBUTION) or [] if path.name.endswith("_test.py")
+    )
+    return {"packaged tests": ", ".join(shipped)} if shipped else {}
+
+
 def main() -> int:
     """Runs the smoke check and prints a JSON summary."""
     try:
@@ -98,7 +108,11 @@ def main() -> int:
         print(json.dumps({"status": "error", "error": str(err)}, indent=2))
         return 2
     installed_root = Path(sysconfig.get_paths()["purelib"]).resolve()
-    failures = {**import_failures(modules, installed_root), **environment_failures()}
+    failures = {
+        **import_failures(modules, installed_root),
+        **environment_failures(),
+        **packaging_failures(),
+    }
     summary = {"status": "failure" if failures else "success", "checked": len(modules)}
     print(json.dumps({**summary, "failures": failures}, indent=2))
     return 1 if failures else 0

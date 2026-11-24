@@ -15,8 +15,8 @@
 # Builds the xmanager-cloud sdist, then the wheel from the unpacked sdist (which
 # exercises the proto staging hooks outside the repository tree), then installs
 # each into clean virtualenvs (without xmanager) across Python 3.11-3.14 and the
-# protobuf runtime floor and ceiling, and import-checks the installed package.
-# Nothing is published.
+# protobuf runtime floor and ceiling, import-checks the installed package and
+# runs the xmanager_cloud unit tests against it. Nothing is published.
 name: 'xmanager-cloud Package'
 
 on:
@@ -166,7 +166,7 @@ jobs:
           fi
           "${VENV_DIR}/bin/python" -m pip list
 
-      - name: 'Import-Check Installed Package'
+      - name: 'Import-Check and Unit-Test Installed Package'
         env:
           VENV_DIR: '${{ runner.temp }}/xmanager-cloud-venv'
         run: |
