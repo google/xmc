@@ -34,16 +34,21 @@ type mockDashboardClient struct {
 	// credentials were forwarded.
 	outgoingMD []metadata.MD
 	ctxErrs    []error
-	// getChartResp/getChartErr answer GetChart; getChartReqs records the names it was asked for.
-	getChartResp *dashboard_pb.Chart
-	getChartErr  error
-	getChartReqs []string
+	// getChartResp/getChartErr answer GetChart; getChartReqs/MD/CtxErrs record the calls.
+	getChartResp    *dashboard_pb.Chart
+	getChartErr     error
+	getChartReqs    []string
+	getChartMD      []metadata.MD
+	getChartCtxErrs []error
 }
 
 func (m *mockDashboardClient) GetChart(ctx context.Context, in *dashboard_pb.GetChartRequest, _ ...grpc.CallOption) (*dashboard_pb.Chart, error) {
+	md, _ := metadata.FromOutgoingContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getChartReqs = append(m.getChartReqs, in.GetName())
+	m.getChartMD = append(m.getChartMD, md)
+	m.getChartCtxErrs = append(m.getChartCtxErrs, ctx.Err())
 	return m.getChartResp, m.getChartErr
 }
 

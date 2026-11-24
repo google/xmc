@@ -34,7 +34,7 @@ The meta-chart works exactly like [`stable-2026a`](../stable-2026a/README.md): t
 | `clickhouse` | `STABLE` | Metadata-only; same as [`stable-2026a`](../stable-2026a/components/clickhouse/README.md). |
 | `ingestion-gateway` | `STABLE` | Metadata-only; same as [`stable-2026a`](../stable-2026a/components/ingestion-gateway/README.md). |
 | `vizier` | `EXPERIMENTAL` | [`components/vizier`](components/vizier/README.md): 3P wrapper for a bring-your-own Open Source Vizier endpoint. |
-| `hpo` | `EXPERIMENTAL` | [`components/hpo`](components/hpo/README.md): `xmc-study-controller`, embedded in `xmc-bridge`. Requires `vizier` and `clickhouse`. |
+| `hpo` | `EXPERIMENTAL` | [`components/hpo`](components/hpo/README.md): `xmc-study-controller`, embedded in `xmc-bridge`. Requires `vizier` and `clickhouse` (and `dashboardServiceDeployment.enabled=true` for automatic `STUDY` parallel-coordinates chart provisioning). |
 
 [`rules.yaml`](rules.yaml) sets `staticChecks.allowExperimental: true`, so the `EXPERIMENTAL` components are allowed but ship disabled, and enabling one requires `acknowledgeExperimental: true`. Its compatibility matrix also requires `vizier` and `clickhouse` for `hpo`. `hpo` additionally accepts `imageTag`, `parameters.maxTrialBudget` (a positive int32), and `parameters.studyControllerServiceAccount` (a Google service account email, or empty).
 

@@ -28,6 +28,39 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
+func TestMockStorage_CreateArtifact(t *testing.T) {
+	in := &essmsgpb.Artifact{Name: "artifacts/10", Parent: "experiments/1"}
+	override := &essmsgpb.Artifact{Name: "artifacts/99"}
+	boom := errors.New("boom")
+
+	for _, tc := range []struct {
+		name      string
+		mock      MockStorage
+		in        *essmsgpb.Artifact
+		want      *essmsgpb.Artifact
+		wantClone bool
+		wantErr   error
+	}{
+		{name: "clones_input_when_artifact_unset", in: in, want: in, wantClone: true},
+		{name: "returns_nil_for_nil_input"},
+		{name: "returns_configured_artifact_override", mock: MockStorage{Artifact: override}, in: in, want: override},
+		{name: "returns_configured_error", mock: MockStorage{CreateArtifactErr: boom}, in: in, wantErr: boom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.mock.CreateArtifact(context.Background(), tc.in)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("CreateArtifact() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantClone && got == tc.in {
+				t.Fatal("CreateArtifact() returned input pointer instead of clone")
+			}
+			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
+				t.Errorf("CreateArtifact() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestMockStorage_RunInSerializableTransaction(t *testing.T) {
 	ctx := context.Background()
 	fixedTime := time.Date(2026, time.October, 29, 10, 0, 0, 0, time.UTC)

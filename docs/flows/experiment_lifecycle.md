@@ -35,14 +35,17 @@ sequenceDiagram
     Storage-->>ESS: 9. Success
     opt STUDY
         ESS->>Redis: 10a. Enqueue StudyReconcilePayload (best effort)
-        ESS->>Storage: 10b. Persist study ChartArtifact PROVISIONING (when Dashboard configured, best effort)
     end
     ESS-->>Client: 11. Experiment
     opt STUDY
-        Note over Redis,DS: Asynchronously, after the RPC returns
+        Note over ESS,DS: Asynchronously, after the RPC returns (best effort)
         Redis-->>SC: Reconcile tick (per-study lease lock, logged)
-        ESS-->>DS: CreateChart(study-{xid}-parallel-coordinates)
-        ESS->>Storage: UpdateArtifact(status=SUCCESS/FAILED)
+        opt Dashboard configured (10b, background goroutine)
+            ESS--)XID: CreateXidEntry (child artifact XID, 10s bound)
+            ESS->>Storage: Persist study ChartArtifact (PROVISIONING)
+            ESS--)DS: CreateChart(study-{xid}-parallel-coordinates) / GetChart read-back
+            ESS->>Storage: UpdateArtifact(status=SUCCESS/FAILED, chart)
+        end
     end
 ```
 

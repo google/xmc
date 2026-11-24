@@ -55,10 +55,10 @@ var nonPlotIDChars = regexp.MustCompile(`[^a-z0-9]+`)
 // order it looks for them. See jwtFromMetadata in internal/auth.
 var authForwardKeys = []string{"x-goog-iap-jwt-assertion", "authorization"}
 
-// identityForwardKeys travel with the credentials but are not credentials. resolveUserEmail in
-// internal/auth prefers x-goog-user-email over the token's own email claim, so dropping it here
-// would authorize the chart against a different principal than the rest of the caller's
-// requests. Carrying one of these and no token is still an uncredentialed call.
+// identityForwardKeys travel alongside credentials for compatibility, though they are not used
+// for authentication or authorization. resolveUserEmail in internal/auth resolves caller email
+// strictly from the verified token's email claim (never x-goog-user-email); carrying one of these
+// and no token is still an uncredentialed call.
 var identityForwardKeys = []string{"x-goog-user-email"}
 
 // withForwardedAuth copies the caller's credentials from ctx's incoming metadata onto its
@@ -251,7 +251,7 @@ func (o *dashboardObserver) handleProvisionPanic(ctxBg context.Context, artifact
 	}()
 	cArtifact.Status = essmsgpb.ChartArtifact_FAILED
 	if cArtifact.ErrorMessage == "" {
-		cArtifact.ErrorMessage = fmt.Sprintf("chart provisioning panicked: %v", r)
+		cArtifact.ErrorMessage = "chart provisioning failed: internal error"
 	}
 	_ = o.persistProvisionedArtifact(ctxBg, artifactToProvision)
 }
@@ -283,17 +283,22 @@ func (o *dashboardObserver) createDashboardChart(ctxBg context.Context, xid, wid
 }
 
 // recoverStudyChart reads back the deterministic study chart (wid 0) after CreateChart returned
-// AlreadyExists or DeadlineExceeded, which can both mean the chart was committed. Validation binds
-// study chart IDs to their experiment parent, so an existing chart under that ID is the study's.
+// AlreadyExists or DeadlineExceeded, which can both mean the chart was committed. GetChart accepts
+// only root "charts/{chart}" names, and the recovered chart must match (xid, wid=0) before linking.
 func (o *dashboardObserver) recoverStudyChart(ctxAuth context.Context, xid, wid int64, createErr error) (*dashboard_apipb.Chart, bool) {
 	if code := status.Code(createErr); wid != 0 || (code != codes.AlreadyExists && code != codes.DeadlineExceeded) {
 		return nil, false
 	}
 	getCtx, cancel := context.WithTimeout(context.WithoutCancel(ctxAuth), studyChartRecoveryTimeout)
 	defer cancel()
-	chart, err := o.client.GetChart(getCtx, &dashboard_apipb.GetChartRequest{Name: validator.ConstructExperimentChartName(xid, validator.StudyChartID(xid))})
+	chart, err := o.client.GetChart(getCtx, &dashboard_apipb.GetChartRequest{Name: validator.ConstructRootChartName(validator.StudyChartID(xid))})
 	if err != nil {
 		logging.Warn(ctxAuth, "Failed to read back the study chart after CreateChart", "create_error", createErr, "error", err)
+		return nil, false
+	}
+	if chart.GetXid() != xid || chart.GetWid() != 0 {
+		logging.Warn(ctxAuth, "Recovered study chart does not match expected experiment scope",
+			"want_xid", xid, "got_xid", chart.GetXid(), "got_wid", chart.GetWid())
 		return nil, false
 	}
 	return chart, true

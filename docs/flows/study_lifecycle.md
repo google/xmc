@@ -64,8 +64,9 @@ flowchart LR
     ESS -->|"CreateXidEntry"| XID
     ESS -->|"1 txn: evaluate deps, clamp budget,<br/>insert STUDY, pin snapshots"| DB
     ESS -.->|"XADD StudyReconcilePayload<br/>(best-effort, 2s timeout)"| Stream
+    ESS -.->|"Post-commit CreateXidEntry<br/>(study chart artifact, 10s bound)"| XID
     ESS -.->|"Post-commit background: insert study ChartArtifact (10s bound);<br/>async UpdateArtifact(status, chart)"| DB
-    ESS -.->|"Async CreateChart<br/>(study-{xid}-parallel-coordinates)"| DS
+    ESS -.->|"Async CreateChart / GetChart read-back<br/>(study-{xid}-parallel-coordinates)"| DS
 
     Stream -.->|"XREADGROUP / XAUTOCLAIM"| SC
     SC <-->|"SET NX PX 70s / Lua DEL<br/>& /readyz PING"| Lock
@@ -177,7 +178,7 @@ sequenceDiagram
     ESS--)DS: async CreateChart(parent=experiments/{xid}, chart_id=study-{xid}-parallel-coordinates)
     DS->>XID: CheckUserAuthorization(xids/{xid}, WRITER)
     DS->>DB: insert Charts row (Wid NULL)
-    DS-->>ESS: Chart, or ALREADY_EXISTS / DEADLINE_EXCEEDED (ESS then GetChart reads the chart back)
+    DS-->>ESS: Chart, or ALREADY_EXISTS / DEADLINE_EXCEEDED (ESS then GetChart charts/study-{xid}-parallel-coordinates and checks Xid, Wid==0)
     ESS->>DB: UpdateArtifact(status=SUCCESS, chart)
     Client->>DS: GET /v1/experiments/{xid}/charts
     DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
@@ -203,8 +204,9 @@ sequenceDiagram
   `chart_id = study-{xid}-parallel-coordinates`, and a single `PARALLEL_COORDINATES` plot, writing
   `SUCCESS` and the created `Chart` (or `FAILED` and `error_message`) back to the artifact. Because the
   chart ID is deterministic, a `CreateChart` that returns `ALREADY_EXISTS` or `DEADLINE_EXCEEDED`
-  (the chart may already be committed) makes the observer read the chart back with `GetChart` and
-  record `SUCCESS` when it exists. Note that
+  (the chart may already be committed) makes the observer read
+  `charts/study-{xid}-parallel-coordinates` back with `GetChart`, verify `Xid == xid` and `Wid == 0`,
+  and record `SUCCESS` when it matches. Note that
   `dashboard-service` gRPC currently validates `CLIENT_ID` on forwarded tokens (full
   `IAP_EXPECTED_HTTP_AUDIENCE`, `IAP_EXPECTED_GRPC_AUDIENCE`, `IAP_EXPECTED_ISSUER`, and `JWKS`
   validator parity with `ESS` lands in a follow-up change, so IAP-fronted gRPC `CreateExperiment`
@@ -212,12 +214,9 @@ sequenceDiagram
   `Unauthenticated` until then). When no Dashboard Service is configured (`ess_dashboard_service_addr`
   empty, the Helm default when `dashboardServiceDeployment.enabled` is `false`), `ESS` skips
   provisioning so no artifact is left stuck in `PROVISIONING`.
-- **Deterministic chart ID & parent binding**: the study chart's resource name is computable from
-  the experiment XID as `experiments/{xid}/charts/study-{xid}-parallel-coordinates`. Chart IDs
-  matching `^study-\d+-parallel-coordinates$` are reserved for the matching parent `experiments/{xid}`
-  (`ValidateCreateChartRequest` rejects any non-matching experiment parent, work unit parent, leading
-  zero, or overflowing number with `INVALID_ARGUMENT`), preventing writers of one experiment from
-  claiming another study's chart ID.
+- **Deterministic chart ID**: the study chart's resource name is computable from the experiment XID
+  as `experiments/{xid}/charts/study-{xid}-parallel-coordinates` (parent-binding reservation rules are
+  listed under Experiment-level charts below).
 - **UI rendering status**: `<xmc-chart-artifact-view>` is mounted only on work unit pages; on the
   experiment Artifacts tab (`experiments/{xid}`), the study's `OUTPUT` `ChartArtifact` renders as an
   `<xmc-artifact-card>` in the `Output` pipeline column displaying its `study` /
@@ -244,11 +243,14 @@ sequenceDiagram
   `stage="artifact"` (child XID allocation or artifact insert failure) or `stage="chart"`
   (`DashboardService.CreateChart` failure or `UpdateArtifact` status write-back failure). Failed or
   missing study charts are not automatically re-provisioned yet (deferred to future sweeper or
-  controller recovery). That sweeper must also detect uncounted states: a `ChartArtifact` left in
-  `PROVISIONING` past the observer bound (ESS killed or rolled mid-provisioning, an ambiguous
-  artifact-insert commit, or a write-back failure after a successful `CreateChart`), a study chart
-  that exists while its artifact is `FAILED` (the `GetChart` read-back after `ALREADY_EXISTS` or a
-  deadline also failed), and orphan child XID entries from failed artifact inserts.
+  controller recovery). That sweeper must reconcile both uncounted crash windows (when ESS is
+  killed or rolled past its shutdown grace period before finishing) and failure states that increment
+  the counter without identifying which study or artifact needs repair: a committed `STUDY` with no
+  `ChartArtifact` row at all (ESS terminated or `persistArtifact` failed when a Dashboard Service is
+  configured), a `ChartArtifact` left in `PROVISIONING` past the observer bound (ESS terminated
+  mid-provisioning or status write-back after `CreateChart` failed), a study chart that exists while
+  its artifact is `FAILED` (for example, `GetChart` read-back after `ALREADY_EXISTS` or a deadline
+  also failed), and orphan child XID entries left when `persistArtifact` fails after `CreateXidEntry`.
   On the read path, `GetChartData` returns `FAILED_PRECONDITION` when the
   experiment is not a `STUDY` with a `StudyConfig`, and, like every chart, when no metrics store
   (ClickHouse or BigQuery) is configured; it also fails while a configured metrics store is
