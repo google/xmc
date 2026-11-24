@@ -124,6 +124,17 @@ class ProtocIncludeDirsTest(BuildStagingTestCase):
         with self.assertRaisesRegex(RuntimeError, "googleapis-common-protos"):
             build_staging.protoc_include_dirs(self._find_spec(specs))
 
+    def test_missing_google_namespace_raises(self) -> None:
+        specs = self._specs()
+
+        def find_spec(name: str) -> ModuleSpec | None:
+            if name == "google.api":
+                raise ModuleNotFoundError("No module named 'google'")
+            return specs[name]
+
+        with self.assertRaisesRegex(RuntimeError, "googleapis-common-protos"):
+            build_staging.protoc_include_dirs(find_spec)
+
 
 class CopyPlanTest(BuildStagingTestCase):
     def test_sdist_plan_stages_protos_and_shipped_xdash_files(self) -> None:

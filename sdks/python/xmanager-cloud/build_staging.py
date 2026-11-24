@@ -35,7 +35,9 @@ STAGED_DIR_NAME = "_staged"
 # (api/protos subdirectory, xmanager_cloud subpackage). The subpackage paths match
 # the `import_prefix` of the Bazel proto_library targets and the `import` lines in
 # the .proto files, so generated modules keep their existing import paths, e.g.
-# `xmanager_cloud.experiment_state_server.proto.api_pb2`.
+# `xmanager_cloud.experiment_state_server.proto.api_pb2`. Keep in sync with
+# PROTO_PACKAGE_DIRS in deploy/cli/install_xmanager.py and the paths filter in
+# .github/workflows/xmanager-cloud-package.yml.
 PROTO_PACKAGES: tuple[tuple[str, str], ...] = (
     ("experiment", "experiment_state_server"),
     ("xid", "xid_service"),
@@ -108,7 +110,10 @@ def protoc_include_dirs(
         RuntimeError: If grpcio-tools or googleapis-common-protos is not installed.
     """
     grpc_tools = find_spec("grpc_tools")
-    googleapis = find_spec("google.api")
+    try:
+        googleapis = find_spec("google.api")
+    except ModuleNotFoundError:  # No `google` namespace package at all.
+        googleapis = None
     if grpc_tools is None or grpc_tools.origin is None:
         raise RuntimeError("grpcio-tools must be a build dependency")
     if googleapis is None or not googleapis.submodule_search_locations:
