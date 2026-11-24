@@ -87,7 +87,14 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateA
 		return nil, err
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
+	return h.persistArtifact(ctx, idCtx, req.GetParent(), artifact)
+}
 
+// persistArtifact provisions an artifact XID under idCtx.parentXID on behalf of idCtx.creator,
+// stores the validated artifact under parent, and notifies the artifact observers. Callers
+// validate the artifact first: user requests through validateAndPrepareArtifactCreation, and
+// server-built artifacts by construction.
+func (h *ArtifactHandler) persistArtifact(ctx context.Context, idCtx createArtifactContext, parent string, artifact *msgpb.Artifact) (*msgpb.Artifact, error) {
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", idCtx.creator)
 	artifactXIDEntry, err := h.createXid(ctx, idCtx.creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(idCtx.parentXID))
 	if err != nil {
@@ -103,7 +110,7 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateA
 	name := validator.ConstructArtifactName(artifactXID)
 	ctx = logging.WithArtifactName(ctx, name)
 	newArtifact := &msgpb.Artifact{
-		Name: name, Parent: req.GetParent(), Url: artifact.Url, Priority: artifact.Priority,
+		Name: name, Parent: parent, Url: artifact.Url, Priority: artifact.Priority,
 		Tags: artifact.Tags, Notes: artifact.Notes, LifecyclePhase: artifact.LifecyclePhase,
 		DataType: artifact.DataType, MimeType: artifact.MimeType, AdditionalInfo: artifact.AdditionalInfo, Payload: artifact.Payload,
 	}
@@ -132,6 +139,10 @@ func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, arti
 		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
 			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
 			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", grpcerr.ErrInvalidArgument)
+		}
+		if len(h.artifactObservers) == 0 {
+			chartArtifact.Status, chartArtifact.ErrorMessage = msgpb.ChartArtifact_FAILED, "dashboard service is not configured"
+			return nil
 		}
 		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
 	}

@@ -29,9 +29,15 @@ import (
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func chartArtifactFixture() *essmsgpb.Artifact {
@@ -48,18 +54,42 @@ func chartArtifactFixture() *essmsgpb.Artifact {
 
 type recordingStorage struct {
 	*storage.MockStorage
-	mu            sync.Mutex
-	updateUpdates []*storage.ArtifactUpdate
+	mu                  sync.Mutex
+	panicUpdateArtifact bool
+	// blockCreate, when set, makes CreateArtifact wait until it is closed.
+	blockCreate      chan struct{}
+	createdArtifacts []*essmsgpb.Artifact
+	createCtxErrs    []error
+	updateUpdates    []*storage.ArtifactUpdate
 	// updateCtxErrs records ctx.Err() as each write was attempted, so tests can tell a write
 	// that reached storage from one that was refused by an already-finished context.
 	updateCtxErrs []error
 }
 
-func (s *recordingStorage) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
+func (s *recordingStorage) CreateArtifact(ctx context.Context, artifact *essmsgpb.Artifact) (*essmsgpb.Artifact, error) {
+	if s.blockCreate != nil {
+		<-s.blockCreate
+	}
 	s.mu.Lock()
-	s.updateUpdates = append(s.updateUpdates, update)
-	s.updateCtxErrs = append(s.updateCtxErrs, ctx.Err())
+	defer s.mu.Unlock()
+	s.createCtxErrs = append(s.createCtxErrs, ctx.Err())
+	created, err := s.MockStorage.CreateArtifact(ctx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	s.createdArtifacts = append(s.createdArtifacts, proto.Clone(created).(*essmsgpb.Artifact))
+	return created, nil
+}
+
+func (s *recordingStorage) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
+	clonedUpdate := &storage.ArtifactUpdate{AID: update.AID, Artifact: proto.Clone(update.Artifact).(*essmsgpb.Artifact), UpdateMask: update.UpdateMask}
+	s.mu.Lock()
+	s.updateUpdates, s.updateCtxErrs = append(s.updateUpdates, clonedUpdate), append(s.updateCtxErrs, ctx.Err())
+	shouldPanic := s.panicUpdateArtifact
 	s.mu.Unlock()
+	if shouldPanic {
+		panic("unexpected storage update panic")
+	}
 	return s.MockStorage.UpdateArtifact(ctx, update)
 }
 
@@ -647,4 +677,147 @@ func TestDashboardObserver_OnArtifactCreated_StorageUpdateError(t *testing.T) {
 	// Should not panic or block
 	obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
 	wg.Wait()
+}
+
+func TestDashboardObserver_OnArtifactCreated_ExperimentLevelStudyChart(t *testing.T) {
+	wantReq := studyChartRequest(100, "")
+	createdChart := proto.Clone(wantReq.GetChart()).(*dashboard_apipb.Chart)
+	createdChart.Name = "experiments/100/charts/study-100-parallel-coordinates"
+	mockDash := &mockDashboardClient{createChartResp: createdChart}
+	var wg sync.WaitGroup
+	recStorage := &recordingStorage{MockStorage: &storage.MockStorage{}}
+	obs := NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), recStorage, &wg)
+	artifact := &essmsgpb.Artifact{
+		Name: "artifacts/300", Parent: "experiments/100",
+		Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{Chart: &essmsgpb.ChartArtifact{MetricNames: []string{"accuracy"}, Status: essmsgpb.ChartArtifact_PROVISIONING}}},
+	}
+	before := testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart))
+	obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
+	wg.Wait()
+	if len(mockDash.reqs) != 1 {
+		t.Fatalf("len(mockDash.reqs) = %d, want 1", len(mockDash.reqs))
+	}
+	if diff := cmp.Diff(wantReq, mockDash.reqs[0], protocmp.Transform()); diff != "" {
+		t.Errorf("CreateChart request mismatch (-want +got):\n%s", diff)
+	}
+	if err := validator.ValidateCreateChartRequest(mockDash.reqs[0]); err != nil {
+		t.Errorf("ValidateCreateChartRequest(studyChartRequest) = %v, want nil", err)
+	}
+	if len(recStorage.updateUpdates) != 1 {
+		t.Fatalf("len(recStorage.updateUpdates) = %d, want 1", len(recStorage.updateUpdates))
+	}
+	gotPayload := recStorage.updateUpdates[0].Artifact.GetPayload().GetChart()
+	if gotPayload.GetStatus() != essmsgpb.ChartArtifact_SUCCESS {
+		t.Errorf("ChartArtifact status = %v, want SUCCESS", gotPayload.GetStatus())
+	}
+	if diff := cmp.Diff(createdChart, gotPayload.GetChart(), protocmp.Transform()); diff != "" {
+		t.Errorf("persisted ChartArtifact.chart mismatch (-want +got):\n%s", diff)
+	}
+	if delta := testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart)) - before; delta != 0 {
+		t.Errorf("study chart failure counter {stage=chart} increased by %v, want 0", delta)
+	}
+}
+
+func TestDashboardObserver_StudyChartFailureCounter(t *testing.T) {
+	dashErr, storeErr := errors.New("dashboard unavailable"), errors.New("storage unavailable")
+	for _, tc := range []struct {
+		name, artifactName, parent                string
+		nilStorage, panicCreateChart, panicUpdate bool
+		createChartErr, updateArtifactErr         error
+		wantDashCalls, wantUpdates                int
+		wantStatus                                essmsgpb.ChartArtifact_Status
+		wantChartStageDelta                       float64
+	}{
+		{name: "study_create_chart_fails", artifactName: "artifacts/300", parent: "experiments/100", createChartErr: dashErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_write_back_fails", artifactName: "artifacts/300", parent: "experiments/100", updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_both_create_and_write_back_fail_counts_once", artifactName: "artifacts/300", parent: "experiments/100", createChartErr: dashErr, updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_invalid_artifact_name_counts_write_back_failure", artifactName: "invalid-artifact-name", parent: "experiments/100", wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_nil_storage_counts_write_back_failure_without_panic", artifactName: "artifacts/300", parent: "experiments/100", nilStorage: true, wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_chart_panic_increments_chart_failure_counter", artifactName: "artifacts/300", parent: "experiments/100", panicCreateChart: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_write_back_panic_after_success_keeps_success_without_retry", artifactName: "artifacts/300", parent: "experiments/100", panicUpdate: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_both_create_and_write_back_panic_recovers_cleanly", artifactName: "artifacts/300", parent: "experiments/100", panicCreateChart: true, panicUpdate: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "work_unit_create_chart_fails_does_not_count", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", createChartErr: dashErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "work_unit_write_back_fails_does_not_count", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS},
+		{name: "work_unit_chart_panic_does_not_increment_study_counter", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", panicCreateChart: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "invalid_parent_marks_failed_without_study_counter", artifactName: "artifacts/300", parent: "invalid-parent", wantDashCalls: 0, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDash := &mockDashboardClient{createChartErr: tc.createChartErr}
+			if tc.panicCreateChart {
+				mockDash.createChartFn = func(_ context.Context, _ *dashboard_apipb.CreateChartRequest) (*dashboard_apipb.Chart, error) {
+					panic("unexpected dashboard client panic")
+				}
+			}
+			var wg sync.WaitGroup
+			recStorage := &recordingStorage{MockStorage: &storage.MockStorage{UpdateArtifactErr: tc.updateArtifactErr}, panicUpdateArtifact: tc.panicUpdate}
+			var st storage.Storage = recStorage
+			if tc.nilStorage {
+				st = nil
+			}
+			obs := NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), st, &wg)
+			artifact := &essmsgpb.Artifact{Name: tc.artifactName, Parent: tc.parent, Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{Chart: &essmsgpb.ChartArtifact{Title: "Parallel Coordinates", Status: essmsgpb.ChartArtifact_PROVISIONING}}}}
+			beforeChart, beforeArtifact := testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart)), testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageArtifact))
+			obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
+			wg.Wait()
+			if len(mockDash.reqs) != tc.wantDashCalls || len(recStorage.updateUpdates) != tc.wantUpdates {
+				t.Fatalf("dashCalls = %d (want %d), updates = %d (want %d)", len(mockDash.reqs), tc.wantDashCalls, len(recStorage.updateUpdates), tc.wantUpdates)
+			}
+			if tc.wantUpdates == 1 {
+				up, gotChart := recStorage.updateUpdates[0], recStorage.updateUpdates[0].Artifact.GetPayload().GetChart()
+				if up.AID != 300 || gotChart.GetStatus() != tc.wantStatus {
+					t.Errorf("persisted update (AID, status) = (%d, %v), want (300, %v)", up.AID, gotChart.GetStatus(), tc.wantStatus)
+				}
+				if tc.wantStatus == essmsgpb.ChartArtifact_FAILED && gotChart.GetErrorMessage() == "" {
+					t.Error("persisted FAILED ChartArtifact has empty ErrorMessage, want non-empty")
+				}
+				if tc.panicCreateChart && !strings.Contains(gotChart.GetErrorMessage(), "unexpected dashboard client panic") {
+					t.Errorf("panic ErrorMessage = %q, want panic text", gotChart.GetErrorMessage())
+				}
+			}
+			if delta := testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart)) - beforeChart; delta != tc.wantChartStageDelta {
+				t.Errorf("study chart failure counter {stage=chart} delta = %v, want %v", delta, tc.wantChartStageDelta)
+			}
+			if delta := testutil.ToFloat64(studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageArtifact)) - beforeArtifact; delta != 0 {
+				t.Errorf("study chart failure counter {stage=artifact} delta = %v, want 0", delta)
+			}
+		})
+	}
+}
+
+func TestDashboardObserver_RecoversStudyChartAfterAmbiguousCreate(t *testing.T) {
+	const studyChartName = "experiments/100/charts/study-100-parallel-coordinates"
+	existing := &dashboard_apipb.Chart{Name: studyChartName, Xid: 100}
+	for _, tc := range []struct {
+		name, parent  string
+		createErr     error
+		getErr        error
+		wantGetChart  []string
+		wantStatus    essmsgpb.ChartArtifact_Status
+		wantChartName string
+	}{
+		{name: "study_already_exists_reads_back_chart", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), wantGetChart: []string{studyChartName}, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartName: studyChartName},
+		{name: "study_deadline_after_commit_reads_back_chart", parent: "experiments/100", createErr: status.Error(codes.DeadlineExceeded, "deadline"), wantGetChart: []string{studyChartName}, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartName: studyChartName},
+		{name: "study_read_back_failure_records_failed", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), getErr: status.Error(codes.NotFound, "gone"), wantGetChart: []string{studyChartName}, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "study_other_error_does_not_read_back", parent: "experiments/100", createErr: status.Error(codes.PermissionDenied, "denied"), wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "work_unit_already_exists_does_not_read_back", parent: "experiments/100/workUnits/200", createErr: status.Error(codes.AlreadyExists, "exists"), wantStatus: essmsgpb.ChartArtifact_FAILED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDash := &mockDashboardClient{createChartErr: tc.createErr, getChartResp: existing, getChartErr: tc.getErr}
+			var wg sync.WaitGroup
+			recStorage := &recordingStorage{MockStorage: &storage.MockStorage{}}
+			obs := NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), recStorage, &wg)
+			obs.OnArtifactCreated(t.Context(), &essmsgpb.Artifact{Name: "artifacts/300", Parent: tc.parent, Payload: &essmsgpb.ArtifactPayload{Type: &essmsgpb.ArtifactPayload_Chart{Chart: &essmsgpb.ChartArtifact{Status: essmsgpb.ChartArtifact_PROVISIONING}}}})
+			wg.Wait()
+			if diff := cmp.Diff(tc.wantGetChart, mockDash.getChartReqs); diff != "" {
+				t.Errorf("GetChart names mismatch (-want +got):\n%s", diff)
+			}
+			if len(recStorage.updateUpdates) != 1 {
+				t.Fatalf("len(updateUpdates) = %d, want 1", len(recStorage.updateUpdates))
+			}
+			got := recStorage.updateUpdates[0].Artifact.GetPayload().GetChart()
+			if got.GetStatus() != tc.wantStatus || got.GetChart().GetName() != tc.wantChartName {
+				t.Errorf("persisted ChartArtifact = (%v, %q), want (%v, %q)", got.GetStatus(), got.GetChart().GetName(), tc.wantStatus, tc.wantChartName)
+			}
+		})
+	}
 }

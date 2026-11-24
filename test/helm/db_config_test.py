@@ -270,6 +270,25 @@ class DbConfigChartTest(unittest.TestCase):
         self.assertIn("health_log_monitor_resource_name:", health_cm_cloud_run)
         self.assertNotIn("health_log_monitor_url", health_cm_cloud_run)
 
+    def test_ess_dashboard_service_addr_follows_dashboard_deployment(self) -> None:
+        """ess-config leaves ess_dashboard_service_addr empty unless dashboard-service is enabled."""
+        for values in (
+            {},
+            {"dashboardServiceDeployment": "null"},
+            {"dashboardServiceDeployment.enabled": "false"},
+        ):
+            with self.subTest(values=values):
+                self.assertIn(
+                    'ess_dashboard_service_addr: ""',
+                    render_template("templates/ess/configmap.yaml", values),
+                )
+        self.assertIn(
+            'ess_dashboard_service_addr: "dashboard-service.xmc.svc.cluster.local:50051"',
+            render_template(
+                "templates/ess/configmap.yaml", {"dashboardServiceDeployment.enabled": "true"}
+            ),
+        )
+
     def test_workloads_source_postgres_password_from_secret(self) -> None:
         """Every workload receives POSTGRES_PASSWORD from postgres-secret when database.backend is postgres."""
         values = {

@@ -207,8 +207,14 @@ resource for it. The URL artifact below it links straight to the dashboard.
 ## Notes on the artifact payload
 
 `CreateArtifact` rejects a `ChartArtifact` that sets `chart`, `status` or `error_message`
-— they are `OUTPUT_ONLY`. The client supplies only `title` and `metric_names`; the server
-marks the artifact `PROVISIONING` and fills the rest asynchronously.
+— they are `OUTPUT_ONLY` — and requires a WorkUnit parent
+(`experiments/{xid}/workUnits/{wid}`) for client-created `ChartArtifact` payloads
+(experiment-level `ChartArtifact` resources under `experiments/{xid}` are reserved for
+server-provisioned `STUDY` parallel-coordinates charts; see
+[Study Lifecycle](../../docs/flows/study_lifecycle.md#3-study-visualization-parallel-coordinates-chart)).
+The client supplies only `title` and `metric_names`; when `ess_dashboard_service_addr` is
+configured, the server marks the artifact `PROVISIONING` and fills the rest asynchronously
+(otherwise it records `FAILED` immediately).
 
 The dashboard URL is repeated in three places because each is read by something
 different: `Artifact.url` for API consumers, the artifact's notes for anyone reading the

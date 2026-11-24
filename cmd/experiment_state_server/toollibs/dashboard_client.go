@@ -45,3 +45,11 @@ func (c *DashboardToolClient) CreateChart(ctx context.Context, req *pb.CreateCha
 	}
 	return c.client.CreateChart(ctx, req, opts...)
 }
+
+// GetChart issues a GetChart RPC to the xmc-dashboard-service.
+func (c *DashboardToolClient) GetChart(ctx context.Context, req *pb.GetChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
+	if c == nil || c.client == nil {
+		return nil, errors.New("client is not initialized")
+	}
+	return c.client.GetChart(ctx, req, opts...)
+}

@@ -22,8 +22,10 @@ profile values and actuation details.
 ## 1. Runtime Topology
 
 The diagram below shows every live runtime edge involved in actuating `hpo`, submitting a `STUDY`
-experiment, consuming study reconcile ticks, and reading the study's parallel-coordinates chart. Solid arrows are synchronous requests or
-in-transaction writes; dashed arrows are asynchronous probes or Redis stream operations.
+experiment (including post-commit reconcile enqueueing and study chart provisioning), consuming
+study reconcile ticks, and reading the study's parallel-coordinates chart. Solid arrows are
+synchronous requests or in-transaction writes; dashed arrows are asynchronous probes, post-commit
+side effects, or Redis stream operations.
 
 ```mermaid
 flowchart LR
@@ -38,7 +40,7 @@ flowchart LR
         Client["SDK / CLI / gRPC Client"]
         ESS["Experiment State Server"]
         XID["XID Service"]
-        DB[("Spanner / Postgres<br/>Experiments + Component Snapshots")]
+        DB[("Spanner / Postgres<br/>Experiments + Component Snapshots<br/>+ Artifacts + Charts")]
     end
 
     subgraph Bus["Redis"]
@@ -62,15 +64,17 @@ flowchart LR
     ESS -->|"CreateXidEntry"| XID
     ESS -->|"1 txn: evaluate deps, clamp budget,<br/>insert STUDY, pin snapshots"| DB
     ESS -.->|"XADD StudyReconcilePayload<br/>(best-effort, 2s timeout)"| Stream
+    ESS -.->|"Post-commit background: insert study ChartArtifact (10s bound);<br/>async UpdateArtifact(status, chart)"| DB
+    ESS -.->|"Async CreateChart<br/>(study-{xid}-parallel-coordinates)"| DS
 
     Stream -.->|"XREADGROUP / XAUTOCLAIM"| SC
     SC <-->|"SET NX PX 70s / Lua DEL<br/>& /readyz PING"| Lock
     SC -->|"GetExperiment(experiments/{xid})<br/>(WI GSA Google ID token)"| ESS
     SC -.->|"Invalid payload / exhausted retries"| DLQ
 
-    Client -->|"CreateChart / ListCharts / getData<br/>(experiments/{xid})"| DS
+    Client -->|"ListCharts / getData<br/>(experiments/{xid}/charts/...)"| DS
     DS -->|"CheckUserAuthorization"| XID
-    DS -->|"read Charts + StudyConfig + WorkUnits"| DB
+    DS -->|"insert/list Charts + read StudyConfig + WorkUnits"| DB
 ```
 
 Key boundaries in this topology:
@@ -87,7 +91,8 @@ Key boundaries in this topology:
 - **Unsigned hint stream**: `xmc-study-reconcile-stream` carries an unsigned protojson
   `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`,
   [`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) with at-least-once
-  delivery; see [Architecture Overview §7.2](../architecture/overview.md#72-signed-task-payloads)
+  delivery; see
+  [Architecture Overview §7.2](../architecture/overview.md#72-inter-service-task-authentication)
   for the trust-boundary exception.
 - **Study chart reads**: the Dashboard Service serves the experiment-level parallel-coordinates
   chart from the experiment database it already opens (the `StudyConfig` and the study's work units)
@@ -150,31 +155,75 @@ flowchart TD
 
 ## 3. Study Visualization (Parallel-Coordinates Chart)
 
-The Dashboard Service serves an experiment-level `PARALLEL_COORDINATES` chart for a `STUDY`
-experiment through the dashboard API
-([`dashboard_service.proto`](../../api/protos/dashboard/dashboard_service.proto)). Today a client
-creates the chart itself; `ESS` does not provision it on `CreateExperiment(STUDY)` yet.
+When a `STUDY` experiment is created and `ess_dashboard_service_addr` is configured on `ESS` (via
+environment variable or the `ess-config` ConfigMap), `ESS`
+automatically provisions an experiment-level `PARALLEL_COORDINATES` chart for the study through its
+artifact observer pipeline and the dashboard API
+([`dashboard_service.proto`](../../api/protos/dashboard/dashboard_service.proto)).
 
 ```mermaid
 sequenceDiagram
     participant Client as SDK / CLI / UI
-    participant DS as Dashboard Service
+    participant ESS as Experiment State Server
     participant XID as XID Service
     participant DB as Spanner / Postgres
+    participant DS as Dashboard Service
 
-    Client->>DS: CreateChart(parent=experiments/{xid}, PARALLEL_COORDINATES plot)
+    Client->>ESS: CreateExperiment(STUDY)
+    ESS->>DB: commit STUDY + pin snapshots
+    ESS-->>Client: Experiment
+    ESS--)XID: background CreateXidEntry(parent=xids/{xid}) (post-commit, 10s bound)
+    ESS--)DB: background insert Artifacts row (parent=experiments/{xid}, ChartArtifact PROVISIONING)
+    ESS--)DS: async CreateChart(parent=experiments/{xid}, chart_id=study-{xid}-parallel-coordinates)
     DS->>XID: CheckUserAuthorization(xids/{xid}, WRITER)
     DS->>DB: insert Charts row (Wid NULL)
+    DS-->>ESS: Chart, or ALREADY_EXISTS / DEADLINE_EXCEEDED (ESS then GetChart reads the chart back)
+    ESS->>DB: UpdateArtifact(status=SUCCESS, chart)
     Client->>DS: GET /v1/experiments/{xid}/charts
     DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
     DS->>DB: list Charts rows (Xid = xid AND Wid IS NULL)
     DS-->>Client: ListChartsResponse (experiment-level charts only)
-    Client->>DS: GET /v1/experiments/{xid}/charts/{chart}:getData
+    Client->>DS: GET /v1/experiments/{xid}/charts/study-{xid}-parallel-coordinates:getData
     DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
     DS->>DB: read the experiment's StudyConfig and page through all work units
     DS-->>Client: ParallelCoordinatesData (axes, objective, trajectories)
 ```
 
+- **Post-commit auto-provisioning**: after the `STUDY` creation transaction commits (next to the
+  initial reconcile tick enqueue), `ESS` creates a server-provisioned `ChartArtifact` under
+  `experiments/{xid}` (`WorkUnitId` `NULL`, display name and title `"Parallel Coordinates"`,
+  `metric_names` listing the study's objective metric ID, initial status `PROVISIONING`) on a
+  background goroutine tracked by the server's shutdown wait group, bounded at `10s` on a
+  cancellation-detached context that preserves caller auth metadata, so `CreateExperiment` returns
+  right after commit and a slow XID or database call cannot make clients time out and retry a
+  committed study. User
+  `CreateArtifact` calls continue to reject experiment-level `ChartArtifact` payloads with
+  `INVALID_ARGUMENT`. The `dashboardObserver` then asynchronously calls `DashboardService.CreateChart`
+  with the creating user's forwarded credentials, `parent = experiments/{xid}`, deterministic
+  `chart_id = study-{xid}-parallel-coordinates`, and a single `PARALLEL_COORDINATES` plot, writing
+  `SUCCESS` and the created `Chart` (or `FAILED` and `error_message`) back to the artifact. Because the
+  chart ID is deterministic, a `CreateChart` that returns `ALREADY_EXISTS` or `DEADLINE_EXCEEDED`
+  (the chart may already be committed) makes the observer read the chart back with `GetChart` and
+  record `SUCCESS` when it exists. Note that
+  `dashboard-service` gRPC currently validates `CLIENT_ID` on forwarded tokens (full
+  `IAP_EXPECTED_HTTP_AUDIENCE`, `IAP_EXPECTED_GRPC_AUDIENCE`, `IAP_EXPECTED_ISSUER`, and `JWKS`
+  validator parity with `ESS` lands in a follow-up change, so IAP-fronted gRPC `CreateExperiment`
+  callers such as `xm_cloud` or JWKS OIDC callers record `ChartArtifact` `FAILED` with
+  `Unauthenticated` until then). When no Dashboard Service is configured (`ess_dashboard_service_addr`
+  empty, the Helm default when `dashboardServiceDeployment.enabled` is `false`), `ESS` skips
+  provisioning so no artifact is left stuck in `PROVISIONING`.
+- **Deterministic chart ID & parent binding**: the study chart's resource name is computable from
+  the experiment XID as `experiments/{xid}/charts/study-{xid}-parallel-coordinates`. Chart IDs
+  matching `^study-\d+-parallel-coordinates$` are reserved for the matching parent `experiments/{xid}`
+  (`ValidateCreateChartRequest` rejects any non-matching experiment parent, work unit parent, leading
+  zero, or overflowing number with `INVALID_ARGUMENT`), preventing writers of one experiment from
+  claiming another study's chart ID.
+- **UI rendering status**: `<xmc-chart-artifact-view>` is mounted only on work unit pages; on the
+  experiment Artifacts tab (`experiments/{xid}`), the study's `OUTPUT` `ChartArtifact` renders as an
+  `<xmc-artifact-card>` in the `Output` pipeline column displaying its `study` /
+  `parallel-coordinates` tags, comma-joined `Metrics` (`accuracy`), and — once `chart` is populated on
+  `SUCCESS` — a collapsible `Chart Data` JSON block until experiment-level `PARALLEL_COORDINATES` UI
+  rendering support lands.
 - **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created and listed under
   the parent `experiments/{xid}` (`ListCharts` returns only that experiment's experiment-level charts
   and never its work unit charts), with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
@@ -190,11 +239,21 @@ sequenceDiagram
 - **Trajectories**: one per work unit in ascending ID order, with the state of its current
   execution, its creation time, and the time it completed (unset while it runs). Trajectories do not
   carry parameter values or the objective value yet.
-- **Failure modes**: `GetChartData` returns `FAILED_PRECONDITION` when the experiment is not a
-  `STUDY` with a `StudyConfig`, and, like every chart, when no metrics store (ClickHouse or BigQuery)
-  is configured; it also fails while a configured metrics store is unreachable, because the chart
-  data engine is built on it. A missing experiment-level chart, or an experiment-level name that
-  points at a work unit chart or another experiment's chart, returns `NOT_FOUND` (unlike work unit
-  charts, no default chart is synthesized).
+- **Failure modes & recovery**: provisioning failures never fail `CreateExperiment(STUDY)` — `ESS`
+  logs the error and increments `xmc_ess_study_chart_provisioning_failures_total` with
+  `stage="artifact"` (child XID allocation or artifact insert failure) or `stage="chart"`
+  (`DashboardService.CreateChart` failure or `UpdateArtifact` status write-back failure). Failed or
+  missing study charts are not automatically re-provisioned yet (deferred to future sweeper or
+  controller recovery). That sweeper must also detect uncounted states: a `ChartArtifact` left in
+  `PROVISIONING` past the observer bound (ESS killed or rolled mid-provisioning, an ambiguous
+  artifact-insert commit, or a write-back failure after a successful `CreateChart`), a study chart
+  that exists while its artifact is `FAILED` (the `GetChart` read-back after `ALREADY_EXISTS` or a
+  deadline also failed), and orphan child XID entries from failed artifact inserts.
+  On the read path, `GetChartData` returns `FAILED_PRECONDITION` when the
+  experiment is not a `STUDY` with a `StudyConfig`, and, like every chart, when no metrics store
+  (ClickHouse or BigQuery) is configured; it also fails while a configured metrics store is
+  unreachable, because the chart data engine is built on it. A missing experiment-level chart, or an
+  experiment-level name that points at a work unit chart or another experiment's chart, returns
+  `NOT_FOUND` (unlike work unit charts, no default chart is synthesized).
 - **Other chart RPCs**: `GetChart`, `UpdateChart`, and `DeleteChart` accept only `charts/{chart}`
   names, for experiment-level and work unit charts alike.

@@ -277,7 +277,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	srv, err := New(Params{
 		Config: cfg, Storage: st, Authorizer: auth,
 		XidClient: xidClient, WorkUnitActuator: taskQueueClient, ArtifactObservers: observers,
-		StudyReconcilePublisher: studyReconcilePublisher,
+		StudyReconcilePublisher: studyReconcilePublisher, BackgroundTasks: &bgTaskWG,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)

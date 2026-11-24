@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,6 +141,12 @@ func withWorkUnitActuator(actuator WorkUnitActuator) testServerOpt {
 func withStudyReconcilePublisher(publisher StudyReconcilePublisher) testServerOpt {
 	return func(p *Params) {
 		p.StudyReconcilePublisher = publisher
+	}
+}
+
+func withArtifactObservers(observers ...ArtifactObserver) testServerOpt {
+	return func(p *Params) {
+		p.ArtifactObservers = observers
 	}
 }
 
@@ -351,13 +358,19 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 // mockXidClient is a mock implementation of the XidServiceClient.
 type mockXidClient struct {
 	xidmsgpb.XidServiceClient
+	mu                         sync.Mutex
 	getXidEntryErr             error
 	getXidEntryResp            *xidmsgpb.XidEntry
 	getXidEntryCalls           int
 	createXidEntryErr          error
 	createXidEntryResp         *xidmsgpb.XidEntry
+	createXidEntryResps        []*xidmsgpb.XidEntry
+	createXidEntryErrs         []error
 	createXidEntryCalls        int
 	gotCreateXidEntryReq       *xidmsgpb.CreateXidEntryRequest
+	createXidEntryMD           []metadata.MD
+	createXidEntryCtxErrs      []error
+	createXidEntryDeadlines    []time.Time
 	checkUserAuthorizationErr  error
 	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
 	updateXidEntryErr          error
@@ -372,8 +385,19 @@ func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntr
 	return m.getXidEntryResp, m.getXidEntryErr
 }
 func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	m.createXidEntryCalls++
-	m.gotCreateXidEntryReq = in
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	idx := m.createXidEntryCalls
+	m.createXidEntryCalls, m.gotCreateXidEntryReq = idx+1, in
+	md, _ := metadata.FromOutgoingContext(ctx)
+	dl, _ := ctx.Deadline()
+	m.createXidEntryMD, m.createXidEntryCtxErrs, m.createXidEntryDeadlines = append(m.createXidEntryMD, md), append(m.createXidEntryCtxErrs, ctx.Err()), append(m.createXidEntryDeadlines, dl)
+	if idx < len(m.createXidEntryErrs) && m.createXidEntryErrs[idx] != nil {
+		return nil, m.createXidEntryErrs[idx]
+	}
+	if idx < len(m.createXidEntryResps) {
+		return m.createXidEntryResps[idx], nil
+	}
 	return m.createXidEntryResp, m.createXidEntryErr
 }
 func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidmsgpb.CheckUserAuthorizationResponse, error) {
