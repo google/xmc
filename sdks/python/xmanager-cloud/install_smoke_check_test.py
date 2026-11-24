@@ -172,6 +172,14 @@ class PackagingFailuresTest(InstallSmokeCheckTestCase):
     def test_missing_record_passes(self) -> None:
         self.assertEqual(self._packaging_failures(None), {})
 
+    def test_distribution_not_installed_fails(self) -> None:
+        with mock.patch.object(
+            install_smoke_check.metadata, "files", side_effect=metadata.PackageNotFoundError
+        ):
+            failures = install_smoke_check.packaging_failures()
+
+        self.assertEqual(failures, {"packaged tests": "xmanager-cloud is not installed"})
+
 
 class MainTest(InstallSmokeCheckTestCase):
     def _main(
