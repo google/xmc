@@ -143,7 +143,10 @@ def _xdash_files(xdash_dir: Path) -> list[Path]:
     modules = [path for path in xdash_dir.glob("*.py") if not is_test_module(path.stem)]
     if not modules:
         raise FileNotFoundError(f"No xdash modules found in {xdash_dir}")
-    return sorted([*modules, xdash_dir / "py.typed"])
+    marker = xdash_dir / "py.typed"
+    if not marker.is_file():
+        raise FileNotFoundError(f"Missing {marker}")
+    return sorted([*modules, marker])
 
 
 def sdist_copy_plan(layout: SourceLayout) -> CopyPlan:

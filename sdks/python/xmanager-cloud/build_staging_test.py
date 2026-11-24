@@ -214,6 +214,13 @@ class CopyPlanTest(BuildStagingTestCase):
         with self.assertRaisesRegex(FileNotFoundError, "No xdash modules"):
             build_staging.xdash_copy_plan(layout)
 
+    def test_missing_xdash_py_typed_raises(self) -> None:
+        layout = _make_sources(self.root)
+        (layout.xdash_dir / "py.typed").unlink()
+
+        with self.assertRaisesRegex(FileNotFoundError, "py.typed"):
+            build_staging.xdash_copy_plan(layout)
+
 
 class GeneratedNamesTest(BuildStagingTestCase):
     def test_generated_init_files_cover_every_proto_package(self) -> None:
