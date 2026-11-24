@@ -199,6 +199,15 @@ def write_init_files(target_root: Path) -> None:
         (target_root / init_file).touch()
 
 
+def expected_proto_modules(layout: SourceLayout) -> list[str]:
+    """Lists the importable `*_pb2` and `*_pb2_grpc` modules the wheel must contain."""
+    return [
+        f"xmanager_cloud.{dst_package}.proto.{proto.stem}{suffix}"
+        for _, dst_package, proto in _proto_files(layout.proto_root)
+        for suffix in ("_pb2", "_pb2_grpc")
+    ]
+
+
 def copy_files(plan: CopyPlan, target_root: Path) -> None:
     """Copies every planned file under target_root, creating parent directories."""
     for source, relative in plan:
