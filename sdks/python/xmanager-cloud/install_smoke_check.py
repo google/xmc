@@ -39,6 +39,7 @@ from pathlib import Path
 import build_staging
 
 _PROJECT_DIR = Path(__file__).resolve().parent
+# Importing xmanager_cloud runs the legacy xmanager guard.
 _SDK_MODULES = ("xmanager_cloud", "xdash", "xdash.auth", "xdash.cli", "xdash.client")
 
 

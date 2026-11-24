@@ -172,3 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           "${VENV_DIR}/bin/python" sdks/python/xmanager-cloud/install_smoke_check.py
+          # -I keeps the source tree off sys.path so the tests import the installed package.
+          for test_file in sdks/python/xmanager-cloud/src/xmanager_cloud/*_test.py; do
+            "${VENV_DIR}/bin/python" -I "${test_file}"
+          done
