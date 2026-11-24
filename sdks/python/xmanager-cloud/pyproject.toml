@@ -50,10 +50,11 @@ classifiers = [
 # - googleapis-common-protos<1.75.4: 1.75.4 registers operations_proto.proto in a
 #   way that conflicts with modules compiled against
 #   google/longrunning/operations.proto (see deploy/cli/install_xmanager.py).
+#   1.63.1 is the first release that allows protobuf 5.x.
 # - google-auth and requests: used by the bundled xdash authentication helpers.
 dependencies = [
     "google-auth>=2.28.0",
-    "googleapis-common-protos>=1.63.0,<1.75.4",
+    "googleapis-common-protos>=1.63.1,<1.75.4",
     "grpcio>=1.70.0",
     "protobuf>=5.29.6,<7.0.0",
     "requests>=2.32.0",

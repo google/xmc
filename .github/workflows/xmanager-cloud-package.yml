@@ -48,6 +48,8 @@ jobs:
           # without persisted credentials; full history avoids that fetch.
           fetch-depth: ${{ github.event_name == 'merge_group' && '0' || '1' }}
 
+      # The api/protos directories must match PROTO_PACKAGES in
+      # sdks/python/xmanager-cloud/build_staging.py.
       - name: 'Check Changed Paths'
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         uses: 'dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36' # v3.0.2
