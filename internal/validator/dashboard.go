@@ -127,7 +127,7 @@ func validateInlineCharts(charts []*spb.Chart) error {
 		if chart.GetWid() <= 0 {
 			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), grpcerr.ErrInvalidArgument)
 		}
-		if err := validateChartPlotIDs(chart.GetPlots()); err != nil {
+		if err := ValidateChartPlotIDs(chart.GetPlots()); err != nil {
 			return fmt.Errorf("charts[%d]: %w", i, err)
 		}
 		if err := ValidateChartPlotTypes(chart.GetPlots(), false); err != nil {
@@ -308,7 +308,7 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetWid() != wuWid {
 		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
 	}
-	if err := validateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
+	if err := ValidateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
 		return err
 	}
 	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
@@ -316,11 +316,6 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 
 // ValidateChartPlotIDs checks that every plot is non-nil and carries a non-whitespace, unique plot_id.
 func ValidateChartPlotIDs(plots []*spb.PlotSpec) error {
-	return validateChartPlotIDs(plots)
-}
-
-// validateChartPlotIDs checks that every plot is non-nil and carries a non-whitespace, unique plot_id.
-func validateChartPlotIDs(plots []*spb.PlotSpec) error {
 	seen := make(map[string]bool, len(plots))
 	for i, plot := range plots {
 		if plot == nil {
@@ -422,7 +417,7 @@ func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
 		if strings.TrimSpace(chart.GetTitle()) == "" {
 			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
 		}
-		return validateChartPlotIDs(chart.GetPlots())
+		return ValidateChartPlotIDs(chart.GetPlots())
 	}
 	return validateChartUpdateMask(chart, in.GetUpdateMask().GetPaths())
 }
@@ -437,7 +432,7 @@ func validateChartUpdateMask(chart *spb.Chart, paths []string) error {
 			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
 		}
 		if path == "plots" {
-			if err := validateChartPlotIDs(chart.GetPlots()); err != nil {
+			if err := ValidateChartPlotIDs(chart.GetPlots()); err != nil {
 				return err
 			}
 		}

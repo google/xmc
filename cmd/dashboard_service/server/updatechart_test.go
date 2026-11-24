@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -508,6 +509,12 @@ func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
 			name: "in-transaction plot validation InvalidArgument surfaces as InvalidArgument", stored: workUnitChart,
 			plots: scatter, repoErr: status.Error(codes.InvalidArgument, "level changed"), wantCode: codes.InvalidArgument,
 		},
+		{
+			name: "in-transaction scope rebind NotFound scrubs foreign XID", stored: workUnitChart,
+			plots:    scatter,
+			repoErr:  status.Error(codes.NotFound, `chart "experiments/200/charts/c" does not match expected scope "experiments/100/workUnits/1/charts/c"`),
+			wantCode: codes.NotFound,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -544,6 +551,9 @@ func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
 			resp, err := s.UpdateChart(ctx, req)
 			if status.Code(err) != tc.wantCode {
 				t.Fatalf("UpdateChart() code = %v, want %v (err: %v)", status.Code(err), tc.wantCode, err)
+			}
+			if tc.wantCode == codes.NotFound && strings.Contains(err.Error(), "experiments/200") {
+				t.Errorf("UpdateChart() NotFound error leaked foreign scope: %q", err)
 			}
 			wantUpdated := tc.wantCode == codes.OK || tc.repoErr != nil
 			if updated != wantUpdated {

@@ -290,13 +290,7 @@ func BuildChartParentFilter(parent string) (string, error) {
 // ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
 // the experiment-level name for a chart with an experiment but wid 0, and the root name otherwise.
 func ChartName(chartID string, xid, wid int64) string {
-	if xid <= 0 {
-		return validator.ConstructRootChartName(chartID)
-	}
-	if wid == 0 {
-		return validator.ConstructExperimentChartName(xid, chartID)
-	}
-	return validator.ConstructWorkUnitChartName(xid, wid, chartID)
+	return validator.ConstructCanonicalChartName(chartID, xid, wid)
 }
 
 // ResolveChartWid returns the wid to store for a chart: its wid field when set, otherwise the wid

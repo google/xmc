@@ -423,6 +423,19 @@ func ConstructRootChartName(chartID string) string {
 	return fmt.Sprintf("charts/%s", chartID)
 }
 
+// ConstructCanonicalChartName returns the canonical resource name of a stored chart: the work unit
+// name for a chart with a wid, the experiment-level name for a chart with an experiment and wid 0,
+// and the root name otherwise.
+func ConstructCanonicalChartName(chartID string, xid, wid int64) string {
+	if xid <= 0 {
+		return ConstructRootChartName(chartID)
+	}
+	if wid == 0 {
+		return ConstructExperimentChartName(xid, chartID)
+	}
+	return ConstructWorkUnitChartName(xid, wid, chartID)
+}
+
 // ConstructDashboardChartName constructs a chart name in the format "dashboards/{dashboard_id}/charts/{chart_id}".
 func ConstructDashboardChartName(dashboardID, chartID string) string {
 	return fmt.Sprintf("dashboards/%s/charts/%s", dashboardID, chartID)

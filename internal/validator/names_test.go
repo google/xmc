@@ -1229,4 +1229,19 @@ func TestConstructChartNames(t *testing.T) {
 			t.Errorf("ConstructRootChartName() = %q, want %q", got, want)
 		}
 	})
+
+	t.Run("ConstructCanonicalChartName dispatches by xid and wid", func(t *testing.T) {
+		for _, tc := range []struct {
+			xid, wid int64
+			want     string
+		}{
+			{0, 0, "charts/c1"},
+			{1001, 0, "experiments/1001/charts/c1"},
+			{1001, 3, "experiments/1001/workUnits/3/charts/c1"},
+		} {
+			if got := ConstructCanonicalChartName("c1", tc.xid, tc.wid); got != tc.want {
+				t.Errorf("ConstructCanonicalChartName(c1, %d, %d) = %q, want %q", tc.xid, tc.wid, got, tc.want)
+			}
+		}
+	})
 }

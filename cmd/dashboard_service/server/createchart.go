@@ -30,11 +30,7 @@ import (
 func populateChartProperties(chart *dpb.Chart, chartID string, xid, wid int64) {
 	chart.Xid = xid
 	chart.Wid = wid
-	if wid == 0 {
-		chart.Name = validator.ConstructExperimentChartName(xid, chartID)
-		return
-	}
-	chart.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
+	chart.Name = validator.ConstructCanonicalChartName(chartID, xid, wid)
 }
 
 // CreateChart handles creation of a new chart entity under a work unit or, for PARALLEL_COORDINATES

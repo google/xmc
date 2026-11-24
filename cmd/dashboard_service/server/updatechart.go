@@ -55,13 +55,6 @@ func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chart
 	return existing, targetXID, nil
 }
 
-func scopedChartName(chartID string, xid, wid int64) string {
-	if wid == 0 {
-		return validator.ConstructExperimentChartName(xid, chartID)
-	}
-	return validator.ConstructWorkUnitChartName(xid, wid, chartID)
-}
-
 // validateUpdatedPlotTypes checks that an update replacing the plots keeps plot types that fit the
 // level of the stored chart: only PARALLEL_COORDINATES on experiment-level charts, none on work unit
 // charts.
@@ -105,7 +98,7 @@ func (s *Server) UpdateChart(ctx context.Context, req *dpb.UpdateChartRequest) (
 	// Pass the authorized (Xid, Wid) scope in Name while leaving mutable fields untouched for the
 	// storage transaction's masked merge (which re-verifies both scope and plot level in-transaction).
 	scopedChart := proto.Clone(req.GetChart()).(*dpb.Chart)
-	scopedChart.Name = scopedChartName(chartID, targetXID, existing.GetWid())
+	scopedChart.Name = validator.ConstructCanonicalChartName(chartID, targetXID, existing.GetWid())
 	updated, err := s.repo.UpdateChart(ctx, scopedChart, req.GetUpdateMask())
 	if err != nil {
 		if isNotFoundError(err) {

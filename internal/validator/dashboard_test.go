@@ -1613,6 +1613,27 @@ func parallelCoordinatesPlots() []*spb.PlotSpec {
 	return []*spb.PlotSpec{{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}}
 }
 
+func TestValidateChartPlotIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		plots   []*spb.PlotSpec
+		wantErr error
+	}{
+		{name: "empty slice"},
+		{name: "unique non-whitespace IDs", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p2"}}},
+		{name: "nil plot element", plots: []*spb.PlotSpec{nil}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty plot_id", plots: []*spb.PlotSpec{{PlotId: ""}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace plot_id", plots: []*spb.PlotSpec{{PlotId: " \t "}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate plot_id", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}, wantErr: grpcerr.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateChartPlotIDs(tc.plots); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotIDs() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateChartPlotTypes(t *testing.T) {
 	scatter, parallel := &spb.PlotSpec{PlotId: "loss", Type: spb.PlotType_SCATTER}, &spb.PlotSpec{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}
 	for _, tc := range []struct {
