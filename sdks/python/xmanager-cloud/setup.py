@@ -18,7 +18,6 @@ Project metadata lives in pyproject.toml; this file only wires the build_staging
 functions into the sdist and build_py commands.
 """
 
-import importlib.util
 import sys
 import tempfile
 from pathlib import Path
@@ -31,22 +30,6 @@ _PROJECT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_PROJECT_DIR))
 
 import build_staging  # noqa: E402
-
-
-def _protoc_include_dirs() -> list[Path]:
-    """Returns the well-known (grpc_tools) and googleapis proto include paths."""
-    grpc_tools_spec = importlib.util.find_spec("grpc_tools")
-    googleapis_spec = importlib.util.find_spec("google.api")
-    if (
-        grpc_tools_spec is None
-        or grpc_tools_spec.origin is None
-        or googleapis_spec is None
-        or not googleapis_spec.submodule_search_locations
-    ):
-        raise RuntimeError("grpcio-tools and googleapis-common-protos must be build dependencies")
-    grpc_tools_dir = Path(grpc_tools_spec.origin).parent
-    googleapis_root = Path(googleapis_spec.submodule_search_locations[0]).parent.parent
-    return [grpc_tools_dir / "_proto", googleapis_root]
 
 
 # setuptools ships no type information, so its command classes are typed as Any.
@@ -69,16 +52,14 @@ class BuildPyWithProtos(build_py):  # type: ignore[misc]
         layout = build_staging.resolve_source_layout(_PROJECT_DIR)
         build_lib = Path(self.build_lib)
         build_staging.copy_files(build_staging.xdash_copy_plan(layout), build_lib)
-        for init_file in build_staging.generated_init_files():
-            (build_lib / init_file).parent.mkdir(parents=True, exist_ok=True)
-            (build_lib / init_file).touch()
+        build_staging.write_init_files(build_lib)
         proto_plan = build_staging.proto_copy_plan(layout)
         with tempfile.TemporaryDirectory() as proto_tree:
             build_staging.copy_files(proto_plan, Path(proto_tree))
             build_staging.compile_protos(
                 proto_tree=Path(proto_tree),
                 proto_files=[relative for _, relative in proto_plan],
-                include_dirs=_protoc_include_dirs(),
+                include_dirs=build_staging.protoc_include_dirs(),
                 output_dir=build_lib,
                 protoc_main=protoc.main,
             )

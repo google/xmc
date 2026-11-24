@@ -24,8 +24,10 @@ library so it stays testable without a build environment.
 from __future__ import annotations
 
 import dataclasses
+import importlib.util
 import shutil
 from collections.abc import Callable, Iterable, Sequence
+from importlib.machinery import ModuleSpec
 from pathlib import Path, PurePosixPath
 
 STAGED_DIR_NAME = "_staged"
@@ -76,6 +78,9 @@ def resolve_source_layout(project_dir: Path) -> SourceLayout:
     staged = project_dir / STAGED_DIR_NAME
     if staged.is_dir():
         return SourceLayout(proto_root=staged / "api" / "protos", xdash_dir=staged / "xdash")
+    hint = "build xmanager-cloud from the XMC repository or its sdist."
+    if len(project_dir.parents) < 3:
+        raise FileNotFoundError(f"Found no {staged} (sdist) and no repository checkout; {hint}")
     repo = SourceLayout(
         proto_root=project_dir.parents[2] / "api" / "protos",
         xdash_dir=project_dir.parent / "xdash",
@@ -84,8 +89,32 @@ def resolve_source_layout(project_dir: Path) -> SourceLayout:
         return repo
     raise FileNotFoundError(
         f"Found neither {staged} (sdist) nor {repo.proto_root} and {repo.xdash_dir} "
-        "(repository checkout); build xmanager-cloud from the XMC repository or its sdist."
+        f"(repository checkout); {hint}"
     )
+
+
+def protoc_include_dirs(
+    find_spec: Callable[[str], ModuleSpec | None] = importlib.util.find_spec,
+) -> list[Path]:
+    """Returns the well-known (grpc_tools) and googleapis proto include paths.
+
+    Args:
+        find_spec: `importlib.util.find_spec`, injected so tests need no build env.
+
+    Returns:
+        The `grpc_tools/_proto` directory and the root that contains `google/api/`.
+
+    Raises:
+        RuntimeError: If grpcio-tools or googleapis-common-protos is not installed.
+    """
+    grpc_tools = find_spec("grpc_tools")
+    googleapis = find_spec("google.api")
+    if grpc_tools is None or grpc_tools.origin is None:
+        raise RuntimeError("grpcio-tools must be a build dependency")
+    if googleapis is None or not googleapis.submodule_search_locations:
+        raise RuntimeError("googleapis-common-protos must be a build dependency")
+    googleapis_root = Path(googleapis.submodule_search_locations[0]).parent.parent
+    return [Path(grpc_tools.origin).parent / "_proto", googleapis_root]
 
 
 def is_test_module(module_name: str) -> bool:
@@ -146,6 +175,13 @@ def generated_init_files() -> list[PurePosixPath]:
             PurePosixPath("xmanager_cloud", dst_package, "proto", "__init__.py"),
         )
     ]
+
+
+def write_init_files(target_root: Path) -> None:
+    """Creates the empty `__init__.py` files of the generated proto subpackages."""
+    for init_file in generated_init_files():
+        (target_root / init_file).parent.mkdir(parents=True, exist_ok=True)
+        (target_root / init_file).touch()
 
 
 def copy_files(plan: CopyPlan, target_root: Path) -> None:
