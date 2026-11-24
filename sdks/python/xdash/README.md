@@ -18,6 +18,10 @@ protobuf modules through `xdash/_protos.py`, and those modules are produced by t
 plain `pip install` of this directory would import but fail at first use. Outside Bazel, build
 those targets and put their output on `PYTHONPATH` yourself.
 
+The [`xmanager-cloud`](../xmanager-cloud/README.md) package (preview, not yet published to PyPI)
+bundles this directory together with the compiled protobuf modules and installs the `xdash`
+console script, so a `pip install` of its wheel or sdist works without Bazel.
+
 ## Python SDK Examples
 
 ### Reading Dashboards and Charts
