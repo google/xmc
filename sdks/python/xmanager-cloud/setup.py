@@ -1,0 +1,87 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""setuptools commands that stage protos and xdash into the xmanager-cloud build.
+
+Project metadata lives in pyproject.toml; this file only wires the build_staging
+functions into the sdist and build_py commands.
+"""
+
+import importlib.util
+import sys
+import tempfile
+from pathlib import Path
+
+from setuptools import setup
+from setuptools.command.build_py import build_py
+from setuptools.command.sdist import sdist
+
+_PROJECT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_PROJECT_DIR))
+
+import build_staging  # noqa: E402
+
+
+def _protoc_include_dirs() -> list[Path]:
+    """Returns the well-known (grpc_tools) and googleapis proto include paths."""
+    grpc_tools_spec = importlib.util.find_spec("grpc_tools")
+    googleapis_spec = importlib.util.find_spec("google.api")
+    if (
+        grpc_tools_spec is None
+        or grpc_tools_spec.origin is None
+        or googleapis_spec is None
+        or not googleapis_spec.submodule_search_locations
+    ):
+        raise RuntimeError("grpcio-tools and googleapis-common-protos must be build dependencies")
+    grpc_tools_dir = Path(grpc_tools_spec.origin).parent
+    googleapis_root = Path(googleapis_spec.submodule_search_locations[0]).parent.parent
+    return [grpc_tools_dir / "_proto", googleapis_root]
+
+
+# setuptools ships no type information, so its command classes are typed as Any.
+class SdistWithStagedSources(sdist):  # type: ignore[misc]
+    """Copies the protos and xdash sources into the sdist under `_staged/`."""
+
+    def make_release_tree(self, base_dir: str, files: list[str]) -> None:
+        super().make_release_tree(base_dir, files)
+        layout = build_staging.resolve_source_layout(_PROJECT_DIR)
+        build_staging.copy_files(build_staging.sdist_copy_plan(layout), Path(base_dir))
+
+
+class BuildPyWithProtos(build_py):  # type: ignore[misc]
+    """Compiles the XMC protos and bundles xdash into the build directory."""
+
+    def run(self) -> None:
+        super().run()
+        from grpc_tools import protoc
+
+        layout = build_staging.resolve_source_layout(_PROJECT_DIR)
+        build_lib = Path(self.build_lib)
+        build_staging.copy_files(build_staging.xdash_copy_plan(layout), build_lib)
+        for init_file in build_staging.generated_init_files():
+            (build_lib / init_file).parent.mkdir(parents=True, exist_ok=True)
+            (build_lib / init_file).touch()
+        proto_plan = build_staging.proto_copy_plan(layout)
+        with tempfile.TemporaryDirectory() as proto_tree:
+            build_staging.copy_files(proto_plan, Path(proto_tree))
+            build_staging.compile_protos(
+                proto_tree=Path(proto_tree),
+                proto_files=[relative for _, relative in proto_plan],
+                include_dirs=_protoc_include_dirs(),
+                output_dir=build_lib,
+                protoc_main=protoc.main,
+            )
+
+
+setup(cmdclass={"sdist": SdistWithStagedSources, "build_py": BuildPyWithProtos})
