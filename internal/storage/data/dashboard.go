@@ -132,9 +132,27 @@ func PrepareDashboardUpdate(existing, updated *dpb.Dashboard, updateMask *fieldm
 }
 
 // MergeCharts merges an updated Chart proto message into a current Chart proto message based on an update mask.
-// Note: xid and wid are immutable chart ownership fields and cannot be updated.
+// Note: xid and wid are immutable chart ownership fields and cannot be updated. When updated.Name
+// carries an experiment or work-unit scope, current must still belong to that exact (xid, wid).
 func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+	if err := verifyChartScope(current, updated); err != nil {
+		return nil, err
+	}
 	return mergeProtoWithMask("chart", current, updated, updateMask, defaultChartMaskPaths, applyChartMaskPath)
+}
+
+func verifyChartScope(current, updated *dpb.Chart) error {
+	if current == nil || updated == nil || updated.GetName() == "" {
+		return nil
+	}
+	expXid, wuWid, _, err := validator.ValidateChartName(updated.GetName())
+	if err != nil {
+		return fmt.Errorf("invalid chart name %q: %w", updated.GetName(), err)
+	}
+	if expXid > 0 && (current.GetXid() != expXid || current.GetWid() != wuWid) {
+		return fmt.Errorf("chart %q does not match expected scope %q: %w", current.GetName(), updated.GetName(), grpcerr.ErrNotFound)
+	}
+	return nil
 }
 
 func applyChartMaskPath(merged, updated *dpb.Chart, path string) error {
@@ -144,6 +162,12 @@ func applyChartMaskPath(merged, updated *dpb.Chart, path string) error {
 	case "description":
 		merged.Description = updated.GetDescription()
 	case "plots":
+		if err := validator.ValidateChartPlotIDs(updated.GetPlots()); err != nil {
+			return err
+		}
+		if err := validator.ValidateChartPlotTypes(updated.GetPlots(), merged.GetXid() > 0 && merged.GetWid() == 0); err != nil {
+			return err
+		}
 		merged.Plots = updated.GetPlots()
 	case "plot_layout", "plotLayout":
 		merged.PlotLayout = updated.GetPlotLayout()

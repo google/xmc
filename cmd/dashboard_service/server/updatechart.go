@@ -20,38 +20,46 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/validator"
 )
 
 // authorizeChartWrite verifies caller write authorization on the experiment a chart belongs to and
-// returns the stored chart.
+// returns the stored chart alongside the authorized experiment XID.
 //
-// The chart is read only to learn that experiment and the chart's level (experiment or work unit),
-// neither of which an update can change. The update itself re-reads it inside its own transaction,
-// so nothing else from this snapshot is carried into the write.
-func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chartID string) (*dpb.Chart, error) {
+// The pre-transaction snapshot establishes the authorized (Xid, Wid) scope, and UpdateChart stamps
+// that canonical scope onto the chart name passed to storage so MergeCharts rejects any concurrent
+// DeleteChart + CreateChart rebind inside the write transaction.
+func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chartID string) (*dpb.Chart, int64, error) {
 	existing, err := s.repo.GetChart(ctx, chartID)
 	if err != nil {
 		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "chart %q not found", chartName)
+			return nil, 0, status.Errorf(codes.NotFound, "chart %q not found", chartName)
 		}
-		return nil, status.Errorf(codes.Internal, "failed to get chart: %v", err)
+		return nil, 0, status.Errorf(codes.Internal, "failed to get chart: %v", err)
 	}
 	if existing == nil {
-		return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
+		return nil, 0, status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
 	}
 
 	targetXID := existing.GetXid()
 	if targetXID <= 0 {
-		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
+		return nil, 0, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
 	}
 
 	if err := s.authorizeExperimentWrite(ctx, user, targetXID); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return existing, nil
+	return existing, targetXID, nil
+}
+
+func scopedChartName(chartID string, xid, wid int64) string {
+	if wid == 0 {
+		return validator.ConstructExperimentChartName(xid, chartID)
+	}
+	return validator.ConstructWorkUnitChartName(xid, wid, chartID)
 }
 
 // validateUpdatedPlotTypes checks that an update replacing the plots keeps plot types that fit the
@@ -86,7 +94,7 @@ func (s *Server) UpdateChart(ctx context.Context, req *dpb.UpdateChartRequest) (
 		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
 	}
 
-	existing, err := s.authorizeChartWrite(ctx, user, req.GetChart().GetName(), chartID)
+	existing, targetXID, err := s.authorizeChartWrite(ctx, user, req.GetChart().GetName(), chartID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +102,17 @@ func (s *Server) UpdateChart(ctx context.Context, req *dpb.UpdateChartRequest) (
 		return nil, status.Errorf(codes.InvalidArgument, "invalid update chart request: %v", err)
 	}
 
-	// The field mask is handed to the repository rather than applied here: the merge has to run
-	// against the state the write commits against, which only the storage transaction can see.
-	updated, err := s.repo.UpdateChart(ctx, req.GetChart(), req.GetUpdateMask())
+	// Pass the authorized (Xid, Wid) scope in Name while leaving mutable fields untouched for the
+	// storage transaction's masked merge (which re-verifies both scope and plot level in-transaction).
+	scopedChart := proto.Clone(req.GetChart()).(*dpb.Chart)
+	scopedChart.Name = scopedChartName(chartID, targetXID, existing.GetWid())
+	updated, err := s.repo.UpdateChart(ctx, scopedChart, req.GetUpdateMask())
 	if err != nil {
 		if isNotFoundError(err) {
 			return nil, status.Errorf(codes.NotFound, "chart %q not found", req.GetChart().GetName())
+		}
+		if status.Code(err) == codes.InvalidArgument {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid update chart request: %v", err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to update chart: %v", err)
 	}

@@ -356,6 +356,22 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{
+			name: "invalid_request_inline_chart_empty_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "  ", Type: spb.PlotType_SCATTER}}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_duplicate_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1471,6 +1487,36 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 				},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_empty_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: " "}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_nil_plot",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{nil}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_plots_duplicate_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_title_ignores_invalid_plots",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: ""}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
+			},
+			wantErr: nil,
 		},
 	}
 

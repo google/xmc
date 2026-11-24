@@ -323,6 +323,50 @@ func TestMergeCharts(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"xid"}},
 			wantErr:    true,
 		},
+		{
+			name:    "matching scoped updated.Name succeeds",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/100/workUnits/1/charts/c1" }),
+			want: prototest.Modify(current, func(c *dpb.Chart) {
+				c.Title = "New Chart"
+				c.Description = "New Desc"
+				c.Plots = []*dpb.PlotSpec{{PlotId: "p2", Title: "Plot 2"}}
+				c.PlotLayout = &dpb.LayoutSpec{Columns: 3}
+			}),
+		},
+		{
+			name:    "mismatched scoped updated.Name Xid returns error",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/200/workUnits/1/charts/c1" }),
+			wantErr: true,
+		},
+		{
+			name:    "mismatched scoped updated.Name Wid returns error",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/100/charts/c1" }),
+			wantErr: true,
+		},
+		{
+			name:       "work-unit chart rejects PARALLEL_COORDINATES in MergeCharts",
+			current:    current,
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "pc", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    true,
+		},
+		{
+			name:       "experiment-level chart rejects SCATTER in MergeCharts",
+			current:    &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "loss", Type: dpb.PlotType_SCATTER}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    true,
+		},
+		{
+			name:       "duplicate plot_id rejected in MergeCharts",
+			current:    current,
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "dup"}, {PlotId: "dup"}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    true,
+		},
 	}
 
 	for _, tc := range tests {
