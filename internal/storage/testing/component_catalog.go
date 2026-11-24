@@ -16,21 +16,25 @@ package storagetest
 
 import (
 	"context"
+	"fmt"
 
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
 )
 
-// SeedComponentCatalog inserts and marks observed each record in recs (ordered before dependents).
+// SeedComponentCatalog inserts and marks observed each record in recs within one serializable
+// transaction. Records must come before their dependents: dependency edges are written from each
+// record's ComponentRecord.Dependencies (which should list the same names as Spec.Dependencies),
+// and a dependency not inserted earlier fails with FailedPrecondition, as on both backends.
 func SeedComponentCatalog(ctx context.Context, st storage.TransactionRunner, recs ...*store.ComponentRecord) error {
 	_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-		depIDs := make(map[string]int64, len(recs))
+		depIDs := make(map[string]int64, len(recs)) // Reset on every attempt.
 		for _, rec := range recs {
 			if err := tx.Components.InsertComponent(ctx, rec, depIDs); err != nil {
-				return err
+				return fmt.Errorf("insert component %q: %w", rec.Name, err)
 			}
 			if err := tx.Components.UpdateComponentObservation(ctx, rec, false); err != nil {
-				return err
+				return fmt.Errorf("observe component %q: %w", rec.Name, err)
 			}
 			depIDs[rec.Name] = rec.ComponentID
 		}

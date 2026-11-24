@@ -50,7 +50,6 @@ go_test(
     ],
     embed = [":storage"],
     deps = [
-        "//api/protos/experiment:messages_go_proto",
         "//internal/grpcerr",
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
