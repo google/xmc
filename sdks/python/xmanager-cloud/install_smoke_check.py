@@ -21,7 +21,8 @@ installed and no `xmanager`:
 
 It imports every generated proto module, the bundled xdash SDK, and the xdash
 console script, and requires each to load from the virtualenv rather than the
-repository. Prints a JSON summary and exits 0 on success, 1 on any failure.
+repository. Prints a JSON summary and exits 0 on success, 1 when a check fails,
+and 2 when the repository's proto or xdash sources cannot be found.
 """
 
 from __future__ import annotations
@@ -89,7 +90,11 @@ def environment_failures() -> dict[str, str]:
 
 def main() -> int:
     """Runs the smoke check and prints a JSON summary."""
-    modules = modules_to_check(build_staging.resolve_source_layout(_PROJECT_DIR))
+    try:
+        modules = modules_to_check(build_staging.resolve_source_layout(_PROJECT_DIR))
+    except FileNotFoundError as err:
+        print(json.dumps({"status": "error", "error": str(err)}, indent=2))
+        return 2
     installed_root = Path(sysconfig.get_paths()["purelib"]).resolve()
     failures = {**import_failures(modules, installed_root), **environment_failures()}
     summary = {"status": "failure" if failures else "success", "checked": len(modules)}

@@ -102,9 +102,14 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
     ) -> dict[str, str]:
         with (
             mock.patch.object(install_smoke_check.metadata, "version", version),
-            mock.patch.object(install_smoke_check.metadata, "entry_points", return_value=scripts),
+            mock.patch.object(
+                install_smoke_check.metadata, "entry_points", return_value=scripts
+            ) as entry_points,
         ):
-            return install_smoke_check.environment_failures()
+            failures = install_smoke_check.environment_failures()
+        version.assert_called_once_with("xmanager")
+        entry_points.assert_called_once_with(group="console_scripts", name="xdash")
+        return failures
 
     def test_clean_environment_passes(self) -> None:
         version = mock.MagicMock(side_effect=metadata.PackageNotFoundError)
@@ -160,6 +165,18 @@ class MainTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(status, 1)
         self.assertIn('"status": "failure"', output)
+
+    def test_missing_sources_exit_two_with_json_error(self) -> None:
+        with (
+            mock.patch.object(
+                build_staging, "resolve_source_layout", side_effect=FileNotFoundError("no protos")
+            ),
+            mock.patch("builtins.print") as printed,
+        ):
+            status = install_smoke_check.main()
+
+        self.assertEqual(status, 2)
+        self.assertIn('"error": "no protos"', printed.call_args.args[0])
 
 
 if __name__ == "__main__":
