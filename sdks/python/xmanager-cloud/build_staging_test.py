@@ -16,6 +16,8 @@
 
 import tempfile
 import unittest
+from collections.abc import Callable
+from importlib.machinery import ModuleSpec
 from pathlib import Path, PurePosixPath
 
 import build_staging
@@ -87,6 +89,40 @@ class ResolveSourceLayoutTest(BuildStagingTestCase):
 
         with self.assertRaisesRegex(FileNotFoundError, "Found neither"):
             build_staging.resolve_source_layout(project_dir)
+
+    def test_shallow_project_dir_raises_file_not_found(self) -> None:
+        with self.assertRaisesRegex(FileNotFoundError, "no repository checkout"):
+            build_staging.resolve_source_layout(Path("/xc"))
+
+
+class ProtocIncludeDirsTest(BuildStagingTestCase):
+    def _find_spec(self, specs: dict[str, ModuleSpec | None]) -> Callable[[str], ModuleSpec | None]:
+        return lambda name: specs[name]
+
+    def _specs(self) -> dict[str, ModuleSpec | None]:
+        grpc_tools = ModuleSpec(
+            "grpc_tools", None, origin=str(self.root / "grpc_tools/__init__.py")
+        )
+        googleapis = ModuleSpec("google.api", None, is_package=True)
+        googleapis.submodule_search_locations = [str(self.root / "site" / "google" / "api")]
+        return {"grpc_tools": grpc_tools, "google.api": googleapis}
+
+    def test_returns_well_known_and_googleapis_roots(self) -> None:
+        include_dirs = build_staging.protoc_include_dirs(self._find_spec(self._specs()))
+
+        self.assertEqual(include_dirs, [self.root / "grpc_tools" / "_proto", self.root / "site"])
+
+    def test_missing_grpc_tools_raises(self) -> None:
+        specs = {**self._specs(), "grpc_tools": None}
+
+        with self.assertRaisesRegex(RuntimeError, "grpcio-tools"):
+            build_staging.protoc_include_dirs(self._find_spec(specs))
+
+    def test_missing_googleapis_raises(self) -> None:
+        specs = {**self._specs(), "google.api": None}
+
+        with self.assertRaisesRegex(RuntimeError, "googleapis-common-protos"):
+            build_staging.protoc_include_dirs(self._find_spec(specs))
 
 
 class CopyPlanTest(BuildStagingTestCase):
@@ -196,6 +232,12 @@ class CopyFilesTest(BuildStagingTestCase):
         build_staging.copy_files([(source, PurePosixPath("a/b/dst.proto"))], self.root / "out")
 
         self.assertEqual((self.root / "out" / "a" / "b" / "dst.proto").read_text(), "syntax")
+
+    def test_write_init_files_creates_every_generated_package(self) -> None:
+        build_staging.write_init_files(self.root)
+
+        for init_file in build_staging.generated_init_files():
+            self.assertTrue((self.root / init_file).is_file(), init_file)
 
 
 class CompileProtosTest(BuildStagingTestCase):

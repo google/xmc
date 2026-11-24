@@ -21,7 +21,7 @@ today, for example `xmanager_cloud.experiment_state_server.proto.api_pb2`.
 
 ```bash
 python3 -m pip install build
-python3 -m build sdks/python/xmanager-cloud
+python3 -m build --outdir sdks/python/xmanager-cloud/dist sdks/python/xmanager-cloud
 ```
 
 The build compiles
@@ -35,7 +35,7 @@ sources into a `_staged/` directory, so it builds outside this repository. Build
 explicitly with:
 
 ```bash
-pip install --no-binary xmanager-cloud dist/xmanager_cloud-*.tar.gz
+pip install --no-binary xmanager-cloud sdks/python/xmanager-cloud/dist/xmanager_cloud-*.tar.gz
 ```
 
 `grpcio-tools==1.70.0` publishes no Python 3.14 wheel, so building from the sdist on Python 3.14

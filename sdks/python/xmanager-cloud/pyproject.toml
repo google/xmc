@@ -45,7 +45,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Typing :: Typed",
 ]
 # - grpcio>=1.70.0: generated *_pb2_grpc.py modules reject older gRPC runtimes.
 # - googleapis-common-protos<1.75.4: 1.75.4 registers operations_proto.proto in a
