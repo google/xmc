@@ -15,6 +15,7 @@
 """Covers the plumbing every chart suite depends on to report honest results."""
 
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -122,6 +123,24 @@ class RenderTemplateTest(unittest.TestCase):
                     release_name="custom-release",
                 )
                 self.assertIn("app.kubernetes.io/instance: custom-release", manifests)
+
+    def test_render_chart_renders_a_non_default_chart_dir(self) -> None:
+        """render_chart renders the chart at chart_dir rather than falling back to deploy/helm."""
+        with tempfile.TemporaryDirectory() as chart_dir:
+            with open(os.path.join(chart_dir, "Chart.yaml"), "w", encoding="utf-8") as chart:
+                chart.write("apiVersion: v2\nname: probe\nversion: 0.0.1\n")
+            os.mkdir(os.path.join(chart_dir, "templates"))
+            template = os.path.join(chart_dir, "templates", "probe.yaml")
+            with open(template, "w", encoding="utf-8") as probe:
+                probe.write(
+                    "apiVersion: v1\nkind: ConfigMap\nmetadata:\n"
+                    "  name: probe-{{ .Release.Name }}\n"
+                )
+
+            manifests = render_chart({}, chart_dir=chart_dir, release_name="custom-release")
+
+        self.assertIn("name: probe-custom-release", manifests)
+        self.assertNotIn("templates/ess/deployment.yaml", manifests)
 
     def test_render_surfaces_the_template_error(self) -> None:
         """A bare CalledProcessError hides the helm output that says what went wrong."""

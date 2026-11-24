@@ -121,9 +121,12 @@ def check_helm(ctx: gates.RunContext) -> None:
     """Runs `helm lint` and `test/helm` unit tests."""
     if not gates.should_run_scope(
         ctx.mode,
-        roots=("deploy/helm", "test/helm"),
+        roots=("deploy/helm", "deploy/profiles/stable-2026b/components/hpo", "test/helm"),
         suffixes=(".yaml", ".yml", "_test.py"),
-        fix_pattern=r"^(deploy/helm/|deploy/ctk_v2/xmanager-cloud\.yaml$|test/helm/)",
+        fix_pattern=(
+            r"^(deploy/helm/|deploy/profiles/stable-2026b/components/hpo/"
+            r"|deploy/ctk_v2/xmanager-cloud\.yaml$|test/helm/)"
+        ),
     ):
         return
     if ctx.mode == "check" or gates.staged_paths_match("AMD", r"^deploy/helm/"):

@@ -568,6 +568,12 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 			want:      map[string]any{"enabled": true, "essAudience": placeholderGRPCAudience},
 		},
 		{
+			name:     "empty IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID",
+			clientID: "oauth-client-id",
+			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:     map[string]any{"enabled": true, "essAudience": "oauth-client-id"},
+		},
+		{
 			name:      "component parameters and raw values cannot override essAddr or essAudience",
 			essEnv:    "grpc-service:50051",
 			iapAudEnv: "real-aud",
