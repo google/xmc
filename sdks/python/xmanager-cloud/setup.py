@@ -45,6 +45,10 @@ class SdistWithStagedSources(sdist):  # type: ignore[misc]
 class BuildPyWithProtos(build_py):  # type: ignore[misc]
     """Compiles the XMC protos and bundles xdash into the build directory."""
 
+    def find_package_modules(self, package: str, package_dir: str) -> list[tuple[str, str, str]]:
+        modules = super().find_package_modules(package, package_dir)
+        return [module for module in modules if not build_staging.is_test_module(module[1])]
+
     def run(self) -> None:
         super().run()
         # Resolve include paths first: it reports a missing grpcio-tools clearly.

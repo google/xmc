@@ -16,4 +16,10 @@
 
 Generated modules live under `xmanager_cloud.experiment_state_server.proto`,
 `xmanager_cloud.xid_service.proto`, and `xmanager_cloud.dashboard_service.proto`.
+Importing any of them runs this module first, so the legacy `xmanager` check below
+precedes every `cloud.xmanager.v1` descriptor registration.
 """
+
+from xmanager_cloud import _version_guard
+
+_version_guard.check_xmanager_compatibility()

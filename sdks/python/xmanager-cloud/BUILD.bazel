@@ -14,6 +14,10 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
+# The xmanager_cloud package needs PyPI dependencies (`packaging`) that Bazel does
+# not provide, so src/xmanager_cloud/*_test.py runs against the installed wheel
+# and sdist in .github/workflows/xmanager-cloud-package.yml instead.
+
 py_library(
     name = "build_staging",
     srcs = ["build_staging.py"],
