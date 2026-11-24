@@ -30,7 +30,8 @@ Centralized utilities and build helpers used across tools:
 - [`tool_utils.py`](common/tool_utils.py): Shared virtual environment isolation, handled exception formatting, and unified CLI execution runners.
 - [`build_oci.py`](common/build_oci.py): Docker/OCI container image building and registry push automation.
 - [`setup_venv.py`](common/setup_venv.py): Automated local virtual environment initialization from `requirements.txt`.
-- [`workspace_status.py`](common/workspace_status.py): Bazel workspace status script reading the root `VERSION` file to emit `STABLE_APP_VERSION`.
+- [`release_tags.py`](common/release_tags.py): Shared SemVer release tag globs used by both release tooling and build version stamping.
+- [`workspace_status.py`](common/workspace_status.py): Bazel workspace status script resolving `STABLE_APP_VERSION` (`XMC_VERSION` env → `git describe` on release tags → `0.0.0-unknown`).
 - [`requirements.txt`](common/requirements.txt): Pinned third-party Python dependencies for developer tools.
 
 ### 2. `tools/dev_env/` (Developer Environment Automation)

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	k8sclient "xmanager_cloud/cmd/actuator/k8s_client"
+	"xmanager_cloud/internal/buildinfo"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/kubernetes/common/constants"
@@ -53,7 +54,7 @@ type Config struct {
 }
 
 var (
-	buildVersion                string
+	stampedVersion              = buildinfo.StampedVersion
 	port                        string
 	createNewNamespaces         bool
 	xmanagerServiceAccount      string
@@ -120,14 +121,6 @@ func validate() error {
 	return nil
 }
 
-func resolveBuildVersion(stamped string) string {
-	trimmed := strings.TrimSpace(stamped)
-	if trimmed == "" || trimmed == "redacted" || trimmed == "{STABLE_APP_VERSION}" {
-		return ""
-	}
-	return trimmed
-}
-
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
 func Load() Config {
 	ctx := context.Background()
@@ -161,7 +154,7 @@ func Load() Config {
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
-			AppVersion:                  resolveBuildVersion(buildVersion),
+			AppVersion:                  stampedVersion(),
 		},
 		Audience:               aud,
 		XManagerServiceAccount: xmanagerServiceAccount,

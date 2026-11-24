@@ -49,6 +49,7 @@ py_library(
     deps = [
         ":models_lib",
         ":semver_engine_lib",
+        "//tools/common:release_tags_lib",
         "//tools/common:tool_utils",
     ],
 )

@@ -346,7 +346,7 @@ py_test(
         ":config_lib",
         ":dev_env_lib",
         "//tools/common:tool_utils",
-        "//tools/common:workspace_status",
+        "//tools/common:workspace_status_lib",
     ],
 )
 

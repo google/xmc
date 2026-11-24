@@ -33,6 +33,7 @@ go_library(
         "//api/protos/health:api_go_proto",
         "//internal/auth",
         "//internal/broadcast",
+        "//internal/buildinfo",
         "//internal/common/health",
         "//internal/configutil",
         "//internal/featureflags",
@@ -74,7 +75,7 @@ go_binary(
     pure = "on",
     visibility = ["//visibility:public"],
     x_defs = {
-        "xmanager_cloud/cmd/health_service/main.buildVersion": "{STABLE_APP_VERSION}",
+        "xmanager_cloud/internal/buildinfo.version": "{STABLE_APP_VERSION}",
     },
 )
 

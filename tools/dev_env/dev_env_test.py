@@ -68,14 +68,19 @@ class DevEnvCliTest(unittest.TestCase):
         self.assertIn("dev_env 1.1.0", version_stream.getvalue())
 
     def test_parser_version_fallback(self) -> None:
-        """Verifies --version falls back cleanly without stderr noise when VERSION cannot be read."""
+        """Verifies --version falls back cleanly without stderr noise when git is unavailable."""
         fallback_stream = io.StringIO()
         err_stream = io.StringIO()
         with (
-            patch("tools.common.workspace_status.read_version", side_effect=OSError("missing")),
+            patch.dict("os.environ", {}, clear=False),
+            patch(
+                "tools.common.workspace_status._describe_git_version",
+                side_effect=OSError("git not found"),
+            ),
             patch("sys.stderr", err_stream),
         ):
-            fallback_parser = dev_env.create_parser()
+            with patch("os.environ.get", return_value=""):
+                fallback_parser = dev_env.create_parser()
         with self.assertRaises(SystemExit) as cm:
             with patch("sys.stdout", fallback_stream), patch("sys.stderr", err_stream):
                 fallback_parser.parse_args(["--version"])

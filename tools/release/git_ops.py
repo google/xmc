@@ -20,14 +20,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tools.common.release_tags import PRE_RELEASE_TAG_GLOB, RELEASE_TAG_GLOBS
 from tools.common.tool_utils import HandledError
 from tools.release.models import CommitInfo
 from tools.release.semver_engine import is_semver_tag
 
-_RELEASE_TAG_GLOBS = ("[0-9]*.[0-9]*.[0-9]*", "v[0-9]*.[0-9]*.[0-9]*")
-
-# Pre-release tags such as 1.2.3-rc1 contain a hyphen; bare release tags never do.
-_PRE_RELEASE_TAG_GLOB = "*-*"
+_RELEASE_TAG_GLOBS = RELEASE_TAG_GLOBS
+_PRE_RELEASE_TAG_GLOB = PRE_RELEASE_TAG_GLOB
 
 # Upper bound on `git describe` calls while skipping glob-matching but non-semver
 # tags (e.g. 1.2.3.4), so a repository full of such tags cannot loop unbounded.

@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "build_oci.py",
+    "release_tags.py",
     "requirements.txt",
     "setup_venv.py",
     "workspace_status.py",
@@ -123,10 +124,18 @@ py_test(
 )
 
 py_library(
+    name = "release_tags_lib",
+    srcs = ["release_tags.py"],
+    imports = ["../.."],
+)
+
+py_library(
     name = "workspace_status_lib",
     srcs = ["workspace_status.py"],
-    data = ["//:VERSION"],
     imports = ["../.."],
+    deps = [
+        ":release_tags_lib",
+    ],
 )
 
 py_binary(
@@ -143,6 +152,7 @@ py_test(
     srcs = ["workspace_status_test.py"],
     imports = ["../.."],
     deps = [
+        ":release_tags_lib",
         ":workspace_status_lib",
     ],
 )

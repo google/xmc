@@ -112,22 +112,3 @@ func TestLoadConfig(t *testing.T) {
 		})
 	}
 }
-
-func TestGetBuildVersion(t *testing.T) {
-	orig := buildVersion
-	t.Cleanup(func() {
-		buildVersion = orig
-	})
-
-	for _, placeholder := range []string{"", "redacted", "{STABLE_APP_VERSION}"} {
-		buildVersion = placeholder
-		if got := getBuildVersion(); got != fallbackBuildVersion {
-			t.Errorf("getBuildVersion() with %q = %q, want %q", placeholder, got, fallbackBuildVersion)
-		}
-	}
-
-	buildVersion = "v1.2.3"
-	if got := getBuildVersion(); got != "v1.2.3" {
-		t.Errorf("getBuildVersion() = %q, want %q", got, "v1.2.3")
-	}
-}

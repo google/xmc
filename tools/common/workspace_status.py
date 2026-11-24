@@ -12,57 +12,67 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Workspace status script for Bazel to emit the repository XMC version."""
+"""Workspace status script for Bazel to emit the XMC application version."""
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
+# Support direct execution via `python3 tools/common/workspace_status.py`
+# (Bazel's --workspace_status_command runs without PYTHONPATH set).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-def _default_version_file() -> Path:
-    logical = Path(__file__).parent.parent.parent / "VERSION"
-    if logical.is_file():
-        return logical
-    return Path(__file__).resolve().parents[2] / "VERSION"
+from tools.common.release_tags import PRE_RELEASE_TAG_GLOB, RELEASE_TAG_GLOBS  # noqa: E402
 
-
-DEFAULT_VERSION_FILE = _default_version_file()
-FALLBACK_VERSION = "0.0.0"
-
-
-def read_version(version_file: Path = DEFAULT_VERSION_FILE) -> str:
-    """Reads and returns the trimmed XMC version from the repository VERSION file.
-
-    Args:
-        version_file: Path to the VERSION file.
-
-    Returns:
-        The trimmed version string.
-
-    Raises:
-        OSError: If the file cannot be read.
-        ValueError: If the file is empty or contains whitespace.
-    """
-    raw = version_file.read_text(encoding="utf-8").strip()
-    if not raw or any(ch.isspace() for ch in raw):
-        raise ValueError(f"Invalid version in '{version_file}': {raw!r}")
-    return raw
+ENV_VERSION_VAR = "XMC_VERSION"
+FALLBACK_VERSION = "0.0.0-unknown"
 
 
-def resolve_version(version_file: Path = DEFAULT_VERSION_FILE, *, warn: bool = False) -> str:
-    """Returns the repository version or FALLBACK_VERSION if unreadable/invalid."""
+def _describe_git_version(cwd: Path | None = None) -> str:
+    """Runs `git describe --tags --dirty` scoped to SemVer release tags."""
+    cmd = ["git", "describe", "--tags", "--dirty"]
+    for glob in RELEASE_TAG_GLOBS:
+        cmd.extend(["--match", glob])
+    cmd.extend(["--exclude", PRE_RELEASE_TAG_GLOB])
+    res = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=cwd)
+    return res.stdout.strip()
+
+
+def resolve_version(*, cwd: Path | None = None, warn: bool = False) -> str:
+    """Resolves the XMC version: XMC_VERSION env -> git describe -> FALLBACK_VERSION."""
+    env_raw = os.environ.get(ENV_VERSION_VAR, "").strip()
+    if env_raw:
+        if any(ch.isspace() for ch in env_raw):
+            if warn:
+                print(
+                    f"Ignoring invalid {ENV_VERSION_VAR} containing whitespace: {env_raw!r}",
+                    file=sys.stderr,
+                )
+        else:
+            return env_raw
+
     try:
-        return read_version(version_file)
-    except (OSError, ValueError) as e:
+        described = _describe_git_version(cwd=cwd)
+    except (subprocess.CalledProcessError, OSError) as e:
         if warn:
-            print(f"Error reading version file '{version_file}': {e}", file=sys.stderr)
+            print(f"Error determining version from git describe: {e}", file=sys.stderr)
         return FALLBACK_VERSION
 
+    if not described or any(ch.isspace() for ch in described):
+        if warn:
+            print(f"Ignoring invalid git describe output: {described!r}", file=sys.stderr)
+        return FALLBACK_VERSION
+    return described
 
-def main(version_file: Path = DEFAULT_VERSION_FILE) -> None:
+
+def main() -> None:
     """Emits STABLE_APP_VERSION for Bazel workspace status stamping."""
-    print(f"STABLE_APP_VERSION {resolve_version(version_file, warn=True)}")
+    print(f"STABLE_APP_VERSION {resolve_version(warn=True)}")
 
 
 if __name__ == "__main__":

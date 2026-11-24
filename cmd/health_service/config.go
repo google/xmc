@@ -19,6 +19,7 @@ import (
 	"os"
 	"time"
 
+	"xmanager_cloud/internal/buildinfo"
 	"xmanager_cloud/internal/configutil"
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/storage/dbconfig"
@@ -51,18 +52,7 @@ type Config struct {
 	SchedulingResumeMaxBacklog int
 }
 
-const fallbackBuildVersion = "0.0.0"
-
-var buildVersion string
-
 var cfg Config
-
-func getBuildVersion() string {
-	if buildVersion == "" || buildVersion == "redacted" || buildVersion == "{STABLE_APP_VERSION}" {
-		return fallbackBuildVersion
-	}
-	return buildVersion
-}
 
 func init() {
 	// 1. Load configurations from environment variables
@@ -75,7 +65,7 @@ func init() {
 	configutil.StringEnv(&cfg.RedisAddr, "health_redis_addr", "")
 	configutil.StringEnv(&cfg.AppVersion, "health_app_version", "")
 	configutil.StringEnv(&cfg.ObservabilityURL, "health_observability_url", "")
-	cfg.BuildVersion = getBuildVersion()
+	cfg.BuildVersion = buildinfo.Version()
 	configutil.DurationEnv(&cfg.CacheTTL, "health_status_cache_ttl", 15*time.Second)
 	configutil.IntEnv(&cfg.ForceRefreshMaxRequests, "health_status_force_refresh_max_requests", 5)
 	configutil.DurationEnv(&cfg.ForceRefreshWindow, "health_status_force_refresh_window", 5*time.Second)
