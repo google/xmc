@@ -34,6 +34,10 @@ import (
 
 var _ credentials.PerRPCCredentials = (*BearerTokenCredentials)(nil)
 
+// placeholderGRPCAudience is the Helm chart default of experimentStateServer.iap.grpcAudience,
+// which means no gRPC audience was configured.
+const placeholderGRPCAudience = "placeholder-grpc-audience"
+
 // TokenSourceFunc fetches a Bearer token for an outgoing CMS gRPC request.
 type TokenSourceFunc func(ctx context.Context) (string, error)
 
@@ -90,7 +94,7 @@ func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idT
 		}
 	}
 	aud := resolveCMSAudience(oauthCfg)
-	if aud == "placeholder-grpc-audience" {
+	if aud == placeholderGRPCAudience {
 		logging.Warn(ctx, "No gRPC audience configured for CMS credentials; using placeholder. Production calls will likely fail.")
 	}
 	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, aud, newIDTokenSource)), nil
@@ -146,15 +150,22 @@ func buildGoogleIDTokenFunc(ctx context.Context, audience string, newIDTokenSour
 	}
 }
 
+// resolveCMSAudience returns the audience of the Google ID tokens minted for CMS calls. It prefers
+// IAP_EXPECTED_GRPC_AUDIENCE, treating the Helm chart default placeholderGRPCAudience as unset so a
+// configured OAuth client ID wins, and returns placeholderGRPCAudience only when nothing is set.
 func resolveCMSAudience(oauthCfg *xmcoauth.Config) string {
 	var cfgClientID string
 	if oauthCfg != nil {
 		cfgClientID = oauthCfg.ClientID
 	}
-	for _, candidate := range []string{os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"), cfgClientID, os.Getenv("CLIENT_ID")} {
+	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
+	if iapAud == placeholderGRPCAudience {
+		iapAud = ""
+	}
+	for _, candidate := range []string{iapAud, cfgClientID, os.Getenv("CLIENT_ID")} {
 		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
 			return trimmed
 		}
 	}
-	return "placeholder-grpc-audience"
+	return placeholderGRPCAudience
 }

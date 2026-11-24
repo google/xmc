@@ -172,6 +172,40 @@ func TestNewCMSTokenCredentials(t *testing.T) {
 	})
 }
 
+func TestResolveCMSAudience(t *testing.T) {
+	tests := []struct {
+		name        string
+		iapAudEnv   string
+		cfgClientID string
+		clientIDEnv string
+		want        string
+	}{
+		{name: "IAP_EXPECTED_GRPC_AUDIENCE wins", iapAudEnv: "iap-aud", cfgClientID: "cfg-client", clientIDEnv: "env-client", want: "iap-aud"},
+		{name: "IAP_EXPECTED_GRPC_AUDIENCE is trimmed", iapAudEnv: " iap-aud ", want: "iap-aud"},
+		{name: "placeholder falls back to OAuth config client ID", iapAudEnv: placeholderGRPCAudience, cfgClientID: "cfg-client", clientIDEnv: "env-client", want: "cfg-client"},
+		{name: "padded placeholder falls back to CLIENT_ID", iapAudEnv: " " + placeholderGRPCAudience + " ", clientIDEnv: "env-client", want: "env-client"},
+		{name: "empty IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID", clientIDEnv: "env-client", want: "env-client"},
+		{name: "placeholder kept when no client ID is set", iapAudEnv: placeholderGRPCAudience, want: placeholderGRPCAudience},
+		{name: "placeholder returned when nothing is set", want: placeholderGRPCAudience},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("IAP_EXPECTED_GRPC_AUDIENCE", tc.iapAudEnv)
+			t.Setenv("CLIENT_ID", tc.clientIDEnv)
+			if got := resolveCMSAudience(&xmcoauth.Config{ClientID: tc.cfgClientID}); got != tc.want {
+				t.Errorf("resolveCMSAudience() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	t.Run("nil OAuth config falls back to CLIENT_ID", func(t *testing.T) {
+		t.Setenv("IAP_EXPECTED_GRPC_AUDIENCE", placeholderGRPCAudience)
+		t.Setenv("CLIENT_ID", "env-client")
+		if got := resolveCMSAudience(nil); got != "env-client" {
+			t.Errorf("resolveCMSAudience(nil) = %q, want %q", got, "env-client")
+		}
+	})
+}
+
 // TestBuildNonProdTokenFuncMockAuth covers the mock auth branch directly: binaries without the
 // mockauth tag cannot reach it through LoadConfig, which rejects MOCK_AUTH.
 func TestBuildNonProdTokenFuncMockAuth(t *testing.T) {
