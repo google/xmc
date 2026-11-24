@@ -12,16 +12,18 @@ deps = [
 ]
 ```
 
-Bazel is currently the only supported way to consume this directory directly. The package imports
-its generated
+Bazel is the primary way to consume `xdash` in this repository. The package imports its generated
 protobuf modules through `xdash/_protos.py`, and those modules are produced by the
 `//api/protos/dashboard` `py_proto_library` targets at build time rather than checked in — so a
 plain `pip install` of this directory would import but fail at first use. Outside Bazel, build
 those targets and put their output on `PYTHONPATH` yourself.
 
 The [`xmanager-cloud`](../xmanager-cloud/README.md) package (preview, not yet published to PyPI)
-is the exception: it bundles this directory together with the compiled protobuf modules and
-installs the `xdash` console script, so a `pip install` of its wheel or sdist works without Bazel.
+bundles this directory together with the compiled protobuf modules and installs the `xdash`
+console script, so a `pip install` of its wheel or sdist works without Bazel.
+[`deploy/cli/install_xmanager.py`](../../../deploy/cli/install_xmanager.py) is the other
+non-Bazel path: it compiles the protos into a virtualenv and installs this directory in editable
+mode.
 
 ## Python SDK Examples
 
