@@ -248,7 +248,8 @@ trainer.fit(model, dataloader)
 # Run all Bazel unit tests
 bazel test //sdks/python/...
 
-# Build the wheel and sdist
+# Build the wheel and sdist (CI installs both via .github/workflows/xmc-metrics-package.yml
+# and runs test/packaging/xmc_metrics_install_test.py against them)
 python3 -m build sdks/python/xmc --outdir /tmp/xmc-metrics-dist
 
 # Run pre-commit linters (Ruff, Buildifier, addlicense)

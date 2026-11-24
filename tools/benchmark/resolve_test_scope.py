@@ -104,6 +104,14 @@ NON_CODE_FILES: set[str] = {
     "test/__init__.py",
 }
 
+# Code outside every Bazel package that runs only in its own CI workflow, so no Bazel test can be
+# affected by it. Without this, its .py files resolve to the root package and pull in the full
+# backend suite.
+NON_BAZEL_CODE_PREFIXES: tuple[str, ...] = (
+    # Install smoke tests run against a built wheel/sdist by xmc-metrics-package.yml.
+    "test/packaging/",
+)
+
 
 # Test targets that the backend Bazel suite never runs. //cmd/ui:ui_unit_tests wraps the npm and
 # Karma suite, which needs node_modules and a browser; the UI CI job runs it instead. Add any new
@@ -133,9 +141,15 @@ BUILD_FILE_NAMES: set[str] = {
 
 
 def is_non_code_file(path_str: str) -> bool:
-    """Returns True if the file path is a pure documentation, legal, or deployment artifact."""
+    """Returns True if no Bazel test can depend on the file.
+
+    That covers pure documentation, legal, and deployment artifacts, plus code under
+    NON_BAZEL_CODE_PREFIXES that only its own CI workflow runs.
+    """
     p = Path(path_str)
     if p.name in NON_CODE_FILES or p.suffix == ".md":
+        return True
+    if any(path_str.startswith(prefix) for prefix in NON_BAZEL_CODE_PREFIXES):
         return True
     if p.name in BUILD_FILE_NAMES or p.suffix in CODE_EXTENSIONS:
         return False
