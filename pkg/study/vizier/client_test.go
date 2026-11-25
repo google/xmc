@@ -34,7 +34,7 @@ func dialBufconn(t *testing.T, register func(*grpc.Server)) (*Client, func()) {
 		register(srv)
 	}
 	go func() { _ = srv.Serve(lis) }()
-	client, err := Dial("bufconn:7077", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+	client, err := Dial("127.0.0.1:7077", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 		return lis.DialContext(ctx)
 	}))
 	if err != nil {

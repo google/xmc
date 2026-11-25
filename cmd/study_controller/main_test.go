@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -325,18 +326,39 @@ func startPongRedisServer(t *testing.T) string {
 	t.Cleanup(func() { _ = lis.Close() })
 	go func() {
 		for conn, err := lis.Accept(); err == nil; conn, err = lis.Accept() {
-			go func(c net.Conn) {
-				defer c.Close()
-				for buf := make([]byte, 256); ; {
-					if _, err := c.Read(buf); err != nil {
-						return
-					}
-					_, _ = c.Write([]byte("+PONG\r\n"))
-				}
-			}(conn)
+			go serveFakeRedis(conn)
 		}
 	}()
 	return lis.Addr().String()
+}
+
+func serveFakeRedis(c net.Conn) {
+	defer c.Close()
+	r := bufio.NewReader(c)
+	for line, err := r.ReadString('\n'); err == nil; line, err = r.ReadString('\n') {
+		if !strings.HasPrefix(line, "*") {
+			continue
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(line[1:]))
+		var cmd string
+		for i := 0; i < n; i++ {
+			_, err1 := r.ReadString('\n')
+			arg, err2 := r.ReadString('\n')
+			if err1 != nil || err2 != nil {
+				return
+			}
+			if i == 0 {
+				cmd = strings.ToUpper(strings.TrimSpace(arg))
+			}
+		}
+		reply := "+PONG\r\n"
+		if cmd == "HELLO" {
+			reply = "-ERR unknown command\r\n"
+		} else if cmd == "CLIENT" {
+			reply = "+OK\r\n"
+		}
+		_, _ = c.Write([]byte(reply))
+	}
 }
 
 func startStubVizierServer(t *testing.T) string {
@@ -391,14 +413,11 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	waitReadyStatus(t, addr, http.StatusServiceUnavailable)
 
 	getter.mu.Lock()
-	getter.inner.Component = &unstructured.Unstructured{
-		Object: map[string]any{
-			"apiVersion": "xmc.dev/v1alpha1",
-			"kind":       "Component",
-			"metadata":   map[string]any{"name": "vizier", "namespace": "xmc"},
-			"spec":       map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
-		},
-	}
+	getter.inner.Component = &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+		"metadata": map[string]any{"name": "vizier", "namespace": "xmc"},
+		"spec":     map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
+	}}
 	getter.mu.Unlock()
 	waitReadyStatus(t, addr, http.StatusOK)
 	cancel()

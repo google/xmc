@@ -34,11 +34,11 @@ type pinger interface {
 }
 
 // vizierProbe holds the latched Vizier client once startup Component CR resolution succeeds.
-type vizierProbe struct{ client atomic.Pointer[pinger] }
+type vizierProbe struct{ client atomic.Value }
 
 func (v *vizierProbe) Set(c pinger) {
-	if v != nil {
-		v.client.Store(&c)
+	if v != nil && c != nil {
+		v.client.Store(c)
 	}
 }
 
@@ -46,11 +46,10 @@ func (v *vizierProbe) Ping(ctx context.Context) error {
 	if v == nil {
 		return errors.New("vizier probe is nil")
 	}
-	p := v.client.Load()
-	if p == nil || *p == nil {
-		return errors.New("vizier endpoint not yet resolved")
+	if p, ok := v.client.Load().(pinger); ok && p != nil {
+		return p.Ping(ctx)
 	}
-	return (*p).Ping(ctx)
+	return errors.New("vizier endpoint not yet resolved")
 }
 
 // newHTTPHandler returns the mux serving /healthz, /readyz (Redis and Vizier), and /metrics.
