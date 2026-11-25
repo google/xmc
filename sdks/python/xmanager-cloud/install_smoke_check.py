@@ -64,10 +64,11 @@ def import_failures(modules: Sequence[str], installed_root: Path) -> dict[str, s
         except Exception as err:
             failures[name] = f"{type(err).__name__}: {err}"
             continue
-        if module.__file__ is None:
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
             failures[name] = "has no __file__ (namespace package?)"
             continue
-        origin = Path(module.__file__).resolve()
+        origin = Path(module_file).resolve()
         if not origin.is_relative_to(installed_root):
             failures[name] = f"loaded from {origin}, outside {installed_root}"
     return failures

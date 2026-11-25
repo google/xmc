@@ -95,6 +95,11 @@ class ImportFailuresTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(failures, {"xdash": "has no __file__ (namespace package?)"})
 
+    def test_reports_modules_missing_file_attribute(self) -> None:
+        failures = self._import_failures({"xdash": types.ModuleType("fake")})
+
+        self.assertEqual(failures, {"xdash": "has no __file__ (namespace package?)"})
+
 
 class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
     def _environment_failures(
