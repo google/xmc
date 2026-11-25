@@ -159,13 +159,14 @@ func resolveCMSAudience(oauthCfg *xmcoauth.Config) string {
 		cfgClientID = oauthCfg.ClientID
 	}
 	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
-	if iapAud == placeholderGRPCAudience {
-		iapAud = ""
+	if iapAud != "" && iapAud != placeholderGRPCAudience {
+		return iapAud
 	}
-	for _, candidate := range []string{iapAud, cfgClientID, os.Getenv("CLIENT_ID")} {
-		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
-			return trimmed
-		}
+	if trimmed := strings.TrimSpace(cfgClientID); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(os.Getenv("CLIENT_ID")); trimmed != "" {
+		return trimmed
 	}
 	return placeholderGRPCAudience
 }

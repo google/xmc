@@ -57,7 +57,8 @@ Configuration can be supplied via environment variables (mounted from `xmc-bridg
 | Flag / Environment Variable | Default | Description |
 | :--- | :--- | :--- |
 | `--cms-address` / `CMS_ADDRESS` | `"localhost:50051"` | gRPC endpoint address of the Component Manager Service. |
-| `--namespace` / `NAMESPACE` | `"xmc"` | Target Kubernetes namespace to watch and reconcile Component custom resources. |
+| `--namespace` / `NAMESPACE` | `""` (required) | Target Kubernetes namespace to watch and reconcile Component custom resources. The chart sets it from `.Release.Namespace`. |
+| `--release-name` / `HELM_RELEASE_NAME` | `""` (required) | Helm release name used for 1P component actuation and as the default `--cluster-name`. The chart sets it from `.Release.Name`. |
 | `--chart-path` / `HELM_CHART_PATH` | `""` | Base directory containing per-component Helm charts (`<base>/components/<name>`, `<base>/<name>`, `<base>/<name>.tgz`) or fallback umbrella chart path (when empty, the bridge uses the chart it embeds for the Component's `xmc.dev/profile` label; see [Profile-Selected Embedded Charts](../../pkg/components/bridge/README.md)). |
 | `--probe-interval` / `PROBE_INTERVAL` | `5s` | Delay after a successful reconcile pass before the same Component is reconciled again, to observe workload health changes that emit no Component event. |
 | `--probe-timeout` / `PROBE_TIMEOUT` | `2s` | Timeout of one workload health probe. |
