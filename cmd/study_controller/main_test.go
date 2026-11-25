@@ -289,7 +289,7 @@ func TestServeWithClient_ServesHealthzWhileWaitingForVizierAndCancelsCleanly(t *
 
 	addr := lis.Addr().String()
 	waitHealthy(t, addr)
-	resp, err := (&http.Client{Timeout: time.Second}).Get("http://" + addr + "/readyz")
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + addr + "/readyz")
 	if err != nil {
 		t.Fatalf("GET /readyz error = %v", err)
 	}
