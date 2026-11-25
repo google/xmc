@@ -62,6 +62,7 @@ go_test(
         "//internal/task_queue_redis/redisclient",
         "//pkg/components/crreader",
         "//pkg/components/crreader/crreadertest",
+        "//pkg/study/vizier",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@org_golang_google_grpc//:grpc",
     ],

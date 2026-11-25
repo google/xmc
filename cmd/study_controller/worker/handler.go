@@ -167,7 +167,11 @@ func (h *Handler) HandleTask(ctx context.Context, workerID, data string) rediscl
 			return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: err}
 		}
 		reconcileTicksTotal.WithLabelValues(outcomeRetryError).Inc()
-		logging.Warn(ctx, "Failed to process study reconcile tick", "worker_id", workerID, "error", err)
+		logErr := err
+		if errors.Is(err, study.ErrInvalidStudyConfig) {
+			logErr = ctx.Err()
+		}
+		logging.Warn(ctx, "Failed to process study reconcile tick", "worker_id", workerID, "error", logErr)
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: true, Error: err}
 	}
 	reconcileTicksTotal.WithLabelValues(outcomeReconciled).Inc()

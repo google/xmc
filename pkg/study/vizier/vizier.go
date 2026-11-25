@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package vizier resolves the live vizier Component CR endpoint and manages the Vizier gRPC client.
+// Package vizier resolves the live vizier Component CR endpoint, manages the Vizier gRPC client,
+// converts XMC StudyConfig messages into OSS Vizier StudySpec protos (ToStudySpec), and implements
+// idempotent study registration via Engine.
 package vizier
 
 import (

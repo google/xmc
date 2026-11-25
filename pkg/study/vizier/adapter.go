@@ -15,11 +15,11 @@
 package vizier
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/experiment"
@@ -34,12 +34,12 @@ type Engine struct{ client vizierpb.VizierServiceClient }
 
 var _ study.StudyEngine = (*Engine)(nil)
 
-// NewEngine constructs a Vizier StudyEngine backed by conn.
-func NewEngine(conn *grpc.ClientConn) (*Engine, error) {
-	if conn == nil {
-		return nil, errors.New("vizier gRPC connection must not be nil")
+// NewEngine constructs a Vizier StudyEngine backed by c.
+func NewEngine(c *Client) (*Engine, error) {
+	if c == nil || c.conn == nil {
+		return nil, errors.New("vizier client is not initialized")
 	}
-	return &Engine{client: vizierpb.NewVizierServiceClient(conn)}, nil
+	return &Engine{client: vizierpb.NewVizierServiceClient(c.conn)}, nil
 }
 
 // CreateStudy idempotently registers the study for xid in Vizier under owners/xmc/studies/study-<xid>.
@@ -64,24 +64,17 @@ func (e *Engine) CreateStudy(ctx context.Context, xid int64, cfg *spb.StudyConfi
 		Study:  &vizierpb.Study{DisplayName: displayName, StudySpec: spec},
 	})
 	if err == nil {
-		return cmpOrName(created.GetName(), studyName), nil
+		return cmp.Or(created.GetName(), studyName), nil
 	}
 	if status.Code(err) == codes.AlreadyExists {
 		got, getErr := e.client.GetStudy(ctx, &vizierpb.GetStudyRequest{Name: studyName})
-		if getErr == nil {
-			return cmpOrName(got.GetName(), studyName), nil
+		if getErr != nil {
+			return "", fmt.Errorf("vizier get existing study (code=%s): %w", status.Code(getErr), getErr)
 		}
-		err = getErr
+		return cmp.Or(got.GetName(), studyName), nil
 	}
 	if status.Code(err) == codes.InvalidArgument {
 		return "", fmt.Errorf("%w: vizier rejected study spec", study.ErrInvalidStudyConfig)
 	}
 	return "", fmt.Errorf("vizier create study (code=%s): %w", status.Code(err), err)
-}
-
-func cmpOrName(got, fallback string) string {
-	if got != "" {
-		return got
-	}
-	return fallback
 }

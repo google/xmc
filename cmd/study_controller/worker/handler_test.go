@@ -300,3 +300,26 @@ func TestHandleTask_DeadlineAndShutdownTransitions(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleTask_CancelledInvalidStudyRetriesWithoutLeakingPayload(t *testing.T) {
+	parentCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var logs bytes.Buffer
+	h, _ := NewHandler(HandlerParams{
+		Locker: &fakeLocker{lease: &fakeLease{}},
+		Reconcile: func(context.Context, int64) error {
+			return fmt.Errorf("%w: SECRET_PAYLOAD", study.ErrInvalidStudyConfig)
+		},
+	})
+	before := snapshotOutcomes()
+	res := h.HandleTask(logging.WithLogger(parentCtx, slog.New(slog.NewTextHandler(&logs, nil))), "w", `{"experiment":"experiments/123"}`)
+	if !res.ShouldBeRetried || res.WasRunSuccessful || !errors.Is(res.Error, study.ErrInvalidStudyConfig) {
+		t.Errorf("HandleTask() = %+v, want retry=true with ErrInvalidStudyConfig", res)
+	}
+	if diff := cmp.Diff(map[string]float64{outcomeRetryError: 1}, diffOutcomes(before)); diff != "" {
+		t.Errorf("metric deltas mismatch (-want +got):\n%s", diff)
+	}
+	if strings.Contains(logs.String(), "SECRET_PAYLOAD") {
+		t.Errorf("logs leaked user payload on shutdown: %q", logs.String())
+	}
+}

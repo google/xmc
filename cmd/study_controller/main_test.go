@@ -37,6 +37,7 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/components/crreader"
 	"xmanager_cloud/pkg/components/crreader/crreadertest"
+	"xmanager_cloud/pkg/study/vizier"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -382,9 +383,13 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	defer cancel()
 
 	getter := &atomicGetter{}
+	var gotVizier atomic.Pointer[vizier.Client]
 	done := make(chan error, 1)
 	go func() {
-		done <- serveWithClient(ctx, lis, client, nil, "xmc-custom", func() (crreader.Getter, error) { return getter, nil })
+		done <- serveWithClient(ctx, lis, client, func(vc *vizier.Client) (worker.ReconcileFunc, error) {
+			gotVizier.Store(vc)
+			return nil, nil
+		}, "xmc-custom", func() (crreader.Getter, error) { return getter, nil })
 	}()
 
 	addr := lis.Addr().String()
@@ -413,6 +418,28 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("serveWithClient() after Vizier latch = %v, want nil", err)
+	}
+	if gotVizier.Load() == nil {
+		t.Error("newReconciler did not receive latched *vizier.Client")
+	}
+}
+
+func TestServeWithClient_ReturnsReconcilerError(t *testing.T) {
+	lis := mustListen(t)
+	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	vizierAddr := startStubVizierServer(t)
+	getter := &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{
+		"xmc/vizier": {Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+			"metadata": map[string]any{"name": "vizier", "namespace": "xmc"},
+			"spec":     map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
+		}},
+	}}
+	err := serveWithClient(context.Background(), lis, client, func(*vizier.Client) (worker.ReconcileFunc, error) {
+		return nil, errors.New("reconciler init failed")
+	}, "xmc", func() (crreader.Getter, error) { return getter, nil })
+	if err == nil {
+		t.Fatal("serveWithClient() with reconciler error = nil, want non-nil")
 	}
 }
 

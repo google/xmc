@@ -94,7 +94,7 @@ func listenAndServe(ctx context.Context, cfg config.Config) error {
 		}
 	}()
 	newReconciler := func(vc *vizier.Client) (worker.ReconcileFunc, error) {
-		engine, err := vizier.NewEngine(vc.Conn())
+		engine, err := vizier.NewEngine(vc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Vizier engine: %w", err)
 		}

@@ -134,6 +134,18 @@ func TestToStudySpec_InvalidInputsAndPayloadFreeErrors(t *testing.T) {
 		{name: "discrete empty", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{}}})},
 		{name: "discrete non-finite", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{Values: []float64{1, math.Inf(-1)}}}})},
 		{name: "discrete log <= 0", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ScaleType: spb.ParameterSpec_LOG, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{Values: []float64{2.0, 0.0}}}})},
+		{name: "discrete duplicates", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{Values: []float64{3.0, 1.0, 3.0}}}})},
+		{name: "discrete signed zero duplicates", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{Values: []float64{math.Copysign(0, -1), 0.0}}}})},
+		{name: "categorical empty string", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_CategoricalValueSpec{CategoricalValueSpec: &spb.CategoricalValueSpec{Values: []string{"a", ""}}}})},
+		{name: "categorical duplicate", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_CategoricalValueSpec{CategoricalValueSpec: &spb.CategoricalValueSpec{Values: []string{secret, secret}}}})},
+		{name: "duplicate parameter_id", cfg: &spb.StudyConfig{
+			Algorithm: "RANDOM_SEARCH",
+			Metrics:   []*spb.MetricSpec{{MetricId: "m", Goal: spb.MetricSpec_MAXIMIZE}},
+			Parameters: []*spb.ParameterSpec{
+				{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_IntegerValueSpec{IntegerValueSpec: &spb.IntegerValueSpec{MinValue: 1, MaxValue: 2}}},
+				{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_IntegerValueSpec{IntegerValueSpec: &spb.IntegerValueSpec{MinValue: 3, MaxValue: 4}}},
+			},
+		}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

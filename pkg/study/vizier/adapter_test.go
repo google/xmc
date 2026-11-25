@@ -17,7 +17,6 @@ package vizier
 import (
 	"context"
 	"errors"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -26,7 +25,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/pkg/study"
@@ -35,12 +33,13 @@ import (
 
 type fakeVizierServer struct {
 	vizierpb.UnimplementedVizierServiceServer
-	mu         sync.Mutex
-	studies    map[string]*vizierpb.Study
-	createReqs []*vizierpb.CreateStudyRequest
-	getReqs    []*vizierpb.GetStudyRequest
-	createErr  error
-	getErr     error
+	mu          sync.Mutex
+	studies     map[string]*vizierpb.Study
+	createReqs  []*vizierpb.CreateStudyRequest
+	getReqs     []*vizierpb.GetStudyRequest
+	createErr   error
+	getErr      error
+	omitResName bool
 }
 
 func (s *fakeVizierServer) CreateStudy(_ context.Context, req *vizierpb.CreateStudyRequest) (*vizierpb.Study, error) {
@@ -60,7 +59,9 @@ func (s *fakeVizierServer) CreateStudy(_ context.Context, req *vizierpb.CreateSt
 	}
 	name := req.GetParent() + "/studies/" + req.GetStudy().GetDisplayName()
 	created := proto.Clone(req.GetStudy()).(*vizierpb.Study)
-	created.Name = name
+	if !s.omitResName {
+		created.Name = name
+	}
 	s.studies[name] = created
 	return proto.Clone(created).(*vizierpb.Study), nil
 }
@@ -78,42 +79,38 @@ func (s *fakeVizierServer) GetStudy(_ context.Context, req *vizierpb.GetStudyReq
 	return nil, status.Error(codes.NotFound, "not found")
 }
 
-func dialVizierBufconn(t *testing.T, srv *fakeVizierServer) *Client {
+func newBufconnEngine(t *testing.T, srv *fakeVizierServer) *Engine {
 	t.Helper()
-	lis := bufconn.Listen(1024 * 1024)
-	gs := grpc.NewServer()
-	if srv != nil {
-		vizierpb.RegisterVizierServiceServer(gs, srv)
-	}
-	go func() { _ = gs.Serve(lis) }()
-	c, err := Dial("127.0.0.1:7077", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-		return lis.DialContext(ctx)
-	}))
+	c, _ := dialBufconn(t, func(gs *grpc.Server) {
+		if srv != nil {
+			vizierpb.RegisterVizierServiceServer(gs, srv)
+		}
+	})
+	engine, err := NewEngine(c)
 	if err != nil {
-		gs.Stop()
-		_ = lis.Close()
-		t.Fatalf("Dial() error = %v", err)
+		t.Fatalf("NewEngine() error = %v", err)
 	}
-	t.Cleanup(func() { _ = c.Close(); gs.Stop(); _ = lis.Close() })
-	return c
+	return engine
 }
 
-func TestNewEngine_RejectsNilConn(t *testing.T) {
+func TestNewEngine_RejectsNilClient(t *testing.T) {
 	t.Parallel()
 	if _, err := NewEngine(nil); err == nil {
 		t.Fatal("NewEngine(nil) = nil, want error")
+	}
+	if _, err := NewEngine(&Client{}); err == nil {
+		t.Fatal("NewEngine(empty) = nil, want error")
+	}
+	var nilEngine *Engine
+	if _, err := nilEngine.CreateStudy(context.Background(), 1, validStudyConfig()); err == nil {
+		t.Fatal("(*Engine)(nil).CreateStudy() = nil, want error")
 	}
 }
 
 func TestEngine_CreateStudy_IdempotentAndValidRequest(t *testing.T) {
 	t.Parallel()
 	srv := &fakeVizierServer{}
-	c := dialVizierBufconn(t, srv)
-	engine, err := NewEngine(c.Conn())
-	if err != nil {
-		t.Fatalf("NewEngine() error = %v", err)
-	}
-
+	engine := newBufconnEngine(t, srv)
 	cfg := validStudyConfig()
 	wantSpec, err := ToStudySpec(cfg)
 	if err != nil {
@@ -143,32 +140,44 @@ func TestEngine_CreateStudy_IdempotentAndValidRequest(t *testing.T) {
 	}
 }
 
-func TestEngine_CreateStudy_AlreadyExistsFallbackAndErrors(t *testing.T) {
+func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("AlreadyExists falls back to GetStudy", func(t *testing.T) {
 		t.Parallel()
 		srv := &fakeVizierServer{
 			createErr: status.Error(codes.AlreadyExists, "exists"),
-			studies: map[string]*vizierpb.Study{
-				"owners/xmc/studies/study-7": {Name: "owners/xmc/studies/study-7", DisplayName: "study-7"},
-			},
+			studies:   map[string]*vizierpb.Study{"owners/xmc/studies/study-7": {Name: "owners/xmc/studies/study-7", DisplayName: "study-7"}},
 		}
-		engine, _ := NewEngine(dialVizierBufconn(t, srv).Conn())
-		name, err := engine.CreateStudy(context.Background(), 7, validStudyConfig())
-		if err != nil {
-			t.Fatalf("CreateStudy() error = %v", err)
+		name, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, validStudyConfig())
+		if err != nil || name != "owners/xmc/studies/study-7" || len(srv.getReqs) != 1 {
+			t.Fatalf("got name=%q err=%v getReqs=%v", name, err, srv.getReqs)
 		}
-		if name != "owners/xmc/studies/study-7" || len(srv.getReqs) != 1 || srv.getReqs[0].GetName() != "owners/xmc/studies/study-7" {
-			t.Errorf("got name=%q getReqs=%v", name, srv.getReqs)
+	})
+
+	t.Run("AlreadyExists GetStudy InvalidArgument stays retryable", func(t *testing.T) {
+		t.Parallel()
+		srv := &fakeVizierServer{
+			createErr: status.Error(codes.AlreadyExists, "exists"),
+			getErr:    status.Error(codes.InvalidArgument, "bad get"),
+		}
+		_, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, validStudyConfig())
+		if err == nil || errors.Is(err, study.ErrInvalidStudyConfig) {
+			t.Fatalf("CreateStudy() error = %v, want retryable non-ErrInvalidStudyConfig", err)
+		}
+	})
+
+	t.Run("empty Study.Name response falls back to constructed name", func(t *testing.T) {
+		t.Parallel()
+		name, err := newBufconnEngine(t, &fakeVizierServer{omitResName: true}).CreateStudy(context.Background(), 9, validStudyConfig())
+		if err != nil || name != "owners/xmc/studies/study-9" {
+			t.Fatalf("got name=%q err=%v, want owners/xmc/studies/study-9", name, err)
 		}
 	})
 
 	t.Run("Unavailable returns retryable error", func(t *testing.T) {
 		t.Parallel()
-		srv := &fakeVizierServer{createErr: status.Error(codes.Unavailable, "restarting")}
-		engine, _ := NewEngine(dialVizierBufconn(t, srv).Conn())
-		_, err := engine.CreateStudy(context.Background(), 7, validStudyConfig())
+		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.Unavailable, "restarting")}).CreateStudy(context.Background(), 7, validStudyConfig())
 		if err == nil || errors.Is(err, study.ErrInvalidStudyConfig) {
 			t.Fatalf("CreateStudy() error = %v, want retryable non-ErrInvalidStudyConfig", err)
 		}
@@ -177,22 +186,24 @@ func TestEngine_CreateStudy_AlreadyExistsFallbackAndErrors(t *testing.T) {
 	t.Run("InvalidArgument wraps ErrInvalidStudyConfig without server payload", func(t *testing.T) {
 		t.Parallel()
 		const secretMsg = "SECRET_SERVER_DETAIL"
-		srv := &fakeVizierServer{createErr: status.Error(codes.InvalidArgument, secretMsg)}
-		engine, _ := NewEngine(dialVizierBufconn(t, srv).Conn())
-		_, err := engine.CreateStudy(context.Background(), 7, validStudyConfig())
-		if !errors.Is(err, study.ErrInvalidStudyConfig) {
-			t.Fatalf("CreateStudy() error = %v, want ErrInvalidStudyConfig", err)
-		}
-		if strings.Contains(err.Error(), secretMsg) {
-			t.Errorf("error %q leaked server message %q", err.Error(), secretMsg)
+		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.InvalidArgument, secretMsg)}).CreateStudy(context.Background(), 7, validStudyConfig())
+		if !errors.Is(err, study.ErrInvalidStudyConfig) || strings.Contains(err.Error(), secretMsg) {
+			t.Fatalf("CreateStudy() error = %v, want ErrInvalidStudyConfig without %q", err, secretMsg)
 		}
 	})
 
-	t.Run("non-positive xid wraps ErrInvalidStudyConfig", func(t *testing.T) {
+	t.Run("invalid xid or StudyConfig short-circuits before RPC", func(t *testing.T) {
 		t.Parallel()
-		engine, _ := NewEngine(dialVizierBufconn(t, nil).Conn())
+		srv := &fakeVizierServer{}
+		engine := newBufconnEngine(t, srv)
 		if _, err := engine.CreateStudy(context.Background(), 0, validStudyConfig()); !errors.Is(err, study.ErrInvalidStudyConfig) {
 			t.Fatalf("CreateStudy(0) error = %v, want ErrInvalidStudyConfig", err)
+		}
+		if _, err := engine.CreateStudy(context.Background(), 5, nil); !errors.Is(err, study.ErrInvalidStudyConfig) {
+			t.Fatalf("CreateStudy(nil) error = %v, want ErrInvalidStudyConfig", err)
+		}
+		if len(srv.createReqs) != 0 {
+			t.Fatalf("CreateStudy RPC calls = %d, want 0", len(srv.createReqs))
 		}
 	})
 }
