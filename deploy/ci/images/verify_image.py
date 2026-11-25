@@ -77,6 +77,8 @@ def _run_command_expectation(
     Returns:
         Failure description string, or ``None`` when the assertion passes.
     """
+    if not spec.argv:
+        return f"{spec.name}: failed to execute: argv is empty"
     try:
         proc = runner(
             list(spec.argv),
@@ -88,7 +90,9 @@ def _run_command_expectation(
     except (OSError, subprocess.SubprocessError) as exc:
         return f"{spec.name}: failed to execute {spec.argv[0]}: {exc}"
 
-    combined = f"{proc.stdout}\n{proc.stderr}".strip()
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    combined = f"{stdout}\n{stderr}".strip()
     if proc.returncode != 0:
         return f"{spec.name}: exited {proc.returncode}: {combined[:300]}"
     for expected in spec.expected_substrings:
@@ -160,6 +164,36 @@ def _lint_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation,
     )
 
 
+def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    """Verifies addlicense binary presence and pre-initialized TFLint Google plugin.
+
+    Args:
+        manifest: Parsed versions.json mapping.
+        env: Process environment mapping.
+
+    Returns:
+        List of failure messages (empty when all checks pass).
+    """
+    failures: list[str] = []
+    if shutil.which("addlicense") is None:
+        failures.append("addlicense: binary not found on PATH")
+
+    plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
+    if not plugin_dir:
+        failures.append(
+            "tflint-google-plugin: TFLINT_PLUGIN_DIR environment variable is not set or empty"
+        )
+        return failures
+
+    plugin_ver = _tool_version(manifest, "tflint_google_plugin")
+    expected_plugin = (
+        Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
+    )
+    if not expected_plugin.is_dir():
+        failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
+    return failures
+
+
 def _cloud_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation, ...]:
     """Builds command expectations specific to the ci-cloud image.
 
@@ -190,30 +224,6 @@ def _cloud_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation
         ),
         CommandExpectation("kind", ("/opt/xmc-tools/bin/kind", "--version"), (kind_ver,)),
     )
-
-
-def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
-    """Verifies addlicense binary presence and pre-initialized TFLint Google plugin.
-
-    Args:
-        manifest: Parsed versions.json mapping.
-        env: Process environment mapping.
-
-    Returns:
-        List of failure messages (empty when all checks pass).
-    """
-    failures: list[str] = []
-    if shutil.which("addlicense") is None:
-        failures.append("addlicense: binary not found on PATH")
-
-    plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
-    plugin_ver = _tool_version(manifest, "tflint_google_plugin")
-    expected_plugin = (
-        Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
-    )
-    if not plugin_dir or not expected_plugin.is_dir():
-        failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
-    return failures
 
 
 def _check_cloud_extras() -> list[str]:

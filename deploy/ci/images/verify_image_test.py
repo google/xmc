@@ -167,7 +167,19 @@ class RunSmokeChecksTest(unittest.TestCase):
                 "lint", _load_manifest(), env={}, runner=_fake_runner_factory()
             )
         self.assertTrue(any("addlicense" in f for f in failures))
-        self.assertTrue(any("tflint-google-plugin" in f for f in failures))
+        self.assertTrue(any("TFLINT_PLUGIN_DIR" in f for f in failures))
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("shutil.which", return_value="/usr/local/bin/addlicense"),
+        ):
+            missing_dir_failures = verify_image.run_smoke_checks(
+                "lint",
+                _load_manifest(),
+                env={"TFLINT_PLUGIN_DIR": tmp},
+                runner=_fake_runner_factory(),
+            )
+        self.assertTrue(any("missing pre-cached plugin" in f for f in missing_dir_failures))
 
     def test_playwright_role_passes_when_runtime_ready(self) -> None:
         fake_pw = _FakePlaywrightModule()
@@ -293,6 +305,24 @@ class RunSmokeChecksTest(unittest.TestCase):
         self.assertIsNotNone(err)
         assert err is not None
         self.assertIn("failed to execute nope", err)
+
+        empty_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("empty", ()), _raising_runner
+        )
+        self.assertIsNotNone(empty_err)
+        assert empty_err is not None
+        self.assertIn("argv is empty", empty_err)
+
+        none_output_runner = _fake_runner_factory(
+            {"node": subprocess.CompletedProcess(["node"], 0, None, None)}
+        )
+        none_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("node", ("node", "--version"), ("None",)),
+            none_output_runner,
+        )
+        self.assertIsNotNone(none_err)
+        assert none_err is not None
+        self.assertIn("expected 'None'", none_err)
 
     def test_rejects_unsupported_role_and_invalid_manifest(self) -> None:
         with self.assertRaises(ValueError):
