@@ -82,31 +82,18 @@ func convertParameter(idx int, p *spb.ParameterSpec, seen map[string]struct{}) (
 	isLog := scale == vizierpb.StudySpec_ParameterSpec_UNIT_LOG_SCALE || scale == vizierpb.StudySpec_ParameterSpec_UNIT_REVERSE_LOG_SCALE
 	switch v := p.GetParameterValueSpec().(type) {
 	case *spb.ParameterSpec_DoubleValueSpec:
-		s := v.DoubleValueSpec
-		if s == nil || !isFinite(s.GetMinValue()) || !isFinite(s.GetMaxValue()) || s.GetMinValue() > s.GetMaxValue() || (isLog && s.GetMinValue() <= 0) {
-			return nil, invalidParamErr(idx, "invalid double bounds")
-		}
-		out.ParameterValueSpec = &vizierpb.StudySpec_ParameterSpec_DoubleValueSpec_{DoubleValueSpec: &vizierpb.StudySpec_ParameterSpec_DoubleValueSpec{MinValue: s.GetMinValue(), MaxValue: s.GetMaxValue()}}
+		out.ParameterValueSpec, err = convertDoubleSpec(idx, v.DoubleValueSpec, isLog)
 	case *spb.ParameterSpec_IntegerValueSpec:
-		s := v.IntegerValueSpec
-		if s == nil || s.GetMinValue() > s.GetMaxValue() || (isLog && s.GetMinValue() <= 0) {
-			return nil, invalidParamErr(idx, "invalid integer bounds")
-		}
-		out.ParameterValueSpec = &vizierpb.StudySpec_ParameterSpec_IntegerValueSpec_{IntegerValueSpec: &vizierpb.StudySpec_ParameterSpec_IntegerValueSpec{MinValue: s.GetMinValue(), MaxValue: s.GetMaxValue()}}
+		out.ParameterValueSpec, err = convertIntegerSpec(idx, v.IntegerValueSpec, isLog)
 	case *spb.ParameterSpec_CategoricalValueSpec:
-		spec, err := convertCategoricalSpec(idx, v.CategoricalValueSpec, scale)
-		if err != nil {
-			return nil, err
-		}
-		out.ParameterValueSpec = &vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec_{CategoricalValueSpec: spec}
+		out.ParameterValueSpec, err = convertCategoricalSpec(idx, v.CategoricalValueSpec, scale)
 	case *spb.ParameterSpec_DiscreteValueSpec:
-		spec, err := convertDiscreteSpec(idx, v.DiscreteValueSpec, isLog)
-		if err != nil {
-			return nil, err
-		}
-		out.ParameterValueSpec = &vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec_{DiscreteValueSpec: spec}
+		out.ParameterValueSpec, err = convertDiscreteSpec(idx, v.DiscreteValueSpec, isLog)
 	default:
 		return nil, invalidParamErr(idx, "missing parameter_value_spec")
+	}
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -126,7 +113,21 @@ func convertScaleType(idx int, s spb.ParameterSpec_ScaleType) (vizierpb.StudySpe
 	}
 }
 
-func convertCategoricalSpec(idx int, s *spb.CategoricalValueSpec, scale vizierpb.StudySpec_ParameterSpec_ScaleType) (*vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec, error) {
+func convertDoubleSpec(idx int, s *spb.DoubleValueSpec, isLog bool) (*vizierpb.StudySpec_ParameterSpec_DoubleValueSpec_, error) {
+	if s == nil || !isFinite(s.GetMinValue()) || !isFinite(s.GetMaxValue()) || s.GetMinValue() > s.GetMaxValue() || (isLog && s.GetMinValue() <= 0) {
+		return nil, invalidParamErr(idx, "invalid double bounds")
+	}
+	return &vizierpb.StudySpec_ParameterSpec_DoubleValueSpec_{DoubleValueSpec: &vizierpb.StudySpec_ParameterSpec_DoubleValueSpec{MinValue: s.GetMinValue(), MaxValue: s.GetMaxValue()}}, nil
+}
+
+func convertIntegerSpec(idx int, s *spb.IntegerValueSpec, isLog bool) (*vizierpb.StudySpec_ParameterSpec_IntegerValueSpec_, error) {
+	if s == nil || s.GetMinValue() > s.GetMaxValue() || (isLog && s.GetMinValue() <= 0) {
+		return nil, invalidParamErr(idx, "invalid integer bounds")
+	}
+	return &vizierpb.StudySpec_ParameterSpec_IntegerValueSpec_{IntegerValueSpec: &vizierpb.StudySpec_ParameterSpec_IntegerValueSpec{MinValue: s.GetMinValue(), MaxValue: s.GetMaxValue()}}, nil
+}
+
+func convertCategoricalSpec(idx int, s *spb.CategoricalValueSpec, scale vizierpb.StudySpec_ParameterSpec_ScaleType) (*vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec_, error) {
 	if s == nil || len(s.GetValues()) == 0 {
 		return nil, invalidParamErr(idx, "categorical values must not be empty")
 	}
@@ -143,10 +144,10 @@ func convertCategoricalSpec(idx int, s *spb.CategoricalValueSpec, scale vizierpb
 		}
 		seen[v] = struct{}{}
 	}
-	return &vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec{Values: slices.Clone(s.GetValues())}, nil
+	return &vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec_{CategoricalValueSpec: &vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec{Values: slices.Clone(s.GetValues())}}, nil
 }
 
-func convertDiscreteSpec(idx int, s *spb.DiscreteValueSpec, isLog bool) (*vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec, error) {
+func convertDiscreteSpec(idx int, s *spb.DiscreteValueSpec, isLog bool) (*vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec_, error) {
 	if s == nil || len(s.GetValues()) == 0 {
 		return nil, invalidParamErr(idx, "discrete values must not be empty")
 	}
@@ -165,7 +166,7 @@ func convertDiscreteSpec(idx int, s *spb.DiscreteValueSpec, isLog bool) (*vizier
 	if isLog && sorted[0] <= 0 {
 		return nil, invalidParamErr(idx, "log-scaled discrete values must be positive")
 	}
-	return &vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec{Values: sorted}, nil
+	return &vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec_{DiscreteValueSpec: &vizierpb.StudySpec_ParameterSpec_DiscreteValueSpec{Values: sorted}}, nil
 }
 
 func isFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
