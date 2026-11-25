@@ -19,7 +19,7 @@ projectId: "YOUR_GCP_PROJECT_ID"
 environment: "YOUR_ENVIRONMENT_NAME"
 domainSuffix: "YOUR_DOMAIN_SUFFIX"
 # Top-level URL for the XMC deployment. If set, this automatically configures
-# gateway.uiHostname, gateway.apiHostname, gateway.grpcHostname, and ui.apiUrl.
+# gateway.uiHostname, gateway.apiHostname, gateway.grpcHostname, gateway.metricsIngestHostname, and ui.apiUrl.
 xmcUrl: ""
 
 taskSignatureTtlSeconds: 86400
@@ -199,10 +199,14 @@ gateway:
   enabled: true
   name: "xmc-gateway"
   className: "gke-l7-global-external-managed"
+  lbProxyCidrs:
+    - 130.211.0.0/22
+    - 35.191.0.0/16
   staticIp: "YOUR_GATEWAY_STATIC_IP"
   uiHostname: "YOUR_UI_HOSTNAME"
   apiHostname: "YOUR_API_HOSTNAME"
   grpcHostname: "YOUR_GRPC_HOSTNAME"
+  metricsIngestHostname: "YOUR_METRICS_INGEST_HOSTNAME"
   certMap: ""
   sslCertificateName: "xmc-grpc-tls"
 

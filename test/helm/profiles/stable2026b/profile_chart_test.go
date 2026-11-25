@@ -19,15 +19,10 @@
 package stable2026b_test
 
 import (
-	"io/fs"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gopkg.in/yaml.v3"
 
-	stable2026bcharts "xmanager_cloud/deploy/profiles/stable-2026b"
 	"xmanager_cloud/test/helm/profiles/profilecontract"
 )
 
@@ -206,60 +201,4 @@ func TestStable2026b_RejectsInvalidValues(t *testing.T) {
 	}
 }
 
-// TestStable2026b_MetadataOnlyComponentsMatchStable2026a guards the bridge fallback: a 1P catalog
-// component whose chart stable2026b.EmbeddedCharts does not embed gets its workload from the
-// stable-2026a chart of the same name, so its Chart.yaml name and version must match that chart.
-// Ship and embed a full chart before bumping either.
-func TestStable2026b_MetadataOnlyComponentsMatchStable2026a(t *testing.T) {
-	t.Parallel()
-	s := stable2026b()
-	dirB := profilecontract.ChartDir(t, s)
-	dirA := profilecontract.ChartDir(t, profilecontract.Spec{ChartRelPath: "deploy/profiles/stable-2026a"})
-	metadataOnly := metadataOnly1PComponents(t, s)
-	if len(metadataOnly) == 0 {
-		t.Fatal("stable-2026b has no metadata-only 1P components; expected at least ingestion-gateway")
-	}
-	for _, name := range metadataOnly {
-		want := readChartIdentity(t, filepath.Join(dirA, "components", name))
-		if diff := cmp.Diff(want, readChartIdentity(t, filepath.Join(dirB, "components", name))); diff != "" {
-			t.Errorf("components/%s Chart.yaml differs from stable-2026a (-stable-2026a +stable-2026b):\n%s", name, diff)
-		}
-	}
-}
-
-// metadataOnly1PComponents returns the catalog components that render as 1P Components and whose
-// chart stable2026b.EmbeddedCharts does not embed.
-func metadataOnly1PComponents(t *testing.T, s profilecontract.Spec) []string {
-	t.Helper()
-	docs := profilecontract.RenderDocs(t, profilecontract.LoadProfile(t, s), nil)
-	var names []string
-	for _, name := range s.Components {
-		if profilecontract.Lookup(profilecontract.DocByName(t, docs, name), "spec", "componentType") != "COMPONENT_TYPE_CUSTOM_1P_COMPONENT" {
-			continue
-		}
-		if _, err := fs.Stat(stable2026bcharts.EmbeddedCharts, "components/"+name+"/Chart.yaml"); err == nil {
-			continue
-		}
-		names = append(names, name)
-	}
-	return names
-}
-
 // chartIdentity is the part of a Chart.yaml that identifies the chart a release installs.
-type chartIdentity struct {
-	Name    string `yaml:"name"`
-	Version string `yaml:"version"`
-}
-
-func readChartIdentity(t *testing.T, chartDir string) chartIdentity {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(chartDir, "Chart.yaml"))
-	if err != nil {
-		t.Fatalf("read Chart.yaml: %v", err)
-	}
-	var id chartIdentity
-	if err := yaml.Unmarshal(raw, &id); err != nil {
-		t.Fatalf("parse %s/Chart.yaml: %v", chartDir, err)
-	}
-	return id
-}

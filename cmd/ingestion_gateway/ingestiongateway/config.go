@@ -44,6 +44,8 @@ type Config struct {
 	TLSInsecureSkipVerify bool
 	ProjectID             string
 	ComponentsNamespace   string
+	RequireAuth           bool
+	JWTSecret             string
 }
 
 // Flags holds the CLI flag value bindings for FlagSet registration.
@@ -66,6 +68,8 @@ type Flags struct {
 	TLSInsecureSkipVerify bool
 	ProjectID             string
 	ComponentsNamespace   string
+	RequireAuth           bool
+	JWTSecret             string
 }
 
 // RegisterFlags registers the ingestion gateway CLI flags on the given FlagSet and returns a Flags struct binding.
@@ -97,6 +101,8 @@ func RegisterFlags(fs *flag.FlagSet) *Flags {
 	// crash pods during a rolling upgrade between those chart generations.
 	fs.Bool("enable_components", true, "Deprecated: ignored; components are always enabled.")
 	fs.StringVar(&f.ComponentsNamespace, "components_namespace", "xmc", "Kubernetes namespace containing the redpanda Component CR.")
+	fs.BoolVar(&f.RequireAuth, "require_auth", false, "Require authentication on the metrics ingestion endpoint.")
+	fs.StringVar(&f.JWTSecret, "jwt_secret", "", "Secret for JWT authentication.")
 	return f
 }
 
@@ -117,6 +123,18 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 	effectiveTopicName := getEnvOrDefault(f.TopicName, "xmc-metrics", "TOPIC_NAME", "REDPANDA_TOPIC")
 	effectiveComponentsNS := getEnvOrDefault(f.ComponentsNamespace, "xmc", "COMPONENTS_NAMESPACE")
 
+	requireAuth := f.RequireAuth || strings.ToLower(os.Getenv("INGESTION_REQUIRE_AUTH")) == "true"
+	jwtSecret := getEnvOrDefault(f.JWTSecret, "", "JWT_SECRET")
+
+	jwtSecretFile := getEnvOrDefault("", "", "JWT_SECRET_FILE")
+	if jwtSecret == "" && jwtSecretFile != "" {
+		content, err := os.ReadFile(jwtSecretFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read JWT_SECRET_FILE %q: %w", jwtSecretFile, err)
+		}
+		jwtSecret = strings.TrimSpace(string(content))
+	}
+
 	cfg := &Config{
 		Port:                  strings.TrimSpace(effectivePort),
 		MessageBus:            strings.ToLower(effectiveMessageBus),
@@ -136,6 +154,8 @@ func LoadConfig(optionalFlags ...*Flags) (*Config, error) {
 		TLSInsecureSkipVerify: f.TLSInsecureSkipVerify,
 		ProjectID:             strings.TrimSpace(f.ProjectID),
 		ComponentsNamespace:   strings.TrimSpace(effectiveComponentsNS),
+		RequireAuth:           requireAuth,
+		JWTSecret:             jwtSecret,
 	}
 
 	// SASL is a Kafka wire-protocol concept. Skip the secret file reads in Pub/Sub mode so that a

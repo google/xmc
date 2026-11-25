@@ -58,7 +58,7 @@ func main() {
 	defer producer.Close()
 	logging.Info(ctx, "Message bus topic validation passed", "message_bus", cfg.MessageBus, "topic", cfg.TopicName)
 
-	server := startHTTPServer(ctx, cfg.Port, cfg.TopicName, gMetrics, producer)
+	server := startHTTPServer(ctx, cfg, gMetrics, producer)
 	awaitShutdown(ctx, server)
 }
 
@@ -101,9 +101,10 @@ func logInitializing(ctx context.Context, cfg *ingestiongateway.Config) {
 		"min_partitions", cfg.MinPartitions, "min_replicas", cfg.MinReplicas)
 }
 
-func startHTTPServer(ctx context.Context, port string, topicName string, metrics *ingestiongateway.GatewayMetrics, optionalProducer ...ingestiongateway.MetricProducer) *http.Server {
-	srvCfg := ingestiongateway.DefaultServerConfig(port)
-	srvCfg.TopicName = topicName
+func startHTTPServer(ctx context.Context, cfg *ingestiongateway.Config, metrics *ingestiongateway.GatewayMetrics, optionalProducer ...ingestiongateway.MetricProducer) *http.Server {
+	srvCfg := ingestiongateway.DefaultServerConfig(cfg.Port)
+	srvCfg.TopicName = cfg.TopicName
+	srvCfg.AuthConfig = cfg
 	if metrics != nil {
 		srvCfg.Metrics = metrics
 	}
@@ -113,7 +114,7 @@ func startHTTPServer(ctx context.Context, port string, topicName string, metrics
 	server := ingestiongateway.NewHTTPServer(srvCfg)
 
 	go func() {
-		logging.Info(ctx, "Ingestion Gateway server listening", "port", port)
+		logging.Info(ctx, "Ingestion Gateway server listening", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logging.Fatal(ctx, "HTTP server listener error", "error", err)
 		}

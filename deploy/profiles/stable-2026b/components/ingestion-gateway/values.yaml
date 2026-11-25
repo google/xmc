@@ -1,12 +1,11 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
-# Metadata-only component chart: values read by templates/component.yaml. xmc-bridge installs the
-# xmc-cmp-ingestion-gateway workload from the stable-2026a chart of the same name and version, with
-# that chart's own workload defaults.
 enabled: false
 stability: "STABLE"
+deployWorkload: false
 namespace: ""
 global: { imageTag: "" }
+image: { repository: "us-docker.pkg.dev/xmc-prod/xmc/ingestion-gateway", tag: "latest" }
 imageTag: ""
 deletionProtection: true
 deletionPolicy: "Delete"
@@ -17,4 +16,16 @@ parameters:
   topicName: "xmc-metrics"
   minPartitions: 128
   minReplicas: 1
+  requireAuth: false
+  gatewayEnabled: false
+  gatewayName: "xmc-gateway"
+  gatewayHostname: ""
+  gatewayLbProxyCidrs: "130.211.0.0/22,35.191.0.0/16"
+minReplicas: 2
+maxReplicas: 10
+serviceAccountName: "default"
+projectId: ""
+sasl: { enabled: false, mechanism: "SCRAM-SHA-256", secretName: "" }
+tls: { enabled: false, secretName: "" }
+resources: { requests: { cpu: "10m", memory: "64Mi" }, limits: { cpu: "100m", memory: "256Mi" } }
 ingestionGatewayDeployment: {}

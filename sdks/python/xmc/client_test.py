@@ -52,6 +52,17 @@ class TestClient(unittest.TestCase):
         self.assertEqual(client._headers["Authorization"], "Bearer test-token")
         self.assertEqual(client._headers["Content-Type"], "application/json")
 
+    def test_init_headers_whitespace(self) -> None:
+        os.environ["XMC_GATEWAY_URL"] = "https://xmc.googleapis.com"
+        os.environ["XMC_API_KEY"] = "  test-token  \n"
+        client = Client()
+        self.assertEqual(client._headers.get("Authorization"), "Bearer test-token")
+
+        # Test empty/whitespace-only key
+        os.environ["XMC_API_KEY"] = "   \n"
+        client_empty = Client()
+        self.assertNotIn("Authorization", client_empty._headers)
+
     @patch("urllib.request.urlopen")
     def test_get_request_success(self, mock_urlopen: MagicMock) -> None:
         mock_response = MagicMock()

@@ -42,6 +42,7 @@ type ServerConfig struct {
 	Producer          MetricProducer
 	TopicName         string
 	Metrics           *GatewayMetrics
+	AuthConfig        *Config
 }
 
 // DefaultServerConfig creates baseline server settings for a given port.
@@ -88,7 +89,13 @@ func NewHTTPServer(cfg ServerConfig) *http.Server {
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", healthzHandler)
 	mux.Handle("/metrics", cfg.Metrics.MetricsHandler())
-	mux.HandleFunc("/api/v1/metrics", NewMetricsIngestionHandler(cfg.Producer, cfg.TopicName, cfg.Metrics))
+
+	var ingestionHandler http.Handler = http.HandlerFunc(NewMetricsIngestionHandler(cfg.Producer, cfg.TopicName, cfg.Metrics))
+	if cfg.AuthConfig != nil {
+		authMw := NewAuthMiddleware(cfg.AuthConfig, cfg.Metrics)
+		ingestionHandler = authMw.Middleware(ingestionHandler)
+	}
+	mux.Handle("/api/v1/metrics", ingestionHandler)
 
 	var handler http.Handler = mux
 	handler = cfg.Metrics.HTTPMiddleware(handler)

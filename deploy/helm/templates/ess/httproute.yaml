@@ -103,6 +103,7 @@ spec:
     - {{ include "xmanager-cloud.uiHostname" . | quote }}
     - {{ include "xmanager-cloud.apiHostname" . | quote }}
     - {{ include "xmanager-cloud.grpcHostname" . | quote }}
+    - {{ include "xmanager-cloud.metricsIngestHostname" . | quote }}
   rules:
     - matches:
         - path:

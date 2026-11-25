@@ -38,6 +38,7 @@ type GatewayMetrics struct {
 	HTTPRequestDurationSeconds *prometheus.HistogramVec
 	ActiveConnections          prometheus.Gauge
 	DroppedPayloadsTotal       *prometheus.CounterVec
+	AuthFailuresTotal          *prometheus.CounterVec
 
 	// Franz-Go Telemetry Metrics
 	BrokersConnections     prometheus.Gauge
@@ -59,6 +60,7 @@ func NewGatewayMetrics(reg *prometheus.Registry) *GatewayMetrics {
 		m.HTTPRequestDurationSeconds,
 		m.ActiveConnections,
 		m.DroppedPayloadsTotal,
+		m.AuthFailuresTotal,
 		m.BrokersConnections,
 		m.ProduceRecordSizeBytes,
 		m.ProduceRecordsTotal,
@@ -81,6 +83,10 @@ func newGatewayMetricCollectors(reg *prometheus.Registry) *GatewayMetrics {
 		ActiveConnections: prometheus.NewGauge(prometheus.GaugeOpts{Name: "xmc_ingestion_active_connections", Help: "Number of active HTTP connections."}),
 		DroppedPayloadsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{Name: "xmc_ingestion_dropped_payloads_total", Help: "Total number of dropped metric payloads."},
+			[]string{"reason"},
+		),
+		AuthFailuresTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{Name: "ingestion_gateway_auth_failures_total", Help: "Total number of authentication failures."},
 			[]string{"reason"},
 		),
 		BrokersConnections: prometheus.NewGauge(prometheus.GaugeOpts{Name: "franz_go_brokers_connections", Help: "Number of active Franz-Go broker connections."}),
@@ -107,6 +113,13 @@ func (m *GatewayMetrics) RecordHTTPRequest(status int, path, method string, dura
 // RecordDroppedPayload increments dropped payloads counter with a specific reason.
 func (m *GatewayMetrics) RecordDroppedPayload(reason string) {
 	m.DroppedPayloadsTotal.WithLabelValues(reason).Inc()
+}
+
+// RecordAuthFailure increments auth failure counter with a specific reason.
+func (m *GatewayMetrics) RecordAuthFailure(reason string) {
+	if m != nil && m.AuthFailuresTotal != nil {
+		m.AuthFailuresTotal.WithLabelValues(reason).Inc()
+	}
 }
 
 // RecordProducedRecord records the payload size and outcome of a single publish attempt.

@@ -18,8 +18,7 @@ package stable2026b
 import "embed"
 
 // EmbeddedCharts embeds the 1P component Helm charts under components/ that stable-2026b does not share with
-// stable-2026a: hpo. The redpanda, clickhouse and ingestion-gateway directories are metadata-only, and xmc-bridge
-// installs the 1P ingestion-gateway workload from the stable-2026a chart of the same name and version.
+// stable-2026a: hpo, ingestion-gateway. The redpanda and clickhouse directories are metadata-only.
 //
-//go:embed components/hpo/Chart.yaml components/hpo/values.yaml components/hpo/templates/*
+//go:embed components/hpo/Chart.yaml components/hpo/values.yaml components/hpo/templates/* components/ingestion-gateway/Chart.yaml components/ingestion-gateway/values.yaml components/ingestion-gateway/templates/*
 var EmbeddedCharts embed.FS

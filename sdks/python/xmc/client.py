@@ -26,6 +26,7 @@ from typing import Any
 
 from xmc.dist_harvest import (
     harvest_client_metadata,
+    resolve_bearer_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,7 @@ class Client:
             self._disabled = _is_metrics_disabled_env(env=env_dict)
 
         self.base_url = str(base_url).rstrip("/")
-        self.api_key = env_dict.get("XMC_API_KEY")
+        self.api_key = resolve_bearer_token(env_dict)
         self.timeout = 30.0
 
         (

@@ -19,6 +19,7 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "ingestiongateway",
     srcs = [
+        "auth.go",
         "component_resolver.go",
         "config.go",
         "handler.go",
@@ -41,6 +42,7 @@ go_library(
         "//internal/logging",
         "//internal/security/keyreloader",
         "//pkg/apis/metrics",
+        "//pkg/auth/oauth2",
         "//pkg/components/crreader",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/collectors",
@@ -64,6 +66,7 @@ go_library(
 go_test(
     name = "ingestiongateway_test",
     srcs = [
+        "auth_test.go",
         "component_resolver_test.go",
         "config_test.go",
         "handler_test.go",
