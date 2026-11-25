@@ -249,15 +249,14 @@ def _probe_playwright_python() -> str | None:
         Failure description string, or ``None`` when the probe succeeds.
     """
     try:
-        for mod_name in ("absl", "requests", "playwright.sync_api"):
+        for mod_name in ("absl", "requests"):
             importlib.import_module(mod_name)
         sync_api = importlib.import_module("playwright.sync_api")
         with sync_api.sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.set_content("<h1>smoke-ok</h1>")
-            heading = page.locator("h1").text_content()
-            browser.close()
+            with pw.chromium.launch(headless=True) as browser:
+                page = browser.new_page()
+                page.set_content("<h1>smoke-ok</h1>")
+                heading = page.locator("h1").text_content()
         if heading != "smoke-ok":
             return f"playwright-python: unexpected heading text '{heading}'"
     except Exception as exc:

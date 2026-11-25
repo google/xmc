@@ -90,15 +90,20 @@ def _fake_runner_factory(
 class _FakePlaywrightModule:
     """Minimal sync_playwright double for testing headless probe logic."""
 
-    def __init__(self, heading: str = "smoke-ok") -> None:
+    def __init__(self, heading: str = "smoke-ok", fail_on_set_content: bool = False) -> None:
         self._heading = heading
+        self._fail_on_set_content = fail_on_set_content
+        self.browser_closed = False
 
     def sync_playwright(self) -> Any:
         heading = self._heading
+        fail_on_set_content = self._fail_on_set_content
+        outer = self
 
         class _Page:
             def set_content(self, _html: str) -> None:
-                return None
+                if fail_on_set_content:
+                    raise RuntimeError("page render crashed")
 
             def locator(self, _selector: str) -> Any:
                 class _Locator:
@@ -108,11 +113,14 @@ class _FakePlaywrightModule:
                 return _Locator()
 
         class _Browser:
+            def __enter__(self) -> _Browser:
+                return self
+
+            def __exit__(self, *_exc: object) -> None:
+                outer.browser_closed = True
+
             def new_page(self) -> _Page:
                 return _Page()
-
-            def close(self) -> None:
-                return None
 
         class _Chromium:
             def launch(self, headless: bool = True) -> _Browser:
@@ -227,6 +235,15 @@ class RunSmokeChecksTest(unittest.TestCase):
         self.assertIsNotNone(err)
         assert err is not None
         self.assertIn("no playwright", err)
+
+    def test_playwright_probe_closes_browser_on_page_error(self) -> None:
+        fake_pw = _FakePlaywrightModule(fail_on_set_content=True)
+        with mock.patch("importlib.import_module", return_value=fake_pw):
+            err = verify_image._probe_playwright_python()
+        self.assertTrue(fake_pw.browser_closed)
+        self.assertIsNotNone(err)
+        assert err is not None
+        self.assertIn("page render crashed", err)
 
     def test_cloud_and_e2e_roles_validate_tools_and_bazelisk(self) -> None:
         fake_pw = _FakePlaywrightModule()
