@@ -66,6 +66,8 @@ CORE_INFRA_FILES: set[str] = {
 # the Bazel dependency graph.
 HELM_SUITE_PREFIXES: tuple[str, ...] = (
     "deploy/helm/",
+    # workload_identity_binding_test renders the hpo chart against the blueprint.
+    "deploy/profiles/stable-2026b/components/hpo/",
     "test/helm/",
     ".github/actions/run-chart-tests/",
 )
