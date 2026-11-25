@@ -69,7 +69,11 @@ func TestRun_RejectsInvalidInput(t *testing.T) {
 	}
 	defer busy.Close()
 	busyPort := strconv.Itoa(busy.Addr().(*net.TCPAddr).Port)
-	const redisAddr = "-redis_addr=redis-service:6379"
+	const (
+		redisAddr   = "-redis_addr=redis-service:6379"
+		essAddr     = "-ess_addr=grpc-service:50051"
+		essAudience = "-ess_audience=ess-aud.apps.googleusercontent.com"
+	)
 
 	tests := []struct {
 		name string
@@ -77,11 +81,14 @@ func TestRun_RejectsInvalidInput(t *testing.T) {
 		want int
 	}{
 		{name: "unknown flag", args: []string{"-unknown"}, want: 2},
-		{name: "invalid port", args: []string{"-port=http", redisAddr}, want: 1},
+		{name: "invalid port", args: []string{"-port=http", redisAddr, essAddr, essAudience}, want: 1},
 		// Validation fails before Listen, so the default port is never bound.
-		{name: "missing redis address", args: []string{"-port=" + config.DefaultPort}, want: 1},
-		{name: "malformed redis address", args: []string{"-port=" + config.DefaultPort, "-redis_addr=redis-service"}, want: 1},
-		{name: "port already in use", args: []string{"-port=" + busyPort, redisAddr}, want: 1},
+		{name: "missing redis address", args: []string{"-port=" + config.DefaultPort, essAddr, essAudience}, want: 1},
+		{name: "malformed redis address", args: []string{"-port=" + config.DefaultPort, "-redis_addr=redis-service", essAddr, essAudience}, want: 1},
+		{name: "missing ess address", args: []string{"-port=" + config.DefaultPort, redisAddr, essAudience}, want: 1},
+		{name: "malformed ess address", args: []string{"-port=" + config.DefaultPort, redisAddr, "-ess_addr=grpc-service", essAudience}, want: 1},
+		{name: "missing ess audience", args: []string{"-port=" + config.DefaultPort, redisAddr, essAddr}, want: 1},
+		{name: "port already in use", args: []string{"-port=" + busyPort, redisAddr, essAddr, essAudience}, want: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,7 +102,12 @@ func TestRun_RejectsInvalidInput(t *testing.T) {
 func TestRun_CancelledContextExitsZero(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	args := []string{"-port=" + freePort(t), "-redis_addr=127.0.0.1:" + freePort(t)}
+	args := []string{
+		"-port=" + freePort(t),
+		"-redis_addr=127.0.0.1:" + freePort(t),
+		"-ess_addr=127.0.0.1:" + freePort(t),
+		"-ess_audience=ess-aud.apps.googleusercontent.com",
+	}
 
 	if got := run(ctx, args); got != 0 {
 		t.Errorf("run(%v) with a cancelled context = %d, want 0", args, got)
@@ -125,7 +137,7 @@ func TestServeWithClient_RejectsInvalidClients(t *testing.T) {
 				t.Fatalf("net.Listen() error = %v", err)
 			}
 			defer lis.Close()
-			if err := serveWithClient(context.Background(), lis, tc.client); err == nil {
+			if err := serveWithClient(context.Background(), lis, tc.client, nil); err == nil {
 				t.Errorf("serveWithClient(%+v) error = nil, want non-nil", tc.client)
 			}
 		})
@@ -201,7 +213,7 @@ func TestStopConsumer_LogsCloseFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
-	handler, err := worker.NewRedisHandler(client)
+	handler, err := worker.NewRedisHandler(client, nil)
 	if err != nil {
 		t.Fatalf("NewRedisHandler() error = %v", err)
 	}
