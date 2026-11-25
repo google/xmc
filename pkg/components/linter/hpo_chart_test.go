@@ -194,6 +194,13 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	for _, f := range []string{hpoDeploymentFile, hpoServiceAccountFile, hpoRBACFile} {
 		assertWellFormedManifests(t, rendered[f])
 	}
+	customNS, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeValues(map[string]any{"namespace": "xmc-custom"}))
+	if err != nil {
+		t.Fatalf("renderChartWithValues(namespace=xmc-custom) failed: %v", err)
+	}
+	if !strings.Contains(customNS[hpoDeploymentFile], "-components_namespace=xmc-custom") {
+		t.Errorf("expected -components_namespace=xmc-custom in Deployment, got:\n%s", customNS[hpoDeploymentFile])
+	}
 }
 
 // TestHPOChart_ImageResolution covers the xmc-study-controller image precedence: the bridge-resolved

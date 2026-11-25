@@ -41,20 +41,12 @@ const vizierComponentName = "vizier"
 // Client holds a single shared plaintext gRPC connection to the in-cluster Vizier service.
 type Client struct{ conn *grpc.ClientConn }
 
-// Conn returns the underlying shared gRPC ClientConn, or nil if c is nil.
-func (c *Client) Conn() *grpc.ClientConn {
-	if c == nil {
-		return nil
-	}
-	return c.conn
-}
-
 // Dial creates a shared plaintext gRPC ClientConn to target (host:port) with bounded reconnect backoff.
 func Dial(target string, extraOpts ...grpc.DialOption) (*Client, error) {
 	if _, err := validateEndpoint(target); err != nil {
 		return nil, err
 	}
-	conn, err := grpc.NewClient(target, append([]grpc.DialOption{
+	conn, err := grpc.NewClient("dns:///"+target, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 250 * time.Millisecond, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 5 * time.Second}}),
 		grpc.WithDefaultCallOptions(grpc.WaitForReady(true)),
@@ -144,12 +136,12 @@ func validateEndpoint(raw string) (string, error) {
 		return "", errors.New("vizier endpoint is required")
 	}
 	for _, r := range raw {
-		if r > 0x7f || unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("/?#@\\", r) {
+		if r > 0x7f || unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("/?#@\\%", r) {
 			return "", errors.New("invalid vizier endpoint: must be ASCII host:port without scheme, credentials, path, or whitespace")
 		}
 	}
 	host, port, err := net.SplitHostPort(raw)
-	if err != nil || host == "" || (strings.Contains(host, ":") && net.ParseIP(host) == nil) {
+	if err != nil || host == "" || strings.HasPrefix(raw, "[") != strings.Contains(host, ":") || (strings.Contains(host, ":") && net.ParseIP(host) == nil) {
 		return "", errors.New("invalid vizier endpoint: must be host:port, with IPv6 hosts in brackets")
 	}
 	if n, err := strconv.ParseUint(port, 10, 64); err != nil || n < 1 || n > 65535 {

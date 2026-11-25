@@ -96,16 +96,9 @@ func TestClient_Ping(t *testing.T) {
 		}
 	})
 
-	t.Run("Conn and nil client", func(t *testing.T) {
+	t.Run("nil client", func(t *testing.T) {
 		t.Parallel()
-		c, _ := dialBufconn(t, nil)
-		if c.Conn() == nil {
-			t.Error("Client.Conn() = nil, want non-nil")
-		}
 		var nilClient *Client
-		if nilClient.Conn() != nil {
-			t.Errorf("(*Client)(nil).Conn() = %v, want nil", nilClient.Conn())
-		}
 		if err := nilClient.Ping(context.Background()); err == nil {
 			t.Error("(*Client)(nil).Ping() = nil, want error")
 		}
