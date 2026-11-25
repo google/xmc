@@ -46,7 +46,9 @@ version.
 
 `xmanager` releases before `0.9.0rc1` bundle their own `xmanager_cloud` protos and `xdash`.
 Loading both copies registers the `cloud.xmanager.v1` descriptors twice and crashes the process,
-so importing `xmanager_cloud` with such a release installed raises an `ImportError`. Both
+so importing `xmanager_cloud` with such a release installed raises an `ImportError` (provided
+`xmanager-cloud` was installed last; a legacy `xmanager` installed afterwards overwrites the
+check). Both
 distributions own the same files, so upgrading `xmanager` deletes them; reinstall
 `xmanager-cloud` afterwards:
 
