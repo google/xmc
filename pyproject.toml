@@ -22,12 +22,6 @@ line-length = 100
 # which is also the published SDKs' requires-python minimum. Venv/CI tooling
 # uses 3.13.
 target-version = "py311"
-# TEMPORARY (removed in the next commit): keeps the verbatim Google3 copy of the
-# xm_cloud login command byte-identical to upstream so it can be diffed, before
-# the follow-up commit reformats it to repository style. force-exclude makes the
-# exclusion also apply to the staged paths the pre-commit hook passes to ruff.
-force-exclude = true
-extend-exclude = ["sdks/python/xmanager-cloud/src/xm_cloud/cli/login_command*.py"]
 
 [tool.ruff.lint]
 select = [
@@ -132,6 +126,4 @@ exclude = [
     '(^|/)node_modules/',
     '(^|/)test/regression/',
     '(^|/)dev_env\.py$',
-    # TEMPORARY (removed in the next commit): verbatim Google3 copy, see [tool.ruff].
-    '^sdks/python/xmanager-cloud/src/xm_cloud/cli/login_command(_test)?\.py$',
 ]

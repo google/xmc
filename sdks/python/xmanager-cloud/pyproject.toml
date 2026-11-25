@@ -30,7 +30,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xmanager-cloud"
 version = "1.0.0.dev0"
-description = "XManager on Cloud (XMC) gRPC client protos and xdash dashboard SDK"
+description = "XManager on Cloud (XMC) gRPC client protos, xdash dashboard SDK, and xmc CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -66,7 +66,8 @@ Homepage = "https://github.com/google/xmc"
 
 [project.scripts]
 xdash = "xdash.cli:main"
+xmc = "xm_cloud.cli.main:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-packages = ["xmanager_cloud"]
+packages = ["xm_cloud", "xm_cloud.cli", "xmanager_cloud"]

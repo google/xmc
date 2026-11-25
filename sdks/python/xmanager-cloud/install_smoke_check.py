@@ -19,11 +19,11 @@ installed and no `xmanager`:
 
     <venv>/bin/python sdks/python/xmanager-cloud/install_smoke_check.py
 
-It imports every generated proto module, the bundled xdash SDK, and the xdash
-console script, requires each to load from the virtualenv rather than the
-repository, and checks that no `*_test.py` module was packaged. Prints a JSON
-summary and exits 0 on success, 1 when a check fails, and 2 when the
-repository's proto or xdash sources cannot be found.
+It imports every generated proto module, the bundled xdash SDK, the xm_cloud
+CLI, and the xdash and xmc console scripts, requires each to load from the
+virtualenv rather than the repository, and checks that no `*_test.py` module
+was packaged. Prints a JSON summary and exits 0 on success, 1 when a check
+fails, and 2 when the repository's proto or xdash sources cannot be found.
 """
 
 from __future__ import annotations
@@ -42,7 +42,18 @@ import build_staging
 _PROJECT_DIR = Path(__file__).resolve().parent
 _DISTRIBUTION = "xmanager-cloud"
 # Importing xmanager_cloud runs the legacy xmanager guard.
-_SDK_MODULES = ("xmanager_cloud", "xdash", "xdash.auth", "xdash.cli", "xdash.client")
+_SDK_MODULES = (
+    "xmanager_cloud",
+    "xdash",
+    "xdash.auth",
+    "xdash.cli",
+    "xdash.client",
+    "xm_cloud",
+    "xm_cloud.cli",
+    "xm_cloud.cli.login_command",
+    "xm_cloud.cli.main",
+)
+_CONSOLE_SCRIPTS = ("xdash", "xmc")
 
 
 def modules_to_check(layout: build_staging.SourceLayout) -> list[str]:
@@ -78,18 +89,26 @@ def import_failures(modules: Sequence[str], installed_root: Path) -> dict[str, s
 
 
 def environment_failures() -> dict[str, str]:
-    """Checks that xmanager is absent and the xdash console script loads."""
+    """Checks that xmanager is absent and every console script loads."""
     failures: dict[str, str] = {}
     with contextlib.suppress(metadata.PackageNotFoundError):
         failures["xmanager"] = f"must not be installed, found {metadata.version('xmanager')}"
-    scripts = metadata.entry_points(group="console_scripts", name="xdash")
+    for name in _CONSOLE_SCRIPTS:
+        failures.update(console_script_failures(name))
+    return failures
+
+
+def console_script_failures(name: str) -> dict[str, str]:
+    """Checks that the console script `name` is registered and its target loads."""
+    label = f"{name} console script"
+    scripts = metadata.entry_points(group="console_scripts", name=name)
     if not scripts:
-        return {**failures, "xdash console script": "not registered"}
+        return {label: "not registered"}
     try:
         next(iter(scripts)).load()
     except Exception as err:
-        failures["xdash console script"] = f"{type(err).__name__}: {err}"
-    return failures
+        return {label: f"{type(err).__name__}: {err}"}
+    return {}
 
 
 def packaging_failures() -> dict[str, str]:
