@@ -169,6 +169,8 @@ func firstNonEmptyEnv(keys ...string) string {
 	return ""
 }
 
+// resolveBridgeESSAudience applies the same precedence as the CMS client's resolveCMSAudience
+// (pkg/components/bridge/credentials.go) but reads only CLIENT_ID and returns "" when nothing is set.
 func resolveBridgeESSAudience() string {
 	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
 	if iapAud != "" && iapAud != PlaceholderGRPCAudience {

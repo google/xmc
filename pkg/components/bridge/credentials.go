@@ -154,6 +154,7 @@ func buildGoogleIDTokenFunc(ctx context.Context, audience string, newIDTokenSour
 // resolveCMSAudience returns the audience of the Google ID tokens minted for CMS calls. It prefers
 // IAP_EXPECTED_GRPC_AUDIENCE, treating the Helm chart default placeholderGRPCAudience as unset so a
 // configured OAuth client ID wins, and returns placeholderGRPCAudience only when nothing is set.
+// helm.resolveBridgeESSAudience applies the same precedence for the 1P release essAudience.
 func resolveCMSAudience(oauthCfg *xmcoauth.Config) string {
 	var cfgClientID string
 	if oauthCfg != nil {

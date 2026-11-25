@@ -183,6 +183,8 @@ func TestResolveCMSAudience(t *testing.T) {
 		{name: "IAP_EXPECTED_GRPC_AUDIENCE wins", iapAudEnv: "iap-aud", cfgClientID: "cfg-client", clientIDEnv: "env-client", want: "iap-aud"},
 		{name: "IAP_EXPECTED_GRPC_AUDIENCE is trimmed", iapAudEnv: " iap-aud ", want: "iap-aud"},
 		{name: "placeholder falls back to OAuth config client ID", iapAudEnv: placeholderGRPCAudience, cfgClientID: "cfg-client", clientIDEnv: "env-client", want: "cfg-client"},
+		// The literal pins the shared constant to the chart default in deploy/helm/values.yaml.
+		{name: "chart default literal falls back to CLIENT_ID", iapAudEnv: "placeholder-grpc-audience", clientIDEnv: "env-client", want: "env-client"},
 		{name: "padded placeholder falls back to CLIENT_ID", iapAudEnv: " " + placeholderGRPCAudience + " ", clientIDEnv: "env-client", want: "env-client"},
 		{name: "empty IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID", clientIDEnv: "env-client", want: "env-client"},
 		{name: "placeholder kept when no client ID is set", iapAudEnv: placeholderGRPCAudience, want: placeholderGRPCAudience},
