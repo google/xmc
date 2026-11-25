@@ -126,8 +126,8 @@ func TestResolveEndpoint(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "disabled via status.state=DISABLED",
-			getter:  &crreadertest.FakeGetter{Component: vizierComponent(true, "DISABLED", "vizier-service:7077", true)},
+			name:    "disabled via status.state=COMPONENT_STATE_DISABLED",
+			getter:  &crreadertest.FakeGetter{Component: vizierComponent(true, crreader.StateDisabled, "vizier-service:7077", true)},
 			wantErr: true,
 		},
 		{

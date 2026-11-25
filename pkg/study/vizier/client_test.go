@@ -21,10 +21,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -96,12 +94,8 @@ func TestClient_Ping(t *testing.T) {
 		stop()
 		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
-		err := c.Ping(ctx)
-		if err == nil {
+		if err := c.Ping(ctx); err == nil {
 			t.Fatal("Ping() on stopped server = nil, want error")
-		}
-		if code := status.Code(err); code != codes.Unavailable && code != codes.DeadlineExceeded && code != codes.Unknown {
-			// Wrapped error: verify non-nil is returned.
 		}
 	})
 
