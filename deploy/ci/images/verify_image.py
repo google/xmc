@@ -76,6 +76,8 @@ def _run_command_expectation(
     Returns:
         Failure description string, or ``None`` when the assertion passes.
     """
+    if not spec.argv:
+        return f"{spec.name}: failed to execute: argv is empty"
     try:
         proc = runner(
             list(spec.argv),
@@ -87,7 +89,9 @@ def _run_command_expectation(
     except (OSError, subprocess.SubprocessError) as exc:
         return f"{spec.name}: failed to execute {spec.argv[0]}: {exc}"
 
-    combined = f"{proc.stdout}\n{proc.stderr}".strip()
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    combined = f"{stdout}\n{stderr}".strip()
     if proc.returncode != 0:
         return f"{spec.name}: exited {proc.returncode}: {combined[:300]}"
     for expected in spec.expected_substrings:
@@ -174,11 +178,17 @@ def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> l
         failures.append("addlicense: binary not found on PATH")
 
     plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
+    if not plugin_dir:
+        failures.append(
+            "tflint-google-plugin: TFLINT_PLUGIN_DIR environment variable is not set or empty"
+        )
+        return failures
+
     plugin_ver = _tool_version(manifest, "tflint_google_plugin")
     expected_plugin = (
         Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
     )
-    if not plugin_dir or not expected_plugin.is_dir():
+    if not expected_plugin.is_dir():
         failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
     return failures
 
