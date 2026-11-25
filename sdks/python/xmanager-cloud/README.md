@@ -46,8 +46,16 @@ version.
 
 `xmanager` releases before `0.9.0rc1` bundle their own `xmanager_cloud` protos and `xdash`.
 Loading both copies registers the `cloud.xmanager.v1` descriptors twice and crashes the process,
-so importing `xmanager_cloud` with such a release installed raises an `ImportError` asking you to
-run `pip install -U "xmanager>=0.9.0"`. Environments without `xmanager` are unaffected.
+so importing `xmanager_cloud` with such a release installed raises an `ImportError`. Both
+distributions own the same files, so upgrading `xmanager` deletes them; reinstall
+`xmanager-cloud` afterwards:
+
+```bash
+pip install -U "xmanager>=0.9.0"  # add --pre while only a 0.9.0 release candidate exists
+pip install --force-reinstall --no-deps xmanager-cloud
+```
+
+Environments without `xmanager` are unaffected.
 
 ## Testing
 

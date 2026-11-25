@@ -48,7 +48,11 @@ class CheckXmanagerCompatibilityTest(unittest.TestCase):
     def test_legacy_xmanager_raises_import_error(self) -> None:
         self._patch_installed_version(return_value="0.8.5.post1")
 
-        with self.assertRaisesRegex(ImportError, r'pip install -U "xmanager>=0\.9\.0"'):
+        with self.assertRaisesRegex(
+            ImportError,
+            r'pip install -U "xmanager>=0\.9\.0" && '
+            r"pip install --force-reinstall --no-deps xmanager-cloud",
+        ):
             _version_guard.check_xmanager_compatibility()
 
     def test_dev_build_below_rc_floor_raises_import_error(self) -> None:

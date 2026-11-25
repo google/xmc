@@ -169,8 +169,11 @@ class PackagingFailuresTest(InstallSmokeCheckTestCase):
             {"packaged tests": "xdash/cli_test.py, xmanager_cloud/_version_guard_test.py"},
         )
 
-    def test_missing_record_passes(self) -> None:
-        self.assertEqual(self._packaging_failures(None), {})
+    def test_missing_record_fails(self) -> None:
+        self.assertEqual(
+            self._packaging_failures(None),
+            {"packaged tests": "xmanager-cloud has no RECORD file list"},
+        )
 
     def test_distribution_not_installed_fails(self) -> None:
         with mock.patch.object(
