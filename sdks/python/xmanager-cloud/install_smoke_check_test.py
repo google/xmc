@@ -14,6 +14,7 @@
 
 """Unit tests for install_smoke_check."""
 
+import json
 import tempfile
 import types
 import unittest
@@ -148,28 +149,40 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
 
 
 class MainTest(InstallSmokeCheckTestCase):
-    def _main(self, failures: dict[str, str]) -> tuple[int, str]:
+    def _main(
+        self, import_failures: dict[str, str], env_failures: dict[str, str] | None = None
+    ) -> tuple[int, dict[str, object]]:
         with (
             mock.patch.object(build_staging, "resolve_source_layout"),
             mock.patch.object(install_smoke_check, "modules_to_check", return_value=["m"]),
-            mock.patch.object(install_smoke_check, "import_failures", return_value=failures),
-            mock.patch.object(install_smoke_check, "environment_failures", return_value={}),
+            mock.patch.object(install_smoke_check, "import_failures", return_value=import_failures),
+            mock.patch.object(
+                install_smoke_check, "environment_failures", return_value=env_failures or {}
+            ),
             mock.patch("builtins.print") as printed,
         ):
             status = install_smoke_check.main()
-        return status, printed.call_args.args[0]
+        return status, json.loads(printed.call_args.args[0])
 
     def test_success_exits_zero(self) -> None:
         status, output = self._main({})
 
         self.assertEqual(status, 0)
-        self.assertIn('"status": "success"', output)
+        self.assertEqual(output, {"status": "success", "checked": 1, "failures": {}})
 
-    def test_failure_exits_one(self) -> None:
+    def test_import_failure_exits_one(self) -> None:
         status, output = self._main({"m": "TypeError: boom"})
 
         self.assertEqual(status, 1)
-        self.assertIn('"status": "failure"', output)
+        self.assertEqual(
+            output, {"status": "failure", "checked": 1, "failures": {"m": "TypeError: boom"}}
+        )
+
+    def test_environment_failure_exits_one(self) -> None:
+        status, output = self._main({}, {"xmanager": "must not be installed, found 0.8.5"})
+
+        self.assertEqual(status, 1)
+        self.assertEqual(output["failures"], {"xmanager": "must not be installed, found 0.8.5"})
 
     def test_missing_sources_exit_two_with_json_error(self) -> None:
         with (
