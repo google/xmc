@@ -90,15 +90,20 @@ def _fake_runner_factory(
 class _FakePlaywrightModule:
     """Minimal sync_playwright double for testing headless probe logic."""
 
-    def __init__(self, heading: str = "smoke-ok") -> None:
+    def __init__(self, heading: str = "smoke-ok", fail_on_set_content: bool = False) -> None:
         self._heading = heading
+        self._fail_on_set_content = fail_on_set_content
+        self.browser_closed = False
 
     def sync_playwright(self) -> Any:
         heading = self._heading
+        fail_on_set_content = self._fail_on_set_content
+        outer = self
 
         class _Page:
             def set_content(self, _html: str) -> None:
-                return None
+                if fail_on_set_content:
+                    raise RuntimeError("page render crashed")
 
             def locator(self, _selector: str) -> Any:
                 class _Locator:
@@ -108,11 +113,14 @@ class _FakePlaywrightModule:
                 return _Locator()
 
         class _Browser:
+            def __enter__(self) -> _Browser:
+                return self
+
+            def __exit__(self, *_exc: object) -> None:
+                outer.browser_closed = True
+
             def new_page(self) -> _Page:
                 return _Page()
-
-            def close(self) -> None:
-                return None
 
         class _Chromium:
             def launch(self, headless: bool = True) -> _Browser:
@@ -167,7 +175,19 @@ class RunSmokeChecksTest(unittest.TestCase):
                 "lint", _load_manifest(), env={}, runner=_fake_runner_factory()
             )
         self.assertTrue(any("addlicense" in f for f in failures))
-        self.assertTrue(any("tflint-google-plugin" in f for f in failures))
+        self.assertTrue(any("TFLINT_PLUGIN_DIR" in f for f in failures))
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("shutil.which", return_value="/usr/local/bin/addlicense"),
+        ):
+            missing_dir_failures = verify_image.run_smoke_checks(
+                "lint",
+                _load_manifest(),
+                env={"TFLINT_PLUGIN_DIR": tmp},
+                runner=_fake_runner_factory(),
+            )
+        self.assertTrue(any("missing pre-cached plugin" in f for f in missing_dir_failures))
 
     def test_playwright_role_passes_when_runtime_ready(self) -> None:
         fake_pw = _FakePlaywrightModule()
@@ -215,6 +235,15 @@ class RunSmokeChecksTest(unittest.TestCase):
         self.assertIsNotNone(err)
         assert err is not None
         self.assertIn("no playwright", err)
+
+    def test_playwright_probe_closes_browser_on_page_error(self) -> None:
+        fake_pw = _FakePlaywrightModule(fail_on_set_content=True)
+        with mock.patch("importlib.import_module", return_value=fake_pw):
+            err = verify_image._probe_playwright_python()
+        self.assertTrue(fake_pw.browser_closed)
+        self.assertIsNotNone(err)
+        assert err is not None
+        self.assertIn("page render crashed", err)
 
     def test_cloud_and_e2e_roles_validate_tools_and_bazelisk(self) -> None:
         fake_pw = _FakePlaywrightModule()
@@ -293,6 +322,24 @@ class RunSmokeChecksTest(unittest.TestCase):
         self.assertIsNotNone(err)
         assert err is not None
         self.assertIn("failed to execute nope", err)
+
+        empty_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("empty", ()), _raising_runner
+        )
+        self.assertIsNotNone(empty_err)
+        assert empty_err is not None
+        self.assertIn("argv is empty", empty_err)
+
+        none_output_runner = _fake_runner_factory(
+            {"node": subprocess.CompletedProcess(["node"], 0, None, None)}
+        )
+        none_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("node", ("node", "--version"), ("None",)),
+            none_output_runner,
+        )
+        self.assertIsNotNone(none_err)
+        assert none_err is not None
+        self.assertIn("expected 'None'", none_err)
 
     def test_rejects_unsupported_role_and_invalid_manifest(self) -> None:
         with self.assertRaises(ValueError):

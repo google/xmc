@@ -41,11 +41,11 @@ class BuildBakeVariablesTest(unittest.TestCase):
         manifest = _load_baseline_manifest()
         rendered = render_bake_vars.build_bake_variables(manifest)
         variables = rendered["variable"]
+        tools = manifest["tools"]
+        assert isinstance(tools, dict)
         self.assertEqual(variables["BASE_IMAGE"]["default"], manifest["base_image"])
-        self.assertEqual(variables["GO_VERSION"]["default"], "1.26.11")
-        self.assertEqual(variables["TERRAFORM_VERSION"]["default"], "1.12.2")
-        self.assertEqual(variables["PLAYWRIGHT_PYTHON_VERSION"]["default"], "1.61.0")
-        self.assertEqual(variables["PLAYWRIGHT_NPM_VERSION"]["default"], "1.61.1")
+        for var_name, tool_key, field_key in render_bake_vars._TOOL_FIELD_MAP:
+            self.assertEqual(variables[var_name]["default"], tools[tool_key][field_key])
 
     def test_rejects_missing_base_image(self) -> None:
         manifest = _load_baseline_manifest()
@@ -62,14 +62,14 @@ class BuildBakeVariablesTest(unittest.TestCase):
     def test_rejects_missing_tool_entry(self) -> None:
         manifest = copy.deepcopy(_load_baseline_manifest())
         assert isinstance(manifest["tools"], dict)
-        del manifest["tools"]["helm"]
-        with self.assertRaisesRegex(ValueError, "helm"):
+        del manifest["tools"]["node"]
+        with self.assertRaisesRegex(ValueError, "node"):
             render_bake_vars.build_bake_variables(manifest)
 
     def test_rejects_empty_tool_field(self) -> None:
         manifest = copy.deepcopy(_load_baseline_manifest())
         assert isinstance(manifest["tools"], dict)
-        manifest["tools"]["go"]["sha256"] = ""
+        manifest["tools"]["python"]["sha256"] = ""
         with self.assertRaisesRegex(ValueError, "sha256"):
             render_bake_vars.build_bake_variables(manifest)
 
@@ -93,7 +93,7 @@ class RenderBakeVarsCliTest(unittest.TestCase):
             exit_code = render_bake_vars.main(["--versions", str(_REPO_VERSIONS_PATH)])
         self.assertEqual(exit_code, 0)
         parsed = json.loads(buf.getvalue())
-        self.assertIn("GO_VERSION", parsed["variable"])
+        self.assertIn("PYTHON_VERSION", parsed["variable"])
 
     def test_fails_on_invalid_json_or_non_object_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,6 +111,19 @@ class RenderBakeVarsCliTest(unittest.TestCase):
             exit_code = render_bake_vars.main(["--versions", "/nonexistent/versions.json"])
         self.assertEqual(exit_code, 1)
         self.assertIn("error:", err.getvalue())
+
+    def test_fails_cleanly_on_output_write_oserror(self) -> None:
+        err = io.StringIO()
+        with (
+            mock.patch.object(Path, "write_text", side_effect=OSError("disk full")),
+            mock.patch("sys.stderr", err),
+            tempfile.TemporaryDirectory() as tmp,
+        ):
+            exit_code = render_bake_vars.main(
+                ["--versions", str(_REPO_VERSIONS_PATH), "--output", str(Path(tmp) / "out.json")]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("disk full", err.getvalue())
 
 
 if __name__ == "__main__":
