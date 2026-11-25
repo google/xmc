@@ -36,6 +36,7 @@ go_proto_library(
 
 go_library(
     name = "vizierpb",
+    srcs = ["doc.go"],
     embed = [":vizier_go_proto"],
     importpath = "xmanager_cloud/pkg/study/vizierpb",
     visibility = ["//visibility:public"],
