@@ -31,6 +31,7 @@ import (
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 )
@@ -98,16 +99,28 @@ func (r *repeatingTokenReader) ListWorkUnits(context.Context, string, int32, str
 }
 
 func baseStudyExperiment() *essmsgpb.Experiment {
+	cfg := prototest.Modify(experimenttest.StudyConfig(), func(c *essmsgpb.StudyConfig) {
+		c.Parameters = c.Parameters[:1]
+	})
 	return &essmsgpb.Experiment{
 		Name:           "experiments/1001",
 		ExperimentType: essmsgpb.Experiment_STUDY,
-		TypeConfig: &essmsgpb.Experiment_StudyConfig{StudyConfig: &essmsgpb.StudyConfig{
-			Parameters: []*essmsgpb.ParameterSpec{{
-				ParameterId:        "learning_rate",
-				ParameterValueSpec: &essmsgpb.ParameterSpec_DoubleValueSpec{DoubleValueSpec: &essmsgpb.DoubleValueSpec{MinValue: 1e-5, MaxValue: 1e-1}},
-				ScaleType:          essmsgpb.ParameterSpec_LOG,
+		TypeConfig:     &essmsgpb.Experiment_StudyConfig{StudyConfig: cfg},
+	}
+}
+
+func wantStudyPlotData(trajectories ...*dpb.ParallelCoordinatesData_RunTrajectory) *dpb.ChartData_PlotData {
+	return &dpb.ChartData_PlotData{
+		PlotId: "study",
+		Type:   dpb.PlotType_PARALLEL_COORDINATES,
+		Content: &dpb.ChartData_PlotData_ParallelCoordinatesData{ParallelCoordinatesData: &dpb.ParallelCoordinatesData{
+			Axes: []*dpb.ParallelCoordinatesData_Axis{{
+				ParameterId: "learning_rate",
+				Values:      &dpb.ParallelCoordinatesData_Axis_DoubleRange_{DoubleRange: &dpb.ParallelCoordinatesData_Axis_DoubleRange{MinValue: 1e-5, MaxValue: 1e-1}},
+				ScaleType:   dpb.ParallelCoordinatesData_Axis_LOG,
 			}},
-			Metrics: []*essmsgpb.MetricSpec{{MetricId: "val/loss", Goal: essmsgpb.MetricSpec_MINIMIZE}},
+			Objective:    &dpb.ParallelCoordinatesData_Objective{MetricId: "accuracy", Goal: dpb.ParallelCoordinatesData_Objective_MAXIMIZE},
+			Trajectories: trajectories,
 		}},
 	}
 }
@@ -145,22 +158,10 @@ func TestFetchParallelCoordinatesData(t *testing.T) {
 		t.Fatalf("fetchParallelCoordinatesData() error = %v", err)
 	}
 
-	want := []*dpb.ChartData_PlotData{{
-		PlotId: "study",
-		Type:   dpb.PlotType_PARALLEL_COORDINATES,
-		Content: &dpb.ChartData_PlotData_ParallelCoordinatesData{ParallelCoordinatesData: &dpb.ParallelCoordinatesData{
-			Axes: []*dpb.ParallelCoordinatesData_Axis{{
-				ParameterId: "learning_rate",
-				Values:      &dpb.ParallelCoordinatesData_Axis_DoubleRange_{DoubleRange: &dpb.ParallelCoordinatesData_Axis_DoubleRange{MinValue: 1e-5, MaxValue: 1e-1}},
-				ScaleType:   dpb.ParallelCoordinatesData_Axis_LOG,
-			}},
-			Objective: &dpb.ParallelCoordinatesData_Objective{MetricId: "val/loss", Goal: dpb.ParallelCoordinatesData_Objective_MINIMIZE},
-			Trajectories: []*dpb.ParallelCoordinatesData_RunTrajectory{
-				testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_COMPLETED, testCompleteTime),
-				testTrajectory(2, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil),
-			},
-		}},
-	}}
+	want := []*dpb.ChartData_PlotData{wantStudyPlotData(
+		testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_COMPLETED, testCompleteTime),
+		testTrajectory(2, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil),
+	)}
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("fetchParallelCoordinatesData() mismatch (-want +got):\n%s", diff)
 	}
@@ -282,19 +283,9 @@ func TestProviderFetchChartDataServesParallelCoordinates(t *testing.T) {
 	t.Cleanup(func() { _ = provider.Close() })
 	chart := &dpb.Chart{Name: "experiments/1001/charts/study", Xid: 1001, Plots: []*dpb.PlotSpec{parallelCoordinatesPlot}}
 	want := &dpb.ChartData{
-		Name: "experiments/1001/charts/study", Xid: 1001, Wid: 0,
-		PlotsData: []*dpb.ChartData_PlotData{{
-			PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES,
-			Content: &dpb.ChartData_PlotData_ParallelCoordinatesData{ParallelCoordinatesData: &dpb.ParallelCoordinatesData{
-				Axes: []*dpb.ParallelCoordinatesData_Axis{{
-					ParameterId: "learning_rate",
-					Values:      &dpb.ParallelCoordinatesData_Axis_DoubleRange_{DoubleRange: &dpb.ParallelCoordinatesData_Axis_DoubleRange{MinValue: 1e-5, MaxValue: 1e-1}},
-					ScaleType:   dpb.ParallelCoordinatesData_Axis_LOG,
-				}},
-				Objective:    &dpb.ParallelCoordinatesData_Objective{MetricId: "val/loss", Goal: dpb.ParallelCoordinatesData_Objective_MINIMIZE},
-				Trajectories: []*dpb.ParallelCoordinatesData_RunTrajectory{testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil)},
-			}},
-		}},
+		Name:      "experiments/1001/charts/study",
+		Xid:       1001,
+		PlotsData: []*dpb.ChartData_PlotData{wantStudyPlotData(testTrajectory(1, dpb.ParallelCoordinatesData_RunTrajectory_RUNNING, nil))},
 	}
 
 	firstEngine, err := provider.Engine(context.Background())

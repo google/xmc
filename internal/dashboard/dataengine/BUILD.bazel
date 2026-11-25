@@ -61,6 +61,7 @@ go_test(
         "//api/protos/dashboard:api_go_proto",
         "//api/protos/dashboard:service_go_proto",
         "//api/protos/experiment:messages_go_proto",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/prototest",
         "//pkg/bigquery",
