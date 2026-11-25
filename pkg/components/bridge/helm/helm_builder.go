@@ -29,7 +29,9 @@ import (
 const (
 	// terminationGracePeriodBufferSeconds provides a 5s buffer beyond drain timeout before force killing.
 	terminationGracePeriodBufferSeconds = 5
-	placeholderGRPCAudience             = "placeholder-grpc-audience"
+	// PlaceholderGRPCAudience is the Helm chart default of experimentStateServer.iap.grpcAudience,
+	// which means no gRPC audience was configured. Shared by the CMS client and essAudience.
+	PlaceholderGRPCAudience = "placeholder-grpc-audience"
 )
 
 // ComponentRef uniquely identifies a component within a Kubernetes cluster by its namespace, name, and optional CR UID.
@@ -169,7 +171,7 @@ func firstNonEmptyEnv(keys ...string) string {
 
 func resolveBridgeESSAudience() string {
 	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
-	if iapAud != "" && iapAud != placeholderGRPCAudience {
+	if iapAud != "" && iapAud != PlaceholderGRPCAudience {
 		return iapAud
 	}
 	if clientID := strings.TrimSpace(os.Getenv("CLIENT_ID")); clientID != "" {

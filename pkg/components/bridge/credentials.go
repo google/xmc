@@ -30,13 +30,14 @@ import (
 	"xmanager_cloud/internal/logging"
 	tq "xmanager_cloud/internal/task_queue"
 	xmcoauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 var _ credentials.PerRPCCredentials = (*BearerTokenCredentials)(nil)
 
-// placeholderGRPCAudience is the Helm chart default of experimentStateServer.iap.grpcAudience,
-// which means no gRPC audience was configured.
-const placeholderGRPCAudience = "placeholder-grpc-audience"
+// placeholderGRPCAudience aliases the chart default shared with the 1P release essAudience
+// resolution so the CMS client and essAudience cannot drift.
+const placeholderGRPCAudience = helm.PlaceholderGRPCAudience
 
 // TokenSourceFunc fetches a Bearer token for an outgoing CMS gRPC request.
 type TokenSourceFunc func(ctx context.Context) (string, error)
