@@ -1175,6 +1175,27 @@ func TestValidateCreateChartRequest(t *testing.T) {
 	}
 }
 
+func TestParseChartParent(t *testing.T) {
+	tests := []struct {
+		parent  string
+		want    ParsedChartParent
+		wantErr error
+	}{
+		{parent: "dashboards/dash-1", want: ParsedChartParent{DashboardID: "dash-1"}},
+		{parent: "experiments/100", want: ParsedChartParent{XID: 100}},
+		{parent: "experiments/100/workUnits/2", want: ParsedChartParent{XID: 100, WID: 2}},
+		{parent: "", wantErr: grpcerr.ErrInvalidArgument},
+		{parent: "experiments/0", wantErr: grpcerr.ErrInvalidArgument},
+		{parent: "experiments/100/workUnits/0", wantErr: grpcerr.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		got, err := ParseChartParent(tc.parent)
+		if !errors.Is(err, tc.wantErr) || got != tc.want {
+			t.Errorf("ParseChartParent(%q) = (%+v, %v), want (%+v, %v)", tc.parent, got, err, tc.want, tc.wantErr)
+		}
+	}
+}
+
 func TestValidateListChartsRequest(t *testing.T) {
 	tests := []struct {
 		name    string

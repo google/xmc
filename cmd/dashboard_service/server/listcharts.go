@@ -81,17 +81,14 @@ func (s *Server) ListCharts(ctx context.Context, req *dpb.ListChartsRequest) (*d
 // names a work unit or an experiment, matching the per-chart check in GetChart. A dashboard parent
 // carries no single xid, so its charts are authorized individually after the read instead.
 func (s *Server) resolveChartParent(ctx context.Context, user, parent string) (chartParentKind, error) {
-	if _, err := validator.ValidateDashboardName(parent); err == nil {
-		return dashboardParent, nil
-	}
-	if xid, err := validator.ValidateExperimentName(parent); err == nil {
-		return experimentScopedParent, s.authorizeExperimentRead(ctx, user, xid)
-	}
-	xid, _, err := validator.ValidateWorkUnitName(parent)
+	parsed, err := validator.ParseChartParent(parent)
 	if err != nil {
 		return dashboardParent, status.Errorf(codes.InvalidArgument, "unsupported chart parent %q", parent)
 	}
-	return experimentScopedParent, s.authorizeExperimentRead(ctx, user, xid)
+	if parsed.XID > 0 {
+		return experimentScopedParent, s.authorizeExperimentRead(ctx, user, parsed.XID)
+	}
+	return dashboardParent, nil
 }
 
 // authorizeListedCharts prunes charts the caller cannot read and guarantees a non-nil slice. A work

@@ -470,54 +470,8 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 }
 
 func TestListCharts_ParentExperiment(t *testing.T) {
-	ctx := context.Background()
-	repo, _ := setupDashboardRepository(ctx, t)
-
-	e1 := storagetest.ExperimentChartProto("study-a", 100)
-	e2 := storagetest.ExperimentChartProto("study-b", 100)
-	other := storagetest.ExperimentChartProto("study-c", 200)
-	workUnitChart := blankChartProto(chartID1, 100, 1)
-	for _, c := range []*dpb.Chart{e1, e2, other, workUnitChart} {
-		if err := repo.CreateChart(ctx, c); err != nil {
-			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
-		}
-	}
-
-	// The experiment parent lists only that experiment's experiment-level charts, across pages.
-	var listed []*dpb.Chart
-	pageToken := ""
-	for page := 0; page < 3; page++ {
-		charts, next, err := repo.ListCharts(ctx, "experiments/100", 1, pageToken, "", "", 0)
-		if err != nil {
-			t.Fatalf("ListCharts experiment parent page %d failed: %v", page, err)
-		}
-		if page < 2 && len(charts) != 1 {
-			t.Fatalf("page %d returned %d charts, want 1", page, len(charts))
-		}
-		if page == 0 && next == "" {
-			t.Fatal("page 0 returned empty nextPageToken, want cursor for page 1")
-		}
-		listed = append(listed, charts...)
-		pageToken = next
-		if next == "" {
-			break
-		}
-	}
-	if pageToken != "" {
-		t.Errorf("pagination did not terminate cleanly; trailing nextPageToken = %q", pageToken)
-	}
-	ignoreTimestamps := protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")
-	if diff := cmp.Diff([]*dpb.Chart{e1, e2}, listed, protocmp.Transform(), ignoreTimestamps); diff != "" {
-		t.Errorf("ListCharts experiment parent mismatch (-want +got):\n%s", diff)
-	}
-
-	wuCharts, wuNext, err := repo.ListCharts(ctx, "experiments/100/workUnits/1", 10, "", "", "", 0)
-	if err != nil || wuNext != "" {
-		t.Fatalf("ListCharts work unit parent err=%v next=%q, want nil and empty token", err, wuNext)
-	}
-	if diff := cmp.Diff([]*dpb.Chart{workUnitChart}, wuCharts, protocmp.Transform(), ignoreTimestamps); diff != "" {
-		t.Errorf("ListCharts work unit parent mismatch (-want +got):\n%s", diff)
-	}
+	repo, _ := setupDashboardRepository(context.Background(), t)
+	storagetest.VerifyListChartsParentExperiment(context.Background(), t, repo)
 }
 
 func TestListCharts_WidNullOrderAndPagination(t *testing.T) {

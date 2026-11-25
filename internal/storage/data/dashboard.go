@@ -244,29 +244,23 @@ func BuildChartParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
 	}
-	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		withPrefix := "dashboards/" + strings.TrimPrefix(parent, "dashboards/")
-		dashID, err := validator.ValidateDashboardName(withPrefix)
-		if err != nil {
+	if !strings.Contains(parent, "/") {
+		parent = "dashboards/" + parent
+	}
+	parsed, err := validator.ParseChartParent(parent)
+	if err != nil {
+		if strings.HasPrefix(parent, "dashboards/") {
 			return "", fmt.Errorf("invalid dashboard parent name: %w", err)
 		}
-		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
-	}
-	if !strings.HasPrefix(parent, "experiments/") {
-		return "", fmt.Errorf("unsupported parent format %q: %w", parent, grpcerr.ErrInvalidArgument)
-	}
-	if strings.Contains(parent, "/workUnits/") {
-		xid, wid, err := validator.ValidateWorkUnitName(parent)
-		if err != nil {
-			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
+		if strings.HasPrefix(parent, "experiments/") {
+			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
 		}
-		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
+		return "", fmt.Errorf("unsupported parent format %q: %w", parent, err)
 	}
-	xid, err := validator.ValidateExperimentName(parent)
-	if err != nil {
-		return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
+	if parsed.DashboardID != "" {
+		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", parsed.DashboardID, parent), nil
 	}
-	return fmt.Sprintf("xid = %d AND wid = %d", xid, 0), nil
+	return fmt.Sprintf("xid = %d AND wid = %d", parsed.XID, parsed.WID), nil
 }
 
 // ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
