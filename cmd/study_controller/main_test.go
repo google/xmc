@@ -328,10 +328,15 @@ func startPongRedisServer(t *testing.T) string {
 			go func(c net.Conn) {
 				defer c.Close()
 				for buf := make([]byte, 256); ; {
-					if _, err := c.Read(buf); err != nil {
+					n, err := c.Read(buf)
+					if err != nil {
 						return
 					}
-					_, _ = c.Write([]byte("+PONG\r\n"))
+					if bytes.Contains(bytes.ToUpper(buf[:n]), []byte("HELLO")) {
+						_, _ = c.Write([]byte("-ERR unknown command\r\n"))
+					} else {
+						_, _ = c.Write([]byte("+PONG\r\n"))
+					}
 				}
 			}(conn)
 		}

@@ -35,7 +35,10 @@ go_library(
 go_test(
     name = "vizier_test",
     size = "small",
-    srcs = ["client_test.go", "resolver_test.go"],
+    srcs = [
+        "client_test.go",
+        "resolver_test.go",
+    ],
     embed = [":vizier"],
     deps = [
         "//internal/logging",
