@@ -88,10 +88,12 @@ go_test(
     deps = [
         "//api/protos/experiment:messages_go_proto",
         "//api/protos/task_queue:task_go_proto",
+        "//cmd/actuator/k8s_client/preconditions_validator",
         "//internal/kubernetes/common/constants",
         "//internal/prototest",
         "//internal/storage/spanner",
         "//internal/storage/spanner/emulator",
+        "//internal/toollibs/execution_environments",
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@io_k8s_api//batch/v1:batch",

@@ -38,6 +38,8 @@ spec:
       - name: actuator
         image: {{ .Values.actuator_custom_image | quote }}
         imagePullPolicy: Always
+        args:
+        - "-default_execution_environment={{ .Values.executionEnvironment | default "gke" }}"
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

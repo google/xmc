@@ -287,12 +287,11 @@ func buildBaseJobSet(workUnit *esspb.WorkUnit, jobSetName, namespace string, met
 }
 
 func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.WorkUnit, namespace string, jobSet *jobsetv1alpha2.JobSet) (*jobsetv1alpha2.JobSet, error) {
-	executionEnv, ok := ee.Lookup(c.RuntimeConfig.DefaultExecutionEnvironment)
-	if !ok {
-		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
-		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
+	executionEnv, err := c.resolveExecutionEnvironment(ctx)
+	if err != nil {
+		return nil, err
 	}
-	jobSet, err := executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
+	jobSet, err = executionEnv.InjectOnJobSetCreation(ctx, workUnit, jobSet)
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +303,23 @@ func (c *Client) finalizeAndValidateJobSet(ctx context.Context, workUnit *esspb.
 		return nil, err
 	}
 	return jobSet, nil
+}
+
+func (c *Client) resolveExecutionEnvironment(ctx context.Context) (ee.Environment, error) {
+	if c.RuntimeConfig.DefaultExecutionEnvironment == "kubernetes" {
+		env, err := ee.NewKubernetes(c.RuntimeConfig.KubernetesPlacement)
+		if err != nil {
+			logging.Error(ctx, "Invalid kubernetes execution environment placement config", "error", err)
+			return nil, fmt.Errorf("invalid kubernetes placement config: %w", err)
+		}
+		return env, nil
+	}
+	executionEnv, ok := ee.Lookup(c.RuntimeConfig.DefaultExecutionEnvironment)
+	if !ok {
+		logging.Error(ctx, "Failed to get execution environment", "execution_environment", c.RuntimeConfig.DefaultExecutionEnvironment)
+		return nil, fmt.Errorf("failed to get execution environment: %q", c.RuntimeConfig.DefaultExecutionEnvironment)
+	}
+	return executionEnv, nil
 }
 
 func buildJobSetName(target string) string {

@@ -19,6 +19,8 @@ go_library(
     srcs = [
         "environment.go",
         "gke.go",
+        "kubernetes.go",
+        "placement_config.go",
     ],
     importpath = "xmanager_cloud/internal/toollibs/execution_environments",
     visibility = ["//:__subpackages__"],
@@ -29,6 +31,7 @@ go_library(
         "@io_k8s_api//batch/v1:batch",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/resource",
+        "@io_k8s_apimachinery//pkg/util/validation",
         "@io_k8s_sigs_jobset//api/jobset/v1alpha2",
         "@org_golang_google_protobuf//proto",
     ],
@@ -39,6 +42,8 @@ go_test(
     srcs = [
         "environment_test.go",
         "gke_test.go",
+        "kubernetes_test.go",
+        "placement_config_test.go",
     ],
     embed = [":execution_environments"],
     deps = [

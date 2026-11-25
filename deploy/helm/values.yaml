@@ -23,6 +23,32 @@ domainSuffix: "YOUR_DOMAIN_SUFFIX"
 xmcUrl: ""
 
 taskSignatureTtlSeconds: 86400
+# Default execution environment for work units ("gke" or "kubernetes").
+executionEnvironment: "gke"
+
+# Optional cluster-administrator accelerator placement defaults used when executionEnvironment is
+# "kubernetes". Allows administrators to configure custom schedulers, supplemental host device
+# groups, and templated JobSet/Pod metadata once per cluster while keeping workload specs portable.
+kubernetesPlacement:
+  gpu:
+    schedulerName: ""
+    supplementalGroups: []
+    exclusivePlacement: false
+    nodeSelector: {}
+    podLabels: {}
+    podAnnotations: {}
+    jobSetLabels: {}
+    jobSetAnnotations: {}
+  tpu:
+    schedulerName: ""
+    supplementalGroups: []
+    exclusivePlacement: false
+    nodeSelector: {}
+    podLabels: {}
+    podAnnotations: {}
+    jobSetLabels: {}
+    jobSetAnnotations: {}
+
 isDevEnvironment: false
 imageTag: latest
 xid_custom_image: "us-docker.pkg.dev/YOUR_GCP_PROJECT_ID/xmc/xid-service-dev:latest"

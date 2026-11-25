@@ -37,6 +37,8 @@ spec:
       - name: reconciler
         image: {{ .Values.reconciler_custom_image | quote }}
         imagePullPolicy: Always
+        args:
+        - "-default_execution_environment={{ .Values.executionEnvironment | default "gke" }}"
         securityContext:
           allowPrivilegeEscalation: false
           privileged: false

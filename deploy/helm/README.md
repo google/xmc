@@ -248,6 +248,40 @@ kubectl create secret generic remote-k8s-config \
 
 ---
 
+## Execution Environment & Cluster Accelerator Placement
+
+`executionEnvironment` selects how XMC translates logical `WorkUnit` resource requests into Kubernetes `JobSet` specifications across `ess`, `actuator`, and `reconciler`:
+
+- `"gke"` (default): Configures GKE node-pool selectors, GKE exclusive-topology annotations, GCS FUSE annotations, and Cloud Console links.
+- `"kubernetes"`: Configures standard Kubernetes container resource limits, indexed multi-node `JobSet` networking, and accelerator `Exists` taint tolerations without cloud-vendor selectors or console URLs.
+
+When `executionEnvironment` is `"kubernetes"`, cluster administrators can configure `kubernetesPlacement` (`gpu` and `tpu` profiles, which support identical fields) once during chart installation so researchers continue submitting portable logical `GpuResources` and `TpuResources` specifications without specifying cluster-level Kubernetes details:
+
+```yaml
+executionEnvironment: "kubernetes"
+
+kubernetesPlacement:
+  gpu:
+    schedulerName: "gang-scheduler"
+    supplementalGroups: [2000]
+    exclusivePlacement: true
+    nodeSelector:
+      accelerator.example.com/gpu-class: "{{ .AcceleratorType }}"
+    podLabels:
+      accelerator.example.com/count: "{{ .Count }}"
+    jobSetLabels:
+      orchestration.example.com/workload-group: "{{ truncHash 63 .JobSetName }}"
+  tpu: {}
+```
+
+### Role Separation & Guardrails
+
+- **Cluster Administrators (Helm `values.yaml`)**: Configure `executionEnvironment` and `kubernetesPlacement` (`schedulerName`, positive non-root `supplementalGroups`, `exclusivePlacement`, `nodeSelector`, `podLabels`, `podAnnotations`, `jobSetLabels`, and `jobSetAnnotations`). Administrator metadata templates reject reserved system prefixes and keys (`xmc.google.com/*`, `xmc.dev/*`, `kueue.x-k8s.io/*`, `jobset.sigs.k8s.io/*`, `app.kubernetes.io/managed-by`, and `cluster-autoscaler.kubernetes.io/safe-to-evict`) at startup.
+- **Researchers (`WorkUnit` API)**: Specify logical compute requirements (`CpuResources`, `GpuResources`, `TpuResources`) and optional workload labels/annotations/node selectors. Non-empty labels, annotations, or node selectors set on a `WorkUnit` take precedence over administrator template defaults, while XMC's pre-populated system identity and queue labels remain protected and `schedulerName`, `supplementalGroups`, and `exclusivePlacement` cannot be set via the `WorkUnit` API.
+- **Template Coordinates**: Metadata templates use Go `text/template` (`missingkey=error`) with `.JobSetName`, `.Namespace`, `.JobName`, `.XID`, `.WID`, `.EID`, `.AcceleratorType`, `.Topology`, `.Count`, and `truncHash <maxLen> <value>` (deterministic SHA-256 suffix truncation for Kubernetes identifier length budgets, `maxLen >= 10`).
+
+---
+
 ## Deployment Modes
 
 ### Local KinD Deployment

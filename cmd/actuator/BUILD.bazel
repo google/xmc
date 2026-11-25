@@ -30,6 +30,7 @@ go_library(
         "//internal/storage/dbconfig",
         "//internal/storage/factory",
         "//internal/task_queue_redis/redisclient",
+        "//internal/toollibs/execution_environments",
         "//pkg/auth/jwks",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@io_k8s_client_go//kubernetes",
@@ -41,6 +42,7 @@ go_library(
 go_test(
     name = "actuator_test",
     srcs = [
+        "config_test.go",
         "health_test.go",
         "main_test.go",
         "prod_test.go",
@@ -49,6 +51,8 @@ go_test(
     deps = [
         "//internal/common/health",
         "//internal/task_queue_redis/redisclient",
+        "//internal/toollibs/execution_environments",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/fake",
     ],

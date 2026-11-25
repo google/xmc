@@ -27,8 +27,10 @@ import (
 	"k8s.io/utils/ptr"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 	esspb "xmanager_cloud/api/protos/experiment"
+	preconditionsvalidator "xmanager_cloud/cmd/actuator/k8s_client/preconditions_validator"
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/prototest"
+	ee "xmanager_cloud/internal/toollibs/execution_environments"
 )
 
 func envFieldRef(name, fieldPath string) corev1.EnvVar {
@@ -466,5 +468,109 @@ func TestConstructJobSet_NoExecutable(t *testing.T) {
 
 	if _, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", constants.XmcLabelValue, testTime, Priorities{}); err == nil {
 		t.Errorf("constructJobSet() with no executable succeeded, want error")
+	}
+}
+
+func TestConstructJobSet_KubernetesPlacement(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	client.RuntimeConfig.DefaultExecutionEnvironment = "kubernetes"
+	client.RuntimeConfig.KubernetesPlacement = ee.PlacementConfig{
+		GPU: ee.AcceleratorPlacement{
+			SchedulerName:      "gang-scheduler",
+			SupplementalGroups: []int64{2000},
+			NodeSelector: map[string]string{
+				"accelerator.example.com/gpu-class": "{{ .AcceleratorType }}",
+			},
+			JobSetLabels: map[string]string{
+				"orchestration.example.com/group": "{{ truncHash 24 .JobSetName }}",
+			},
+		},
+	}
+
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		wu.Executable.GetJobset().Jobs[0].Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_GpuResources{
+				GpuResources: &esspb.GpuResources{
+					Type:  "H100",
+					Count: 8,
+				},
+			},
+		}
+	})
+
+	got, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+	if err != nil {
+		t.Fatalf("constructJobSet() unexpected error: %v", err)
+	}
+	if got.Labels["orchestration.example.com/group"] != "xmc-operation-123-456" {
+		t.Errorf("JobSet label = %q, want %q", got.Labels["orchestration.example.com/group"], "xmc-operation-123-456")
+	}
+	pod := got.Spec.ReplicatedJobs[0].Template.Spec.Template
+	if pod.Spec.SchedulerName != "gang-scheduler" {
+		t.Errorf("Pod SchedulerName = %q, want %q", pod.Spec.SchedulerName, "gang-scheduler")
+	}
+	if diff := cmp.Diff([]int64{2000}, pod.Spec.SecurityContext.SupplementalGroups); diff != "" {
+		t.Errorf("SupplementalGroups diff (-want +got):\n%s", diff)
+	}
+	if pod.Spec.NodeSelector["accelerator.example.com/gpu-class"] != "H100" {
+		t.Errorf("Pod nodeSelector = %v, want gpu-class=H100", pod.Spec.NodeSelector)
+	}
+}
+
+func TestPrepareAndValidateUnstructuredJobSet_ExclusivePlacementScopedToKubernetes(t *testing.T) {
+	placement := ee.PlacementConfig{
+		GPU: ee.AcceleratorPlacement{ExclusivePlacement: true},
+	}
+	workUnit := prototest.Modify(baseCPUWorkUnit, func(wu *esspb.WorkUnit) {
+		job := wu.Executable.GetJobset().Jobs[0]
+		job.HostNetwork = proto.Bool(true)
+		job.Spec.Resources = &esspb.ResourceSet{
+			Resources: &esspb.ResourceSet_GpuResources{
+				GpuResources: &esspb.GpuResources{
+					Type:  "H100",
+					Count: 8,
+				},
+			},
+		}
+	})
+
+	for _, tc := range []struct {
+		name    string
+		envName string
+		wantErr bool
+	}{
+		{name: "kubernetes_allows_hostNetwork_with_exclusive_placement", envName: "kubernetes", wantErr: false},
+		{name: "gke_ignores_kubernetes_exclusive_placement", envName: "gke", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, client, _ := setupTestClient(true, nil)
+			client.RuntimeConfig.AllowHostNetwork = true
+			client.RuntimeConfig.DefaultExecutionEnvironment = tc.envName
+			client.RuntimeConfig.KubernetesPlacement = placement
+			client.preconditionsValidator = preconditionsvalidator.NewWithOptions(preconditionsvalidator.Options{
+				ExclusiveResources: client.RuntimeConfig.exclusiveResourceNames(),
+			})
+
+			js, err := client.constructJobSet(ctx, workUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{})
+			if err != nil {
+				t.Fatalf("constructJobSet() unexpected error: %v", err)
+			}
+			_, err = client.prepareAndValidateUnstructuredJobSet(ctx, js, testTarget)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("prepareAndValidateUnstructuredJobSet() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestConstructJobSet_InvalidKubernetesPlacement(t *testing.T) {
+	ctx, client, _ := setupTestClient(true /* createNewNamespaces */, &alwaysPassingPreconditionsValidator{})
+	client.RuntimeConfig.DefaultExecutionEnvironment = "kubernetes"
+	client.RuntimeConfig.KubernetesPlacement = ee.PlacementConfig{
+		GPU: ee.AcceleratorPlacement{SupplementalGroups: []int64{-1}},
+	}
+
+	if _, err := client.constructJobSet(ctx, baseCPUWorkUnit, testTarget, "test-author", "test-namespace", testTime, Priorities{}); err == nil {
+		t.Fatalf("constructJobSet() with invalid placement config succeeded, want error")
 	}
 }

@@ -108,4 +108,5 @@ spec:
         args:
         - "-ess_tls_cert_file="
         - "-ess_tls_key_file="
+        - "-ess_default_execution_environment={{ .Values.executionEnvironment | default "gke" }}"
 {{- end }}
