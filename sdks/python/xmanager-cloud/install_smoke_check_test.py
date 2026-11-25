@@ -186,7 +186,10 @@ class PackagingFailuresTest(InstallSmokeCheckTestCase):
 
 class MainTest(InstallSmokeCheckTestCase):
     def _main(
-        self, import_failures: dict[str, str], env_failures: dict[str, str] | None = None
+        self,
+        import_failures: dict[str, str],
+        env_failures: dict[str, str] | None = None,
+        packaging_failures: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, object]]:
         with (
             mock.patch.object(build_staging, "resolve_source_layout"),
@@ -195,7 +198,9 @@ class MainTest(InstallSmokeCheckTestCase):
             mock.patch.object(
                 install_smoke_check, "environment_failures", return_value=env_failures or {}
             ),
-            mock.patch.object(install_smoke_check, "packaging_failures", return_value={}),
+            mock.patch.object(
+                install_smoke_check, "packaging_failures", return_value=packaging_failures or {}
+            ),
             mock.patch("builtins.print") as printed,
         ):
             status = install_smoke_check.main()
@@ -220,6 +225,13 @@ class MainTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(status, 1)
         self.assertEqual(output["failures"], {"xmanager": "must not be installed, found 0.8.5"})
+
+    def test_packaging_failure_exits_one(self) -> None:
+        packaged = {"packaged tests": "xmanager_cloud/_version_guard_test.py"}
+        status, output = self._main({}, packaging_failures=packaged)
+
+        self.assertEqual(status, 1)
+        self.assertEqual(output["failures"], packaged)
 
     def test_missing_sources_exit_two_with_json_error(self) -> None:
         with (
