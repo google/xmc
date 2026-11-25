@@ -142,7 +142,13 @@ func TestConfig_Validate(t *testing.T) {
 		{name: "ess audience DEL control char", modify: func(c *Config) { c.ESSAudience = "secret\x7faud" }, wantErr: true},
 		{name: "ess audience unicode non-breaking space", modify: func(c *Config) { c.ESSAudience = "secret\u00a0aud" }, wantErr: true},
 		{name: "empty components namespace allowed", modify: func(c *Config) { c.ComponentsNamespace = "" }},
+		{name: "single char components namespace", modify: func(c *Config) { c.ComponentsNamespace = "a" }},
 		{name: "valid components namespace", modify: func(c *Config) { c.ComponentsNamespace = "xmc-staging" }},
+		{name: "max length components namespace", modify: func(c *Config) { c.ComponentsNamespace = strings.Repeat("a", 63) }},
+		{name: "components namespace too long", modify: func(c *Config) { c.ComponentsNamespace = strings.Repeat("a", 64) }, wantErr: true},
+		{name: "components namespace uppercase", modify: func(c *Config) { c.ComponentsNamespace = "XMC" }, wantErr: true},
+		{name: "components namespace leading hyphen", modify: func(c *Config) { c.ComponentsNamespace = "-xmc" }, wantErr: true},
+		{name: "components namespace trailing hyphen", modify: func(c *Config) { c.ComponentsNamespace = "xmc-" }, wantErr: true},
 		{name: "components namespace with space", modify: func(c *Config) { c.ComponentsNamespace = "xmc ns" }, wantErr: true},
 		{name: "components namespace with control char", modify: func(c *Config) { c.ComponentsNamespace = "xmc\x00" }, wantErr: true},
 	}

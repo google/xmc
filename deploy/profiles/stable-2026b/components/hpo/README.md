@@ -1,6 +1,6 @@
 # HPO 1P Native Component Blueprint (`stable-2026b`)
 
-This Helm sub-chart (`deploy/profiles/stable-2026b/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
+This Helm sub-chart (`deploy/profiles/stable-2026b/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml), [`templates/rbac.yaml`](templates/rbac.yaml)).
 
 > [!NOTE]
 > The `xmc-study-controller` workload renders a `Deployment`, `ServiceAccount`, `Role`, and `RoleBinding`. It resolves the live `vizier` `Component` CR endpoint at startup, consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), and reports Redis and Vizier reachability on `/readyz`. It does not yet create Vizier studies on ticks or query ClickHouse. The chart renders no `Service`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
@@ -31,7 +31,7 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `hpo` Component CR in the catalog. |
 | `acknowledgeExperimental` | *(omitted)* | `spec.acknowledgeExperimental` | Explicit administrator acknowledgement required when `enabled: true` because `stability` is `EXPERIMENTAL`. |
-| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace` | Target Kubernetes namespace for the `Component` CR and actuated workload resources. |
+| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace` | Target Kubernetes namespace for the `Component` CR, `-components_namespace`, and `Role`/`RoleBinding`. |
 | `imageTag` | `""` | `spec.imageTag` | `xmc-study-controller` image tag, used when `global.imageTag` is empty. Omitted from the CR when both are empty. |
 | `deletionProtection` | `true` | `spec.deletionProtection` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
@@ -78,8 +78,8 @@ The Study Controller connects to the XMC Redis server:
 
 - **Address**: the umbrella chart value `redisAddr` reaches `xmc-bridge` as `REDIS_ADDR` in the `xmc-bridge-config` ConfigMap, and `xmc-bridge` passes it to every 1P release as `<component>Deployment.redisAddr`. A `redisAddr` Component parameter is ignored. The chart renders the value as `-redis_addr`. The value is `required`: an `xmc-cmp-hpo` release without `hpoDeployment.redisAddr` fails to render, so the Helm install or upgrade fails instead of starting a Study Controller without Redis. The profile release does not need it.
 - **Password**: the `REDIS_PASSWORD` environment variable, read from key `redis-password` of the umbrella chart's `redis-secret` Secret. `xmc-bridge` only actuates Components in the XMC release namespace, where the umbrella chart renders `redis-secret`.
-- **Readiness**: `/readyz` pings Redis with a 2s timeout and returns `503 Service Unavailable` when the ping fails, so the pod reports `NotReady` while Redis is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check Redis, so a Redis outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect Redis reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
-- **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping.
+- **Readiness**: `/readyz` checks Redis (`Ping`) and Vizier (`Health/Check`) with a 2s timeout and returns `503 Service Unavailable` when either fails, so the pod reports `NotReady` while Redis or Vizier is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check dependencies, so an outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect dependency reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
+- **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping or Vizier resolution/health check.
 
 ### ESS Connection
 

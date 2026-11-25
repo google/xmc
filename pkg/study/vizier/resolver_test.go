@@ -110,36 +110,13 @@ func TestResolveEndpoint(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{
-			name:   "present and enabled",
-			getter: &crreadertest.FakeGetter{Component: vizierComponent(true, "READY", "vizier-service.xmc.svc.cluster.local:7077", true)},
-			want:   "vizier-service.xmc.svc.cluster.local:7077",
-		},
-		{
-			name:    "absent component",
-			getter:  &crreadertest.FakeGetter{},
-			wantErr: true,
-		},
-		{
-			name:    "disabled via spec.enabled=false",
-			getter:  &crreadertest.FakeGetter{Component: vizierComponent(false, "READY", "vizier-service:7077", true)},
-			wantErr: true,
-		},
-		{
-			name:    "disabled via status.state=COMPONENT_STATE_DISABLED",
-			getter:  &crreadertest.FakeGetter{Component: vizierComponent(true, crreader.StateDisabled, "vizier-service:7077", true)},
-			wantErr: true,
-		},
-		{
-			name:    "missing parameters",
-			getter:  &crreadertest.FakeGetter{Component: vizierComponent(true, "READY", "", false)},
-			wantErr: true,
-		},
-		{
-			name:    "missing parameters.endpoint",
-			getter:  &crreadertest.FakeGetter{Component: vizierComponent(true, "READY", "", true)},
-			wantErr: true,
-		},
+		{name: "present and enabled", getter: &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{"xmc/vizier": vizierComponent(true, "COMPONENT_STATE_ENABLED", "vizier-service.xmc.svc.cluster.local:7077", true)}}, want: "vizier-service.xmc.svc.cluster.local:7077"},
+		{name: "absent component", getter: &crreadertest.FakeGetter{}, wantErr: true},
+		{name: "disabled via spec.enabled=false", getter: &crreadertest.FakeGetter{Component: vizierComponent(false, "COMPONENT_STATE_ENABLED", "vizier-service:7077", true)}, wantErr: true},
+		{name: "disabled via status.state=COMPONENT_STATE_DISABLED", getter: &crreadertest.FakeGetter{Component: vizierComponent(true, crreader.StateDisabled, "vizier-service:7077", true)}, wantErr: true},
+		{name: "missing parameters", getter: &crreadertest.FakeGetter{Component: vizierComponent(true, "COMPONENT_STATE_ENABLED", "", false)}, wantErr: true},
+		{name: "missing parameters.endpoint", getter: &crreadertest.FakeGetter{Component: vizierComponent(true, "COMPONENT_STATE_ENABLED", "", true)}, wantErr: true},
+		{name: "non-map spec.parameters", getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": map[string]any{"enabled": true, "parameters": "invalid"}}}}, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -161,7 +138,10 @@ type scriptedGetter struct {
 	idx   int
 }
 
-func (g *scriptedGetter) GetComponent(_ context.Context, _, _ string) (*unstructured.Unstructured, error) {
+func (g *scriptedGetter) GetComponent(_ context.Context, ns, name string) (*unstructured.Unstructured, error) {
+	if ns != "xmc" || name != "vizier" {
+		return nil, errors.New("unexpected component lookup: " + ns + "/" + name)
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.idx >= len(g.steps) {
@@ -186,13 +166,13 @@ func TestWaitForEndpoint_TransitionsAndSecretFreeLogs(t *testing.T) {
 			func() (*unstructured.Unstructured, error) { return absent.GetComponent(ctx, "xmc", "vizier") },
 			func() (*unstructured.Unstructured, error) { return nil, errors.New("transient apiserver error") },
 			func() (*unstructured.Unstructured, error) {
-				return vizierComponent(false, "READY", "vizier-service:7077", true), nil
+				return vizierComponent(false, "COMPONENT_STATE_ENABLED", "vizier-service:7077", true), nil
 			},
 			func() (*unstructured.Unstructured, error) {
-				return vizierComponent(true, "READY", secretEndpoint, true), nil
+				return vizierComponent(true, "COMPONENT_STATE_ENABLED", secretEndpoint, true), nil
 			},
 			func() (*unstructured.Unstructured, error) {
-				return vizierComponent(true, "READY", "vizier-service.xmc.svc.cluster.local:7077", true), nil
+				return vizierComponent(true, "COMPONENT_STATE_ENABLED", "vizier-service.xmc.svc.cluster.local:7077", true), nil
 			},
 		},
 	}

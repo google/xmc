@@ -16,7 +16,7 @@
 # Rendered only for the xmc-cmp-hpo release that xmc-bridge installs; the stable-2026b profile
 # release renders only the Component CR.
 {{- $port := 8080 }}
-{{- $ns := .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) }}
+{{- $ns := include "hpo.namespace" . }}
 {{- $deploy := .Values.hpoDeployment | default dict }}
 apiVersion: apps/v1
 kind: Deployment
@@ -89,7 +89,7 @@ spec:
             port: http-port
           initialDelaySeconds: 5
           periodSeconds: 10
-          # Longer than the 2s Redis ping of /readyz.
+          # Longer than the 2s /readyz check covering Redis and Vizier.
           timeoutSeconds: 3
         livenessProbe:
           httpGet:

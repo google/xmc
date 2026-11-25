@@ -17,6 +17,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/grpc"
 	"xmanager_cloud/cmd/study_controller/config"
 	"xmanager_cloud/cmd/study_controller/worker"
 	"xmanager_cloud/internal/logging"
@@ -314,12 +316,65 @@ func (g *atomicGetter) GetComponent(ctx context.Context, ns, name string) (*unst
 	return g.inner.GetComponent(ctx, ns, name)
 }
 
+func startPongRedisServer(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+	go func() {
+		for conn, err := lis.Accept(); err == nil; conn, err = lis.Accept() {
+			go func(c net.Conn) {
+				defer c.Close()
+				for buf := make([]byte, 256); ; {
+					if _, err := c.Read(buf); err != nil {
+						return
+					}
+					_, _ = c.Write([]byte("+PONG\r\n"))
+				}
+			}(conn)
+		}
+	}()
+	return lis.Addr().String()
+}
+
+func startStubVizierServer(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	srv := grpc.NewServer()
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(func() { srv.Stop(); _ = lis.Close() })
+	return lis.Addr().String()
+}
+
+func waitReadyStatus(t *testing.T, addr string, want int) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get("http://" + addr + "/readyz")
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == want {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("GET /readyz at %s did not return %d before deadline", addr, want)
+}
+
 func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("net.Listen() error = %v", err)
 	}
-	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	client := worker.NewRedisConsumer(startPongRedisServer(t))
+	vizierAddr := startStubVizierServer(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -331,20 +386,37 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 		})
 	}()
 
-	waitHealthy(t, lis.Addr().String())
+	addr := lis.Addr().String()
+	waitHealthy(t, addr)
+	waitReadyStatus(t, addr, http.StatusServiceUnavailable)
+
 	getter.mu.Lock()
 	getter.inner.Component = &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "xmc.dev/v1alpha1",
 			"kind":       "Component",
 			"metadata":   map[string]any{"name": "vizier", "namespace": "xmc"},
-			"spec":       map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": "127.0.0.1:" + freePort(t)}},
+			"spec":       map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
 		},
 	}
 	getter.mu.Unlock()
-	time.Sleep(700 * time.Millisecond)
+	waitReadyStatus(t, addr, http.StatusOK)
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("serveWithClient() after Vizier latch = %v, want nil", err)
+	}
+}
+
+func TestServeWithClient_ReturnsGetterError(t *testing.T) {
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	err = serveWithClient(context.Background(), lis, client, nil, "xmc", func() (crreader.Getter, error) {
+		return nil, errors.New("k8s config unavailable")
+	})
+	if err == nil {
+		t.Fatal("serveWithClient() with getter error = nil, want non-nil")
 	}
 }

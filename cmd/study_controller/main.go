@@ -13,11 +13,10 @@
 // limitations under the License.
 
 // Package main is the entrypoint of xmc-study-controller, the workload of the hpo component.
-// It consumes study reconcile ticks from Redis and serves health and metrics endpoints; /readyz
-// reports whether Redis is reachable.
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -78,10 +77,7 @@ func run(ctx context.Context, args []string) int {
 	return 0
 }
 
-// listenAndServe listens on cfg.Port, consumes study reconcile ticks from the Redis server at
-// cfg.RedisAddr, re-reads studies from ESS at cfg.ESSAddr, and serves the HTTP endpoints until
-// ctx is done. The Redis consumer client also backs readiness. The consumer is stopped and its
-// clients closed on return.
+// listenAndServe serves HTTP endpoints, resolves Vizier, and consumes study reconcile ticks until ctx is done.
 func listenAndServe(ctx context.Context, cfg config.Config) error {
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
@@ -124,22 +120,31 @@ func serveWithClient(
 	vp := &vizierProbe{}
 	httpCtx, cancelHTTP := context.WithCancel(ctx)
 	defer cancelHTTP()
+	resolveCtx, cancelResolve := context.WithCancel(ctx)
+	defer cancelResolve()
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- serve(httpCtx, lis, newHTTPHandler(client, vp)) }()
+	go func() {
+		defer cancelResolve()
+		serveErr <- serve(httpCtx, lis, newHTTPHandler(client, vp))
+	}()
 
-	vizierClient, err := resolveAndDialVizier(ctx, componentsNamespace, newGetter)
+	vizierClient, err := resolveAndDialVizier(resolveCtx, componentsNamespace, newGetter)
 	if err != nil {
-		_ = client.Close(context.WithoutCancel(ctx))
 		cancelHTTP()
-		if sErr := <-serveErr; sErr != nil && ctx.Err() == nil {
-			return sErr
+		sErr := <-serveErr
+		if client != nil && client.Client != nil {
+			_ = client.Close(context.WithoutCancel(ctx))
 		}
 		if ctx.Err() != nil {
 			return nil
 		}
-		return err
+		return cmp.Or(sErr, err)
 	}
-	defer closeVizier(ctx, vizierClient)
+	defer func() {
+		if err := vizierClient.Close(); err != nil {
+			logging.Warn(ctx, "Failed to close Vizier client", "error", err)
+		}
+	}()
 	vp.Set(vizierClient)
 
 	consumer := worker.Start(ctx, client, handler)
@@ -147,7 +152,7 @@ func serveWithClient(
 	return <-serveErr
 }
 
-func resolveAndDialVizier(ctx context.Context, componentsNamespace string, newGetter func() (crreader.Getter, error)) (*vizier.Client, error) {
+func resolveAndDialVizier(ctx context.Context, ns string, newGetter func() (crreader.Getter, error)) (*vizier.Client, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -155,17 +160,11 @@ func resolveAndDialVizier(ctx context.Context, componentsNamespace string, newGe
 	if err != nil {
 		return nil, fmt.Errorf("failed to create component getter: %w", err)
 	}
-	endpoint, err := vizier.WaitForEndpoint(ctx, getter, componentsNamespace)
+	endpoint, err := vizier.WaitForEndpoint(ctx, getter, ns)
 	if err != nil {
 		return nil, err
 	}
 	return vizier.Dial(endpoint)
-}
-
-func closeVizier(ctx context.Context, client *vizier.Client) {
-	if err := client.Close(); err != nil {
-		logging.Warn(ctx, "Failed to close Vizier client", "error", err)
-	}
 }
 
 // stopConsumer stops consumer, logging rather than returning a failure: it runs on shutdown.

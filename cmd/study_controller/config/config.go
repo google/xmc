@@ -113,11 +113,18 @@ func validateESSAudience(aud string) error {
 	return nil
 }
 
-// validateOptionalNamespace checks that ns, when non-empty, contains no whitespace or control characters.
+// validateOptionalNamespace checks that ns, when non-empty, is a valid Kubernetes DNS-1123 label.
 func validateOptionalNamespace(ns string) error {
-	for _, r := range ns {
-		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			return errors.New("invalid components_namespace: must not contain whitespace or control characters")
+	if ns == "" {
+		return nil
+	}
+	isAlnum := func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') }
+	if len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) {
+		return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
+	}
+	for i := 0; i < len(ns); i++ {
+		if !isAlnum(ns[i]) && ns[i] != '-' {
+			return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
 		}
 	}
 	return nil
