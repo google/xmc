@@ -16,11 +16,15 @@ package storagetest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/pkg/components/store"
 )
+
+// ErrNilRecord is returned when a nil component record is passed to SeedComponentCatalog.
+var ErrNilRecord = errors.New("nil component record provided")
 
 // SeedComponentCatalog inserts and marks observed each record in recs within one serializable
 // transaction. Records must come before their dependents: dependency edges are written from each
@@ -29,7 +33,10 @@ import (
 func SeedComponentCatalog(ctx context.Context, st storage.TransactionRunner, recs ...*store.ComponentRecord) error {
 	_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		depIDs := make(map[string]int64, len(recs)) // Reset on every attempt.
-		for _, rec := range recs {
+		for i, rec := range recs {
+			if rec == nil {
+				return fmt.Errorf("record[%d]: %w", i, ErrNilRecord)
+			}
 			if err := tx.Components.InsertComponent(ctx, rec, depIDs); err != nil {
 				return fmt.Errorf("insert component %q: %w", rec.Name, err)
 			}

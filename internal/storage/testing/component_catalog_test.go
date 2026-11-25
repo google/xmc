@@ -70,6 +70,8 @@ func TestSeedComponentCatalog(t *testing.T) {
 			wantCalls: []string{"insert:clickhouse deps=map[]"}, wantErr: boom},
 		{name: "observe_error_is_returned", repo: &recordingComponentTxRepo{observeErr: boom}, recs: []*store.ComponentRecord{clickhouse},
 			wantCalls: []string{"insert:clickhouse deps=map[]", "observe:clickhouse"}, wantErr: boom},
+		{name: "nil_record_returns_error", repo: &recordingComponentTxRepo{}, recs: []*store.ComponentRecord{nil},
+			wantErr: ErrNilRecord},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := &storage.MockStorage{Transaction: &storage.Transaction{Components: tc.repo}, RunInTransactionAttempts: tc.attempts}

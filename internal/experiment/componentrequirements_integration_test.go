@@ -93,8 +93,9 @@ func TestCreateExperiment_StudyPinsComponentsOnEveryBackend(t *testing.T) {
 
 			// vizier stops being ready while hpo stays ENABLED: the in-transaction check rejects the
 			// study and rolls back its experiment row.
+			vizierID := experimenttest.HPOCatalog(nil)["vizier"].ComponentID
 			_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-				return tx.Components.UpdateComponentState(ctx, experimenttest.HPOCatalog(nil)["vizier"].ComponentID, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, nil)
+				return tx.Components.UpdateComponentState(ctx, vizierID, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, nil)
 			})
 			if err != nil {
 				t.Fatalf("UpdateComponentState(vizier) failed: %v", err)
