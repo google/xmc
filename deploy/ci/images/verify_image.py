@@ -74,6 +74,8 @@ def _run_command_expectation(
     Returns:
         Failure description string, or ``None`` when the assertion passes.
     """
+    if not spec.argv:
+        return f"{spec.name}: failed to execute: argv is empty"
     try:
         proc = runner(
             list(spec.argv),
@@ -85,7 +87,9 @@ def _run_command_expectation(
     except (OSError, subprocess.SubprocessError) as exc:
         return f"{spec.name}: failed to execute {spec.argv[0]}: {exc}"
 
-    combined = f"{proc.stdout}\n{proc.stderr}".strip()
+    stdout = proc.stdout or ""
+    stderr = proc.stderr or ""
+    combined = f"{stdout}\n{stderr}".strip()
     if proc.returncode != 0:
         return f"{spec.name}: exited {proc.returncode}: {combined[:300]}"
     for expected in spec.expected_substrings:

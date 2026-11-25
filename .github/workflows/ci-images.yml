@@ -103,6 +103,7 @@ jobs:
           GIT_SHA: ${{ github.sha }}
           CACHE_MODE: gha
         with:
+          source: '.'
           files: |
             deploy/ci/images/docker-bake.hcl
             ${{ runner.temp }}/bake-vars.json

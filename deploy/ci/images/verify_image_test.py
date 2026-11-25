@@ -88,6 +88,24 @@ class RunSmokeChecksTest(unittest.TestCase):
         assert err is not None
         self.assertIn("failed to execute nope", err)
 
+        empty_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("empty", ()), _raising_runner
+        )
+        self.assertIsNotNone(empty_err)
+        assert empty_err is not None
+        self.assertIn("argv is empty", empty_err)
+
+        none_output_runner = _fake_runner_factory(
+            {"node": subprocess.CompletedProcess(["node"], 0, None, None)}
+        )
+        none_err = verify_image._run_command_expectation(
+            verify_image.CommandExpectation("node", ("node", "--version"), ("None",)),
+            none_output_runner,
+        )
+        self.assertIsNotNone(none_err)
+        assert none_err is not None
+        self.assertIn("expected 'None'", none_err)
+
     def test_rejects_unsupported_role_and_invalid_manifest(self) -> None:
         with self.assertRaises(ValueError):
             verify_image.run_smoke_checks("invalid", _load_manifest())
