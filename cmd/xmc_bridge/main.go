@@ -120,10 +120,11 @@ func finalizeConfig(cfg *Config) error {
 
 // ParseConfig parses command line flags and environment variables into a validated Config object.
 // args typically receives os.Args[1:]. Default values fall back to corresponding environment
-// variables (CMS_ADDRESS, NAMESPACE, HELM_RELEASE_NAME, CLUSTER_NAME, PROBE_INTERVAL,
-// PROBE_TIMEOUT, RECONCILE_TIMEOUT, MAX_CONCURRENT_RECONCILES, KUBECONFIG, HELM_CHART_PATH) if
-// flags are omitted.
-// Returns an error if flag parsing fails, if cms-address, namespace or release-name is empty, if
+// variables (CMS_ADDRESS, NAMESPACE, HELM_RELEASE_NAME, CLUSTER_NAME, COMPONENT_OWNERSHIP_EPOCH,
+// PROBE_INTERVAL, PROBE_TIMEOUT, RECONCILE_TIMEOUT, MAX_CONCURRENT_RECONCILES, KUBECONFIG,
+// HELM_CHART_PATH) if flags are omitted.
+// Returns an error if flag parsing or an environment value fails to parse, if cms-address,
+// namespace or release-name is empty, if the cluster name or ownership epoch is invalid, if
 // intervals/timeouts are non-positive, if max-concurrent-reconciles is below 1 or if
 // health-probe-bind-address is empty or "0".
 func ParseConfig(args []string) (*Config, error) {
