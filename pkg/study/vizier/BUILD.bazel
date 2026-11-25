@@ -18,11 +18,18 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "vizier",
-    srcs = ["vizier.go"],
+    srcs = [
+        "adapter.go",
+        "convert.go",
+        "vizier.go",
+    ],
     importpath = "xmanager_cloud/pkg/study/vizier",
     deps = [
+        "//api/protos/experiment",
         "//internal/logging",
         "//pkg/components/crreader",
+        "//pkg/study",
+        "//pkg/study/vizierpb",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//backoff",
         "@org_golang_google_grpc//codes",
@@ -35,16 +42,29 @@ go_library(
 go_test(
     name = "vizier_test",
     size = "small",
-    srcs = ["client_test.go", "resolver_test.go"],
+    srcs = [
+        "adapter_test.go",
+        "client_test.go",
+        "convert_test.go",
+        "resolver_test.go",
+    ],
     embed = [":vizier"],
     deps = [
+        "//api/protos/experiment",
         "//internal/logging",
         "//pkg/components/crreader",
         "//pkg/components/crreader/crreadertest",
+        "//pkg/study",
+        "//pkg/study/vizierpb",
+        "@com_github_google_go_cmp//cmp",
         "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

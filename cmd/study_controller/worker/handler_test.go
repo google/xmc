@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/redislock"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/pkg/study"
 )
 
 type fakeLease struct {
@@ -95,7 +97,7 @@ func (s *stubLockClient) EvalSha(_ context.Context, _ string, _ []string, _ ...a
 }
 
 func snapshotOutcomes() map[string]float64 {
-	outcomes := []string{outcomeReconciled, outcomeContended, outcomeRetryError, outcomeInvalidPayload}
+	outcomes := []string{outcomeReconciled, outcomeContended, outcomeRetryError, outcomeInvalidPayload, outcomeInvalidStudy}
 	snap := make(map[string]float64, len(outcomes))
 	for _, o := range outcomes {
 		snap[o] = testutil.ToFloat64(reconcileTicksTotal.WithLabelValues(o))
@@ -191,6 +193,8 @@ func TestHandleTask_OutcomesAndLockAcquisition(t *testing.T) {
 			wantMetrics: map[string]float64{outcomeRetryError: 1}, wantLogs: []string{"Failed to acquire study reconcile lock", "xid=123"}},
 		{name: "reconcile error retried", data: validTick, recErr: reconcileErr, wantRetry: true, wantErrIs: reconcileErr, wantAcquireCalls: 1, wantKey: wantKey, wantRec: true,
 			wantMetrics: map[string]float64{outcomeRetryError: 1}, wantLogs: []string{"Failed to process study reconcile tick", "xid=123"}},
+		{name: "invalid study config dead-lettered without retry", data: validTick, recErr: fmt.Errorf("%w: SECRET_PAYLOAD", study.ErrInvalidStudyConfig), wantRetry: false, wantErrIs: study.ErrInvalidStudyConfig, wantAcquireCalls: 1, wantKey: wantKey, wantRec: true,
+			wantMetrics: map[string]float64{outcomeInvalidStudy: 1}, wantLogs: []string{"Dropping invalid study config tick", "xid=123"}},
 		{name: "release lost lease logs warn", data: validTick, releaseErr: redislock.ErrLeaseLost, wantSuccess: true, wantAcquireCalls: 1, wantKey: wantKey, wantRec: true,
 			wantMetrics: map[string]float64{outcomeReconciled: 1}, wantLogs: []string{"Study reconcile lock lease was already lost before release"}},
 		{name: "release transport error logs warn", data: validTick, releaseErr: acquireErr, wantSuccess: true, wantAcquireCalls: 1, wantKey: wantKey, wantRec: true,
@@ -237,6 +241,9 @@ func TestHandleTask_OutcomesAndLockAcquisition(t *testing.T) {
 				if !strings.Contains(logs.String(), wantLog) {
 					t.Errorf("logs = %q, want %q", logs.String(), wantLog)
 				}
+			}
+			if strings.Contains(logs.String(), "SECRET_PAYLOAD") {
+				t.Errorf("logs leaked user payload: %q", logs.String())
 			}
 		})
 	}

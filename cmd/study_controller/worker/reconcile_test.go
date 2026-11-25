@@ -17,6 +17,7 @@ package worker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/pkg/study"
 )
 
 type fakeExperimentReader struct {
@@ -40,10 +42,34 @@ func (f *fakeExperimentReader) GetExperiment(_ context.Context, name string) (*s
 	return f.exp, nil
 }
 
-func TestNewESSReconciler_RejectsNilReader(t *testing.T) {
+type fakeStudyEngine struct {
+	calls int
+	xid   int64
+	cfg   *spb.StudyConfig
+	name  string
+	err   error
+}
+
+func (f *fakeStudyEngine) CreateStudy(_ context.Context, xid int64, cfg *spb.StudyConfig) (string, error) {
+	f.calls++
+	f.xid = xid
+	f.cfg = cfg
+	if f.err != nil {
+		return "", f.err
+	}
+	if f.name != "" {
+		return f.name, nil
+	}
+	return fmt.Sprintf("owners/xmc/studies/study-%d", xid), nil
+}
+
+func TestNewESSReconciler_RejectsNilDependencies(t *testing.T) {
 	t.Parallel()
-	if _, err := NewESSReconciler(nil); err == nil {
-		t.Fatal("NewESSReconciler(nil) error = nil, want error")
+	if _, err := NewESSReconciler(nil, &fakeStudyEngine{}); err == nil {
+		t.Fatal("NewESSReconciler(nil, engine) error = nil, want error")
+	}
+	if _, err := NewESSReconciler(&fakeExperimentReader{}, nil); err == nil {
+		t.Fatal("NewESSReconciler(reader, nil) error = nil, want error")
 	}
 }
 
@@ -64,16 +90,36 @@ func TestESSReconciler_GateMatrix(t *testing.T) {
 	}
 
 	tests := []struct {
-		name        string
-		exp         *spb.Experiment
-		err         error
-		wantRetry   bool
-		wantErrCode codes.Code
-		wantLogs    []string
+		name            string
+		exp             *spb.Experiment
+		err             error
+		engineErr       error
+		wantRetry       bool
+		wantErrCode     codes.Code
+		wantEngineCalls int
+		wantLogs        []string
 	}{
 		{
-			name: "active STUDY proceeds and ACKs", exp: activeStudy,
-			wantLogs: []string{"Verified active study on ESS", "experiment_type=STUDY", "active_state=ACTIVE", "launch_state=LAUNCHING", "algorithm=RANDOM_SEARCH", "max_trial_budget=10"},
+			name:            "active STUDY registers in Vizier and ACKs",
+			exp:             activeStudy,
+			wantEngineCalls: 1,
+			wantLogs:        []string{"Registered active study in Vizier", "vizier_study=owners/xmc/studies/study-42", "launch_state=LAUNCHING", "max_trial_budget=10"},
+		},
+		{
+			name:            "active STUDY transient engine error retries",
+			exp:             activeStudy,
+			engineErr:       status.Error(codes.Unavailable, "vizier down"),
+			wantRetry:       true,
+			wantErrCode:     codes.Unavailable,
+			wantEngineCalls: 1,
+		},
+		{
+			name:            "active STUDY invalid config dead-letters without retry",
+			exp:             activeStudy,
+			engineErr:       fmt.Errorf("%w: bad param", study.ErrInvalidStudyConfig),
+			wantRetry:       false,
+			wantEngineCalls: 1,
+			wantLogs:        []string{"Dropping invalid study config tick"},
 		},
 		{
 			name:     "STANDARD active experiment is skipped and ACKed",
@@ -111,7 +157,8 @@ func TestESSReconciler_GateMatrix(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			reader := &fakeExperimentReader{exp: tc.exp, err: tc.err}
-			reconcile, err := NewESSReconciler(reader)
+			engine := &fakeStudyEngine{err: tc.engineErr}
+			reconcile, err := NewESSReconciler(reader, engine)
 			if err != nil {
 				t.Fatalf("NewESSReconciler() error = %v", err)
 			}
@@ -129,8 +176,15 @@ func TestESSReconciler_GateMatrix(t *testing.T) {
 			if reader.gotName != "experiments/42" {
 				t.Errorf("GetExperiment name = %q, want %q", reader.gotName, "experiments/42")
 			}
-			if res.ShouldBeRetried != tc.wantRetry || res.WasRunSuccessful == tc.wantRetry {
-				t.Errorf("HandleTask() = %+v, want retry=%v success=%v", res, tc.wantRetry, !tc.wantRetry)
+			if engine.calls != tc.wantEngineCalls {
+				t.Errorf("CreateStudy calls = %d, want %d", engine.calls, tc.wantEngineCalls)
+			}
+			wantSuccess := !tc.wantRetry && !errors.Is(tc.engineErr, study.ErrInvalidStudyConfig) && (tc.err == nil && (tc.exp != nil || tc.wantEngineCalls == 0) || status.Code(tc.err) == codes.NotFound)
+			if tc.exp == nil && tc.err == nil {
+				wantSuccess = false
+			}
+			if res.ShouldBeRetried != tc.wantRetry || res.WasRunSuccessful != wantSuccess {
+				t.Errorf("HandleTask() = %+v, want retry=%v success=%v", res, tc.wantRetry, wantSuccess)
 			}
 			if tc.wantErrCode != codes.OK && status.Code(res.Error) != tc.wantErrCode {
 				t.Errorf("HandleTask() error code = %v, want %v (err=%v)", status.Code(res.Error), tc.wantErrCode, res.Error)

@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026b/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml), [`templates/rbac.yaml`](templates/rbac.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload renders a `Deployment`, `ServiceAccount`, `Role`, and `RoleBinding`. It resolves the live `vizier` `Component` CR endpoint at startup, consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), and reports Redis and Vizier reachability on `/readyz`. It does not yet create Vizier studies on ticks or query ClickHouse. The chart renders no `Service`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
+> The `xmc-study-controller` workload renders a `Deployment`, `ServiceAccount`, `Role`, and `RoleBinding`. It resolves the live `vizier` `Component` CR endpoint at startup, consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), idempotently registers active studies in OSS Vizier via `CreateStudy`, and reports Redis and Vizier reachability on `/readyz`. It does not yet suggest/dispatch trials or query ClickHouse. The chart renders no `Service`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
 
 ---
 
@@ -103,16 +103,17 @@ The Study Controller consumes the `xmc-study-reconcile-stream` Redis stream as t
 
 Each delivered tick is classified by outcome (`xmc_study_controller_reconcile_ticks_total{outcome}`); for valid payloads, the controller acquires an advisory distributed per-study lease at `xmc:study-reconcile-lock:{xid}` (`SET ... NX PX` with a random 16-byte token, 70s lease TTL exceeding the 60s reconcile timeout, and token-checked Lua `DEL`):
 
-- **Acquired (`reconciled`)**: re-reads `experiments/{xid}` from ESS via `GetExperiment` using its Workload Identity Google ID token. Ticks for missing (`NotFound`), non-`STUDY`, or inactive (`status.active_state != ACTIVE`) experiments are logged and acknowledged as no-ops; active `STUDY` experiments log their verified state and are acknowledged after releasing the lease.
+- **Acquired (`reconciled`)**: re-reads `experiments/{xid}` from ESS via `GetExperiment` using its Workload Identity Google ID token. Ticks for missing (`NotFound`), non-`STUDY`, or inactive (`status.active_state != ACTIVE`) experiments are logged and acknowledged as no-ops; active `STUDY` experiments are idempotently registered in OSS Vizier (`owners/xmc/studies/study-{xid}`) via `CreateStudy` and acknowledged after releasing the lease.
 - **Already held (`contended`)**: logs `Skipped contended study reconcile tick` at info level and acknowledges the tick without reconciling so multi-replica deployments never reconcile the same study concurrently.
-- **Lock or reconcile failure (`retry_error`)**: releases any acquired lease if still owned and retries the tick via stream redelivery.
+- **Lock or transient reconcile failure (`retry_error`)**: releases any acquired lease if still owned and retries the tick via stream redelivery.
+- **Invalid study config (`invalid_study`)**: a `StudyConfig` that fails conversion or is rejected by Vizier with `InvalidArgument` (when not cancelled by shutdown) goes directly to `xmc-study-reconcile-dlq-stream` without retrying or logging user payload contents.
 - **Malformed payload (`invalid_payload`)**: a payload whose `data` does not decode to a valid `experiments/{xid}` resource name goes to the `xmc-study-reconcile-dlq-stream` dead-letter stream without acquiring the lock or retrying (raw stream entries missing a `data` field are dead-lettered directly by the stream consumer before the handler runs).
 
 The controller re-creates the consumer group when Redis loses it, for example after a restart without persistence.
 
 The Experiment State Server publishes one tick when it creates a `STUDY` experiment; see [Create Experiment](../../../../../docs/flows/experiment_lifecycle.md#1-create-experiment) and [Study Lifecycle](../../../../../docs/flows/study_lifecycle.md) for the end-to-end architecture and tick-processing diagrams.
 
-- **Metrics**: `GET /metrics` exposes `xmc_study_controller_reconcile_ticks_total{outcome="reconciled|contended|retry_error|invalid_payload"}`.
+- **Metrics**: `GET /metrics` exposes `xmc_study_controller_reconcile_ticks_total{outcome="reconciled|contended|retry_error|invalid_payload|invalid_study"}`.
 - **Troubleshooting**: to inspect dead-lettered ticks and the reason each was rejected, run `XRANGE xmc-study-reconcile-dlq-stream - +` in `redis-cli`.
 - **Shutdown**: on SIGTERM the controller stops its HTTP server (up to 5s), then drains the consumer (up to 10s) so an in-flight tick releases its per-study lock (2s detached timeout) and settles on the stream (5s detached timeout). Ticks it has not started stay pending and are reclaimed later. If you set the Component's `lifecycleControl.drainTimeoutSeconds`, set it to at least 10: the pod's termination grace period is that value plus 5s.
 

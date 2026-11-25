@@ -28,6 +28,7 @@ import (
 	"xmanager_cloud/internal/redislock"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/pkg/study"
 )
 
 const (
@@ -39,6 +40,7 @@ const (
 	outcomeContended        = "contended"
 	outcomeRetryError       = "retry_error"
 	outcomeInvalidPayload   = "invalid_payload"
+	outcomeInvalidStudy     = "invalid_study"
 )
 
 var reconcileTicksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -47,7 +49,7 @@ var reconcileTicksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 }, []string{"outcome"})
 
 func init() {
-	for _, o := range []string{outcomeReconciled, outcomeContended, outcomeRetryError, outcomeInvalidPayload} {
+	for _, o := range []string{outcomeReconciled, outcomeContended, outcomeRetryError, outcomeInvalidPayload, outcomeInvalidStudy} {
 		reconcileTicksTotal.WithLabelValues(o)
 	}
 }
@@ -159,6 +161,11 @@ func (h *Handler) HandleTask(ctx context.Context, workerID, data string) rediscl
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: true, Error: err}
 	}
 	if err := h.reconcileWithLease(ctx, workerID, xid, lease); err != nil {
+		if errors.Is(err, study.ErrInvalidStudyConfig) && ctx.Err() == nil {
+			reconcileTicksTotal.WithLabelValues(outcomeInvalidStudy).Inc()
+			logging.Warn(ctx, "Dropping invalid study config tick", "worker_id", workerID)
+			return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: false, Error: err}
+		}
 		reconcileTicksTotal.WithLabelValues(outcomeRetryError).Inc()
 		logging.Warn(ctx, "Failed to process study reconcile tick", "worker_id", workerID, "error", err)
 		return redisclient.TaskResult{WasRunSuccessful: false, ShouldBeRetried: true, Error: err}
