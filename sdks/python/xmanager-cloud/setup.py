@@ -47,7 +47,11 @@ class BuildPyWithProtos(build_py):  # type: ignore[misc]
 
     def find_package_modules(self, package: str, package_dir: str) -> list[tuple[str, str, str]]:
         modules = super().find_package_modules(package, package_dir)
-        return [module for module in modules if not build_staging.is_test_module(module[1])]
+        return [
+            (pkg, module, path)
+            for pkg, module, path in modules
+            if not build_staging.is_test_module(module)
+        ]
 
     def run(self) -> None:
         super().run()
