@@ -32,6 +32,16 @@ from packaging.version import InvalidVersion, Version
 MIN_XMANAGER_VERSION = Version("0.9.0rc1")
 
 
+def _parse_version(installed: str | None) -> Version | None:
+    """Parses an installed version string; None if it is missing or invalid."""
+    if installed is None:
+        return None
+    try:
+        return Version(installed)
+    except InvalidVersion:
+        return None
+
+
 def check_xmanager_compatibility() -> None:
     """Raises if an installed `xmanager` still bundles `xmanager_cloud`.
 
@@ -49,9 +59,8 @@ def check_xmanager_compatibility() -> None:
         # A dist-info without a Version field: Python 3.14+ raises KeyError, while
         # older versions return None.
         installed = None
-    try:
-        version = Version(installed or "")
-    except InvalidVersion:
+    version = _parse_version(installed)
+    if version is None:
         warnings.warn(
             f"Cannot parse the installed xmanager version {installed!r}; skipping the "
             f"xmanager>={MIN_XMANAGER_VERSION} compatibility check.",
