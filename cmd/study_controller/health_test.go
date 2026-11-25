@@ -47,6 +47,8 @@ func TestNewHTTPHandler(t *testing.T) {
 		pingErr      error
 		vizierErr    error
 		nilVizier    bool
+		typedNil     bool
+		unconfigured bool
 		wantStatus   int
 		wantContains string
 	}{
@@ -56,6 +58,8 @@ func TestNewHTTPHandler(t *testing.T) {
 		{name: "readiness with Redis unreachable", method: http.MethodGet, path: "/readyz", pingErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Redis ping timeout", method: http.MethodGet, path: "/readyz", pingErr: context.DeadlineExceeded, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Vizier unresolved", method: http.MethodGet, path: "/readyz", nilVizier: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with typed-nil vizierProbe", method: http.MethodGet, path: "/readyz", typedNil: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with nil vizier interface", method: http.MethodGet, path: "/readyz", unconfigured: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Vizier unreachable", method: http.MethodGet, path: "/readyz", vizierErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "metrics exposes runtime stats", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "go_goroutines"},
 		{name: "metrics exposes reconcile ticks counter", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "xmc_study_controller_reconcile_ticks_total"},
@@ -66,9 +70,15 @@ func TestNewHTTPHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var vizier pinger = &fakePinger{err: tc.vizierErr}
+			vp := &vizierProbe{}
+			vp.Set(&fakePinger{err: tc.vizierErr})
+			var vizier pinger = vp
 			if tc.nilVizier {
 				vizier = &vizierProbe{}
+			} else if tc.typedNil {
+				vizier = (*vizierProbe)(nil)
+			} else if tc.unconfigured {
+				vizier = nil
 			}
 			handler := newHTTPHandler(&fakePinger{err: tc.pingErr}, vizier)
 			rec := httptest.NewRecorder()

@@ -18,10 +18,7 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "vizier",
-    srcs = [
-        "client.go",
-        "resolver.go",
-    ],
+    srcs = ["vizier.go"],
     importpath = "xmanager_cloud/pkg/study/vizier",
     deps = [
         "//internal/logging",
@@ -38,10 +35,7 @@ go_library(
 go_test(
     name = "vizier_test",
     size = "small",
-    srcs = [
-        "client_test.go",
-        "resolver_test.go",
-    ],
+    srcs = ["client_test.go", "resolver_test.go"],
     embed = [":vizier"],
     deps = [
         "//internal/logging",

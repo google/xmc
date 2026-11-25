@@ -42,15 +42,8 @@ func dialBufconn(t *testing.T, register func(*grpc.Server)) (*Client, func()) {
 		_ = lis.Close()
 		t.Fatalf("Dial() error = %v", err)
 	}
-	t.Cleanup(func() {
-		_ = client.Close()
-		srv.Stop()
-		_ = lis.Close()
-	})
-	return client, func() {
-		srv.Stop()
-		_ = lis.Close()
-	}
+	t.Cleanup(func() { _ = client.Close(); srv.Stop(); _ = lis.Close() })
+	return client, func() { srv.Stop(); _ = lis.Close() }
 }
 
 func TestClient_Ping(t *testing.T) {
@@ -88,24 +81,35 @@ func TestClient_Ping(t *testing.T) {
 		}
 	})
 
-	t.Run("stopped server returns error", func(t *testing.T) {
+	t.Run("stopped server fails fast despite WaitForReady default", func(t *testing.T) {
 		t.Parallel()
 		c, stop := dialBufconn(t, nil)
 		stop()
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
+		start := time.Now()
 		if err := c.Ping(ctx); err == nil {
 			t.Fatal("Ping() on stopped server = nil, want error")
 		}
+		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+			t.Errorf("Ping() took %v, want fast fail (<500ms) with WaitForReady(false)", elapsed)
+		}
 	})
 
-	t.Run("nil client", func(t *testing.T) {
+	t.Run("Conn and nil client", func(t *testing.T) {
 		t.Parallel()
-		var c *Client
-		if err := c.Ping(context.Background()); err == nil {
+		c, _ := dialBufconn(t, nil)
+		if c.Conn() == nil {
+			t.Error("Client.Conn() = nil, want non-nil")
+		}
+		var nilClient *Client
+		if nilClient.Conn() != nil {
+			t.Errorf("(*Client)(nil).Conn() = %v, want nil", nilClient.Conn())
+		}
+		if err := nilClient.Ping(context.Background()); err == nil {
 			t.Error("(*Client)(nil).Ping() = nil, want error")
 		}
-		if err := c.Close(); err != nil {
+		if err := nilClient.Close(); err != nil {
 			t.Errorf("(*Client)(nil).Close() = %v, want nil", err)
 		}
 	})

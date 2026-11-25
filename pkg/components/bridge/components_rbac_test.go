@@ -329,6 +329,9 @@ func workloadRBACCases(kube kubernetes.Interface) []rbacCase {
 		{"DELETE allowlisted xmc-study-controller-components-reader Role passes RBAC (NotFound)", func(ctx context.Context) error {
 			return kube.RbacV1().Roles("xmc").Delete(ctx, "xmc-study-controller-components-reader", metav1.DeleteOptions{})
 		}, apierrors.IsNotFound},
+		{"DELETE allowlisted xmc-study-controller-components-reader-binding RoleBinding passes RBAC (NotFound)", func(ctx context.Context) error {
+			return kube.RbacV1().RoleBindings("xmc").Delete(ctx, "xmc-study-controller-components-reader-binding", metav1.DeleteOptions{})
+		}, apierrors.IsNotFound},
 		{"DELETE non-allowlisted xmc-bridge-role Role is Forbidden", func(ctx context.Context) error {
 			return kube.RbacV1().Roles("xmc").Delete(ctx, "xmc-bridge-role", metav1.DeleteOptions{})
 		}, apierrors.IsForbidden},

@@ -135,8 +135,8 @@ func summarizeStudyController(t *testing.T, manifest string) studyControllerSumm
 }
 
 // TestHPOChart_BridgeReleaseRendersWorkload renders the hpo chart as the xmc-cmp-hpo release that
-// xmc-bridge installs: it must render the xmc-study-controller Deployment and ServiceAccount, and
-// not the Component CR.
+// xmc-bridge installs: it must render the xmc-study-controller Deployment, ServiceAccount, Role, and
+// RoleBinding, and not the Component CR.
 func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	t.Parallel()
 	rendered, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", map[string]any{
