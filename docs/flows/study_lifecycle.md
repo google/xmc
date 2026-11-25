@@ -12,9 +12,10 @@ profile values and actuation details.
 > `hpo` and `vizier` are `EXPERIMENTAL` components shipped in the preview
 > [`stable-2026b`](../../deploy/profiles/stable-2026b/README.md) profile (disabled by default;
 > enabling requires `acknowledgeExperimental: true`). Today `xmc-study-controller` validates
-> reconcile ticks, serializes per-study execution under an advisory Redis lease lock, and records
-> health and Prometheus metrics; reconciling studies against ESS, Vizier, and ClickHouse is still a
-> no-op stub.
+> reconcile ticks, serializes per-study execution under an advisory Redis lease lock, authenticates
+> to ESS with its Workload Identity Google ID token to re-read each ticked experiment (`STUDY` +
+> `ACTIVE` gate), and records health and Prometheus metrics; Vizier and ClickHouse orchestration is
+> not yet wired.
 
 ---
 
@@ -51,7 +52,7 @@ flowchart LR
     end
 
     Prof -->|"Component CRs:<br/>hpo, vizier, clickhouse"| Bridge
-    Bridge -.->|"TCP :7077 readiness probe"| Viz
+    Bridge -.->|"Readiness probe :7077<br/>(TCP, or gRPC health opt-in)"| Viz
     Bridge -.->|"Readiness check"| CH
     Bridge -.->|"Helm install when<br/>vizier & clickhouse Ready"| SC
 
@@ -62,6 +63,7 @@ flowchart LR
 
     Stream -.->|"XREADGROUP / XAUTOCLAIM"| SC
     SC <-->|"SET NX PX 70s / Lua DEL<br/>& /readyz PING"| Lock
+    SC -->|"GetExperiment(experiments/{xid})<br/>(WI GSA Google ID token)"| ESS
     SC -.->|"Invalid payload / exhausted retries"| DLQ
 ```
 
@@ -100,9 +102,10 @@ flowchart TD
     Parse -->|"Yes"| Acq["SET xmc:study-reconcile-lock:{xid} token NX PX 70s<br/>(16-byte crypto/rand hex token)"]
     Acq -->|"NX miss (ErrNotAcquired)"| Cont["outcome=contended<br/>Log INFO + XACK (skip reconcile)"]
     Acq -->|"Redis error"| RetryAcq["outcome=retry_error<br/>Warn + re-enqueue (up to 5 retries -> DLQ)"]
-    Acq -->|"Acquired"| Run["Run reconcile(ctx, xid) (60s timeout; stub today)<br/>then Lua compare-and-DEL release (2s detached ctx)"]
-    Run -->|"Error or SIGTERM cancel"| RetryRun["outcome=retry_error<br/>Warn + re-enqueue (up to 5 retries -> DLQ)"]
-    Run -->|"Success"| Ok["outcome=reconciled<br/>Log INFO + XACK"]
+    Acq -->|"Acquired"| Read["ESS GetExperiment(experiments/{xid})<br/>(60s timeout, WI GSA ID token)"]
+    Read -->|"NotFound / non-STUDY /<br/>active_state != ACTIVE"| Skip["Log INFO skip<br/>release lease (2s detached)<br/>outcome=reconciled + XACK"]
+    Read -->|"Other ESS error or SIGTERM"| RetryRun["outcome=retry_error<br/>release lease + re-enqueue (up to 5 retries -> DLQ)"]
+    Read -->|"STUDY & ACTIVE"| Ok["Log verified study state<br/>release lease (2s detached)<br/>outcome=reconciled + XACK"]
 ```
 
 ### Lease, Timeout, and Shutdown Invariants

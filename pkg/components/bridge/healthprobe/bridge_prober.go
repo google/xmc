@@ -29,7 +29,7 @@ import (
 type StatusDetectorHealthProber interface {
 	// DetectStatus queries the target 3P custom resource to determine readiness and extract access coordinates.
 	DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error)
-	// Probe executes an active HTTP/TCP probe against target.
+	// Probe executes an active HTTP/TCP/gRPC probe against target.
 	Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error)
 	// ProbeHealth evaluates the runtime health of a component based on its spec and default namespace, returning health status and message.
 	ProbeHealth(ctx context.Context, spec *componentspb.ComponentSpec, defaultNamespace string) (bool, string)
@@ -64,7 +64,7 @@ func (p *BridgeProber) DetectStatus(ctx context.Context, ref statusdetector.Wrap
 	return p.detector.DetectStatus(ctx, ref)
 }
 
-// Probe executes an active HTTP/TCP health probe against target using the configured probe timeout.
+// Probe executes an active HTTP/TCP/gRPC health probe against target using the configured probe timeout.
 func (p *BridgeProber) Probe(ctx context.Context, target string, timeout time.Duration) (*HealthProbeResult, error) {
 	if p.healthProber == nil {
 		return nil, errors.New("health prober is uninitialized")

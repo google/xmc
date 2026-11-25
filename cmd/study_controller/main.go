@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"xmanager_cloud/cmd/study_controller/config"
+	"xmanager_cloud/cmd/study_controller/essclient"
 	"xmanager_cloud/cmd/study_controller/worker"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
@@ -76,18 +77,34 @@ func run(ctx context.Context, args []string) int {
 }
 
 // listenAndServe listens on cfg.Port, consumes study reconcile ticks from the Redis server at
-// cfg.RedisAddr and serves the HTTP endpoints until ctx is done. The Redis consumer client also
-// backs readiness. The consumer is stopped and its client closed on return.
+// cfg.RedisAddr, re-reads studies from ESS at cfg.ESSAddr, and serves the HTTP endpoints until
+// ctx is done. The Redis consumer client also backs readiness. The consumer is stopped and its
+// clients closed on return.
 func listenAndServe(ctx context.Context, cfg config.Config) error {
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {
 		return fmt.Errorf("failed to listen on port %s: %w", cfg.Port, err)
 	}
-	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr))
+	essClient, err := essclient.New(ctx, cfg.ESSAddr, cfg.ESSAudience)
+	if err != nil {
+		_ = lis.Close()
+		return fmt.Errorf("failed to create ESS client: %w", err)
+	}
+	defer func() {
+		if closeErr := essClient.Close(); closeErr != nil {
+			logging.Warn(ctx, "Failed to close ESS client", "error", closeErr)
+		}
+	}()
+	reconcile, err := worker.NewESSReconciler(essClient)
+	if err != nil {
+		_ = lis.Close()
+		return fmt.Errorf("failed to create ESS reconciler: %w", err)
+	}
+	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr), reconcile)
 }
 
-func serveWithClient(ctx context.Context, lis net.Listener, client *redisclient.ConsumerClient) error {
-	handler, err := worker.NewRedisHandler(client)
+func serveWithClient(ctx context.Context, lis net.Listener, client *redisclient.ConsumerClient, reconcile worker.ReconcileFunc) error {
+	handler, err := worker.NewRedisHandler(client, reconcile)
 	if err != nil {
 		_ = lis.Close()
 		if client != nil && client.Client != nil {

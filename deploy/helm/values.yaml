@@ -46,6 +46,8 @@ featureFlags:
 
 componentsDeployment:
   cmsAddress: "grpc-service:50051"
+  # In-cluster ESS gRPC endpoint passed to 1P components as <component>Deployment.essAddr; defaults to cmsAddress / "grpc-service:50051".
+  essAddress: ""
   # Human-readable cluster label reported in CMS ownership fence declarations; defaults to release name when empty.
   clusterName: ""
   # Monotonic fencing epoch declared by xmc-bridge to CMS (>= 1).

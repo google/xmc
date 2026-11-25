@@ -1024,6 +1024,8 @@ class TestHelmSuiteScope(unittest.TestCase):
         for path in (
             "deploy/helm/values.yaml",
             "deploy/helm/templates/reconciler/deployment.yaml",
+            "deploy/profiles/stable-2026b/components/hpo/templates/serviceaccount.yaml",
+            "deploy/profiles/stable-2026b/components/hpo/values.yaml",
             "deploy/ctk_v2/xmanager-cloud.yaml",
             "test/helm/session_ttl_test.py",
             ".github/workflows/unit-tests.yml",
@@ -1033,6 +1035,7 @@ class TestHelmSuiteScope(unittest.TestCase):
             self.assertTrue(touches_helm_suite(["README.md", path]), path)
         for path in (
             "deploy/helmfile.yaml",
+            "deploy/profiles/stable-2026b/components/ess/values.yaml",
             "deploy/ctk_v2/verify_xmc.py",
             ".github/actions/run-ui-tests/action.yml",
             "cmd/ui/src/app/app.component.ts",

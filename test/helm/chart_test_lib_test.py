@@ -15,10 +15,12 @@
 """Covers the plumbing every chart suite depends on to report honest results."""
 
 import os
+import tempfile
 import unittest
 from unittest import mock
 
 from chart_test_lib import (
+    _resolve_chart_dir,
     find_chart_dir,
     find_repo_file,
     render_chart,
@@ -99,6 +101,46 @@ class RenderTemplateTest(unittest.TestCase):
 
         self.assertIn("templates/dashboard-service/deployment.yaml", manifests)
         self.assertIn("templates/ess/deployment.yaml", manifests)
+
+    def test_resolve_chart_dir_handles_default_relative_absolute_and_missing(self) -> None:
+        """_resolve_chart_dir defaults to deploy/helm, preserves abs paths, and resolves relative."""
+        default_dir = find_chart_dir()
+        abs_dir = os.path.abspath(default_dir)
+        self.assertEqual(_resolve_chart_dir(None), default_dir)
+        self.assertEqual(_resolve_chart_dir(""), default_dir)
+        self.assertEqual(_resolve_chart_dir(os.path.join("deploy", "helm")), default_dir)
+        self.assertEqual(_resolve_chart_dir(abs_dir), abs_dir)
+        with self.assertRaises(FileNotFoundError):
+            _resolve_chart_dir(os.path.join("deploy", "does-not-exist"))
+
+    def test_render_chart_supports_custom_chart_dir_and_release_name(self) -> None:
+        """render_chart forwards custom chart_dir (relative or absolute) and release_name."""
+        for chart_dir in (os.path.join("deploy", "helm"), os.path.abspath(find_chart_dir())):
+            with self.subTest(chart_dir=chart_dir):
+                manifests = render_chart(
+                    {},
+                    chart_dir=chart_dir,
+                    release_name="custom-release",
+                )
+                self.assertIn("app.kubernetes.io/instance: custom-release", manifests)
+
+    def test_render_chart_renders_a_non_default_chart_dir(self) -> None:
+        """render_chart renders the chart at chart_dir rather than falling back to deploy/helm."""
+        with tempfile.TemporaryDirectory() as chart_dir:
+            with open(os.path.join(chart_dir, "Chart.yaml"), "w", encoding="utf-8") as chart:
+                chart.write("apiVersion: v2\nname: probe\nversion: 0.0.1\n")
+            os.mkdir(os.path.join(chart_dir, "templates"))
+            template = os.path.join(chart_dir, "templates", "probe.yaml")
+            with open(template, "w", encoding="utf-8") as probe:
+                probe.write(
+                    "apiVersion: v1\nkind: ConfigMap\nmetadata:\n"
+                    "  name: probe-{{ .Release.Name }}\n"
+                )
+
+            manifests = render_chart({}, chart_dir=chart_dir, release_name="custom-release")
+
+        self.assertIn("name: probe-custom-release", manifests)
+        self.assertNotIn("templates/ess/deployment.yaml", manifests)
 
     def test_render_surfaces_the_template_error(self) -> None:
         """A bare CalledProcessError hides the helm output that says what went wrong."""

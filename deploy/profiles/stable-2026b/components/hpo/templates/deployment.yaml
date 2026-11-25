@@ -16,6 +16,7 @@
 # Rendered only for the xmc-cmp-hpo release that xmc-bridge installs; the stable-2026b profile
 # release renders only the Component CR.
 {{- $port := 8080 }}
+{{- $deploy := .Values.hpoDeployment | default dict }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,7 +44,7 @@ spec:
       serviceAccountName: xmc-study-controller
       # The Study Controller does not call the Kubernetes API.
       automountServiceAccountToken: false
-      {{- with (.Values.hpoDeployment | default dict).terminationGracePeriodSeconds }}
+      {{- with $deploy.terminationGracePeriodSeconds }}
       # Set by xmc-bridge from the Component drain timeout.
       terminationGracePeriodSeconds: {{ . }}
       {{- end }}
@@ -69,7 +70,10 @@ spec:
         args:
         - "-port={{ $port }}"
         # Set by xmc-bridge from the umbrella chart value redisAddr.
-        - {{ printf "-redis_addr=%s" (required "hpoDeployment.redisAddr is required" (.Values.hpoDeployment | default dict).redisAddr) | quote }}
+        - {{ printf "-redis_addr=%s" (required "hpoDeployment.redisAddr is required" $deploy.redisAddr) | quote }}
+        # Set by xmc-bridge from ESS_ADDR/CMS_ADDRESS and IAP_EXPECTED_GRPC_AUDIENCE/CLIENT_ID.
+        - {{ printf "-ess_addr=%s" (required "hpoDeployment.essAddr is required" $deploy.essAddr) | quote }}
+        - {{ printf "-ess_audience=%s" (required "hpoDeployment.essAudience is required" $deploy.essAudience) | quote }}
         env:
         - name: REDIS_PASSWORD
           valueFrom:

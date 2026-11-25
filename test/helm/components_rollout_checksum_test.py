@@ -64,6 +64,12 @@ CONFIG_MUTATIONS: tuple[tuple[str, str, dict[str, str], str | None], ...] = (
         {"componentsDeployment.cmsAddress": "grpc-service:60051"},
         None,
     ),
+    (
+        "templates/components/deployment.yaml",
+        "xmc-bridge-deployment",
+        {"componentsDeployment.essAddress": "ess-custom:50051"},
+        None,
+    ),
 )
 
 POD_CONFIG_CHECKSUM_PATTERN = re.compile(
@@ -125,6 +131,29 @@ class ComponentsRolloutChecksumTest(unittest.TestCase):
                 first = pod_config_checksum(render_template(template, BASE_VALUES))
                 second = pod_config_checksum(render_template(template, BASE_VALUES))
                 self.assertEqual(first, second)
+
+    def test_bridge_configmap_ess_addr_precedence(self) -> None:
+        """ESS_ADDR prefers essAddress, falls back to cmsAddress, then grpc-service:50051."""
+        cases: tuple[tuple[str, dict[str, str], str], ...] = (
+            ("default", {}, 'ESS_ADDR: "grpc-service:50051"'),
+            (
+                "cmsAddress fallback",
+                {"componentsDeployment.cmsAddress": "cms-alt:50051"},
+                'ESS_ADDR: "cms-alt:50051"',
+            ),
+            (
+                "essAddress override",
+                {
+                    "componentsDeployment.cmsAddress": "cms-alt:50051",
+                    "componentsDeployment.essAddress": "ess-alt:50051",
+                },
+                'ESS_ADDR: "ess-alt:50051"',
+            ),
+        )
+        for name, overrides, expected in cases:
+            with self.subTest(case=name):
+                manifest = render_template("templates/components/configmap.yaml", overrides)
+                self.assertIn(expected, manifest)
 
     def test_null_components_and_metrics_blocks_render_safely(self) -> None:
         """Null overrides for componentsDeployment or metrics do not fail checksum rendering."""
