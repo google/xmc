@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-VALID_ROLES: tuple[str, ...] = ("base", "lint")
+VALID_ROLES: tuple[str, ...] = ("base", "lint", "cloud")
 _CMD_TIMEOUT_SECONDS = 60
 
 
@@ -183,6 +183,54 @@ def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> l
     return failures
 
 
+def _cloud_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation, ...]:
+    """Builds command expectations specific to the ci-cloud image.
+
+    Args:
+        manifest: Parsed versions.json mapping.
+
+    Returns:
+        Tuple of cloud ``CommandExpectation`` objects.
+    """
+    tf_ver = _tool_version(manifest, "terraform")
+    kubectl_ver = _tool_version(manifest, "kubectl")
+    helm_ver = _tool_version(manifest, "helm")
+    kind_ver = _tool_version(manifest, "kind")
+    docker_ver = _tool_version(manifest, "docker_cli")
+    return (
+        CommandExpectation("gcloud", ("gcloud", "version"), ("Google Cloud SDK",)),
+        CommandExpectation("gke-gcloud-auth-plugin", ("gke-gcloud-auth-plugin", "--version"), ()),
+        CommandExpectation("docker-cli", ("docker", "--version"), (docker_ver,)),
+        CommandExpectation("gcluster", ("/opt/xmc-tools/bin/gcluster", "--version"), ()),
+        CommandExpectation(
+            "terraform", ("/opt/xmc-tools/bin/terraform", "version"), (f"v{tf_ver}",)
+        ),
+        CommandExpectation(
+            "kubectl", ("/opt/xmc-tools/bin/kubectl", "version", "--client"), (f"v{kubectl_ver}",)
+        ),
+        CommandExpectation(
+            "helm", ("/opt/xmc-tools/bin/helm", "version", "--short"), (f"v{helm_ver}",)
+        ),
+        CommandExpectation("kind", ("/opt/xmc-tools/bin/kind", "--version"), (kind_ver,)),
+    )
+
+
+def _check_cloud_extras() -> list[str]:
+    """Verifies bazelisk executable and bazel symlink under /opt/xmc-tools/bin.
+
+    Returns:
+        List of failure messages (empty when all checks pass).
+    """
+    failures: list[str] = []
+    bazelisk = Path("/opt/xmc-tools/bin/bazelisk")
+    bazel = Path("/opt/xmc-tools/bin/bazel")
+    if not bazelisk.is_file() or not os.access(bazelisk, os.X_OK):
+        failures.append(f"bazelisk: missing executable at {bazelisk}")
+    if not bazel.exists() or not os.access(bazel, os.X_OK):
+        failures.append(f"bazel: missing executable/symlink at {bazel}")
+    return failures
+
+
 def run_smoke_checks(
     role: str,
     manifest: Mapping[str, Any],
@@ -192,7 +240,7 @@ def run_smoke_checks(
     """Executes all smoke assertions for a CI runner image role.
 
     Args:
-        role: Target role (``base``, ``lint``).
+        role: Target role (``base``, ``lint``, ``cloud``).
         manifest: Parsed versions.json mapping.
         env: Optional environment mapping (defaults to ``os.environ``).
         runner: Subprocess runner callable.
@@ -213,6 +261,9 @@ def run_smoke_checks(
     if role == "lint":
         specs.extend(_lint_expectations(manifest))
         failures.extend(_check_lint_extras(manifest, active_env))
+    if role == "cloud":
+        specs.extend(_cloud_expectations(manifest))
+        failures.extend(_check_cloud_extras())
 
     for spec in specs:
         err = _run_command_expectation(spec, runner)

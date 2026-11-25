@@ -56,6 +56,15 @@ variable "HELM_VERSION" { default = "" }
 variable "HELM_SHA256" { default = "" }
 variable "TRIVY_VERSION" { default = "" }
 variable "TRIVY_SHA256" { default = "" }
+variable "KUBECTL_VERSION" { default = "" }
+variable "KUBECTL_SHA256" { default = "" }
+variable "KIND_VERSION" { default = "" }
+variable "KIND_SHA256" { default = "" }
+variable "BAZELISK_VERSION" { default = "" }
+variable "BAZELISK_SHA256" { default = "" }
+variable "DOCKER_CLI_VERSION" { default = "" }
+variable "DOCKER_CLI_SHA256" { default = "" }
+variable "HPC_TOOLKIT_COMMIT" { default = "" }
 
 function "image_tags" {
   params = [name]
@@ -73,7 +82,7 @@ function "gha_cache_to" {
 }
 
 group "default" {
-  targets = ["ci-base", "ci-lint"]
+  targets = ["ci-base", "ci-lint", "ci-cloud"]
 }
 
 target "_common" {
@@ -133,5 +142,33 @@ target "ci-lint" {
     HELM_SHA256           = HELM_SHA256
     TRIVY_VERSION         = TRIVY_VERSION
     TRIVY_SHA256          = TRIVY_SHA256
+  }
+}
+
+target "ci-cloud" {
+  inherits   = ["_common"]
+  dockerfile = "deploy/ci/images/Dockerfile.cloud"
+  tags       = image_tags("ci-cloud")
+  cache-from = gha_cache_from("ci-cloud")
+  cache-to   = gha_cache_to("ci-cloud")
+  contexts = {
+    "ci-base" = "target:ci-base"
+  }
+  args = {
+    GO_VERSION         = GO_VERSION
+    GO_SHA256          = GO_SHA256
+    HPC_TOOLKIT_COMMIT = HPC_TOOLKIT_COMMIT
+    TERRAFORM_VERSION  = TERRAFORM_VERSION
+    TERRAFORM_SHA256   = TERRAFORM_SHA256
+    KUBECTL_VERSION    = KUBECTL_VERSION
+    KUBECTL_SHA256     = KUBECTL_SHA256
+    HELM_VERSION       = HELM_VERSION
+    HELM_SHA256        = HELM_SHA256
+    KIND_VERSION       = KIND_VERSION
+    KIND_SHA256        = KIND_SHA256
+    BAZELISK_VERSION   = BAZELISK_VERSION
+    BAZELISK_SHA256    = BAZELISK_SHA256
+    DOCKER_CLI_VERSION = DOCKER_CLI_VERSION
+    DOCKER_CLI_SHA256  = DOCKER_CLI_SHA256
   }
 }

@@ -46,6 +46,8 @@ class BuildBakeVariablesTest(unittest.TestCase):
         self.assertEqual(variables["NODE_VERSION"]["default"], "22.23.5")
         self.assertEqual(variables["GO_VERSION"]["default"], "1.26.11")
         self.assertEqual(variables["TERRAFORM_VERSION"]["default"], "1.12.2")
+        self.assertEqual(variables["KUBECTL_VERSION"]["default"], "1.32.2")
+        self.assertEqual(variables["KIND_VERSION"]["default"], "0.29.0")
 
     def test_rejects_missing_base_image(self) -> None:
         manifest = _load_baseline_manifest()

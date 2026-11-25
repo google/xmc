@@ -1,0 +1,96 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM ci-base AS gcluster-builder
+
+ARG GO_VERSION
+ARG GO_SHA256
+ARG HPC_TOOLKIT_COMMIT
+
+RUN apt-get update && apt-get install -y --no-install-recommends make \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eu; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz; \
+    echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c -; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm -f /tmp/go.tar.gz
+
+RUN set -eu; \
+    mkdir -p /src/hpc-toolkit /out; \
+    cd /src/hpc-toolkit; \
+    git init -q; \
+    git remote add origin https://github.com/GoogleCloudPlatform/hpc-toolkit.git; \
+    git fetch --depth 1 origin "${HPC_TOOLKIT_COMMIT}"; \
+    git checkout -q FETCH_HEAD; \
+    PATH="/usr/local/go/bin:${PATH}" make; \
+    cp /src/hpc-toolkit/gcluster /out/gcluster
+
+FROM ci-base
+
+ARG TERRAFORM_VERSION
+ARG TERRAFORM_SHA256
+ARG KUBECTL_VERSION
+ARG KUBECTL_SHA256
+ARG HELM_VERSION
+ARG HELM_SHA256
+ARG KIND_VERSION
+ARG KIND_SHA256
+ARG BAZELISK_VERSION
+ARG BAZELISK_SHA256
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256
+
+# Install Google Cloud CLI and GKE auth plugin from Google's official apt repository.
+RUN set -eu; \
+    curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+        | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+        > /etc/apt/sources.list.d/google-cloud-sdk.list; \
+    apt-get update && apt-get install -y --no-install-recommends \
+        google-cloud-cli \
+        google-cloud-cli-gke-gcloud-auth-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install static Docker CLI binary (client only; daemon comes from the host socket when needed).
+RUN set -eu; \
+    curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" -o /tmp/docker.tgz; \
+    echo "${DOCKER_CLI_SHA256}  /tmp/docker.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/docker.tgz -C /usr/local/bin --strip-components=1 docker/docker; \
+    chmod +x /usr/local/bin/docker; \
+    rm -f /tmp/docker.tgz
+
+# Populate /opt/xmc-tools/bin so deploy-gke.yml can extract pinned binaries via docker cp.
+COPY --from=gcluster-builder /out/gcluster /opt/xmc-tools/bin/gcluster
+
+RUN set -eu; \
+    mkdir -p /opt/xmc-tools/bin; \
+    curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip; \
+    echo "${TERRAFORM_SHA256}  /tmp/terraform.zip" | sha256sum -c -; \
+    unzip -q -o /tmp/terraform.zip terraform -d /opt/xmc-tools/bin; \
+    curl -fsSL "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o /opt/xmc-tools/bin/kubectl; \
+    echo "${KUBECTL_SHA256}  /opt/xmc-tools/bin/kubectl" | sha256sum -c -; \
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz; \
+    echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/helm.tar.gz -C /opt/xmc-tools/bin --strip-components=1 linux-amd64/helm; \
+    curl -fsSL "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64" -o /opt/xmc-tools/bin/kind; \
+    echo "${KIND_SHA256}  /opt/xmc-tools/bin/kind" | sha256sum -c -; \
+    curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/bazelisk-linux-amd64" -o /opt/xmc-tools/bin/bazelisk; \
+    echo "${BAZELISK_SHA256}  /opt/xmc-tools/bin/bazelisk" | sha256sum -c -; \
+    chmod +x /opt/xmc-tools/bin/*; \
+    ln -sf /opt/xmc-tools/bin/bazelisk /opt/xmc-tools/bin/bazel; \
+    chmod -R a+rX /opt/xmc-tools; \
+    rm -f /tmp/terraform.zip /tmp/helm.tar.gz
+
+ENV PATH="/opt/xmc-tools/bin:${PATH}"

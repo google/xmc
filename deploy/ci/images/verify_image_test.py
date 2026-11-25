@@ -58,9 +58,17 @@ def _fake_runner_factory(
         "buildifier": f"buildifier version: {tools['buildifier']['version']}",
         "shellcheck": f"version: {tools['shellcheck']['version']}",
         "terraform": f"Terraform v{tools['terraform']['version']}",
+        "/opt/xmc-tools/bin/terraform": f"Terraform v{tools['terraform']['version']}",
         "tflint": f"TFLint version {tools['tflint']['version']}",
         "helm": f"v{tools['helm']['version']}+g1234",
+        "/opt/xmc-tools/bin/helm": f"v{tools['helm']['version']}+g1234",
         "trivy": f"Version: {tools['trivy']['version']}",
+        "gcloud": "Google Cloud SDK 500.0.0",
+        "gke-gcloud-auth-plugin": "Kubernetes v1.32.0",
+        "docker": f"Docker version {tools['docker_cli']['version']}",
+        "/opt/xmc-tools/bin/gcluster": "gcluster v1.109.0",
+        "/opt/xmc-tools/bin/kubectl": f"Client Version: v{tools['kubectl']['version']}",
+        "/opt/xmc-tools/bin/kind": f"kind v{tools['kind']['version']} go1.26",
     }
 
     def _run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -109,6 +117,39 @@ class RunSmokeChecksTest(unittest.TestCase):
             )
         self.assertTrue(any("addlicense" in f for f in failures))
         self.assertTrue(any("tflint-google-plugin" in f for f in failures))
+
+    def test_cloud_role_validates_tools_and_bazelisk(self) -> None:
+        orig_is_file = Path.is_file
+        orig_exists = Path.exists
+        orig_access = verify_image.os.access
+
+        def _is_file(p: Path) -> bool:
+            return str(p) == "/opt/xmc-tools/bin/bazelisk" or orig_is_file(p)
+
+        def _exists(p: Path) -> bool:
+            return str(p) == "/opt/xmc-tools/bin/bazel" or orig_exists(p)
+
+        def _access(path: Any, mode: int) -> bool:
+            if str(path).startswith("/opt/xmc-tools/bin/bazel"):
+                return True
+            return orig_access(path, mode)
+
+        with (
+            mock.patch.object(Path, "is_file", _is_file),
+            mock.patch.object(Path, "exists", _exists),
+            mock.patch.object(verify_image.os, "access", _access),
+        ):
+            cloud_failures = verify_image.run_smoke_checks(
+                "cloud",
+                _load_manifest(),
+                env={},
+                runner=_fake_runner_factory(),
+            )
+        self.assertEqual(cloud_failures, [])
+
+    def test_cloud_extras_reports_missing_bazelisk(self) -> None:
+        failures = verify_image._check_cloud_extras()
+        self.assertEqual(len(failures), 2)
 
     def test_command_failures_nonzero_version_mismatch_and_oserror(self) -> None:
         bad_runner = _fake_runner_factory(
