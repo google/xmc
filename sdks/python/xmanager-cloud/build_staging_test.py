@@ -221,6 +221,13 @@ class CopyPlanTest(BuildStagingTestCase):
         with self.assertRaisesRegex(FileNotFoundError, "py.typed"):
             build_staging.xdash_copy_plan(layout)
 
+    def test_nested_xdash_module_raises(self) -> None:
+        layout = _make_sources(self.root)
+        _write(layout.xdash_dir / "sub" / "module.py")
+
+        with self.assertRaisesRegex(RuntimeError, "subpackages are not staged"):
+            build_staging.xdash_copy_plan(layout)
+
 
 class GeneratedNamesTest(BuildStagingTestCase):
     def test_generated_init_files_cover_every_proto_package(self) -> None:
