@@ -139,10 +139,17 @@ def _proto_files(proto_root: Path) -> Iterable[tuple[str, str, Path]]:
 
 
 def _xdash_files(xdash_dir: Path) -> list[Path]:
-    """Lists the xdash files shipped in the wheel: non-test modules and `py.typed`."""
+    """Lists the xdash files shipped in the wheel: non-test modules and `py.typed`.
+
+    xdash is a flat package today; a nested module fails the build instead of
+    being silently left out of the copy plans.
+    """
     modules = [path for path in xdash_dir.glob("*.py") if not is_test_module(path.stem)]
     if not modules:
         raise FileNotFoundError(f"No xdash modules found in {xdash_dir}")
+    nested = sorted(path for path in xdash_dir.rglob("*.py") if path.parent != xdash_dir)
+    if nested:
+        raise RuntimeError(f"xdash subpackages are not staged yet: {nested[0]}")
     marker = xdash_dir / "py.typed"
     if not marker.is_file():
         raise FileNotFoundError(f"Missing {marker}")
