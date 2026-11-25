@@ -62,7 +62,9 @@ class XmcMetricsInstallTest(unittest.TestCase):
         self.assertIn(major, (5, 6))
 
     def test_build_script_and_unit_tests_not_shipped(self):
-        shipped = [Path(str(f)).name for f in importlib.metadata.files("xmc-metrics") or []]
+        files = importlib.metadata.files("xmc-metrics")
+        self.assertIsNotNone(files, "xmc-metrics has no RECORD file list")
+        shipped = [Path(str(f)).name for f in files or []]
         self.assertIn("types.py", shipped)
         self.assertNotIn("setup.py", shipped)
         self.assertEqual([name for name in shipped if name.endswith("_test.py")], [])
