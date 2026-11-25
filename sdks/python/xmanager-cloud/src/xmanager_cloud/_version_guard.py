@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Rejects legacy `xmanager` wheels that bundle their own `xmanager_cloud` protos.
+"""Rejects legacy `xmanager` wheels that can bundle their own `xmanager_cloud` protos.
 
-`xmanager < 0.9.0rc1` ships `xmanager_cloud/*_pb2.py` and `xdash/` itself. Loading
-those next to this package registers the `cloud.xmanager.v1` descriptors twice
-and crashes the process with a `TypeError` from the protobuf descriptor pool, so
-this check fails early with an actionable message instead.
+`xmanager < 0.9.0rc1` releases (notably `0.8.5.post1`) ship `xmanager_cloud/*_pb2.py`
+and `xdash/` themselves. Loading those next to this package registers the
+`cloud.xmanager.v1` descriptors twice and crashes the process with a `TypeError`
+from the protobuf descriptor pool, so this check conservatively rejects every
+pre-0.9.0rc1 release early with an actionable message instead.
 """
 
 from __future__ import annotations
@@ -70,9 +71,9 @@ def check_xmanager_compatibility() -> None:
         return
     if version < MIN_XMANAGER_VERSION:
         raise ImportError(
-            f"xmanager-cloud is incompatible with xmanager {installed}, which bundles its "
-            "own xmanager_cloud protos and xdash. Upgrading xmanager deletes those shared "
-            "files, so reinstall xmanager-cloud afterwards: "
+            f"xmanager-cloud is incompatible with xmanager {installed}: releases before "
+            "0.9.0rc1 can bundle their own xmanager_cloud protos and xdash. Upgrading "
+            "xmanager deletes those shared files, so reinstall xmanager-cloud afterwards: "
             'pip install -U "xmanager>=0.9.0" && '
             "pip install --force-reinstall --no-deps xmanager-cloud "
             "(add --pre to the first command while only a 0.9.0 release candidate exists)."
