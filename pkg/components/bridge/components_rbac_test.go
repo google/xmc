@@ -326,6 +326,9 @@ func workloadRBACCases(kube kubernetes.Interface) []rbacCase {
 		{"DELETE allowlisted ingestion-gateway-components-reader Role passes RBAC (NotFound)", func(ctx context.Context) error {
 			return kube.RbacV1().Roles("xmc").Delete(ctx, "ingestion-gateway-components-reader", metav1.DeleteOptions{})
 		}, apierrors.IsNotFound},
+		{"DELETE allowlisted xmc-study-controller-components-reader Role passes RBAC (NotFound)", func(ctx context.Context) error {
+			return kube.RbacV1().Roles("xmc").Delete(ctx, "xmc-study-controller-components-reader", metav1.DeleteOptions{})
+		}, apierrors.IsNotFound},
 		{"DELETE non-allowlisted xmc-bridge-role Role is Forbidden", func(ctx context.Context) error {
 			return kube.RbacV1().Roles("xmc").Delete(ctx, "xmc-bridge-role", metav1.DeleteOptions{})
 		}, apierrors.IsForbidden},
@@ -403,12 +406,24 @@ func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {
 			t.Fatalf("Deployment xmc-study-controller after upgrade = %+v, %v; want image %s", dep, err, studyControllerImage)
 		}
+		if _, err := adminKube.RbacV1().Roles("xmc").Get(ctx, "xmc-study-controller-components-reader", metav1.GetOptions{}); err != nil {
+			t.Fatalf("Role xmc-study-controller-components-reader after upgrade: %v", err)
+		}
+		if _, err := adminKube.RbacV1().RoleBindings("xmc").Get(ctx, "xmc-study-controller-components-reader-binding", metav1.GetOptions{}); err != nil {
+			t.Fatalf("RoleBinding xmc-study-controller-components-reader-binding after upgrade: %v", err)
+		}
 	})
 	if _, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("Deployment xmc-study-controller after Uninstall: err = %v, want NotFound", err)
 	}
 	if _, err := adminKube.CoreV1().ServiceAccounts("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Errorf("ServiceAccount xmc-study-controller after Uninstall: err = %v, want NotFound", err)
+	}
+	if _, err := adminKube.RbacV1().Roles("xmc").Get(ctx, "xmc-study-controller-components-reader", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("Role xmc-study-controller-components-reader after Uninstall: err = %v, want NotFound", err)
+	}
+	if _, err := adminKube.RbacV1().RoleBindings("xmc").Get(ctx, "xmc-study-controller-components-reader-binding", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Errorf("RoleBinding xmc-study-controller-components-reader-binding after Uninstall: err = %v, want NotFound", err)
 	}
 }
 

@@ -34,6 +34,8 @@ import (
 	"xmanager_cloud/cmd/study_controller/worker"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/pkg/components/crreader"
+	"xmanager_cloud/pkg/study/vizier"
 )
 
 // HTTP server timeouts bound per-connection resource usage (e.g. slow-client attacks).
@@ -100,10 +102,17 @@ func listenAndServe(ctx context.Context, cfg config.Config) error {
 		_ = lis.Close()
 		return fmt.Errorf("failed to create ESS reconciler: %w", err)
 	}
-	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr), reconcile)
+	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr), reconcile, cfg.ComponentsNamespace, crreader.NewK8sGetter)
 }
 
-func serveWithClient(ctx context.Context, lis net.Listener, client *redisclient.ConsumerClient, reconcile worker.ReconcileFunc) error {
+func serveWithClient(
+	ctx context.Context,
+	lis net.Listener,
+	client *redisclient.ConsumerClient,
+	reconcile worker.ReconcileFunc,
+	componentsNamespace string,
+	newGetter func() (crreader.Getter, error),
+) error {
 	handler, err := worker.NewRedisHandler(client, reconcile)
 	if err != nil {
 		_ = lis.Close()
@@ -112,9 +121,51 @@ func serveWithClient(ctx context.Context, lis net.Listener, client *redisclient.
 		}
 		return fmt.Errorf("failed to create study reconcile handler: %w", err)
 	}
+	vp := &vizierProbe{}
+	httpCtx, cancelHTTP := context.WithCancel(ctx)
+	defer cancelHTTP()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- serve(httpCtx, lis, newHTTPHandler(client, vp)) }()
+
+	vizierClient, err := resolveAndDialVizier(ctx, componentsNamespace, newGetter)
+	if err != nil {
+		_ = client.Close(context.WithoutCancel(ctx))
+		cancelHTTP()
+		if sErr := <-serveErr; sErr != nil && ctx.Err() == nil {
+			return sErr
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
+	defer closeVizier(ctx, vizierClient)
+	vp.Set(vizierClient)
+
 	consumer := worker.Start(ctx, client, handler)
 	defer stopConsumer(ctx, consumer)
-	return serve(ctx, lis, newHTTPHandler(client))
+	return <-serveErr
+}
+
+func resolveAndDialVizier(ctx context.Context, componentsNamespace string, newGetter func() (crreader.Getter, error)) (*vizier.Client, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	getter, err := newGetter()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create component getter: %w", err)
+	}
+	endpoint, err := vizier.WaitForEndpoint(ctx, getter, componentsNamespace)
+	if err != nil {
+		return nil, err
+	}
+	return vizier.Dial(endpoint)
+}
+
+func closeVizier(ctx context.Context, client *vizier.Client) {
+	if err := client.Close(); err != nil {
+		logging.Warn(ctx, "Failed to close Vizier client", "error", err)
+	}
 }
 
 // stopConsumer stops consumer, logging rather than returning a failure: it runs on shutdown.

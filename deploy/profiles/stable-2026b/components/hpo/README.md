@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026b/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload is a `Deployment` and a `ServiceAccount` only. It consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), and serves health and metrics endpoints; it does not yet orchestrate Vizier or ClickHouse. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
+> The `xmc-study-controller` workload renders a `Deployment`, `ServiceAccount`, `Role`, and `RoleBinding`. It resolves the live `vizier` `Component` CR endpoint at startup, consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), and reports Redis and Vizier reachability on `/readyz`. It does not yet create Vizier studies on ticks or query ClickHouse. The chart renders no `Service`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
 
 ---
 
@@ -55,8 +55,10 @@ Rendered only for the `xmc-cmp-hpo` release:
 
 | Object | Name | Notes |
 | :--- | :--- | :--- |
-| `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness, see [Redis Connection](#redis-connection)) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
+| `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness, see [Redis Connection](#redis-connection) and [Vizier Connection](#vizier-connection)) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem, mounts the service account token to read `Component/vizier`, and receives `-components_namespace`. |
 | `ServiceAccount` | `xmc-study-controller` | Pod identity. Carries the Workload Identity annotation `iam.gke.io/gcp-service-account` when `parameters.studyControllerServiceAccount` is set. |
+| `Role` | `xmc-study-controller-components-reader` | Least-privilege role granting `get` on `components.xmc.dev` restricted to `resourceNames: ["vizier"]`. |
+| `RoleBinding` | `xmc-study-controller-components-reader-binding` | Binds `xmc-study-controller` to `xmc-study-controller-components-reader` in the release namespace. |
 
 The pod carries the label `xmc.google.com/vizier-client: "true"`. XMC ships no NetworkPolicy for Vizier, which is bring-your-own; operators who restrict access to their Vizier server can admit pods with this label.
 
@@ -86,6 +88,14 @@ The Study Controller calls the Experiment State Server over plaintext in-cluster
 - **Address (`-ess_addr`)**: `xmc-bridge` reads `ESS_ADDR` (defaulting to `CMS_ADDRESS` / `grpc-service:50051` in `xmc-bridge-config`) and injects it into every 1P release as `<component>Deployment.essAddr`. Any `essAddr` Component parameter or raw value is stripped (bridge-wins) so a Component CR cannot redirect the controller's Google ID token to an arbitrary host. The chart renders `-ess_addr` with fail-closed `required`.
 - **Audience (`-ess_audience`)**: `xmc-bridge` resolves the gRPC audience from `IAP_EXPECTED_GRPC_AUDIENCE` (falling back to `CLIENT_ID` when unset or placeholder) and injects it as `<component>Deployment.essAudience`, stripping any Component override. The chart renders `-ess_audience` with fail-closed `required`.
 - **Identity**: `deploy/ctk_v2/xmanager-cloud.yaml` provisions the `xmc-sc-sa` Google service account (no project IAM roles) and binds it to the `xmc-study-controller` Kubernetes ServiceAccount via Workload Identity. Passing `xmc-sc-sa@<project>.iam.gserviceaccount.com` in `parameters.studyControllerServiceAccount` annotates the ServiceAccount and authorizes the controller in ESS.
+
+### Vizier Connection
+
+At startup, `xmc-study-controller` starts its HTTP server (`/healthz` `200 OK`, `/readyz` `503 Service Unavailable`) and polls the live `vizier` `Component` CR in `-components_namespace` using its mounted Kubernetes service account token (`xmc-study-controller-components-reader` `Role`):
+
+- **Resolution & Backoff**: Reads `spec.parameters.endpoint` as a strict `host:port` target. While `vizier` is absent, disabled, or malformed, the controller backs off exponentially with jitter (up to `10s`) without crash-looping (`livenessProbe` stays `200 OK`) and holds off starting the Redis stream consumer so queued ticks are not burned into the dead-letter stream.
+- **Latched Client & `/readyz` Reachability**: Once resolved, the controller latches a single shared plaintext gRPC connection (`MaxDelay: 5s` reconnect backoff) and starts the Redis consumer. `/readyz` verifies both Redis (`Ping`) and Vizier reachability (`grpc.health.v1.Health/Check`, treating `SERVING` and `codes.Unimplemented` for OSS Vizier as healthy) within `2s`.
+- **Endpoint Changes**: `spec.parameters.endpoint` is latched at startup and not re-resolved per tick; changing the Vizier endpoint requires restarting `xmc-study-controller`.
 
 ### Study Reconcile Ticks
 

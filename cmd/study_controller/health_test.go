@@ -45,14 +45,18 @@ func TestNewHTTPHandler(t *testing.T) {
 		method       string
 		path         string
 		pingErr      error
+		vizierErr    error
+		nilVizier    bool
 		wantStatus   int
 		wantContains string
 	}{
 		{name: "liveness", method: http.MethodGet, path: "/healthz", wantStatus: http.StatusOK, wantContains: "OK"},
-		{name: "liveness ignores Redis outage", method: http.MethodGet, path: "/healthz", pingErr: unreachable, wantStatus: http.StatusOK, wantContains: "OK"},
-		{name: "readiness with Redis reachable", method: http.MethodGet, path: "/readyz", wantStatus: http.StatusOK, wantContains: "OK"},
+		{name: "liveness ignores Redis and Vizier outage", method: http.MethodGet, path: "/healthz", pingErr: unreachable, vizierErr: unreachable, wantStatus: http.StatusOK, wantContains: "OK"},
+		{name: "readiness with Redis and Vizier reachable", method: http.MethodGet, path: "/readyz", wantStatus: http.StatusOK, wantContains: "OK"},
 		{name: "readiness with Redis unreachable", method: http.MethodGet, path: "/readyz", pingErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Redis ping timeout", method: http.MethodGet, path: "/readyz", pingErr: context.DeadlineExceeded, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with Vizier unresolved", method: http.MethodGet, path: "/readyz", nilVizier: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with Vizier unreachable", method: http.MethodGet, path: "/readyz", vizierErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "metrics exposes runtime stats", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "go_goroutines"},
 		{name: "metrics exposes reconcile ticks counter", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "xmc_study_controller_reconcile_ticks_total"},
 		{name: "unknown path", method: http.MethodGet, path: "/unknown", wantStatus: http.StatusNotFound},
@@ -62,7 +66,11 @@ func TestNewHTTPHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			handler := newHTTPHandler(&fakePinger{err: tc.pingErr})
+			var vizier pinger = &fakePinger{err: tc.vizierErr}
+			if tc.nilVizier {
+				vizier = &vizierProbe{}
+			}
+			handler := newHTTPHandler(&fakePinger{err: tc.pingErr}, vizier)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
 			if rec.Code != tc.wantStatus {
@@ -74,6 +82,9 @@ func TestNewHTTPHandler(t *testing.T) {
 			if tc.pingErr != nil && strings.Contains(rec.Body.String(), tc.pingErr.Error()) {
 				t.Errorf("%s %s body = %q, want it not to expose the ping error", tc.method, tc.path, rec.Body.String())
 			}
+			if tc.vizierErr != nil && strings.Contains(rec.Body.String(), tc.vizierErr.Error()) {
+				t.Errorf("%s %s body = %q, want it not to expose the vizier error", tc.method, tc.path, rec.Body.String())
+			}
 		})
 	}
 }
@@ -81,16 +92,19 @@ func TestNewHTTPHandler(t *testing.T) {
 func TestReadinessCheck_BoundsPingWithTimeout(t *testing.T) {
 	t.Parallel()
 	redis := &fakePinger{}
+	vizier := &fakePinger{}
 	start := time.Now()
 
-	readinessCheck(redis).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	readinessCheck(redis, vizier).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/readyz", nil))
 	end := time.Now()
 
-	if !redis.hasDeadline {
-		t.Fatal("Ping context has no deadline, want one bounded by readinessPingTimeout")
-	}
-	earliest, latest := start.Add(readinessPingTimeout), end.Add(readinessPingTimeout)
-	if redis.deadline.Before(earliest) || redis.deadline.After(latest) {
-		t.Errorf("Ping context deadline = %v, want within [%v, %v] (readinessPingTimeout after the request)", redis.deadline, earliest, latest)
+	for name, p := range map[string]*fakePinger{"redis": redis, "vizier": vizier} {
+		if !p.hasDeadline {
+			t.Fatalf("%s Ping context has no deadline, want one bounded by readinessPingTimeout", name)
+		}
+		earliest, latest := start.Add(readinessPingTimeout), end.Add(readinessPingTimeout)
+		if p.deadline.Before(earliest) || p.deadline.After(latest) {
+			t.Errorf("%s Ping context deadline = %v, want within [%v, %v] (readinessPingTimeout after the request)", name, p.deadline, earliest, latest)
+		}
 	}
 }
