@@ -64,6 +64,9 @@ LEGACY_GO_ROOTS = frozenset(
 # Exact google3 import paths whose root collides with Go stdlib (`go/...`).
 LEGACY_GO_EXACT = frozenset({"go/flag", "go/google"})
 
+# Explicit allowlist for vendored OSS third_party dependencies (must remain narrow).
+ALLOWED_THIRD_PARTY_PREFIXES = ("third_party/vizier/",)
+
 # Files that legitimately contain the patterns this tool searches for.
 SELF_EXCLUDED = frozenset(
     {
@@ -215,11 +218,20 @@ def count_line_metric(metric: LineMetric, repo_root: Path, files: list[str]) -> 
     return total
 
 
+def is_allowlisted_third_party_file(path: str) -> bool:
+    """Reports whether a third_party/ path is an explicitly allowlisted OSS dependency."""
+    return path.startswith(ALLOWED_THIRD_PARTY_PREFIXES)
+
+
 def collect_metrics(repo_root: Path, files: list[str]) -> dict[str, int]:
     """Computes all ratchet metrics for the given tracked files."""
     scanned = [f for f in files if f not in SELF_EXCLUDED]
     metrics = count_go_imports(repo_root, scanned, tracked_directories(files))
-    metrics["third_party_files"] = sum(1 for f in scanned if f.startswith("third_party/"))
+    metrics["third_party_files"] = sum(
+        1
+        for f in scanned
+        if f.startswith("third_party/") and not is_allowlisted_third_party_file(f)
+    )
     metrics["generic_helper_filenames"] = count_generic_helper_filenames(scanned)
     for metric in LINE_METRICS:
         metrics[metric.name] = count_line_metric(metric, repo_root, scanned)
