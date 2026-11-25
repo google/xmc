@@ -40,6 +40,7 @@ import (
 func seedStudyController(ctx context.Context, t *testing.T, st storage.Storage) {
 	t.Helper()
 	hpo := experimenttest.HPOCatalog(map[string]string{"studyControllerServiceAccount": studyControllerGSA})["hpo"]
+	hpo.Dependencies = nil
 	hpo.Spec.Dependencies = nil
 	if err := storagetest.SeedComponentCatalog(ctx, st, hpo); err != nil {
 		t.Fatalf("seeding the hpo component failed: %v", err)

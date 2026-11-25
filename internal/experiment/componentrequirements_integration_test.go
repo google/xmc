@@ -44,11 +44,13 @@ const (
 // seedHPOCatalog writes ready EXPERIMENTAL hpo and vizier components and a ready STABLE clickhouse
 // component, on which hpo depends, through the transaction-scoped component repository. hpo limits
 // study trial budgets to seededMaxTrialBudget.
-func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) {
+func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) int64 {
 	t.Helper()
-	if err := storagetest.SeedComponentCatalog(ctx, st, experimenttest.OrderedHPOCatalog(map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)})...); err != nil {
+	recs := experimenttest.OrderedHPOCatalog(map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)})
+	if err := storagetest.SeedComponentCatalog(ctx, st, recs...); err != nil {
 		t.Fatalf("SeedComponentCatalog() failed: %v", err)
 	}
+	return recs[1].ComponentID
 }
 
 func newStudy(xid int64) *essmsgpb.Experiment {
@@ -82,7 +84,7 @@ func TestCreateExperiment_StudyPinsComponentsOnEveryBackend(t *testing.T) {
 		t.Run(backend.Name, func(t *testing.T) {
 			ctx := t.Context()
 			st, _ := backend.Open(ctx, t)
-			seedHPOCatalog(ctx, t, st)
+			vizierID := seedHPOCatalog(ctx, t, st)
 
 			const xid = 501
 			if _, err := experiment.CreateExperiment(ctx, st, newStudy(xid)); err != nil {
@@ -93,7 +95,6 @@ func TestCreateExperiment_StudyPinsComponentsOnEveryBackend(t *testing.T) {
 
 			// vizier stops being ready while hpo stays ENABLED: the in-transaction check rejects the
 			// study and rolls back its experiment row.
-			vizierID := experimenttest.HPOCatalog(nil)["vizier"].ComponentID
 			_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 				return tx.Components.UpdateComponentState(ctx, vizierID, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, nil)
 			})

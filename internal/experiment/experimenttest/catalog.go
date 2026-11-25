@@ -27,7 +27,6 @@ func OrderedHPOCatalog(hpoParams map[string]string) []*store.ComponentRecord {
 	c["clickhouse"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_STABLE
 	c["vizier"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
 	c["hpo"].Spec.Stability = componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL
-	c["hpo"].Dependencies = c["hpo"].Spec.GetDependencies()
 	return []*store.ComponentRecord{c["clickhouse"], c["vizier"], c["hpo"]}
 }
 
@@ -49,6 +48,7 @@ func readyRecord(id int64, name string, componentType componentspb.ComponentType
 		ComponentID:        id,
 		Name:               name,
 		Spec:               &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Dependencies: deps},
+		Dependencies:       deps,
 		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
 		Generation:         1,
 		ObservedGeneration: proto.Int64(1),
