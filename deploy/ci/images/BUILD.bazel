@@ -20,7 +20,9 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "Dockerfile.base",
     "Dockerfile.cloud",
+    "Dockerfile.e2e",
     "Dockerfile.lint",
+    "Dockerfile.playwright",
     "docker-bake.hcl",
     "versions.json",
 ])

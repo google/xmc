@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: 'Comma-separated bake targets (default: default group)'
+        description: 'Comma-separated bake targets (default: default group = all 5 images)'
         required: false
         default: 'default'
         type: string
@@ -81,7 +81,7 @@ jobs:
           fi
           if [ -z "${INPUT_IMAGES}" ] || [ "${INPUT_IMAGES}" = "default" ] || [ "${INPUT_IMAGES}" = "all" ]; then
             bake_targets="default"
-            target_list="ci-base ci-lint ci-cloud"
+            target_list="ci-base ci-lint ci-playwright ci-cloud ci-e2e"
           else
             bake_targets="${INPUT_IMAGES}"
             target_list="${INPUT_IMAGES//,/ }"

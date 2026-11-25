@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import shutil
@@ -28,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-VALID_ROLES: tuple[str, ...] = ("base", "lint", "cloud")
+VALID_ROLES: tuple[str, ...] = ("base", "lint", "playwright", "cloud", "e2e")
 _CMD_TIMEOUT_SECONDS = 60
 
 
@@ -159,30 +160,6 @@ def _lint_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation,
     )
 
 
-def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
-    """Verifies addlicense binary presence and pre-initialized TFLint Google plugin.
-
-    Args:
-        manifest: Parsed versions.json mapping.
-        env: Process environment mapping.
-
-    Returns:
-        List of failure messages (empty when all checks pass).
-    """
-    failures: list[str] = []
-    if shutil.which("addlicense") is None:
-        failures.append("addlicense: binary not found on PATH")
-
-    plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
-    plugin_ver = _tool_version(manifest, "tflint_google_plugin")
-    expected_plugin = (
-        Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
-    )
-    if not plugin_dir or not expected_plugin.is_dir():
-        failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
-    return failures
-
-
 def _cloud_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation, ...]:
     """Builds command expectations specific to the ci-cloud image.
 
@@ -215,6 +192,30 @@ def _cloud_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation
     )
 
 
+def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    """Verifies addlicense binary presence and pre-initialized TFLint Google plugin.
+
+    Args:
+        manifest: Parsed versions.json mapping.
+        env: Process environment mapping.
+
+    Returns:
+        List of failure messages (empty when all checks pass).
+    """
+    failures: list[str] = []
+    if shutil.which("addlicense") is None:
+        failures.append("addlicense: binary not found on PATH")
+
+    plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
+    plugin_ver = _tool_version(manifest, "tflint_google_plugin")
+    expected_plugin = (
+        Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
+    )
+    if not plugin_dir or not expected_plugin.is_dir():
+        failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
+    return failures
+
+
 def _check_cloud_extras() -> list[str]:
     """Verifies bazelisk executable and bazel symlink under /opt/xmc-tools/bin.
 
@@ -231,6 +232,79 @@ def _check_cloud_extras() -> list[str]:
     return failures
 
 
+def _probe_playwright_python() -> str | None:
+    """Imports pre-baked Python packages and launches headless Chromium via Playwright.
+
+    Returns:
+        Failure description string, or ``None`` when the probe succeeds.
+    """
+    try:
+        for mod_name in ("absl", "requests", "playwright.sync_api"):
+            importlib.import_module(mod_name)
+        sync_api = importlib.import_module("playwright.sync_api")
+        with sync_api.sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_content("<h1>smoke-ok</h1>")
+            heading = page.locator("h1").text_content()
+            browser.close()
+        if heading != "smoke-ok":
+            return f"playwright-python: unexpected heading text '{heading}'"
+    except Exception as exc:
+        return f"playwright-python: headless Chromium launch failed: {exc}"
+    return None
+
+
+def _check_playwright_runtime(
+    env: Mapping[str, str],
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+) -> list[str]:
+    """Verifies pre-baked Playwright environment, Karma Chromium binary, and headless launch.
+
+    Args:
+        env: Process environment mapping.
+        runner: Subprocess runner callable.
+
+    Returns:
+        List of failure messages (empty when all checks pass).
+    """
+    failures: list[str] = []
+    browsers_path = env.get("PLAYWRIGHT_BROWSERS_PATH", "")
+    if browsers_path != "/ms-playwright" or not Path(browsers_path).is_dir():
+        failures.append(
+            f"PLAYWRIGHT_BROWSERS_PATH must point to /ms-playwright (got '{browsers_path}')"
+        )
+    if env.get("XMC_USE_PREBAKED_ENV") != "true":
+        failures.append("XMC_USE_PREBAKED_ENV must be 'true'")
+
+    chrome_bin = env.get("CHROME_BIN", "")
+    if not chrome_bin or not Path(chrome_bin).is_file() or not os.access(chrome_bin, os.X_OK):
+        failures.append(
+            f"CHROME_BIN must point to an executable Chromium binary (got '{chrome_bin}')"
+        )
+    else:
+        karma_argv = (
+            chrome_bin,
+            "--headless",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--dump-dom",
+            "about:blank",
+        )
+        karma_err = _run_command_expectation(
+            CommandExpectation("karma-chromium", karma_argv, ("<html",)),
+            runner,
+        )
+        if karma_err:
+            failures.append(karma_err)
+
+    pw_err = _probe_playwright_python()
+    if pw_err:
+        failures.append(pw_err)
+    return failures
+
+
 def run_smoke_checks(
     role: str,
     manifest: Mapping[str, Any],
@@ -240,7 +314,7 @@ def run_smoke_checks(
     """Executes all smoke assertions for a CI runner image role.
 
     Args:
-        role: Target role (``base``, ``lint``, ``cloud``).
+        role: Target role (``base``, ``lint``, ``playwright``, ``cloud``, ``e2e``).
         manifest: Parsed versions.json mapping.
         env: Optional environment mapping (defaults to ``os.environ``).
         runner: Subprocess runner callable.
@@ -261,14 +335,25 @@ def run_smoke_checks(
     if role == "lint":
         specs.extend(_lint_expectations(manifest))
         failures.extend(_check_lint_extras(manifest, active_env))
-    if role == "cloud":
+    if role in ("cloud", "e2e"):
         specs.extend(_cloud_expectations(manifest))
         failures.extend(_check_cloud_extras())
+    if role == "e2e":
+        specs.extend(
+            (
+                CommandExpectation("gcc", ("gcc", "--version"), ("gcc",)),
+                CommandExpectation("openssl", ("openssl", "version"), ("OpenSSL",)),
+                CommandExpectation("patch", ("patch", "--version"), ("patch",)),
+            )
+        )
 
     for spec in specs:
         err = _run_command_expectation(spec, runner)
         if err:
             failures.append(err)
+
+    if role in ("playwright", "e2e"):
+        failures.extend(_check_playwright_runtime(active_env, runner))
     return failures
 
 

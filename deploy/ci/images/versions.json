@@ -77,6 +77,12 @@
     "hpc_toolkit": {
       "version": "v1.109.0",
       "commit": "b8e318c782e1c85ec0d312688c099626fa9139b0"
+    },
+    "playwright_python": {
+      "version": "1.61.0"
+    },
+    "playwright_npm": {
+      "version": "1.61.1"
     }
   },
   "images": {}

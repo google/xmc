@@ -69,19 +69,70 @@ def _fake_runner_factory(
         "/opt/xmc-tools/bin/gcluster": "gcluster v1.109.0",
         "/opt/xmc-tools/bin/kubectl": f"Client Version: v{tools['kubectl']['version']}",
         "/opt/xmc-tools/bin/kind": f"kind v{tools['kind']['version']} go1.26",
+        "gcc": "gcc (Ubuntu 13.3.0) 13.3.0",
+        "openssl": "OpenSSL 3.0.13",
+        "patch": "GNU patch 2.7.6",
     }
 
     def _run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         cmd = argv[0]
         if overrides and cmd in overrides:
             return overrides[cmd]
+        if "--dump-dom" in argv:
+            return subprocess.CompletedProcess(
+                argv, 0, "<html><head></head><body></body></html>", ""
+            )
         return subprocess.CompletedProcess(argv, 0, defaults.get(cmd, ""), "")
 
     return _run
 
 
+class _FakePlaywrightModule:
+    """Minimal sync_playwright double for testing headless probe logic."""
+
+    def __init__(self, heading: str = "smoke-ok") -> None:
+        self._heading = heading
+
+    def sync_playwright(self) -> Any:
+        heading = self._heading
+
+        class _Page:
+            def set_content(self, _html: str) -> None:
+                return None
+
+            def locator(self, _selector: str) -> Any:
+                class _Locator:
+                    def text_content(self) -> str:
+                        return heading
+
+                return _Locator()
+
+        class _Browser:
+            def new_page(self) -> _Page:
+                return _Page()
+
+            def close(self) -> None:
+                return None
+
+        class _Chromium:
+            def launch(self, headless: bool = True) -> _Browser:
+                assert headless is True
+                return _Browser()
+
+        class _Ctx:
+            chromium = _Chromium()
+
+            def __enter__(self) -> _Ctx:
+                return self
+
+            def __exit__(self, *_exc: object) -> None:
+                return None
+
+        return _Ctx()
+
+
 class RunSmokeChecksTest(unittest.TestCase):
-    """Tests smoke check logic for base role and failure modes."""
+    """Tests smoke check logic across all five image roles and failure modes."""
 
     def test_base_role_passes(self) -> None:
         failures = verify_image.run_smoke_checks(
@@ -118,34 +169,103 @@ class RunSmokeChecksTest(unittest.TestCase):
         self.assertTrue(any("addlicense" in f for f in failures))
         self.assertTrue(any("tflint-google-plugin" in f for f in failures))
 
-    def test_cloud_role_validates_tools_and_bazelisk(self) -> None:
-        orig_is_file = Path.is_file
-        orig_exists = Path.exists
-        orig_access = verify_image.os.access
+    def test_playwright_role_passes_when_runtime_ready(self) -> None:
+        fake_pw = _FakePlaywrightModule()
+        with tempfile.TemporaryDirectory() as tmp:
+            chrome = Path(tmp) / "chromium"
+            chrome.write_text("#!/bin/sh\n", encoding="utf-8")
+            chrome.chmod(0o755)
+            orig_is_dir = Path.is_dir
 
-        def _is_file(p: Path) -> bool:
-            return str(p) == "/opt/xmc-tools/bin/bazelisk" or orig_is_file(p)
+            def _is_dir(path_obj: Path) -> bool:
+                if str(path_obj) == "/ms-playwright":
+                    return True
+                return orig_is_dir(path_obj)
 
-        def _exists(p: Path) -> bool:
-            return str(p) == "/opt/xmc-tools/bin/bazel" or orig_exists(p)
+            with (
+                mock.patch.object(Path, "is_dir", _is_dir),
+                mock.patch("importlib.import_module", return_value=fake_pw),
+            ):
+                failures = verify_image.run_smoke_checks(
+                    "playwright",
+                    _load_manifest(),
+                    env={
+                        "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+                        "XMC_USE_PREBAKED_ENV": "true",
+                        "CHROME_BIN": str(chrome),
+                    },
+                    runner=_fake_runner_factory(),
+                )
+        self.assertEqual(failures, [])
 
-        def _access(path: Any, mode: int) -> bool:
-            if str(path).startswith("/opt/xmc-tools/bin/bazel"):
-                return True
-            return orig_access(path, mode)
-
-        with (
-            mock.patch.object(Path, "is_file", _is_file),
-            mock.patch.object(Path, "exists", _exists),
-            mock.patch.object(verify_image.os, "access", _access),
-        ):
-            cloud_failures = verify_image.run_smoke_checks(
-                "cloud",
-                _load_manifest(),
-                env={},
-                runner=_fake_runner_factory(),
+    def test_playwright_role_reports_bad_heading_and_missing_env(self) -> None:
+        fake_pw = _FakePlaywrightModule(heading="wrong")
+        with mock.patch("importlib.import_module", return_value=fake_pw):
+            failures = verify_image.run_smoke_checks(
+                "playwright", _load_manifest(), env={}, runner=_fake_runner_factory()
             )
+        self.assertTrue(any("PLAYWRIGHT_BROWSERS_PATH" in f for f in failures))
+        self.assertTrue(any("XMC_USE_PREBAKED_ENV" in f for f in failures))
+        self.assertTrue(any("CHROME_BIN" in f for f in failures))
+        self.assertTrue(any("unexpected heading" in f for f in failures))
+
+    def test_playwright_probe_handles_import_error(self) -> None:
+        with mock.patch("importlib.import_module", side_effect=ImportError("no playwright")):
+            err = verify_image._probe_playwright_python()
+        self.assertIsNotNone(err)
+        assert err is not None
+        self.assertIn("no playwright", err)
+
+    def test_cloud_and_e2e_roles_validate_tools_and_bazelisk(self) -> None:
+        fake_pw = _FakePlaywrightModule()
+        with tempfile.TemporaryDirectory() as tmp:
+            chrome = Path(tmp) / "chromium"
+            chrome.write_text("#!/bin/sh\n", encoding="utf-8")
+            chrome.chmod(0o755)
+            orig_is_dir = Path.is_dir
+            orig_is_file = Path.is_file
+            orig_exists = Path.exists
+            orig_access = verify_image.os.access
+
+            def _is_dir(p: Path) -> bool:
+                return str(p) == "/ms-playwright" or orig_is_dir(p)
+
+            def _is_file(p: Path) -> bool:
+                return str(p) == "/opt/xmc-tools/bin/bazelisk" or orig_is_file(p)
+
+            def _exists(p: Path) -> bool:
+                return str(p) == "/opt/xmc-tools/bin/bazel" or orig_exists(p)
+
+            def _access(path: Any, mode: int) -> bool:
+                if str(path).startswith("/opt/xmc-tools/bin/bazel"):
+                    return True
+                return orig_access(path, mode)
+
+            with (
+                mock.patch.object(Path, "is_dir", _is_dir),
+                mock.patch.object(Path, "is_file", _is_file),
+                mock.patch.object(Path, "exists", _exists),
+                mock.patch.object(verify_image.os, "access", _access),
+                mock.patch("importlib.import_module", return_value=fake_pw),
+            ):
+                cloud_failures = verify_image.run_smoke_checks(
+                    "cloud",
+                    _load_manifest(),
+                    env={},
+                    runner=_fake_runner_factory(),
+                )
+                e2e_failures = verify_image.run_smoke_checks(
+                    "e2e",
+                    _load_manifest(),
+                    env={
+                        "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright",
+                        "XMC_USE_PREBAKED_ENV": "true",
+                        "CHROME_BIN": str(chrome),
+                    },
+                    runner=_fake_runner_factory(),
+                )
         self.assertEqual(cloud_failures, [])
+        self.assertEqual(e2e_failures, [])
 
     def test_cloud_extras_reports_missing_bazelisk(self) -> None:
         failures = verify_image._check_cloud_extras()
@@ -158,7 +278,9 @@ class RunSmokeChecksTest(unittest.TestCase):
                 "node": subprocess.CompletedProcess(["node"], 0, "v18.0.0", ""),
             }
         )
-        failures = verify_image.run_smoke_checks("base", _load_manifest(), runner=bad_runner)
+        failures = verify_image.run_smoke_checks(
+            "base", _load_manifest(), env={}, runner=bad_runner
+        )
         self.assertTrue(any("exited 1" in f for f in failures))
         self.assertTrue(any("expected 'v22." in f for f in failures))
 
@@ -176,9 +298,9 @@ class RunSmokeChecksTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_image.run_smoke_checks("invalid", _load_manifest())
         with self.assertRaises(ValueError):
-            verify_image._tool_version({}, "python")
+            verify_image._tool_version({}, "go")
         with self.assertRaises(ValueError):
-            verify_image._tool_version({"tools": {}}, "python")
+            verify_image._tool_version({"tools": {}}, "go")
 
 
 class VerifyImageCliTest(unittest.TestCase):
@@ -197,12 +319,12 @@ class VerifyImageCliTest(unittest.TestCase):
     def test_cli_returns_one_on_failures(self) -> None:
         err = io.StringIO()
         with (
-            mock.patch.object(verify_image, "run_smoke_checks", return_value=["node: bad version"]),
+            mock.patch.object(verify_image, "run_smoke_checks", return_value=["go: bad version"]),
             mock.patch("sys.stderr", err),
         ):
-            rc = verify_image.main(["--role", "base", "--versions", str(_REPO_VERSIONS_PATH)])
+            rc = verify_image.main(["--role", "lint", "--versions", str(_REPO_VERSIONS_PATH)])
         self.assertEqual(rc, 1)
-        self.assertIn("FAIL: node: bad version", err.getvalue())
+        self.assertIn("FAIL: go: bad version", err.getvalue())
 
     def test_cli_returns_one_on_non_object_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
