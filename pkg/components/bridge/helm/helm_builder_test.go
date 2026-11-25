@@ -32,6 +32,10 @@ func TestBuildHelmValues(t *testing.T) {
 	t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", "")
 	t.Setenv("PROJECT_ID", "")
 	t.Setenv("REDIS_ADDR", "")
+	t.Setenv("ESS_ADDR", "")
+	t.Setenv("CMS_ADDRESS", "")
+	t.Setenv("IAP_EXPECTED_GRPC_AUDIENCE", "")
+	t.Setenv("CLIENT_ID", "")
 
 	t.Run("basic 1p component with parameters and image tag", func(t *testing.T) {
 		opts := HelmComponentOptions{
@@ -440,6 +444,10 @@ func TestBuildHelmValues_DefaultEnvImageAndCustomNamespace(t *testing.T) {
 			t.Setenv("DEFAULT_INGESTION_GATEWAY_IMAGE", tt.defaultEnvImg)
 			t.Setenv("PROJECT_ID", "")
 			t.Setenv("REDIS_ADDR", "")
+			t.Setenv("ESS_ADDR", "")
+			t.Setenv("CMS_ADDRESS", "")
+			t.Setenv("IAP_EXPECTED_GRPC_AUDIENCE", "")
+			t.Setenv("CLIENT_ID", "")
 			opts := ParseHelmComponentOptions(
 				"ingestion-gateway",
 				tt.namespace,
@@ -459,6 +467,10 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 		name       string
 		projectEnv string
 		redisEnv   string
+		essEnv     string
+		cmsEnv     string
+		iapAudEnv  string
+		clientID   string
 		opts       HelmComponentOptions
 		want       map[string]any
 	}{
@@ -471,6 +483,10 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 			name:       "whitespace-only env vars are omitted",
 			projectEnv: "  ",
 			redisEnv:   "\t",
+			essEnv:     " ",
+			cmsEnv:     "\n",
+			iapAudEnv:  "  ",
+			clientID:   "\t",
 			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
 			want:       map[string]any{"enabled": true},
 		},
@@ -478,8 +494,16 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 			name:       "env vars reach the hpo release trimmed",
 			projectEnv: " my-proj ",
 			redisEnv:   " redis-service.xmc.svc.cluster.local:6379 ",
+			essEnv:     " grpc-service:50051 ",
+			iapAudEnv:  " ess-aud.apps.googleusercontent.com ",
 			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
-			want:       map[string]any{"enabled": true, "projectId": "my-proj", "redisAddr": "redis-service.xmc.svc.cluster.local:6379"},
+			want: map[string]any{
+				"enabled":     true,
+				"projectId":   "my-proj",
+				"redisAddr":   "redis-service.xmc.svc.cluster.local:6379",
+				"essAddr":     "grpc-service:50051",
+				"essAudience": "ess-aud.apps.googleusercontent.com",
+			},
 		},
 		{
 			name:     "env vars reach every 1P release",
@@ -488,19 +512,19 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
 		},
 		{
-			name:     "component parameter does not override the env var",
+			name:     "component parameter does not override redisAddr",
 			redisEnv: "10.0.0.3:6379",
 			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"redisAddr": "10.0.0.4:6379"}},
 			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
 		},
 		{
-			name:     "raw value does not override the env var",
+			name:     "raw value does not override redisAddr",
 			redisEnv: "10.0.0.3:6379",
 			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, RawValues: map[string]any{"redisAddr": "10.0.0.4:6379"}},
 			want:     map[string]any{"enabled": true, "redisAddr": "10.0.0.3:6379"},
 		},
 		{
-			name: "component parameter is dropped when the env var is unset",
+			name: "component parameter is dropped when redisAddr env var is unset",
 			opts: HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"redisAddr": "10.0.0.4:6379"}},
 			want: map[string]any{"enabled": true},
 		},
@@ -510,11 +534,76 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 			opts:       HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true, Parameters: map[string]string{"projectId": "other-proj"}},
 			want:       map[string]any{"enabled": true, "projectId": "other-proj"},
 		},
+		{
+			name:   "ESS_ADDR takes precedence over CMS_ADDRESS",
+			essEnv: "ess-override:50051",
+			cmsEnv: "grpc-service:50051",
+			opts:   HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:   map[string]any{"enabled": true, "essAddr": "ess-override:50051"},
+		},
+		{
+			name:   "CMS_ADDRESS is used when ESS_ADDR is empty",
+			cmsEnv: "grpc-service:50051",
+			opts:   HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:   map[string]any{"enabled": true, "essAddr": "grpc-service:50051"},
+		},
+		{
+			name:      "non-placeholder IAP_EXPECTED_GRPC_AUDIENCE wins over CLIENT_ID",
+			iapAudEnv: "iap-aud",
+			clientID:  "oauth-client-id",
+			opts:      HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:      map[string]any{"enabled": true, "essAudience": "iap-aud"},
+		},
+		{
+			name:      "placeholder IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID",
+			iapAudEnv: placeholderGRPCAudience,
+			clientID:  "oauth-client-id",
+			opts:      HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:      map[string]any{"enabled": true, "essAudience": "oauth-client-id"},
+		},
+		{
+			name:      "placeholder IAP_EXPECTED_GRPC_AUDIENCE kept when CLIENT_ID is also empty",
+			iapAudEnv: placeholderGRPCAudience,
+			opts:      HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:      map[string]any{"enabled": true, "essAudience": placeholderGRPCAudience},
+		},
+		{
+			name:     "empty IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID",
+			clientID: "oauth-client-id",
+			opts:     HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
+			want:     map[string]any{"enabled": true, "essAudience": "oauth-client-id"},
+		},
+		{
+			name:      "component parameters and raw values cannot override essAddr or essAudience",
+			essEnv:    "grpc-service:50051",
+			iapAudEnv: "real-aud",
+			opts: HelmComponentOptions{
+				Ref:        ComponentRef{Name: "hpo"},
+				Enabled:    true,
+				Parameters: map[string]string{"essAddr": "evil:50051", "essAudience": "evil-aud"},
+				RawValues:  map[string]any{"essAddr": "evil-raw:50051", "essAudience": "evil-raw-aud"},
+			},
+			want: map[string]any{"enabled": true, "essAddr": "grpc-service:50051", "essAudience": "real-aud"},
+		},
+		{
+			name: "component parameters and raw values for essAddr and essAudience are dropped when env unset",
+			opts: HelmComponentOptions{
+				Ref:        ComponentRef{Name: "hpo"},
+				Enabled:    true,
+				Parameters: map[string]string{"essAddr": "evil:50051", "essAudience": "evil-aud"},
+				RawValues:  map[string]any{"essAddr": "evil-raw:50051", "essAudience": "evil-raw-aud"},
+			},
+			want: map[string]any{"enabled": true},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("PROJECT_ID", tt.projectEnv)
 			t.Setenv("REDIS_ADDR", tt.redisEnv)
+			t.Setenv("ESS_ADDR", tt.essEnv)
+			t.Setenv("CMS_ADDRESS", tt.cmsEnv)
+			t.Setenv("IAP_EXPECTED_GRPC_AUDIENCE", tt.iapAudEnv)
+			t.Setenv("CLIENT_ID", tt.clientID)
 			t.Setenv(defaultComponentEnvImageVar(tt.opts.Ref.Name), "")
 			got := BuildHelmValues(tt.opts)[ComponentNameToHelmKey(tt.opts.Ref.Name)]
 			if diff := cmp.Diff(tt.want, got); diff != "" {

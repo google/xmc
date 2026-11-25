@@ -280,6 +280,39 @@ test('parseRangeDiff identifies added commits and captures addedCommitShas', () 
   assert.deepStrictEqual(resultRemoved.addedCommitShas, []);
 });
 
+test('parseRangeDiff ignores commit-pair patterns in code context and commit message lines', () => {
+  const sampleOutput = [
+    '1:  a1b2c3d ! 1:  e5f6g7h Commit title',
+    '      ## Commit message ##',
+    '         1: a1b2c3d < -: -------',
+    '         -: ------- > 2: 89abcdef',
+    '    @@ pkg/a.go:10,5 @@',
+    '      1:  0000000 = 1:  0000000',
+    '      1: a1b2c3d < -: -------',
+    '      -: ------- > 2: 89abcdef',
+    '    ++realDeltaLine()'
+  ].join('\n');
+
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.hasRemovedCommits, false);
+  assert.deepStrictEqual(result.addedCommitShas, []);
+  assert.strictEqual(result.additions, 1);
+  assert.strictEqual(result.totalDelta, 1);
+  assert.strictEqual(result.isCleanRebase, false);
+});
+
+test('parseRangeDiff matches genuine commit headers padded with up to 3 leading spaces', () => {
+  const sampleOutput = [
+    ' 10: a1b2c3d =  10: e5f6g7h Tenth commit',
+    '   -: ------- > 1000: 89abcdef Added thousandth commit'
+  ].join('\n');
+
+  const result = parseRangeDiff(sampleOutput);
+  assert.strictEqual(result.hasRemovedCommits, false);
+  assert.deepStrictEqual(result.addedCommitShas, ['89abcdef']);
+  assert.strictEqual(result.isCleanRebase, false);
+});
+
 test('isIgnoredRangeDiffHeader detects metadata and header lines', () => {
   assert.strictEqual(isIgnoredRangeDiffHeader('@@ Metadata'), true);
   assert.strictEqual(isIgnoredRangeDiffHeader('Author: Alice <alice@google.com>'), true);

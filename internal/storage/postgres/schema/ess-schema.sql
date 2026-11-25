@@ -105,6 +105,8 @@ CREATE TABLE WorkUnits (
   SortPhase BIGINT GENERATED ALWAYS AS (CASE WHEN ExecutionState IN (1, 3, 4) THEN 1 WHEN ExecutionState IN (2) THEN 0 ELSE -1 END) STORED,
   CreateTime TIMESTAMPTZ NOT NULL,
   UpdateTime TIMESTAMPTZ NOT NULL,
+  Parameters BYTEA, -- google.protobuf.Struct, NULL for work units that are not study trials.
+  TrialId TEXT, -- NULL for work units that are not study trials.
   PRIMARY KEY (Xid, WorkUnitId),
   FOREIGN KEY (Xid) REFERENCES Experiments (Xid) ON DELETE CASCADE
 );

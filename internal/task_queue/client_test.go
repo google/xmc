@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/redis/go-redis/v9"
 	"github.com/tink-crypto/tink-go/v2/jwt"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -617,6 +618,50 @@ func TestNew_DefaultTokenProvider(t *testing.T) {
 	})
 }
 
+func TestNew_RedisPublisher(t *testing.T) {
+	keyFunc := securitytest.MustCreateTestSigner(t)
+	tests := []struct {
+		name                      string
+		opts                      []Option
+		wantContextTimeoutEnabled bool
+	}{
+		{name: "context timeouts are off by default"},
+		{name: "WithRedisContextTimeout opts in", opts: []Option{WithRedisContextTimeout()}, wantContextTimeoutEnabled: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := New(t.Context(), "project", "sa", "http://actuator", "", keyFunc, 3600, "redis-service:6379", tc.opts...)
+			if err != nil {
+				t.Fatalf("New() failed: %v", err)
+			}
+			defer c.Close()
+			publisher, ok := c.redisClient.(*redisclient.PublisherClient)
+			if !ok {
+				t.Fatalf("redisClient is %T, want *redisclient.PublisherClient", c.redisClient)
+			}
+			client, ok := publisher.Client.(*redis.Client)
+			if !ok {
+				t.Fatalf("publisher client is %T, want *redis.Client", publisher.Client)
+			}
+			if got := client.Options().ContextTimeoutEnabled; got != tc.wantContextTimeoutEnabled {
+				t.Errorf("ContextTimeoutEnabled = %t, want %t", got, tc.wantContextTimeoutEnabled)
+			}
+		})
+	}
+
+	t.Run("WithRedisPublisher takes precedence", func(t *testing.T) {
+		fake := redisclient.NewFakeClient()
+		c, err := New(t.Context(), "project", "sa", "http://actuator", "", keyFunc, 3600, "redis-service:6379", WithRedisContextTimeout(), WithRedisPublisher(fake))
+		if err != nil {
+			t.Fatalf("New() failed: %v", err)
+		}
+		defer c.Close()
+		if c.redisClient != fake {
+			t.Errorf("redisClient = %T, want the WithRedisPublisher publisher", c.redisClient)
+		}
+	})
+}
+
 func TestEnqueueWorkUnitTask_RedisAddMessageError(t *testing.T) {
 	ctx := t.Context()
 	c, fakeRedis := createTaskQueueClient(ctx, t)
@@ -722,5 +767,240 @@ func TestEnqueueResumedWorkUnitTask(t *testing.T) {
 	}
 	if diff := cmp.Diff(wantMeta, payload.GetMetadata(), protocmp.Transform(), protocmp.IgnoreFields(&actuatortaskpb.Metadata{}, "idempotency_key", "trace_id")); diff != "" {
 		t.Errorf("Metadata mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// batchTasks returns n creation tasks for work units 1..n of experiment 1.
+func batchTasks(n int) []WorkUnitTask {
+	tasks := make([]WorkUnitTask, n)
+	for i := range tasks {
+		name := fmt.Sprintf("experiments/1/workUnits/%d", i+1)
+		tasks[i] = WorkUnitTask{
+			Target:        name + "/executions/1",
+			WorkUnit:      &essmsgpb.WorkUnit{Name: name},
+			Action:        &actuatortaskpb.Action{Action: &actuatortaskpb.Action_Create{Create: &actuatortaskpb.CreateAction{}}},
+			OperationName: fmt.Sprintf("%s/operations/op%d", name, i+1),
+		}
+	}
+	return tasks
+}
+
+func TestEnqueueWorkUnitTasks_PipelinesSignedTasksWithOneToken(t *testing.T) {
+	ctx := t.Context()
+	tokenCalls := 0
+	c, fakeRedis := createTaskQueueClient(ctx, t, WithTokenProvider(TokenProviderFunc(func(context.Context, string, string) (string, error) {
+		tokenCalls++
+		return "batch-oidc-token", nil
+	})))
+	tasks := batchTasks(3)
+
+	for i, err := range c.EnqueueWorkUnitTasks(ctx, tasks) {
+		if err != nil {
+			t.Errorf("EnqueueWorkUnitTasks()[%d] = %v, want nil", i, err)
+		}
+	}
+
+	if tokenCalls != 1 || fakeRedis.AddMessagesCalls != 1 || len(fakeRedis.Messages) != len(tasks) {
+		t.Fatalf("token calls = %d, AddMessages calls = %d, messages = %d; want 1, 1, %d", tokenCalls, fakeRedis.AddMessagesCalls, len(fakeRedis.Messages), len(tasks))
+	}
+	for i, msg := range fakeRedis.Messages {
+		var redisTask interfaces.RedisTask
+		if err := json.Unmarshal([]byte(msg), &redisTask); err != nil {
+			t.Fatalf("Failed to unmarshal redis message %d: %v", i, err)
+		}
+		payload := &actuatortaskpb.ActuatorPayload{}
+		if err := protojson.Unmarshal(redisTask.Payload, payload); err != nil {
+			t.Fatalf("Failed to unmarshal payload %d: %v", i, err)
+		}
+		got := []string{payload.GetTarget(), payload.GetMetadata().GetOperationName(), redisTask.OidcToken}
+		want := []string{tasks[i].Target, tasks[i].OperationName, "batch-oidc-token"}
+		if diff := cmp.Diff(want, got); diff != "" || redisTask.Signature == "" {
+			t.Errorf("message %d mismatch (-want +got):\n%s, signature %q", i, diff, redisTask.Signature)
+		}
+	}
+}
+
+func TestEnqueueWorkUnitTasks_EmptyBatchMintsNoToken(t *testing.T) {
+	ctx := t.Context()
+	tokenCalls := 0
+	c, fakeRedis := createTaskQueueClient(ctx, t, WithTokenProvider(TokenProviderFunc(func(context.Context, string, string) (string, error) {
+		tokenCalls++
+		return "batch-oidc-token", nil
+	})))
+
+	if errs := c.EnqueueWorkUnitTasks(ctx, nil); errs != nil {
+		t.Errorf("EnqueueWorkUnitTasks(empty) = %v, want nil", errs)
+	}
+	if tokenCalls != 0 || fakeRedis.AddMessagesCalls != 0 {
+		t.Errorf("token calls = %d, AddMessages calls = %d; want 0, 0", tokenCalls, fakeRedis.AddMessagesCalls)
+	}
+}
+
+func TestEnqueueWorkUnitTasks_NilActionFailsTask(t *testing.T) {
+	ctx := t.Context()
+	c, fakeRedis := createTaskQueueClient(ctx, t)
+	tasks := batchTasks(2)
+	tasks[0].Action = nil
+
+	errs := c.EnqueueWorkUnitTasks(ctx, tasks)
+
+	if len(errs) != 2 || errs[0] == nil || !strings.Contains(errs[0].Error(), "must not be nil") || errs[1] != nil {
+		t.Errorf("EnqueueWorkUnitTasks() = %v, want [action must not be nil error, nil]", errs)
+	}
+	if len(fakeRedis.Messages) != 1 {
+		t.Errorf("messages added = %d, want 1", len(fakeRedis.Messages))
+	}
+}
+
+func TestEnqueueWithoutRedisClient(t *testing.T) {
+	ctx := t.Context()
+	tokenCalls := 0
+	c, _ := createTaskQueueClient(ctx, t, WithTokenProvider(TokenProviderFunc(func(context.Context, string, string) (string, error) {
+		tokenCalls++
+		return "batch-oidc-token", nil
+	})))
+	c.redisClient = nil
+	task := batchTasks(1)[0]
+
+	errs := c.EnqueueWorkUnitTasks(ctx, batchTasks(2))
+	if len(errs) != 2 {
+		t.Fatalf("EnqueueWorkUnitTasks() returned %d errors, want 2", len(errs))
+	}
+	for i, err := range errs {
+		if err == nil || !strings.Contains(err.Error(), "redis client is not configured") {
+			t.Errorf("EnqueueWorkUnitTasks()[%d] = %v, want redis client is not configured", i, err)
+		}
+	}
+	if err := c.EnqueueWorkUnitTask(ctx, task.Target, task.WorkUnit, task.Action, task.OperationName); err == nil || !strings.Contains(err.Error(), "redis client is not configured") {
+		t.Errorf("EnqueueWorkUnitTask() = %v, want redis client is not configured", err)
+	}
+	if tokenCalls != 0 {
+		t.Errorf("token calls = %d, want 0", tokenCalls)
+	}
+}
+
+// shortResultPublisher is a Redis publisher whose AddMessages answers only the first message.
+type shortResultPublisher struct {
+	*redisclient.FakeClient
+}
+
+func (p shortResultPublisher) AddMessages(ctx context.Context, data []string) []error {
+	return p.FakeClient.AddMessages(ctx, data)[:1]
+}
+
+func TestEnqueueWorkUnitTasks_MissingRedisResultFailsTask(t *testing.T) {
+	ctx := t.Context()
+	c, _ := createTaskQueueClient(ctx, t, WithRedisPublisher(shortResultPublisher{redisclient.NewFakeClient()}))
+
+	errs := c.EnqueueWorkUnitTasks(ctx, batchTasks(3))
+
+	if len(errs) != 3 || errs[0] != nil {
+		t.Fatalf("EnqueueWorkUnitTasks() = %v, want 3 errors with the first nil", errs)
+	}
+	for i, err := range errs[1:] {
+		if err == nil || !strings.Contains(err.Error(), "no response from redis for this message") {
+			t.Errorf("EnqueueWorkUnitTasks()[%d] = %v, want no response from redis", i+1, err)
+		}
+	}
+}
+
+func TestEnqueueWorkUnitTasks_Failures(t *testing.T) {
+	ctx := t.Context()
+	errRedis := errors.New("redis down")
+	failingSigner := func() (jwt.Signer, error) { return nil, errors.New("no signing key") }
+	tests := []struct {
+		name        string
+		client      func(t *testing.T) (*Client, *redisclient.FakeClient)
+		wantErrSub  []string
+		wantAddCall int
+	}{
+		{
+			name: "token failure fails every task without a round trip",
+			client: func(t *testing.T) (*Client, *redisclient.FakeClient) {
+				return createTaskQueueClient(ctx, t, WithTokenProvider(&mockTokenProvider{Err: errors.New("iam down")}))
+			},
+			wantErrSub:  []string{"failed to generate OIDC token", "failed to generate OIDC token"},
+			wantAddCall: 0,
+		},
+		{
+			name: "signing failure fails the task",
+			client: func(t *testing.T) (*Client, *redisclient.FakeClient) {
+				c, fakeRedis := createTaskQueueClient(ctx, t)
+				c.signer = failingSigner
+				return c, fakeRedis
+			},
+			wantErrSub:  []string{"failed to create message signature", "failed to create message signature"},
+			wantAddCall: 1,
+		},
+		{
+			name: "redis failure fails only that task",
+			client: func(t *testing.T) (*Client, *redisclient.FakeClient) {
+				c, fakeRedis := createTaskQueueClient(ctx, t)
+				fakeRedis.AddMessagesErrors = []error{nil, errRedis}
+				return c, fakeRedis
+			},
+			wantErrSub:  []string{"", "failed to add message to redis: redis down"},
+			wantAddCall: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, fakeRedis := tt.client(t)
+			errs := c.EnqueueWorkUnitTasks(ctx, batchTasks(2))
+			for i, err := range errs {
+				if tt.wantErrSub[i] == "" {
+					if err != nil {
+						t.Errorf("errs[%d] = %v, want nil", i, err)
+					}
+					continue
+				}
+				if err == nil || !strings.Contains(err.Error(), tt.wantErrSub[i]) {
+					t.Errorf("errs[%d] = %v, want error containing %q", i, err, tt.wantErrSub[i])
+				}
+			}
+			if fakeRedis.AddMessagesCalls != tt.wantAddCall {
+				t.Errorf("AddMessages calls = %d, want %d", fakeRedis.AddMessagesCalls, tt.wantAddCall)
+			}
+		})
+	}
+}
+
+// TestEnqueueWorkUnitTasks_MapsRedisErrorsToTasksAfterSigningFailure checks that per-message Redis
+// errors are reported on the right task when an earlier task was never sent.
+func TestEnqueueWorkUnitTasks_MapsRedisErrorsToTasksAfterSigningFailure(t *testing.T) {
+	ctx := t.Context()
+	c, fakeRedis := createTaskQueueClient(ctx, t)
+	sign := c.signer
+	signCalls := 0
+	c.signer = func() (jwt.Signer, error) {
+		signCalls++
+		if signCalls == 1 {
+			return nil, errors.New("no signing key")
+		}
+		return sign()
+	}
+	// Task 0 fails signing, so the first Redis message belongs to task 1.
+	fakeRedis.AddMessagesErrors = []error{errors.New("redis down")}
+
+	errs := c.EnqueueWorkUnitTasks(ctx, batchTasks(3))
+
+	got := make([]string, len(errs))
+	for i, err := range errs {
+		switch {
+		case err == nil:
+			got[i] = "ok"
+		case strings.Contains(err.Error(), "failed to create message signature"):
+			got[i] = "signature"
+		case strings.Contains(err.Error(), "failed to add message to redis"):
+			got[i] = "redis"
+		default:
+			got[i] = err.Error()
+		}
+	}
+	if diff := cmp.Diff([]string{"signature", "redis", "ok"}, got); diff != "" {
+		t.Errorf("EnqueueWorkUnitTasks() errors mismatch (-want +got):\n%s", diff)
+	}
+	if len(fakeRedis.Messages) != 1 {
+		t.Errorf("messages added = %d, want 1", len(fakeRedis.Messages))
 	}
 }

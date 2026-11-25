@@ -348,4 +348,14 @@ func TestStopWorkUnit_TaskEnqueueFails(t *testing.T) {
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("StopWorkUnit() got error %v, want %v", err, grpcerr.ErrInternal)
 	}
+	if got := len(taskQueueClient.EnqueuedTasks); got != 1 {
+		t.Fatalf("StopWorkUnit() attempted %d enqueues, want 1", got)
+	}
+	checkOperationStopped(t, storage, 123, 456)
+	checkSystemMessage(t, storage, 456, "experiments/123/workUnits/456/executions/1", &apipb.StructuredMessage{
+		Source:         apipb.StructuredMessage_XMANAGER_BACKEND,
+		Severity:       apipb.StructuredMessage_ERROR,
+		UserFacingText: "Failed to stop work unit. Please try again.",
+		Parent:         "experiments/123/workUnits/456",
+	})
 }

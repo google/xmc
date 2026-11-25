@@ -22,6 +22,7 @@ go_library(
         "parameters.go",
         "requests.go",
         "study.go",
+        "studytrial.go",
         "volumes.go",
     ],
     importpath = "xmanager_cloud/internal/validator",
@@ -36,6 +37,7 @@ go_library(
         "//internal/grpcerr",
         "//internal/kubernetes/common/jobsetutil",
         "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
 
@@ -47,6 +49,7 @@ go_test(
         "parameters_test.go",
         "requests_test.go",
         "study_test.go",
+        "studytrial_test.go",
         "volumes_test.go",
     ],
     embed = [":validator"],
@@ -65,6 +68,7 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
+        "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

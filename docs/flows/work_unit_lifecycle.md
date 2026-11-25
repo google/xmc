@@ -81,6 +81,12 @@ and combined with the work unit's own priority to resolve the Kueue `WorkloadPri
 (see [Execution Model §6](../architecture/execution_model.md#6-scheduling-and-priority)).
 Priority is therefore captured when the task is enqueued, not when the JobSet is built.
 
+`CreateWorkUnit` returns `FAILED_PRECONDITION` for a `STUDY` experiment. Its work units are trials,
+created only by the study controller, so the trial count always equals the number of stored work
+units (see [STUDY Experiments](../../cmd/experiment_state_server/README.md#study-experiments)). The
+check is the first read in step 4's transaction, before a work unit ID is assigned, so nothing is
+written.
+
 ### What the Actuator builds
 
 Step 10 is where a protobuf `WorkUnit` becomes a Kubernetes object. `cmd/actuator/k8s_client`
@@ -110,6 +116,43 @@ The response returns after step 8, typically in milliseconds and before any pod 
 what makes launching an experiment with hundreds of work units practical, and it is why
 `CreateWorkUnit` succeeding does not mean the work started — only that the intent is durably
 recorded and queued.
+
+### Batch create for studies
+
+The study controller creates the trials of a `STUDY` experiment with `BatchCreateWorkUnits`, which
+writes up to 500 work units in one transaction and returns them synchronously instead of an
+`Operation` (contract and errors in
+[STUDY Experiments](../../cmd/experiment_state_server/README.md#creating-trials-batchcreateworkunits)).
+
+```mermaid
+sequenceDiagram
+    participant SC as Study Controller
+    participant ESS as ESS (Exp State Server)
+    participant DB as Spanner/Postgres (Storage)
+    participant Redis
+    participant Actuator
+
+    SC->>ESS: 1. BatchCreateWorkUnits(parent, N requests)
+    ESS->>DB: 2. Read hpo component (studyControllerServiceAccount)
+    ESS->>DB: 3. FetchExperiment (STUDY, study_config, priority)
+    ESS->>ESS: 4. Validate parameters and trial_id, and assemble each work unit
+    ESS->>DB: 5. One transaction: re-check caller, next WID, insert N work units, update experiment once
+    ESS->>DB: 6. AddWorkUnitOperation per work unit
+    ESS->>Redis: 7. Pipelined XADD of N signed payloads
+    ESS-->>SC: 8. N WorkUnits in request order
+    Redis-->>Actuator: 9. HandleWorkUnitTask per work unit (Async)
+```
+
+Step 2 runs right after authentication and the parent name check, before the experiment is read
+or the payload is validated, so callers other than the study controller get `PERMISSION_DENIED`
+and learn nothing else. Unlike step 6 of `CreateWorkUnit`, the experiment priority comes from the
+read in step 3, and the experiment is not read again. Step 5 assigns the IDs `next .. next+N-1`
+from a single next-ID read. If step 6 or 7 fails for some work units, they get a `FATAL` status
+message, written for all of them in one transaction (and any recorded operation from step 6 is
+marked `Done` with `INTERNAL`), and the RPC returns `INTERNAL` naming them; the remaining work units
+are still scheduled. This cleanup runs even if the caller cancels the RPC. The trials are already
+stored, so the controller must not create them again when it retries; ESS does not deduplicate
+batches.
 
 ---
 
@@ -328,6 +371,7 @@ sequenceDiagram
 | Failure | Effect | Recovery |
 | :--- | :--- | :--- |
 | ESS crashes after committing but before enqueuing | Operation exists with no task; work unit stays in its pre-actuation state. | Client retries the RPC; the idempotency key prevents duplicate cluster mutations if a task did land. |
+| ESS fails to enqueue the task (for example, a Redis error) | ESS closes any recorded operation as done with the error (`INTERNAL` when the error carries no gRPC status) and the RPC fails. Create and restart also record a `FATAL` status message on the execution; stop records an `ERROR` one. `UpdateWorkUnit` has no operation and writes no status message; its metadata change stays committed. | For `CreateWorkUnit` and `BatchCreateWorkUnits`, the work units are already committed, so restart the unscheduled work units instead of retrying create. For restart and stop, the client retries the RPC. For `UpdateWorkUnit`, retrying with the same `priority` is a no-op and does not enqueue a task (`shouldEnqueueWorkUnitTask` only enqueues when `priority` changes); update `priority` to a different value (or change and restore it) to trigger cluster propagation. |
 | Actuator crashes mid-task | Message is unacknowledged in the Redis stream. | Reclaimed after the 5-minute abandoned-message timeout and redelivered to another consumer. |
 | Task fails repeatedly | Retried up to 5 times with a 2-minute processing timeout each. | After exhaustion, moved to `xmc-dlq-stream` for operator inspection. |
 | Task message has no `data` field | Cannot be handled, now or on a retry. | Moved to `xmc-dlq-stream` at once with reason `missing_data`, and acknowledged. |

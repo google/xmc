@@ -29,6 +29,7 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
@@ -387,11 +389,15 @@ func TestComponentsRBAC_HelmLifecycleEnvtest(t *testing.T) {
 		t.Fatalf("failed to load the stable-2026b hpo chart: %v", err)
 	}
 	// The second call changes the image, so Helm PATCHes the xmc-study-controller Deployment.
-	const studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
-	const redisAddr = "redis-service.xmc.svc.cluster.local:6379"
+	const (
+		studyControllerImage = "registry.example.com/xmc/study-controller-dev:v2"
+		redisAddr            = "redis-service.xmc.svc.cluster.local:6379"
+		essAddr              = "grpc-service:50051"
+		essAudience          = "test-ess-audience"
+	)
 	runHelmLifecycleAsBridge(ctx, t, runner, "xmc-cmp-hpo", hpoChart, []map[string]any{
-		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1", "redisAddr": redisAddr}},
-		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage, "redisAddr": redisAddr}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": "registry.example.com/xmc/study-controller-dev:v1", "redisAddr": redisAddr, "essAddr": essAddr, "essAudience": essAudience}},
+		{"hpoDeployment": map[string]any{"enabled": true, "image": studyControllerImage, "redisAddr": redisAddr, "essAddr": essAddr, "essAudience": essAudience}},
 	}, func() {
 		dep, err := adminKube.AppsV1().Deployments("xmc").Get(ctx, "xmc-study-controller", metav1.GetOptions{})
 		if err != nil || len(dep.Spec.Template.Spec.Containers) != 1 || dep.Spec.Template.Spec.Containers[0].Image != studyControllerImage {
@@ -474,7 +480,44 @@ func startBridgeRBACEnvtest(ctx context.Context, t *testing.T, ns string) (*rest
 		t.Fatalf("failed to create %s namespace: %v", ns, err)
 	}
 	applyBridgeRBACManifests(ctx, t, adminKube, ns)
+	waitForBridgeRBACPropagation(ctx, t, adminCfg, ns)
 	return adminCfg, adminKube
+}
+
+// waitForBridgeRBACPropagation blocks until the API server's RBAC authorizer, which serves from
+// asynchronously updated informer caches, honors every xmc-bridge binding. Without it the first
+// impersonated request can race the binding create and be spuriously Forbidden.
+func waitForBridgeRBACPropagation(ctx context.Context, t *testing.T, adminCfg *rest.Config, ns string) {
+	t.Helper()
+	kube, _ := impersonateBridgeSA(t, adminCfg, ns)
+	// One allowed read per binding; NotFound proves the request passed authorization.
+	probes := []struct {
+		binding string
+		call    func(context.Context) error
+	}{
+		{"xmc-bridge-rolebinding", func(ctx context.Context) error {
+			_, err := kube.CoreV1().Secrets(ns).List(ctx, metav1.ListOptions{})
+			return err
+		}},
+		{"xmc-bridge-leader-election", func(ctx context.Context) error {
+			_, err := kube.CoordinationV1().Leases(ns).Get(ctx, "xmc-bridge", metav1.GetOptions{})
+			return err
+		}},
+		{"xmc-bridge-cluster-identity", func(ctx context.Context) error {
+			_, err := kube.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{})
+			return err
+		}},
+	}
+	for _, p := range probes {
+		var lastErr error
+		err := wait.PollUntilContextTimeout(ctx, 50*time.Millisecond, 10*time.Second, true, func(ctx context.Context) (bool, error) {
+			lastErr = p.call(ctx)
+			return lastErr == nil || apierrors.IsNotFound(lastErr), nil
+		})
+		if err != nil {
+			t.Fatalf("timed out waiting for RBAC binding %s to propagate: %v (last error: %v)", p.binding, err, lastErr)
+		}
+	}
 }
 
 // bridgeSAIdentity returns the user name and groups of xmc-bridge-sa in namespace ns.

@@ -27,6 +27,23 @@ from unittest import mock
 from tools.nightly_tests import weekly_visual_snapshot
 
 
+def _mock_link(href: str) -> mock.MagicMock:
+    """Builds a mock Playwright locator yielding a single link with the given href."""
+    links = mock.MagicMock(count=mock.MagicMock(return_value=1))
+    links.nth.return_value.get_attribute.return_value = href
+    return links
+
+
+def _mock_row(xid: str, *, has_work_units: bool) -> mock.MagicMock:
+    """Builds a mock /experiments table row."""
+    row = mock.MagicMock()
+    row.inner_text.return_value = f"{xid} Experiment {xid}"
+    no_wu = mock.MagicMock(count=mock.MagicMock(return_value=0 if has_work_units else 1))
+    link = _mock_link(f"/experiments/{xid}")
+    row.locator.side_effect = lambda sel: no_wu if "no-work-units" in sel else link
+    return row
+
+
 class WeeklyVisualSnapshotTest(unittest.TestCase):
     """Test suite for weekly_visual_snapshot library and CLI."""
 
@@ -64,27 +81,73 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             ],
         )
         self.assertEqual(weekly_visual_snapshot.GOLDEN_ROUTES[0].route, "/experiments")
+        self.assertEqual(
+            weekly_visual_snapshot.GOLDEN_ROUTES[2].route,
+            "/experiments/{xid}/workUnits/{wid}",
+        )
 
-    def test_discover_xid_from_page(self) -> None:
+    def test_discover_xid_from_page_skips_no_work_units_rows(self) -> None:
+        empty_loc = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        row_items = [
+            _mock_row("101", has_work_units=False),
+            _mock_row("102", has_work_units=True),
+        ]
+        rows = mock.MagicMock(count=mock.MagicMock(return_value=len(row_items)))
+        rows.nth.side_effect = lambda i: row_items[i]
+        page = mock.MagicMock()
+        page.locator.return_value = rows
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page), "102")
+
+        links = _mock_link("/experiments/108")
+        all_no_wu_rows = [_mock_row("101", has_work_units=False)]
+        all_no_wu_loc = mock.MagicMock(count=mock.MagicMock(return_value=1))
+        all_no_wu_loc.nth.side_effect = lambda i: all_no_wu_rows[i]
+        page_all_no_wu = mock.MagicMock()
+        page_all_no_wu.locator.side_effect = lambda sel: all_no_wu_loc if "tbody" in sel else links
+        self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_all_no_wu), "")
+
         page_with_link = mock.MagicMock()
-        links = mock.MagicMock(count=mock.MagicMock(return_value=1))
-        links.nth.return_value.get_attribute.return_value = "/experiments/108"
-        page_with_link.locator.return_value = links
+        page_with_link.locator.side_effect = lambda sel: empty_loc if "tbody" in sel else links
         self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_with_link), "108")
 
         page_empty = mock.MagicMock()
-        page_empty.locator.return_value = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        page_empty.locator.return_value = empty_loc
         self.assertEqual(weekly_visual_snapshot.discover_xid_from_page(page_empty), "")
+
+    def test_discover_wid_from_page(self) -> None:
+        empty_loc = mock.MagicMock(count=mock.MagicMock(return_value=0))
+        scoped_links = _mock_link("/experiments/42/workUnits/7")
+        fallback_links = _mock_link("/experiments/42/workUnits/9")
+
+        page_scoped = mock.MagicMock()
+        page_scoped.locator.side_effect = lambda sel: (
+            scoped_links if "xmc-work-units-table" in sel else fallback_links
+        )
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_scoped), "7")
+
+        page_fallback = mock.MagicMock()
+        page_fallback.locator.side_effect = lambda sel: (
+            empty_loc if "xmc-work-units-table" in sel else fallback_links
+        )
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_fallback), "9")
+
+        page_empty = mock.MagicMock()
+        page_empty.locator.return_value = empty_loc
+        self.assertEqual(weekly_visual_snapshot.discover_wid_from_page(page_empty), "")
 
     def test_capture_all_routes_saves_screenshots(self) -> None:
         session = self._mock_session()
-        caps = weekly_visual_snapshot.capture_all_routes(session, output_dir=self.out_dir, xid=42)
+        with mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="7"):
+            caps = weekly_visual_snapshot.capture_all_routes(
+                session, output_dir=self.out_dir, xid=42
+            )
         self.assertEqual(len(caps), 4)
         for cap in caps:
             self.assertTrue(
                 os.path.isfile(os.path.join(self.out_dir, "screenshots", cap["filename"]))
             )
         self.assertEqual(caps[1]["route"], "/experiments/42")
+        self.assertEqual(caps[2]["route"], "/experiments/42/workUnits/7")
         session.switch_tab.assert_called_once_with("Work Units", timeout_ms=60000)
 
     def test_capture_single_route_normalizes_trailing_slash_and_relative_route(self) -> None:
@@ -93,26 +156,42 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
         route_spec = weekly_visual_snapshot.GoldenRoute(
             id="test_route",
             title="Test Route",
-            route="experiments/{xid}",
+            route="experiments/{xid}/workUnits/{wid}",
         )
         cap = weekly_visual_snapshot.capture_single_route(
-            session, route_spec, xid=123, output_dir=self.out_dir
+            session, route_spec, xid=123, output_dir=self.out_dir, wid=5
         )
         self.assertEqual(session.ui_base_url, "https://xmc.example.com")
-        self.assertEqual(cap["route"], "/experiments/123")
+        self.assertEqual(cap["route"], "/experiments/123/workUnits/5")
         session.page.goto.assert_called_once_with(
-            "https://xmc.example.com/experiments/123",
+            "https://xmc.example.com/experiments/123/workUnits/5",
             wait_until="networkidle",
             timeout=60000,
         )
 
-    def test_capture_all_routes_auto_discovers_or_skips_xid_routes(self) -> None:
+    def test_capture_all_routes_auto_discovers_or_skips_xid_and_wid_routes(self) -> None:
         session = self._mock_session()
-        with mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"):
+        with (
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="3"),
+        ):
             caps_found = weekly_visual_snapshot.capture_all_routes(
                 session, output_dir=self.out_dir, xid=""
             )
         self.assertEqual(caps_found[1]["route"], "/experiments/88")
+        self.assertEqual(caps_found[2]["route"], "/experiments/88/workUnits/3")
+
+        with (
+            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="88"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value=""),
+        ):
+            caps_no_wid = weekly_visual_snapshot.capture_all_routes(
+                session, output_dir=self.out_dir, xid=""
+            )
+        self.assertEqual(
+            [c["id"] for c in caps_no_wid],
+            ["01_experiments_list", "03_experiment_workunits", "06_resource_dashboard"],
+        )
 
         with mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value=""):
             caps_skipped = weekly_visual_snapshot.capture_all_routes(
@@ -169,7 +248,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
                 weekly_visual_snapshot.ui_entities_validator,
                 "XMCUIBrowserSession",
             ) as mock_session_cls,
-            mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="55"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="2"),
         ):
 
             def create_session(**kwargs):
@@ -190,6 +269,7 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             screenshots_dir=os.path.join(self.out_dir, "screenshots"),
         )
         self.assertEqual(manifest["ui_base_url"], "https://xmc.example.com")
+        self.assertEqual(manifest["captures"][2]["route"], "/experiments/55/workUnits/2")
         goto_calls = session.page.goto.call_args_list
         self.assertTrue(goto_calls)
         for call_args in goto_calls:
@@ -214,11 +294,13 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             ),
             mock.patch.object(weekly_visual_snapshot, "FLAGS", fake_flags),
             mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page", return_value="77"),
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="4"),
         ):
             weekly_visual_snapshot.main(["weekly_visual_snapshot.py"])
         with open(os.path.join(self.out_dir, "manifest.json"), encoding="utf-8") as f_man:
             manifest = json.load(f_man)
         self.assertEqual(manifest["xid"], "77")
+        self.assertEqual(manifest["captures"][2]["route"], "/experiments/77/workUnits/4")
         self.assertTrue(os.path.isfile(os.path.join(self.out_dir, "index.html")))
 
     def test_main_with_explicit_xid_flag(self) -> None:
@@ -239,11 +321,14 @@ class WeeklyVisualSnapshotTest(unittest.TestCase):
             ),
             mock.patch.object(weekly_visual_snapshot, "FLAGS", fake_flags),
             mock.patch.object(weekly_visual_snapshot, "discover_xid_from_page") as mock_discover,
+            mock.patch.object(weekly_visual_snapshot, "discover_wid_from_page", return_value="8"),
         ):
             weekly_visual_snapshot.main(["weekly_visual_snapshot.py"])
         mock_discover.assert_not_called()
         with open(os.path.join(self.out_dir, "manifest.json"), encoding="utf-8") as f_man:
-            self.assertEqual(json.load(f_man)["xid"], "999")
+            manifest = json.load(f_man)
+        self.assertEqual(manifest["xid"], "999")
+        self.assertEqual(manifest["captures"][2]["route"], "/experiments/999/workUnits/8")
 
     def test_load_gallery_template(self) -> None:
         template = weekly_visual_snapshot.load_gallery_template()

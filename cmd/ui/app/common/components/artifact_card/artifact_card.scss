@@ -26,6 +26,11 @@
     cursor: pointer;
   }
 
+  .artifact-icon-link {
+    text-decoration: none;
+    color: inherit;
+  }
+
   .card-main-content {
     display: flex;
     align-items: center;

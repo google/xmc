@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
-import { Component, computed, signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { of, Subject, throwError } from 'rxjs';
@@ -22,7 +22,7 @@ import { GetRunningAndPendingJobsResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 import { bootstrap, cleanState, flush, setupModule } from 'app/testing/test';
 
-import { QueueJobsTable, QueueJobsTableData } from './queue_jobs_table';
+import { QueueJobsTable } from './queue_jobs_table';
 import { QueueJobsTableHarness } from './queue_jobs_table_harness';
 
 const EMPTY_STATE_SELECTOR = '.jobs-empty-state';

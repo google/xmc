@@ -18,6 +18,7 @@ package workunit
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -42,7 +43,7 @@ import (
 const entityName = "work unit"
 
 var (
-	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
+	selectWorkUnitSQL = safesql.New(`SELECT Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, CreateTime, UpdateTime, Parameters, TrialId FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
 	lockWorkUnitSQL   = safesql.Concat(selectWorkUnitSQL, safesql.New(" FOR NO KEY UPDATE"))
 
 	selectCurrentExecutionSQL  = safesql.New(`SELECT Xid, WorkUnitId, ExecutionId, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionMetadata, WorkUnitStatus FROM WorkUnits WHERE Xid = $1 AND WorkUnitId = $2`)
@@ -52,8 +53,8 @@ var (
 	lockExperimentSQL = safesql.New(`SELECT 1 FROM Experiments WHERE Xid = $1 FOR NO KEY UPDATE`)
 	nextWorkUnitIDSQL = safesql.New(`SELECT COALESCE(MAX(WorkUnitId), 0) + 1 FROM WorkUnits WHERE Xid = $1`)
 
-	insertWorkUnitSQL = safesql.New(`INSERT INTO WorkUnits (Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, PositionInQueue, CreateTime, UpdateTime)
-VALUES (@xid, @workunitid, @workunittype, @priority, @urls, @tags, @notes, @executable, @executioncreatetime, @executionupdatetime, @executioncompletetime, @executionid, @executionmetadata, @workunitstatus, @queuename, @executionstate, @executionstatusmessageseverity, @positioninqueue, @createtime, @updatetime)`)
+	insertWorkUnitSQL = safesql.New(`INSERT INTO WorkUnits (Xid, WorkUnitId, WorkUnitType, Priority, Urls, Tags, Notes, Executable, ExecutionCreateTime, ExecutionUpdateTime, ExecutionCompleteTime, ExecutionId, ExecutionMetadata, WorkUnitStatus, QueueName, ExecutionState, ExecutionStatusMessageSeverity, PositionInQueue, CreateTime, UpdateTime, Parameters, TrialId)
+VALUES (@xid, @workunitid, @workunittype, @priority, @urls, @tags, @notes, @executable, @executioncreatetime, @executionupdatetime, @executioncompletetime, @executionid, @executionmetadata, @workunitstatus, @queuename, @executionstate, @executionstatusmessageseverity, @positioninqueue, @createtime, @updatetime, @parameters, @trialid)`)
 
 	updateWorkUnitSQL = safesql.New(`UPDATE WorkUnits SET Priority = @priority, Urls = @urls, Tags = @tags, Notes = @notes, UpdateTime = @updatetime WHERE Xid = @xid AND WorkUnitId = @workunitid`)
 
@@ -164,25 +165,51 @@ func (r *TxRepository) FetchNextWorkUnitID(ctx context.Context, xid int64) (int6
 
 // InsertWorkUnit inserts a new work unit and its initial execution within the transaction.
 func (r *TxRepository) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit) error {
-	if wu == nil {
+	return r.InsertWorkUnits(ctx, []*essmsgpb.WorkUnit{wu})
+}
+
+// InsertWorkUnits inserts new work units of one experiment and their initial executions within the
+// transaction. It locks the experiment once and sends all inserts in a single batch round trip. An
+// empty wus takes no lock and sends nothing.
+func (r *TxRepository) InsertWorkUnits(ctx context.Context, wus []*essmsgpb.WorkUnit) error {
+	if len(wus) == 0 {
+		return nil
+	}
+	if slices.Contains(wus, nil) {
 		return pgdb.WrapStatusError("work unit must not be nil", grpcerr.ErrInvalidArgument, nil)
+	}
+	xid, err := data.WorkUnitsExperimentID(wus)
+	if err != nil {
+		return err
 	}
 	if err := requireDB(r.tx); err != nil {
 		return err
 	}
-	row, err := postgresdata.WorkUnitProtoToRow(wu)
+	batch, err := workUnitInsertBatch(wus)
 	if err != nil {
 		return err
 	}
-	tag, err := r.tx.Exec(ctx, lockExperimentSQL.String(), row.Xid)
+	tag, err := r.tx.Exec(ctx, lockExperimentSQL.String(), xid)
 	if err != nil {
 		return pgdb.TranslateError(err, "experiment")
 	}
 	if tag.RowsAffected() == 0 {
 		return pgdb.TranslateError(pgx.ErrNoRows, "experiment")
 	}
-	_, err = r.tx.Exec(ctx, insertWorkUnitSQL.String(), row.GetInsertArgs())
-	return pgdb.TranslateError(err, entityName)
+	return pgdb.TranslateError(r.tx.SendBatch(ctx, batch).Close(), entityName)
+}
+
+// workUnitInsertBatch queues one INSERT per work unit.
+func workUnitInsertBatch(wus []*essmsgpb.WorkUnit) (*pgx.Batch, error) {
+	batch := &pgx.Batch{}
+	for _, wu := range wus {
+		row, err := postgresdata.WorkUnitProtoToRow(wu)
+		if err != nil {
+			return nil, err
+		}
+		batch.Queue(insertWorkUnitSQL.String(), row.GetInsertArgs())
+	}
+	return batch, nil
 }
 
 // FetchWorkUnit retrieves a work unit by its unique ID within the transaction.

@@ -263,7 +263,9 @@ function computeBulkCommitPatchIds(shas, opts) {
         patchIdMap.set(sha, patchId);
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    /* Best-effort cache population; caller tolerates partial map. */
+  }
   return patchIdMap;
 }
 
@@ -310,7 +312,9 @@ function resolveParentBaseFromMatch(matchedSha, commitIndex, opts) {
   for (const target of [`${matchedSha}~${baseOffset}`, `${matchedSha}~1`]) {
     try {
       return execGit(['rev-parse', '--verify', target], { ...opts, ignoreExitCode: false }).trim();
-    } catch (_) {}
+    } catch (_) {
+      /* Probe next parent candidate when this offset does not exist. */
+    }
   }
   return null;
 }
@@ -369,7 +373,9 @@ function resolveStackedApprovedRange(currentRange, approvedRange, approvedSha, p
       const correlatedBase = correlateStackedParentBase(currCommits, approvedMaps, opts);
       if (correlatedBase) return `${correlatedBase}..${approvedSha}`;
     }
-  } catch (_) {}
+  } catch (_) {
+    /* Fall back to commit-count range resolution below. */
+  }
 
   try {
     execGit(['rev-parse', '--verify', `${approvedSha}~${prCommitCount}`], { ...opts, ignoreExitCode: false });
@@ -538,24 +544,23 @@ function getPrChangedFiles(baseRefOrApprovedSha, approvedShaOrCurrentSha, curren
   }
 
   if (baseRef) {
-    const prDiffOutput = execGit(['diff', '--name-only', `origin/${baseRef}...${headSha}`], opts);
+    const diffOpts = { ...opts, ignoreExitCode: false };
+    const prDiffOutput = execGit(['diff', '--name-only', '--no-renames', `origin/${baseRef}...${headSha}`], diffOpts);
     const files = new Set(prDiffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean));
 
     if (approvedSha && approvedSha !== headSha) {
-      try {
-        const isAncestor = execGit(['merge-base', '--is-ancestor', approvedSha, headSha], { ...opts, ignoreExitCode: true });
-        if (isAncestor.status === 0) {
-          const followUpDiff = execGit(['diff', '--name-only', approvedSha, headSha], opts);
-          for (const file of followUpDiff.split(/\r?\n/).map(f => f.trim()).filter(Boolean)) {
-            files.add(file);
-          }
+      const isAncestor = execGit(['merge-base', '--is-ancestor', approvedSha, headSha], { ...opts, ignoreExitCode: true });
+      if (isAncestor.status === 0) {
+        const followUpDiff = execGit(['diff', '--name-only', '--no-renames', approvedSha, headSha], diffOpts);
+        for (const file of followUpDiff.split(/\r?\n/).map(f => f.trim()).filter(Boolean)) {
+          files.add(file);
         }
-      } catch (_) {}
+      }
     }
     return Array.from(files);
   }
 
-  const diffOutput = execGit(['diff', '--name-only', approvedSha, headSha], opts);
+  const diffOutput = execGit(['diff', '--name-only', '--no-renames', approvedSha, headSha], { ...opts, ignoreExitCode: false });
   return diffOutput.split(/\r?\n/).map(f => f.trim()).filter(Boolean);
 }
 

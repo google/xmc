@@ -12,7 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ChangeDetectionStrategy, Component, input, OnInit, output, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  input,
+  OnInit,
+  output,
+  signal,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatOptionModule } from '@angular/material/core';
@@ -57,6 +65,11 @@ export class SmartResourceFinderComponent implements OnInit {
 
   protected readonly dominantTooltip = ROD_TERM_TOOLTIPS.dominantResource;
   protected readonly rows = signal<ResourceRequirementRow[]>([createRow(1, '')]);
+  protected readonly removeRowAriaLabels = computed(() =>
+    this.rows().map(
+      (row, index) => `Remove ${row.resourceType || 'resource filter'} (row ${index + 1})`,
+    ),
+  );
 
   ngOnInit() {
     this.emitQuery();

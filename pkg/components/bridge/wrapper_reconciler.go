@@ -114,10 +114,16 @@ func (r *Reconciler) handle3PStatusDetectionFailure(ctx context.Context, in Reco
 }
 
 // reconcileOperatorlessWrapper handles Profile 3 (Operator-less static or external SaaS components).
-// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP health probes.
+// It bypasses CRD status detection and validates runtime availability via direct TCP/HTTP/gRPC health probes.
 func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in ReconcileComponentInput, canonicalName string, res *ReconcileResult, probeEndpoint string) (*ReconcileResult, error) {
-	if ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint); !ok {
+	ok, reason, msg := r.verifyEndpointHealth(ctx, probeEndpoint)
+	if !ok {
 		return r.handle3PUnreadyStatus(ctx, in, canonicalName, res, reason, msg)
+	}
+	readyMsg := "Static endpoint is reachable and healthy"
+	if msg != "" {
+		// Surface the probe's verdict (e.g. the gRPC UNIMPLEMENTED fallback) on the Ready condition.
+		readyMsg += ": " + msg
 	}
 	connEndpoint := probeEndpoint
 	var secretName string
@@ -132,13 +138,14 @@ func (r *Reconciler) reconcileOperatorlessWrapper(ctx context.Context, in Reconc
 		Ready:            true,
 		Endpoint:         connEndpoint,
 		ConnectionSecret: secretName,
-		Message:          "Static endpoint is reachable and healthy",
+		Message:          readyMsg,
 	}
 	return r.handle3PReadyStatus(ctx, in, canonicalName, res, resStatus)
 }
 
 // verifyEndpointHealth performs an active probe against endpoint (if non-empty) to verify data-plane availability.
-// A zero timeout defers to the prober's configured default.
+// A zero timeout defers to the prober's configured default. On success the message is the probe's own
+// (possibly empty) message; on failure it is the unready reason's message.
 func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) (bool, string, string) {
 	probeRes, err := healthprobe.ProbeEndpointHealth(ctx, r.prober, endpoint, 0)
 	if errors.Is(err, healthprobe.ErrNilProbeResult) {
@@ -154,7 +161,7 @@ func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) 
 		}
 		return false, "ProbeUnhealthy", msg
 	}
-	return true, "", ""
+	return true, "", probeRes.Message
 }
 
 // handle3PUnreadyStatus sets Ready=False and Reconciling/Stalled status conditions when 3P health or readiness fails.

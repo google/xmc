@@ -23,7 +23,7 @@ genrule(
     name = "ess_version_gen",
     srcs = ["//internal/storage/spanner/migrations:ess_migrations"],
     outs = ["ess_version_gen.go"],
-    cmd = "python3 $(location :generate_version.py) essMigrationVersion $@ $(SRCS)",
+    cmd = "python3 $(execpath :generate_version.py) essMigrationVersion $@ $(SRCS)",
     tools = [":generate_version.py"],
 )
 
@@ -31,7 +31,7 @@ genrule(
     name = "xid_version_gen",
     srcs = ["//internal/storage/spanner/migrations:xid_migrations"],
     outs = ["xid_version_gen.go"],
-    cmd = "python3 $(location :generate_version.py) xidMigrationVersion $@ $(SRCS)",
+    cmd = "python3 $(execpath :generate_version.py) xidMigrationVersion $@ $(SRCS)",
     tools = [":generate_version.py"],
 )
 

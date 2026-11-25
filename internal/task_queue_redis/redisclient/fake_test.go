@@ -45,3 +45,21 @@ func TestFakeClient_ExtendClaim(t *testing.T) {
 		t.Errorf("ExtendClaimCalls = %d, want 2", fake.ExtendClaimCalls)
 	}
 }
+
+func TestFakeClient_AddMessages(t *testing.T) {
+	fake := NewFakeClient()
+	errBoom := errors.New("boom")
+	fake.AddMessagesErrors = []error{nil, errBoom}
+
+	errs := fake.AddMessages(context.Background(), []string{"a", "b", "c"})
+
+	if fake.AddMessagesCalls != 1 {
+		t.Errorf("AddMessagesCalls = %d, want 1", fake.AddMessagesCalls)
+	}
+	if len(errs) != 3 || errs[0] != nil || !errors.Is(errs[1], errBoom) || errs[2] != nil {
+		t.Errorf("AddMessages() = %v, want [nil boom nil]", errs)
+	}
+	if len(fake.Messages) != 2 || fake.Messages[0] != "a" || fake.Messages[1] != "c" {
+		t.Errorf("Messages = %v, want [a c]", fake.Messages)
+	}
+}

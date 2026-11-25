@@ -44,8 +44,66 @@ func (p *PublisherClient) Close(ctx context.Context) error {
 
 // AddMessage adds a message to the Redis stream.
 func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAttempts string) error {
-	args := &redis.XAddArgs{
-		Stream: p.StreamName,
+	if err := p.XAdd(ctx, xAddArgs(p.StreamName, data, failedAttempts)).Err(); err != nil {
+		return fmt.Errorf("failed to add message to stream %s: %w", p.StreamName, err)
+	}
+	return nil
+}
+
+// AddMessages adds new messages (no failed attempts) to the Redis stream in a single pipelined
+// round trip. A non-nil error does not guarantee the message was not added: the reply may be lost
+// after Redis applied the XADD, and go-redis may retry the pipeline, so consumers must tolerate
+// duplicates.
+func (p *PublisherClient) AddMessages(ctx context.Context, data []string) []error {
+	return addMessages(ctx, p.Client, p.StreamName, data)
+}
+
+// streamPipeliner runs queued Redis commands in one pipelined round trip. *redis.Client satisfies it.
+type streamPipeliner interface {
+	Pipelined(ctx context.Context, fn func(redis.Pipeliner) error) ([]redis.Cmder, error)
+}
+
+// addMessages XADDs each of data to stream through one pipeline and returns one error per message,
+// nil for the messages that were added. go-redis sets the error of every queued command when the
+// round trip fails, and returns the first command error from Pipelined, so the per-command errors
+// are authoritative. A message whose command was never queued, because Pipelined returned without
+// running fn, fails with the Pipelined error, or with a not-queued error when there is none.
+func addMessages(ctx context.Context, client streamPipeliner, stream string, data []string) []error {
+	errs := make([]error, len(data))
+	if len(data) == 0 {
+		return errs
+	}
+	cmds := make([]*redis.StringCmd, len(data))
+	// The pipeline error is the first command error, reported per command below.
+	_, pipeErr := client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, d := range data {
+			cmds[i] = pipe.XAdd(ctx, xAddArgs(stream, d, "0"))
+		}
+		return nil
+	})
+	for i, cmd := range cmds {
+		if err := commandError(cmd, pipeErr); err != nil {
+			errs[i] = fmt.Errorf("failed to add message to stream %s: %w", stream, err)
+		}
+	}
+	return errs
+}
+
+// commandError returns the error of a pipelined command. A nil cmd was never queued: it fails with
+// pipeErr when set, and with a not-queued error otherwise.
+func commandError(cmd *redis.StringCmd, pipeErr error) error {
+	if cmd != nil {
+		return cmd.Err()
+	}
+	if pipeErr != nil {
+		return fmt.Errorf("message was not queued in the pipeline: %w", pipeErr)
+	}
+	return fmt.Errorf("message was not queued in the pipeline")
+}
+
+func xAddArgs(stream, data, failedAttempts string) *redis.XAddArgs {
+	return &redis.XAddArgs{
+		Stream: stream,
 		MaxLen: DefaultMaxLen,
 		Approx: true,
 		Values: map[string]any{
@@ -53,8 +111,4 @@ func (p *PublisherClient) AddMessage(ctx context.Context, data string, failedAtt
 			"failedAttempts": failedAttempts,
 		},
 	}
-	if err := p.XAdd(ctx, args).Err(); err != nil {
-		return fmt.Errorf("failed to add message to stream %s: %w", p.StreamName, err)
-	}
-	return nil
 }

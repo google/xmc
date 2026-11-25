@@ -33,3 +33,10 @@ func TestStudyConfig_IsValid(t *testing.T) {
 		t.Errorf("ValidateCreateExperimentRequest(StudyConfig()) = %v, want nil", err)
 	}
 }
+
+func TestTrialParameters_IsValid(t *testing.T) {
+	wu := &essmsgpb.WorkUnit{Parameters: TrialParameters(), TrialId: "1"}
+	if err := validator.ValidateWorkUnitTrialFields(wu, StudyConfig()); err != nil {
+		t.Errorf("ValidateWorkUnitTrialFields(TrialParameters(), StudyConfig()) = %v, want nil", err)
+	}
+}

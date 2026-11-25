@@ -187,6 +187,13 @@ jobs:
         run: |
           python3 tools/lint/check_ui_selector_contract.py
 
+      - name: 'Check ESS Migration Ordering'
+        env:
+          XMC_BYPASS_VENV: '1'
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          python3 tools/lint/check_migration_order.py --base-ref "origin/${BASE_REF}"
+
       - name: 'Verify Go Dependencies (go mod tidy)'
         run: |
           go mod tidy -diff

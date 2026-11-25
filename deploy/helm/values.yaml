@@ -46,6 +46,8 @@ featureFlags:
 
 componentsDeployment:
   cmsAddress: "grpc-service:50051"
+  # In-cluster ESS gRPC endpoint passed to 1P components as <component>Deployment.essAddr; defaults to cmsAddress / "grpc-service:50051".
+  essAddress: ""
   # Human-readable cluster label reported in CMS ownership fence declarations; defaults to release name when empty.
   clusterName: ""
   # Monotonic fencing epoch declared by xmc-bridge to CMS (>= 1).
@@ -296,6 +298,11 @@ queues:
           nvidia.com/gpu: "100000000"
           cpu: "100000000"
           memory: "100000000Gi"
+  # The TPU queue's shape is fixed in templates/kueue-dev/tpu-queue.yaml; only
+  # `enabled` is read. A cluster with no TPU node pools can set it false to omit
+  # the TPU ResourceFlavor, ClusterQueue, LocalQueue and the tpu-queue Namespace.
+  tpu:
+    enabled: true
 
 # Pass configuration to Kueue sub-chart
 kueue:

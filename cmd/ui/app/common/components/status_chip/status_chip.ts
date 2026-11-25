@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
 
 /**
@@ -35,6 +35,25 @@ export enum StatusOption {
   UNKNOWN = 'Unknown',
 }
 
+const STATUS_COLOR_MAP: Readonly<Record<StatusOption, string>> = {
+  [StatusOption.SUCCESS]: 'green',
+  [StatusOption.COMPLETED]: 'green',
+  // TODO: Add .light-green and .grey CSS rules in status_chip.scss so STARTING/DESCHEDULING/SCHEDULING chips render distinct colors.
+  [StatusOption.STARTING]: 'light-green',
+  [StatusOption.FAILED]: 'red',
+  [StatusOption.RUNNING]: 'blue',
+  [StatusOption.NOT_RUNNING]: 'blue',
+  [StatusOption.PENDING]: 'yellow',
+  [StatusOption.INITIALIZING]: 'yellow',
+  [StatusOption.UNKNOWN]: 'yellow',
+  [StatusOption.RESTARTING]: 'yellow',
+  [StatusOption.DESCHEDULING]: 'grey',
+  [StatusOption.SCHEDULING]: 'grey',
+  [StatusOption.SCHEDULING_PAUSED]: 'orange',
+  [StatusOption.STOPPING]: 'black',
+  [StatusOption.STOPPED]: 'black',
+};
+
 /**
  * Display a status chip for an experiment, work unit, or job.
  */
@@ -53,5 +72,5 @@ export class StatusChip {
   // jobs in a work unit.
   readonly replicas = input<number | undefined>(undefined);
 
-  readonly StatusOption = StatusOption;
+  protected readonly statusColor = computed(() => STATUS_COLOR_MAP[this.status()]);
 }

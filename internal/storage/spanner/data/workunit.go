@@ -17,6 +17,8 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/spanner"
+	"google.golang.org/protobuf/proto"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	pb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
@@ -56,11 +58,45 @@ func WorkUnitRowToProto(row *spanner.Row) (*pb.WorkUnit, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := readTrialFields(row, workUnit); err != nil {
+		return nil, err
+	}
 
 	workUnit.Name = validator.ConstructWorkUnitName(xid, workUnitID)
 	workUnit.WorkUnitType = workUnitType
 	exec.Name = validator.ConstructWorkUnitExecutionName(xid, workUnitID, eid)
 	return workUnit, nil
+}
+
+// readTrialFields reads the nullable Parameters and TrialId columns of a study trial into wu. NULL,
+// stored for work units that are not trials, leaves the fields unset.
+func readTrialFields(row *spanner.Row, wu *pb.WorkUnit) error {
+	var parameters []byte
+	var trialID spanner.NullString
+	if err := readColumns(row, colDest{"Parameters", &parameters}, colDest{"TrialId", &trialID}); err != nil {
+		return err
+	}
+	if parameters != nil {
+		wu.Parameters = &structpb.Struct{}
+		if err := proto.Unmarshal(parameters, wu.Parameters); err != nil {
+			return fmt.Errorf("failed to unmarshal column Parameters: %w", err)
+		}
+	}
+	wu.TrialId = trialID.StringVal
+	return nil
+}
+
+// marshalParameters returns the deterministic wire encoding of parameters, or nil (NULL) when
+// parameters is nil. An empty Struct encodes as empty, non-NULL bytes.
+func marshalParameters(parameters *structpb.Struct) ([]byte, error) {
+	if parameters == nil {
+		return nil, nil
+	}
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Parameters: %w", err)
+	}
+	return b, nil
 }
 
 // WorkUnitProtoToInsertMutation creates a Spanner mutation to insert a WorkUnit.
@@ -83,6 +119,10 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 	if tags == nil {
 		tags = []string{}
 	}
+	parameters, err := marshalParameters(workUnit.GetParameters())
+	if err != nil {
+		return nil, err
+	}
 
 	return spanner.Insert(
 		workunitschema.WorkUnitTableName,
@@ -104,6 +144,8 @@ func WorkUnitProtoToInsertMutation(workUnit *pb.WorkUnit) (*spanner.Mutation, er
 			workUnit.CurrentWorkUnitExecution.Status,   // WorkUnitStatus
 			workUnit.CreateTime.AsTime(),               // CreateTime
 			workUnit.UpdateTime.AsTime(),               // UpdateTime
+			parameters,                                 // Parameters
+			spanner.NullString{StringVal: workUnit.GetTrialId(), Valid: workUnit.GetTrialId() != ""}, // TrialId
 		},
 	), nil
 }

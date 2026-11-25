@@ -16,6 +16,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, Subject, throwError } from 'rxjs';
 
+import { HealthStatusResponse, SystemInfo } from 'app/protos/health_service';
+
 import { FeatureFlagService } from '../service/feature_flag_service';
 import { HealthService } from '../service/health_service';
 import { SnackbarService } from '../service/snackbar_service';
@@ -23,6 +25,26 @@ import { MockHealthService } from '../service/testing/mock_health_service';
 import { bootstrap, cleanState, flush, get, getHarness, setupModule } from '../testing/test';
 import { AdminPanelPage } from './admin_panel';
 import { AdminPanelHarness } from './testing/admin_panel_harness';
+
+const DEFAULT_SYSTEM_INFO: SystemInfo = {
+  appVersion: 'mock-app-version-1.0.0',
+  essDbSchemaVersion: '6',
+  xidDbSchemaVersion: '1',
+};
+
+function buildHealthStatus(
+  overrides: Partial<HealthStatusResponse> = {},
+  systemInfoOverrides?: Partial<SystemInfo>,
+): HealthStatusResponse {
+  return {
+    healthState: 'HEALTH_STATE_HEALTHY',
+    systemInfo: systemInfoOverrides
+      ? { ...DEFAULT_SYSTEM_INFO, ...systemInfoOverrides }
+      : { ...DEFAULT_SYSTEM_INFO },
+    healthCheckTime: { seconds: 1717804800, nanos: 0 },
+    ...overrides,
+  };
+}
 
 describe('AdminPanelPage Component', () => {
   cleanState(() => {
@@ -109,17 +131,7 @@ describe('AdminPanelPage Component', () => {
 
   it('should not display system observability link if observabilityUrl is missing', async () => {
     const healthService = get(HealthService);
-    spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
-    );
+    spyOn(healthService, 'getHealthStatus').and.returnValue(of(buildHealthStatus()));
 
     bootstrap(AdminPanelPage);
     await flush();
@@ -147,22 +159,13 @@ describe('AdminPanelPage Component', () => {
   it('should retry loading health status when clicking retry on page error banner', async () => {
     const healthService = get(HealthService);
     let attempts = 0;
-    const mockStatus = {
-      healthState: 'HEALTH_STATE_HEALTHY',
-      systemInfo: {
-        appVersion: 'mock-app-version-1.0.0',
-        essDbSchemaVersion: '6',
-        xidDbSchemaVersion: '1',
-      },
-      components: [],
-      healthCheckTime: { seconds: 1717804800, nanos: 0 },
-    };
+    const mockStatus = buildHealthStatus({ components: [] });
     spyOn(healthService, 'getHealthStatus').and.callFake(() => {
       attempts++;
       if (attempts === 1) {
         return throwError(() => new Error('Initial load failed'));
       }
-      return of(mockStatus as any);
+      return of(mockStatus);
     });
 
     bootstrap(AdminPanelPage);
@@ -184,18 +187,9 @@ describe('AdminPanelPage Component', () => {
     const healthService = get(HealthService);
     const snackbarService = get(SnackbarService);
     const openSpy = spyOn(snackbarService, 'open');
-    const firstStatus = {
-      healthState: 'HEALTH_STATE_HEALTHY',
-      systemInfo: {
-        appVersion: 'mock-app-version-1.0.0',
-        essDbSchemaVersion: '6',
-        xidDbSchemaVersion: '1',
-      },
-      components: [],
-      healthCheckTime: { seconds: 1717804800, nanos: 0 },
-    };
+    const firstStatus = buildHealthStatus({ components: [] });
     spyOn(healthService, 'getHealthStatus').and.returnValues(
-      of(firstStatus as any),
+      of(firstStatus),
       throwError(() => new Error('Refresh error')),
     );
 
@@ -216,7 +210,7 @@ describe('AdminPanelPage Component', () => {
   it('should display progress spinner while loading', async () => {
     const healthService = get(HealthService);
     // Never emit to keep isLoading true
-    spyOn(healthService, 'getHealthStatus').and.returnValue(new Subject<any>());
+    spyOn(healthService, 'getHealthStatus').and.returnValue(new Subject<HealthStatusResponse>());
 
     bootstrap(AdminPanelPage);
     // Flush microtasks without completing observable
@@ -313,17 +307,7 @@ describe('AdminPanelPage Component', () => {
 
   it('should display N/A for build version in footer when buildVersion is empty or undefined', async () => {
     const healthService = get(HealthService);
-    spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
-    );
+    spyOn(healthService, 'getHealthStatus').and.returnValue(of(buildHealthStatus()));
 
     bootstrap(AdminPanelPage);
     await flush();
@@ -335,16 +319,7 @@ describe('AdminPanelPage Component', () => {
   it('should display build version in footer when buildVersion is provided', async () => {
     const healthService = get(HealthService);
     spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          buildVersion: 'v2026.09.01-prod',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      of(buildHealthStatus({}, { buildVersion: 'v2026.09.01-prod' })),
     );
 
     bootstrap(AdminPanelPage);
@@ -357,10 +332,7 @@ describe('AdminPanelPage Component', () => {
   it('should not display footer when systemInfo is missing', async () => {
     const healthService = get(HealthService);
     spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      of(buildHealthStatus({ systemInfo: undefined })),
     );
 
     bootstrap(AdminPanelPage);
@@ -384,16 +356,7 @@ describe('AdminPanelPage Component', () => {
   it('should render scheduling pause card in paused state when isSchedulingPaused is true', async () => {
     const healthService = get(HealthService);
     spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-          isSchedulingPaused: true,
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      of(buildHealthStatus({}, { isSchedulingPaused: true })),
     );
 
     bootstrap(AdminPanelPage);
@@ -491,16 +454,7 @@ describe('AdminPanelPage Component', () => {
     const healthService = get(HealthService);
     let pausedOnBackend = false;
     spyOn(healthService, 'getHealthStatus').and.callFake(() => {
-      return of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-          isSchedulingPaused: pausedOnBackend,
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any);
+      return of(buildHealthStatus({}, { isSchedulingPaused: pausedOnBackend }));
     });
 
     bootstrap(AdminPanelPage);
@@ -551,7 +505,7 @@ describe('AdminPanelPage Component', () => {
 
   it('should disable toggle while pauseScheduling is in flight', async () => {
     const healthService = get(HealthService);
-    const pauseSubject$ = new Subject<any>();
+    const pauseSubject$ = new Subject<void>();
     spyOn(healthService, 'pauseScheduling').and.returnValue(pauseSubject$);
 
     bootstrap(AdminPanelPage);
@@ -570,7 +524,7 @@ describe('AdminPanelPage Component', () => {
     // While request is pending, button is disabled
     expect(await pauseBtn!.isDisabled()).toBeTrue();
 
-    pauseSubject$.next({});
+    pauseSubject$.next();
     pauseSubject$.complete();
     await flush();
 
@@ -582,17 +536,12 @@ describe('AdminPanelPage Component', () => {
     const healthService = get(HealthService);
     const pauseSpy = spyOn(healthService, 'pauseScheduling');
     spyOn(healthService, 'getHealthStatus').and.returnValue(
-      of({
-        healthState: 'HEALTH_STATE_HEALTHY',
-        systemInfo: {
-          appVersion: 'mock-app-version-1.0.0',
-          essDbSchemaVersion: '6',
-          xidDbSchemaVersion: '1',
-          isSchedulingPaused: false,
-          schedulingPauseError: 'spanner read timeout',
-        },
-        healthCheckTime: { seconds: 1717804800, nanos: 0 },
-      } as any),
+      of(
+        buildHealthStatus(
+          {},
+          { isSchedulingPaused: false, schedulingPauseError: 'spanner read timeout' },
+        ),
+      ),
     );
 
     bootstrap(AdminPanelPage);

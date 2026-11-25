@@ -126,8 +126,9 @@ function parseRangeDiff(output) {
   const addedCommitShas = [];
 
   for (const line of lines) {
+    // eslint-disable-next-line no-control-regex -- intentionally strips ANSI escape codes
     const cleanLine = line.replace(/\x1b\[[0-9;]*m/g, '');
-    const commitMatch = cleanLine.match(/^\s*(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
+    const commitMatch = cleanLine.match(/^ {0,3}(?:\d+|-):\s+([a-f0-9-]+)\s+([=!<>])\s+(?:\d+|-):\s+([a-f0-9-]+)/);
     if (commitMatch) {
       const status = commitMatch[2];
       if (status !== '=') {

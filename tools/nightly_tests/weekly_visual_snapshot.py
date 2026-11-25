@@ -64,7 +64,7 @@ GOLDEN_ROUTES: tuple[GoldenRoute, ...] = (
     GoldenRoute(
         id="05_workunit_details",
         title="WorkUnit Details & Status",
-        route="/experiments/{xid}/workUnits/1",
+        route="/experiments/{xid}/workUnits/{wid}",
     ),
     GoldenRoute(
         id="06_resource_dashboard",
@@ -72,6 +72,12 @@ GOLDEN_ROUTES: tuple[GoldenRoute, ...] = (
         route="/resources",
     ),
 )
+
+# ui-contract: experiments_table.ng.html marks expandable status sub-rows with .detail-row.
+_EXPERIMENTS_ROW_SEL = "tbody tr:not(.detail-row)"
+# ui-contract: work_units_status_bar.ng.html renders .no-work-units when an experiment has 0 work units.
+_NO_WORK_UNITS_BADGE_SEL = ".no-work-units"
+_WORKUNIT_LINK_SEL = 'xmc-work-units-table a[href*="/workUnits/"]'
 
 
 def load_gallery_template() -> str:
@@ -82,18 +88,43 @@ def load_gallery_template() -> str:
 
 
 def discover_xid_from_page(page: Any) -> str:
-    """Discovers the first experiment XID from the rendered /experiments page DOM."""
+    """Discovers the first experiment XID with work units from the /experiments page DOM."""
     try:
+        rows = page.locator(_EXPERIMENTS_ROW_SEL)
+        row_count = rows.count()
+        for i in range(row_count):
+            row = rows.nth(i)
+            if row.locator(_NO_WORK_UNITS_BADGE_SEL).count() > 0:
+                continue
+            links = row.locator('a[href*="/experiments/"]')
+            for j in range(links.count()):
+                href = str(links.nth(j).get_attribute("href") or "")
+                if match := re.search(r"/experiments/(\d+)", href):
+                    return match.group(1)
+            if match := re.search(r"\b(\d+)\b", str(row.inner_text() or "")):
+                return match.group(1)
+        if row_count > 0:
+            return ""
         links = page.locator('a[href*="/experiments/"]')
         for i in range(links.count()):
             href = str(links.nth(i).get_attribute("href") or "")
             if match := re.search(r"/experiments/(\d+)", href):
                 return match.group(1)
-        rows = page.locator("tbody tr")
-        if rows.count() > 0 and (
-            match := re.search(r"\b(\d+)\b", str(rows.first.inner_text() or ""))
-        ):
-            return match.group(1)
+    except Exception:
+        return ""
+    return ""
+
+
+def discover_wid_from_page(page: Any) -> str:
+    """Discovers the first work unit ID from the rendered Work Units table DOM."""
+    try:
+        links = page.locator(_WORKUNIT_LINK_SEL)
+        if links.count() == 0:
+            links = page.locator('a[href*="/workUnits/"]')
+        for i in range(links.count()):
+            href = str(links.nth(i).get_attribute("href") or "")
+            if match := re.search(r"/workUnits/([^/?#]+)", href):
+                return match.group(1)
     except Exception:
         return ""
     return ""
@@ -105,9 +136,10 @@ def capture_single_route(
     xid: str | int,
     output_dir: str,
     timeout_ms: int = 60000,
+    wid: str | int = "",
 ) -> dict[str, Any]:
     """Navigates to a single canonical route and saves a full-page screenshot."""
-    resolved_route = route_spec.route.format(xid=xid)
+    resolved_route = route_spec.route.format(xid=xid, wid=wid)
     clean_base_url = str(session.ui_base_url or "").strip().rstrip("/")
     clean_route = resolved_route if resolved_route.startswith("/") else f"/{resolved_route}"
     session.ui_base_url = clean_base_url
@@ -138,13 +170,20 @@ def capture_all_routes(
     """Captures all configured canonical routes and returns their manifest records."""
     os.makedirs(os.path.join(output_dir, "screenshots"), exist_ok=True)
     resolved_xid = verifier_cli.parse_xid(str(xid) if xid is not None else "", required=False)
+    resolved_wid = ""
     captures: list[dict[str, Any]] = []
     for route in routes:
-        if "{xid}" in route.route and not resolved_xid:
+        if ("{xid}" in route.route and not resolved_xid) or (
+            "{wid}" in route.route and not resolved_wid
+        ):
             continue
-        captures.append(capture_single_route(session, route, resolved_xid, output_dir))
+        captures.append(
+            capture_single_route(session, route, resolved_xid, output_dir, wid=resolved_wid)
+        )
         if route.route == "/experiments" and not resolved_xid:
             resolved_xid = discover_xid_from_page(session.page)
+        elif "{xid}" in route.route and "{wid}" not in route.route and not resolved_wid:
+            resolved_wid = discover_wid_from_page(session.page)
     return captures
 
 

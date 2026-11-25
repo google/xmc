@@ -58,8 +58,10 @@ from tools.nightly_tests.workflow_matrix import (  # noqa: E402
     validate_examples_filter,
 )
 
-# `${VAR}` placeholders in matrix args (expanded by the nightly step's `eval echo`).
+# `${VAR}` placeholders in matrix args (expanded by the nightly step's `eval "EVAL_ARGS=(${RAW_ARGS})"`).
 _PLACEHOLDER_RE = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}")
+# Unquoted shell characters that behave specially inside bash `eval "EVAL_ARGS=(...)"`.
+_UNQUOTED_SHELL_METACHARS = frozenset("()*?[];&|<>\n")
 # Placeholders the nightly launch step defines, with the value used when unset here.
 _KNOWN_PLACEHOLDERS = {"QUEUE_NAME": "cpu-queue"}
 # Number of trailing non-empty stderr lines kept as failure context.
@@ -200,17 +202,42 @@ def parse_verify_modules(
     return _verify_modules_from_items(parse_matrix_items(workflow_text), examples_filter)
 
 
+def _reject_unquoted_shell_syntax(expanded: str, raw_args: str) -> None:
+    """Reject unquoted globs or shell operators treated specially by bash array eval."""
+    quote = ""
+    escaped = False
+    for ch in expanded:
+        if escaped:
+            escaped = False
+        elif quote == "'":
+            if ch == "'":
+                quote = ""
+        elif ch == "\\":
+            escaped = True
+        elif quote == '"':
+            if ch == '"':
+                quote = ""
+        elif ch in ('"', "'"):
+            quote = ch
+        elif ch in _UNQUOTED_SHELL_METACHARS:
+            raise ValueError(
+                f"unsupported unquoted shell character {ch!r} in matrix args {raw_args!r}"
+            )
+
+
 def expand_args(raw_args: str) -> list[str]:
     """Expand and tokenize matrix args the way the nightly launch step does.
 
-    Nightly runs `EVAL_ARGS=$(eval echo "${RAW_ARGS}")` and passes `${EVAL_ARGS}`
-    unquoted: quotes are removed, `echo` joins the words, and the shell splits again
-    on whitespace (so a quoted value containing spaces becomes several tokens).
+    Nightly runs `eval "EVAL_ARGS=(${RAW_ARGS})"` and passes `"${EVAL_ARGS[@]}"`:
+    shell quotes preserve whitespace inside an argument instead of re-splitting on
+    whitespace, and empty quoted tokens (`""`) are preserved as `""`.
 
     Raises:
         ValueError: For a placeholder the nightly step does not define, any other
-            shell expansion (e.g. `$VAR`, `${VAR:-x}`, `$(...)`), or unbalanced
-            quotes, so nothing passes here as a literal and differs in nightly.
+            shell expansion (e.g. `$VAR`, `${VAR:-x}`, `$(...)`), unquoted globs
+            or shell operators (`()`, `*`, `?`, `[`, `;`, `&`, `|`, `<`, `>`), or
+            unbalanced quotes, so nothing passes here as a literal and differs in
+            nightly.
     """
 
     def _substitute(match: re.Match[str]) -> str:
@@ -222,7 +249,8 @@ def expand_args(raw_args: str) -> list[str]:
     expanded = _PLACEHOLDER_RE.sub(_substitute, raw_args)
     if "$" in expanded or "`" in expanded:
         raise ValueError(f"unsupported shell expansion in matrix args {raw_args!r}")
-    return " ".join(shlex.split(expanded)).split()
+    _reject_unquoted_shell_syntax(expanded, raw_args)
+    return shlex.split(expanded)
 
 
 def _stderr_tail(text: str) -> str:

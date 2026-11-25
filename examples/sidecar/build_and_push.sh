@@ -22,8 +22,12 @@ if [ -f "../../.env" ]; then
   source "../../.env"
 fi
 
-: "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
-REGISTRY="${XMC_ACR_TARGET:-us-docker.pkg.dev/${PROJECT_ID}/xmc}"
+if [[ -n "${XMC_ACR_TARGET:-}" ]]; then
+  REGISTRY="${XMC_ACR_TARGET%/}"
+else
+  : "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
+  REGISTRY="us-docker.pkg.dev/${PROJECT_ID}/xmc"
+fi
 IMAGE_TAG="${REGISTRY}/sidecar-job:latest"
 
 echo "Building Docker image: ${IMAGE_TAG}..."

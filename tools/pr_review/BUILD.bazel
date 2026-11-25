@@ -19,6 +19,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    "check_pr_body.py",
     "fetch_pr_comment.py",
     "generate_review_checklist.py",
     "github_utils.py",
@@ -45,6 +46,33 @@ py_test(
     imports = ["../.."],
     deps = [
         ":github_utils",
+    ],
+)
+
+py_library(
+    name = "check_pr_body_lib",
+    srcs = ["check_pr_body.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_binary(
+    name = "check_pr_body",
+    srcs = ["check_pr_body.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_pr_body_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "check_pr_body_test",
+    srcs = ["check_pr_body_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_pr_body_lib",
+        "//tools/common:tool_utils",
     ],
 )
 

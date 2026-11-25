@@ -18,7 +18,7 @@ genrule(
     name = "ess_version_gen",
     srcs = ["//internal/storage/postgres/migrations:ess_migrations"],
     outs = ["ess_version_gen.go"],
-    cmd = "python3 $(location //internal/storage/spanner/migrations/version:generate_version.py) essMigrationVersion $@ $(SRCS)",
+    cmd = "python3 $(execpath //internal/storage/spanner/migrations/version:generate_version.py) essMigrationVersion $@ $(SRCS)",
     tools = ["//internal/storage/spanner/migrations/version:generate_version.py"],
 )
 
@@ -26,7 +26,7 @@ genrule(
     name = "xid_version_gen",
     srcs = ["//internal/storage/postgres/migrations:xid_migrations"],
     outs = ["xid_version_gen.go"],
-    cmd = "python3 $(location //internal/storage/spanner/migrations/version:generate_version.py) xidMigrationVersion $@ $(SRCS)",
+    cmd = "python3 $(execpath //internal/storage/spanner/migrations/version:generate_version.py) xidMigrationVersion $@ $(SRCS)",
     tools = ["//internal/storage/spanner/migrations/version:generate_version.py"],
 )
 

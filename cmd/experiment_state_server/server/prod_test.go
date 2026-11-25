@@ -15,7 +15,14 @@
 package server
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +122,50 @@ func TestInitStudyReconcilePublisher(t *testing.T) {
 	}
 	if err := cleanup(); err == nil {
 		t.Error("second cleanup() = nil, want the error of closing a closed publisher")
+	}
+}
+
+// writeSigningKeyFile writes a PKCS#8 PEM RSA private key to a temporary file and returns its path.
+func writeSigningKeyFile(t *testing.T) string {
+	t.Helper()
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey() error = %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatalf("x509.MarshalPKCS8PrivateKey() error = %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "signing-key.pem")
+	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), 0600); err != nil {
+		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+	return path
+}
+
+// TestInitTaskQueueClient_HungRedisBoundedByContext uses the production task queue settings
+// against a Redis server that never replies: a call fails at its context deadline instead of
+// go-redis's fixed 3s read timeout.
+func TestInitTaskQueueClient_HungRedisBoundedByContext(t *testing.T) {
+	cfg := &config.Config{SigningKeyFile: writeSigningKeyFile(t), RedisAddr: startSilentRedis(t)}
+	client, err := initTaskQueueClient(t.Context(), cfg, nil)
+	if err != nil {
+		t.Fatalf("initTaskQueueClient() error = %v", err)
+	}
+	defer client.Close()
+	const deadline = 200 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), deadline)
+	defer cancel()
+
+	start := time.Now()
+	err = client.PingRedis(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("PingRedis() with a hung Redis = nil, want error")
+	}
+	if limit := deadline + time.Second; elapsed > limit {
+		t.Errorf("PingRedis() with a hung Redis took %v, want at most %v", elapsed, limit)
 	}
 }
 

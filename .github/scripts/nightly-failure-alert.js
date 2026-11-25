@@ -89,31 +89,75 @@ function sanitizeMarkdownTitle(title) {
 }
 
 /**
+ * Per-workflow alert settings. Each profile owns its issue label (so failures of
+ * different nightly workflows are tracked in separate issues), the issue title and
+ * heading, and the workflow-specific result rows of the issue table.
+ */
+const ALERT_PROFILES = {
+  'examples-e2e': {
+    labelName: 'nightly-failure',
+    title: 'Nightly Test Suite Failure',
+    heading: '🌙 Nightly E2E Test Suite Failed',
+    description: 'The automated nightly test suite against the `xmc-nightly` deployment encountered a failure.',
+    resultRows: ({ xid, triggerOutcome = 'unknown', verifyOutcome = 'unknown' }) => [
+      ['Experiment XID', xid || 'N/A'],
+      ['Trigger Action', triggerOutcome],
+      ['Verification Assertions', verifyOutcome],
+    ],
+  },
+  'unit-tests': {
+    labelName: 'nightly-unit-test-failure',
+    title: 'Nightly Uncached Unit Test Failure',
+    heading: '🧪 Nightly Uncached Unit Tests Failed',
+    description:
+      'The nightly `unit-tests` run (backend Bazel tests with `--nocache_test_results`, plus the Angular UI and Helm chart suites) failed. ' +
+      'If the backend job failed, post-submit runs reuse cached Bazel test results, so the failure may be a flaky or broken test they did not execute; ' +
+      'check the workflow run to see which suite failed.',
+    resultRows: ({ jobResults = [] }) => (jobResults.length > 0 ? jobResults : [['Jobs', 'unknown']]),
+  },
+};
+
+const DEFAULT_ALERT_PROFILE = 'examples-e2e';
+
+/**
+ * Returns the alert profile registered under name, or throws for an unknown name.
+ * @param {string} [name=DEFAULT_ALERT_PROFILE]
+ * @returns {Object} Alert profile.
+ */
+function resolveAlertProfile(name) {
+  const profileName = name || DEFAULT_ALERT_PROFILE;
+  const profile = ALERT_PROFILES[profileName];
+  if (!profile) {
+    throw new Error(`Unknown ALERT_PROFILE '${profileName}'; expected one of: ${Object.keys(ALERT_PROFILES).join(', ')}`);
+  }
+  return profile;
+}
+
+/**
  * Formats the issue body markdown for nightly test suite failure alerts.
  * @param {Object} params
  * @returns {string} Formatted markdown body.
  */
-function formatFailureIssueBody({
-  serverUrl = 'https://github.com',
-  owner,
-  repo,
-  runId,
-  sha,
-  ref,
-  eventName,
-  xid,
-  associatedPr,
-  triggerOutcome = 'unknown',
-  verifyOutcome = 'unknown',
-  activeOwners = [],
-}) {
+function formatFailureIssueBody(params) {
+  const {
+    serverUrl = 'https://github.com',
+    owner,
+    repo,
+    runId,
+    sha,
+    ref,
+    eventName,
+    associatedPr,
+    activeOwners = [],
+    profile = ALERT_PROFILES[DEFAULT_ALERT_PROFILE],
+  } = params;
   const runUrl = `${serverUrl}/${owner}/${repo}/actions/runs/${runId}`;
   const commitUrl = `${serverUrl}/${owner}/${repo}/commit/${sha}`;
   const shortSha = sha ? sha.substring(0, 7) : 'unknown';
   const mentions = (activeOwners || []).map(o => `@${o}`).join(' ');
 
-  let body = `### 🌙 Nightly E2E Test Suite Failed\n\n`;
-  body += `The automated nightly test suite against the \`xmc-nightly\` deployment encountered a failure.\n\n`;
+  let body = `### ${profile.heading}\n\n`;
+  body += `${profile.description}\n\n`;
   body += `| Metric / Step | Status / Value |\n`;
   body += `| :--- | :--- |\n`;
   body += `| **Workflow Run** | [View Run Details](${runUrl}) |\n`;
@@ -128,9 +172,10 @@ function formatFailureIssueBody({
 
   body += `| **Branch / Ref** | \`${ref || 'refs/heads/main'}\` |\n`;
   body += `| **Trigger Event** | \`${eventName || 'schedule'}\` |\n`;
-  body += `| **Experiment XID** | \`${xid || 'N/A'}\` |\n`;
-  body += `| **Trigger Action** | \`${triggerOutcome}\` |\n`;
-  body += `| **Verification Assertions** | \`${verifyOutcome}\` |\n\n`;
+  for (const [label, value] of profile.resultRows(params)) {
+    body += `| **${label}** | \`${value}\` |\n`;
+  }
+  body += `\n`;
 
   if (mentions) {
     body += `cc ${mentions} — please investigate the nightly failure when possible.\n`;
@@ -228,7 +273,8 @@ async function postOrUpdateAlertIssue(github, owner, repo, existingIssue, params
   }
 
   const today = new Date().toISOString().split('T')[0];
-  const title = `🚨 Nightly Test Suite Failure (${today})`;
+  const profile = params.profile || ALERT_PROFILES[DEFAULT_ALERT_PROFILE];
+  const title = `🚨 ${profile.title} (${today})`;
   if (core) core.info(`Creating new nightly failure issue: "${title}"`);
 
   const { data: newIssue } = await github.rest.issues.create({
@@ -299,14 +345,24 @@ function resolveTriggerOutcome(needsContext) {
 }
 
 /**
+ * Lists the result of every upstream job as [jobName, result] rows.
+ * @param {Object} needsContext
+ * @returns {Array<[string, string]>}
+ */
+function resolveJobResults(needsContext) {
+  return Object.entries(needsContext || {}).map(([job, value]) => [job, value?.result || 'unknown']);
+}
+
+/**
  * Constructs the parameter dictionary for alert issue creation and comment updates.
  * @param {Object} context
  * @param {string[]} activeOwners
  * @param {Object|null} associatedPr
  * @param {Object} needsContext
+ * @param {Object} [profile=ALERT_PROFILES[DEFAULT_ALERT_PROFILE]]
  * @returns {Object}
  */
-function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
+function buildAlertParams(context, activeOwners, associatedPr, needsContext, profile = ALERT_PROFILES[DEFAULT_ALERT_PROFILE]) {
   const { owner, repo } = context.repo;
   const rawXid = process.env.XID || '';
   return {
@@ -324,7 +380,9 @@ function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
       needsContext?.['run-and-verify-demo-workload']?.result ||
       needsContext?.['aggregate-results']?.result ||
       'unknown',
+    jobResults: resolveJobResults(needsContext),
     activeOwners,
+    profile,
   };
 }
 
@@ -336,6 +394,7 @@ function buildAlertParams(context, activeOwners, associatedPr, needsContext) {
  * @param {any} params.core - Actions core logger.
  * @param {string} [params.ownersPath='OWNERS'] - Path to OWNERS file.
  * @param {string} [params.absenceContent=process.env.ABSENCE_LIST || ''] - Raw ABSENCE_LIST content.
+ * @param {string} [params.profileName=process.env.ALERT_PROFILE] - Alert profile name (default: examples-e2e).
  */
 async function run({
   github,
@@ -343,19 +402,23 @@ async function run({
   core,
   ownersPath = 'OWNERS',
   absenceContent = process.env.ABSENCE_LIST || '',
+  profileName = process.env.ALERT_PROFILE,
 }) {
+  const profile = resolveAlertProfile(profileName);
   const { owner, repo } = context.repo;
   const activeOwners = resolveActiveOwners(ownersPath, absenceContent, core);
   const needsContext = parseNeedsContext(core);
   const associatedPr = await lookupAssociatedPullRequest(github, owner, repo, context.sha, core);
-  const alertParams = buildAlertParams(context, activeOwners, associatedPr, needsContext);
+  const alertParams = buildAlertParams(context, activeOwners, associatedPr, needsContext, profile);
 
-  const LABEL_NAME = 'nightly-failure';
-  const existingIssue = await findExistingNightlyFailureIssue(github, owner, repo, LABEL_NAME, core);
-  return postOrUpdateAlertIssue(github, owner, repo, existingIssue, alertParams, LABEL_NAME, core);
+  const existingIssue = await findExistingNightlyFailureIssue(github, owner, repo, profile.labelName, core);
+  return postOrUpdateAlertIssue(github, owner, repo, existingIssue, alertParams, profile.labelName, core);
 }
 
 module.exports = {
+  ALERT_PROFILES,
+  resolveAlertProfile,
+  resolveJobResults,
   parseUsernames,
   filterActiveOwners,
   resolveActiveOwners,

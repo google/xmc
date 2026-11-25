@@ -99,6 +99,27 @@ class ClassificationTest(unittest.TestCase):
             frozenset({"a", "a/b"}),
         )
 
+    def test_is_generic_helper_filename_boundaries(self):
+        self.assertTrue(cli.is_generic_helper_filename("pkg/urlUtil.go"))
+        self.assertTrue(cli.is_generic_helper_filename("tools/misc_ops.py"))
+        self.assertTrue(cli.is_generic_helper_filename("pkg/common.go"))
+        self.assertTrue(cli.is_generic_helper_filename("deploy/helper.tpl"))
+        self.assertTrue(cli.is_generic_helper_filename("deploy/helm/templates/helper.yaml"))
+        self.assertTrue(cli.is_generic_helper_filename("pkg/templates/_helpers.tpl"))
+        self.assertFalse(cli.is_generic_helper_filename("deploy/helm/templates/_helpers.tpl"))
+
+    def test_oss_b_todo_references_scoping(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in ("api/a.proto", "cmd/a.go", "pkg/a.go", "internal/a.go", "tools/a.py"):
+                p = root / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text("// TODO(b/12345): fix\n")
+            metrics = cli.collect_metrics(
+                root, ["api/a.proto", "cmd/a.go", "pkg/a.go", "internal/a.go", "tools/a.py"]
+            )
+            self.assertEqual(metrics["oss_b_todo_references"], 3)
+
 
 class CollectMetricsTest(unittest.TestCase):
     def setUp(self):
@@ -121,7 +142,9 @@ class CollectMetricsTest(unittest.TestCase):
             "deploy/ctk_v2/m/main.tf": '"-alsologtostderr",\n"-log_keyword=x",\n',
             "deploy/helm/templates/e.yaml": "args: ['--notracelog']\ncommand: run -vmodule=x\n",
             "cmd/ui/app/a.ts": "import { X } from 'javascript/closure/format/format';\n",
-            "sdks/p.py": "from third_party.xmanager_cloud.x import y\n",
+            "sdks/p.py": "from third_party.xmanager_cloud.x import y\n# TODO(b/12345): fix\n",
+            "pkg/helper.go": "package helper\n",
+            "deploy/helm/templates/_helpers.tpl": '{{- define "xmc" -}}{{- end -}}\n',
             "third_party/grpc_gateway.BUILD": "",
             # Self-excluded files must not be counted.
             "tools/lint/check_legacy_imports_test.py": "from third_party.xmanager_cloud import x\n",
@@ -141,9 +164,11 @@ class CollectMetricsTest(unittest.TestCase):
             {
                 "compat_go_targets": 2,
                 "gazelle_resolve_directives": 1,
+                "generic_helper_filenames": 1,
                 "go_legacy_root_imports": 3,
                 "go_unresolved_module_imports": 1,
                 "helm_google3_flags": 6,
+                "oss_b_todo_references": 1,
                 "proto_third_party_paths": 2,
                 "python_legacy_paths": 1,
                 "third_party_files": 1,

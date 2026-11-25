@@ -14,10 +14,11 @@
 
 filegroup(
     name = "chart",
-    srcs = glob([
+    srcs = [
         "Chart.yaml",
         "values.yaml",
         "values-local.yaml",
+    ] + glob([
         "templates/**",
     ]),
     visibility = ["//visibility:public"],

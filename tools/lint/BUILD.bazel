@@ -38,6 +38,27 @@ py_test(
 )
 
 py_library(
+    name = "check_doc_links_lib",
+    srcs = ["check_doc_links.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_agent_doc_paths_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_test(
+    name = "check_doc_links_test",
+    srcs = ["check_doc_links_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_agent_doc_paths_lib",
+        ":check_doc_links_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_file_naming_lib",
     srcs = ["check_file_naming.py"],
     imports = ["../.."],
@@ -68,6 +89,23 @@ py_test(
     imports = ["../.."],
     deps = [
         ":check_legacy_imports_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
+    name = "check_migration_order_lib",
+    srcs = ["check_migration_order.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_migration_order_test",
+    srcs = ["check_migration_order_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_migration_order_lib",
         "//tools/common:tool_utils",
     ],
 )
@@ -137,5 +175,26 @@ py_test(
     deps = [
         ":precommit_deploy_checks_lib",
         ":precommit_gates_lib",
+    ],
+)
+
+py_library(
+    name = "precommit_runner_lib",
+    srcs = ["precommit_runner.py"],
+    imports = ["../.."],
+    deps = [
+        ":precommit_deploy_checks_lib",
+        ":precommit_gates_lib",
+    ],
+)
+
+py_test(
+    name = "precommit_runner_test",
+    srcs = ["precommit_runner_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":precommit_deploy_checks_lib",
+        ":precommit_gates_lib",
+        ":precommit_runner_lib",
     ],
 )

@@ -31,6 +31,7 @@
   width: 10px;
   height: 10px;
   margin-right: 5px;
+  background-color: $status-base;
 }
 
 .state-count-state-container {
@@ -50,6 +51,7 @@
   align-items: center;
   justify-content: center;
   color: var(--mat-sys-background);
+  background-color: $status-base;
   font-size: 14px;
 }
 
@@ -71,7 +73,8 @@
   background-color: $status-paused;
 }
 
-.SCHEDULING_PAUSED {
+.SCHEDULING_PAUSED,
+.PARTIALLY_FAILED {
   background-color: $status-scheduling-paused;
 }
 
@@ -84,7 +87,9 @@
 }
 
 .STOPPING,
-.STOPPED {
+.STOPPED,
+.WORK_UNIT_STATE_UNSPECIFIED,
+.unknown-state {
   background-color: $status-base;
 }
 

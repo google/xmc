@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { SeriesOption, TitleComponentOption, XAXisComponentOption } from 'echarts';
+
 import { PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { buildEChartsOption, getEmptyChartOption } from './echarts_options_builder';
@@ -21,8 +23,8 @@ describe('echarts_options_builder dispatcher', () => {
   describe('getEmptyChartOption', () => {
     it('should return fallback message when data is empty or missing', () => {
       const option = getEmptyChartOption();
-      expect((option.title as any)?.text).toBe('No metric data available');
-      expect((option.series as any[])?.length).toBe(0);
+      expect((option.title as TitleComponentOption)?.text).toBe('No metric data available');
+      expect((option.series as SeriesOption[])?.length).toBe(0);
     });
   });
 
@@ -57,7 +59,7 @@ describe('echarts_options_builder dispatcher', () => {
       };
       const option = buildEChartsOption(scatterSpec, mockScatterData);
       expect(option.series).toBeDefined();
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as SeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].name).toBe('loss');
     });
@@ -67,7 +69,7 @@ describe('echarts_options_builder dispatcher', () => {
       for (const t of typesToTest) {
         const option = buildEChartsOption(unspecifiedSpec, { ...mockScatterData, type: t });
         expect(option.series).toBeDefined();
-        const seriesArr = option.series as any[];
+        const seriesArr = option.series as SeriesOption[];
         expect(seriesArr.length).toBe(1);
         expect(seriesArr[0].name).toBe('loss');
       }
@@ -81,7 +83,7 @@ describe('echarts_options_builder dispatcher', () => {
       };
       const option = buildEChartsOption(barSpec, mockBarData);
       expect(option.series).toBeDefined();
-      const seriesArr = option.series as any[];
+      const seriesArr = option.series as SeriesOption[];
       expect(seriesArr.length).toBe(1);
       expect(seriesArr[0].type).toBe('bar');
     });
@@ -98,7 +100,7 @@ describe('echarts_options_builder dispatcher', () => {
       for (const t of typesToTest) {
         const option = buildEChartsOption(unspecifiedSpec, { ...mockBarData, type: t });
         expect(option.series).toBeDefined();
-        const seriesArr = option.series as any[];
+        const seriesArr = option.series as SeriesOption[];
         expect(seriesArr.length).toBe(1);
         expect(seriesArr[0].type).toBe('bar');
       }
@@ -115,7 +117,7 @@ describe('echarts_options_builder dispatcher', () => {
         data: { metrics: ['loss'] },
       };
       const option = buildEChartsOption(scatterSpec, mockScatterData, customTheme);
-      expect((option.xAxis as any)?.axisLabel?.color).toBe('#ff0000');
+      expect((option.xAxis as XAXisComponentOption)?.axisLabel?.color).toBe('#ff0000');
     });
   });
 });

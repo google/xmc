@@ -60,3 +60,21 @@ func MergeWorkUnits(current, updated *pb.WorkUnit, updateMask *fieldmaskpb.Field
 	}
 	return validator.FillWorkUnitNullValues(merged), nil
 }
+
+// WorkUnitsExperimentID returns the XID of the experiment that all wus belong to, derived from the
+// name of each work unit. It returns grpcerr.ErrInvalidArgument when a name does not parse or the
+// work units belong to more than one experiment.
+func WorkUnitsExperimentID(wus []*pb.WorkUnit) (int64, error) {
+	var xid int64
+	for i, wu := range wus {
+		wuXID, _, err := validator.ValidateWorkUnitName(wu.GetName())
+		if err != nil {
+			return 0, fmt.Errorf("work unit %d has an invalid name %q: %v: %w", i, wu.GetName(), err, grpcerr.ErrInvalidArgument)
+		}
+		if i > 0 && wuXID != xid {
+			return 0, fmt.Errorf("work units must belong to one experiment, got %d and %d: %w", xid, wuXID, grpcerr.ErrInvalidArgument)
+		}
+		xid = wuXID
+	}
+	return xid, nil
+}

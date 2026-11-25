@@ -146,7 +146,7 @@ jobs:
           build_and_push metrics-job            metrics_job            .
           build_and_push chart-artifact-job     chart_artifact_job     .
           build_and_push metrics-dashboard-job  metrics_dashboard_job  .
-          build_and_push programmatic-xprof-job managed_xprof_artifact_job
+          build_and_push managed-xprof-artifact-job managed_xprof_artifact_job
           build_and_push per-job-node-selector  per_job_node_selector
 
   run-and-verify-examples:
@@ -445,9 +445,9 @@ jobs:
           cd "${GITHUB_WORKSPACE}/${EXAMPLE_PATH}"
           export PYTHONPATH="${GITHUB_WORKSPACE}/${EXAMPLE_PATH}:${GITHUB_WORKSPACE}:${PYTHONPATH:-}"
 
-          EVAL_ARGS=$(eval echo "${RAW_ARGS}")
+          eval "EVAL_ARGS=(${RAW_ARGS})"
 
-          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" ${EVAL_ARGS} | tee /dev/stderr)
+          OUTPUT=$("${GITHUB_WORKSPACE}/.venv/bin/python3" "${ENTRYPOINT}" "${EVAL_ARGS[@]}" | tee /dev/stderr)
 
           # Extract XID or Dashboard ID from output
           XID=$(echo "${OUTPUT}" | grep -oP 'Experiment XID:\s*\K\d+' || echo "${OUTPUT}" | grep -oP 'XID:\s*\K\d+' || true)

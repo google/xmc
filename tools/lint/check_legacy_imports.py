@@ -28,8 +28,10 @@ https://github.com/google/xmc/issues/1066.
 import argparse
 import dataclasses
 import json
+import posixpath
 import re
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -118,7 +120,26 @@ LINE_METRICS = (
         path_regex=r"\.(py|sh)$",
         line_regex=r"third_party[./](xmanager_cloud|javascript)|_virtual_imports/.*/third_party",
     ),
+    LineMetric(
+        name="oss_b_todo_references",
+        path_regex=r"^(api|cmd|pkg|sdks)/",
+        line_regex=r"TODO\([^)]*\bb/\d+",
+    ),
 )
+
+_GENERIC_FILENAME_RE = re.compile(r"(?:util|helper|misc|common)", re.IGNORECASE)
+
+
+def is_generic_helper_filename(path: str) -> bool:
+    """Reports whether path uses a generic filename banned for new modules."""
+    if path.startswith("deploy/") and "/templates/" in path and path.endswith(".tpl"):
+        return False
+    return bool(_GENERIC_FILENAME_RE.search(posixpath.basename(path)))
+
+
+def count_generic_helper_filenames(files: Iterable[str]) -> int:
+    """Counts tracked files whose basenames use generic helper/util/misc/common names."""
+    return sum(1 for f in files if is_generic_helper_filename(f))
 
 
 def extract_go_imports(source: str) -> list[str]:
@@ -199,6 +220,7 @@ def collect_metrics(repo_root: Path, files: list[str]) -> dict[str, int]:
     scanned = [f for f in files if f not in SELF_EXCLUDED]
     metrics = count_go_imports(repo_root, scanned, tracked_directories(files))
     metrics["third_party_files"] = sum(1 for f in scanned if f.startswith("third_party/"))
+    metrics["generic_helper_filenames"] = count_generic_helper_filenames(scanned)
     for metric in LINE_METRICS:
         metrics[metric.name] = count_line_metric(metric, repo_root, scanned)
     return dict(sorted(metrics.items()))
@@ -277,7 +299,9 @@ def check_legacy_imports(args: argparse.Namespace) -> dict[str, Any]:
     if diff["regressed"]:
         raise HandledError(
             f"google3 legacy constructs increased: {json.dumps(diff['regressed'])}",
-            "Use OSS import paths and standard Bazel rules; see github.com/google/xmc/issues/1066.",
+            "Use OSS import paths, OSS TODOs (no TODO(b/...)), descriptive filenames "
+            "(avoid util/helper/misc/common), and standard Bazel rules; see "
+            "github.com/google/xmc/issues/1066.",
         )
     return {
         "metrics": current,

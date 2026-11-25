@@ -31,6 +31,26 @@ import {
 
 const STACK_TRACE_PREVIEW_LINES = 5;
 
+type SeverityStylePrefix = 'debug' | 'info' | 'warning' | 'error' | 'fatal';
+
+interface SeverityStyle {
+  readonly prefix: SeverityStylePrefix;
+  readonly lineClass: string;
+}
+
+const DEFAULT_SEVERITY_STYLE: SeverityStyle = {
+  prefix: 'info',
+  lineClass: 'blue-vertical-line',
+};
+
+const SEVERITY_STYLE_MAP: Readonly<Record<string, SeverityStyle>> = {
+  DEBUG: { prefix: 'debug', lineClass: 'grey-vertical-line' },
+  INFO: DEFAULT_SEVERITY_STYLE,
+  WARNING: { prefix: 'warning', lineClass: 'yellow-vertical-line' },
+  ERROR: { prefix: 'error', lineClass: 'red-vertical-line' },
+  FATAL: { prefix: 'fatal', lineClass: 'red-vertical-line' },
+};
+
 /**
  * Component for displaying a status message, including aux information such as
  * a stack trace and scheduling information.
@@ -89,19 +109,14 @@ export class StatusMessage {
     () => this.stackTraceLines().length > STACK_TRACE_PREVIEW_LINES,
   );
 
-  protected readonly lineClass = computed(() => {
-    const severity = this.message().severity;
-    if (severity === 'WARNING') {
-      return 'yellow-vertical-line';
-    }
-    if (severity === 'ERROR' || severity === 'FATAL') {
-      return 'red-vertical-line';
-    }
-    if (severity === 'DEBUG') {
-      return 'grey-vertical-line';
-    }
-    return 'blue-vertical-line';
-  });
+  private readonly severityStyle = computed(
+    () => SEVERITY_STYLE_MAP[this.message().severity ?? ''] ?? DEFAULT_SEVERITY_STYLE,
+  );
+  protected readonly lineClass = computed(() => this.severityStyle().lineClass);
+  protected readonly containerClass = computed(
+    () => `${this.severityStyle().prefix}-message-container`,
+  );
+  protected readonly messageClass = computed(() => `${this.severityStyle().prefix}-message`);
 
   protected readonly urlsForWidget = computed<ProcessedUrl[]>(() => {
     const url = this.message().userFacingUrl;

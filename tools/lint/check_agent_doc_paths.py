@@ -108,8 +108,8 @@ def build_path_token_re(roots: Iterable[str]) -> re.Pattern[str]:
 
 
 _PATH_TOKEN_RE = build_path_token_re(PATH_ROOTS)
-_INLINE_CODE_RE = re.compile(r"(`+)(.+?)\1")
-_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+INLINE_CODE_RE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+_FENCE_RE = re.compile(r"^\s*(?:(`{3,})([^`]*)|(~{3,})(.*))$")
 _PLACEHOLDER_RE = re.compile(r"[<{$*\[]|\.\.\.")
 _TRAILING_PUNCTUATION = "."
 
@@ -132,6 +132,14 @@ def is_agent_doc(path: str) -> bool:
     )
 
 
+def opens_fence(line: str) -> str:
+    """Returns the opening fence marker when a line opens a CommonMark fenced block."""
+    fence = _FENCE_RE.match(line)
+    if not fence:
+        return ""
+    return fence.group(1) or fence.group(3)
+
+
 def closes_fence(line: str, opening: str) -> bool:
     """Returns whether a line closes a fenced block opened with `opening`.
 
@@ -142,7 +150,8 @@ def closes_fence(line: str, opening: str) -> bool:
     fence = _FENCE_RE.match(line)
     if not fence:
         return False
-    run, rest = fence.group(1), fence.group(2)
+    run = fence.group(1) or fence.group(3)
+    rest = fence.group(2) if fence.group(1) is not None else fence.group(4)
     return run[0] == opening[0] and len(run) >= len(opening) and not rest.strip()
 
 
@@ -156,11 +165,11 @@ def iter_code_segments(text: str) -> Iterator[tuple[int, str]]:
             else:
                 yield lineno, line
             continue
-        fence = _FENCE_RE.match(line)
-        if fence:
-            opening = fence.group(1)
+        opened = opens_fence(line)
+        if opened:
+            opening = opened
             continue
-        for match in _INLINE_CODE_RE.finditer(line):
+        for match in INLINE_CODE_RE.finditer(line):
             yield lineno, match.group(2)
 
 

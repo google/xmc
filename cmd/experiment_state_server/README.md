@@ -122,6 +122,87 @@ the RPC: ESS logs it and increments the `xmc_ess_study_reconcile_enqueue_failure
 and the study stays created without a reconcile tick until a future sweeper recovers it (see
 [Create Experiment](../../docs/flows/experiment_lifecycle.md#1-create-experiment)).
 
+A study's work units are its trials, which only the study controller creates. `CreateWorkUnit` on a
+`STUDY` experiment returns `FAILED_PRECONDITION` without writing anything
+([`internal/workunit/createworkunit.go`](../../internal/workunit/createworkunit.go)), and rejects
+`parameters` and `trial_id` with `INVALID_ARGUMENT`.
+
+#### Reading Studies & Deployment Admission: `GetExperiment`
+
+ESS's gRPC authorizer (`server.NewProd` / `studyControllerAdmission`) admits the active `hpo`
+component's `parameters.studyControllerServiceAccount` in addition to the deployment admission
+allowlist (`allowed_emails` / `authorized_iam_role`), so the dedicated study controller GSA does not
+need broad deployment admission. Normal user traffic checks the deployment admission delegate first
+(zero component-catalog overhead); on delegate denial or error, ESS falls back to checking the
+active `hpo` component record.
+
+In `GetExperiment` ([`server/getexperiment.go`](server/getexperiment.go)), normal user traffic
+checks XID ACLs first (zero component-catalog lookups). When the XID service returns
+`PERMISSION_DENIED` or `INTERNAL` (e.g. during a CRM outage), ESS checks whether the caller's
+verified email matches `parameters.studyControllerServiceAccount` (ASCII case-insensitive) of an
+enabled or pending-reconciliation (and experimentally acknowledged) `hpo` component; if so, it reads
+the experiment from storage directly and returns it (with `acls` unset) only when
+`experiment_type == STUDY`, rejecting non-`STUDY` experiments with `PERMISSION_DENIED` (`NOT_FOUND`
+if the experiment does not exist). When the `hpo` component is missing, disabled, unacknowledged, or
+the parameter is empty, the XID error is returned (fail closed).
+
+#### Creating Trials: `BatchCreateWorkUnits`
+
+The study controller creates trials with `BatchCreateWorkUnits` (AIP-233, `POST
+/v1/{parent=experiments/*}/workUnits:batchCreate`). The request holds 1 to 500 `CreateWorkUnitRequest`s
+whose `parent` is empty or the batch `parent` and whose `work_unit_id` is unset. The response is
+synchronous: the created work units, in request order, with contiguous IDs that follow the
+experiment's largest work unit ID. ESS checks, in order
+([`server/batchcreateworkunits.go`](server/batchcreateworkunits.go)):
+
+| Check | Error |
+| :--- | :--- |
+| The caller is authenticated. | `UNAUTHENTICATED` |
+| `parent` is an experiment name. | `INVALID_ARGUMENT` |
+| The caller's verified email equals the `hpo` component parameter `studyControllerServiceAccount` (ASCII case-insensitive). XID ACLs are not consulted. A missing, disabled, or unacknowledged `hpo` component or an empty parameter rejects every caller. This check runs before the experiment is read or the payload is validated. | `PERMISSION_DENIED` |
+| The experiment exists. | `NOT_FOUND` |
+| The experiment is a `STUDY`; other types are not supported yet. | `UNIMPLEMENTED` |
+| The request holds 1 to 500 requests, each work unit is valid, as for `CreateWorkUnit`, and trial IDs are unique in the batch. | `INVALID_ARGUMENT` |
+| Each work unit has a `trial_id` (at most 128 bytes, printable) and `parameters` with exactly one feasible value per `study_config` parameter: a finite number in range for `DOUBLE`, an integral one for `INTEGER`, one of the values for `DISCRETE`, and one of the category strings for `CATEGORICAL`. | `INVALID_ARGUMENT` |
+
+ESS then writes all work units in one transaction
+([`internal/workunit/batchcreateworkunits.go`](../../internal/workunit/batchcreateworkunits.go)): it
+checks the caller against the `hpo` component again, reads the experiment once, allocates the IDs with a
+single next-ID read, inserts the work units in one write, and updates the experiment's denormalized
+status and resources once. After the commit it records one creation operation per work unit and
+enqueues all creation tasks in one pipelined Redis round trip. A work unit whose operation or task
+cannot be created gets the `FATAL` status message `CreateWorkUnit` uses on enqueue failure
+(`CreateWorkUnit` does not mark `FATAL` if operation creation fails); ESS writes these messages for
+all such work units in one transaction.
+Then any already-recorded `Operation` for such a work unit is marked `Done` with `INTERNAL`, and the RPC
+returns `INTERNAL` naming those work units; the other work units are scheduled. This cleanup runs
+even if the caller cancels the RPC, bounded by its own timeout. Because the trials are already
+stored, the study controller must not create them again when it retries; ESS does not deduplicate
+`trial_id` across batches. `parameters` and `trial_id` are immutable and returned by `GetWorkUnit`
+and `ListWorkUnits`.
+
+##### Trust Boundary
+
+Owning or writing to a study does not let a user create its trials. The experiment creator, like
+every other user, calls with their own identity. The email comes from the Google-signed ID token
+that ESS verifies (the `x-goog-user-email` header is not trusted), so it never matches the
+configured study controller, and `BatchCreateWorkUnits` fails with `PERMISSION_DENIED`. XID ACLs
+grant nothing there. Conversely, the configured `parameters.studyControllerServiceAccount` identity
+bypasses deployment admission and XID ACLs to call `GetExperiment` and `BatchCreateWorkUnits` on all
+`STUDY` experiments (on non-`STUDY` experiments, `GetExperiment` returns `PERMISSION_DENIED` and
+`BatchCreateWorkUnits` returns `UNIMPLEMENTED`).
+
+The check is only as strong as control over the configured identity. These principals can pass it:
+
+| Principal | How |
+| :--- | :--- |
+| Holders of `roles/iam.serviceAccountTokenCreator` on the study controller's Google service account | They can mint ID tokens for it. |
+| Users who can run pods as the `xmc-study-controller` Kubernetes ServiceAccount in the release namespace | Workload Identity hands such pods that service account's tokens. |
+| Users who can edit the `hpo` Component | They can point `parameters.studyControllerServiceAccount` at an identity they control. |
+
+Grant none of these beyond the operators who run XMC. See
+[Securing the Study Controller Identity](../../deploy/profiles/stable-2026b/components/hpo/README.md#securing-the-study-controller-identity).
+
 ---
 
 ## Testing & Verification

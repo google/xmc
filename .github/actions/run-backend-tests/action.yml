@@ -28,6 +28,10 @@ inputs:
     description: 'Host and port for the Spanner emulator'
     required: false
     default: '127.0.0.1:9010'
+  cache-test-results:
+    description: "Reuse cached test results ('true') or execute every test ('false', passes --nocache_test_results; build outputs stay cached)"
+    required: false
+    default: 'true'
 
 runs:
   using: 'composite'
@@ -91,18 +95,24 @@ runs:
         SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
         SPANNER_TIMEOUT_INPUT: ${{ inputs.spanner-check-timeout }}
         TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
+        CACHE_TEST_RESULTS: ${{ inputs.cache-test-results }}
       shell: bash
       # The same entrypoint as local runs resolves the rdeps scope of the event, waits for the
       # Spanner emulator, and runs the affected targets with the shared test flags. CI-only
       # flags are appended with --bazel-flag and win over the defaults.
       run: |
+        cache_flags=()
+        if [[ "${CACHE_TEST_RESULTS}" == 'false' ]]; then
+          cache_flags+=(--bazel-flag=--nocache_test_results)
+        fi
         python3 tools/run_affected_tests.py --ci \
           --repository-cache "${HOME}/.cache/bazel-repo" \
           --emulator-wait-seconds "${SPANNER_TIMEOUT_INPUT}" \
           --bazel-flag=--config=ci \
           --bazel-flag="--disk_cache=${HOME}/.cache/bazel-disk" \
           --bazel-flag=--experimental_repository_cache_hardlinks \
-          --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300"
+          --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300" \
+          "${cache_flags[@]}"
 
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2

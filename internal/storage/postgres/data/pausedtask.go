@@ -67,6 +67,8 @@ type PendingPausedTaskRow struct {
 	WorkUnitStatus        []byte     `db:"workunitstatus"`
 	WorkUnitCreateTime    time.Time  `db:"workunitcreatetime"`
 	WorkUnitUpdateTime    time.Time  `db:"workunitupdatetime"`
+	Parameters            []byte     `db:"parameters"`
+	TrialID               *string    `db:"trialid"`
 }
 
 // PausedTaskToRow converts a storage.PausedTask into a PausedTaskRow for insertion.
@@ -115,11 +117,15 @@ func pendingRowToWorkUnit(row PendingPausedTaskRow) (*essmsgpb.WorkUnit, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &essmsgpb.WorkUnit{
+	wu := &essmsgpb.WorkUnit{
 		Name: validator.ConstructWorkUnitName(row.Xid, row.WorkUnitID), WorkUnitType: essmsgpb.WorkUnit_WorkUnitType(row.WorkUnitType),
 		Priority: essmsgpb.Priority(row.WorkUnitPriority), Urls: urls, Tags: row.Tags, Notes: row.Notes, Executable: executable,
 		CurrentWorkUnitExecution: execution, CreateTime: timestamppb.New(row.WorkUnitCreateTime), UpdateTime: timestamppb.New(row.WorkUnitUpdateTime),
-	}, nil
+	}
+	if err := setTrialFields(wu, row.Parameters, row.TrialID); err != nil {
+		return nil, err
+	}
+	return wu, nil
 }
 
 func pendingRowToExecution(row PendingPausedTaskRow) (*essmsgpb.WorkUnitExecution, error) {

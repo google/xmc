@@ -82,7 +82,6 @@ class TestHostComponent {
 
 describe('DashboardGridComponent', () => {
   let fixture: ComponentFixture<TestHostComponent>;
-  let host: TestHostComponent;
   let harness: DashboardGridHarness;
   let dashboardServiceSpy: jasmine.SpyObj<DashboardService>;
 
@@ -100,7 +99,6 @@ describe('DashboardGridComponent', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(TestHostComponent);
-    host = fixture.componentInstance;
     fixture.detectChanges();
     const loader = TestbedHarnessEnvironment.loader(fixture);
     harness = await loader.getHarness(DashboardGridHarness);

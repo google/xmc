@@ -25,6 +25,7 @@ go_test(
         "//internal/security/securitytest",
         "//internal/task_queue_redis/redisclient",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_redis_go_redis_v9//:go-redis",
         "@com_github_tink_crypto_tink_go_v2//jwt",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",

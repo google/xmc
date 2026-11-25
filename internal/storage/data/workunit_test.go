@@ -14,14 +14,53 @@
 package data
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	pb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 )
+
+func TestWorkUnitsExperimentID(t *testing.T) {
+	named := func(names ...string) []*pb.WorkUnit {
+		wus := make([]*pb.WorkUnit, len(names))
+		for i, name := range names {
+			// The execution name is ignored: the XID comes from the work unit name.
+			wus[i] = &pb.WorkUnit{Name: name, CurrentWorkUnitExecution: &pb.WorkUnitExecution{Name: "experiments/9/workUnits/1/executions/1"}}
+		}
+		return wus
+	}
+	tests := []struct {
+		name    string
+		wus     []*pb.WorkUnit
+		wantXID int64
+		wantErr bool
+	}{
+		{name: "one experiment", wus: named("experiments/7/workUnits/1", "experiments/7/workUnits/2"), wantXID: 7},
+		{name: "empty", wus: nil, wantXID: 0},
+		{name: "mixed experiments", wus: named("experiments/7/workUnits/1", "experiments/8/workUnits/2"), wantErr: true},
+		{name: "unparseable name", wus: named("experiments/7/workUnits/1", "invalid"), wantErr: true},
+		{name: "nil work unit", wus: []*pb.WorkUnit{nil}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			xid, err := WorkUnitsExperimentID(tt.wus)
+			if tt.wantErr {
+				if !errors.Is(err, grpcerr.ErrInvalidArgument) {
+					t.Errorf("WorkUnitsExperimentID() = (%d, %v), want InvalidArgument", xid, err)
+				}
+				return
+			}
+			if err != nil || xid != tt.wantXID {
+				t.Errorf("WorkUnitsExperimentID() = (%d, %v), want (%d, nil)", xid, err, tt.wantXID)
+			}
+		})
+	}
+}
 
 func TestMergeWorkUnits(t *testing.T) {
 	current := &pb.WorkUnit{

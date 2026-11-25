@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +22,12 @@ if [ -f "../../.env" ]; then
   source "../../.env"
 fi
 
-PROJECT_ID="${PROJECT_ID}"
-REGISTRY="${XMC_ACR_TARGET:-us-docker.pkg.dev/${PROJECT_ID}/xmc}"
+if [[ -n "${XMC_ACR_TARGET:-}" ]]; then
+  REGISTRY="${XMC_ACR_TARGET%/}"
+else
+  : "${PROJECT_ID:?PROJECT_ID environment variable must be set}"
+  REGISTRY="us-docker.pkg.dev/${PROJECT_ID}/xmc"
+fi
 IMAGE_TAG="${REGISTRY}/multipod-counter:latest"
 
 echo "Building Docker image: ${IMAGE_TAG}..."

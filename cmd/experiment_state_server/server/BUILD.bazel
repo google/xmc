@@ -17,6 +17,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "server",
     srcs = [
+        "batchcreateworkunits.go",
         "batchrestartworkunits.go",
         "batchstopworkunits.go",
         "createartifact.go",
@@ -39,6 +40,7 @@ go_library(
         "restartworkunitexecutions.go",
         "server.go",
         "stopworkunit.go",
+        "studycontroller_admission.go",
         "studyreconcile.go",
         "updateartifact.go",
         "updateexperiment.go",
@@ -104,6 +106,7 @@ go_library(
 go_test(
     name = "server_test",
     srcs = [
+        "batchcreateworkunits_test.go",
         "batchrestartworkunits_test.go",
         "batchstopworkunits_test.go",
         "createartifact_test.go",
@@ -127,6 +130,7 @@ go_test(
         "restartworkunitexecutions_test.go",
         "server_test.go",
         "stopworkunit_test.go",
+        "studycontroller_admission_test.go",
         "studyreconcile_test.go",
         "updateartifact_test.go",
         "updateexperiment_test.go",

@@ -34,6 +34,7 @@ import (
 	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/postgres/pgdb"
@@ -86,7 +87,9 @@ func TestRepository_ValidationAndNilGuards(t *testing.T) {
 		func() error { _, err := txRepo.FetchWorkUnit(ctx, 1, 1); return err },
 		func() error { _, err := txRepo.FetchUpdatingWorkUnits(ctx, 1, []int64{1}); return err },
 		func() error { _, err := txRepo.FetchNextWorkUnitID(ctx, 1); return err },
-		func() error { return txRepo.InsertWorkUnit(ctx, &essmsgpb.WorkUnit{}) },
+		func() error {
+			return txRepo.InsertWorkUnit(ctx, &essmsgpb.WorkUnit{Name: validator.ConstructWorkUnitName(1, 1)})
+		},
 		func() error { return txRepo.SaveWorkUnitExecution(ctx, &essmsgpb.WorkUnitExecution{}) },
 		func() error {
 			return txRepo.UpdateCurrentWorkUnitExecution(ctx, 1, 1, 1, &essmsgpb.WorkUnitExecution{})
@@ -771,5 +774,111 @@ func assertNoKeyUpdateCompatibleWithKeyShare(t *testing.T, pool *pgxpool.Pool, r
 	})
 	if err != nil {
 		t.Fatalf("TxRepository.FetchWorkUnit() blocked by FOR KEY SHARE (must use FOR NO KEY UPDATE, not FOR UPDATE): %v", err)
+	}
+}
+
+func TestTxRepository_InsertWorkUnits_EmptyBatchTakesNoLock(t *testing.T) {
+	// The transaction is nil: an empty batch returns before it locks or sends anything.
+	if err := (&TxRepository{}).InsertWorkUnits(t.Context(), nil); err != nil {
+		t.Errorf("InsertWorkUnits(empty) = %v, want nil", err)
+	}
+}
+
+func TestTxRepository_InsertWorkUnits_RejectsInvalidBatchesBeforeLocking(t *testing.T) {
+	misnamed := blankWorkUnitProto(1, 2, baseTestTime)
+	misnamed.Name = validator.ConstructWorkUnitName(2, 2)
+	unparseable := blankWorkUnitProto(1, 3, baseTestTime)
+	unparseable.Name = "invalid"
+	tests := []struct {
+		name string
+		wus  []*essmsgpb.WorkUnit
+	}{
+		{name: "nil work unit", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(1, 1, baseTestTime), nil}},
+		{name: "mixed experiments", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(1, 1, baseTestTime), blankWorkUnitProto(2, 1, baseTestTime)}},
+		{name: "mixed experiments by name", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(1, 1, baseTestTime), misnamed}},
+		{name: "unparseable work unit name", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(1, 1, baseTestTime), unparseable}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The transaction is nil: the batch is rejected before it is used.
+			if err := (&TxRepository{}).InsertWorkUnits(t.Context(), tt.wus); status.Code(err) != codes.InvalidArgument {
+				t.Errorf("InsertWorkUnits() = %v (code %v), want InvalidArgument", err, status.Code(err))
+			}
+		})
+	}
+}
+
+// trialWorkUnitProto returns blankWorkUnitProto(xid, wid) as a study trial.
+func trialWorkUnitProto(xid, wid int64) *essmsgpb.WorkUnit {
+	wu := blankWorkUnitProto(xid, wid, baseTestTime)
+	wu.Parameters = experimenttest.TrialParameters()
+	wu.TrialId = fmt.Sprintf("trial-%d", wid)
+	return wu
+}
+
+func TestTxRepository_InsertWorkUnits(t *testing.T) {
+	ctx := t.Context()
+	_, essPool := postgrestest.Setup(ctx, t)
+	repo := NewRepository(essPool)
+	const xid, otherXID = 701, 702
+	postgrestest.SeedExperiment(ctx, t, essPool, xid)
+	postgrestest.SeedExperiment(ctx, t, essPool, otherXID)
+	insert := func(wus []*essmsgpb.WorkUnit) error {
+		return pgdb.RunInTx(ctx, essPool, func(ctx context.Context, tx pgx.Tx) error {
+			return repo.WithTx(tx).InsertWorkUnits(ctx, wus)
+		})
+	}
+
+	want := []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 1), blankWorkUnitProto(xid, 2, baseTestTime), trialWorkUnitProto(xid, 3)}
+	if err := insert(want); err != nil {
+		t.Fatalf("InsertWorkUnits() failed: %v", err)
+	}
+	for _, wu := range want {
+		_, wid, _ := validator.ValidateWorkUnitName(wu.GetName())
+		got, err := repo.FetchWorkUnit(ctx, xid, wid)
+		if err != nil {
+			t.Fatalf("FetchWorkUnit(%d) failed: %v", wid, err)
+		}
+		if diff := cmp.Diff(wu, got, protocmp.Transform()); diff != "" {
+			t.Errorf("FetchWorkUnit(%d) mismatch (-want +got):\n%s", wid, diff)
+		}
+	}
+	listed, _, err := repo.ListWorkUnits(ctx, validator.ConstructExperimentName(xid), 10, "", "", "", 0)
+	if err != nil {
+		t.Fatalf("ListWorkUnits() failed: %v", err)
+	}
+	if diff := cmp.Diff(want, listed, protocmp.Transform()); diff != "" {
+		t.Errorf("ListWorkUnits() mismatch (-want +got):\n%s", diff)
+	}
+
+	// renamed returns blankWorkUnitProto(xid, wid) named name, keeping its execution name.
+	renamed := func(xid, wid int64, name string) *essmsgpb.WorkUnit {
+		wu := blankWorkUnitProto(xid, wid, baseTestTime)
+		wu.Name = name
+		return wu
+	}
+	tests := []struct {
+		name     string
+		wus      []*essmsgpb.WorkUnit
+		wantCode codes.Code
+	}{
+		{name: "empty batch", wus: nil, wantCode: codes.OK},
+		{name: "nil work unit", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), nil}, wantCode: codes.InvalidArgument},
+		{name: "mixed experiments", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), trialWorkUnitProto(otherXID, 1)}, wantCode: codes.InvalidArgument},
+		{name: "mixed experiments by name", wus: []*essmsgpb.WorkUnit{blankWorkUnitProto(xid, 4, baseTestTime), renamed(xid, 5, validator.ConstructWorkUnitName(otherXID, 5))}, wantCode: codes.InvalidArgument},
+		{name: "unparseable work unit name", wus: []*essmsgpb.WorkUnit{renamed(xid, 4, "invalid")}, wantCode: codes.InvalidArgument},
+		{name: "invalid execution name", wus: []*essmsgpb.WorkUnit{{Name: validator.ConstructWorkUnitName(xid, 4)}}, wantCode: codes.InvalidArgument},
+		{name: "missing experiment", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(99999, 1)}, wantCode: codes.NotFound},
+		{name: "duplicate work unit rolls back the batch", wus: []*essmsgpb.WorkUnit{trialWorkUnitProto(xid, 4), trialWorkUnitProto(xid, 3)}, wantCode: codes.AlreadyExists},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := insert(tt.wus); status.Code(err) != tt.wantCode {
+				t.Errorf("InsertWorkUnits() = %v (code %v), want code %v", err, status.Code(err), tt.wantCode)
+			}
+		})
+	}
+	if _, err := repo.FetchWorkUnit(ctx, xid, 4); status.Code(err) != codes.NotFound {
+		t.Errorf("FetchWorkUnit(4) after failed batches = %v, want NotFound", err)
 	}
 }

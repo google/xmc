@@ -147,7 +147,7 @@ class ParseEntrypointsTest(unittest.TestCase):
         self.assertEqual(smoke.parse_verify_modules(workflow, frozenset({"ui"})), ["pkg.ui_verify"])
 
     def test_expand_args(self) -> None:
-        """Placeholders expand and tokens split like nightly's `eval echo`; others fail."""
+        """Placeholders expand and tokens split like nightly's `EVAL_ARGS` array; others fail."""
         with mock.patch.dict("os.environ", {}, clear=True):
             self.assertEqual(smoke.expand_args("--queue=${QUEUE_NAME}"), ["--queue=cpu-queue"])
         with mock.patch.dict("os.environ", {"QUEUE_NAME": "gpu-queue"}):
@@ -159,7 +159,10 @@ class ParseEntrypointsTest(unittest.TestCase):
                 '--endpoint="localhost:50051" --create-experiments',
                 ["--endpoint=localhost:50051", "--create-experiments"],
             ),
-            ('--name="a b"', ["--name=a", "b"]),
+            ('--name="a b"', ["--name=a b"]),
+            ('--q="a (b)*?"', ["--q=a (b)*?"]),
+            ("--q='c\\d'", ["--q=c\\d"]),
+            ('""', [""]),
             ("", []),
         )
         for raw, expected in tokenized:
@@ -171,6 +174,11 @@ class ParseEntrypointsTest(unittest.TestCase):
             "--q=${QUEUE_NAME:-x}",
             "--q=$(id)",
             '--q="open',
+            "--q=(a)",
+            "--q=*",
+            "--q=a?",
+            "--q=a[0]",
+            "--q=a;id",
         )
         for raw in rejected:
             with self.subTest(raw=raw), self.assertRaises(ValueError):
@@ -321,7 +329,8 @@ class SmokeExecutionTest(unittest.TestCase):
             ("renamed_flag", "--queue_name=${QUEUE_NAME}", False, "queue_name"),
             ("bad_type", "--num_work_units=three", False, "num_work_units"),
             ("positional_leftover", "--queue=x extra", False, "unexpected positional args"),
-            ("quoted_value_split_like_nightly", '--queue="a b"', False, "unexpected positional"),
+            ("quoted_value_preserved_like_nightly", '--queue="a b"', True, ""),
+            ("empty_quoted_arg_is_positional", '--queue=x ""', False, "unexpected positional"),
             ("validators_run_without_args", "", False, "queue"),
         )
         for name, args, expected_ok, expected_error in cases:

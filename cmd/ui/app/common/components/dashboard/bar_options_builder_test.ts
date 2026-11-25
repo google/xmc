@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import type { BarSeriesOption, XAXisComponentOption, YAXisComponentOption } from 'echarts';
+
 import { PlotData, PlotSpec, PlotType } from 'app/service/dashboard_models';
 
 import { buildBarOption } from './bar_options_builder';
@@ -40,8 +42,9 @@ describe('bar_options_builder', () => {
 
     it('should build bar chart with categories, values, and series name from spec title', () => {
       const option = buildBarOption(mockSpec, mockBarData);
-      expect((option.xAxis as any)?.data).toEqual(['WorkUnit 1', 'WorkUnit 2', 'WorkUnit 3']);
-      const seriesArr = option.series as any[];
+      const xAxis = option.xAxis as XAXisComponentOption & { data?: string[] };
+      expect(xAxis?.data).toEqual(['WorkUnit 1', 'WorkUnit 2', 'WorkUnit 3']);
+      const seriesArr = option.series as BarSeriesOption[];
       expect(seriesArr[0].type).toBe('bar');
       expect(seriesArr[0].name).toBe('Accuracy Distribution');
       expect(seriesArr[0].data).toEqual([0.92, 0.88, 0.94]);
@@ -53,8 +56,9 @@ describe('bar_options_builder', () => {
         coords: { yMin: 0, yMax: 1.0 },
       };
       const option = buildBarOption(specWithCoords, mockBarData);
-      expect((option.yAxis as any)?.min).toBe(0);
-      expect((option.yAxis as any)?.max).toBe(1.0);
+      const yAxis = option.yAxis as YAXisComponentOption;
+      expect(yAxis?.min).toBe(0);
+      expect(yAxis?.max).toBe(1.0);
     });
 
     it('should fallback series name to metricName or Value when spec title is omitted', () => {
@@ -64,7 +68,7 @@ describe('bar_options_builder', () => {
         data: { metrics: ['eval/accuracy'] },
       };
       const optionMetric = buildBarOption(specNoTitle, mockBarData);
-      expect((optionMetric.series as any[])[0].name).toBe('eval/accuracy');
+      expect((optionMetric.series as BarSeriesOption[])[0].name).toBe('eval/accuracy');
 
       const dataNoMetric: PlotData = {
         plotId: 'accuracy_dist',
@@ -74,7 +78,7 @@ describe('bar_options_builder', () => {
         },
       };
       const optionFallback = buildBarOption(specNoTitle, dataNoMetric);
-      expect((optionFallback.series as any[])[0].name).toBe('Value');
+      expect((optionFallback.series as BarSeriesOption[])[0].name).toBe('Value');
     });
   });
 });

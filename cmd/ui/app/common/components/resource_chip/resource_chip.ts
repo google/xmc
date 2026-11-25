@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatChipsModule } from '@angular/material/chips';
 
 /** The resource type */
@@ -22,6 +22,14 @@ export enum ResourceType {
   TPU = 'TPU',
   UNKNOWN = 'UNKNOWN',
 }
+
+const RESOURCE_COLOR_MAP: Readonly<Record<ResourceType, string>> = {
+  [ResourceType.CPU]: 'grey',
+  [ResourceType.MEMORY]: 'grey',
+  [ResourceType.UNKNOWN]: 'grey',
+  [ResourceType.GPU]: 'green',
+  [ResourceType.TPU]: 'green',
+};
 
 /** The resource chip component. */
 @Component({
@@ -36,5 +44,5 @@ export class ResourceChip {
   readonly resourceType = input.required<ResourceType>();
   readonly text = input.required<string>();
 
-  readonly ResourceType = ResourceType;
+  protected readonly chipColor = computed(() => RESOURCE_COLOR_MAP[this.resourceType()]);
 }

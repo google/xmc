@@ -177,4 +177,26 @@ describe('SmartResourceFinderComponent', () => {
       'The primary resource used to calculate and display queue velocity and pending demand metrics on queue cards.',
     );
   });
+
+  it('should compute remove button aria-labels from row resource types and re-index on removal', async () => {
+    await harness.clickAddButton();
+    await harness.clickAddButton();
+    await harness.selectResourceType(0, 'nvidia.com/gpu');
+    await harness.selectResourceType(2, 'tpu');
+    fixture.detectChanges();
+
+    expect(await harness.getRemoveButtonAriaLabels()).toEqual([
+      'Remove nvidia.com/gpu (row 1)',
+      'Remove resource filter (row 2)',
+      'Remove tpu (row 3)',
+    ]);
+
+    await harness.clickRemoveButton(1);
+    fixture.detectChanges();
+
+    expect(await harness.getRemoveButtonAriaLabels()).toEqual([
+      'Remove nvidia.com/gpu (row 1)',
+      'Remove tpu (row 2)',
+    ]);
+  });
 });

@@ -30,13 +30,15 @@ genrule(
             "*.html",
             "*.json",
             "*.svg",
-            "nginx.conf",
-            "generate_config.sh",
         ],
         allow_empty = True,
-    ) + [":build_ui_oci.py"],
+    ) + [
+        "nginx.conf",
+        "generate_config.sh",
+        ":build_ui_oci.py",
+    ],
     outs = ["ui_image_tarball.tar"],
-    cmd = "python3 $(location :build_ui_oci.py) $@",
+    cmd = "python3 $(execpath :build_ui_oci.py) $@",
     tools = [":build_ui_oci.py"],
     visibility = ["//visibility:public"],
 )
@@ -141,9 +143,9 @@ py_test(
         "*.html",
         "*.json",
         "*.svg",
-        "package-lock.json",
+    ]) + [
         "karma.conf.js",
-    ]),
+    ],
     main = "run_ui_tests.py",
     tags = [
         "local",

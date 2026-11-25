@@ -24,6 +24,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/storage"
 )
 
@@ -55,6 +56,7 @@ func TestPausedTaskRoundTrip(t *testing.T) {
 		ExecutionCreateTime: createTime, ExecutionUpdateTime: createTime, ExecutionCompleteTime: &completeTime, ExecutionID: 3,
 		WorkUnitStatus:     mustMarshal(t, &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_SCHEDULING_PAUSED}),
 		WorkUnitCreateTime: createTime, WorkUnitUpdateTime: completeTime,
+		Parameters: mustMarshal(t, experimenttest.TrialParameters()), TrialID: proto.String("trial-1"),
 	})
 	if err != nil {
 		t.Fatalf("PendingPausedTaskRowToTask() unexpected error: %v", err)
@@ -70,6 +72,7 @@ func TestPausedTaskRoundTrip(t *testing.T) {
 			CreateTime: timestamppb.New(createTime), UpdateTime: timestamppb.New(createTime), CompleteTime: timestamppb.New(completeTime),
 		},
 		CreateTime: timestamppb.New(createTime), UpdateTime: timestamppb.New(completeTime),
+		Parameters: experimenttest.TrialParameters(), TrialId: "trial-1",
 	}
 	if diff := cmp.Diff(&want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("round trip mismatch (-want +got):\n%s", diff)
@@ -87,6 +90,7 @@ func TestPendingPausedTaskRowToTask_CorruptProto(t *testing.T) {
 		{name: "executable", row: PendingPausedTaskRow{Executable: corrupt}},
 		{name: "execution_metadata", row: PendingPausedTaskRow{ExecutionMetadata: corrupt}},
 		{name: "work_unit_status", row: PendingPausedTaskRow{WorkUnitStatus: corrupt}},
+		{name: "parameters", row: PendingPausedTaskRow{Parameters: corrupt}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

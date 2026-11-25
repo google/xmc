@@ -435,6 +435,16 @@ func TestBatchRestartWorkUnits_TaskEnqueueFails(t *testing.T) {
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("BatchRestartWorkUnits() returned error %v, want %v", err, grpcerr.ErrInternal)
 	}
+	if got := len(taskQueueClient.EnqueuedTasks); got != 1 {
+		t.Fatalf("BatchRestartWorkUnits() attempted %d enqueues, want 1", got)
+	}
+	checkOperationStopped(t, storage, 123, 456)
+	checkSystemMessage(t, storage, 456, "experiments/123/workUnits/456/executions/2", &msgpb.StructuredMessage{
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		Severity:       msgpb.StructuredMessage_FATAL,
+		UserFacingText: "Failed to restart work unit. Please try again.",
+		Parent:         "experiments/123/workUnits/456",
+	})
 }
 
 func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
@@ -502,6 +512,9 @@ func TestBatchRestartWorkUnits_PartialFailure(t *testing.T) {
 			t.Errorf("New work unit execution for work unit %d has wrong execution ID: got %d, want 2", workUnitID, eid)
 		}
 	}
+
+	// Verify only the failed enqueue closed its operation and recorded a FATAL status message.
+	checkPartialEnqueueOperations(ctx, t, server.WorkUnitHandler.storage, xid, taskQueueClient.EnqueuedTasks, "restart", msgpb.StructuredMessage_FATAL)
 }
 
 func TestBatchRestartWorkUnits_NoCurrentExecutionFails(t *testing.T) {

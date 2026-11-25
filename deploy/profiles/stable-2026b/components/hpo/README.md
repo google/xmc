@@ -3,7 +3,7 @@
 This Helm sub-chart (`deploy/profiles/stable-2026b/components/hpo/`) defines the XMC 1P Native Component blueprint ([`templates/component.yaml`](templates/component.yaml)) for **Hyperparameter Optimization (HPO)** (`hyperparameter-optimization`) and the `xmc-study-controller` workload that `xmc-bridge` actuates for it ([`templates/deployment.yaml`](templates/deployment.yaml), [`templates/serviceaccount.yaml`](templates/serviceaccount.yaml)).
 
 > [!NOTE]
-> The `xmc-study-controller` workload is a `Deployment` and a plain `ServiceAccount` only. It consumes study reconcile ticks from Redis under a per-study Redis lease lock and logs them, and serves health and metrics endpoints; it does not yet reconcile studies. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries no Workload Identity annotation.
+> The `xmc-study-controller` workload is a `Deployment` and a `ServiceAccount` only. It consumes study reconcile ticks from Redis under a per-study Redis lease lock, authenticates to the Experiment State Server (ESS) with its Workload Identity Google ID token to re-read and gate each ticked experiment (`STUDY` + `ACTIVE`), and serves health and metrics endpoints; it does not yet orchestrate Vizier or ClickHouse. The chart renders no `Service`, `Role`/`RoleBinding`, `NetworkPolicy` or `ConfigMap`, and the `ServiceAccount` carries a Workload Identity annotation when `parameters.studyControllerServiceAccount` is set.
 
 ---
 
@@ -37,13 +37,14 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
 | `dependencies` | `["vizier", "clickhouse"]` | `spec.dependencies` | Upstream XMC Component names required before `hpo` is actuated. |
 | `parameters.maxTrialBudget` | `"1000"` | `spec.parameters.maxTrialBudget` | Largest `max_trial_budget` a study may use: a positive decimal integer, at most `2147483647`. The Experiment State Server reads it when a study is created, clamps larger budgets to it, and records a WARNING status message on the experiment; a missing or invalid value falls back to `1000`. A change applies to studies created afterwards; existing studies keep their stored budget. `xmc-bridge` also passes the value into the `xmc-cmp-hpo` release values, where it is unused, so changing it triggers a no-op upgrade during which study creation may briefly return `FAILED_PRECONDITION`. The profile release is upgraded with `--reset-then-reuse-values`, so removing an override does not revert it; set `"1000"` explicitly instead. |
+| `parameters.studyControllerServiceAccount` | `""` | `spec.parameters.studyControllerServiceAccount` (omitted when empty) | Email of the Google service account that `xmc-study-controller` runs as through Workload Identity, for example `xmc-sc-sa@<project>.iam.gserviceaccount.com` in CTK v2 installs. The Experiment State Server admits this identity on gRPC, allows it to read `STUDY` experiments via `GetExperiment` without XID ACLs, and lets only this identity create the work units (trials) of studies with `BatchCreateWorkUnits`, comparing emails case-insensitively; while it is empty every caller gets `PERMISSION_DENIED` on `BatchCreateWorkUnits` and falls through to normal XID ACLs on `GetExperiment`. `xmc-bridge` passes it to the `xmc-cmp-hpo` release as `hpoDeployment.studyControllerServiceAccount`, which renders it as the `iam.gke.io/gcp-service-account` annotation of the `xmc-study-controller` ServiceAccount. CTK v2 ([`deploy/ctk_v2/xmanager-cloud.yaml`](../../../../ctk_v2/xmanager-cloud.yaml)) provisions the `xmc-sc-sa` Google service account (with `project_roles: []`) and its Workload Identity binding to `xmc-study-controller` automatically (operators pass its email when installing `xmc-profile`); non-CTK installs create the service account and binding manually. |
 
 ---
 
 ## 3. Actuation Lifecycle
 
 1. **Declare intent**: install the [`stable-2026b` profile](../../README.md) with `components.vizier.enabled=true`, `components.vizier.acknowledgeExperimental=true`, `components.clickhouse.enabled=true`, `components.hpo.enabled=true`, and `components.hpo.acknowledgeExperimental=true`.
-2. **Actuate**: once `vizier` and `clickhouse` report `Ready=True`, `xmc-bridge` installs the `xmc-cmp-hpo` release from the embedded chart (`deploy/profiles/stable-2026b/charts.go`). [`templates/component.yaml`](templates/component.yaml) is guarded by `{{- if not (hasPrefix "xmc-cmp-" .Release.Name) -}}` so the `xmc-cmp-hpo` release never re-renders the `Component` CR, and the workload templates are guarded by `{{- if hasPrefix "xmc-cmp-" .Release.Name }}` so the profile release never renders them. While a dependency is not Ready, `hpo` reports `Ready=False` with reason `DependenciesNotReady` and no `xmc-cmp-hpo` release exists.
+2. **Actuate**: once `vizier` and `clickhouse` report `Ready=True`, `xmc-bridge` installs the `xmc-cmp-hpo` release from the embedded chart ([`deploy/profiles/stable-2026b/charts.go`](../../charts.go)). [`templates/component.yaml`](templates/component.yaml) is guarded by `{{- if not (hasPrefix "xmc-cmp-" .Release.Name) -}}` so the `xmc-cmp-hpo` release never re-renders the `Component` CR, and the workload templates are guarded by `{{- if hasPrefix "xmc-cmp-" .Release.Name }}` so the profile release never renders them. While a dependency is not Ready, `hpo` reports `Ready=False` with reason `DependenciesNotReady` and no `xmc-cmp-hpo` release exists.
 3. **Deactivate**: setting `components.hpo.enabled=false` makes `xmc-bridge` uninstall `xmc-cmp-hpo`.
 
 ---
@@ -55,9 +56,17 @@ Rendered only for the `xmc-cmp-hpo` release:
 | Object | Name | Notes |
 | :--- | :--- | :--- |
 | `Deployment` | `xmc-study-controller` | 1 replica of [`cmd/study_controller`](../../../../../cmd/study_controller). Serves `/healthz` (liveness), `/readyz` (readiness, see [Redis Connection](#redis-connection)) and `/metrics` (Prometheus) on HTTP port `8080`. Runs as non-root with a read-only root filesystem and no service account token. |
-| `ServiceAccount` | `xmc-study-controller` | Pod identity, without a Workload Identity annotation. |
+| `ServiceAccount` | `xmc-study-controller` | Pod identity. Carries the Workload Identity annotation `iam.gke.io/gcp-service-account` when `parameters.studyControllerServiceAccount` is set. |
 
 The pod carries the label `xmc.google.com/vizier-client: "true"`. XMC ships no NetworkPolicy for Vizier, which is bring-your-own; operators who restrict access to their Vizier server can admit pods with this label.
+
+### Securing the Study Controller Identity
+
+The Experiment State Server admits the identity in `parameters.studyControllerServiceAccount` on gRPC, allows it to read any `STUDY` experiment via `GetExperiment` without XID ACLs, and lets only that identity create study trials with `BatchCreateWorkUnits`. Experiment owners and writers can't create trials (see [Trust Boundary](../../../../../cmd/experiment_state_server/README.md#trust-boundary)). Anyone who controls that identity can read studies and create trials, so restrict all three of these:
+
+- **Google service account:** grant `roles/iam.workloadIdentityUser` only to `serviceAccount:<project>.svc.id.goog[<namespace>/xmc-study-controller]`, and grant `roles/iam.serviceAccountTokenCreator` on it to no one.
+- **Release namespace:** limit who can create pods or set `serviceAccountName: xmc-study-controller` in the namespace where XMC runs.
+- **`hpo` Component:** limit who can edit `Component` resources (`components.xmc.dev`) and the profile values, since they choose the identity.
 
 `xmc-bridge` may only manage the objects named above; their names are allowlisted in the bridge Role ([`deploy/helm/templates/components/rbac.yaml`](../../../../helm/templates/components/rbac.yaml)), so renaming or adding an object requires updating that Role.
 
@@ -70,13 +79,21 @@ The Study Controller connects to the XMC Redis server:
 - **Readiness**: `/readyz` pings Redis with a 2s timeout and returns `503 Service Unavailable` when the ping fails, so the pod reports `NotReady` while Redis is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check Redis, so a Redis outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect Redis reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
 - **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping.
 
+### ESS Connection
+
+The Study Controller calls the Experiment State Server over plaintext in-cluster gRPC (h2c) using Google ID tokens minted via Workload Identity:
+
+- **Address (`-ess_addr`)**: `xmc-bridge` reads `ESS_ADDR` (defaulting to `CMS_ADDRESS` / `grpc-service:50051` in `xmc-bridge-config`) and injects it into every 1P release as `<component>Deployment.essAddr`. Any `essAddr` Component parameter or raw value is stripped (bridge-wins) so a Component CR cannot redirect the controller's Google ID token to an arbitrary host. The chart renders `-ess_addr` with fail-closed `required`.
+- **Audience (`-ess_audience`)**: `xmc-bridge` resolves the gRPC audience from `IAP_EXPECTED_GRPC_AUDIENCE` (falling back to `CLIENT_ID` when unset or placeholder) and injects it as `<component>Deployment.essAudience`, stripping any Component override. The chart renders `-ess_audience` with fail-closed `required`.
+- **Identity**: `deploy/ctk_v2/xmanager-cloud.yaml` provisions the `xmc-sc-sa` Google service account (no project IAM roles) and binds it to the `xmc-study-controller` Kubernetes ServiceAccount via Workload Identity. Passing `xmc-sc-sa@<project>.iam.gserviceaccount.com` in `parameters.studyControllerServiceAccount` annotates the ServiceAccount and authorizes the controller in ESS.
+
 ### Study Reconcile Ticks
 
 The Study Controller consumes the `xmc-study-reconcile-stream` Redis stream as the `study-controller-group` consumer group, sharing a single Redis connection pool across stream consumption, per-study locking, and `/readyz`. Each message is a protojson `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`) that names a study; ticks are unsigned hints, delivered at least once.
 
 Each delivered tick is classified by outcome (`xmc_study_controller_reconcile_ticks_total{outcome}`); for valid payloads, the controller acquires an advisory distributed per-study lease at `xmc:study-reconcile-lock:{xid}` (`SET ... NX PX` with a random 16-byte token, 70s lease TTL exceeding the 60s reconcile timeout, and token-checked Lua `DEL`):
 
-- **Acquired (`reconciled`)**: reconciles the study (currently a stub), releases the lease, logs `Processed study reconcile tick` at info level with the study's XID, and acknowledges the tick.
+- **Acquired (`reconciled`)**: re-reads `experiments/{xid}` from ESS via `GetExperiment` using its Workload Identity Google ID token. Ticks for missing (`NotFound`), non-`STUDY`, or inactive (`status.active_state != ACTIVE`) experiments are logged and acknowledged as no-ops; active `STUDY` experiments log their verified state and are acknowledged after releasing the lease.
 - **Already held (`contended`)**: logs `Skipped contended study reconcile tick` at info level and acknowledges the tick without reconciling so multi-replica deployments never reconcile the same study concurrently.
 - **Lock or reconcile failure (`retry_error`)**: releases any acquired lease if still owned and retries the tick via stream redelivery.
 - **Malformed payload (`invalid_payload`)**: a payload whose `data` does not decode to a valid `experiments/{xid}` resource name goes to the `xmc-study-reconcile-dlq-stream` dead-letter stream without acquiring the lock or retrying (raw stream entries missing a `data` field are dead-lettered directly by the stream consumer before the handler runs).

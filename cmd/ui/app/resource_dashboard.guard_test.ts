@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { TestBed } from '@angular/core/testing';
-import { Router, UrlTree } from '@angular/router';
+import { ActivatedRouteSnapshot, Router, RouterStateSnapshot, UrlTree } from '@angular/router';
 
 import { resourceDashboardGuard } from './resource_dashboard.guard';
 import { FeatureFlagService } from './service/feature_flag_service';
@@ -48,7 +48,7 @@ describe('resourceDashboardGuard', () => {
 
     it('should return true and not redirect', () => {
       const result = TestBed.runInInjectionContext(() =>
-        resourceDashboardGuard({} as any, {} as any),
+        resourceDashboardGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
       );
 
       expect(result).toBeTrue();
@@ -61,7 +61,7 @@ describe('resourceDashboardGuard', () => {
 
     it('should return UrlTree redirecting to /', () => {
       const result = TestBed.runInInjectionContext(() =>
-        resourceDashboardGuard({} as any, {} as any),
+        resourceDashboardGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot),
       );
 
       expect(result).toEqual('/' as unknown as UrlTree);

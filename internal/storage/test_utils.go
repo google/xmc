@@ -15,15 +15,19 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	msgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/pkg/components/store"
 )
 
@@ -237,6 +241,8 @@ type MockStorage struct {
 	NextWorkUnitID                    int64
 	InsertWorkUnitErr                 error
 	InsertedWorkUnit                  *essmsgpb.WorkUnit
+	InsertWorkUnitsErr                error
+	InsertedWorkUnits                 []*essmsgpb.WorkUnit
 	AddWorkUnitOperationErr           error
 	LROOp                             *lropb.Operation
 	UpdateCurrentWorkUnitExecutionErr error
@@ -430,25 +436,65 @@ func (s *MockStorage) InsertWorkUnit(ctx context.Context, wu *essmsgpb.WorkUnit)
 	return nil
 }
 
-// AddWorkUnitOperation mocks adding a work unit operation.
+// InsertWorkUnits mocks inserting a batch of work units within a transaction and records copies.
+func (s *MockStorage) InsertWorkUnits(ctx context.Context, wus []*essmsgpb.WorkUnit) error {
+	if s.InsertWorkUnitsErr != nil {
+		return s.InsertWorkUnitsErr
+	}
+	s.InsertedWorkUnits = make([]*essmsgpb.WorkUnit, len(wus))
+	for i, wu := range wus {
+		s.InsertedWorkUnits[i] = proto.Clone(wu).(*essmsgpb.WorkUnit)
+	}
+	return nil
+}
+
+// AddWorkUnitOperation mocks adding a work unit operation. It returns LROOp when set. Otherwise,
+// like real storage, it returns a new pending operation named after xid and wid, so callers that
+// later complete or fail the operation reach UpdateWorkUnitOperation. Like both real backends, the
+// default path rejects nil metadata; like Postgres, the error wraps grpcerr.ErrInvalidArgument.
 func (s *MockStorage) AddWorkUnitOperation(ctx context.Context, xid int64, wid int64, metadata *essmsgpb.OperationMetadata) (*lropb.Operation, error) {
 	if s.AddWorkUnitOperationErr != nil {
 		return nil, s.AddWorkUnitOperationErr
 	}
-	return s.LROOp, nil
+	if s.LROOp != nil {
+		return s.LROOp, nil
+	}
+	if metadata == nil {
+		return nil, fmt.Errorf("operation metadata must not be nil: %w", grpcerr.ErrInvalidArgument)
+	}
+	anyMetadata, err := anypb.New(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal operation metadata to Any: %w", err)
+	}
+	return &lropb.Operation{
+		Name:     validator.ConstructOperationName(xid, wid, uuid.NewString()),
+		Metadata: anyMetadata,
+	}, nil
 }
 
 // FetchUpdatingWorkUnits mocks fetching a batch of work units for update within a transaction.
+// Like real storage, it reads earlier writes: the base work unit is WorkUnit, or the last
+// InsertedWorkUnit when WorkUnit is unset, and its current execution is the last one written for
+// that wid through UpdateCurrentWorkUnitExecution. Unlike real storage, the mock never rolls back,
+// so writes made by a failed transaction callback stay visible here.
 func (s *MockStorage) FetchUpdatingWorkUnits(ctx context.Context, xid int64, wids []int64) (map[int64]*essmsgpb.WorkUnit, error) {
 	if s.FetchWorkUnitErr != nil {
 		return nil, s.FetchWorkUnitErr
 	}
-	if s.WorkUnit == nil {
+	base := s.WorkUnit
+	if base == nil {
+		base = s.InsertedWorkUnit
+	}
+	if base == nil {
 		return nil, nil
 	}
 	res := make(map[int64]*essmsgpb.WorkUnit, len(wids))
 	for _, wid := range wids {
-		res[wid] = proto.Clone(s.WorkUnit).(*essmsgpb.WorkUnit)
+		wu := proto.Clone(base).(*essmsgpb.WorkUnit)
+		if execution, ok := s.UpdatedWorkUnitExecutions[wid]; ok {
+			wu.CurrentWorkUnitExecution = proto.Clone(execution).(*essmsgpb.WorkUnitExecution)
+		}
+		res[wid] = wu
 	}
 	return res, nil
 }

@@ -299,6 +299,7 @@ func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 			name: "fetch_next_work_unit_id_error",
 			wid:  0,
 			storage: &storage.MockStorage{
+				Experiment:             &essmsgpb.Experiment{Name: "experiments/123"},
 				FetchNextWorkUnitIDErr: boomErr,
 			},
 			wantErr: boomErr,
@@ -307,6 +308,7 @@ func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 			name: "insert_work_unit_error",
 			wid:  1,
 			storage: &storage.MockStorage{
+				Experiment:        &essmsgpb.Experiment{Name: "experiments/123"},
 				InsertWorkUnitErr: boomErr,
 			},
 			wantErr: boomErr,
@@ -318,6 +320,21 @@ func TestCreateWorkUnit_TransactionRetryAndErrorPaths(t *testing.T) {
 				FetchExperimentErr: boomErr,
 			},
 			wantErr: boomErr,
+		},
+		{
+			// The ID and insert sentinels prove the parent check runs before either call.
+			name: "study_experiment_rejected_before_id_and_insert",
+			wid:  0,
+			storage: &storage.MockStorage{
+				FetchNextWorkUnitIDErr: boomErr,
+				InsertWorkUnitErr:      boomErr,
+				Experiment: &essmsgpb.Experiment{
+					Name:           "experiments/123",
+					ExperimentType: essmsgpb.Experiment_STUDY,
+					Status:         &essmsgpb.ExperimentStatus{},
+				},
+			},
+			wantErr: workunit.ErrStudyWorkUnitCreation,
 		},
 		{
 			name: "save_status_message_history_error",

@@ -38,6 +38,9 @@ spec:
   {{- $params := .Values.parameters | default dict }}
   parameters:
     endpoint: {{ $params.endpoint | default "vizier-service.xmc.svc.cluster.local:7077" | quote }}
+    {{- with $params.healthCheckEndpoint }}
+    healthCheckEndpoint: {{ . | quote }}
+    {{- end }}
   {{- if .Values.dependencies }}
   dependencies: {{ .Values.dependencies | toYaml | nindent 4 }}
   {{- end }}

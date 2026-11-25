@@ -103,7 +103,9 @@ func initTaskQueueClient(ctx context.Context, cfg *config.Config, oauthCfg *oaut
 	if err != nil {
 		return nil, fmt.Errorf("failed to load signing key: %w", err)
 	}
-	var opts []tq.Option
+	// Context deadlines bound the task queue's socket I/O, so a hung Redis fails an enqueue at the
+	// RPC deadline instead of the client's fixed read and write timeouts.
+	opts := []tq.Option{tq.WithRedisContextTimeout()}
 	if oauthCfg != nil && oauthCfg.IsNonProdAuth() && oauthCfg.TokenURL != "" && oauthCfg.ClientID != "" {
 		opts = append(opts, tq.WithTokenProvider(tq.NewOidcTokenProvider(tq.OidcTokenProviderConfig{
 			TokenURL:     oauthCfg.TokenURL,
@@ -222,8 +224,9 @@ func initProdStorage(ctx context.Context) (*dbfactory.Storage, func() error, err
 }
 
 // NewProd creates and initializes a production Server instance along with its dependencies.
-// admission is the deployment admission check (normally authz.DeploymentAdmission of the binary's
-// oauth2.Authenticator) that every authenticated gRPC caller must pass.
+// admission is the base deployment admission check (normally authz.DeploymentAdmission of the
+// binary's oauth2.Authenticator); NewProd wraps it with studyControllerAdmission so the active
+// hpo component's studyControllerServiceAccount is also admitted on gRPC.
 func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, admission authz.AdmissionChecker) (_ *ProdServer, retErr error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config cannot be nil")
@@ -245,7 +248,7 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	}
 	cleanups = append(cleanups, storageCleanup)
 
-	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, admission)
+	auth, err := NewGRPCAuthorizer(ctx, cfg, oauthCfg, studyControllerAdmission(admission, st.Components()))
 	if err != nil {
 		return nil, err
 	}

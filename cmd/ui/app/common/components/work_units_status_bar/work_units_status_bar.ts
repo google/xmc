@@ -17,6 +17,40 @@ import { MatMenuModule } from '@angular/material/menu';
 
 import { ExperimentStatus, WorkUnitStatus } from 'app/protos/experiment_state_server';
 
+interface StateCountView {
+  readonly key: string;
+  readonly label: string;
+  readonly count: string;
+  readonly width: string;
+  readonly segmentClass: string;
+  readonly squareClass: string;
+}
+
+const FALLBACK_STATE_CLASS = 'unknown-state';
+const UNSPECIFIED_STATE = 'WORK_UNIT_STATE_UNSPECIFIED';
+
+function stateSortIndex(state: WorkUnitStatus.WorkUnitState | undefined): number {
+  const index = ORDERED_STATES.indexOf(state ?? UNSPECIFIED_STATE);
+  return index === -1 ? ORDERED_STATES.length : index;
+}
+
+const STATE_CLASS_MAP: Readonly<Record<string, string>> = {
+  INITIALIZING: 'INITIALIZING',
+  PENDING: 'PENDING',
+  SCHEDULING_PAUSED: 'SCHEDULING_PAUSED',
+  SCHEDULING: 'SCHEDULING',
+  STARTING: 'STARTING',
+  RUNNING: 'RUNNING',
+  PARTIALLY_FAILED: 'PARTIALLY_FAILED',
+  STOPPING: 'STOPPING',
+  RESTARTING: 'RESTARTING',
+  STOPPED: 'STOPPED',
+  DESCHEDULING: 'DESCHEDULING',
+  COMPLETED: 'COMPLETED',
+  FAILED: 'FAILED',
+  WORK_UNIT_STATE_UNSPECIFIED: UNSPECIFIED_STATE,
+};
+
 /**
  * A horizontal stacked bar.
  * Showing the proportional distribution of an experiment's work units across
@@ -42,12 +76,27 @@ export class WorkUnitsStatusBar {
 
   /** Sort by state so the status bar looks consistent. */
   readonly sortedStateCounts: Signal<ExperimentStatus.StateCount[]> = computed(() => {
-    return this.stateCounts().toSorted((a, b) => {
-      return (
-        ORDERED_STATES.indexOf(a.state ?? 'WORK_UNIT_STATE_UNSPECIFIED') -
-        ORDERED_STATES.indexOf(b.state ?? 'WORK_UNIT_STATE_UNSPECIFIED')
-      );
-    });
+    return this.stateCounts().toSorted((a, b) => stateSortIndex(a.state) - stateSortIndex(b.state));
+  });
+
+  protected readonly visibleStateViews: Signal<ReadonlyArray<StateCountView>> = computed(() => {
+    return this.sortedStateCounts()
+      .filter((stateCount) => Boolean(stateCount.count && stateCount.count !== '0'))
+      .map((stateCount, index) => {
+        const count = String(stateCount.count);
+        const stateName = stateCount.state ?? UNSPECIFIED_STATE;
+        const cssClass = stateCount.state
+          ? (STATE_CLASS_MAP[stateCount.state] ?? FALLBACK_STATE_CLASS)
+          : FALLBACK_STATE_CLASS;
+        return {
+          key: `${stateCount.state ?? UNSPECIFIED_STATE}-${index}`,
+          label: stateName.toLowerCase(),
+          count,
+          width: this.getWidth(count),
+          segmentClass: `state ${cssClass}`,
+          squareClass: `square ${cssClass}`,
+        };
+      });
   });
 
   /**

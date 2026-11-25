@@ -54,7 +54,7 @@ export class MockHealthService extends HealthService {
         },
       ],
       healthCheckTime: { seconds: 1717804800, nanos: 0 },
-    } as any);
+    });
   }
 
   override getHealthConfigs(): Observable<ListConfigEntriesResponse> {
@@ -69,14 +69,14 @@ export class MockHealthService extends HealthService {
           ],
         },
       ],
-    } as any);
+    });
   }
 
   override getUserInfo(): Observable<UserInfoResponse> {
     return of({
       userEmail: 'mock-user@google.com',
       privileges: ['PRIVILEGE_ACCESS_ADMIN_PANEL'],
-    } as any);
+    });
   }
 
   override getSchedulingStatus(): Observable<GetSchedulingStatusResponse> {

@@ -131,6 +131,7 @@ py_test(
     data = [
         "//deploy/ctk_v2:blueprint",
         "//deploy/helm:chart",
+        "//deploy/profiles/stable-2026b/components/hpo:chart",
     ],
     imports = [
         ".",

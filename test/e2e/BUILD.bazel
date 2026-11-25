@@ -55,6 +55,7 @@ _KIND_3P_DEPS = [
     "//api/protos/components/v1alpha1",
     "//pkg/components/bridge",
     "//pkg/components/bridge/healthprobe",
+    "//pkg/components/bridge/healthprobe/healthprobetest",
     "//pkg/components/bridge/helm",
     "//pkg/components/bridge/statusdetector",
     "//pkg/components/cms",

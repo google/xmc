@@ -20,7 +20,7 @@ Runs:
    containers).
 2. `secondary-counter` (1 replica running a second distinct pod role in the same
    WorkUnit).
-Leverages the XManager library (`pip install xmanager`).
+Leverages the XManager library (`pip install "xmanager>=0.8.5.post1,<0.9.0"`).
 """
 
 import logging

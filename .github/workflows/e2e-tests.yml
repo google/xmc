@@ -142,7 +142,7 @@ jobs:
       - name: 'Install Kubectl, KinD, and Helm'
         run: |
           mkdir -p "${HOME}/.local/bin"
-          echo "${HOME}/.local/bin" >> $GITHUB_PATH
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
           export PATH="${HOME}/.local/bin:${PATH}"
 
           if ! command -v kubectl &>/dev/null; then

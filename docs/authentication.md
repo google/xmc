@@ -18,7 +18,7 @@ Emails, domains, and IAM members match the same way as [ACL principals](#experim
 
 ## Interactive Use: `xmanager login`
 
-Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1` and XMC `>= 0.16.0`), installed via `pip install "xmanager>=0.8.5.post1"` or [`install_xmanager.py`](../deploy/cli/README.md):
+Sign in as yourself with the `xmanager` CLI (requires `xmanager >= 0.8.5.post1, < 0.9.0` and XMC `>= 0.16.0`), installed via `pip install "xmanager>=0.8.5.post1,<0.9.0"` or [`install_xmanager.py`](../deploy/cli/README.md):
 
 ```bash
 xmanager login   # Reads XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN from the environment.

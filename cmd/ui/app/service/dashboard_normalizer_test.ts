@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { MetricPolarity, PlotType } from './dashboard_models';
+import { MetricPolarity, PlotSpec, PlotType } from './dashboard_models';
 import {
   normalizeChart,
   normalizeChartData,
@@ -217,7 +217,7 @@ describe('dashboard_normalizer', () => {
     it('should defensively ensure metrics array when data is an empty object', () => {
       const spec = normalizePlotSpec({
         plot_id: 'spec_empty_data',
-        data: {} as unknown as any,
+        data: {} as PlotSpec['data'],
       });
 
       expect(spec.data?.metrics).toEqual([]);

@@ -15,7 +15,10 @@
 // Package experimenttest provides experiment test fixtures shared across packages.
 package experimenttest
 
-import essmsgpb "xmanager_cloud/api/protos/experiment"
+import (
+	structpb "google.golang.org/protobuf/types/known/structpb"
+	essmsgpb "xmanager_cloud/api/protos/experiment"
+)
 
 // StudyConfig returns a new valid single-objective study config that uses every parameter type.
 // Derive variants with prototest.Modify.
@@ -46,4 +49,14 @@ func StudyConfig() *essmsgpb.StudyConfig {
 		Algorithm:         "RANDOM_SEARCH",
 		MaxParallelTrials: 2,
 	}
+}
+
+// TrialParameters returns new valid trial parameters for StudyConfig, one value per parameter.
+func TrialParameters() *structpb.Struct {
+	return &structpb.Struct{Fields: map[string]*structpb.Value{
+		"learning_rate": structpb.NewNumberValue(0.01),
+		"batch_size":    structpb.NewNumberValue(32),
+		"optimizer":     structpb.NewStringValue("adam"),
+		"dropout":       structpb.NewNumberValue(0.2),
+	}}
 }

@@ -13,7 +13,7 @@
 // limitations under the License.
 import { TestbedHarnessEnvironment } from '@angular/cdk/testing/testbed';
 import { Component, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { LoadingBar } from './loading_bar';
@@ -29,7 +29,7 @@ class TestHostComponent {
 }
 
 describe('LoadingBar Component', () => {
-  let fixture: any;
+  let fixture: ComponentFixture<TestHostComponent>;
   let hostInstance: TestHostComponent;
   let loadingBarHarness: LoadingBarHarness;
 

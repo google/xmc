@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@rules_buf//buf:defs.bzl", "buf_breaking_test")
+load("@rules_buf//buf:defs.bzl", "buf_breaking_test", "buf_lint_test")
 load("@rules_proto//proto:defs.bzl", "proto_descriptor_set")
 
 # Every //api proto_library. The `cloud_xmanager_v1_proto` targets duplicate
@@ -53,5 +53,12 @@ buf_breaking_test(
     exclude_imports = True,
     # Checks every baseline file, so deleted or renamed files fail.
     limit_to_input_files = False,
+    targets = _PROTOS,
+)
+
+buf_lint_test(
+    name = "protos_lint_test",
+    config = "buf.yaml",
+    error_format = "msvs",
     targets = _PROTOS,
 )

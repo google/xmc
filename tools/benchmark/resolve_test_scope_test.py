@@ -158,17 +158,21 @@ class TestResolveTestScope(unittest.TestCase):
                 patterns = str(scope["bazel_targets"]).split()
                 self.assertEqual(patterns, ["//...", "-//cmd/ui:ui_unit_tests"])
 
-    def test_resolve_test_scope_main_branch_push(self):
-        scope = resolve_test_scope(
-            ["cmd/ui/src/app/app.component.ts"],
-            event_name="push",
-            ref="refs/heads/main",
-            use_rdeps=False,
-        )
-        self.assertTrue(scope["run_backend"])
-        self.assertTrue(scope["run_ui"])
-        self.assertEqual(scope["backend_mode"], "all")
-        self.assertTrue(scope["run_helm"])
+    def test_resolve_test_scope_main_branch_events_run_full_regression(self):
+        # Post-submit (push), the nightly uncached run (schedule), and manual runs on main
+        # (workflow_dispatch) all select the full suite regardless of modified files.
+        for event_name in ("push", "schedule", "workflow_dispatch"):
+            with self.subTest(event_name):
+                scope = resolve_test_scope(
+                    ["cmd/ui/src/app/app.component.ts"],
+                    event_name=event_name,
+                    ref="refs/heads/main",
+                    use_rdeps=False,
+                )
+                self.assertTrue(scope["run_backend"])
+                self.assertTrue(scope["run_ui"])
+                self.assertEqual(scope["backend_mode"], "all")
+                self.assertTrue(scope["run_helm"])
 
     @patch("tools.benchmark.resolve_test_scope.discover_bazel_rdeps_targets")
     def test_resolve_test_scope_rdeps_success(self, mock_rdeps):
@@ -1020,6 +1024,8 @@ class TestHelmSuiteScope(unittest.TestCase):
         for path in (
             "deploy/helm/values.yaml",
             "deploy/helm/templates/reconciler/deployment.yaml",
+            "deploy/profiles/stable-2026b/components/hpo/templates/serviceaccount.yaml",
+            "deploy/profiles/stable-2026b/components/hpo/values.yaml",
             "deploy/ctk_v2/xmanager-cloud.yaml",
             "deploy/ctk_v2/xmc-deployment-template.yaml",
             "test/helm/session_ttl_test.py",
@@ -1030,6 +1036,7 @@ class TestHelmSuiteScope(unittest.TestCase):
             self.assertTrue(touches_helm_suite(["README.md", path]), path)
         for path in (
             "deploy/helmfile.yaml",
+            "deploy/profiles/stable-2026b/components/ess/values.yaml",
             "deploy/ctk_v2/verify_xmc.py",
             ".github/actions/run-ui-tests/action.yml",
             "cmd/ui/src/app/app.component.ts",

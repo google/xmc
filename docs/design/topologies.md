@@ -1,6 +1,6 @@
 # Deployment Topologies
 
-XMC supports two deployment topologies using automated HPC Cluster Toolkit blueprints.
+XMC uses automated HPC Cluster Toolkit blueprints for deployment (Cluster Toolkit Blueprint v2; legacy Blueprint v1 has been removed).
 
 ---
 
@@ -13,7 +13,7 @@ This is the legacy/initial topology which uses:
 - **State & Messaging**: Uses Cloud Spanner for state storage, Memorystore Redis or Cloud Tasks for background queues, and Pub/Sub for log streams.
 - **DNS/IP**: Public IPs and Managed DNS zones.
 
-For more details, see the [deploy/ctk_v1/README.md](../../deploy/ctk_v1/README.md).
+*(Cluster Toolkit Blueprint v1 has been deprecated and removed from this repository in favor of Blueprint v2 below.)*
 
 ---
 

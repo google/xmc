@@ -16,11 +16,12 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   isBotUser,
+  extractDismissalReviewId,
   extractDismissalContext,
+  resolveDismissedReviewState,
+  extractEligibleReviewer,
   parseTimelineReviewEvent,
   resolveActiveApproval,
-  findLatestApprovalFromTimeline,
-  findLatestApprovalFromReviews,
   findLatestApproval,
   GRAPHQL_TIMELINE_QUERY,
   MAX_TIMELINE_PAGES,
@@ -739,6 +740,78 @@ test('fetchRestTimeline paginates events via REST and catches errors', async () 
   };
   const emptyNodes = await fetchRestTimeline(failingGithub, 'google', 'xmc', 123, {});
   assert.deepStrictEqual(emptyNodes, []);
+});
+
+test('extractEligibleReviewer and parseTimelineReviewEvent fall back when user is empty object or empty login', () => {
+  const hybridBlocking = { event: 'reviewed', id: 10, user: {}, author: { login: 'reviewer1' }, state: 'CHANGES_REQUESTED', commit_id: 'sha-block', submitted_at: '2026-09-01T12:00:00Z' };
+  assert.deepStrictEqual(extractEligibleReviewer(hybridBlocking, 'author1'), { reviewer: 'reviewer1', commitSha: 'sha-block' });
+
+  const context = { authorLower: 'author1', manualDismissalIds: new Set(), dismissedReviewPreviousStates: new Map() };
+  const parsedBlocking = parseTimelineReviewEvent(hybridBlocking, context);
+  assert.strictEqual(parsedBlocking.approver, 'reviewer1');
+  assert.strictEqual(parsedBlocking.state, 'CHANGES_REQUESTED');
+
+  assert.deepStrictEqual(parseTimelineReviewEvent({ event: 'reviewed', id: 11, user: { login: '' }, author: { login: 'reviewer2' }, state: 'APPROVED', commit: { oid: 'sha-oid' } }, context), {
+    approver: 'reviewer2', state: 'APPROVED', isDismissed: false, approvedSha: 'sha-oid', submittedAt: undefined
+  });
+
+  const timelineEvents = [
+    { id: 1, event: 'reviewed', user: { login: 'alice' }, state: 'APPROVED', commit_id: 'sha-1', submitted_at: '2026-09-01T10:00:00Z' },
+    hybridBlocking
+  ];
+  assert.strictEqual(findLatestApproval([], 'author1', timelineEvents), null);
+});
+
+test('resolveDismissedReviewState returns null for missing ID, unknown ID, or non-actionable state', () => {
+  const prevStates = new Map([[10, 'APPROVED'], ['20', 'CHANGES_REQUESTED'], [30, 'COMMENTED']]);
+  assert.strictEqual(resolveDismissedReviewState(null, prevStates), null);
+  assert.strictEqual(resolveDismissedReviewState(undefined, prevStates), null);
+  assert.strictEqual(resolveDismissedReviewState(0, prevStates), null);
+  assert.strictEqual(resolveDismissedReviewState(999, prevStates), null);
+  assert.strictEqual(resolveDismissedReviewState(30, prevStates), null);
+  assert.deepStrictEqual(resolveDismissedReviewState(10, prevStates), { state: 'APPROVED', isDismissed: true });
+  assert.deepStrictEqual(resolveDismissedReviewState(20, prevStates), { state: 'CHANGES_REQUESTED', isDismissed: true });
+});
+
+test('parseTimelineReviewEvent and findLatestApproval preserve CHANGES_REQUESTED across unresolvable or COMMENTED dismissals', () => {
+  const context = { authorLower: 'author1', manualDismissalIds: new Set(), dismissedReviewPreviousStates: new Map([[30, 'COMMENTED']]) };
+  assert.strictEqual(parseTimelineReviewEvent({ event: 'reviewed', id: 30, user: { login: 'bob' }, state: 'DISMISSED', commit_id: 'sha-2' }, context), null);
+  assert.strictEqual(parseTimelineReviewEvent({ event: 'reviewed', user: { login: 'bob' }, state: 'DISMISSED', commit_id: 'sha-2' }, context), null);
+
+  const timelineEvents = [
+    { __typename: 'PullRequestReview', databaseId: 1, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha-1' }, submittedAt: '2026-09-01T09:00:00Z' },
+    { __typename: 'PullRequestReview', databaseId: 2, author: { login: 'bob' }, state: 'CHANGES_REQUESTED', commit: { oid: 'sha-1' }, submittedAt: '2026-09-01T10:00:00Z' },
+    { __typename: 'PullRequestReview', databaseId: 3, author: { login: 'bob' }, state: 'DISMISSED', commit: { oid: 'sha-2' }, submittedAt: '2026-09-01T11:00:00Z' },
+    { __typename: 'ReviewDismissedEvent', previousReviewState: 'COMMENTED', pullRequestCommit: { commit: { oid: 'sha-2' } }, review: { databaseId: 3 } }
+  ];
+  assert.strictEqual(findLatestApproval([], 'author1', timelineEvents), null);
+});
+
+test('parseTimelineReviewEvent and findLatestApproval ignore timeline COMMENTED reviews', () => {
+  const context = { authorLower: 'author1', manualDismissalIds: new Set(), dismissedReviewPreviousStates: new Map() };
+  assert.strictEqual(parseTimelineReviewEvent({ __typename: 'PullRequestReview', databaseId: 40, author: { login: 'alice' }, state: 'COMMENTED', commit: { oid: 'sha-comment' }, submittedAt: '2026-09-01T11:00:00Z' }, context), null);
+
+  const timelineEvents = [
+    { __typename: 'PullRequestReview', databaseId: 41, author: { login: 'alice' }, state: 'APPROVED', commit: { oid: 'sha-approved' }, submittedAt: '2026-09-01T10:00:00Z' },
+    { __typename: 'PullRequestReview', databaseId: 42, author: { login: 'alice' }, state: 'COMMENTED', commit: { oid: 'sha-comment' }, submittedAt: '2026-09-01T12:00:00Z' }
+  ];
+  const result = findLatestApproval([], 'author1', timelineEvents);
+  assert.ok(result);
+  assert.strictEqual(result.approver, 'alice');
+  assert.strictEqual(result.approvedSha, 'sha-approved');
+});
+
+test('extractEligibleReviewer and extractDismissalReviewId handle nullable GraphQL timeline fields', () => {
+  assert.strictEqual(extractEligibleReviewer({ __typename: 'PullRequestReview', author: null, commit: { oid: 'sha-1' }, state: 'APPROVED' }, 'author1'), null);
+  assert.strictEqual(extractEligibleReviewer({ __typename: 'PullRequestReview', author: { login: 'alice' }, commit: null, state: 'APPROVED' }, 'author1'), null);
+  assert.strictEqual(extractDismissalReviewId({ __typename: 'ReviewDismissedEvent', review: null, dismissed_review: null }), null);
+
+  const ctx = extractDismissalContext([
+    { __typename: 'ReviewDismissedEvent', review: null, previousReviewState: 'APPROVED' },
+    { event: 'review_dismissed', dismissed_review: null }
+  ]);
+  assert.strictEqual(ctx.manualDismissalIds.size, 0);
+  assert.strictEqual(ctx.dismissedReviewPreviousStates.size, 0);
 });
 
 

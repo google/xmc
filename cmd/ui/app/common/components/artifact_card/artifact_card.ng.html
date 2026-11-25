@@ -24,9 +24,9 @@ limitations under the License.
   <div class="card-main-content">
     @if (displayProperties().url) {
       <a
+        class="artifact-icon-link"
         target="_blank"
         rel="noreferrer"
-        style="text-decoration: none; color: inherit"
         [href]="displayProperties().url | safeUrl"
       >
         <mat-icon>{{ displayProperties().icon }}</mat-icon>
@@ -183,12 +183,7 @@ limitations under the License.
 <ng-template #urlTemplate let-url="url">
   <div class="payload-detail-section">
     <div class="payload-detail-text">
-      <a
-        target="_blank"
-        rel="noreferrer"
-        style="text-decoration: none; color: inherit"
-        [href]="url.url | safeUrl"
-      >
+      <a class="artifact-icon-link" target="_blank" rel="noreferrer" [href]="url.url | safeUrl">
         {{ url.displayName || url.url }}
       </a>
     </div>

@@ -43,6 +43,7 @@ graph TD
 | [`approval-policy.js`](approval-policy.js) | **Decision Engine**: Evaluates whether a PR qualifies for auto-reapproval (clean rebase vs code owner grace delta) and enforces protected file boundaries. |
 | [`assign-reviewers.js`](assign-reviewers.js) | **Reviewer Assignment**: Parses `OWNERS`, filters out absent reviewers configured in the `ABSENCE_LIST` repository variable (`vars.ABSENCE_LIST` — **Settings → Secrets and variables → Actions → Variables** or `gh variable set ABSENCE_LIST`, requiring repository `write` / Actions Variables write access), and assigns eligible reviewers to open pull requests. |
 | [`absence-schedule.js`](absence-schedule.js) | **Absence Schedule Parser**: Parses unconditional (`NICK`) and inclusive UTC date-ranged (`NICK DD.MM.YYYY-DD.MM.YYYY`) reviewer absence entries from `ABSENCE_LIST` (entries separated by newlines, `,`, or `;`; `#` starts an end-of-line comment; optional leading `-`/`*`/`+`/`@` prefixes). Consumed by `assign-reviewers.js` and `nightly-failure-alert.js`; malformed entries emit a non-blocking `core.warning` and are ignored (user treated as available). |
+| [`nightly-failure-alert.js`](nightly-failure-alert.js) | **Nightly Failure Alert**: Opens a labeled GitHub issue for a failed nightly workflow on `main` (or comments on the open one) and @-mentions `OWNERS` not listed in `ABSENCE_LIST`. The `ALERT_PROFILE` env var selects the label, title, and result rows: `examples-e2e` (default, `nightly-failure`, used by `nightly-examples-e2e.yml`) or `unit-tests` (`nightly-unit-test-failure`, used by `nightly-unit-tests.yml`). |
 
 ---
 
@@ -126,7 +127,7 @@ Any modification touching protected files immediately aborts auto-reapproval:
 - `api/buf.yaml` and `api/BUILD.bazel` (the breaking-change rules and test definition, which could otherwise weaken or redirect the check)
 - Target base branch configuration files
 
-Scoping uses 3-dot diff against the PR's target base branch (`git diff --name-only origin/${baseRef}...${currentSha}`) to prevent false positives when intermediate commits are merged into `origin/main`. If Git commands fail, the check defaults to `hasProtectedFileChanges = true` (fail-safe).
+Scoping uses 3-dot diff against the PR's target base branch (`git diff --name-only --no-renames origin/${baseRef}...${currentSha}`) to prevent false positives when intermediate commits are merged into `origin/main` and to detect renames out of protected paths. If Git commands fail, the check defaults to `hasProtectedFileChanges = true` (fail-safe).
 
 **Clean rebase exception**: A PR touching protected files is still auto-reapproved, for any author, when the push is a pure clean rebase: every approved commit is unchanged in `git range-diff`, with zero changed patch lines and no removed or added commits. Any other change (including grace delta or test-only edits) keeps the lockout. Restoring a dismissed approval on the same commit also stays locked out.
 

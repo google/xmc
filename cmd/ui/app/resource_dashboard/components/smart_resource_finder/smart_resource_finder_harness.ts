@@ -96,6 +96,12 @@ export class SmartResourceFinderHarness extends ComponentHarness {
     return removeBtns.length;
   }
 
+  /** Gets the aria-label attributes of all rendered remove resource filter buttons. */
+  async getRemoveButtonAriaLabels(): Promise<Array<string | null>> {
+    const removeBtns = await this.removeButtons();
+    return Promise.all(removeBtns.map((btn) => btn.getAttribute('aria-label')));
+  }
+
   /** Clicks the remove resource filter button at the given index. */
   async clickRemoveButton(index: number): Promise<void> {
     const removeBtns = await this.removeButtons();

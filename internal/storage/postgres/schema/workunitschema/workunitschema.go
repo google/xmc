@@ -44,6 +44,8 @@ const (
 	executionStateTableField        = querytools.TableField("state")
 	createdTableField               = querytools.TableField("created")
 	updatedTableField               = querytools.TableField("updated")
+	parametersTableField            = querytools.TableField("parameters")
+	trialIDTableField               = querytools.TableField("trial_id")
 )
 
 // WorkUnitColumns is the full list of columns in the PostgreSQL WorkUnits table.
@@ -52,6 +54,7 @@ var WorkUnitColumns = []string{
 	"ExecutionCreateTime", "ExecutionUpdateTime", "ExecutionCompleteTime", "ExecutionId",
 	"ExecutionMetadata", "WorkUnitStatus", "QueueName", "ExecutionState",
 	"ExecutionStatusMessageSeverity", "PositionInQueue", "CreateTime", "UpdateTime",
+	"Parameters", "TrialId",
 }
 
 // CurrentWorkUnitExecutionColumns is the list of columns to fetch when getting the current work
@@ -102,6 +105,9 @@ var (
 			executionStateTableField:        {Name: executionStateTableField, QueryLiteral: safesql.New("wu.ExecutionState"), Type: filtervisitor.Integer, Selectable: true, EnumValues: pb.WorkUnitStatus_WorkUnitState_value},
 			createdTableField:               {Name: createdTableField, QueryLiteral: safesql.New("wu.CreateTime"), Type: filtervisitor.Timestamp, Selectable: true},
 			updatedTableField:               {Name: updatedTableField, QueryLiteral: safesql.New("wu.UpdateTime"), Type: filtervisitor.Timestamp, Selectable: true},
+			// Selectable only: study trial fields are not filterable.
+			parametersTableField: {Name: parametersTableField, QueryLiteral: safesql.New("wu.Parameters"), Selectable: true},
+			trialIDTableField:    {Name: trialIDTableField, QueryLiteral: safesql.New("wu.TrialId"), Selectable: true},
 		},
 		OrderedIndicesWithSortDirection: []querytools.UserOrderedIndex{
 			{TableField: xidTableField, SortOrder: querytools.Asc},
@@ -119,7 +125,7 @@ var (
 		executionCreateTimeTableField, executionUpdateTimeTableField,
 		executionCompleteTimeTableField, executionIDTableField, executionMetadataTableField,
 		workUnitStatusTableField, queueNameTableField, executionStateTableField,
-		createdTableField, updatedTableField,
+		createdTableField, updatedTableField, parametersTableField, trialIDTableField,
 	}
 
 	// WorkUnitFullTextFields is the list of fields that can be used for full text search for WorkUnit queries.

@@ -26,6 +26,7 @@ go_test(
         "common_test.go",
         "consumer_test.go",
         "fake_test.go",
+        "publisher_test.go",
     ],
     embed = [":redisclient"],
     deps = [

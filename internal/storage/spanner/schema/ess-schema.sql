@@ -300,6 +300,12 @@ CREATE TABLE WorkUnits (
   CreateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
   -- The last time the work unit was updated, including on creation.
   UpdateTime TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp = TRUE),
+
+  -- The hyperparameter values of a study trial, a proto-marshaled google.protobuf.Struct. BYTES
+  -- keeps google.protobuf.Struct out of the proto bundle. NULL for work units that are not trials.
+  Parameters BYTES(MAX),
+  -- The optimization engine's trial ID. NULL for work units that are not trials.
+  TrialId STRING(MAX),
 ) PRIMARY KEY (BitReversedXid, WorkUnitId),
   INTERLEAVE IN PARENT Experiments
   ON DELETE CASCADE;

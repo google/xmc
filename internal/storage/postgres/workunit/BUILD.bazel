@@ -59,6 +59,7 @@ go_test(
     tags = ["local"],
     deps = [
         "//api/protos/experiment:messages_go_proto",
+        "//internal/experiment/experimenttest",
         "//internal/grpcerr",
         "//internal/storage",
         "//internal/storage/postgres/pgdb",

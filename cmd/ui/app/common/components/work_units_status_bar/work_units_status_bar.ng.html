@@ -23,28 +23,24 @@ limitations under the License.
     (click)="menuTrigger.openMenu()"
   >
     <div class="states">
-      @for (stateCount of sortedStateCounts(); track stateCount.state) {
-        @if (stateCount.count && stateCount.count !== '0') {
-          <span class="state {{ stateCount.state }}" [style.width]="getWidth(stateCount.count)">
-            {{ stateCount.count }}
-          </span>
-        }
+      @for (stateView of visibleStateViews(); track stateView.key) {
+        <span [class]="stateView.segmentClass" [style.width]="stateView.width">
+          {{ stateView.count }}
+        </span>
       }
     </div>
   </div>
 
   <mat-menu #menu="matMenu">
-    @for (stateCount of sortedStateCounts(); track stateCount.state) {
+    @for (stateView of visibleStateViews(); track stateView.key) {
       <dl>
-        @if (stateCount.count && stateCount.count !== '0' && stateCount.state) {
-          <div class="key-value-pair">
-            <dt class="state-count-state-container">
-              <div class="square {{ stateCount.state }}"></div>
-              {{ stateCount.state.toLowerCase() }}:
-            </dt>
-            <dd>{{ stateCount.count }}</dd>
-          </div>
-        }
+        <div class="key-value-pair">
+          <dt class="state-count-state-container">
+            <div [class]="stateView.squareClass"></div>
+            {{ stateView.label }}:
+          </dt>
+          <dd>{{ stateView.count }}</dd>
+        </div>
       </dl>
     }
   </mat-menu>

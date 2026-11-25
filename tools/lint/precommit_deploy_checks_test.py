@@ -300,6 +300,24 @@ class DeployChecksTest(unittest.TestCase):
             deploy_checks.check_helm(ctx_no_helm)
         self.assertTrue(ctx_no_helm.failed)
 
+    def test_check_helm_scope_includes_hpo_chart(self):
+        with mock.patch.object(gates, "should_run_scope", return_value=False) as scope_mock:
+            deploy_checks.check_helm(gates.RunContext(mode="fix"))
+        kwargs = scope_mock.call_args.kwargs
+        self.assertIn("deploy/profiles/stable-2026b/components/hpo", kwargs["roots"])
+        for path in (
+            "deploy/helm/values.yaml",
+            "deploy/profiles/stable-2026b/components/hpo/templates/serviceaccount.yaml",
+            "deploy/ctk_v2/xmanager-cloud.yaml",
+            "test/helm/workload_identity_binding_test.py",
+        ):
+            self.assertRegex(path, kwargs["fix_pattern"])
+        for path in (
+            "deploy/profiles/stable-2026b/components/ess/values.yaml",
+            "deploy/ctk_v2/verify_xmc.py",
+        ):
+            self.assertNotRegex(path, kwargs["fix_pattern"])
+
     def test_check_security_pass_fail_and_skip(self):
         ctx_skip = gates.RunContext(mode="check")
         with (

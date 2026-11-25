@@ -12,19 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { getHarness } from '@angular/cdk/testing/catalyst/async';
+import { Component, signal } from '@angular/core';
 import { MatChipHarness } from '@angular/material/chips/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { bootstrap, setupModule } from 'app/testing/test';
+import { bootstrap, cleanState, flush, setupModule } from 'app/testing/test';
 
 import { ResourceChip, ResourceType } from './resource_chip';
 
+@Component({
+  standalone: true,
+  imports: [ResourceChip],
+  template: `<xmc-resource-chip [resourceType]="resourceType()" text="Resource" />`,
+})
+class TestHostComponent {
+  readonly resourceType = signal<ResourceType>(ResourceType.CPU);
+}
+
 describe('ResourceChip Component', () => {
-  beforeEach(() => {
+  cleanState(() => {
     setupModule({
-      imports: [ResourceChip, NoopAnimationsModule],
+      imports: [ResourceChip, TestHostComponent, NoopAnimationsModule],
     });
-  });
+    return {};
+  }, beforeEach);
 
   it('should display the correct text inside the chip', async () => {
     const testText = 'CPU Usage: 80%';
@@ -37,7 +48,9 @@ describe('ResourceChip Component', () => {
   const testCases = [
     { name: 'CPU', type: ResourceType.CPU, expectedClass: 'grey' },
     { name: 'MEMORY', type: ResourceType.MEMORY, expectedClass: 'grey' },
+    { name: 'UNKNOWN', type: ResourceType.UNKNOWN, expectedClass: 'grey' },
     { name: 'GPU', type: ResourceType.GPU, expectedClass: 'green' },
+    { name: 'TPU', type: ResourceType.TPU, expectedClass: 'green' },
   ];
 
   for (const tc of testCases) {
@@ -47,9 +60,27 @@ describe('ResourceChip Component', () => {
       const chipHarness = await getHarness(MatChipHarness);
       const host = await chipHarness.host();
 
+      expect(await host.hasClass('mat-mdc-chip'))
+        .withContext('Expected host Material chip class to be preserved')
+        .toBeTrue();
       expect(await host.hasClass(tc.expectedClass))
         .withContext(`Expected to have class "${tc.expectedClass}"`)
         .toBeTrue();
     });
   }
+
+  it('updates chip class cleanly when resourceType changes without dropping host classes', async () => {
+    const hostComp = bootstrap(TestHostComponent);
+    const chipHost = await (await getHarness(MatChipHarness)).host();
+
+    expect(await chipHost.hasClass('mat-mdc-chip')).toBeTrue();
+    expect(await chipHost.hasClass('grey')).toBeTrue();
+
+    hostComp.resourceType.set(ResourceType.GPU);
+    await flush();
+
+    expect(await chipHost.hasClass('mat-mdc-chip')).toBeTrue();
+    expect(await chipHost.hasClass('grey')).toBeFalse();
+    expect(await chipHost.hasClass('green')).toBeTrue();
+  });
 });

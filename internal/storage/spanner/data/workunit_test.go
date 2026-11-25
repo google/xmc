@@ -14,14 +14,19 @@
 package spannerdata
 
 import (
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	pb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/spanner/schema/workunitschema"
 )
@@ -117,6 +122,8 @@ func TestWorkUnitProtoToInsertMutation(t *testing.T) {
 			wu.CurrentWorkUnitExecution.Status,
 			wu.CreateTime.AsTime(),
 			wu.UpdateTime.AsTime(),
+			[]byte(nil),
+			spanner.NullString{},
 		},
 	)
 
@@ -168,29 +175,7 @@ func TestWorkUnitProtoToUpdateMutation_InvalidName(t *testing.T) {
 }
 
 func TestWorkUnitRowToProto(t *testing.T) {
-	keys := []string{"Xid", "WorkUnitId", "WorkUnitType", "Priority", "Urls", "Tags", "Notes", "Executable", "ExecutionCreateTime", "ExecutionUpdateTime", "ExecutionCompleteTime", "ExecutionId", "ExecutionMetadata", "WorkUnitStatus", "CreateTime", "UpdateTime"}
-	values := []any{
-		int64(123),
-		int64(456),
-		fullTestWorkUnit.WorkUnitType,
-		int64(fullTestWorkUnit.Priority),
-		fullTestWorkUnit.Urls,
-		fullTestWorkUnit.Tags,
-		fullTestWorkUnit.Notes,
-		fullTestWorkUnit.Executable,
-		fullTestWorkUnit.CurrentWorkUnitExecution.CreateTime.AsTime(),
-		fullTestWorkUnit.CurrentWorkUnitExecution.UpdateTime.AsTime(),
-		spanner.NullTime{Time: fullTestWorkUnit.CurrentWorkUnitExecution.CompleteTime.AsTime(), Valid: true},
-		int64(789),
-		fullTestWorkUnit.CurrentWorkUnitExecution.Metadata,
-		fullTestWorkUnit.CurrentWorkUnitExecution.Status,
-		fullTestWorkUnit.CreateTime.AsTime(),
-		fullTestWorkUnit.UpdateTime.AsTime(),
-	}
-	row, err := spanner.NewRow(keys, values)
-	if err != nil {
-		t.Fatalf("Failed to create Spanner row: %v", err)
-	}
+	row := trialRow(t, []byte(nil), spanner.NullString{})
 
 	got, err := WorkUnitRowToProto(row)
 	if err != nil {
@@ -201,6 +186,101 @@ func TestWorkUnitRowToProto(t *testing.T) {
 
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("WorkUnitRowToProto() returned unexpected diff (-want +got):\n%s", diff)
+	}
+}
+
+// trialRow returns a WorkUnits row of fullTestWorkUnit with the given Parameters and TrialId column
+// values.
+func trialRow(t *testing.T, parameters []byte, trialID spanner.NullString) *spanner.Row {
+	t.Helper()
+	return workUnitRow(t, workunitschema.WorkUnitColumns, append(insertValuesPrefix(), parameters, trialID))
+}
+
+// workUnitRow returns a Spanner row with the given columns and values.
+func workUnitRow(t *testing.T, keys []string, values []any) *spanner.Row {
+	t.Helper()
+	row, err := spanner.NewRow(keys, values)
+	if err != nil {
+		t.Fatalf("Failed to create Spanner row: %v", err)
+	}
+	return row
+}
+
+// trialWorkUnit returns fullTestWorkUnit as a study trial.
+func trialWorkUnit() *pb.WorkUnit {
+	return prototest.Modify(&fullTestWorkUnit, func(wu *pb.WorkUnit) {
+		wu.Parameters = experimenttest.TrialParameters()
+		wu.TrialId = "trial-7"
+	})
+}
+
+func TestWorkUnitTrialFields_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name       string
+		parameters *structpb.Struct
+		trialID    string
+	}{
+		{name: "trial", parameters: experimenttest.TrialParameters(), trialID: "trial-7"},
+		{name: "empty parameters stay non-null", parameters: &structpb.Struct{}, trialID: "trial-8"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wu := prototest.Modify(&fullTestWorkUnit, func(wu *pb.WorkUnit) {
+				wu.Parameters = tt.parameters
+				wu.TrialId = tt.trialID
+			})
+			parameters, err := marshalParameters(wu.GetParameters())
+			if err != nil || parameters == nil {
+				t.Fatalf("marshalParameters() = (%v, %v), want non-nil bytes", parameters, err)
+			}
+			mutation, err := WorkUnitProtoToInsertMutation(wu)
+			if err != nil {
+				t.Fatalf("WorkUnitProtoToInsertMutation() failed: %v", err)
+			}
+			want := spanner.Insert(workunitschema.WorkUnitTableName, workunitschema.WorkUnitColumns, append(insertValuesPrefix(), parameters, spanner.NullString{StringVal: tt.trialID, Valid: true}))
+			if diff := cmp.Diff(want, mutation, protocmp.Transform(), cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+				t.Errorf("WorkUnitProtoToInsertMutation() diff (-want +got):\n%s", diff)
+			}
+			got, err := WorkUnitRowToProto(trialRow(t, parameters, spanner.NullString{StringVal: tt.trialID, Valid: true}))
+			if err != nil {
+				t.Fatalf("WorkUnitRowToProto() failed: %v", err)
+			}
+			if diff := cmp.Diff(wu, got, protocmp.Transform()); diff != "" {
+				t.Errorf("round trip diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// insertValuesPrefix returns the insert mutation values of fullTestWorkUnit before Parameters.
+func insertValuesPrefix() []any {
+	wu := &fullTestWorkUnit
+	return []any{
+		int64(123), int64(456), wu.WorkUnitType, int64(wu.Priority), wu.Urls, wu.Tags, wu.Notes, wu.Executable,
+		wu.CurrentWorkUnitExecution.CreateTime.AsTime(), wu.CurrentWorkUnitExecution.UpdateTime.AsTime(),
+		spanner.NullTime{Time: wu.CurrentWorkUnitExecution.CompleteTime.AsTime(), Valid: true}, int64(789),
+		wu.CurrentWorkUnitExecution.Metadata, wu.CurrentWorkUnitExecution.Status, wu.CreateTime.AsTime(), wu.UpdateTime.AsTime(),
+	}
+}
+
+func TestWorkUnitTrialFields_Errors(t *testing.T) {
+	invalidUTF8 := prototest.Modify(trialWorkUnit(), func(wu *pb.WorkUnit) {
+		wu.Parameters.Fields["\xff"] = structpb.NewNumberValue(1)
+	})
+	if _, err := WorkUnitProtoToInsertMutation(invalidUTF8); err == nil || !strings.Contains(err.Error(), "failed to marshal Parameters") {
+		t.Errorf("WorkUnitProtoToInsertMutation(invalid UTF-8 key) = %v, want marshal error", err)
+	}
+	if _, err := WorkUnitRowToProto(trialRow(t, []byte{0xff, 0xff}, spanner.NullString{})); err == nil || !strings.Contains(err.Error(), "failed to unmarshal column Parameters") {
+		t.Errorf("WorkUnitRowToProto(corrupt Parameters) = %v, want unmarshal error", err)
+	}
+	keys := slices.Clone(workunitschema.WorkUnitColumns[:16])
+	partial := workUnitRow(t, append(keys, "Parameters"), append(insertValuesPrefix(), []byte(nil)))
+	if _, err := WorkUnitRowToProto(partial); err == nil || !strings.Contains(err.Error(), "TrialId") {
+		t.Errorf("WorkUnitRowToProto(missing TrialId) = %v, want error", err)
+	}
+	withoutParameters := workUnitRow(t, keys, insertValuesPrefix())
+	if _, err := WorkUnitRowToProto(withoutParameters); err == nil || !strings.Contains(err.Error(), "Parameters") {
+		t.Errorf("WorkUnitRowToProto(missing Parameters) = %v, want error", err)
 	}
 }
 
