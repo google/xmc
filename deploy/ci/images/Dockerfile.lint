@@ -1,0 +1,99 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM ci-base AS go-builder
+
+ARG GO_VERSION
+ARG GO_SHA256
+ARG GOLANGCI_LINT_VERSION
+
+RUN set -eu; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz; \
+    echo "${GO_SHA256}  /tmp/go.tar.gz" | sha256sum -c -; \
+    tar -C /usr/local -xzf /tmp/go.tar.gz; \
+    rm -f /tmp/go.tar.gz
+
+# Compile golangci-lint with the pinned Go toolchain so it can lint go.mod's Go version.
+RUN set -eu; \
+    PATH="/usr/local/go/bin:${PATH}" \
+    GOBIN=/out \
+    go install "github.com/golangci/golangci-lint/cmd/golangci-lint@v${GOLANGCI_LINT_VERSION}"
+
+FROM ci-base
+
+ARG RUFF_VERSION
+ARG MYPY_VERSION
+ARG ACTIONLINT_VERSION
+ARG ACTIONLINT_SHA256
+ARG BUILDIFIER_VERSION
+ARG BUILDIFIER_SHA256
+ARG ADDLICENSE_VERSION
+ARG ADDLICENSE_SHA256
+ARG SHELLCHECK_VERSION
+ARG SHELLCHECK_SHA256
+ARG TERRAFORM_VERSION
+ARG TERRAFORM_SHA256
+ARG TFLINT_VERSION
+ARG TFLINT_SHA256
+ARG HELM_VERSION
+ARG HELM_SHA256
+ARG TRIVY_VERSION
+ARG TRIVY_SHA256
+
+COPY --from=go-builder /usr/local/go /usr/local/go
+COPY --from=go-builder /out/golangci-lint /usr/local/bin/golangci-lint
+
+ENV GOPATH="/root/go" \
+    TFLINT_PLUGIN_DIR="/opt/tflint-plugins" \
+    PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+
+RUN pip3 install --no-cache-dir "ruff==${RUFF_VERSION}" "mypy==${MYPY_VERSION}"
+
+RUN set -eu; \
+    curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -o /tmp/actionlint.tar.gz; \
+    echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/actionlint.tar.gz -C /usr/local/bin actionlint; \
+    curl -fsSL "https://github.com/bazelbuild/buildtools/releases/download/v${BUILDIFIER_VERSION}/buildifier-linux-amd64" -o /usr/local/bin/buildifier; \
+    echo "${BUILDIFIER_SHA256}  /usr/local/bin/buildifier" | sha256sum -c -; \
+    chmod +x /usr/local/bin/buildifier; \
+    curl -fsSL "https://github.com/google/addlicense/releases/download/v${ADDLICENSE_VERSION}/addlicense_${ADDLICENSE_VERSION}_Linux_x86_64.tar.gz" -o /tmp/addlicense.tar.gz; \
+    echo "${ADDLICENSE_SHA256}  /tmp/addlicense.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/addlicense.tar.gz -C /usr/local/bin addlicense; \
+    curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" -o /tmp/shellcheck.tar.xz; \
+    echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -; \
+    tar -xJf /tmp/shellcheck.tar.xz -C /usr/local/bin --strip-components=1 "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"; \
+    curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip; \
+    echo "${TERRAFORM_SHA256}  /tmp/terraform.zip" | sha256sum -c -; \
+    unzip -q -o /tmp/terraform.zip terraform -d /usr/local/bin; \
+    curl -fsSL "https://github.com/terraform-linters/tflint/releases/download/v${TFLINT_VERSION}/tflint_linux_amd64.zip" -o /tmp/tflint.zip; \
+    echo "${TFLINT_SHA256}  /tmp/tflint.zip" | sha256sum -c -; \
+    unzip -q -o /tmp/tflint.zip tflint -d /usr/local/bin; \
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" -o /tmp/helm.tar.gz; \
+    echo "${HELM_SHA256}  /tmp/helm.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/helm.tar.gz -C /usr/local/bin --strip-components=1 linux-amd64/helm; \
+    curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" -o /tmp/trivy.tar.gz; \
+    echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy; \
+    chmod +x /usr/local/bin/actionlint /usr/local/bin/addlicense /usr/local/bin/shellcheck \
+        /usr/local/bin/terraform /usr/local/bin/tflint /usr/local/bin/helm /usr/local/bin/trivy; \
+    rm -f /tmp/actionlint.tar.gz /tmp/addlicense.tar.gz /tmp/shellcheck.tar.xz \
+        /tmp/terraform.zip /tmp/tflint.zip /tmp/helm.tar.gz /tmp/trivy.tar.gz
+
+# Pre-initialize TFLint plugins from the repository config so CI runs offline without rate limits.
+COPY .tflint.hcl /tmp/.tflint.hcl
+RUN set -eu; \
+    mkdir -p "${TFLINT_PLUGIN_DIR}"; \
+    tflint --config=/tmp/.tflint.hcl --init; \
+    rm -f /tmp/.tflint.hcl; \
+    chmod -R a+rX "${TFLINT_PLUGIN_DIR}"

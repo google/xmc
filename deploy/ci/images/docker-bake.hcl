@@ -35,6 +35,27 @@ variable "PYTHON_RELEASE_TAG" { default = "" }
 variable "PYTHON_SHA256" { default = "" }
 variable "NODE_VERSION" { default = "" }
 variable "NODE_SHA256" { default = "" }
+variable "GO_VERSION" { default = "" }
+variable "GO_SHA256" { default = "" }
+variable "RUFF_VERSION" { default = "" }
+variable "MYPY_VERSION" { default = "" }
+variable "GOLANGCI_LINT_VERSION" { default = "" }
+variable "ACTIONLINT_VERSION" { default = "" }
+variable "ACTIONLINT_SHA256" { default = "" }
+variable "BUILDIFIER_VERSION" { default = "" }
+variable "BUILDIFIER_SHA256" { default = "" }
+variable "ADDLICENSE_VERSION" { default = "" }
+variable "ADDLICENSE_SHA256" { default = "" }
+variable "SHELLCHECK_VERSION" { default = "" }
+variable "SHELLCHECK_SHA256" { default = "" }
+variable "TERRAFORM_VERSION" { default = "" }
+variable "TERRAFORM_SHA256" { default = "" }
+variable "TFLINT_VERSION" { default = "" }
+variable "TFLINT_SHA256" { default = "" }
+variable "HELM_VERSION" { default = "" }
+variable "HELM_SHA256" { default = "" }
+variable "TRIVY_VERSION" { default = "" }
+variable "TRIVY_SHA256" { default = "" }
 
 function "image_tags" {
   params = [name]
@@ -52,7 +73,7 @@ function "gha_cache_to" {
 }
 
 group "default" {
-  targets = ["ci-base"]
+  targets = ["ci-base", "ci-lint"]
 }
 
 target "_common" {
@@ -78,5 +99,39 @@ target "ci-base" {
     PYTHON_SHA256      = PYTHON_SHA256
     NODE_VERSION       = NODE_VERSION
     NODE_SHA256        = NODE_SHA256
+  }
+}
+
+target "ci-lint" {
+  inherits   = ["_common"]
+  dockerfile = "deploy/ci/images/Dockerfile.lint"
+  tags       = image_tags("ci-lint")
+  cache-from = gha_cache_from("ci-lint")
+  cache-to   = gha_cache_to("ci-lint")
+  contexts = {
+    "ci-base" = "target:ci-base"
+  }
+  args = {
+    GO_VERSION            = GO_VERSION
+    GO_SHA256             = GO_SHA256
+    RUFF_VERSION          = RUFF_VERSION
+    MYPY_VERSION          = MYPY_VERSION
+    GOLANGCI_LINT_VERSION = GOLANGCI_LINT_VERSION
+    ACTIONLINT_VERSION    = ACTIONLINT_VERSION
+    ACTIONLINT_SHA256     = ACTIONLINT_SHA256
+    BUILDIFIER_VERSION    = BUILDIFIER_VERSION
+    BUILDIFIER_SHA256     = BUILDIFIER_SHA256
+    ADDLICENSE_VERSION    = ADDLICENSE_VERSION
+    ADDLICENSE_SHA256     = ADDLICENSE_SHA256
+    SHELLCHECK_VERSION    = SHELLCHECK_VERSION
+    SHELLCHECK_SHA256     = SHELLCHECK_SHA256
+    TERRAFORM_VERSION     = TERRAFORM_VERSION
+    TERRAFORM_SHA256      = TERRAFORM_SHA256
+    TFLINT_VERSION        = TFLINT_VERSION
+    TFLINT_SHA256         = TFLINT_SHA256
+    HELM_VERSION          = HELM_VERSION
+    HELM_SHA256           = HELM_SHA256
+    TRIVY_VERSION         = TRIVY_VERSION
+    TRIVY_SHA256          = TRIVY_SHA256
   }
 }

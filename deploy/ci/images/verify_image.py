@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -26,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-VALID_ROLES: tuple[str, ...] = ("base",)
+VALID_ROLES: tuple[str, ...] = ("base", "lint")
 _CMD_TIMEOUT_SECONDS = 60
 
 
@@ -119,16 +121,80 @@ def _base_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation,
     )
 
 
+def _lint_expectations(manifest: Mapping[str, Any]) -> tuple[CommandExpectation, ...]:
+    """Builds command expectations specific to the ci-lint image.
+
+    Args:
+        manifest: Parsed versions.json mapping.
+
+    Returns:
+        Tuple of lint ``CommandExpectation`` objects.
+    """
+    go_ver = _tool_version(manifest, "go")
+    gl_ver = _tool_version(manifest, "golangci_lint")
+    return (
+        CommandExpectation("go", ("go", "version"), (f"go{go_ver}",)),
+        CommandExpectation("ruff", ("ruff", "--version"), (_tool_version(manifest, "ruff"),)),
+        CommandExpectation("mypy", ("mypy", "--version"), (_tool_version(manifest, "mypy"),)),
+        CommandExpectation(
+            "golangci-lint", ("golangci-lint", "--version"), (gl_ver, f"go{go_ver}")
+        ),
+        CommandExpectation(
+            "actionlint", ("actionlint", "-version"), (_tool_version(manifest, "actionlint"),)
+        ),
+        CommandExpectation(
+            "buildifier", ("buildifier", "-version"), (_tool_version(manifest, "buildifier"),)
+        ),
+        CommandExpectation(
+            "shellcheck", ("shellcheck", "--version"), (_tool_version(manifest, "shellcheck"),)
+        ),
+        CommandExpectation(
+            "terraform", ("terraform", "version"), (f"v{_tool_version(manifest, 'terraform')}",)
+        ),
+        CommandExpectation("tflint", ("tflint", "--version"), (_tool_version(manifest, "tflint"),)),
+        CommandExpectation(
+            "helm", ("helm", "version", "--short"), (f"v{_tool_version(manifest, 'helm')}",)
+        ),
+        CommandExpectation("trivy", ("trivy", "--version"), (_tool_version(manifest, "trivy"),)),
+    )
+
+
+def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
+    """Verifies addlicense binary presence and pre-initialized TFLint Google plugin.
+
+    Args:
+        manifest: Parsed versions.json mapping.
+        env: Process environment mapping.
+
+    Returns:
+        List of failure messages (empty when all checks pass).
+    """
+    failures: list[str] = []
+    if shutil.which("addlicense") is None:
+        failures.append("addlicense: binary not found on PATH")
+
+    plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
+    plugin_ver = _tool_version(manifest, "tflint_google_plugin")
+    expected_plugin = (
+        Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
+    )
+    if not plugin_dir or not expected_plugin.is_dir():
+        failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
+    return failures
+
+
 def run_smoke_checks(
     role: str,
     manifest: Mapping[str, Any],
+    env: Mapping[str, str] | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> list[str]:
     """Executes all smoke assertions for a CI runner image role.
 
     Args:
-        role: Target role (``base``).
+        role: Target role (``base``, ``lint``).
         manifest: Parsed versions.json mapping.
+        env: Optional environment mapping (defaults to ``os.environ``).
         runner: Subprocess runner callable.
 
     Returns:
@@ -140,8 +206,15 @@ def run_smoke_checks(
     if role not in VALID_ROLES:
         raise ValueError(f"Unsupported role '{role}'. Expected one of: {', '.join(VALID_ROLES)}")
 
+    active_env = os.environ if env is None else env
+    specs: list[CommandExpectation] = list(_base_expectations(manifest))
     failures: list[str] = []
-    for spec in _base_expectations(manifest):
+
+    if role == "lint":
+        specs.extend(_lint_expectations(manifest))
+        failures.extend(_check_lint_extras(manifest, active_env))
+
+    for spec in specs:
         err = _run_command_expectation(spec, runner)
         if err:
             failures.append(err)
