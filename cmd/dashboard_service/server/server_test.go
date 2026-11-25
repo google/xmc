@@ -620,7 +620,12 @@ func TestGetChartData(t *testing.T) {
 
 	t.Run("authorized user gets experiment-level chart data", func(t *testing.T) {
 		var capturedReq *xidapipb.CheckUserAuthorizationRequest
-		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, _ string) (*dpb.Chart, error) { return prototest.Modify(baseExpChart, nil), nil }}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { capturedReq = in })
+		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, chartID string) (*dpb.Chart, error) {
+			if chartID != "hpo-parallel-coord" {
+				t.Errorf("GetChart(%q), want chart ID %q", chartID, "hpo-parallel-coord")
+			}
+			return prototest.Modify(baseExpChart, nil), nil
+		}}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { capturedReq = in })
 		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/charts/hpo-parallel-coord"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)

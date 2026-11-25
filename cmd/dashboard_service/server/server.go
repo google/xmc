@@ -227,18 +227,6 @@ func chartMatchesName(parsed validator.ParsedChartName, chart *dpb.Chart) bool {
 	return true
 }
 
-// resolveChartXID returns the chart's persisted experiment XID, falling back to the
-// XID encoded in the chart resource name when the stored record does not carry one.
-func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
-	xid := chart.GetXid()
-	if xid <= 0 {
-		if parsed, err := validator.ParseChartName(name); err == nil && parsed.XID > 0 {
-			return parsed.XID
-		}
-	}
-	return xid
-}
-
 // validateDataEngineDependencies ensures required service dependencies are configured.
 func (s *Server) validateDataEngineDependencies() error {
 	if s.dataEngine == nil {

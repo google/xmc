@@ -39,7 +39,11 @@ func ExperimentChartProto(chartID string, xid int64) *dpb.Chart {
 // CollectChartPages reads all ListCharts pages using pageSize and returns their names.
 func CollectChartPages(ctx context.Context, t *testing.T, repo storage.DashboardStore, parent string, pageSize int32, filter, orderBy string) []string {
 	t.Helper()
+	if pageSize <= 0 {
+		t.Fatalf("CollectChartPages pageSize = %d, want > 0", pageSize)
+	}
 	var names []string
+	seenTokens := make(map[string]bool)
 	for tok := ""; ; {
 		page, next, err := repo.ListCharts(ctx, parent, pageSize, tok, filter, orderBy, 0)
 		if err != nil {
@@ -48,15 +52,19 @@ func CollectChartPages(ctx context.Context, t *testing.T, repo storage.Dashboard
 		if len(page) > int(pageSize) {
 			t.Fatalf("ListCharts(%q) page len = %d, want <= %d", orderBy, len(page), pageSize)
 		}
+		if next != "" && len(page) != int(pageSize) {
+			t.Fatalf("ListCharts(%q) non-terminal page len = %d, want %d", orderBy, len(page), pageSize)
+		}
 		for _, c := range page {
 			names = append(names, c.GetName())
 		}
 		if next == "" {
 			return names
 		}
-		if next == tok {
+		if seenTokens[next] {
 			t.Fatalf("ListCharts(%q) repeated page token %q", orderBy, next)
 		}
+		seenTokens[next] = true
 		tok = next
 	}
 }
