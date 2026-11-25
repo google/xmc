@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -325,23 +326,46 @@ func startPongRedisServer(t *testing.T) string {
 	t.Cleanup(func() { _ = lis.Close() })
 	go func() {
 		for conn, err := lis.Accept(); err == nil; conn, err = lis.Accept() {
-			go func(c net.Conn) {
-				defer c.Close()
-				for buf := make([]byte, 256); ; {
-					n, err := c.Read(buf)
-					if err != nil {
-						return
-					}
-					if bytes.Contains(bytes.ToUpper(buf[:n]), []byte("HELLO")) {
-						_, _ = c.Write([]byte("-ERR unknown command\r\n"))
-					} else {
-						_, _ = c.Write([]byte("+PONG\r\n"))
-					}
-				}
-			}(conn)
+			go serveFakeRedis(conn)
 		}
 	}()
 	return lis.Addr().String()
+}
+
+func serveFakeRedis(c net.Conn) {
+	defer c.Close()
+	r := bufio.NewReader(c)
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		if !strings.HasPrefix(line, "*") {
+			continue
+		}
+		n, _ := strconv.Atoi(strings.TrimSpace(line[1:]))
+		var cmd string
+		for i := 0; i < n; i++ {
+			if _, err := r.ReadString('\n'); err != nil {
+				return
+			}
+			arg, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if i == 0 {
+				cmd = strings.ToUpper(strings.TrimSpace(arg))
+			}
+		}
+		switch cmd {
+		case "HELLO":
+			_, _ = c.Write([]byte("-ERR unknown command\r\n"))
+		case "CLIENT":
+			_, _ = c.Write([]byte("+OK\r\n"))
+		default:
+			_, _ = c.Write([]byte("+PONG\r\n"))
+		}
+	}
 }
 
 func startStubVizierServer(t *testing.T) string {
