@@ -39,12 +39,7 @@ func vizierComponent(enabled bool, state, endpoint string, withParams bool) *uns
 		}
 		spec["parameters"] = params
 	}
-	obj := map[string]any{
-		"apiVersion": "xmc.dev/v1alpha1",
-		"kind":       "Component",
-		"metadata":   map[string]any{"name": "vizier", "namespace": "xmc"},
-		"spec":       spec,
-	}
+	obj := map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": spec}
 	if state != "" {
 		obj["status"] = map[string]any{"state": state}
 	}
@@ -59,8 +54,11 @@ func TestValidateEndpoint(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "dns host and port", raw: "vizier-service.xmc.svc.cluster.local:7077"},
+		{name: "dns host matching scheme", raw: "unix:7077"},
 		{name: "ipv4 and port", raw: "10.0.0.5:7077"},
 		{name: "bracketed ipv6 and port", raw: "[::1]:7077"},
+		{name: "bracketed non-ipv6", raw: "[vizier-service]:7077", wantErr: true},
+		{name: "percent escape", raw: "s3cr3t%zz:7077", wantErr: true},
 		{name: "empty", raw: "", wantErr: true},
 		{name: "whitespace only", raw: "   \t ", wantErr: true},
 		{name: "leading whitespace", raw: " vizier:7077", wantErr: true},
@@ -138,7 +136,10 @@ type scriptedGetter struct {
 	idx   int
 }
 
-func (g *scriptedGetter) GetComponent(_ context.Context, ns, name string) (*unstructured.Unstructured, error) {
+func (g *scriptedGetter) GetComponent(ctx context.Context, ns, name string) (*unstructured.Unstructured, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, errors.New("missing GetComponent deadline")
+	}
 	if ns != "xmc" || name != "vizier" {
 		return nil, errors.New("unexpected component lookup: " + ns + "/" + name)
 	}
@@ -185,6 +186,9 @@ func TestWaitForEndpoint_TransitionsAndSecretFreeLogs(t *testing.T) {
 		t.Errorf("waitForEndpoint() = %q, want vizier-service.xmc.svc.cluster.local:7077", got)
 	}
 	logged := logs.String()
+	if !strings.Contains(logged, "Waiting for valid Vizier") || !strings.Contains(logged, "Resolved Vizier endpoint") {
+		t.Errorf("expected transition logs, got:\n%s", logged)
+	}
 	for _, secret := range []string{secretEndpoint, "s3cr3t", "user:s3cr3t", "bad-host"} {
 		if strings.Contains(logged, secret) {
 			t.Errorf("logs leaked secret fragment %q:\n%s", secret, logged)
