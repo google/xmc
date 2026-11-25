@@ -149,7 +149,7 @@ def is_non_code_file(path_str: str) -> bool:
     p = Path(path_str)
     if p.name in NON_CODE_FILES or p.suffix == ".md":
         return True
-    if any(path_str.startswith(prefix) for prefix in NON_BAZEL_CODE_PREFIXES):
+    if path_str.startswith(NON_BAZEL_CODE_PREFIXES):
         return True
     if p.name in BUILD_FILE_NAMES or p.suffix in CODE_EXTENSIONS:
         return False
