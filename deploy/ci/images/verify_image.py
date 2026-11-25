@@ -178,11 +178,17 @@ def _check_lint_extras(manifest: Mapping[str, Any], env: Mapping[str, str]) -> l
         failures.append("addlicense: binary not found on PATH")
 
     plugin_dir = env.get("TFLINT_PLUGIN_DIR", "")
+    if not plugin_dir:
+        failures.append(
+            "tflint-google-plugin: TFLINT_PLUGIN_DIR environment variable is not set or empty"
+        )
+        return failures
+
     plugin_ver = _tool_version(manifest, "tflint_google_plugin")
     expected_plugin = (
         Path(plugin_dir) / "github.com" / "terraform-linters" / "tflint-ruleset-google" / plugin_ver
     )
-    if not plugin_dir or not expected_plugin.is_dir():
+    if not expected_plugin.is_dir():
         failures.append(f"tflint-google-plugin: missing pre-cached plugin at {expected_plugin}")
     return failures
 

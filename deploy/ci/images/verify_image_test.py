@@ -108,7 +108,19 @@ class RunSmokeChecksTest(unittest.TestCase):
                 "lint", _load_manifest(), env={}, runner=_fake_runner_factory()
             )
         self.assertTrue(any("addlicense" in f for f in failures))
-        self.assertTrue(any("tflint-google-plugin" in f for f in failures))
+        self.assertTrue(any("TFLINT_PLUGIN_DIR" in f for f in failures))
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("shutil.which", return_value="/usr/local/bin/addlicense"),
+        ):
+            missing_dir_failures = verify_image.run_smoke_checks(
+                "lint",
+                _load_manifest(),
+                env={"TFLINT_PLUGIN_DIR": tmp},
+                runner=_fake_runner_factory(),
+            )
+        self.assertTrue(any("missing pre-cached plugin" in f for f in missing_dir_failures))
 
     def test_command_failures_nonzero_version_mismatch_and_oserror(self) -> None:
         bad_runner = _fake_runner_factory(
