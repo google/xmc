@@ -32,6 +32,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	storagedata "xmanager_cloud/internal/storage/data"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -69,16 +70,6 @@ func blankChartProto(chartID string, xid, wid int64) *dpb.Chart {
 			{PlotId: "plot-1", Title: "Loss vs Epochs", Type: dpb.PlotType_SCATTER},
 		},
 		PlotLayout: &dpb.LayoutSpec{Type: dpb.LayoutSpec_GRID, Columns: 1},
-	}
-}
-
-// experimentChartProto returns an experiment-level chart, which has no wid.
-func experimentChartProto(chartID string, xid int64) *dpb.Chart {
-	return &dpb.Chart{
-		Name:  validator.ConstructExperimentChartName(xid, chartID),
-		Title: "Study " + chartID,
-		Xid:   xid,
-		Plots: []*dpb.PlotSpec{{PlotId: "study", Title: "Study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
 	}
 }
 
@@ -462,86 +453,25 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	repo, pool := setupDashboardRepository(ctx, t)
 
-	e1 := experimentChartProto("study-a", 100)
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
 	if err := repo.CreateChart(ctx, e1); err != nil {
 		t.Fatalf("CreateChart %s failed: %v", e1.GetName(), err)
 	}
 
-	var widIsNull bool
-	if err := pool.QueryRow(ctx, `SELECT Wid IS NULL FROM Charts WHERE ChartId = $1`, "study-a").Scan(&widIsNull); err != nil || !widIsNull {
-		t.Fatalf("Charts.Wid IS NULL for an experiment-level chart = (%v, %v), want (true, nil)", widIsNull, err)
+	assertWidNull := func() {
+		var widIsNull bool
+		if err := pool.QueryRow(ctx, `SELECT Wid IS NULL FROM Charts WHERE ChartId = $1`, "study-a").Scan(&widIsNull); err != nil || !widIsNull {
+			t.Fatalf("Charts.Wid IS NULL for an experiment-level chart = (%v, %v), want (true, nil)", widIsNull, err)
+		}
 	}
-	got, err := repo.GetChart(ctx, "study-a")
-	if err != nil {
-		t.Fatalf("GetChart failed: %v", err)
-	}
-	if diff := cmp.Diff(e1, got, protocmp.Transform(), protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")); diff != "" {
-		t.Errorf("GetChart round-trip mismatch (-want +got):\n%s", diff)
-	}
-
-	updated, err := repo.UpdateChart(ctx, &dpb.Chart{Name: e1.GetName(), Title: "Renamed"}, &fmpb.FieldMask{Paths: []string{"title"}})
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
-		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
-	}
+	assertWidNull()
+	storagetest.VerifyExperimentLevelChartRoundTrip(ctx, t, repo, e1)
+	assertWidNull()
 }
 
 func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
-	ctx := context.Background()
-	repo, _ := setupDashboardRepository(ctx, t)
-
-	e1 := experimentChartProto("wid-ord-a", 100)
-	e2 := experimentChartProto("wid-ord-b", 100)
-	w1 := blankChartProto("wid-ord-c", 100, 1)
-	w2 := blankChartProto("wid-ord-d", 100, 1)
-	for _, c := range []*dpb.Chart{e1, e2, w1, w2} {
-		if err := repo.CreateChart(ctx, c); err != nil {
-			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
-		}
-	}
-	dash := blankDashboardProto("dashboards/wid-ord-dash")
-	dash.ChartIds = []string{"wid-ord-a", "wid-ord-b", "wid-ord-c", "wid-ord-d"}
-	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
-		t.Fatalf("CreateDashboard failed: %v", err)
-	}
-
-	for _, scope := range []struct {
-		name, parent, filter string
-	}{
-		{name: "root", filter: "xid = 100"},
-		{name: "dashboard_parent", parent: "dashboards/wid-ord-dash"},
-	} {
-		for _, tc := range []struct {
-			orderBy string
-			want    []string
-		}{
-			{"wid asc", []string{e1.GetName(), e2.GetName(), w1.GetName(), w2.GetName()}},
-			{"wid desc", []string{w1.GetName(), w2.GetName(), e1.GetName(), e2.GetName()}},
-		} {
-			t.Run(scope.name+"/"+tc.orderBy, func(t *testing.T) {
-				var got []string
-				for tok := ""; ; {
-					page, next, err := repo.ListCharts(ctx, scope.parent, 1, tok, scope.filter, tc.orderBy, 0)
-					if err != nil {
-						t.Fatalf("ListCharts(%q) failed: %v", tc.orderBy, err)
-					}
-					if len(page) != 1 {
-						t.Fatalf("ListCharts(%q) page len = %d, want 1", tc.orderBy, len(page))
-					}
-					got = append(got, page[0].GetName())
-					if next == "" {
-						break
-					}
-					tok = next
-				}
-				if diff := cmp.Diff(tc.want, got); diff != "" {
-					t.Errorf("ListCharts(%q) mismatch (-want +got):\n%s", tc.orderBy, diff)
-				}
-			})
-		}
-	}
+	repo, _ := setupDashboardRepository(context.Background(), t)
+	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, repo)
 }
 
 func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {

@@ -32,6 +32,7 @@ import (
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -567,31 +568,34 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
+	newChartDataServer := func(repo *mockRepository, allowed bool, onAuth func(*xidapipb.CheckUserAuthorizationRequest)) *Server {
+		return NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{
+			checkUserAuthorizationFn: func(_ context.Context, in *xidapipb.CheckUserAuthorizationRequest, _ ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				if onAuth != nil {
+					onAuth(in)
+				}
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(allowed)}, nil
+			},
+		}, &mockChartDataEngine{})
+	}
+	baseExpChart := &dpb.Chart{Name: "experiments/1001/charts/hpo-parallel-coord", Xid: 1001, Plots: []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}}
+	baseWuChart := &dpb.Chart{Name: "experiments/1001/workUnits/3/charts/c", Xid: 1001, Wid: 3}
+
 	t.Run("scoped chart names reject mismatched stored chart levels", func(t *testing.T) {
 		tests := []struct {
-			name    string
-			reqName string
-			stored  *dpb.Chart
+			name, reqName string
+			stored        *dpb.Chart
 		}{
-			{name: "experiment URL for work unit chart", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/1001/workUnits/2/charts/c", Xid: 1001, Wid: 2}},
-			{name: "experiment URL for another experiment", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/7/charts/c", Xid: 7}},
-			{name: "work unit URL for experiment-level chart", reqName: "experiments/1001/workUnits/2002/charts/c", stored: &dpb.Chart{Name: "experiments/1001/charts/c", Xid: 1001}},
-			{name: "work unit URL for another experiment", reqName: "experiments/1001/workUnits/1/charts/c", stored: &dpb.Chart{Name: "experiments/7/workUnits/3/charts/c", Xid: 7, Wid: 3}},
-			{name: "work unit URL for wrong work unit", reqName: "experiments/1001/workUnits/1/charts/c", stored: &dpb.Chart{Name: "experiments/1001/workUnits/3/charts/c", Xid: 1001, Wid: 3}},
+			{"experiment URL for work unit chart", "experiments/1001/charts/c", prototest.Modify(baseWuChart, func(c *dpb.Chart) { c.Name = "experiments/1001/workUnits/2/charts/c"; c.Wid = 2 })},
+			{"experiment URL for another experiment", "experiments/1001/charts/c", prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/7/charts/c"; c.Xid = 7 })},
+			{"work unit URL for experiment-level chart", "experiments/1001/workUnits/2002/charts/c", prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/1001/charts/c" })},
+			{"work unit URL for another experiment", "experiments/1001/workUnits/1/charts/c", prototest.Modify(baseWuChart, func(c *dpb.Chart) { c.Name = "experiments/7/workUnits/3/charts/c"; c.Xid = 7 })},
+			{"work unit URL for wrong work unit", "experiments/1001/workUnits/1/charts/c", prototest.Modify(baseWuChart, nil)},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
-				repo := &mockRepository{
-					getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) { return tc.stored, nil },
-				}
 				var authTargets []string
-				xidMock := &mockXidClient{
-					checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-						authTargets = append(authTargets, in.GetName())
-						return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-					},
-				}
-				s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
+				s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, _ string) (*dpb.Chart, error) { return tc.stored, nil }}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { authTargets = append(authTargets, in.GetName()) })
 				if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: tc.reqName}); status.Code(err) != codes.NotFound {
 					t.Errorf("GetChartData(%q) code = %v, want %v", tc.reqName, status.Code(err), codes.NotFound)
 				}
@@ -603,18 +607,10 @@ func TestGetChartData(t *testing.T) {
 	})
 
 	t.Run("authorizes experiment XID before querying repository", func(t *testing.T) {
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				t.Fatalf("GetChart(%q) must not be called before XID authorization", chartId)
-				return nil, nil
-			},
-		}
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
+		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, id string) (*dpb.Chart, error) {
+			t.Fatalf("GetChart(%q) called pre-auth", id)
+			return nil, nil
+		}}, false, nil)
 		for _, name := range []string{"experiments/1001/charts/missing-chart", "experiments/1001/workUnits/1/charts/missing-chart"} {
 			if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: name}); status.Code(err) != codes.PermissionDenied {
 				t.Errorf("GetChartData(%q) code = %v, want %v", name, status.Code(err), codes.PermissionDenied)
@@ -623,27 +619,8 @@ func TestGetChartData(t *testing.T) {
 	})
 
 	t.Run("authorized user gets experiment-level chart data", func(t *testing.T) {
-		stored := &dpb.Chart{
-			Name:  "experiments/1001/charts/hpo-parallel-coord",
-			Xid:   1001,
-			Plots: []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
-		}
-		repo := &mockRepository{
-			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-				if chartId != "hpo-parallel-coord" {
-					t.Errorf("GetChart(%q), want chart ID %q", chartId, "hpo-parallel-coord")
-				}
-				return stored, nil
-			},
-		}
 		var capturedReq *xidapipb.CheckUserAuthorizationRequest
-		xidMock := &mockXidClient{
-			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-				capturedReq = in
-				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-			},
-		}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
+		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, _ string) (*dpb.Chart, error) { return prototest.Modify(baseExpChart, nil), nil }}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { capturedReq = in })
 		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/charts/hpo-parallel-coord"})
 		if err != nil {
 			t.Fatalf("GetChartData() unexpected error: %v", err)

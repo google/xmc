@@ -33,7 +33,7 @@ with DashboardClient(endpoint="localhost:8080") as client:
         print(f"{dashboard.name}: {dashboard.title}")
 
     dashboard = client.get_dashboard("dashboards/vcc_comparison")
-    chart = client.get_chart("experiments/234911122/workUnits/1/charts/baseline")
+    chart = client.get_chart("charts/baseline")
     print(f"{chart.title} has {len(chart.plots)} plots")
 ```
 

@@ -76,6 +76,7 @@ go_test(
         "//api/protos/xid:messages_go_proto",
         "//internal/auth",
         "//internal/dashboard/dataengine",
+        "//internal/prototest",
         "//internal/validator",
         "@com_github_google_go_cmp//cmp",
         "@org_golang_google_grpc//:grpc",

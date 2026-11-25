@@ -85,8 +85,8 @@ enum PlotType {
   BAR = 3;
   HISTOGRAM = 4;
   // One axis per parameter of a hyperparameter optimization study and one line per work unit of
-  // the study. Only allowed on experiment-level charts of STUDY experiments; the plot's data spec
-  // is not used.
+  // the study. Only allowed on experiment-level charts (GetChartData requires a STUDY experiment);
+  // the plot's data spec is not used.
   PARALLEL_COORDINATES = 5;
 }
 

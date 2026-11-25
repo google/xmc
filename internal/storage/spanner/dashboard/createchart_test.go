@@ -19,11 +19,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/protobuf/testing/protocmp"
-	fieldmaskpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 func TestCreateChart_Success(t *testing.T) {
@@ -98,32 +95,22 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
-	e1 := experimentChartProto("study-a", 100)
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
 	if err := repo.CreateChart(ctx, e1); err != nil {
 		t.Fatalf("CreateChart %s failed: %v", e1.GetName(), err)
 	}
 
-	row, err := repo.client.Single().ReadRow(ctx, "Charts", spanner.Key{"study-a"}, []string{"Wid"})
-	if err != nil {
-		t.Fatalf("ReadRow failed: %v", err)
+	assertWidNull := func() {
+		row, err := repo.client.Single().ReadRow(ctx, "Charts", spanner.Key{"study-a"}, []string{"Wid"})
+		if err != nil {
+			t.Fatalf("ReadRow failed: %v", err)
+		}
+		var wid spanner.NullInt64
+		if err := row.Columns(&wid); err != nil || wid.Valid {
+			t.Fatalf("Charts.Wid for experiment-level chart = (%v, %v), want NULL", wid, err)
+		}
 	}
-	var wid spanner.NullInt64
-	if err := row.Columns(&wid); err != nil || wid.Valid {
-		t.Fatalf("Charts.Wid for an experiment-level chart = (%v, %v), want NULL", wid, err)
-	}
-	got, err := repo.GetChart(ctx, "study-a")
-	if err != nil {
-		t.Fatalf("GetChart failed: %v", err)
-	}
-	if diff := cmp.Diff(e1, got, protocmp.Transform(), protocmp.IgnoreFields(&dpb.Chart{}, "create_time", "update_time")); diff != "" {
-		t.Errorf("GetChart round-trip mismatch (-want +got):\n%s", diff)
-	}
-
-	updated, err := repo.UpdateChart(ctx, &dpb.Chart{Name: e1.GetName(), Title: "Renamed"}, &fieldmaskpb.FieldMask{Paths: []string{"title"}})
-	if err != nil {
-		t.Fatalf("UpdateChart failed: %v", err)
-	}
-	if updated.GetWid() != 0 || updated.GetName() != e1.GetName() {
-		t.Errorf("UpdateChart = (name %q, wid %d), want (%q, 0)", updated.GetName(), updated.GetWid(), e1.GetName())
-	}
+	assertWidNull()
+	storagetest.VerifyExperimentLevelChartRoundTrip(ctx, t, repo, e1)
+	assertWidNull()
 }
