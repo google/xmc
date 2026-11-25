@@ -25,41 +25,38 @@ import (
 
 type mockDashboardClient struct {
 	dashboard_pb.DashboardServiceClient
-	mu              sync.Mutex
-	createChartResp *dashboard_pb.Chart
-	createChartErr  error
-	createChartFn   func(ctx context.Context, in *dashboard_pb.CreateChartRequest) (*dashboard_pb.Chart, error)
-	reqs            []*dashboard_pb.CreateChartRequest
-	// outgoingMD records the metadata each call carried, so tests can assert that the caller's
-	// credentials were forwarded.
-	outgoingMD []metadata.MD
-	ctxErrs    []error
-	// getChartResp/getChartErr answer GetChart; getChartReqs/MD/CtxErrs record the calls.
-	getChartResp    *dashboard_pb.Chart
-	getChartErr     error
-	getChartReqs    []string
-	getChartMD      []metadata.MD
-	getChartCtxErrs []error
+	mu                            sync.Mutex
+	createChartResp, getChartResp *dashboard_pb.Chart
+	createChartErr, getChartErr   error
+	createChartFn                 func(ctx context.Context, in *dashboard_pb.CreateChartRequest) (*dashboard_pb.Chart, error)
+	reqs                          []*dashboard_pb.CreateChartRequest
+	outgoingMD, getChartMD        []metadata.MD // records forwarded credential metadata
+	ctxErrs, getChartCtxErrs      []error
+	getChartReqs                  []string
+}
+
+func appendMetadataCall(ctx context.Context, mds *[]metadata.MD, errs *[]error) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	*mds = append(*mds, md)
+	*errs = append(*errs, ctx.Err())
 }
 
 func (m *mockDashboardClient) GetChart(ctx context.Context, in *dashboard_pb.GetChartRequest, _ ...grpc.CallOption) (*dashboard_pb.Chart, error) {
-	md, _ := metadata.FromOutgoingContext(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.getChartReqs = append(m.getChartReqs, in.GetName())
-	m.getChartMD = append(m.getChartMD, md)
-	m.getChartCtxErrs = append(m.getChartCtxErrs, ctx.Err())
+	appendMetadataCall(ctx, &m.getChartMD, &m.getChartCtxErrs)
 	return m.getChartResp, m.getChartErr
 }
 
-func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, opts ...grpc.CallOption) (*dashboard_pb.Chart, error) {
-	md, _ := metadata.FromOutgoingContext(ctx)
+func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, _ ...grpc.CallOption) (*dashboard_pb.Chart, error) {
 	m.mu.Lock()
 	fn, err, resp := m.createChartFn, m.createChartErr, m.createChartResp
 	m.mu.Unlock()
 	defer func() {
 		m.mu.Lock()
-		m.reqs, m.outgoingMD, m.ctxErrs = append(m.reqs, in), append(m.outgoingMD, md), append(m.ctxErrs, ctx.Err())
+		m.reqs = append(m.reqs, in)
+		appendMetadataCall(ctx, &m.outgoingMD, &m.ctxErrs)
 		m.mu.Unlock()
 	}()
 	if fn != nil {

@@ -50,6 +50,9 @@ func TestDashboardToolClient_GetChart(t *testing.T) {
 	if _, err := (*DashboardToolClient)(nil).GetChart(context.Background(), &pb.GetChartRequest{}); err == nil {
 		t.Error("GetChart() on nil client returned nil error, want error")
 	}
+	if _, err := NewDashboardToolClient(&mockDashboardServiceClient{}).GetChart(context.Background(), nil); err == nil {
+		t.Error("GetChart(nil) returned nil error, want error")
+	}
 }
 
 func TestDashboardToolClient_CreateChart(t *testing.T) {

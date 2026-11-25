@@ -29,15 +29,11 @@ import (
 )
 
 func TestMockStorage_CreateArtifact(t *testing.T) {
-	in := &essmsgpb.Artifact{Name: "artifacts/10", Parent: "experiments/1"}
-	override := &essmsgpb.Artifact{Name: "artifacts/99"}
-	boom := errors.New("boom")
-
+	in, override, boom := &essmsgpb.Artifact{Name: "artifacts/10", Parent: "experiments/1"}, &essmsgpb.Artifact{Name: "artifacts/99"}, errors.New("boom")
 	for _, tc := range []struct {
 		name      string
 		mock      MockStorage
-		in        *essmsgpb.Artifact
-		want      *essmsgpb.Artifact
+		in, want  *essmsgpb.Artifact
 		wantClone bool
 		wantErr   error
 	}{
@@ -48,11 +44,8 @@ func TestMockStorage_CreateArtifact(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := tc.mock.CreateArtifact(context.Background(), tc.in)
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("CreateArtifact() error = %v, want %v", err, tc.wantErr)
-			}
-			if tc.wantClone && got == tc.in {
-				t.Fatal("CreateArtifact() returned input pointer instead of clone")
+			if !errors.Is(err, tc.wantErr) || (tc.wantClone && got == tc.in) {
+				t.Fatalf("CreateArtifact() = (%v, %v), wantClone=%v wantErr=%v", got, err, tc.wantClone, tc.wantErr)
 			}
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
 				t.Errorf("CreateArtifact() mismatch (-want +got):\n%s", diff)

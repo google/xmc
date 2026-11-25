@@ -182,6 +182,28 @@ func plotSpecsForMetrics(ctx context.Context, metricNames []string) []*dashboard
 	return plots
 }
 
+// studyChartRecoveryTimeout bounds reading back a study chart after an ambiguous CreateChart.
+const (
+	studyChartRecoveryTimeout = 15 * time.Second
+	studyChartPlotID          = "parallel_coordinates"
+)
+
+func studyChartRequest(xid int64, title string) *dashboard_apipb.CreateChartRequest {
+	if title == "" {
+		title = studyChartTitle
+	}
+	return &dashboard_apipb.CreateChartRequest{
+		Parent:  validator.ConstructExperimentName(xid),
+		ChartId: validator.StudyChartID(xid),
+		Chart: &dashboard_apipb.Chart{
+			Title:      title,
+			Xid:        xid,
+			Plots:      []*dashboard_apipb.PlotSpec{{PlotId: studyChartPlotID, Title: title, Type: dashboard_apipb.PlotType_PARALLEL_COORDINATES}},
+			PlotLayout: &dashboard_apipb.LayoutSpec{Type: dashboard_apipb.LayoutSpec_GRID, Columns: 1},
+		},
+	}
+}
+
 // chartRequest builds the CreateChart request for a ChartArtifact under (xid, wid); wid 0 builds
 // the server-provisioned study parallel coordinates chart.
 func chartRequest(ctx context.Context, xid, wid int64, cArtifact *essmsgpb.ChartArtifact) *dashboard_apipb.CreateChartRequest {
@@ -202,6 +224,15 @@ func chartRequest(ctx context.Context, xid, wid int64, cArtifact *essmsgpb.Chart
 	}
 }
 
+func isStudyChartArtifact(artifact *essmsgpb.Artifact) bool {
+	_, wid, err := validator.ValidateArtifactParent(artifact.GetParent())
+	return err == nil && wid == 0
+}
+
+func markChartFailed(cArtifact *essmsgpb.ChartArtifact, msg string) {
+	cArtifact.Status, cArtifact.ErrorMessage = essmsgpb.ChartArtifact_FAILED, msg
+}
+
 // NewDashboardObserver creates an ArtifactObserver that provisions charts on Dashboard.
 func NewDashboardObserver(client *toollibs.DashboardToolClient, s storage.Storage, wg *sync.WaitGroup) ArtifactObserver {
 	return &dashboardObserver{client: client, storage: s, wg: wg}
@@ -211,33 +242,31 @@ func (o *dashboardObserver) OnArtifactCreated(ctxBg context.Context, artifactToP
 	if artifactToProvision.GetPayload().GetChart() == nil {
 		return
 	}
-	xid, wid, parentErr := validator.ValidateArtifactParent(artifactToProvision.GetParent())
-	isStudyChart := parentErr == nil && wid == 0
 	o.wg.Add(1)
 	go func() {
 		defer o.wg.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				o.handleProvisionPanic(ctxBg, artifactToProvision, isStudyChart, r)
+				o.handleProvisionPanic(ctxBg, artifactToProvision, r)
 			}
 		}()
-		o.provisionChartArtifact(ctxBg, artifactToProvision, xid, wid, parentErr, isStudyChart)
+		o.provisionChartArtifact(ctxBg, artifactToProvision)
 	}()
 }
 
-func (o *dashboardObserver) provisionChartArtifact(ctxBg context.Context, artifactToProvision *essmsgpb.Artifact, xid, wid int64, parentErr error, isStudyChart bool) {
+func (o *dashboardObserver) provisionChartArtifact(ctxBg context.Context, artifactToProvision *essmsgpb.Artifact) {
 	ctxBg, cancel := context.WithTimeout(ctxBg, 2*time.Minute)
 	defer cancel()
-	createErr := o.createDashboardChart(ctxBg, xid, wid, parentErr, artifactToProvision.GetPayload().GetChart())
+	createErr := o.createDashboardChart(ctxBg, artifactToProvision.GetParent(), artifactToProvision.GetPayload().GetChart())
 	writeErr := o.persistProvisionedArtifact(ctxBg, artifactToProvision)
-	if isStudyChart && (createErr != nil || writeErr != nil) {
+	if isStudyChartArtifact(artifactToProvision) && (createErr != nil || writeErr != nil) {
 		studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart).Inc()
 	}
 }
 
-func (o *dashboardObserver) handleProvisionPanic(ctxBg context.Context, artifactToProvision *essmsgpb.Artifact, isStudyChart bool, r any) {
+func (o *dashboardObserver) handleProvisionPanic(ctxBg context.Context, artifactToProvision *essmsgpb.Artifact, r any) {
 	logging.Error(ctxBg, "Recovered from panic in dashboardObserver", "panic", r)
-	if isStudyChart {
+	if isStudyChartArtifact(artifactToProvision) {
 		studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageChart).Inc()
 	}
 	cArtifact := artifactToProvision.GetPayload().GetChart()
@@ -249,17 +278,19 @@ func (o *dashboardObserver) handleProvisionPanic(ctxBg context.Context, artifact
 			logging.Error(ctxBg, "Recovered from panic while persisting failed ChartArtifact", "panic", writePanic)
 		}
 	}()
-	cArtifact.Status = essmsgpb.ChartArtifact_FAILED
 	if cArtifact.ErrorMessage == "" {
-		cArtifact.ErrorMessage = "chart provisioning failed: internal error"
+		markChartFailed(cArtifact, "chart provisioning failed: internal error")
+	} else {
+		cArtifact.Status = essmsgpb.ChartArtifact_FAILED
 	}
 	_ = o.persistProvisionedArtifact(ctxBg, artifactToProvision)
 }
 
-func (o *dashboardObserver) createDashboardChart(ctxBg context.Context, xid, wid int64, parentErr error, cArtifact *essmsgpb.ChartArtifact) error {
+func (o *dashboardObserver) createDashboardChart(ctxBg context.Context, parent string, cArtifact *essmsgpb.ChartArtifact) error {
+	xid, wid, parentErr := validator.ValidateArtifactParent(parent)
 	if parentErr != nil {
 		logging.Error(ctxBg, "Invalid ChartArtifact parent", "error", parentErr)
-		cArtifact.Status, cArtifact.ErrorMessage = essmsgpb.ChartArtifact_FAILED, parentErr.Error()
+		markChartFailed(cArtifact, parentErr.Error())
 		return parentErr
 	}
 	ctxAuth, forwarded := withForwardedAuth(ctxBg)
@@ -274,7 +305,7 @@ func (o *dashboardObserver) createDashboardChart(ctxBg context.Context, xid, wid
 	}
 	if err != nil {
 		logging.Error(ctxBg, "Background Chart provisioning failed", "error", err)
-		cArtifact.Status, cArtifact.ErrorMessage = essmsgpb.ChartArtifact_FAILED, err.Error()
+		markChartFailed(cArtifact, err.Error())
 		return err
 	}
 	logging.Info(ctxBg, "Background Chart provisioning succeeded")

@@ -21,7 +21,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
 	msgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
@@ -30,12 +29,9 @@ import (
 const (
 	// studyChartProvisionTimeout bounds study chart artifact creation so a hung XID/DB call caps delay.
 	studyChartProvisionTimeout = 10 * time.Second
-	// studyChartRecoveryTimeout bounds reading back a study chart after an ambiguous CreateChart.
-	studyChartRecoveryTimeout = 15 * time.Second
-	studyChartTitle           = "Parallel Coordinates"
-	studyChartPlotID          = "parallel_coordinates"
-	studyChartStageArtifact   = "artifact"
-	studyChartStageChart      = "chart"
+	studyChartTitle            = "Parallel Coordinates"
+	studyChartStageArtifact    = "artifact"
+	studyChartStageChart       = "chart"
 )
 
 var studyChartProvisioningFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -66,23 +62,29 @@ func newStudyChartProvisioner(artifacts *ArtifactHandler, wg *sync.WaitGroup) *s
 // A slow XID or DB call then cannot delay the CreateExperiment response past commit, which would
 // make clients with short deadlines retry and create duplicate studies.
 func (p *studyChartProvisioner) start(ctx context.Context, creator string, exp *msgpb.Experiment) {
-	if p == nil || p.wg == nil || exp.GetExperimentType() != msgpb.Experiment_STUDY {
+	if p == nil || exp.GetExperimentType() != msgpb.Experiment_STUDY {
+		return
+	}
+	if p.wg == nil {
 		p.provision(ctx, creator, exp)
 		return
 	}
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		p.provision(context.WithoutCancel(ctx), creator, exp)
+		defer func() {
+			if r := recover(); r != nil {
+				studyChartProvisioningFailuresTotal.WithLabelValues(studyChartStageArtifact).Inc()
+				logging.Error(ctx, "Panic during study chart provisioning", "experiment_name", exp.GetName(), "panic", r)
+			}
+		}()
+		p.provision(ctx, creator, exp)
 	}()
 }
 
-// provision creates the chart artifact of exp on behalf of creator when exp is a STUDY.
+// provision creates the chart artifact of exp on behalf of creator.
 func (p *studyChartProvisioner) provision(ctx context.Context, creator string, exp *msgpb.Experiment) {
-	if p == nil || exp.GetExperimentType() != msgpb.Experiment_STUDY {
-		return
-	}
-	if p.artifacts == nil || len(p.artifacts.artifactObservers) == 0 {
+	if p == nil || p.artifacts == nil || !p.artifacts.hasDashboardObserver() {
 		logging.Info(ctx, "No Dashboard Service configured; skipping study chart provisioning", "experiment_name", exp.GetName())
 		return
 	}
@@ -110,14 +112,4 @@ func studyChartArtifact(exp *msgpb.Experiment, xid int64) *msgpb.Artifact {
 		Url: &msgpb.Url{Url: "/v1/" + validator.ConstructExperimentChartName(xid, validator.StudyChartID(xid)), DisplayName: studyChartTitle}, Tags: []string{"study", "parallel-coordinates"}, LifecyclePhase: msgpb.Artifact_OUTPUT,
 		Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Chart{Chart: &msgpb.ChartArtifact{Title: studyChartTitle, MetricNames: metricNames, Status: msgpb.ChartArtifact_PROVISIONING}}},
 	})
-}
-
-func studyChartRequest(xid int64, title string) *dashboard_apipb.CreateChartRequest {
-	if title == "" {
-		title = studyChartTitle
-	}
-	return &dashboard_apipb.CreateChartRequest{
-		Parent: validator.ConstructExperimentName(xid), ChartId: validator.StudyChartID(xid),
-		Chart: &dashboard_apipb.Chart{Title: title, Xid: xid, Plots: []*dashboard_apipb.PlotSpec{{PlotId: studyChartPlotID, Title: title, Type: dashboard_apipb.PlotType_PARALLEL_COORDINATES}}, PlotLayout: &dashboard_apipb.LayoutSpec{Type: dashboard_apipb.LayoutSpec_GRID, Columns: 1}},
-	}
 }

@@ -475,27 +475,16 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	}
 }
 
-func TestCreateArtifact_RejectsUserExperimentLevelChartArtifact(t *testing.T) {
-	xidClient := &mockXidClient{
-		checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
-		createXidEntryResp:         &xidmsgpb.XidEntry{Name: proto.String("xids/999")},
+func TestCreateArtifact_ChartValidationAndUnconfiguredObservers(t *testing.T) {
+	newChartReq := func(parent, title string) *msgpb.CreateArtifactRequest {
+		return &msgpb.CreateArtifactRequest{Parent: parent, Artifact: &msgpb.Artifact{Url: &msgpb.Url{Url: "http://example.com/chart"}, Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Chart{Chart: &msgpb.ChartArtifact{Title: title, MetricNames: []string{"accuracy"}}}}}}
 	}
-	server := newTestServer(t, withStorage(&storage.MockStorage{}), withXidClient(xidClient))
-	req := &msgpb.CreateArtifactRequest{
-		Parent: "experiments/123",
-		Artifact: &msgpb.Artifact{
-			Url:     &msgpb.Url{Url: "http://example.com/chart"},
-			Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Chart{Chart: &msgpb.ChartArtifact{Title: "Parallel Coordinates", MetricNames: []string{"accuracy"}}}},
-		},
+	xidClient := &mockXidClient{checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/999")}}
+	srv := newTestServer(t, withStorage(&storage.MockStorage{}), withXidClient(xidClient))
+	if _, err := srv.CreateArtifact(context.Background(), newChartReq("experiments/123", "Parallel Coordinates")); !errors.Is(err, grpcerr.ErrInvalidArgument) || xidClient.createXidEntryCalls != 0 {
+		t.Errorf("CreateArtifact(experiment-level ChartArtifact) = (%v, xidCalls=%d), want (%v, 0)", err, xidClient.createXidEntryCalls, grpcerr.ErrInvalidArgument)
 	}
-	if _, err := server.CreateArtifact(context.Background(), req); !errors.Is(err, grpcerr.ErrInvalidArgument) {
-		t.Errorf("CreateArtifact(experiment-level ChartArtifact) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
-	}
-	if xidClient.createXidEntryCalls != 0 {
-		t.Errorf("CreateArtifact(experiment-level ChartArtifact) made %d CreateXidEntry calls, want 0", xidClient.createXidEntryCalls)
-	}
-	got, err := server.CreateArtifact(context.Background(), &msgpb.CreateArtifactRequest{Parent: "experiments/123/workUnits/1", Artifact: req.Artifact})
-	if err != nil || got.GetPayload().GetChart().GetStatus() != msgpb.ChartArtifact_FAILED || got.GetPayload().GetChart().GetErrorMessage() != "dashboard service is not configured" {
+	if got, err := srv.CreateArtifact(context.Background(), newChartReq("experiments/123/workUnits/1", "Work Unit Chart")); err != nil || got.GetPayload().GetChart().GetStatus() != msgpb.ChartArtifact_FAILED || got.GetPayload().GetChart().GetErrorMessage() != "dashboard service is not configured" {
 		t.Errorf("CreateArtifact(work-unit ChartArtifact without observers) = (%v, %v), want FAILED 'dashboard service is not configured'", got, err)
 	}
 }
