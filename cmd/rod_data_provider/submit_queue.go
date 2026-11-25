@@ -26,11 +26,11 @@ import (
 
 // GetSubmitQueue returns the recommended target submission queue (LocalQueue) for a cluster queue.
 func (s *server) GetSubmitQueue(ctx context.Context, req *spb.GetSubmitQueueRequest) (*spb.GetSubmitQueueResponse, error) {
-	if err := validateSubmitQueueRequest(ctx, req, s.cache); err != nil {
+	if err := validateSubmitQueueRequest(ctx, req, s.kueueCache); err != nil {
 		return nil, err
 	}
 
-	submitQueueName, err := selectSubmitQueue(s.cache, req.GetQueueName())
+	submitQueueName, err := selectSubmitQueue(s.kueueCache, req.GetQueueName())
 	if err != nil {
 		return nil, err
 	}

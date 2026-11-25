@@ -325,7 +325,7 @@ func TestGetRunningAndPendingJobs(t *testing.T) {
 			if tt.setupCache != nil {
 				kCache = tt.setupCache()
 			}
-			srv := newServer(cfg, kCache, tt.fetcher, nil)
+			srv := newServer(cfg, kCache, nil, tt.fetcher, nil)
 			resp, err := srv.GetRunningAndPendingJobs(tt.ctx, tt.req)
 
 			gotCode := status.Code(err)
@@ -409,7 +409,7 @@ func TestGetRunningAndPendingJobs_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	srv := newServer(cfg, nil, &mockWorkUnitFetcher{}, nil)
+	srv := newServer(cfg, nil, nil, &mockWorkUnitFetcher{}, nil)
 	req := baseReq
 	_, err := srv.GetRunningAndPendingJobs(ctx, req)
 
@@ -602,7 +602,7 @@ func TestGetRunningAndPendingJobs_TargetQueuesResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fetcher := &mockWorkUnitFetcher{}
-			srv := newServer(&Config{}, tt.setupCache(), fetcher, nil)
+			srv := newServer(&Config{}, tt.setupCache(), nil, fetcher, nil)
 
 			_, err := srv.GetRunningAndPendingJobs(context.Background(), &spb.GetRunningAndPendingJobsRequest{
 				QueueName: tt.queueName,
@@ -663,7 +663,7 @@ func TestGetRunningAndPendingJobs_OrderBy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fetcher := &mockWorkUnitFetcher{}
-			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), nil, fetcher, nil)
 			req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
 				r.OrderBy = tt.orderBy
 			})
@@ -732,7 +732,7 @@ func TestGetRunningAndPendingJobs_Filter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fetcher := &mockWorkUnitFetcher{}
-			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), fetcher, nil)
+			srv := newServer(&Config{Port: "8080", GRPCPort: "50051"}, newTestKueueCache(), nil, fetcher, nil)
 			req := prototest.Modify(baseReq, func(r *spb.GetRunningAndPendingJobsRequest) {
 				r.Filter = tt.filter
 			})

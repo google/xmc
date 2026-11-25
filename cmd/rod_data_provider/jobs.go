@@ -47,7 +47,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 
 	clusterQueueName := req.GetQueueName()
 
-	targetQueues := s.cache.GetLocalQueuesForClusterQueue(clusterQueueName)
+	targetQueues := s.kueueCache.GetLocalQueuesForClusterQueue(clusterQueueName)
 
 	pageSize := req.GetPageSize()
 	if pageSize <= 0 {
@@ -72,7 +72,7 @@ func (s *server) GetRunningAndPendingJobs(ctx context.Context, req *spb.GetRunni
 		totalQueueSize = result.TotalQueueSize
 	}
 
-	uniqueAccelerators := buildUniqueQueueAcceleratorMap(s.cache, clusterQueueName)
+	uniqueAccelerators := buildUniqueQueueAcceleratorMap(s.kueueCache, clusterQueueName)
 	return &spb.GetRunningAndPendingJobsResponse{
 		Jobs:            jobs,
 		NextPageToken:   nextPageToken,

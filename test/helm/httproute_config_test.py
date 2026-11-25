@@ -66,6 +66,12 @@ class HTTPRouteConfigTest(unittest.TestCase):
             r"-\s+path:\s*\n\s+type:\s+Exact\s*\n\s+value:\s+/v1/clusterqueues:batchGetSecondaryData",
         )
 
+        # Verify Exact match for /v1/availability.
+        self.assertRegex(
+            manifest,
+            r"-\s+path:\s*\n\s+type:\s+Exact\s*\n\s+value:\s+/v1/availability",
+        )
+
         # Verify backendRef routes to rod-data-provider-service on port 8080.
         self.assertRegex(
             manifest,

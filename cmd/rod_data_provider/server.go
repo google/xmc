@@ -32,17 +32,19 @@ type WorkUnitFetcher interface {
 type server struct {
 	spb.UnimplementedResourceObservabilityServiceServer
 	cfg           *Config
-	cache         *cache.KueueCache
+	kueueCache    *cache.KueueCache
+	physCache     *cache.PhysicalInventoryCache
 	workUnitStore WorkUnitFetcher
 	velocityStore QueueVelocityFetcher
 }
 
 var _ spb.ResourceObservabilityServiceServer = (*server)(nil)
 
-func newServer(cfg *Config, cache *cache.KueueCache, fetcher WorkUnitFetcher, velocityFetcher QueueVelocityFetcher) *server {
+func newServer(cfg *Config, kueueCache *cache.KueueCache, physCache *cache.PhysicalInventoryCache, fetcher WorkUnitFetcher, velocityFetcher QueueVelocityFetcher) *server {
 	return &server{
 		cfg:           cfg,
-		cache:         cache,
+		kueueCache:    kueueCache,
+		physCache:     physCache,
 		workUnitStore: fetcher,
 		velocityStore: velocityFetcher,
 	}
@@ -56,12 +58,12 @@ func (s *server) ListClusterQueues(ctx context.Context, req *spb.ListClusterQueu
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request cannot be nil")
 	}
-	if s.cache == nil || s.cache.ClusterQueues == nil {
+	if s.kueueCache == nil || s.kueueCache.ClusterQueues == nil {
 		return nil, status.Error(codes.Unavailable, "kueue cache is uninitialized")
 	}
 
-	rfMap := buildResourceFlavorMap(s.cache)
-	overviews := buildQueueOverviews(s.cache, rfMap)
+	rfMap := buildResourceFlavorMap(s.kueueCache)
+	overviews := buildQueueOverviews(s.kueueCache, rfMap)
 
 	return &spb.ListClusterQueuesResponse{
 		Queues: overviews,
