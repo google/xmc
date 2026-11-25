@@ -199,28 +199,6 @@ class CollectMetricsTest(unittest.TestCase):
         metrics = cli.collect_metrics(self.root, ["use.go"])
         self.assertEqual(metrics["go_unresolved_module_imports"], 1)
 
-    def test_allowlisted_third_party_vizier_files_are_excluded(self):
-        vizier_files = [
-            "third_party/vizier/BUILD.bazel",
-            "third_party/vizier/LICENSE",
-            "third_party/vizier/README.md",
-            "third_party/vizier/key_value.proto",
-            "third_party/vizier/study.proto",
-            "third_party/vizier/vizier_service.proto",
-        ]
-        metrics = cli.collect_metrics(self.root, vizier_files)
-        self.assertEqual(metrics["third_party_files"], 0)
-
-    def test_unallowlisted_third_party_files_are_still_flagged(self):
-        metrics = cli.collect_metrics(
-            self.root,
-            [
-                "third_party/vizier/study.proto",
-                "third_party/other/foo.proto",
-            ],
-        )
-        self.assertEqual(metrics["third_party_files"], 1)
-
 
 class BaselineTest(unittest.TestCase):
     def test_compare_to_baseline(self):

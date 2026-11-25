@@ -14,30 +14,8 @@
 
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@rules_proto//proto:defs.bzl", "proto_library")
 
-proto_library(
-    name = "vizier_proto",
-    srcs = [
-        "key_value.proto",
-        "study.proto",
-        "vizier_service.proto",
-    ],
-    strip_import_prefix = "/third_party/vizier",
-    deps = [
-        "@com_google_googleapis//google/api:annotations_proto",
-        "@com_google_googleapis//google/api:client_proto",
-        "@com_google_googleapis//google/api:field_behavior_proto",
-        "@com_google_googleapis//google/api:resource_proto",
-        "@com_google_googleapis//google/longrunning:operations_proto",
-        "@com_google_protobuf//:any_proto",
-        "@com_google_protobuf//:duration_proto",
-        "@com_google_protobuf//:empty_proto",
-        "@com_google_protobuf//:struct_proto",
-        "@com_google_protobuf//:timestamp_proto",
-        "@com_google_protobuf//:wrappers_proto",
-    ],
-)
+# gazelle:ignore
 
 go_proto_library(
     name = "vizier_go_proto",
@@ -45,8 +23,8 @@ go_proto_library(
         "@io_bazel_rules_go//proto:go_proto",
         "@io_bazel_rules_go//proto:go_grpc_v2",
     ],
-    importpath = "xmanager_cloud/third_party/vizier",
-    proto = ":vizier_proto",
+    importpath = "xmanager_cloud/pkg/study/vizierpb",
+    proto = "@oss_vizier//:vizier_proto",
     deps = [
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@com_google_googleapis//google/api:field_behavior_go_proto",
@@ -57,14 +35,19 @@ go_proto_library(
 )
 
 go_library(
-    name = "vizier",
+    name = "vizierpb",
     embed = [":vizier_go_proto"],
-    importpath = "xmanager_cloud/third_party/vizier",
+    importpath = "xmanager_cloud/pkg/study/vizierpb",
     visibility = ["//visibility:public"],
 )
 
 go_test(
-    name = "vizier_proto_test",
-    srcs = ["vizier_proto_test.go"],
-    embed = [":vizier"],
+    name = "vizierpb_test",
+    srcs = ["vizierpb_test.go"],
+    deps = [
+        ":vizierpb",
+        "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
+    ],
 )
