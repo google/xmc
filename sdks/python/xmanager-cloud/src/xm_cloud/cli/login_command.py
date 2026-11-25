@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import datetime
 import getpass
 import hashlib
@@ -210,14 +211,19 @@ def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str
         {"version": 1, "deployments": dict(deployments)}, indent=2, sort_keys=True
     ).encode("utf-8")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.")
+    fd_owned = True
     try:
         with os.fdopen(fd, "wb") as f:
+            fd_owned = False
             f.write(payload + b"\n")
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
-        if os.path.exists(tmp):
+        if fd_owned:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        with contextlib.suppress(FileNotFoundError):
             os.unlink(tmp)
         raise
 
@@ -322,6 +328,20 @@ def await_loopback_code(
     return result["code"]
 
 
+def _format_http_error(exc: urllib.error.HTTPError) -> str:
+    """Extracts an OAuth error description from an HTTP error body if present."""
+    try:
+        raw = exc.read(4096).decode("utf-8", errors="replace")
+        payload = json.loads(raw)
+    except (OSError, ValueError):
+        return f"HTTP {exc.code}"
+    if isinstance(payload, dict):
+        detail = payload.get("error_description") or payload.get("error")
+        if isinstance(detail, str) and detail.strip():
+            return f"{detail.strip()} (HTTP {exc.code})"
+    return f"HTTP {exc.code}"
+
+
 def exchange_code(server: str, code: str, verifier: str) -> dict[str, Any]:
     """Exchanges a one-time `code` and PKCE `verifier` at `/api/cli/token`."""
     body = urllib.parse.urlencode(
@@ -342,7 +362,7 @@ def exchange_code(server: str, code: str, verifier: str) -> dict[str, Any]:
         with urllib.request.urlopen(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
-        raise AuthError(f"Token exchange failed (HTTP {exc.code}).") from None
+        raise AuthError(f"Token exchange failed: {_format_http_error(exc)}.") from None
     except (OSError, ValueError, http.client.HTTPException) as exc:
         raise AuthError(f"Token exchange failed: {exc}") from None
     return _validated_grant(payload)

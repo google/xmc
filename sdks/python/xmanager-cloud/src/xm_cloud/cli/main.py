@@ -21,17 +21,29 @@ command's options and `xmc --help` lists the commands.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping, Sequence
-from typing import NamedTuple, TextIO
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple, Protocol, TextIO
 
 from xm_cloud.cli import login_command
+
+
+class SubcommandRunner(Protocol):
+    """Callable signature implemented by every `xmc` subcommand."""
+
+    def __call__(
+        self,
+        argv: Sequence[str],
+        *,
+        out: TextIO = ...,
+        err: TextIO = ...,
+    ) -> int: ...
 
 
 class Subcommand(NamedTuple):
     """An `xmc` subcommand: a one-line summary and the function that runs it."""
 
     summary: str
-    run: Callable[[Sequence[str]], int]
+    run: SubcommandRunner
 
 
 SUBCOMMANDS: Mapping[str, Subcommand] = {
@@ -81,7 +93,7 @@ def main(
         err.write(f"xmc: error: unknown command {args[0]!r}\n{format_usage()}")
         return 2
     try:
-        return command.run(args[1:])
+        return command.run(args[1:], out=out, err=err)
     except KeyboardInterrupt:
         err.write("\nxmc: interrupted\n")
         return 130

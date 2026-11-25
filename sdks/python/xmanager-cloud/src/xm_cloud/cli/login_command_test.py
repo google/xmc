@@ -306,6 +306,18 @@ class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
                 self.assertEqual(login_command.load_credentials(path), {})
 
+    def test_write_credentials_closes_fd_and_unlinks_tmp_on_fdopen_failure(self) -> None:
+        path = pathlib.Path(self._xdg) / "xmc" / "credentials.json"
+        with (
+            mock.patch.object(os, "fdopen", side_effect=OSError("fdopen failed")),
+            mock.patch.object(os, "close", wraps=os.close) as close_mock,
+            self.assertRaisesRegex(login_command.AuthError, "Cannot write credentials file"),
+        ):
+            login_command.save_credentials(path, {})
+
+        close_mock.assert_called_once()
+        self.assertEqual(list(path.parent.glob(".credentials.*")), [])
+
     def test_run_login_reports_save_failure_after_token_exchange(self) -> None:
         out, err = io.StringIO(), io.StringIO()
         grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
@@ -431,8 +443,45 @@ class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
             io.BytesIO(b"{}"),
         )
         with mock.patch.object(urllib.request, "urlopen", side_effect=http_err):
-            with self.assertRaises(login_command.AuthError):
+            with self.assertRaisesRegex(
+                login_command.AuthError, r"Token exchange failed: HTTP 400\."
+            ):
                 login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+    def test_exchange_code_formats_http_error_bodies(self) -> None:
+        cases = [
+            (b'{"error_description": "Code expired"}', "Code expired \\(HTTP 400\\)"),
+            (b'{"error": "invalid_grant"}', "invalid_grant \\(HTTP 400\\)"),
+            (b"not json", "HTTP 400"),
+        ]
+        for body, pattern in cases:
+            with self.subTest(body=body):
+                http_err = urllib.error.HTTPError(
+                    f"{_SERVER}/api/cli/token",
+                    400,
+                    "Bad Request",
+                    email.message.Message(),
+                    io.BytesIO(body),
+                )
+                with (
+                    mock.patch.object(urllib.request, "urlopen", side_effect=http_err),
+                    self.assertRaisesRegex(login_command.AuthError, pattern),
+                ):
+                    login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+        unreadable = urllib.error.HTTPError(
+            f"{_SERVER}/api/cli/token",
+            502,
+            "Bad Gateway",
+            email.message.Message(),
+            None,
+        )
+        with (
+            mock.patch.object(unreadable, "read", side_effect=OSError("closed")),
+            mock.patch.object(urllib.request, "urlopen", side_effect=unreadable),
+            self.assertRaisesRegex(login_command.AuthError, r"Token exchange failed: HTTP 502\."),
+        ):
+            login_command.exchange_code(_SERVER, "code-1", "verifier-1")
 
     def test_exchange_code_rejects_malformed_responses_and_network_errors(self) -> None:
         good = {

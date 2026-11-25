@@ -53,14 +53,23 @@ class MainTest(unittest.TestCase):
         self.assertEqual((code, out), (2, ""))
         self.assertEqual(err, f"xmc: error: unknown command 'stop'\n{main.format_usage()}")
 
-    def test_dispatches_remaining_arguments_and_returns_exit_code(self) -> None:
+    def test_dispatches_remaining_arguments_and_streams_to_subcommand(self) -> None:
         run = mock.Mock(return_value=3)
+        out_stream, err_stream = io.StringIO(), io.StringIO()
         subcommands = {"login": main.Subcommand("Logs in.", run)}
         with mock.patch.object(main, "SUBCOMMANDS", subcommands):
-            code, out, err = self._main(["login", "--status", "--no-browser"])
+            code = main.main(
+                ["login", "--status", "--no-browser"],
+                out=out_stream,
+                err=err_stream,
+            )
 
-        self.assertEqual((code, out, err), (3, "", ""))
-        run.assert_called_once_with(["--status", "--no-browser"])
+        self.assertEqual((code, out_stream.getvalue(), err_stream.getvalue()), (3, "", ""))
+        run.assert_called_once_with(
+            ["--status", "--no-browser"],
+            out=out_stream,
+            err=err_stream,
+        )
 
     def test_defaults_to_process_arguments(self) -> None:
         run = mock.Mock(return_value=0)
@@ -70,7 +79,11 @@ class MainTest(unittest.TestCase):
         ):
             self.assertEqual(main.main(), 0)
 
-        run.assert_called_once_with(["--all"])
+        run.assert_called_once_with(
+            ["--all"],
+            out=main.sys.stdout,
+            err=main.sys.stderr,
+        )
 
     def test_ctrl_c_exits_130_without_a_traceback(self) -> None:
         run = mock.Mock(side_effect=KeyboardInterrupt)
