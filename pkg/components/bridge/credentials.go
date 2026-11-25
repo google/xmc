@@ -30,9 +30,14 @@ import (
 	"xmanager_cloud/internal/logging"
 	tq "xmanager_cloud/internal/task_queue"
 	xmcoauth "xmanager_cloud/pkg/auth/oauth2"
+	"xmanager_cloud/pkg/components/bridge/helm"
 )
 
 var _ credentials.PerRPCCredentials = (*BearerTokenCredentials)(nil)
+
+// placeholderGRPCAudience aliases the chart default shared with the 1P release essAudience
+// resolution so the CMS client and essAudience cannot drift.
+const placeholderGRPCAudience = helm.PlaceholderGRPCAudience
 
 // TokenSourceFunc fetches a Bearer token for an outgoing CMS gRPC request.
 type TokenSourceFunc func(ctx context.Context) (string, error)
@@ -90,8 +95,8 @@ func newCMSTokenCredentialsWithFactory(ctx context.Context, newIDTokenSource idT
 		}
 	}
 	aud := resolveCMSAudience(oauthCfg)
-	if aud == "placeholder-grpc-audience" {
-		logging.Warn(ctx, "No gRPC audience configured for CMS credentials; using placeholder. Production calls will likely fail.")
+	if aud == placeholderGRPCAudience {
+		logging.Warn(ctx, "No gRPC audience or OAuth client ID configured for CMS credentials; using placeholder audience. CMS must also accept the placeholder audience.")
 	}
 	return NewBearerTokenCredentials(buildGoogleIDTokenFunc(ctx, aud, newIDTokenSource)), nil
 }
@@ -146,15 +151,24 @@ func buildGoogleIDTokenFunc(ctx context.Context, audience string, newIDTokenSour
 	}
 }
 
+// resolveCMSAudience returns the audience of the Google ID tokens minted for CMS calls. It prefers
+// IAP_EXPECTED_GRPC_AUDIENCE, treating the Helm chart default placeholderGRPCAudience as unset so a
+// configured OAuth client ID wins, and returns placeholderGRPCAudience only when nothing is set.
+// helm.resolveBridgeESSAudience applies the same precedence for the 1P release essAudience.
 func resolveCMSAudience(oauthCfg *xmcoauth.Config) string {
 	var cfgClientID string
 	if oauthCfg != nil {
 		cfgClientID = oauthCfg.ClientID
 	}
-	for _, candidate := range []string{os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"), cfgClientID, os.Getenv("CLIENT_ID")} {
-		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
-			return trimmed
-		}
+	iapAud := strings.TrimSpace(os.Getenv("IAP_EXPECTED_GRPC_AUDIENCE"))
+	if iapAud != "" && iapAud != placeholderGRPCAudience {
+		return iapAud
 	}
-	return "placeholder-grpc-audience"
+	if trimmed := strings.TrimSpace(cfgClientID); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(os.Getenv("CLIENT_ID")); trimmed != "" {
+		return trimmed
+	}
+	return placeholderGRPCAudience
 }

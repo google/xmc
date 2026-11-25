@@ -556,16 +556,16 @@ func TestBuildHelmValues_BridgeEnvPassThrough(t *testing.T) {
 		},
 		{
 			name:      "placeholder IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID",
-			iapAudEnv: placeholderGRPCAudience,
+			iapAudEnv: PlaceholderGRPCAudience,
 			clientID:  "oauth-client-id",
 			opts:      HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
 			want:      map[string]any{"enabled": true, "essAudience": "oauth-client-id"},
 		},
 		{
 			name:      "placeholder IAP_EXPECTED_GRPC_AUDIENCE kept when CLIENT_ID is also empty",
-			iapAudEnv: placeholderGRPCAudience,
+			iapAudEnv: PlaceholderGRPCAudience,
 			opts:      HelmComponentOptions{Ref: ComponentRef{Name: "hpo"}, Enabled: true},
-			want:      map[string]any{"enabled": true, "essAudience": placeholderGRPCAudience},
+			want:      map[string]any{"enabled": true, "essAudience": PlaceholderGRPCAudience},
 		},
 		{
 			name:     "empty IAP_EXPECTED_GRPC_AUDIENCE falls back to CLIENT_ID",
