@@ -22,16 +22,17 @@ from typing import Any
 # metrics_pb2 is generated, never checked in. The xmc-metrics wheel and sdist build
 # compile it into xmc._protos; Bazel's py_proto_library generates it under
 # api.protos.metrics instead. Both copies carry the same descriptor name. Only a
-# missing packaged module falls back; any other import error inside it (e.g. a too-old
-# protobuf runtime) propagates. no-redef applies only when an editable install has
-# generated xmc._protos.metrics_pb2.
-_PACKAGED_METRICS_PB2 = "xmc._protos.metrics_pb2"
+# missing packaged module (or the whole xmc._protos package) falls back; any other
+# import error inside it (e.g. a too-old protobuf runtime) propagates. no-redef applies
+# only when an editable install has generated xmc._protos.metrics_pb2.
+_PACKAGED_PROTOS = "xmc._protos"
+_PACKAGED_METRICS_PB2 = f"{_PACKAGED_PROTOS}.metrics_pb2"
 try:
     # `import ... as` (not `from xmc._protos import`) so a missing module raises
     # ModuleNotFoundError naming it, rather than a generic "cannot import name".
     import xmc._protos.metrics_pb2 as metrics_pb2
 except ModuleNotFoundError as err:
-    if err.name != _PACKAGED_METRICS_PB2:
+    if err.name not in (_PACKAGED_PROTOS, _PACKAGED_METRICS_PB2):
         raise
     from api.protos.metrics import (  # type: ignore[attr-defined, no-redef, unused-ignore]
         metrics_pb2,

@@ -38,6 +38,14 @@ class TestMetricsProtoImport(unittest.TestCase):
     def test_bazel_build_falls_back_to_api_protos(self):
         self.assertEqual(xmc_types.metrics_pb2.__name__, "api.protos.metrics.metrics_pb2")
 
+    def test_missing_protos_package_falls_back_to_api_protos(self):
+        # None in sys.modules makes `import xmc._protos...` raise ModuleNotFoundError
+        # naming "xmc._protos", as when the package is absent from an install.
+        with mock.patch.dict(sys.modules, {"xmc._protos": None}):
+            module = _exec_fresh_types_module()
+
+        self.assertEqual(module.metrics_pb2.__name__, "api.protos.metrics.metrics_pb2")
+
     def test_descriptor_name_matches_packaged_build(self):
         # setup.py compiles with -I <repo_root>, so both copies share this name and can
         # be loaded in one process.

@@ -51,7 +51,10 @@ def find_proto_root(project_root: Path) -> Path:
     Raises:
         FileNotFoundError: If neither location contains METRICS_PROTO.
     """
-    for candidate in (project_root, *project_root.parents[2:3]):
+    candidates = [project_root]
+    if len(project_root.parents) >= 3:
+        candidates.append(project_root.parents[2])  # sdks/python/xmc -> repository root
+    for candidate in candidates:
         if (candidate / METRICS_PROTO).is_file():
             return candidate
     raise FileNotFoundError(
