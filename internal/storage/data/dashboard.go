@@ -162,10 +162,7 @@ func applyChartMaskPath(merged, updated *dpb.Chart, path string) error {
 	case "description":
 		merged.Description = updated.GetDescription()
 	case "plots":
-		if err := validator.ValidateChartPlotIDs(updated.GetPlots()); err != nil {
-			return err
-		}
-		if err := validator.ValidateChartPlotTypes(updated.GetPlots(), merged.GetXid() > 0 && merged.GetWid() == 0); err != nil {
+		if err := validator.ValidateChartPlots(updated.GetPlots(), validator.IsExperimentLevelChart(merged)); err != nil {
 			return err
 		}
 		merged.Plots = updated.GetPlots()

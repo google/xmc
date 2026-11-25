@@ -127,10 +127,7 @@ func validateInlineCharts(charts []*spb.Chart) error {
 		if chart.GetWid() <= 0 {
 			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), grpcerr.ErrInvalidArgument)
 		}
-		if err := ValidateChartPlotIDs(chart.GetPlots()); err != nil {
-			return fmt.Errorf("charts[%d]: %w", i, err)
-		}
-		if err := ValidateChartPlotTypes(chart.GetPlots(), false); err != nil {
+		if err := ValidateChartPlots(chart.GetPlots(), false); err != nil {
 			return fmt.Errorf("charts[%d]: %w", i, err)
 		}
 	}
@@ -308,10 +305,20 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetWid() != wuWid {
 		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
 	}
-	if err := ValidateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
+	return ValidateChartPlots(in.GetChart().GetPlots(), wuWid == 0)
+}
+
+// IsExperimentLevelChart reports whether chart belongs to an experiment without a work unit.
+func IsExperimentLevelChart(chart *spb.Chart) bool {
+	return chart.GetXid() > 0 && chart.GetWid() == 0
+}
+
+// ValidateChartPlots validates both plot IDs and chart-level plot types.
+func ValidateChartPlots(plots []*spb.PlotSpec, experimentLevel bool) error {
+	if err := ValidateChartPlotIDs(plots); err != nil {
 		return err
 	}
-	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
+	return ValidateChartPlotTypes(plots, experimentLevel)
 }
 
 // ValidateChartPlotIDs checks that every plot is non-nil and carries a non-whitespace, unique plot_id.

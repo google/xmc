@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -469,6 +470,31 @@ func TestUpdateChart(t *testing.T) {
 	})
 }
 
+func newPlotUpdateMockRepo(t *testing.T, stored *dpb.Chart, wantMask []string, repoErr error, updated *bool) *mockRepository {
+	t.Helper()
+	return &mockRepository{
+		getChartFn: func(context.Context, string) (*dpb.Chart, error) { return stored, nil },
+		updateChartFn: func(_ context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+			*updated = true
+			if chart.GetName() != stored.GetName() {
+				t.Errorf("UpdateChart scoped Name = %q, want %q", chart.GetName(), stored.GetName())
+			}
+			if diff := cmp.Diff(wantMask, updateMask.GetPaths()); diff != "" {
+				t.Errorf("UpdateChart mask mismatch (-want +got):\n%s", diff)
+			}
+			if repoErr != nil {
+				return nil, repoErr
+			}
+			merged := proto.Clone(stored).(*dpb.Chart)
+			merged.Title = chart.GetTitle()
+			if len(updateMask.GetPaths()) == 0 || slices.Contains(updateMask.GetPaths(), "plots") {
+				merged.Plots = chart.GetPlots()
+			}
+			return merged, nil
+		},
+	}
+}
+
 func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
 	ctx := context.Background()
 	parallel := []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}
@@ -519,29 +545,7 @@ func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			updated := false
-			repo := &mockRepository{
-				getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
-					return tc.stored, nil
-				},
-				updateChartFn: func(ctx context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
-					updated = true
-					if chart.GetName() != tc.stored.GetName() {
-						t.Errorf("UpdateChart scoped Name = %q, want %q", chart.GetName(), tc.stored.GetName())
-					}
-					if diff := cmp.Diff(tc.mask, updateMask.GetPaths()); diff != "" {
-						t.Errorf("UpdateChart mask mismatch (-want +got):\n%s", diff)
-					}
-					if tc.repoErr != nil {
-						return nil, tc.repoErr
-					}
-					merged := proto.Clone(tc.stored).(*dpb.Chart)
-					merged.Title = chart.GetTitle()
-					if len(updateMask.GetPaths()) == 0 || updateMask.GetPaths()[0] != "title" || len(updateMask.GetPaths()) > 1 {
-						merged.Plots = chart.GetPlots()
-					}
-					return merged, nil
-				},
-			}
+			repo := newPlotUpdateMockRepo(t, tc.stored, tc.mask, tc.repoErr, &updated)
 			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 			req := &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c", Title: "Title", Plots: tc.plots}}
 			if tc.mask != nil {

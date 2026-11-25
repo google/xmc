@@ -1634,6 +1634,26 @@ func TestValidateChartPlotIDs(t *testing.T) {
 	}
 }
 
+func TestValidateChartPlotsAndLevelHelpers(t *testing.T) {
+	if !IsExperimentLevelChart(&spb.Chart{Xid: 1}) {
+		t.Error("IsExperimentLevelChart(xid=1, wid=0) = false, want true")
+	}
+	for _, c := range []*spb.Chart{nil, {Xid: 0}, {Xid: 1, Wid: 2}} {
+		if IsExperimentLevelChart(c) {
+			t.Errorf("IsExperimentLevelChart(%v) = true, want false", c)
+		}
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), true); err != nil {
+		t.Errorf("ValidateChartPlots(parallel, true) unexpected error: %v", err)
+	}
+	if err := ValidateChartPlots([]*spb.PlotSpec{{PlotId: " ", Type: spb.PlotType_SCATTER}}, false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(whitespace) error = %v, want ErrInvalidArgument", err)
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(parallel, false) error = %v, want ErrInvalidArgument", err)
+	}
+}
+
 func TestValidateChartPlotTypes(t *testing.T) {
 	scatter, parallel := &spb.PlotSpec{PlotId: "loss", Type: spb.PlotType_SCATTER}, &spb.PlotSpec{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}
 	for _, tc := range []struct {
