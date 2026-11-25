@@ -16,6 +16,7 @@
 # Rendered only for the xmc-cmp-hpo release that xmc-bridge installs; the stable-2026b profile
 # release renders only the Component CR.
 {{- $port := 8080 }}
+{{- $ns := .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) }}
 {{- $deploy := .Values.hpoDeployment | default dict }}
 apiVersion: apps/v1
 kind: Deployment
@@ -42,8 +43,6 @@ spec:
         xmc.google.com/vizier-client: "true"
     spec:
       serviceAccountName: xmc-study-controller
-      # The Study Controller does not call the Kubernetes API.
-      automountServiceAccountToken: false
       {{- with $deploy.terminationGracePeriodSeconds }}
       # Set by xmc-bridge from the Component drain timeout.
       terminationGracePeriodSeconds: {{ . }}
@@ -74,6 +73,7 @@ spec:
         # Set by xmc-bridge from ESS_ADDR/CMS_ADDRESS and IAP_EXPECTED_GRPC_AUDIENCE/CLIENT_ID.
         - {{ printf "-ess_addr=%s" (required "hpoDeployment.essAddr is required" $deploy.essAddr) | quote }}
         - {{ printf "-ess_audience=%s" (required "hpoDeployment.essAudience is required" $deploy.essAudience) | quote }}
+        - "-components_namespace={{ $ns }}"
         env:
         - name: REDIS_PASSWORD
           valueFrom:

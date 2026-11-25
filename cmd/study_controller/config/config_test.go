@@ -33,17 +33,19 @@ func TestRegisterFlags(t *testing.T) {
 		{name: "defaults", args: nil, want: Config{Port: DefaultPort}},
 		{name: "explicit port", args: []string{"-port=9090"}, want: Config{Port: "9090"}},
 		{
-			name: "explicit redis and ess flags",
+			name: "explicit redis, ess, and components_namespace flags",
 			args: []string{
 				"-redis_addr=redis-service.xmc.svc.cluster.local:6379",
 				"-ess_addr=grpc-service:50051",
 				"-ess_audience=ess-aud.apps.googleusercontent.com",
+				"-components_namespace=xmc-custom",
 			},
 			want: Config{
-				Port:        DefaultPort,
-				RedisAddr:   "redis-service.xmc.svc.cluster.local:6379",
-				ESSAddr:     "grpc-service:50051",
-				ESSAudience: "ess-aud.apps.googleusercontent.com",
+				Port:                DefaultPort,
+				RedisAddr:           "redis-service.xmc.svc.cluster.local:6379",
+				ESSAddr:             "grpc-service:50051",
+				ESSAudience:         "ess-aud.apps.googleusercontent.com",
+				ComponentsNamespace: "xmc-custom",
 			},
 		},
 	}
@@ -139,6 +141,10 @@ func TestConfig_Validate(t *testing.T) {
 		{name: "ess audience NUL control char", modify: func(c *Config) { c.ESSAudience = "secret\x00aud" }, wantErr: true},
 		{name: "ess audience DEL control char", modify: func(c *Config) { c.ESSAudience = "secret\x7faud" }, wantErr: true},
 		{name: "ess audience unicode non-breaking space", modify: func(c *Config) { c.ESSAudience = "secret\u00a0aud" }, wantErr: true},
+		{name: "empty components namespace allowed", modify: func(c *Config) { c.ComponentsNamespace = "" }},
+		{name: "valid components namespace", modify: func(c *Config) { c.ComponentsNamespace = "xmc-staging" }},
+		{name: "components namespace with space", modify: func(c *Config) { c.ComponentsNamespace = "xmc ns" }, wantErr: true},
+		{name: "components namespace with control char", modify: func(c *Config) { c.ComponentsNamespace = "xmc\x00" }, wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

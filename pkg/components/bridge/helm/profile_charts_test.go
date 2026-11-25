@@ -166,6 +166,9 @@ func TestDefaultProfileCharts_Stable2026bHPORendersWorkload(t *testing.T) {
 	if got := rendered["hpo/templates/deployment.yaml"]; !strings.Contains(got, "name: xmc-study-controller") {
 		t.Errorf("xmc-cmp-hpo rendered deployment.yaml = %q, want the xmc-study-controller Deployment", got)
 	}
+	if got := rendered["hpo/templates/rbac.yaml"]; !strings.Contains(got, "name: xmc-study-controller-components-reader") {
+		t.Errorf("xmc-cmp-hpo rendered rbac.yaml = %q, want xmc-study-controller-components-reader Role", got)
+	}
 }
 
 func TestLoadEmbeddedChart(t *testing.T) {

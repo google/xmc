@@ -30,6 +30,8 @@ go_library(
         "//cmd/study_controller/worker",
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
+        "//pkg/components/crreader",
+        "//pkg/study/vizier",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
     ],
 )
@@ -58,5 +60,8 @@ go_test(
         "//cmd/study_controller/worker",
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
+        "//pkg/components/crreader",
+        "//pkg/components/crreader/crreadertest",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
     ],
 )
