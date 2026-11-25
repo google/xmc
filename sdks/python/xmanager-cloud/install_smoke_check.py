@@ -95,9 +95,11 @@ def environment_failures() -> dict[str, str]:
 def packaging_failures() -> dict[str, str]:
     """Checks that the installed distribution ships no unit test modules."""
     try:
-        files = metadata.files(_DISTRIBUTION) or []
+        files = metadata.files(_DISTRIBUTION)
     except metadata.PackageNotFoundError:
         return {"packaged tests": f"{_DISTRIBUTION} is not installed"}
+    if files is None:
+        return {"packaged tests": f"{_DISTRIBUTION} has no RECORD file list"}
     shipped = sorted(
         str(path)
         for path in files

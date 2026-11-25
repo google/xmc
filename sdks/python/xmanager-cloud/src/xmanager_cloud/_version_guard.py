@@ -71,6 +71,9 @@ def check_xmanager_compatibility() -> None:
     if version < MIN_XMANAGER_VERSION:
         raise ImportError(
             f"xmanager-cloud is incompatible with xmanager {installed}, which bundles its "
-            "own xmanager_cloud protos and xdash. Upgrade it with: "
-            'pip install -U "xmanager>=0.9.0"'
+            "own xmanager_cloud protos and xdash. Upgrading xmanager deletes those shared "
+            "files, so reinstall xmanager-cloud afterwards: "
+            'pip install -U "xmanager>=0.9.0" && '
+            "pip install --force-reinstall --no-deps xmanager-cloud "
+            "(add --pre to the first command while only a 0.9.0 release candidate exists)."
         )
