@@ -495,35 +495,51 @@ func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
 	e1 := experimentChartProto("wid-ord-a", 100)
 	e2 := experimentChartProto("wid-ord-b", 100)
 	w1 := blankChartProto("wid-ord-c", 100, 1)
-	for _, c := range []*dpb.Chart{e1, e2, w1} {
+	w2 := blankChartProto("wid-ord-d", 100, 1)
+	for _, c := range []*dpb.Chart{e1, e2, w1, w2} {
 		if err := repo.CreateChart(ctx, c); err != nil {
 			t.Fatalf("CreateChart %s failed: %v", c.GetName(), err)
 		}
 	}
+	dash := blankDashboardProto("dashboards/wid-ord-dash")
+	dash.ChartIds = []string{"wid-ord-a", "wid-ord-b", "wid-ord-c", "wid-ord-d"}
+	if err := repo.CreateDashboard(ctx, dash, nil); err != nil {
+		t.Fatalf("CreateDashboard failed: %v", err)
+	}
 
-	for _, tc := range []struct {
-		orderBy string
-		want    []string
+	for _, scope := range []struct {
+		name, parent, filter string
 	}{
-		{"wid asc", []string{e1.GetName(), e2.GetName(), w1.GetName()}},
-		{"wid desc", []string{w1.GetName(), e1.GetName(), e2.GetName()}},
+		{name: "root", filter: "xid = 100"},
+		{name: "dashboard_parent", parent: "dashboards/wid-ord-dash"},
 	} {
-		var got []string
-		for tok := ""; ; {
-			page, next, err := repo.ListCharts(ctx, "", 1, tok, "xid = 100", tc.orderBy, 0)
-			if err != nil {
-				t.Fatalf("ListCharts(%q) failed: %v", tc.orderBy, err)
-			}
-			for _, c := range page {
-				got = append(got, c.GetName())
-			}
-			if next == "" {
-				break
-			}
-			tok = next
-		}
-		if diff := cmp.Diff(tc.want, got); diff != "" {
-			t.Errorf("ListCharts(%q) mismatch (-want +got):\n%s", tc.orderBy, diff)
+		for _, tc := range []struct {
+			orderBy string
+			want    []string
+		}{
+			{"wid asc", []string{e1.GetName(), e2.GetName(), w1.GetName(), w2.GetName()}},
+			{"wid desc", []string{w1.GetName(), w2.GetName(), e1.GetName(), e2.GetName()}},
+		} {
+			t.Run(scope.name+"/"+tc.orderBy, func(t *testing.T) {
+				var got []string
+				for tok := ""; ; {
+					page, next, err := repo.ListCharts(ctx, scope.parent, 1, tok, scope.filter, tc.orderBy, 0)
+					if err != nil {
+						t.Fatalf("ListCharts(%q) failed: %v", tc.orderBy, err)
+					}
+					if len(page) != 1 {
+						t.Fatalf("ListCharts(%q) page len = %d, want 1", tc.orderBy, len(page))
+					}
+					got = append(got, page[0].GetName())
+					if next == "" {
+						break
+					}
+					tok = next
+				}
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("ListCharts(%q) mismatch (-want +got):\n%s", tc.orderBy, diff)
+				}
+			})
 		}
 	}
 }

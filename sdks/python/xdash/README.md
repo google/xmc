@@ -190,8 +190,8 @@ bazel run //sdks/python/xdash:xdash_bin -- list
 # Retrieve an existing dashboard
 bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 
-# Retrieve a single chart (any of the three chart resource patterns works)
-bazel run //sdks/python/xdash:xdash_bin -- get experiments/234911122/workUnits/1/charts/baseline
+# Retrieve a single chart (GetChart accepts charts/{chart_id}; hierarchical patterns work with get-data below)
+bazel run //sdks/python/xdash:xdash_bin -- get charts/baseline
 
 # Fetch evaluated ChartData for a specific chart
 bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline

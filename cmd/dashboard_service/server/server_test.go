@@ -576,15 +576,27 @@ func TestGetChartData(t *testing.T) {
 			{name: "experiment URL for work unit chart", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/1001/workUnits/2/charts/c", Xid: 1001, Wid: 2}},
 			{name: "experiment URL for another experiment", reqName: "experiments/1001/charts/c", stored: &dpb.Chart{Name: "experiments/7/charts/c", Xid: 7}},
 			{name: "work unit URL for experiment-level chart", reqName: "experiments/1001/workUnits/2002/charts/c", stored: &dpb.Chart{Name: "experiments/1001/charts/c", Xid: 1001}},
+			{name: "work unit URL for another experiment", reqName: "experiments/1001/workUnits/1/charts/c", stored: &dpb.Chart{Name: "experiments/7/workUnits/3/charts/c", Xid: 7, Wid: 3}},
+			{name: "work unit URL for wrong work unit", reqName: "experiments/1001/workUnits/1/charts/c", stored: &dpb.Chart{Name: "experiments/1001/workUnits/3/charts/c", Xid: 1001, Wid: 3}},
 		}
 		for _, tc := range tests {
 			t.Run(tc.name, func(t *testing.T) {
 				repo := &mockRepository{
 					getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) { return tc.stored, nil },
 				}
-				s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+				var authTargets []string
+				xidMock := &mockXidClient{
+					checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+						authTargets = append(authTargets, in.GetName())
+						return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+					},
+				}
+				s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, &mockChartDataEngine{})
 				if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: tc.reqName}); status.Code(err) != codes.NotFound {
 					t.Errorf("GetChartData(%q) code = %v, want %v", tc.reqName, status.Code(err), codes.NotFound)
+				}
+				if diff := cmp.Diff([]string{"xids/1001"}, authTargets); diff != "" {
+					t.Errorf("CheckUserAuthorization targets mismatch (-want +got):\n%s", diff)
 				}
 			})
 		}
@@ -820,7 +832,11 @@ func TestChartMatchesName(t *testing.T) {
 		{name: "experiment name, work unit chart", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 1}, want: false},
 		{name: "experiment name, chart of another experiment", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 7}, want: false},
 		{name: "work unit name rejects experiment-level chart", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100}, want: false},
-		{name: "work unit name keeps resolving by chart ID", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 3}, want: true},
+		{name: "work unit name accepts matching (Xid, Wid)", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 1}, want: true},
+		{name: "work unit name accepts legacy zero-Xid chart with matching Wid", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 0, Wid: 1}, want: true},
+		{name: "work unit name rejects chart of another experiment and work unit", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 3}, want: false},
+		{name: "work unit name rejects chart of another experiment with same Wid", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 1}, want: false},
+		{name: "work unit name rejects chart of wrong Wid under same experiment", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 3}, want: false},
 		{name: "root name keeps resolving by chart ID", chartName: "charts/c", chart: &dpb.Chart{Xid: 7}, want: true},
 	}
 	for _, tc := range tests {
