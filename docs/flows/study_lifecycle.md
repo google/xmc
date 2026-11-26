@@ -14,7 +14,7 @@ profile values and actuation details.
 > enabling requires `acknowledgeExperimental: true`). Today `xmc-study-controller` validates
 > reconcile ticks, serializes per-study execution under an advisory Redis lease lock, authenticates
 > to ESS with its Workload Identity Google ID token to re-read each ticked experiment (`STUDY` +
-> `ACTIVE` gate), resolves the live `vizier` `Component` CR endpoint at startup (`503` on `/readyz` until resolved and reachable via `Health/Check`), and records health and Prometheus metrics; `StudyEngine.CreateStudy` on ticks and ClickHouse orchestration are not yet wired.
+> `ACTIVE` gate), resolves the live `vizier` `Component` CR endpoint at startup (`503` on `/readyz` until resolved and reachable via `Health/Check`), and records health and Prometheus metrics; `VizierService.CreateStudy` on ticks and ClickHouse orchestration are not yet wired.
 
 ---
 

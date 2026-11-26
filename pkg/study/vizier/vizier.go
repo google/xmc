@@ -42,14 +42,15 @@ const vizierComponentName = "vizier"
 type Client struct{ conn *grpc.ClientConn }
 
 // Dial creates a shared plaintext gRPC ClientConn to target (host:port) with bounded reconnect backoff.
-func Dial(target string, extraOpts ...grpc.DialOption) (*Client, error) {
+func Dial(target string) (*Client, error) { return dial(target) }
+
+func dial(target string, extraOpts ...grpc.DialOption) (*Client, error) {
 	if _, err := validateEndpoint(target); err != nil {
 		return nil, err
 	}
 	conn, err := grpc.NewClient("dns:///"+target, append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithConnectParams(grpc.ConnectParams{Backoff: backoff.Config{BaseDelay: 250 * time.Millisecond, Multiplier: 1.6, Jitter: 0.2, MaxDelay: 5 * time.Second}}),
-		grpc.WithDefaultCallOptions(grpc.WaitForReady(true)),
 	}, extraOpts...)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vizier gRPC client: %w", err)
@@ -62,12 +63,16 @@ func (c *Client) Ping(ctx context.Context) error {
 	if c == nil || c.conn == nil {
 		return errors.New("vizier client is not initialized")
 	}
-	resp, err := healthpb.NewHealthClient(c.conn).Check(ctx, &healthpb.HealthCheckRequest{}, grpc.WaitForReady(false), grpc.MaxCallRecvMsgSize(64*1024))
-	if status.Code(err) == codes.Unimplemented {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("vizier health check failed: %w", err)
+	resp, err := healthpb.NewHealthClient(c.conn).Check(ctx, &healthpb.HealthCheckRequest{}, grpc.MaxCallRecvMsgSize(64*1024))
+	if st := status.Convert(err); err != nil {
+		if st.Code() == codes.Unimplemented {
+			return nil
+		}
+		msg := strings.ToValidUTF8(st.Message(), "")
+		if len(msg) > 256 {
+			msg = msg[:256] + "..."
+		}
+		return status.Errorf(st.Code(), "vizier health check failed: %s", msg)
 	}
 	if resp.GetStatus() != healthpb.HealthCheckResponse_SERVING {
 		return fmt.Errorf("vizier health status %s is not serving", resp.GetStatus())
@@ -141,11 +146,14 @@ func validateEndpoint(raw string) (string, error) {
 		}
 	}
 	host, port, err := net.SplitHostPort(raw)
-	if err != nil || host == "" || strings.HasPrefix(raw, "[") != strings.Contains(host, ":") || (strings.Contains(host, ":") && net.ParseIP(host) == nil) {
+	validHost := (strings.Contains(host, ":") && net.ParseIP(host) != nil) || (!strings.Contains(host, ":") && strings.IndexFunc(host, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '.' && r != '-'
+	}) < 0)
+	if err != nil || host == "" || strings.HasPrefix(raw, "[") != strings.Contains(host, ":") || !validHost {
 		return "", errors.New("invalid vizier endpoint: must be host:port, with IPv6 hosts in brackets")
 	}
-	if n, err := strconv.ParseUint(port, 10, 64); err != nil || n < 1 || n > 65535 {
-		return "", errors.New("invalid vizier endpoint: port must be between 1 and 65535")
+	if n, err := strconv.ParseUint(port, 10, 64); err != nil || n < 1 || n > 65535 || strconv.FormatUint(n, 10) != port {
+		return "", errors.New("invalid vizier endpoint: port must be a canonical integer between 1 and 65535")
 	}
 	return raw, nil
 }

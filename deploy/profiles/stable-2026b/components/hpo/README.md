@@ -31,7 +31,7 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | :--- | :--- | :--- | :--- |
 | `enabled` | `false` | `spec.enabled` | Enables or disables the `hpo` Component CR in the catalog. |
 | `acknowledgeExperimental` | *(omitted)* | `spec.acknowledgeExperimental` | Explicit administrator acknowledgement required when `enabled: true` because `stability` is `EXPERIMENTAL`. |
-| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace` | Target Kubernetes namespace for the `Component` CR, `-components_namespace`, and `Role`/`RoleBinding`. |
+| `namespace` | `""` (`.Release.Namespace`, or `"xmc"` when `"default"`/`""`) | `Component.metadata.namespace`, `Deployment` `-components_namespace` | Target Kubernetes namespace for the `Component` CR and `xmc-study-controller`'s `-components_namespace` flag (`Role`/`RoleBinding` stay in `.Release.Namespace`). |
 | `imageTag` | `""` | `spec.imageTag` | `xmc-study-controller` image tag, used when `global.imageTag` is empty. Omitted from the CR when both are empty. |
 | `deletionProtection` | `true` | `spec.deletionProtection` | Prevents accidental deletion of the `Component` CR when enabled. |
 | `deletionPolicy` | `"Delete"` | `spec.deletionPolicy` | Resource cleanup behavior on deletion (`"Delete"` or `"Orphan"`). |
@@ -78,7 +78,7 @@ The Study Controller connects to the XMC Redis server:
 
 - **Address**: the umbrella chart value `redisAddr` reaches `xmc-bridge` as `REDIS_ADDR` in the `xmc-bridge-config` ConfigMap, and `xmc-bridge` passes it to every 1P release as `<component>Deployment.redisAddr`. A `redisAddr` Component parameter is ignored. The chart renders the value as `-redis_addr`. The value is `required`: an `xmc-cmp-hpo` release without `hpoDeployment.redisAddr` fails to render, so the Helm install or upgrade fails instead of starting a Study Controller without Redis. The profile release does not need it.
 - **Password**: the `REDIS_PASSWORD` environment variable, read from key `redis-password` of the umbrella chart's `redis-secret` Secret. `xmc-bridge` only actuates Components in the XMC release namespace, where the umbrella chart renders `redis-secret`.
-- **Readiness**: `/readyz` checks Redis (`Ping`) and Vizier (`Health/Check`) with a 2s timeout and returns `503 Service Unavailable` when either fails, so the pod reports `NotReady` while Redis or Vizier is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check dependencies, so an outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect dependency reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
+- **Readiness**: `/readyz` checks Redis (`Ping`) and Vizier (`Health/Check`) concurrently within a shared 2s timeout and returns `503 Service Unavailable` when either fails, so the pod reports `NotReady` while Redis or Vizier is unreachable. The readiness probe's `timeoutSeconds` is `3`. `/healthz` does not check dependencies, so an outage never restarts the pod. The `hpo` Component's `Ready` condition does not reflect dependency reachability, because `xmc-bridge` checks workload health at the Helm release level; only the pod's readiness does.
 - **Troubleshooting**: if `redis-secret` is missing, the pod stays in `CreateContainerConfigError`; `kubectl describe pod -l app=xmc-study-controller` names the missing Secret. If the pod is `Running` but not `Ready`, its logs show the failing Redis ping or Vizier resolution/health check.
 
 ### ESS Connection
@@ -93,8 +93,8 @@ The Study Controller calls the Experiment State Server over plaintext in-cluster
 
 At startup, `xmc-study-controller` starts its HTTP server (`/healthz` `200 OK`, `/readyz` `503 Service Unavailable`) and polls the live `vizier` `Component` CR in `-components_namespace` using its mounted Kubernetes service account token (`xmc-study-controller-components-reader` `Role`):
 
-- **Resolution & Backoff**: Reads `spec.parameters.endpoint` as a strict `host:port` target. While `vizier` is absent, disabled, or malformed, the controller backs off exponentially with jitter (up to `10s`) without crash-looping (`livenessProbe` stays `200 OK`) and holds off starting the Redis stream consumer so queued ticks are not burned into the dead-letter stream.
-- **Latched Client & `/readyz` Reachability**: Once resolved, the controller latches a single shared plaintext gRPC connection (`MaxDelay: 5s` reconnect backoff) and starts the Redis consumer. `/readyz` verifies both Redis (`Ping`) and Vizier reachability (`grpc.health.v1.Health/Check`, treating `SERVING` and `codes.Unimplemented` for OSS Vizier as healthy) within `2s`.
+- **Resolution & Backoff**: Reads `spec.parameters.endpoint` as a strict `host:port` target. While `vizier` is absent, disabled, malformed, or transiently unreadable from the Kubernetes API, the controller backs off exponentially with jitter (up to `10s`) without crash-looping (`livenessProbe` stays `200 OK`) and holds off starting the Redis stream consumer so queued ticks are not burned into the dead-letter stream.
+- **Latched Client & `/readyz` Reachability**: Once resolved, the controller latches a single shared plaintext gRPC connection (`MaxDelay: 5s` reconnect backoff) and starts the Redis consumer. `/readyz` verifies both Redis (`Ping`) and Vizier reachability (`grpc.health.v1.Health/Check`, treating `SERVING` and `codes.Unimplemented` for OSS Vizier as healthy) concurrently within a shared `2s` deadline.
 - **Endpoint Changes**: `spec.parameters.endpoint` is latched at startup and not re-resolved per tick; changing the Vizier endpoint requires restarting `xmc-study-controller`.
 
 ### Study Reconcile Ticks

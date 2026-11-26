@@ -1,12 +1,10 @@
 {{- if hasPrefix "xmc-cmp-" .Release.Name }}
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
-{{- $ns := include "hpo.namespace" . }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: xmc-study-controller-components-reader
-  namespace: {{ $ns | quote }}
   labels:
     {{- include "hpo.labels" . | nindent 4 }}
 rules:
@@ -19,13 +17,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: xmc-study-controller-components-reader-binding
-  namespace: {{ $ns | quote }}
   labels:
     {{- include "hpo.labels" . | nindent 4 }}
 subjects:
 - kind: ServiceAccount
   name: xmc-study-controller
-  namespace: {{ $ns | quote }}
+  namespace: {{ .Release.Namespace | quote }}
 roleRef:
   kind: Role
   name: xmc-study-controller-components-reader
