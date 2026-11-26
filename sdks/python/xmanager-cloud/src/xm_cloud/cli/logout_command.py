@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 from collections.abc import Mapping, Sequence
@@ -24,13 +25,50 @@ from typing import TextIO
 from xm_cloud.cli import credentials
 
 
+def parse_cli_args(
+    parser: argparse.ArgumentParser,
+    argv: Sequence[str],
+    out: TextIO,
+    err: TextIO,
+) -> argparse.Namespace | int:
+    """Parses `argv` with `parser`, redirecting argparse output to `out`/`err`.
+
+    Args:
+        parser: Configured argument parser.
+        argv: Command-line arguments after the subcommand name.
+        out: Stream for standard output (e.g., `--help`).
+        err: Stream for error output.
+
+    Returns:
+        Parsed `argparse.Namespace`, or an integer exit code if parsing exited.
+    """
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            return parser.parse_args(list(argv))
+    except SystemExit as exc:
+        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
+
+
 def run_logout(
     argv: Sequence[str],
-    env: Mapping[str, str] = os.environ,
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
+    env: Mapping[str, str] | None = None,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
 ) -> int:
-    """Parses `xmc logout` flags, clears credentials, and returns exit code."""
+    """Parses `xmc logout` flags, clears credentials, and returns an exit code.
+
+    Args:
+        argv: Arguments after `logout`.
+        env: Environment mapping. Defaults to `os.environ`.
+        out: Standard output stream. Defaults to `sys.stdout`.
+        err: Standard error stream. Defaults to `sys.stderr`.
+
+    Returns:
+        0 on success or `--help`, 2 on argument usage errors, or 1 on `AuthError`.
+    """
+    env = os.environ if env is None else env
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
     parser = argparse.ArgumentParser(
         prog="xmc logout",
         description=(
@@ -40,7 +78,7 @@ def run_logout(
         ),
     )
     parser.add_argument("--all", action="store_true")
-    parsed = credentials.parse_cli_args(parser, argv, out, err)
+    parsed = parse_cli_args(parser, argv, out, err)
     if isinstance(parsed, int):
         return parsed
     args = parsed
@@ -63,13 +101,3 @@ def run_logout(
     except credentials.AuthError as exc:
         err.write(f"Error: {exc}\n")
         return 1
-
-
-def logout_command(argv: Sequence[str]) -> None:
-    """Runs `logout` from a full `<program> logout ...` argv and exits on failure.
-
-    Args:
-        argv: The full command line, including the program and command names.
-    """
-    if code := run_logout(argv[2:]):
-        sys.exit(code)

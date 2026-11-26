@@ -11,14 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Credentials store, deployment origin resolution, and CLI arg parsing for `xmc`.
+"""Credentials store and deployment origin resolution for `xmc`.
 
 Uses only the standard library, so it works without `xmanager`.
 """
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import json
 import os
@@ -26,11 +25,11 @@ import pathlib
 import stat
 import tempfile
 import urllib.parse
-from collections.abc import Mapping, Sequence
-from typing import Any, TextIO
+from collections.abc import Mapping
+from typing import Any
 
 NO_SERVER_MESSAGE = (
-    "xmc login authenticates with an XManager on Cloud (xm_cloud) deployment"
+    "No XManager on Cloud (xm_cloud) deployment configured"
     " (set XMANAGER_UI_URL, XMANAGER_ENDPOINT, XMC_API_URL, or XMC_DOMAIN)."
     " For xm_local / Vertex AI, use 'gcloud auth application-default login'"
     " instead."
@@ -72,6 +71,13 @@ def _origin(raw: str, *, domain: bool = False) -> str:
     a default port are dropped. Only a `domain` (XMC_DOMAIN) may omit the scheme,
     and it must not carry a path.
 
+    Args:
+        raw: Deployment URL or bare domain string.
+        domain: Whether `raw` is a bare domain (scheme optional, no path allowed).
+
+    Returns:
+        Normalized `scheme://host[:port]` origin string.
+
     Raises:
         AuthError: If `raw` is not a valid, userinfo-free https (or loopback http) URL.
     """
@@ -86,6 +92,8 @@ def _origin(raw: str, *, domain: bool = False) -> str:
         port = p.port
     except ValueError:
         raise invalid from None
+    if port is not None and port < 1:
+        raise invalid
     scheme, host = p.scheme.lower(), _strip_grpc_prefix((p.hostname or "").lower())
     if scheme not in ("https", "http") or not host:
         raise invalid
@@ -120,7 +128,18 @@ def _endpoint_origin(endpoint: str) -> str | None:
 
 
 def resolve_server(env: Mapping[str, str]) -> str:
-    """Resolves and validates the XMC deployment origin from `env`."""
+    """Resolves and validates the XMC deployment origin from `env`.
+
+    Args:
+        env: Environment mapping checked in precedence order (`XMANAGER_ENDPOINT`,
+            `XMC_API_URL`, `XMANAGER_UI_URL`, `XMC_DOMAIN`).
+
+    Returns:
+        Normalized `scheme://host[:port]` deployment origin.
+
+    Raises:
+        AuthError: If no deployment is configured or the configured value is invalid.
+    """
     if (ep := env.get("XMANAGER_ENDPOINT", "").strip()) and (origin := _endpoint_origin(ep)):
         return origin
     for name in ("XMC_API_URL", "XMANAGER_UI_URL"):
@@ -132,7 +151,17 @@ def resolve_server(env: Mapping[str, str]) -> str:
 
 
 def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
-    """Returns `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json`."""
+    """Returns `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json`.
+
+    Args:
+        env: Environment mapping to inspect for path overrides.
+
+    Returns:
+        Absolute path to the credentials JSON file.
+
+    Raises:
+        AuthError: If no absolute override is set and the home directory cannot be resolved.
+    """
     custom = os.path.expanduser(env.get("XMC_CREDENTIALS_FILE", "").strip())
     if os.path.isabs(custom):
         return pathlib.Path(custom)
@@ -149,7 +178,18 @@ def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
 
 
 def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
-    """Loads the `deployments` map from `path`, verifying 0600 permissions."""
+    """Loads the `deployments` map from `path`, verifying 0600 permissions.
+
+    Args:
+        path: Path to the credentials JSON file.
+
+    Returns:
+        Mapping from deployment origin to credential entry, or `{}` if missing.
+
+    Raises:
+        AuthError: If `path` cannot be opened/stat'd, is not a 0600 regular file
+            owned by the current user, or contains corrupt/unsupported JSON.
+    """
     hint = "Run `xmc logout --all` to reset."
     try:
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -172,6 +212,8 @@ def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
                 data = json.load(f)
             except (OSError, ValueError) as exc:
                 raise AuthError(f"Corrupt credentials file {path}: {exc}. {hint}") from None
+    except OSError as exc:
+        raise AuthError(f"Refusing to read {path}: {exc}. {hint}") from None
     finally:
         if not fd_owned:
             with contextlib.suppress(OSError):
@@ -184,6 +226,10 @@ def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
 
 def save_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, Any]]) -> None:
     """Atomically writes `deployments` to `path` with mode 0600 (last writer wins).
+
+    Args:
+        path: Target path for the credentials JSON file.
+        deployments: Mapping from deployment origin to credential entry.
 
     Raises:
         AuthError: If the credentials file or its directory cannot be written.
@@ -224,22 +270,18 @@ def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str
 
 
 def credentials_file_exists(path: pathlib.Path) -> bool:
-    """Returns whether `path` exists, raising `AuthError` if it cannot be checked."""
+    """Returns whether `path` (or a broken symlink at `path`) exists.
+
+    Args:
+        path: Path to check.
+
+    Returns:
+        True if `path` exists or is a symlink (including dangling/loop symlinks).
+
+    Raises:
+        AuthError: If accessing `path` fails with an `OSError`.
+    """
     try:
-        return path.exists()
+        return path.exists() or path.is_symlink()
     except OSError as exc:
         raise AuthError(f"Cannot access credentials file {path}: {exc}") from None
-
-
-def parse_cli_args(
-    parser: argparse.ArgumentParser,
-    argv: Sequence[str],
-    out: TextIO,
-    err: TextIO,
-) -> argparse.Namespace | int:
-    """Parses `argv` with `parser`, redirecting argparse output to `out`/`err`."""
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            return parser.parse_args(list(argv))
-    except SystemExit as exc:
-        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)

@@ -15,14 +15,13 @@
 
 from __future__ import annotations
 
-import argparse
-import io
 import os
 import pathlib
 import stat
+import tempfile
+import unittest
 from unittest import mock
 
-from absl.testing import absltest
 from xdash import auth as xdash_auth
 
 from xm_cloud.cli import credentials
@@ -30,13 +29,14 @@ from xm_cloud.cli import credentials
 _SERVER = "https://xmc.example.com"
 
 
-# absl-py ships no type information to mypy here, so absltest.TestCase is typed as Any.
-class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
+class CredentialsTest(unittest.TestCase):
     """Unit tests for `xm_cloud.cli.credentials`."""
 
     def setUp(self) -> None:
         super().setUp()
-        self._xdg = self.create_tempdir().full_path
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self._xdg = temp_dir.name
 
     def test_resolve_server_precedence_and_validation(self) -> None:
         cases = [
@@ -72,6 +72,7 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
         self.assertEqual(str(ctx.exception), credentials.NO_SERVER_MESSAGE)
         for bad_env in (
             {"XMC_API_URL": "http://xmc.example.com"},
+            {"XMC_API_URL": "http://localhost:0"},
             {"XMC_API_URL": "https://xmc.example.com?q=1"},
             {"XMC_API_URL": "https://[::1"},
             {"XMC_API_URL": "https://xmc.example.com:abc"},
@@ -116,7 +117,8 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
             {"XDG_CONFIG_HOME": "relative"},
         ]
         for env in envs:
-            with self.subTest(env=env), mock.patch.dict(os.environ, env, clear=True):
+            patched_env = {"HOME": self._xdg, **env}
+            with self.subTest(env=env), mock.patch.dict(os.environ, patched_env, clear=True):
                 self.assertEqual(
                     credentials.credentials_path(env), xdash_auth.get_credentials_file_path()
                 )
@@ -173,6 +175,8 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
                     credentials.load_credentials(path)
         path.write_text('{"version": 1, "deployments": []}', encoding="utf-8")
         self.assertEqual(credentials.load_credentials(path), {})
+        with self.assertRaisesRegex(credentials.AuthError, "must be a regular file"):
+            credentials.load_credentials(pathlib.Path(self._xdg))
         if os.name == "posix":
             link = pathlib.Path(self._xdg) / "link.json"
             link.symlink_to(path)
@@ -182,13 +186,15 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
     def test_load_credentials_closes_fd_and_rejects_foreign_owner(self) -> None:
         path = pathlib.Path(self._xdg) / "xmc" / "credentials.json"
         credentials.save_credentials(path, {})
-        with (
-            mock.patch.object(os, "fdopen", side_effect=OSError("fdopen failed")),
-            mock.patch.object(os, "close", wraps=os.close) as close_mock,
-            self.assertRaises(OSError),
-        ):
-            credentials.load_credentials(path)
-        close_mock.assert_called_once()
+        for target_name in ("fdopen", "fstat"):
+            with (
+                self.subTest(failing_call=target_name),
+                mock.patch.object(os, target_name, side_effect=OSError(f"{target_name} failed")),
+                mock.patch.object(os, "close", wraps=os.close) as close_mock,
+                self.assertRaisesRegex(credentials.AuthError, "Refusing to read"),
+            ):
+                credentials.load_credentials(path)
+            close_mock.assert_called_once()
 
         if hasattr(os, "getuid"):
             with (
@@ -196,13 +202,6 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
                 self.assertRaisesRegex(credentials.AuthError, "must be owned by the current user"),
             ):
                 credentials.load_credentials(path)
-
-    def test_parse_cli_args_maps_system_exit_none_to_zero(self) -> None:
-        parser = argparse.ArgumentParser(prog="xmc logout")
-        with mock.patch.object(parser, "parse_args", side_effect=SystemExit(None)):
-            self.assertEqual(
-                credentials.parse_cli_args(parser, [], io.StringIO(), io.StringIO()), 0
-            )
 
     def test_credentials_roundtrip_permissions_and_relative_xdg(self) -> None:
         self.assertEqual(
@@ -241,7 +240,9 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
             self.skipTest("POSIX permissions only")
         for mode in (0o755, 0o775, 0o1777):
             with self.subTest(mode=oct(mode)):
-                existing = pathlib.Path(self.create_tempdir().full_path)
+                temp_dir = tempfile.TemporaryDirectory()
+                self.addCleanup(temp_dir.cleanup)
+                existing = pathlib.Path(temp_dir.name)
                 os.chmod(existing, mode)
                 path = existing / "credentials.json"
 
@@ -265,4 +266,4 @@ class CredentialsTest(absltest.TestCase):  # type: ignore[misc]
 
 
 if __name__ == "__main__":
-    absltest.main()
+    unittest.main()

@@ -70,8 +70,8 @@ def main(
 
     Args:
         argv: Arguments after the program name. Defaults to `sys.argv[1:]`.
-        out: Stream for the requested help text. Defaults to `sys.stdout`.
-        err: Stream for usage errors. Defaults to `sys.stderr`.
+        out: Standard output stream for CLI help and subcommands. Defaults to `sys.stdout`.
+        err: Standard error stream for usage errors, interrupts, and subcommands. Defaults to `sys.stderr`.
 
     Returns:
         The subcommand's exit code, 0 for `--help`, 2 for a missing or unknown

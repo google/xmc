@@ -62,8 +62,8 @@ Environments without `xmanager` are unaffected.
 
 ## Testing
 
-- `bazel test //sdks/python/xmanager-cloud/...` covers the build staging and smoke-check
-  tooling.
+- `bazel test //sdks/python/xmanager-cloud/...` covers the build staging, smoke-check
+  tooling, and `xm_cloud.cli` unit tests.
 - [`xmanager-cloud-package.yml`](../../../.github/workflows/xmanager-cloud-package.yml) builds the
   wheel and sdist, installs each into clean virtualenvs on Python 3.11–3.14 against the
   protobuf floor (`5.29.6`) and the latest `<7` release, then runs
