@@ -205,6 +205,8 @@ message CreateChartRequest {
     }
   ];
   Chart chart = 2 [(google.api.field_behavior) = REQUIRED];
+  // Optional client-assigned chart ID. IDs of the form "study-{xid}-parallel-coordinates" are
+  // reserved for the matching canonical parent "experiments/{xid}".
   string chart_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 

@@ -120,27 +120,38 @@ func TestCreateChart(t *testing.T) {
 	baseWuReq := &dpb.CreateChartRequest{Parent: "experiments/100/workUnits/1", Chart: &dpb.Chart{Title: "Title", Xid: 100, Wid: 1}}
 
 	t.Run("experiment-level parallel coordinates chart under experiment parent", func(t *testing.T) {
-		var savedChart *dpb.Chart
-		repo := &mockRepository{createChartFn: func(_ context.Context, chart *dpb.Chart) error { savedChart = chart; return nil }}
-		var checkedXID string
-		xidMock := &mockXidClient{checkUserAuthorizationFn: func(_ context.Context, in *xidapipb.CheckUserAuthorizationRequest, _ ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
-			checkedXID = in.GetName()
-			return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
-		}}
-		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
-		resp, err := s.CreateChart(ctx, prototest.Modify(baseExpReq, nil))
-		if err != nil {
-			t.Fatalf("CreateChart failed: %v", err)
-		}
-		want := prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/100/charts/hpo-parallel-coord" })
-		if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
-			t.Errorf("CreateChart() mismatch (-want +got):\n%s", diff)
-		}
-		if diff := cmp.Diff(want, savedChart, protocmp.Transform()); diff != "" {
-			t.Errorf("saved chart mismatch (-want +got):\n%s", diff)
-		}
-		if checkedXID != "xids/100" {
-			t.Errorf("CheckUserAuthorization name = %q, want %q", checkedXID, "xids/100")
+		for _, tc := range []struct {
+			name, chartID, wantName string
+		}{
+			{"custom chart ID", "hpo-parallel-coord", "experiments/100/charts/hpo-parallel-coord"},
+			{"matching study chart ID", "study-100-parallel-coordinates", "experiments/100/charts/study-100-parallel-coordinates"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				var savedChart *dpb.Chart
+				var checkedXID string
+				repo := &mockRepository{createChartFn: func(_ context.Context, c *dpb.Chart) error { savedChart = c; return nil }}
+				xidMock := &mockXidClient{
+					checkUserAuthorizationFn: func(_ context.Context, in *xidapipb.CheckUserAuthorizationRequest, _ ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+						checkedXID = in.GetName()
+						return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, nil
+					},
+				}
+				s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+				resp, err := s.CreateChart(ctx, prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = tc.chartID }))
+				if err != nil {
+					t.Fatalf("CreateChart failed: %v", err)
+				}
+				want := prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = tc.wantName })
+				if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
+					t.Errorf("CreateChart() mismatch (-want +got):\n%s", diff)
+				}
+				if diff := cmp.Diff(want, savedChart, protocmp.Transform()); diff != "" {
+					t.Errorf("saved chart mismatch (-want +got):\n%s", diff)
+				}
+				if checkedXID != "xids/100" {
+					t.Errorf("CheckUserAuthorization name = %q, want %q", checkedXID, "xids/100")
+				}
+			})
 		}
 	})
 
@@ -222,6 +233,8 @@ func TestCreateChart(t *testing.T) {
 				r.Chart.Plots = []*dpb.PlotSpec{{PlotId: "p", Type: dpb.PlotType_SCATTER}}
 			})},
 			{name: "wid set under experiment parent", req: prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = ""; r.Chart.Wid = 1 })},
+			{name: "foreign study chart ID rejected", req: prototest.Modify(baseExpReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-999-parallel-coordinates" })},
+			{name: "study chart ID under work unit parent rejected", req: prototest.Modify(baseWuReq, func(r *dpb.CreateChartRequest) { r.ChartId = "study-100-parallel-coordinates" })},
 		}
 
 		for _, tc := range tests {
