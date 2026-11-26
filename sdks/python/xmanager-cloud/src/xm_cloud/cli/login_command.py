@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""`xmc login` subcommand implementation (manual PKCE flow).
+"""`xmc login` subcommand implementation (browser loopback + manual PKCE flow).
 
 Uses only the standard library, so it works without `xmanager`.
 """
@@ -24,15 +24,19 @@ import datetime
 import getpass
 import hashlib
 import http.client
+import http.server
 import json
+import math
 import os
 import pathlib
 import secrets
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO, TypeVar
 
@@ -69,6 +73,7 @@ _RESPONSE_ERRORS = (OSError, ValueError, RecursionError, http.client.HTTPExcepti
 # terminal, ValueError (including UnicodeDecodeError) on a closed or non-UTF-8
 # stdin, AttributeError when `sys.stdin` is None, and termios.error.
 _PROMPT_ERRORS = (OSError, ValueError, AttributeError, *_TTY_ERRORS)
+_EXPIRY_SKEW_SECONDS = 60
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -83,24 +88,110 @@ def pkce_pair() -> tuple[str, str]:
     return verifier, base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def build_login_url(server: str, state: str, challenge: str) -> str:
-    """Builds the `/api/cli/login` URL for the manual PKCE flow.
+def browser_available(env: Mapping[str, str]) -> bool:
+    """Returns True when a local GUI browser can likely be launched."""
+    if any(env.get(k) for k in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")):
+        return False
+    return sys.platform in ("darwin", "win32") or bool(
+        env.get("DISPLAY") or env.get("WAYLAND_DISPLAY")
+    )
+
+
+def build_login_url(server: str, state: str, challenge: str, port: int | None = None) -> str:
+    """Builds the `/api/cli/login` URL for loopback (`port`) or manual mode.
 
     Args:
         server: Deployment origin, e.g. `https://xmc.example.com`.
         state: Opaque CSRF state echoed back by the server.
         challenge: S256 PKCE code challenge from `pkce_pair`.
+        port: Loopback callback port, or None for the manual (copy-paste) flow.
 
     Returns:
         The absolute sign-in URL to open in a browser.
     """
-    params = [
-        ("mode", "manual"),
+    params = [("port", str(port))] if port is not None else [("mode", "manual")]
+    params += [
         ("state", state),
         ("code_challenge", challenge),
         ("code_challenge_method", "S256"),
     ]
     return f"{server}/api/cli/login?{urllib.parse.urlencode(params)}"
+
+
+def _callback_handler(
+    server: str, state: str, result: dict[str, str]
+) -> type[http.server.BaseHTTPRequestHandler]:
+    """Returns a handler class that records the OAuth redirect on `/callback` into `result`."""
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        """Handles loopback OAuth redirect callbacks on `/callback`."""
+
+        timeout = 10.0
+
+        def do_GET(self) -> None:
+            """Validates CSRF `state` and records the authorization code or error."""
+            split = urllib.parse.urlsplit(self.path)
+            qs = urllib.parse.parse_qs(split.query)
+            # Compare bytes: compare_digest rejects non-ASCII str input with TypeError.
+            received = qs.get("state", [""])[0].encode("utf-8")
+            if split.path != "/callback" or not secrets.compare_digest(
+                received, state.encode("ascii")
+            ):
+                self.send_response(400)
+                self.end_headers()
+                return
+            if err := qs.get("error", [""])[0]:
+                result["error"] = err
+                self.send_response(302)
+                q = urllib.parse.urlencode({"error": err})
+                self.send_header("Location", f"{server}/api/cli/success?{q}")
+            elif code := qs.get("code", [""])[0]:
+                result["code"] = code
+                self.send_response(302)
+                self.send_header("Location", f"{server}/api/cli/success")
+            else:
+                result["error"] = "Callback did not include an authorization code"
+                self.send_response(400)
+            self.end_headers()
+
+        def log_message(self, fmt: str, *args: Any) -> None:
+            del fmt, args
+
+    return _Handler
+
+
+def await_loopback_code(
+    server: str,
+    challenge: str,
+    open_url: Callable[[str], bool],
+    out: TextIO,
+    timeout: float,
+) -> str | None:
+    """Runs the loopback callback listener; returns `None` if unopenable."""
+    state, result = secrets.token_urlsafe(24), dict[str, str]()
+    try:
+        httpd = http.server.HTTPServer(("127.0.0.1", 0), _callback_handler(server, state, result))
+    except OSError:  # No IPv4 loopback (e.g. a sandbox): fall back to manual login.
+        return None
+    with httpd:
+        url = build_login_url(server, state, challenge, port=httpd.server_address[1])
+        try:
+            opened = bool(open_url(url))
+        except Exception:  # Any browser launch failure falls back to manual login.
+            opened = False
+        if not opened:
+            return None
+        out.write(f"Opening browser to sign in to {server}:\n  {url}\n")
+        deadline = time.monotonic() + timeout
+        while not result:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise credentials.AuthError("Timed out waiting for browser authentication.")
+            httpd.timeout = min(remaining, 0.5)
+            httpd.handle_request()
+    if "error" in result:
+        raise credentials.AuthError(f"Authentication failed: {result['error']}.")
+    return result["code"]
 
 
 def _format_http_error(exc: urllib.error.HTTPError) -> str:
@@ -447,24 +538,40 @@ def _check_probe_status(server: str, code: int) -> None:
 
 def _interactive_login(
     server: str,
+    no_browser: bool,
+    timeout: float,
+    env: Mapping[str, str],
+    open_url: Callable[[str], bool],
     prompt: Callable[[str], str],
     out: TextIO,
 ) -> dict[str, Any]:
-    """Executes manual PKCE login and returns the token grant.
+    """Executes loopback or manual PKCE login and returns the token grant.
 
     Args:
         server: Deployment origin.
-        prompt: Reads the authorization code.
+        no_browser: Whether to skip the browser loopback flow.
+        timeout: Seconds to wait for the loopback callback.
+        env: Environment used to detect a local browser.
+        open_url: Opens the sign-in URL in a browser; returns False on failure.
+        prompt: Reads the authorization code in the manual flow.
         out: Stream for the sign-in instructions.
 
     Returns:
         The validated token grant from `exchange_code`.
 
     Raises:
-        credentials.AuthError: If the probe or token exchange fails, or the code
-            cannot be read or is invalid.
+        credentials.AuthError: If the probe, the loopback flow, or the token
+            exchange fails, or the code cannot be read or is invalid.
     """
     _probe_cli_login(server)
+    if not no_browser and browser_available(env):
+        verifier, challenge = pkce_pair()
+        code = await_loopback_code(server, challenge, open_url, out, timeout)
+        if code is not None:
+            return exchange_code(server, code, verifier)
+        out.write("Could not launch browser; falling back to manual login.\n")
+    elif not no_browser:
+        out.write("No local browser detected; using manual login.\n")
     verifier, challenge = pkce_pair()
     url = build_login_url(server, secrets.token_urlsafe(24), challenge)
     terminal_text.write(
@@ -522,6 +629,33 @@ def _format_expiry(expires_at: int) -> str:
     return local.strftime("%Y-%m-%d %H:%M %Z")
 
 
+def _valid_entry(entry: Any) -> dict[str, Any] | None:
+    """Returns normalized `entry` if it has a valid non-expired token and email."""
+    if not isinstance(entry, dict):
+        return None
+    tok, email, exp = (
+        entry.get("access_token"),
+        entry.get("email"),
+        entry.get("expires_at"),
+    )
+    if not (
+        isinstance(tok, str)
+        and tok.strip()
+        and isinstance(email, str)
+        and email.strip()
+        and not isinstance(exp, bool)
+        and (isinstance(exp, int) or (isinstance(exp, float) and math.isfinite(exp)))
+        # Credential expiry is a wall-clock Unix timestamp, not an interval.
+        and exp > time.time() + _EXPIRY_SKEW_SECONDS  # noqa: TID251
+    ):
+        return None
+    return {
+        "access_token": tok.strip(),
+        "email": email.strip(),
+        "expires_at": int(exp),
+    }
+
+
 def _parse_login_args(
     argv: Sequence[str],
     out: TextIO,
@@ -547,7 +681,40 @@ def _parse_login_args(
             " (default ~/.config/xmc/credentials.json)."
         ),
     )
-    return arg_parsing.parse_args(parser, argv, out, err)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--timeout", type=float, default=300.0)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--status", action="store_true")
+    group.add_argument("--print-token", action="store_true")
+    parsed = arg_parsing.parse_args(parser, argv, out, err)
+    if isinstance(parsed, int):
+        return parsed
+    if not math.isfinite(parsed.timeout) or parsed.timeout <= 0:
+        err.write("error: --timeout must be a positive finite number\n")
+        return 2
+    return parsed
+
+
+def _report_cached_login(
+    args: argparse.Namespace,
+    server: str,
+    entry: dict[str, Any] | None,
+    out: TextIO,
+    err: TextIO,
+) -> int:
+    """Handles `--print-token` and `--status` from the cached `entry`."""
+    if args.print_token:
+        if not entry:
+            err.write(f"No valid login for {server}. Run `xmc login`.\n")
+            return 1
+        out.write(f"{entry['access_token']}\n")
+        return 0
+    if not entry:
+        err.write(f"Not logged in to {server}. Run `xmc login`.\n")
+        return 1
+    exp = _format_expiry(entry["expires_at"])
+    out.write(f"Logged in to {server} as {entry['email']} until {exp}.\n")
+    return 0
 
 
 def _cache_grant(path: pathlib.Path, server: str, grant: Mapping[str, Any]) -> int:
@@ -586,9 +753,12 @@ def run_login(
     env: Mapping[str, str] | None = None,
     out: TextIO | None = None,
     err: TextIO | None = None,
+    open_url: Callable[[str], bool] = webbrowser.open,
     prompt: Callable[[str], str] = getpass.getpass,
 ) -> int:
-    """Runs `xmc login` (manual PKCE flow) and caches the resulting credentials.
+    """Runs `xmc login` and caches the resulting credentials.
+
+    With `--status` or `--print-token`, reports the cached login instead.
 
     Args:
         argv: Subcommand arguments after `login`.
@@ -596,11 +766,12 @@ def run_login(
             defaults to `os.environ`.
         out: Stream for instructions and success output; defaults to `sys.stdout`.
         err: Stream for error messages; defaults to `sys.stderr`.
+        open_url: Opens the sign-in URL in a browser; defaults to `webbrowser.open`.
         prompt: Reads the authorization code; defaults to `getpass.getpass`.
 
     Returns:
         Process exit code: 0 on success or `--help`, 1 on authentication or
-        cache errors, 2 on invalid arguments.
+        cache errors or when not logged in, 2 on invalid arguments.
     """
     env = os.environ if env is None else env
     out = sys.stdout if out is None else out
@@ -608,10 +779,17 @@ def run_login(
     parsed = _parse_login_args(argv, out, err)
     if isinstance(parsed, int):
         return parsed
+    args = parsed
     try:
         server, path = credentials.resolve_server(env), credentials.credentials_path(env)
-        credentials.load_credentials(path)  # Fail on an unreadable cache before prompting.
-        grant = _interactive_login(server, prompt, out)
+        deployments = credentials.load_credentials(path)  # Also fails fast before prompting.
+        if args.print_token or args.status:
+            return _report_cached_login(
+                args, server, _valid_entry(deployments.get(server)), out, err
+            )
+        grant = _interactive_login(
+            server, args.no_browser, args.timeout, env, open_url, prompt, out
+        )
         expires_at = _cache_grant(path, server, grant)
         terminal_text.write(
             out,

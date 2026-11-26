@@ -15,8 +15,9 @@
 # Builds the xmanager-cloud sdist, then the wheel from the unpacked sdist (which
 # exercises the proto staging hooks outside the repository tree), then installs
 # each into clean virtualenvs (without xmanager) across Python 3.11-3.14 and the
-# protobuf runtime floor and ceiling, import-checks the installed package and
-# runs the xmanager_cloud unit tests against it. Nothing is published.
+# protobuf runtime floor and ceiling, import-checks the installed package, runs
+# `xmc --help` and the xmanager_cloud and xm_cloud.cli unit tests against it.
+# Nothing is published.
 name: 'xmanager-cloud Package'
 
 on:
@@ -172,7 +173,16 @@ jobs:
         run: |
           set -euo pipefail
           "${VENV_DIR}/bin/python" sdks/python/xmanager-cloud/install_smoke_check.py
+          "${VENV_DIR}/bin/xmc" --help
+          "${VENV_DIR}/bin/xmc" login --help
+          "${VENV_DIR}/bin/xmc" logout --help
+          # Test-only dependency of the xm_cloud.cli tests (absltest); the package does
+          # not depend on it. Installed after the smoke check so it cannot mask a
+          # missing runtime dependency. 2.1.0 matches the Bazel abseil-py module.
+          "${VENV_DIR}/bin/python" -m pip install --no-cache-dir absl-py==2.1.0
           # -I keeps the source tree off sys.path so the tests import the installed package.
-          for test_file in sdks/python/xmanager-cloud/src/xmanager_cloud/*_test.py; do
+          for test_file in \
+            sdks/python/xmanager-cloud/src/xmanager_cloud/*_test.py \
+            sdks/python/xmanager-cloud/src/xm_cloud/cli/*_test.py; do
             "${VENV_DIR}/bin/python" -I "${test_file}"
           done
