@@ -322,4 +322,9 @@ func TestHandleTask_CancelledInvalidStudyRetriesWithoutLeakingPayload(t *testing
 	if strings.Contains(logs.String(), "SECRET_PAYLOAD") {
 		t.Errorf("logs leaked user payload on shutdown: %q", logs.String())
 	}
+	for _, want := range []string{"Failed to process study reconcile tick", "xid=123", context.Canceled.Error()} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("logs = %q, want %q", logs.String(), want)
+		}
+	}
 }

@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	spb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/pkg/study"
 )
 
@@ -79,10 +80,7 @@ func TestESSReconciler_GateMatrix(t *testing.T) {
 			LaunchState: spb.ExperimentStatus_LAUNCHING,
 		},
 		TypeConfig: &spb.Experiment_StudyConfig{
-			StudyConfig: &spb.StudyConfig{
-				Algorithm:      "RANDOM_SEARCH",
-				MaxTrialBudget: 10,
-			},
+			StudyConfig: experimenttest.StudyConfig(),
 		},
 	}
 

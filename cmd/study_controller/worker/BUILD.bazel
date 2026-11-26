@@ -53,6 +53,7 @@ go_test(
     embed = [":worker"],
     deps = [
         "//api/protos/experiment",
+        "//internal/experiment/experimenttest",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/redislock",

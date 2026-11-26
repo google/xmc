@@ -51,7 +51,9 @@ go_test(
     embed = [":vizier"],
     deps = [
         "//api/protos/experiment",
+        "//internal/experiment/experimenttest",
         "//internal/logging",
+        "//internal/prototest",
         "//pkg/components/crreader",
         "//pkg/components/crreader/crreadertest",
         "//pkg/study",

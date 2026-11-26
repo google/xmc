@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"xmanager_cloud/cmd/study_controller/config"
 	"xmanager_cloud/cmd/study_controller/worker"
@@ -435,11 +436,20 @@ func TestServeWithClient_ReturnsReconcilerError(t *testing.T) {
 			"spec":     map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
 		}},
 	}}
+	wantErr := errors.New("reconciler init failed")
 	err := serveWithClient(context.Background(), lis, client, func(*vizier.Client) (worker.ReconcileFunc, error) {
-		return nil, errors.New("reconciler init failed")
+		return nil, wantErr
 	}, "xmc", func() (crreader.Getter, error) { return getter, nil })
-	if err == nil {
-		t.Fatal("serveWithClient() with reconciler error = nil, want non-nil")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("serveWithClient() error = %v, want %v", err, wantErr)
+	}
+	if pingErr := client.Ping(context.Background()); !errors.Is(pingErr, redis.ErrClosed) {
+		t.Errorf("client.Ping() after stopServing = %v, want redis.ErrClosed", pingErr)
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+lis.Addr().String()+"/healthz", nil)
+	if resp, getErr := (&http.Client{Timeout: time.Second}).Do(req); getErr == nil {
+		resp.Body.Close()
+		t.Errorf("GET /healthz after stopServing = %d, want error", resp.StatusCode)
 	}
 }
 

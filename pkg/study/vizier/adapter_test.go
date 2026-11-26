@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/pkg/study"
 	"xmanager_cloud/pkg/study/vizierpb"
 )
@@ -102,7 +103,7 @@ func TestNewEngine_RejectsNilClient(t *testing.T) {
 		t.Fatal("NewEngine(empty) = nil, want error")
 	}
 	var nilEngine *Engine
-	if _, err := nilEngine.CreateStudy(context.Background(), 1, validStudyConfig()); err == nil {
+	if _, err := nilEngine.CreateStudy(context.Background(), 1, experimenttest.StudyConfig()); err == nil {
 		t.Fatal("(*Engine)(nil).CreateStudy() = nil, want error")
 	}
 }
@@ -111,7 +112,7 @@ func TestEngine_CreateStudy_IdempotentAndValidRequest(t *testing.T) {
 	t.Parallel()
 	srv := &fakeVizierServer{}
 	engine := newBufconnEngine(t, srv)
-	cfg := validStudyConfig()
+	cfg := experimenttest.StudyConfig()
 	wantSpec, err := ToStudySpec(cfg)
 	if err != nil {
 		t.Fatalf("ToStudySpec() error = %v", err)
@@ -149,7 +150,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 			createErr: status.Error(codes.AlreadyExists, "exists"),
 			studies:   map[string]*vizierpb.Study{"owners/xmc/studies/study-7": {Name: "owners/xmc/studies/study-7", DisplayName: "study-7"}},
 		}
-		name, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, validStudyConfig())
+		name, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, experimenttest.StudyConfig())
 		if err != nil || name != "owners/xmc/studies/study-7" || len(srv.getReqs) != 1 {
 			t.Fatalf("got name=%q err=%v getReqs=%v", name, err, srv.getReqs)
 		}
@@ -161,7 +162,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 			createErr: status.Error(codes.AlreadyExists, "exists"),
 			getErr:    status.Error(codes.InvalidArgument, "bad get"),
 		}
-		_, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, validStudyConfig())
+		_, err := newBufconnEngine(t, srv).CreateStudy(context.Background(), 7, experimenttest.StudyConfig())
 		if err == nil || errors.Is(err, study.ErrInvalidStudyConfig) {
 			t.Fatalf("CreateStudy() error = %v, want retryable non-ErrInvalidStudyConfig", err)
 		}
@@ -169,7 +170,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 
 	t.Run("empty Study.Name response falls back to constructed name", func(t *testing.T) {
 		t.Parallel()
-		name, err := newBufconnEngine(t, &fakeVizierServer{omitResName: true}).CreateStudy(context.Background(), 9, validStudyConfig())
+		name, err := newBufconnEngine(t, &fakeVizierServer{omitResName: true}).CreateStudy(context.Background(), 9, experimenttest.StudyConfig())
 		if err != nil || name != "owners/xmc/studies/study-9" {
 			t.Fatalf("got name=%q err=%v, want owners/xmc/studies/study-9", name, err)
 		}
@@ -177,7 +178,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 
 	t.Run("Unavailable returns retryable error", func(t *testing.T) {
 		t.Parallel()
-		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.Unavailable, "restarting")}).CreateStudy(context.Background(), 7, validStudyConfig())
+		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.Unavailable, "restarting")}).CreateStudy(context.Background(), 7, experimenttest.StudyConfig())
 		if err == nil || errors.Is(err, study.ErrInvalidStudyConfig) {
 			t.Fatalf("CreateStudy() error = %v, want retryable non-ErrInvalidStudyConfig", err)
 		}
@@ -186,7 +187,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 	t.Run("InvalidArgument wraps ErrInvalidStudyConfig without server payload", func(t *testing.T) {
 		t.Parallel()
 		const secretMsg = "SECRET_SERVER_DETAIL"
-		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.InvalidArgument, secretMsg)}).CreateStudy(context.Background(), 7, validStudyConfig())
+		_, err := newBufconnEngine(t, &fakeVizierServer{createErr: status.Error(codes.InvalidArgument, secretMsg)}).CreateStudy(context.Background(), 7, experimenttest.StudyConfig())
 		if !errors.Is(err, study.ErrInvalidStudyConfig) || strings.Contains(err.Error(), secretMsg) {
 			t.Fatalf("CreateStudy() error = %v, want ErrInvalidStudyConfig without %q", err, secretMsg)
 		}
@@ -196,7 +197,7 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 		t.Parallel()
 		srv := &fakeVizierServer{}
 		engine := newBufconnEngine(t, srv)
-		if _, err := engine.CreateStudy(context.Background(), 0, validStudyConfig()); !errors.Is(err, study.ErrInvalidStudyConfig) {
+		if _, err := engine.CreateStudy(context.Background(), 0, experimenttest.StudyConfig()); !errors.Is(err, study.ErrInvalidStudyConfig) {
 			t.Fatalf("CreateStudy(0) error = %v, want ErrInvalidStudyConfig", err)
 		}
 		if _, err := engine.CreateStudy(context.Background(), 5, nil); !errors.Is(err, study.ErrInvalidStudyConfig) {

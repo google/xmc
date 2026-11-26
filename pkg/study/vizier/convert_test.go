@@ -23,23 +23,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/testing/protocmp"
 	spb "xmanager_cloud/api/protos/experiment"
+	"xmanager_cloud/internal/experiment/experimenttest"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/pkg/study"
 	"xmanager_cloud/pkg/study/vizierpb"
 )
-
-func validStudyConfig() *spb.StudyConfig {
-	return &spb.StudyConfig{
-		Algorithm:         "RANDOM_SEARCH",
-		MaxTrialBudget:    20,
-		MaxParallelTrials: 4,
-		Metrics:           []*spb.MetricSpec{{MetricId: "accuracy", Goal: spb.MetricSpec_MAXIMIZE}},
-		Parameters: []*spb.ParameterSpec{{
-			ParameterId:        "lr",
-			ScaleType:          spb.ParameterSpec_LOG,
-			ParameterValueSpec: &spb.ParameterSpec_DoubleValueSpec{DoubleValueSpec: &spb.DoubleValueSpec{MinValue: 1e-4, MaxValue: 1e-1}},
-		}},
-	}
-}
 
 func TestToStudySpec_ValidConversions(t *testing.T) {
 	t.Parallel()
@@ -107,19 +95,28 @@ func TestToStudySpec_InvalidInputsAndPayloadFreeErrors(t *testing.T) {
 	t.Parallel()
 	const secret = "SECRET_USER_TOKEN_XYZ"
 	withParam := func(p *spb.ParameterSpec) *spb.StudyConfig {
-		return &spb.StudyConfig{Algorithm: "RANDOM_SEARCH", Metrics: []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_MAXIMIZE}}, Parameters: []*spb.ParameterSpec{p}}
+		return prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) {
+			c.Metrics[0].MetricId = secret
+			c.Parameters = []*spb.ParameterSpec{p}
+		})
 	}
 	tests := []struct {
 		name string
 		cfg  *spb.StudyConfig
 	}{
 		{name: "nil config", cfg: nil},
-		{name: "empty algorithm", cfg: &spb.StudyConfig{Metrics: []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_MAXIMIZE}}, Parameters: validStudyConfig().Parameters}},
-		{name: "empty parameters", cfg: &spb.StudyConfig{Algorithm: secret, Metrics: []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_MAXIMIZE}}}},
-		{name: "zero metrics", cfg: &spb.StudyConfig{Algorithm: "RANDOM_SEARCH", Parameters: validStudyConfig().Parameters}},
-		{name: "two metrics", cfg: &spb.StudyConfig{Algorithm: "RANDOM_SEARCH", Metrics: []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_MAXIMIZE}, {MetricId: "m2", Goal: spb.MetricSpec_MINIMIZE}}, Parameters: validStudyConfig().Parameters}},
-		{name: "unspecified goal", cfg: &spb.StudyConfig{Algorithm: "RANDOM_SEARCH", Metrics: []*spb.MetricSpec{{MetricId: secret}}, Parameters: validStudyConfig().Parameters}},
-		{name: "unknown goal enum", cfg: &spb.StudyConfig{Algorithm: "RANDOM_SEARCH", Metrics: []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_GoalType(99)}}, Parameters: validStudyConfig().Parameters}},
+		{name: "empty algorithm", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) { c.Algorithm = ""; c.Metrics[0].MetricId = secret })},
+		{name: "empty parameters", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) { c.Algorithm = secret; c.Parameters = nil })},
+		{name: "zero metrics", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) { c.Metrics = nil })},
+		{name: "two metrics", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) {
+			c.Metrics = []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_MAXIMIZE}, {MetricId: "m2", Goal: spb.MetricSpec_MINIMIZE}}
+		})},
+		{name: "unspecified goal", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) {
+			c.Metrics = []*spb.MetricSpec{{MetricId: secret}}
+		})},
+		{name: "unknown goal enum", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) {
+			c.Metrics = []*spb.MetricSpec{{MetricId: secret, Goal: spb.MetricSpec_GoalType(99)}}
+		})},
 		{name: "empty param id", cfg: withParam(&spb.ParameterSpec{})},
 		{name: "unset value spec", cfg: withParam(&spb.ParameterSpec{ParameterId: secret})},
 		{name: "unknown scale type", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ScaleType: spb.ParameterSpec_ScaleType(42), ParameterValueSpec: &spb.ParameterSpec_DoubleValueSpec{DoubleValueSpec: &spb.DoubleValueSpec{MinValue: 1, MaxValue: 2}}})},
@@ -138,14 +135,12 @@ func TestToStudySpec_InvalidInputsAndPayloadFreeErrors(t *testing.T) {
 		{name: "discrete signed zero duplicates", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_DiscreteValueSpec{DiscreteValueSpec: &spb.DiscreteValueSpec{Values: []float64{math.Copysign(0, -1), 0.0}}}})},
 		{name: "categorical empty string", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_CategoricalValueSpec{CategoricalValueSpec: &spb.CategoricalValueSpec{Values: []string{"a", ""}}}})},
 		{name: "categorical duplicate", cfg: withParam(&spb.ParameterSpec{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_CategoricalValueSpec{CategoricalValueSpec: &spb.CategoricalValueSpec{Values: []string{secret, secret}}}})},
-		{name: "duplicate parameter_id", cfg: &spb.StudyConfig{
-			Algorithm: "RANDOM_SEARCH",
-			Metrics:   []*spb.MetricSpec{{MetricId: "m", Goal: spb.MetricSpec_MAXIMIZE}},
-			Parameters: []*spb.ParameterSpec{
+		{name: "duplicate parameter_id", cfg: prototest.Modify(experimenttest.StudyConfig(), func(c *spb.StudyConfig) {
+			c.Parameters = []*spb.ParameterSpec{
 				{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_IntegerValueSpec{IntegerValueSpec: &spb.IntegerValueSpec{MinValue: 1, MaxValue: 2}}},
 				{ParameterId: secret, ParameterValueSpec: &spb.ParameterSpec_IntegerValueSpec{IntegerValueSpec: &spb.IntegerValueSpec{MinValue: 3, MaxValue: 4}}},
-			},
-		}},
+			}
+		})},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

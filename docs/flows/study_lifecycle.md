@@ -85,7 +85,7 @@ Key boundaries in this topology:
 - **Unsigned hint stream**: `xmc-study-reconcile-stream` carries an unsigned protojson
   `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`,
   [`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) with at-least-once
-  delivery; see [Architecture Overview §7.2](../architecture/overview.md#72-signed-task-payloads)
+  delivery; see [Architecture Overview §7.2](../architecture/overview.md#72-inter-service-task-authentication)
   for the trust-boundary exception.
 
 ---
