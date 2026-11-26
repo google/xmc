@@ -25,14 +25,20 @@ import (
 	"xmanager_cloud/internal/validator"
 )
 
-// populateChartProperties sets the canonical name, xid, and wid on the chart resource.
+// populateChartProperties sets the canonical name, xid, and wid on the chart resource. A wid of 0
+// denotes an experiment-level chart.
 func populateChartProperties(chart *dpb.Chart, chartID string, xid, wid int64) {
-	chart.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
 	chart.Xid = xid
 	chart.Wid = wid
+	if wid == 0 {
+		chart.Name = validator.ConstructExperimentChartName(xid, chartID)
+		return
+	}
+	chart.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
 }
 
-// CreateChart handles creation of a new chart entity under a work unit.
+// CreateChart handles creation of a new chart entity under a work unit or, for PARALLEL_COORDINATES
+// charts, under an experiment.
 func (s *Server) CreateChart(ctx context.Context, req *dpb.CreateChartRequest) (*dpb.Chart, error) {
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {

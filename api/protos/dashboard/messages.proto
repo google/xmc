@@ -58,6 +58,7 @@ message Chart {
   option (google.api.resource) = {
     type: "cloud.xmanager.googleapis.com/Chart"
     pattern: "experiments/{experiment}/workUnits/{wid}/charts/{chart}"
+    pattern: "experiments/{experiment}/charts/{chart}"
     pattern: "charts/{chart}"
     pattern: "dashboards/{dashboard}/charts/{chart}"
     singular: "chart"
@@ -68,7 +69,9 @@ message Chart {
   string title = 2 [(google.api.field_behavior) = REQUIRED];
   string description = 3 [(google.api.field_behavior) = OPTIONAL];
   int64 xid = 4 [(google.api.field_behavior) = REQUIRED];
-  int64 wid = 5 [(google.api.field_behavior) = REQUIRED];
+  // The work unit the chart belongs to. 0 for experiment-level charts, which are created under
+  // "experiments/{experiment}" and may only contain PARALLEL_COORDINATES plots.
+  int64 wid = 5 [(google.api.field_behavior) = OPTIONAL];
   repeated PlotSpec plots = 6 [(google.api.field_behavior) = REQUIRED];
   LayoutSpec plot_layout = 7 [(google.api.field_behavior) = REQUIRED];
   google.protobuf.Timestamp create_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -81,6 +84,10 @@ enum PlotType {
   SCATTER = 2;
   BAR = 3;
   HISTOGRAM = 4;
+  // One axis per parameter of a hyperparameter optimization study and one line per work unit of
+  // the study. Only allowed on experiment-level charts (GetChartData requires a STUDY experiment);
+  // the plot's data spec is not used.
+  PARALLEL_COORDINATES = 5;
 }
 
 message GridPosition {

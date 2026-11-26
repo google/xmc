@@ -32,6 +32,7 @@ import (
 	"xmanager_cloud/internal/grpcerr"
 	storagedata "xmanager_cloud/internal/storage/data"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -446,6 +447,31 @@ func TestListCharts_ParentsFiltersAndPagination(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repo, pool := setupDashboardRepository(ctx, t)
+
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
+	if err := repo.CreateChart(ctx, e1); err != nil {
+		t.Fatalf("CreateChart %s failed: %v", e1.GetName(), err)
+	}
+
+	assertWidNull := func() {
+		var widIsNull bool
+		if err := pool.QueryRow(ctx, `SELECT Wid IS NULL FROM Charts WHERE ChartId = $1`, "study-a").Scan(&widIsNull); err != nil || !widIsNull {
+			t.Fatalf("Charts.Wid IS NULL for an experiment-level chart = (%v, %v), want (true, nil)", widIsNull, err)
+		}
+	}
+	assertWidNull()
+	storagetest.VerifyExperimentLevelChartRoundTrip(ctx, t, repo, e1)
+	assertWidNull()
+}
+
+func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
+	repo, _ := setupDashboardRepository(context.Background(), t)
+	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, repo)
 }
 
 func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {

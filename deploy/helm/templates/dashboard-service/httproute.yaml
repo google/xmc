@@ -35,6 +35,10 @@ spec:
         - path:
             type: RegularExpression
             value: /v1/experiments/[a-zA-Z0-9_-]+/workUnits/[a-zA-Z0-9_-]+/charts.*
+        # Experiment-level charts, e.g. the parallel-coordinates chart of a study.
+        - path:
+            type: RegularExpression
+            value: /v1/experiments/[a-zA-Z0-9_-]+/charts.*
       backendRefs:
         - name: dashboard-service
           port: 8080

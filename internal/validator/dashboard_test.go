@@ -22,6 +22,7 @@ import (
 
 	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestValidateChartID(t *testing.T) {
@@ -759,10 +760,17 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "invalid_request_experiment_chart_without_wid",
+			name: "valid_request_experiment_level_chart",
 			req: &spb.GetChartDataRequest{
 				Name:             "experiments/1001/charts/chart-1",
 				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_request_experiment_chart_with_zero_xid",
+			req: &spb.GetChartDataRequest{
+				Name: "experiments/0/charts/chart-1",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -965,6 +973,10 @@ func TestValidateCreateChartParent(t *testing.T) {
 			wantWid: 2,
 			wantErr: nil,
 		},
+		{name: "valid_parent_experiment", req: &spb.CreateChartRequest{Parent: "experiments/100"}, wantXid: 100},
+		{name: "invalid_parent_experiment_zero_xid", req: &spb.CreateChartRequest{Parent: "experiments/0"}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "invalid_parent_experiment_trailing_slash", req: &spb.CreateChartRequest{Parent: "experiments/100/"}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "invalid_parent_experiment_chart_name", req: &spb.CreateChartRequest{Parent: "experiments/100/charts/c1"}, wantErr: grpcerr.ErrInvalidArgument},
 		{
 			name: "invalid_parent_zero_wid",
 			req: &spb.CreateChartRequest{
@@ -1024,6 +1036,8 @@ func TestValidateCreateChartParent(t *testing.T) {
 }
 
 func TestValidateCreateChartRequest(t *testing.T) {
+	baseWuReq := &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2}}
+	baseExpReq := &spb.CreateChartRequest{Parent: "experiments/1", ChartId: "hpo-parallel-coord", Chart: &spb.Chart{Title: "Study", Xid: 1, Plots: parallelCoordinatesPlots()}}
 	tests := []struct {
 		name    string
 		req     *spb.CreateChartRequest
@@ -1132,6 +1146,23 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{name: "valid_experiment_level_parallel_coordinates", req: prototest.Modify(baseExpReq, nil)},
+		{name: "valid_experiment_level_without_plots", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.ChartId, r.Chart.Plots = "", nil })},
+		{name: "experiment_level_with_wid", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.Chart.Wid = 3 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_mismatched_xid", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.Chart.Xid = 2 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_scatter_plot", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: "loss", Type: spb.PlotType_SCATTER}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_with_parallel_coordinates_plot", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = parallelCoordinatesPlots() }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_without_wid", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Wid = 0 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = []*spb.PlotSpec{{Type: spb.PlotType_SCATTER}} }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: " \t ", Type: spb.PlotType_SCATTER}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: "p1", Type: spb.PlotType_SCATTER}, {PlotId: "p1", Type: spb.PlotType_BAR}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "nil_plot_entry", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = []*spb.PlotSpec{nil} }), wantErr: grpcerr.ErrInvalidArgument},
 	}
 
 	for _, tc := range tests {
@@ -1484,6 +1515,35 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 			err := ValidateDeleteChartRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateDeleteChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func parallelCoordinatesPlots() []*spb.PlotSpec {
+	return []*spb.PlotSpec{{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}}
+}
+
+func TestValidateChartPlotTypes(t *testing.T) {
+	scatter, parallel := &spb.PlotSpec{PlotId: "loss", Type: spb.PlotType_SCATTER}, &spb.PlotSpec{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}
+	for _, tc := range []struct {
+		name            string
+		plots           []*spb.PlotSpec
+		experimentLevel bool
+		wantErr         error
+	}{
+		{name: "experiment level without plots", experimentLevel: true},
+		{name: "experiment level with parallel coordinates", plots: []*spb.PlotSpec{parallel, parallel}, experimentLevel: true},
+		{name: "experiment level with scatter", plots: []*spb.PlotSpec{parallel, scatter}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with unspecified plot type", plots: []*spb.PlotSpec{{PlotId: "p"}}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with nil plot", plots: []*spb.PlotSpec{nil}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with nil plot", plots: []*spb.PlotSpec{scatter, nil}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with scatter", plots: []*spb.PlotSpec{scatter}},
+		{name: "work unit level with parallel coordinates", plots: []*spb.PlotSpec{scatter, parallel}, wantErr: grpcerr.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateChartPlotTypes(tc.plots, tc.experimentLevel); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotTypes() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

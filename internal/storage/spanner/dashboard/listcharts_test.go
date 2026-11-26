@@ -21,6 +21,7 @@ import (
 	"time"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 func TestListCharts_All(t *testing.T) {
@@ -420,4 +421,8 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	if token2 != "" {
 		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
 	}
+}
+
+func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
+	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, setupDashboardRepository(context.Background(), t))
 }

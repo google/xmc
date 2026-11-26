@@ -84,6 +84,7 @@ go_test(
         "//internal/storage/data",
         "//internal/storage/spanner/emulator",
         "//internal/storage/spanner/schema/dashboardschema",
+        "//internal/storage/testing",
         "@com_google_cloud_go_spanner//:spanner",
         "@org_golang_google_protobuf//types/known/fieldmaskpb",
     ],

@@ -40,7 +40,7 @@ func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chart
 		return status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
 	}
 
-	targetXID := s.resolveChartXID(existing, chartName)
+	targetXID := existing.GetXid()
 	if targetXID <= 0 {
 		return status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
 	}

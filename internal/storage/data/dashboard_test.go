@@ -406,6 +406,46 @@ func TestUnmarshalPlotSpec(t *testing.T) {
 	}
 }
 
+func TestChartName(t *testing.T) {
+	tests := []struct {
+		name string
+		xid  int64
+		wid  int64
+		want string
+	}{
+		{name: "work unit chart", xid: 100, wid: 2, want: "experiments/100/workUnits/2/charts/c1"},
+		{name: "experiment-level chart", xid: 100, want: "experiments/100/charts/c1"},
+		{name: "chart without experiment", wid: 2, want: "charts/c1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ChartName("c1", tc.xid, tc.wid); got != tc.want {
+				t.Errorf("ChartName(%q, %d, %d) = %q, want %q", "c1", tc.xid, tc.wid, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveChartWid(t *testing.T) {
+	tests := []struct {
+		name    string
+		chart   *dpb.Chart
+		nameWid int64
+		want    int64
+	}{
+		{name: "chart wid wins over name wid", chart: &dpb.Chart{Wid: 3}, nameWid: 2, want: 3},
+		{name: "name wid fills an unset chart wid", chart: &dpb.Chart{}, nameWid: 2, want: 2},
+		{name: "experiment-level chart stays 0", chart: &dpb.Chart{}, want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveChartWid(tc.chart, tc.nameWid); got != tc.want {
+				t.Errorf("ResolveChartWid() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildListChartsFilter(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -492,11 +532,14 @@ func TestExtractChartCursor(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name:  "valid chart returns chart_id cursor",
-			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"},
-			want: map[string]any{
-				"chart_id": "c1",
-			},
+			name:  "work unit chart returns chart_id and wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1", Wid: 1},
+			want:  map[string]any{"chart_id": "c1", "wid": int64(1)},
+		},
+		{
+			name:  "experiment-level chart returns nil wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
+			want:  map[string]any{"chart_id": "c1", "wid": nil},
 		},
 	}
 

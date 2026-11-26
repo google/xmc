@@ -295,17 +295,16 @@ class CliTest(unittest.TestCase):
 
     def test_get_chart(self) -> None:
         self.mock_client.get_chart.return_value = messages_pb2.Chart(
-            name="experiments/1001/charts/c1",
+            name="experiments/1001/workUnits/7/charts/c1",
             title="C1",
             xid=1001,
             wid=7,
             plots=[messages_pb2.PlotSpec(plot_id="p1"), messages_pb2.PlotSpec(plot_id="p2")],
         )
-
-        ret, out, _ = self._run(["get", "experiments/1001/charts/c1"])
+        ret, out, _ = self._run(["get", "charts/c1"])
         self.assertEqual(ret, 0)
-        self.mock_client.get_chart.assert_called_once_with("experiments/1001/charts/c1")
-        self.assertIn("Chart:       experiments/1001/charts/c1", out)
+        self.mock_client.get_chart.assert_called_once_with("charts/c1")
+        self.assertIn("Chart:       experiments/1001/workUnits/7/charts/c1", out)
         self.assertIn("Experiment:  1001 (wid: 7)", out)
         self.assertIn("Plots:       2", out)
 

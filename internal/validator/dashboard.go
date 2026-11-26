@@ -259,7 +259,8 @@ func ValidateGetChartRequest(in *spb.GetChartRequest) error {
 	return nil
 }
 
-// ValidateCreateChartParent extracts and validates experiment XID and work unit WID for a CreateChartRequest.
+// ValidateCreateChartParent extracts and validates the experiment XID and work unit WID of a
+// CreateChartRequest parent. The WID is 0 for an experiment-level parent "experiments/{xid}".
 func ValidateCreateChartParent(in *spb.CreateChartRequest) (xid int64, wid int64, err error) {
 	if in == nil {
 		return 0, 0, fmt.Errorf("request cannot be nil: %w", grpcerr.ErrInvalidArgument)
@@ -267,9 +268,9 @@ func ValidateCreateChartParent(in *spb.CreateChartRequest) (xid int64, wid int64
 	if in.GetParent() == "" {
 		return 0, 0, fmt.Errorf("parent cannot be empty: %w", grpcerr.ErrInvalidArgument)
 	}
-	expXid, wuWid, err := ValidateWorkUnitName(in.GetParent())
+	expXid, wuWid, err := validateExperimentOrWorkUnitParent(in.GetParent())
 	if err != nil {
-		return 0, 0, fmt.Errorf("invalid parent work unit: %w", err)
+		return 0, 0, fmt.Errorf("invalid chart parent: %w", err)
 	}
 	return expXid, wuWid, nil
 }
@@ -297,8 +298,51 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetXid() != expXid {
 		return fmt.Errorf("chart.xid %d must match parent experiment xid %d: %w", in.GetChart().GetXid(), expXid, grpcerr.ErrInvalidArgument)
 	}
+	// An experiment-level parent has wid 0, which no work unit has, so its charts must leave wid 0.
 	if in.GetChart().GetWid() != wuWid {
-		return fmt.Errorf("chart.wid %d must match parent work unit wid %d: %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
+		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
+	}
+	if err := validateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
+		return err
+	}
+	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
+}
+
+// validateChartPlotIDs checks that every non-nil plot carries a non-whitespace, unique plot_id.
+func validateChartPlotIDs(plots []*spb.PlotSpec) error {
+	seen := make(map[string]bool, len(plots))
+	for i, plot := range plots {
+		if plot == nil {
+			continue
+		}
+		id := plot.GetPlotId()
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("plots[%d].plot_id cannot be empty or whitespace: %w", i, grpcerr.ErrInvalidArgument)
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate plots[%d].plot_id %q: %w", i, id, grpcerr.ErrInvalidArgument)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
+// ValidateChartPlotTypes checks that the plot types fit the level of their chart. A
+// PARALLEL_COORDINATES plot spans every work unit of a study, so it is only allowed on
+// experiment-level charts, which in turn allow no other plot type: the other plot types read the
+// metrics of a single work unit.
+func ValidateChartPlotTypes(plots []*spb.PlotSpec, experimentLevel bool) error {
+	for i, plot := range plots {
+		if plot == nil {
+			return fmt.Errorf("plots[%d] cannot be nil: %w", i, grpcerr.ErrInvalidArgument)
+		}
+		isParallelCoordinates := plot.GetType() == spb.PlotType_PARALLEL_COORDINATES
+		if experimentLevel && !isParallelCoordinates {
+			return fmt.Errorf("plots[%d].type %s is not allowed on an experiment-level chart, which only allows PARALLEL_COORDINATES: %w", i, plot.GetType(), grpcerr.ErrInvalidArgument)
+		}
+		if !experimentLevel && isParallelCoordinates {
+			return fmt.Errorf("plots[%d].type PARALLEL_COORDINATES is only allowed on experiment-level charts: %w", i, grpcerr.ErrInvalidArgument)
+		}
 	}
 	return nil
 }

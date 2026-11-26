@@ -260,6 +260,28 @@ func BuildChartParentFilter(parent string) (string, error) {
 	return "", fmt.Errorf("unsupported parent format: %q", parent)
 }
 
+// ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
+// the experiment-level name for a chart with an experiment but wid 0, and the root name otherwise.
+func ChartName(chartID string, xid, wid int64) string {
+	if xid <= 0 {
+		return validator.ConstructRootChartName(chartID)
+	}
+	if wid == 0 {
+		return validator.ConstructExperimentChartName(xid, chartID)
+	}
+	return validator.ConstructWorkUnitChartName(xid, wid, chartID)
+}
+
+// ResolveChartWid returns the wid to store for a chart: its wid field when set, otherwise the wid
+// parsed from its name, and 0 for an experiment-level chart, whose name has no wid. Backends store
+// wid 0 as NULL.
+func ResolveChartWid(chart *dpb.Chart, nameWid int64) int64 {
+	if chart.GetWid() != 0 {
+		return chart.GetWid()
+	}
+	return nameWid
+}
+
 // BuildListChartsFilter combines a chart collection parent filter with an optional user filter.
 func BuildListChartsFilter(parent, filter string) (string, error) {
 	parentFilter, err := BuildChartParentFilter(parent)
@@ -278,8 +300,13 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
 	}
+	var wid any
+	if chart.GetWid() > 0 {
+		wid = chart.GetWid()
+	}
 	return map[string]any{
 		"chart_id": chartID,
+		"wid":      wid,
 	}, nil
 }
 

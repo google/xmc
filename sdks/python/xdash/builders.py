@@ -56,9 +56,10 @@ def validate_chart_id(chart_id: str) -> str:
 def chart_id_from_name(name: str) -> str:
     """Extracts the raw chart ID from a full chart resource name.
 
-    CreateChart returns a chart whose name is
-    'experiments/{xid}/workUnits/{wid}/charts/{chart_id}'; a dashboard needs only the
-    trailing '{chart_id}'. The other two Chart patterns, 'charts/{chart_id}' and
+    CreateChart returns a chart whose name is either
+    'experiments/{xid}/workUnits/{wid}/charts/{chart_id}' or
+    'experiments/{xid}/charts/{chart_id}'; a dashboard needs only the trailing '{chart_id}'.
+    The other two Chart patterns, 'charts/{chart_id}' and
     'dashboards/{dashboard}/charts/{chart_id}', are accepted too.
 
     The name must actually identify a chart. Taking the trailing segment on its own
@@ -226,7 +227,7 @@ class ChartBuilder:
         if xid <= 0:
             raise ValueError("Experiment ID (xid) must be a positive integer.")
         # Positive, not merely non-negative: CreateChart validates its parent with
-        # ValidateWorkUnitName, which rejects experiments/{xid}/workUnits/0.
+        # validateExperimentOrWorkUnitParent, which rejects experiments/{xid}/workUnits/0.
         if wid <= 0:
             raise ValueError("Work unit ID (wid) must be a positive integer.")
         self._xid = xid

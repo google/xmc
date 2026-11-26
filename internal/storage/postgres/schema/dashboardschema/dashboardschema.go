@@ -51,7 +51,7 @@ func chartFields(extra map[querytools.TableField]querytools.Member) map[querytoo
 		TitleTableField:       {Name: TitleTableField, QueryLiteral: safesql.New("c.Title"), Type: filtervisitor.String, Selectable: true},
 		DescriptionTableField: {Name: DescriptionTableField, QueryLiteral: safesql.New("c.Description"), Type: filtervisitor.String, Selectable: true, Nullable: true},
 		XidTableField:         {Name: XidTableField, QueryLiteral: safesql.New("c.Xid"), Type: filtervisitor.Integer, Selectable: true},
-		WidTableField:         {Name: WidTableField, QueryLiteral: safesql.New("c.Wid"), Type: filtervisitor.Integer, Selectable: true},
+		WidTableField:         {Name: WidTableField, QueryLiteral: safesql.New("c.Wid"), Type: filtervisitor.Integer, Selectable: true, Nullable: true},
 		PlotLayoutTableField:  {Name: PlotLayoutTableField, QueryLiteral: safesql.New("c.PlotLayout"), Type: filtervisitor.Bytes, Selectable: true, Nullable: true},
 		OwnerTableField:       {Name: OwnerTableField, QueryLiteral: safesql.New("c.Owner"), Type: filtervisitor.String, Selectable: true},
 		CreatedTableField:     {Name: CreatedTableField, QueryLiteral: safesql.New("c.CreatedAt"), Type: filtervisitor.Timestamp, Selectable: true},
