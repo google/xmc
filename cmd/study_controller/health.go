@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sync/errgroup"
 	"xmanager_cloud/internal/logging"
 )
 
@@ -61,24 +62,30 @@ func newHTTPHandler(redis, vizier pinger) http.Handler {
 	return mux
 }
 
-// readinessCheck responds 200 OK when Redis and Vizier answer within readinessPingTimeout, else 503.
+// readinessCheck responds 200 OK when Redis and Vizier answer concurrently within readinessPingTimeout, else 503.
 func readinessCheck(redis, vizier pinger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
 		defer cancel()
+		g, pingCtx := errgroup.WithContext(ctx)
 		for _, dep := range []struct {
 			name string
 			p    pinger
 		}{{"Redis", redis}, {"Vizier", vizier}} {
-			err := errors.New("probe not configured")
-			if dep.p != nil {
-				err = dep.p.Ping(ctx)
-			}
-			if err != nil {
-				logging.Warn(ctx, "Readiness check failed", "dependency", dep.name, "error", err)
-				http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-				return
-			}
+			g.Go(func() error {
+				err := errors.New("probe not configured")
+				if dep.p != nil {
+					err = dep.p.Ping(pingCtx)
+				}
+				if err != nil {
+					logging.Warn(pingCtx, "Readiness check failed", "dependency", dep.name, "error", err)
+				}
+				return err
+			})
+		}
+		if err := g.Wait(); err != nil {
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		writeOK(w, r)
 	}

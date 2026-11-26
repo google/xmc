@@ -119,13 +119,9 @@ func validateOptionalNamespace(ns string) error {
 		return nil
 	}
 	isAlnum := func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') }
-	if len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) {
+	invalid := strings.IndexFunc(ns, func(r rune) bool { return r > 0x7f || (!isAlnum(byte(r)) && r != '-') }) >= 0
+	if len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) || invalid {
 		return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
-	}
-	for i := 0; i < len(ns); i++ {
-		if !isAlnum(ns[i]) && ns[i] != '-' {
-			return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
-		}
 	}
 	return nil
 }

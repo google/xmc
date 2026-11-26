@@ -33,6 +33,7 @@ go_library(
         "//pkg/components/crreader",
         "//pkg/study/vizier",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

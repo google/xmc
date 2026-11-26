@@ -34,12 +34,10 @@ Resolve the xmc-study-controller container image:
 {{- end -}}
 {{- end -}}
 
-{{- /* Resolve the target Kubernetes namespace for HPO resources. */}}
 {{- define "hpo.namespace" -}}
 {{- .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) -}}
 {{- end -}}
 
-{{- /* Standard labels for HPO RBAC resources. */}}
 {{- define "hpo.labels" -}}
 app: xmc-study-controller
 app.kubernetes.io/name: xmc-study-controller

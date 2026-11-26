@@ -18,6 +18,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -113,9 +114,7 @@ func serveWithClient(
 ) error {
 	if _, err := worker.NewRedisHandler(client, nil); err != nil {
 		_ = lis.Close()
-		if client != nil && client.Client != nil {
-			_ = client.Close(context.WithoutCancel(ctx))
-		}
+		closeRedisClient(ctx, client)
 		return fmt.Errorf("failed to create study reconcile handler: %w", err)
 	}
 	vp := &vizierProbe{}
@@ -133,13 +132,11 @@ func serveWithClient(
 	if err != nil {
 		cancelHTTP()
 		sErr := <-serveErr
-		if client != nil && client.Client != nil {
-			_ = client.Close(context.WithoutCancel(ctx))
+		closeRedisClient(ctx, client)
+		if sErr != nil || ctx.Err() == nil {
+			return cmp.Or(sErr, err)
 		}
-		if ctx.Err() != nil {
-			return nil
-		}
-		return cmp.Or(sErr, err)
+		return nil
 	}
 	defer func() {
 		if err := vizierClient.Close(); err != nil {
@@ -169,14 +166,18 @@ func serveWithClient(
 func stopServing(ctx context.Context, client *redisclient.ConsumerClient, cancel context.CancelFunc, serveErr <-chan error) {
 	cancel()
 	<-serveErr
+	closeRedisClient(ctx, client)
+}
+
+func closeRedisClient(ctx context.Context, client *redisclient.ConsumerClient) {
 	if client != nil && client.Client != nil {
 		_ = client.Close(context.WithoutCancel(ctx))
 	}
 }
 
 func resolveAndDialVizier(ctx context.Context, ns string, newGetter func() (crreader.Getter, error)) (*vizier.Client, error) {
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if newGetter == nil {
+		return nil, errors.New("component getter constructor must not be nil")
 	}
 	getter, err := newGetter()
 	if err != nil {
