@@ -127,19 +127,13 @@ func convertIntegerSpec(idx int, s *spb.IntegerValueSpec, isLog bool) (*vizierpb
 }
 
 func convertCategoricalSpec(idx int, s *spb.CategoricalValueSpec, scale vizierpb.StudySpec_ParameterSpec_ScaleType) (*vizierpb.StudySpec_ParameterSpec_CategoricalValueSpec_, error) {
-	if s == nil || len(s.GetValues()) == 0 {
-		return nil, invalidParamErr(idx, "categorical values must not be empty")
-	}
-	if scale != vizierpb.StudySpec_ParameterSpec_SCALE_TYPE_UNSPECIFIED {
-		return nil, invalidParamErr(idx, "categorical parameter must not set scale_type")
+	if s == nil || len(s.GetValues()) == 0 || scale != vizierpb.StudySpec_ParameterSpec_SCALE_TYPE_UNSPECIFIED {
+		return nil, invalidParamErr(idx, "invalid categorical spec or scale_type")
 	}
 	seen := make(map[string]struct{}, len(s.GetValues()))
 	for _, v := range s.GetValues() {
-		if v == "" {
-			return nil, invalidParamErr(idx, "categorical values must not contain empty string")
-		}
-		if _, dup := seen[v]; dup {
-			return nil, invalidParamErr(idx, "categorical values must be unique")
+		if _, dup := seen[v]; v == "" || dup {
+			return nil, invalidParamErr(idx, "categorical values must be non-empty and unique")
 		}
 		seen[v] = struct{}{}
 	}
