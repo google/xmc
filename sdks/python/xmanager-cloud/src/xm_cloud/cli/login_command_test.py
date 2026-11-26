@@ -209,6 +209,11 @@ class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
         self.assertEqual((code, err.getvalue()), (0, ""))
         self.assertTrue(out.getvalue().startswith("usage: xmc logout "))
 
+    def test_parse_args_maps_system_exit_none_to_zero(self) -> None:
+        parser = login_command.argparse.ArgumentParser(prog="xmc logout")
+        with mock.patch.object(parser, "parse_args", side_effect=SystemExit(None)):
+            self.assertEqual(login_command._parse_args(parser, [], io.StringIO(), io.StringIO()), 0)
+
     def test_credentials_roundtrip_permissions_and_relative_xdg(self) -> None:
         self.assertEqual(
             login_command.credentials_path({"XDG_CONFIG_HOME": "relative"}),

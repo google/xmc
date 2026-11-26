@@ -243,7 +243,7 @@ def _parse_args(
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             return parser.parse_args(list(argv))
     except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 1
+        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
 
 
 def run_logout(

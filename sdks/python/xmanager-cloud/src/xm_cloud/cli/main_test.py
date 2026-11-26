@@ -97,11 +97,15 @@ class MainTest(unittest.TestCase):
         self.assertTrue(out.startswith("usage: xmc logout "))
 
     def test_subcommand_system_exit_from_subcommand_is_returned(self) -> None:
-        run = mock.Mock(side_effect=SystemExit("boom"))
-        with mock.patch.object(main, "SUBCOMMANDS", {"logout": main.Subcommand("Logs out.", run)}):
-            code, out, err = self._main(["logout"])
+        for exc, expected in ((SystemExit("boom"), 1), (SystemExit(None), 0)):
+            with self.subTest(code=exc.code):
+                run = mock.Mock(side_effect=exc)
+                with mock.patch.object(
+                    main, "SUBCOMMANDS", {"logout": main.Subcommand("Logs out.", run)}
+                ):
+                    code, out, err = self._main(["logout"])
 
-        self.assertEqual((code, out, err), (1, "", ""))
+                self.assertEqual((code, out, err), (expected, "", ""))
 
 
 if __name__ == "__main__":

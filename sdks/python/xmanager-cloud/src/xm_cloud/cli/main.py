@@ -93,7 +93,7 @@ def main(
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             return command.run(args[1:], out=out, err=err)
     except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 1
+        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
     except KeyboardInterrupt:
         err.write("\nxmc: interrupted\n")
         return 130
