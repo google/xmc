@@ -38,6 +38,7 @@ func TestValidateStudyChartID(t *testing.T) {
 		{name: "unreserved_id_on_work_unit", chartID: "my-chart", xid: 123, wid: 4},
 		{name: "empty_id", chartID: "", xid: 123},
 		{name: "prefix_only_is_not_reserved", chartID: "study-123-parallel-coordinates-v2", xid: 456},
+		{name: "suffix_only_is_not_reserved", chartID: "v2-study-123-parallel-coordinates", xid: 456},
 		{name: "missing_digits_is_not_reserved", chartID: "study--parallel-coordinates", xid: 456},
 		{name: "negative_number_is_not_reserved", chartID: "study--123-parallel-coordinates", xid: 456},
 		{name: "alphanumeric_segment_is_not_reserved", chartID: "study-12a-parallel-coordinates", xid: 456},
