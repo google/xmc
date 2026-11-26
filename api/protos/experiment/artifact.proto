@@ -213,8 +213,8 @@ message ChartArtifact {
     FAILED = 3;
   }
 
-  // Optional custom title for the dashboard. If empty, the server constructs one 
-  // using parent work unit ID (e.g. metrics_w002).
+  // Optional custom title for the chart. If empty on a work-unit ChartArtifact, the server
+  // constructs "Chart for XID {xid} WID {wid}"; server-provisioned study charts use "Parallel Coordinates".
   string title = 1 [(google.api.field_behavior) = OPTIONAL];
 
   // List of metric keys or patterns visualized in this dashboard.

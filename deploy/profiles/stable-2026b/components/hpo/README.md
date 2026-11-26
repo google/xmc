@@ -21,7 +21,7 @@ The following fields are structural constants of the HPO blueprint defined in [`
 | `spec.componentClass` | `"hyperparameter-optimization"` | Canonical service class for hyperparameter optimization studies and trial orchestration. |
 | `spec.version` / `spec.chartVersion` | `.Chart.Version` (`"0.1.0"`) | Sourced strictly from [`Chart.yaml`](Chart.yaml) as the single source of truth. |
 | `spec.stability` | `"EXPERIMENTAL"` | Catalog-declared maturity stage; enabling requires `acknowledgeExperimental: true`. |
-| `spec.dependencies` | `["vizier", "clickhouse"]` | Declares upstream dependencies on the [`vizier`](../vizier/README.md) optimization engine and [`clickhouse`](../../../stable-2026a/components/clickhouse/README.md) metrics store. `xmc-bridge` waits for both to be Ready before actuating `hpo`. |
+| `spec.dependencies` | `["vizier", "clickhouse"]` | Declares upstream dependencies on the [`vizier`](../vizier/README.md) optimization engine and [`clickhouse`](../../../stable-2026a/components/clickhouse/README.md) metrics store. `xmc-bridge` waits for both to be Ready before actuating `hpo`. `STUDY` parallel-coordinates chart auto-provisioning additionally requires `dashboardServiceDeployment.enabled=true` in the umbrella Helm chart (`ess_dashboard_service_addr`); otherwise ESS skips chart provisioning with an Info log and no failure counter. |
 
 ---
 

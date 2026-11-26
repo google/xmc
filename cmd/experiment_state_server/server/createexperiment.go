@@ -115,6 +115,9 @@ func (h *ExperimentHandler) CreateExperiment(ctx context.Context, req *msgpb.Cre
 	// 5.2. Enqueue the initial reconcile tick of a STUDY for the Study Controller.
 	h.enqueueStudyReconcile(ctx, retExp)
 
+	// 5.3. Provision the chart of a STUDY in the background.
+	h.studyCharts.start(ctx, creator, retExp)
+
 	// 6. Return the successful response.
 	logging.Info(ctx, "Successfully created experiment", "experiment_name", retExp.GetName())
 	return retExp, nil

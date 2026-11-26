@@ -475,6 +475,20 @@ func TestCreateArtifact_ChartArtifact(t *testing.T) {
 	}
 }
 
+func TestCreateArtifact_ChartValidationAndUnconfiguredObservers(t *testing.T) {
+	newChartReq := func(parent, title string) *msgpb.CreateArtifactRequest {
+		return &msgpb.CreateArtifactRequest{Parent: parent, Artifact: &msgpb.Artifact{Url: &msgpb.Url{Url: "http://example.com/chart"}, Payload: &msgpb.ArtifactPayload{Type: &msgpb.ArtifactPayload_Chart{Chart: &msgpb.ChartArtifact{Title: title, MetricNames: []string{"accuracy"}}}}}}
+	}
+	xidClient := &mockXidClient{checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)}, createXidEntryResp: &xidmsgpb.XidEntry{Name: proto.String("xids/999")}}
+	srv := newTestServer(t, withStorage(&storage.MockStorage{}), withXidClient(xidClient))
+	if _, err := srv.CreateArtifact(context.Background(), newChartReq("experiments/123", "Parallel Coordinates")); !errors.Is(err, grpcerr.ErrInvalidArgument) || xidClient.createXidEntryCalls != 0 {
+		t.Errorf("CreateArtifact(experiment-level ChartArtifact) = (%v, xidCalls=%d), want (%v, 0)", err, xidClient.createXidEntryCalls, grpcerr.ErrInvalidArgument)
+	}
+	if got, err := srv.CreateArtifact(context.Background(), newChartReq("experiments/123/workUnits/1", "Work Unit Chart")); err != nil || got.GetPayload().GetChart().GetStatus() != msgpb.ChartArtifact_FAILED || got.GetPayload().GetChart().GetErrorMessage() != "dashboard service is not configured" {
+		t.Errorf("CreateArtifact(work-unit ChartArtifact without observers) = (%v, %v), want FAILED 'dashboard service is not configured'", got, err)
+	}
+}
+
 func TestCreateArtifact_ManagedXprofDefaults(t *testing.T) {
 	ctx := context.Background()
 	server, _ := createExperimentStateServer(ctx, t)

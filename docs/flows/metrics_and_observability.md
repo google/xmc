@@ -260,6 +260,7 @@ ESS and the Study Controller expose the following Prometheus metrics under `/met
 | Metric | Type | Component | Labels | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `xmc_ess_study_reconcile_enqueue_failures_total` | Counter | ESS | — | Created `STUDY` experiments whose initial reconcile tick could not be enqueued to `xmc-study-reconcile-stream`. Such a study is not reconciled until a future sweeper recovers it, so alert on any increase. |
+| `xmc_ess_study_chart_provisioning_failures_total` | Counter | ESS | `stage` | Created `STUDY` experiments whose parallel coordinates chart could not be provisioned, partitioned by `stage` (`artifact` for child XID or artifact insert failure, `chart` for `DashboardService.CreateChart` or status write-back failure). |
 | `xmc_study_controller_reconcile_ticks_total` | Counter | Study Controller | `outcome` | Study reconcile ticks processed, partitioned by `outcome` (`reconciled`, `contended`, `retry_error`, `invalid_payload`). |
 
 ---
