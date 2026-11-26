@@ -183,6 +183,32 @@ class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
             with self.assertRaisesRegex(login_command.AuthError, "Refusing to read"):
                 login_command.load_credentials(link)
 
+    def test_load_credentials_closes_fd_and_rejects_foreign_owner(self) -> None:
+        path = pathlib.Path(self._xdg) / "xmc" / "credentials.json"
+        login_command.save_credentials(path, {})
+        with (
+            mock.patch.object(os, "fdopen", side_effect=OSError("fdopen failed")),
+            mock.patch.object(os, "close", wraps=os.close) as close_mock,
+            self.assertRaises(OSError),
+        ):
+            login_command.load_credentials(path)
+        close_mock.assert_called_once()
+
+        if hasattr(os, "getuid"):
+            with (
+                mock.patch.object(os, "getuid", return_value=os.getuid() + 1),
+                self.assertRaisesRegex(
+                    login_command.AuthError, "must be owned by the current user"
+                ),
+            ):
+                login_command.load_credentials(path)
+
+    def test_run_logout_help_returns_zero_without_exiting(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        code = login_command.run_logout(["--help"], env=self._env(), out=out, err=err)
+        self.assertEqual((code, err.getvalue()), (0, ""))
+        self.assertTrue(out.getvalue().startswith("usage: xmc logout "))
+
     def test_credentials_roundtrip_permissions_and_relative_xdg(self) -> None:
         self.assertEqual(
             login_command.credentials_path({"XDG_CONFIG_HOME": "relative"}),

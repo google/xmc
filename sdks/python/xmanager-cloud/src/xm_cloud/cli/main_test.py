@@ -14,7 +14,6 @@
 
 """Unit tests for `xm_cloud.cli.main`."""
 
-import contextlib
 import io
 import unittest
 from unittest import mock
@@ -92,12 +91,17 @@ class MainTest(unittest.TestCase):
         self.assertEqual((code, out, err), (130, "", "\nxmc: interrupted\n"))
 
     def test_subcommand_help_comes_from_the_subcommand_parser(self) -> None:
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as exit_:
-            main.main(["logout", "--help"])
+        code, out, err = self._main(["logout", "--help"])
 
-        self.assertEqual(exit_.exception.code, 0)
-        self.assertTrue(out.getvalue().startswith("usage: xmc logout "))
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(out.startswith("usage: xmc logout "))
+
+    def test_subcommand_system_exit_from_subcommand_is_returned(self) -> None:
+        run = mock.Mock(side_effect=SystemExit("boom"))
+        with mock.patch.object(main, "SUBCOMMANDS", {"logout": main.Subcommand("Logs out.", run)}):
+            code, out, err = self._main(["logout"])
+
+        self.assertEqual((code, out, err), (1, "", ""))
 
 
 if __name__ == "__main__":

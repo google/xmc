@@ -20,6 +20,7 @@ command's options and `xmc --help` lists the commands.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol, TextIO
@@ -89,7 +90,10 @@ def main(
         err.write(f"xmc: error: unknown command {args[0]!r}\n{format_usage()}")
         return 2
     try:
-        return command.run(args[1:], out=out, err=err)
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            return command.run(args[1:], out=out, err=err)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
     except KeyboardInterrupt:
         err.write("\nxmc: interrupted\n")
         return 130

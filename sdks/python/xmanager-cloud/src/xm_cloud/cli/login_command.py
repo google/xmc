@@ -158,16 +158,25 @@ def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
         return {}
     except OSError as exc:
         raise AuthError(f"Refusing to read {path}: {exc}. {hint}") from None
-    with os.fdopen(fd, "rb") as f:
-        st = os.fstat(f.fileno())
-        if os.name == "posix" and (
-            not stat.S_ISREG(st.st_mode) or (stat.S_IMODE(st.st_mode) & 0o077)
-        ):
+    fd_owned = False
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise AuthError(f"Refusing to read {path} (must be a regular file). {hint}")
+        if hasattr(os, "getuid") and st.st_uid != os.getuid():
+            raise AuthError(f"Refusing to read {path} (must be owned by the current user). {hint}")
+        if os.name == "posix" and (stat.S_IMODE(st.st_mode) & 0o077):
             raise AuthError(f"Refusing to read {path} (must be a 0600 regular file). {hint}")
-        try:
-            data = json.load(f)
-        except (OSError, ValueError) as exc:
-            raise AuthError(f"Corrupt credentials file {path}: {exc}. {hint}") from None
+        with os.fdopen(fd, "rb") as f:
+            fd_owned = True
+            try:
+                data = json.load(f)
+            except (OSError, ValueError) as exc:
+                raise AuthError(f"Corrupt credentials file {path}: {exc}. {hint}") from None
+    finally:
+        if not fd_owned:
+            with contextlib.suppress(OSError):
+                os.close(fd)
     if not isinstance(data, dict) or data.get("version") != 1:
         raise AuthError(f"Unsupported credentials schema in {path}. {hint}")
     deps = data.get("deployments", {})
@@ -223,6 +232,20 @@ def _credentials_file_exists(path: pathlib.Path) -> bool:
         raise AuthError(f"Cannot access credentials file {path}: {exc}") from None
 
 
+def _parse_args(
+    parser: argparse.ArgumentParser,
+    argv: Sequence[str],
+    out: TextIO,
+    err: TextIO,
+) -> argparse.Namespace | int:
+    """Parses `argv` with `parser`, redirecting argparse output to `out`/`err`."""
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            return parser.parse_args(list(argv))
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
+
+
 def run_logout(
     argv: Sequence[str],
     env: Mapping[str, str] = os.environ,
@@ -239,7 +262,10 @@ def run_logout(
         ),
     )
     parser.add_argument("--all", action="store_true")
-    args = parser.parse_args(list(argv))
+    parsed = _parse_args(parser, argv, out, err)
+    if isinstance(parsed, int):
+        return parsed
+    args = parsed
     try:
         path = credentials_path(env)
         if args.all:
