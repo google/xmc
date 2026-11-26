@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""`xmc logout` and credentials store for the `xmc` CLI.
+"""Credentials store, deployment origin resolution, and CLI arg parsing for `xmc`.
 
 Uses only the standard library, so it works without `xmanager`.
 """
@@ -24,7 +24,6 @@ import json
 import os
 import pathlib
 import stat
-import sys
 import tempfile
 import urllib.parse
 from collections.abc import Mapping, Sequence
@@ -224,7 +223,7 @@ def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str
         raise
 
 
-def _credentials_file_exists(path: pathlib.Path) -> bool:
+def credentials_file_exists(path: pathlib.Path) -> bool:
     """Returns whether `path` exists, raising `AuthError` if it cannot be checked."""
     try:
         return path.exists()
@@ -232,7 +231,7 @@ def _credentials_file_exists(path: pathlib.Path) -> bool:
         raise AuthError(f"Cannot access credentials file {path}: {exc}") from None
 
 
-def _parse_args(
+def parse_cli_args(
     parser: argparse.ArgumentParser,
     argv: Sequence[str],
     out: TextIO,
@@ -244,54 +243,3 @@ def _parse_args(
             return parser.parse_args(list(argv))
     except SystemExit as exc:
         return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
-
-
-def run_logout(
-    argv: Sequence[str],
-    env: Mapping[str, str] = os.environ,
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
-) -> int:
-    """Parses `xmc logout` flags, clears credentials, and returns exit code."""
-    parser = argparse.ArgumentParser(
-        prog="xmc logout",
-        description=(
-            "Clear cached XMC credentials from $XMC_CREDENTIALS_FILE or"
-            " $XDG_CONFIG_HOME/xmc/credentials.json"
-            " (default ~/.config/xmc/credentials.json)."
-        ),
-    )
-    parser.add_argument("--all", action="store_true")
-    parsed = _parse_args(parser, argv, out, err)
-    if isinstance(parsed, int):
-        return parsed
-    args = parsed
-    try:
-        path = credentials_path(env)
-        if args.all:
-            if _credentials_file_exists(path):
-                save_credentials(path, {})
-            out.write("Logged out of all XMC deployments.\n")
-            return 0
-        server = resolve_server(env)
-        deployments = load_credentials(path)
-        if server in deployments:
-            del deployments[server]
-            save_credentials(path, deployments)
-            out.write(f"Logged out of {server}.\n")
-        else:
-            out.write(f"Not logged in to {server}.\n")
-        return 0
-    except AuthError as exc:
-        err.write(f"Error: {exc}\n")
-        return 1
-
-
-def logout_command(argv: Sequence[str]) -> None:
-    """Runs `logout` from a full `<program> logout ...` argv and exits on failure.
-
-    Args:
-        argv: The full command line, including the program and command names.
-    """
-    if code := run_logout(argv[2:]):
-        sys.exit(code)

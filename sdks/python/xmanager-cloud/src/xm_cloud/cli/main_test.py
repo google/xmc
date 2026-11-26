@@ -18,7 +18,7 @@ import io
 import unittest
 from unittest import mock
 
-from xm_cloud.cli import login_command, main
+from xm_cloud.cli import logout_command, main
 
 
 class MainTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class MainTest(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_registers_logout(self) -> None:
-        self.assertEqual(main.SUBCOMMANDS["logout"].run, login_command.run_logout)
+        self.assertEqual(main.SUBCOMMANDS["logout"].run, logout_command.run_logout)
 
     def test_help_lists_every_subcommand_on_stdout(self) -> None:
         for flag in ("-h", "--help"):
