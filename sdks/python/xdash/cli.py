@@ -113,7 +113,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     get_parser.add_argument(
         "name",
-        help="Resource name (e.g. dashboards/vcc_comparison or experiments/234911122/charts/baseline)",
+        help=(
+            "Dashboard resource name (e.g. dashboards/vcc_comparison). Single-chart lookup "
+            "is not supported yet; use get-data "
+            "experiments/<xid>/workUnits/<wid>/charts/<chart_id> with the server-assigned "
+            "chart ID listed by `get dashboards/...`"
+        ),
     )
 
     # get-data subcommand

@@ -33,7 +33,9 @@ with DashboardClient(endpoint="localhost:8080") as client:
         print(f"{dashboard.name}: {dashboard.title}")
 
     dashboard = client.get_dashboard("dashboards/vcc_comparison")
-    chart = client.get_chart("experiments/234911122/workUnits/1/charts/baseline")
+    # Chart IDs are server-assigned: take one from dashboard.chart_ids or from the name
+    # create_chart() returns. GetChart accepts the root form charts/{chart_id}.
+    chart = client.get_chart(f"charts/{dashboard.chart_ids[0]}")
     print(f"{chart.title} has {len(chart.plots)} plots")
 ```
 
@@ -194,11 +196,11 @@ bazel run //sdks/python/xdash:xdash_bin -- list
 # Retrieve an existing dashboard
 bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 
-# Retrieve a single chart (any of the three chart resource patterns works)
-bazel run //sdks/python/xdash:xdash_bin -- get experiments/234911122/workUnits/1/charts/baseline
-
-# Fetch evaluated ChartData for a specific chart
-bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline
+# Fetch evaluated ChartData for a specific chart. Chart IDs are server-assigned: take
+# <chart_id> from the "Chart IDs" line of `get dashboards/...` or from the name
+# create-chart prints. (`get` does not yet look up single charts; use
+# DashboardClient.get_chart("charts/<chart_id>") from Python.)
+bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/<chart_id>
 ```
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see
