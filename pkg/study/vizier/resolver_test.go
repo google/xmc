@@ -49,32 +49,21 @@ func vizierComponent(enabled bool, state, endpoint string, withParams bool) *uns
 func TestValidateEndpoint(t *testing.T) {
 	t.Parallel()
 	for _, raw := range []string{"vizier-service.xmc.svc.cluster.local:7077", "unix:7077", "10.0.0.5:7077", "[::1]:7077"} {
-		t.Run("valid/"+raw, func(t *testing.T) {
-			t.Parallel()
-			if got, err := validateEndpoint(raw); err != nil || got != raw {
-				t.Fatalf("validateEndpoint(%q) = (%q, %v), want (%q, nil)", raw, got, err, raw)
-			}
-		})
+		if got, err := validateEndpoint(raw); err != nil || got != raw {
+			t.Errorf("validateEndpoint(%q) = (%q, %v), want (%q, nil)", raw, got, err, raw)
+		}
 	}
-	invalid := []string{
+	for _, raw := range []string{
 		"", "   \t ", " vizier:7077", "vizier:7077 ", "vizier-service", "vizier-service:", ":7077",
 		"vizier-service:0", "vizier-service:65536", "vizier:07077", "vizier-service:grpc", "vizier-service:+7077",
 		"::1:7077", "[not:ip]:7077", "[vizier-service]:7077", "vizier,bad:7077", "vizier!bad:7077",
 		"http://vizier-service:7077", "https://vizier-service:7077", "grpc://vizier-service:7077",
 		"user:s3cr3t@vizier-service:7077", "s3cr3t%zz:7077", "vizier-service:7077/v1",
 		"vizier-service:7077?foo=bar", "vizier-service:7077#frag", "viziér:7077", "vizier:７０７７", "vizier\x00:7077",
-	}
-	for _, raw := range invalid {
-		t.Run("invalid/"+raw, func(t *testing.T) {
-			t.Parallel()
-			_, err := validateEndpoint(raw)
-			if err == nil {
-				t.Fatalf("validateEndpoint(%q) = nil, want error", raw)
-			}
-			if raw != "" && strings.Contains(err.Error(), raw) {
-				t.Errorf("validateEndpoint error %q leaked raw input %q", err.Error(), raw)
-			}
-		})
+	} {
+		if _, err := validateEndpoint(raw); err == nil || (raw != "" && strings.Contains(err.Error(), raw)) {
+			t.Errorf("validateEndpoint(%q) = %v, want error without raw input", raw, err)
+		}
 	}
 }
 
@@ -95,7 +84,7 @@ func TestResolveEndpoint(t *testing.T) {
 		{name: "missing parameters", getter: &crreadertest.FakeGetter{Component: vizierComponent(true, "COMPONENT_STATE_ENABLED", "", false)}, wantErr: true},
 		{name: "missing parameters.endpoint", getter: &crreadertest.FakeGetter{Component: vizierComponent(true, "COMPONENT_STATE_ENABLED", "", true)}, wantErr: true},
 		{name: "non-bool spec.enabled", getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": map[string]any{"enabled": "true", "parameters": map[string]any{"endpoint": "vizier-service:7077"}}}}}, wantErr: true},
-		{name: "non-string status.state", getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": "vizier-service:7077"}}, "status": map[string]any{"state": 123}}}}, wantErr: true},
+		{name: "non-string status.state", getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": "vizier-service:7077"}}, "status": map[string]any{"state": int64(123)}}}}, wantErr: true},
 		{name: "non-map spec.parameters", getter: &crreadertest.FakeGetter{Component: &unstructured.Unstructured{Object: map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": map[string]any{"enabled": true, "parameters": "invalid"}}}}, wantErr: true},
 	}
 	for _, tc := range tests {

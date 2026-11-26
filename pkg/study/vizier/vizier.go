@@ -70,7 +70,7 @@ func (c *Client) Ping(ctx context.Context) error {
 		}
 		msg := strings.ToValidUTF8(st.Message(), "")
 		if len(msg) > 256 {
-			msg = msg[:256] + "..."
+			msg = strings.ToValidUTF8(msg[:256], "") + "..."
 		}
 		return status.Errorf(st.Code(), "vizier health check failed: %s", msg)
 	}
