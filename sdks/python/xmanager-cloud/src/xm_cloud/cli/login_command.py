@@ -656,6 +656,17 @@ def _valid_entry(entry: Any) -> dict[str, Any] | None:
     }
 
 
+def _positive_seconds(raw: str) -> float:
+    """Parses a `--timeout` value, which must be a positive finite number of seconds."""
+    try:
+        value = float(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid number: {raw!r}") from None
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive finite number")
+    return value
+
+
 def _parse_login_args(
     argv: Sequence[str],
     out: TextIO,
@@ -682,17 +693,11 @@ def _parse_login_args(
         ),
     )
     parser.add_argument("--no-browser", action="store_true")
-    parser.add_argument("--timeout", type=float, default=300.0)
+    parser.add_argument("--timeout", type=_positive_seconds, default=300.0)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--status", action="store_true")
     group.add_argument("--print-token", action="store_true")
-    parsed = arg_parsing.parse_args(parser, argv, out, err)
-    if isinstance(parsed, int):
-        return parsed
-    if not math.isfinite(parsed.timeout) or parsed.timeout <= 0:
-        err.write("error: --timeout must be a positive finite number\n")
-        return 2
-    return parsed
+    return arg_parsing.parse_args(parser, argv, out, err)
 
 
 def _report_cached_login(

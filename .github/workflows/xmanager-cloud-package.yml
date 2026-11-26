@@ -176,10 +176,6 @@ jobs:
           "${VENV_DIR}/bin/xmc" --help
           "${VENV_DIR}/bin/xmc" login --help
           "${VENV_DIR}/bin/xmc" logout --help
-          # Test-only dependency of the xm_cloud.cli tests (absltest); the package does
-          # not depend on it. Installed after the smoke check so it cannot mask a
-          # missing runtime dependency. 2.1.0 matches the Bazel abseil-py module.
-          "${VENV_DIR}/bin/python" -m pip install --no-cache-dir absl-py==2.1.0
           # -I keeps the source tree off sys.path so the tests import the installed package.
           for test_file in \
             sdks/python/xmanager-cloud/src/xmanager_cloud/*_test.py \

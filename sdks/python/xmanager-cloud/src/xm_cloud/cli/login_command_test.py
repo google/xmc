@@ -318,7 +318,23 @@ class LoginCommandTest(unittest.TestCase):
                 )
 
                 self.assertEqual(rc, 2)
-                self.assertIn("--timeout must be a positive finite number", err.getvalue())
+                self.assertTrue(err.getvalue().startswith("usage: xmc login "))
+                self.assertIn(
+                    "xmc login: error: argument --timeout: must be a positive finite number",
+                    err.getvalue(),
+                )
+
+    def test_run_login_rejects_a_non_numeric_timeout(self) -> None:
+        err = io.StringIO()
+
+        rc = login_command.run_login(
+            ["--timeout", "soon"], env=self._env(), out=io.StringIO(), err=err
+        )
+
+        self.assertEqual(rc, 2)
+        self.assertIn(
+            "xmc login: error: argument --timeout: invalid number: 'soon'", err.getvalue()
+        )
 
     def test_pkce_and_browser_availability(self) -> None:
         verifier, challenge = login_command.pkce_pair()
