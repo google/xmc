@@ -14,6 +14,7 @@
 
 """XMC Python SDK package."""
 
+from xmc._version import __version__
 from xmc.autolog import autolog
 from xmc.buffer import DEFAULT_CAPACITY, BoundedMetricsBuffer, MetricTuple
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
@@ -25,8 +26,6 @@ from xmc.flusher import MetricsFlusher
 from xmc.network import HTTPClient, SendResult
 from xmc.resilience import ResilienceState, ResilienceStateMachine
 from xmc.types import Metric, validate_metric
-
-__version__ = "0.1.0"
 
 __all__ = [
     "autolog",

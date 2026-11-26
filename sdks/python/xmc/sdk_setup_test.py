@@ -12,17 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Verifies DoD requirements: zero external runtime dependencies and clean sys.modules."""
+"""Verifies DoD requirements: no runtime dependencies beyond protobuf, clean sys.modules."""
 
 import sys
 import unittest
 
 
 class TestSDKSetupAndDependencies(unittest.TestCase):
-    """Verifies DoD requirements: zero external runtime dependencies and clean sys.modules."""
+    """Verifies DoD requirements: no runtime dependencies beyond protobuf, clean sys.modules."""
 
     def test_sys_modules_purity(self) -> None:
-        """Ensures importing xmc imports zero third-party packages into sys.modules."""
+        """Ensures importing xmc loads none of the forbidden HTTP/validation libraries."""
         forbidden_packages = {
             "requests",
             "pydantic",

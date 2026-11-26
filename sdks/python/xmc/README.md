@@ -7,6 +7,29 @@ The `xmc` Python SDK is a high-throughput, thread-safe metrics ingestion client 
 
 ---
 
+## 📦 Installation
+
+The SDK ships as the `xmc-metrics` distribution and is imported as `xmc`. Its only runtime dependency is `protobuf>=5.29.6,<7.0.0`.
+
+> [!WARNING]
+> Never run `pip install xmc`: that name on PyPI belongs to an unrelated package.
+
+```bash
+# From a google/xmc checkout (worker images, local development):
+pip install ./sdks/python/xmc
+pip install -e ./sdks/python/xmc   # editable
+
+# Optional framework integrations:
+pip install "./sdks/python/xmc[keras]"
+pip install "./sdks/python/xmc[lightning]"
+```
+
+Building the package compiles [`api/protos/metrics/metrics.proto`](../../../api/protos/metrics/metrics.proto) into `xmc._protos.metrics_pb2` (see [`setup.py`](setup.py)), so a source install needs the repository's `api/protos/` next to `sdks/`. The sdist bundles that `.proto` and builds anywhere. The build pins `grpcio-tools==1.70.0` and `protobuf==5.29.6`: the generated module refuses to load on a protobuf runtime older than the one that generated it. `grpcio-tools==1.70.0` has no Python 3.14 wheel, so building from source on 3.14 compiles it first; the `xmc-metrics` wheel installs on 3.11–3.14 directly.
+
+Editable installs write `_protos/metrics_pb2.py` into the source tree (git-ignored). Bazel builds don't generate it and import the Bazel-generated `api.protos.metrics.metrics_pb2` instead.
+
+---
+
 ## 🏗️ Architecture & Thread Boundaries
 
 To guarantee zero training loop stall, `xmc` separates the **Training Hot Path** from **Network Serialization & Flushing**.
@@ -224,6 +247,9 @@ trainer.fit(model, dataloader)
 ```bash
 # Run all Bazel unit tests
 bazel test //sdks/python/...
+
+# Build the wheel and sdist
+python3 -m build sdks/python/xmc --outdir /tmp/xmc-metrics-dist
 
 # Run pre-commit linters (Ruff, Buildifier, addlicense)
 ./.githooks/pre-commit
