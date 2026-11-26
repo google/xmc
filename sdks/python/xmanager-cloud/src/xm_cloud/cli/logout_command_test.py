@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-import argparse
 import io
 import os
 import pathlib
 import stat
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -27,6 +27,7 @@ from unittest import mock
 from xm_cloud.cli import credentials, logout_command
 
 _SERVER = "https://xmc.example.com"
+_ENTRY = {"access_token": "t", "email": "u@example.com", "expires_at": 999}
 
 
 class LogoutCommandTest(unittest.TestCase):
@@ -43,24 +44,22 @@ class LogoutCommandTest(unittest.TestCase):
         env.update(extra)
         return env
 
-    def test_parse_cli_args_maps_system_exit_none_to_zero(self) -> None:
-        parser = argparse.ArgumentParser(prog="xmc logout")
-        with mock.patch.object(parser, "parse_args", side_effect=SystemExit(None)):
-            self.assertEqual(
-                logout_command.parse_cli_args(parser, [], io.StringIO(), io.StringIO()), 0
-            )
+    def _run(self, argv: list[str], env: dict[str, str]) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        code = logout_command.run_logout(argv, env=env, out=out, err=err)
+        return code, out.getvalue(), err.getvalue()
 
     def test_run_logout_help_returns_zero_without_exiting(self) -> None:
-        out, err = io.StringIO(), io.StringIO()
-        code = logout_command.run_logout(["--help"], env=self._env(), out=out, err=err)
-        self.assertEqual((code, err.getvalue()), (0, ""))
-        self.assertTrue(out.getvalue().startswith("usage: xmc logout "))
+        code, out, err = self._run(["--help"], self._env())
+
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(out.startswith("usage: xmc logout "))
 
     def test_run_logout_rejects_unknown_flag(self) -> None:
-        out, err = io.StringIO(), io.StringIO()
-        code = logout_command.run_logout(["--bogus"], env=self._env(), out=out, err=err)
-        self.assertEqual((code, out.getvalue()), (2, ""))
-        self.assertIn("unrecognized arguments: --bogus", err.getvalue())
+        code, out, err = self._run(["--bogus"], self._env())
+
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("unrecognized arguments: --bogus", err)
 
     def test_run_logout_reports_corrupt_credentials_file(self) -> None:
         env = self._env()
@@ -69,52 +68,80 @@ class LogoutCommandTest(unittest.TestCase):
         path.write_text("{not json", encoding="utf-8")
         if os.name == "posix":
             os.chmod(path, 0o600)
-        out, err = io.StringIO(), io.StringIO()
 
-        code = logout_command.run_logout([], env=env, out=out, err=err)
+        code, out, err = self._run([], env)
 
-        self.assertEqual((code, out.getvalue()), (1, ""))
-        self.assertIn("Error: Corrupt credentials file", err.getvalue())
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("Error: Corrupt credentials file", err)
 
     def test_run_logout_reports_write_errors(self) -> None:
         env = self._env()
         path = credentials.credentials_path(env)
-        entry = {"access_token": "t", "email": "u@example.com", "expires_at": 999}
-        credentials.save_credentials(path, {_SERVER: entry})
-        err = io.StringIO()
+        credentials.save_credentials(path, {_SERVER: _ENTRY})
         with mock.patch.object(
             credentials.tempfile, "mkstemp", side_effect=PermissionError("denied")
         ):
-            with self.assertRaisesRegex(credentials.AuthError, "Cannot write credentials file"):
-                credentials.save_credentials(path, {})
-            self.assertEqual(logout_command.run_logout([], env=env, out=io.StringIO(), err=err), 1)
-        self.assertIn("Error: Cannot write credentials file", err.getvalue())
-        self.assertEqual(credentials.load_credentials(path), {_SERVER: entry})
+            code, _, err = self._run([], env)
 
-    def test_run_logout_reports_each_outcome(self) -> None:
+        self.assertEqual(code, 1)
+        self.assertIn("Error: Cannot write credentials file", err)
+        self.assertEqual(credentials.load_credentials(path), {_SERVER: _ENTRY})
+
+    def test_run_logout_without_a_server_reports_no_server(self) -> None:
+        code, out, err = self._run([], {"XDG_CONFIG_HOME": self._xdg})
+
+        self.assertEqual((code, out), (1, ""))
+        self.assertEqual(err, f"Error: {credentials.NO_SERVER_MESSAGE}\n")
+
+    def test_run_logout_when_not_logged_in_leaves_no_file(self) -> None:
+        env = self._env()
+
+        code, out, err = self._run([], env)
+
+        self.assertEqual((code, out, err), (0, f"Not logged in to {_SERVER}.\n", ""))
+        self.assertFalse(credentials.credentials_path(env).exists())
+
+    def test_run_logout_removes_only_the_current_server(self) -> None:
         env = self._env()
         path = credentials.credentials_path(env)
-        cases = [
-            (["--all"], "Logged out of all XMC deployments.\n"),
-            ([], f"Not logged in to {_SERVER}.\n"),
-        ]
-        for argv, message in cases:
-            with self.subTest(argv=argv):
-                out = io.StringIO()
-                self.assertEqual(
-                    logout_command.run_logout(argv, env=env, out=out, err=io.StringIO()), 0
-                )
-                self.assertEqual(out.getvalue(), message)
-                self.assertFalse(path.exists())
-        entry = {"access_token": "t", "email": "u@example.com", "expires_at": 999}
         other = "https://other.example.com"
-        credentials.save_credentials(path, {_SERVER: entry, other: entry})
-        out = io.StringIO()
+        credentials.save_credentials(path, {_SERVER: _ENTRY, other: _ENTRY})
 
-        self.assertEqual(logout_command.run_logout([], env=env, out=out, err=io.StringIO()), 0)
+        code, out, err = self._run([], env)
 
-        self.assertEqual(out.getvalue(), f"Logged out of {_SERVER}.\n")
-        self.assertEqual(credentials.load_credentials(path), {other: entry})
+        self.assertEqual((code, out, err), (0, f"Logged out of {_SERVER}.\n", ""))
+        self.assertEqual(credentials.load_credentials(path), {other: _ENTRY})
+
+    def test_run_logout_defaults_to_process_env_and_streams(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict(os.environ, self._env(), clear=True),
+            mock.patch.object(sys, "stdout", out),
+            mock.patch.object(sys, "stderr", err),
+        ):
+            self.assertEqual(logout_command.run_logout([]), 0)
+
+        self.assertEqual((out.getvalue(), err.getvalue()), (f"Not logged in to {_SERVER}.\n", ""))
+
+    def test_run_logout_all_without_a_file_does_not_create_one(self) -> None:
+        env = self._env()
+
+        code, out, err = self._run(["--all"], env)
+
+        self.assertEqual((code, out, err), (0, "Logged out of all XMC deployments.\n", ""))
+        self.assertFalse(credentials.credentials_path(env).exists())
+
+    def test_run_logout_all_clears_an_existing_file(self) -> None:
+        env = self._env()
+        path = credentials.credentials_path(env)
+        credentials.save_credentials(path, {_SERVER: _ENTRY, "https://other.example.com": _ENTRY})
+
+        code, out, err = self._run(["--all"], env)
+
+        self.assertEqual((code, out, err), (0, "Logged out of all XMC deployments.\n", ""))
+        self.assertEqual(credentials.load_credentials(path), {})
+        if os.name == "posix":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
     def test_run_logout_all_replaces_dangling_symlink(self) -> None:
         if os.name != "posix":
@@ -123,24 +150,21 @@ class LogoutCommandTest(unittest.TestCase):
         path = credentials.credentials_path(env)
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.symlink_to(path.parent / "missing-target.json")
-        out, err = io.StringIO(), io.StringIO()
 
-        code = logout_command.run_logout(["--all"], env=env, out=out, err=err)
+        code, out, err = self._run(["--all"], env)
 
-        self.assertEqual((code, err.getvalue()), (0, ""))
-        self.assertEqual(out.getvalue(), "Logged out of all XMC deployments.\n")
+        self.assertEqual((code, out, err), (0, "Logged out of all XMC deployments.\n", ""))
         self.assertFalse(path.is_symlink())
         self.assertTrue(stat.S_ISREG(path.stat().st_mode))
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(credentials.load_credentials(path), {})
 
     def test_run_logout_all_reports_an_unreadable_credentials_location(self) -> None:
-        err = io.StringIO()
         with mock.patch.object(pathlib.Path, "exists", side_effect=PermissionError("denied")):
-            rc = logout_command.run_logout(["--all"], env=self._env(), out=io.StringIO(), err=err)
+            code, _, err = self._run(["--all"], self._env())
 
-        self.assertEqual(rc, 1)
-        self.assertIn("Error: Cannot access credentials file", err.getvalue())
+        self.assertEqual(code, 1)
+        self.assertIn("Error: Cannot access credentials file", err)
 
 
 if __name__ == "__main__":

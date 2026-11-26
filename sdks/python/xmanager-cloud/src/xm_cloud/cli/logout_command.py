@@ -16,37 +16,46 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import os
+import pathlib
 import sys
 from collections.abc import Mapping, Sequence
 from typing import TextIO
 
-from xm_cloud.cli import credentials
+from xm_cloud.cli import arg_parsing, credentials
 
 
-def parse_cli_args(
-    parser: argparse.ArgumentParser,
-    argv: Sequence[str],
-    out: TextIO,
-    err: TextIO,
-) -> argparse.Namespace | int:
-    """Parses `argv` with `parser`, redirecting argparse output to `out`/`err`.
+def _build_parser() -> argparse.ArgumentParser:
+    """Returns the `xmc logout` argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="xmc logout",
+        description=(
+            "Clear cached XMC credentials from $XMC_CREDENTIALS_FILE or"
+            " $XDG_CONFIG_HOME/xmc/credentials.json"
+            " (default ~/.config/xmc/credentials.json)."
+        ),
+    )
+    parser.add_argument("--all", action="store_true")
+    return parser
 
-    Args:
-        parser: Configured argument parser.
-        argv: Command-line arguments after the subcommand name.
-        out: Stream for standard output (e.g., `--help`).
-        err: Stream for error output.
 
-    Returns:
-        Parsed `argparse.Namespace`, or an integer exit code if parsing exited.
+def _logout(path: pathlib.Path, env: Mapping[str, str], *, all_deployments: bool) -> str:
+    """Removes cached credentials from `path` and returns the message to print.
+
+    Raises:
+        credentials.AuthError: If the deployment or the credentials file is invalid.
     """
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            return parser.parse_args(list(argv))
-    except SystemExit as exc:
-        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
+    if all_deployments:
+        if credentials.credentials_file_exists(path):
+            credentials.save_credentials(path, {})
+        return "Logged out of all XMC deployments.\n"
+    server = credentials.resolve_server(env)
+    deployments = credentials.load_credentials(path)
+    if server not in deployments:
+        return f"Not logged in to {server}.\n"
+    del deployments[server]
+    credentials.save_credentials(path, deployments)
+    return f"Logged out of {server}.\n"
 
 
 def run_logout(
@@ -69,35 +78,13 @@ def run_logout(
     env = os.environ if env is None else env
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
-    parser = argparse.ArgumentParser(
-        prog="xmc logout",
-        description=(
-            "Clear cached XMC credentials from $XMC_CREDENTIALS_FILE or"
-            " $XDG_CONFIG_HOME/xmc/credentials.json"
-            " (default ~/.config/xmc/credentials.json)."
-        ),
-    )
-    parser.add_argument("--all", action="store_true")
-    parsed = parse_cli_args(parser, argv, out, err)
+    parsed = arg_parsing.parse_args(_build_parser(), argv, out, err)
     if isinstance(parsed, int):
         return parsed
-    args = parsed
     try:
         path = credentials.credentials_path(env)
-        if args.all:
-            if credentials.credentials_file_exists(path):
-                credentials.save_credentials(path, {})
-            out.write("Logged out of all XMC deployments.\n")
-            return 0
-        server = credentials.resolve_server(env)
-        deployments = credentials.load_credentials(path)
-        if server in deployments:
-            del deployments[server]
-            credentials.save_credentials(path, deployments)
-            out.write(f"Logged out of {server}.\n")
-        else:
-            out.write(f"Not logged in to {server}.\n")
-        return 0
+        out.write(_logout(path, env, all_deployments=parsed.all))
     except credentials.AuthError as exc:
         err.write(f"Error: {exc}\n")
         return 1
+    return 0

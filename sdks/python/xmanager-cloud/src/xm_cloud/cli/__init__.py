@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Subcommands of the `xmc` command-line interface."""
+"""The `xmc` command-line interface: dispatcher, subcommands, and credentials store."""

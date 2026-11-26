@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""XManager on Cloud (XMC) launcher and the `xmc` command-line interface."""
+"""XManager on Cloud (XMC) client package; currently provides the `xmc` command-line interface."""

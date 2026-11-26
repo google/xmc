@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Entry point of the `xmc` console script, which dispatches to subcommands.
 
 Each subcommand parses its own flags, so `xmc <command> --help` shows the
@@ -25,7 +24,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol, TextIO
 
-from xm_cloud.cli import logout_command
+from xm_cloud.cli import arg_parsing, logout_command
 
 
 class SubcommandRunner(Protocol):
@@ -70,12 +69,15 @@ def main(
 
     Args:
         argv: Arguments after the program name. Defaults to `sys.argv[1:]`.
-        out: Standard output stream for CLI help and subcommands. Defaults to `sys.stdout`.
-        err: Standard error stream for usage errors, interrupts, and subcommands. Defaults to `sys.stderr`.
+        out: Standard output stream for CLI help and subcommands. Defaults to
+            `sys.stdout`.
+        err: Standard error stream for usage errors, interrupts, and subcommands.
+            Defaults to `sys.stderr`.
 
     Returns:
-        The subcommand's exit code, 0 for `--help`, 2 for a missing or unknown
-        subcommand, or 130 when interrupted with Ctrl-C.
+        The subcommand's exit code (or the code of a `SystemExit` it raises, with a
+        non-integer code written to `err` and mapped to 1), 0 for `--help`, 2 for a
+        missing or unknown subcommand, or 130 when interrupted with Ctrl-C.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     out = sys.stdout if out is None else out
@@ -93,7 +95,7 @@ def main(
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             return command.run(args[1:], out=out, err=err)
     except SystemExit as exc:
-        return 0 if exc.code is None else (exc.code if isinstance(exc.code, int) else 1)
+        return arg_parsing.exit_code(exc, err)
     except KeyboardInterrupt:
         err.write("\nxmc: interrupted\n")
         return 130

@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Unit tests for `xm_cloud.cli.main`."""
 
 import io
@@ -22,13 +21,15 @@ from xm_cloud.cli import logout_command, main
 
 
 class MainTest(unittest.TestCase):
+    """Unit tests for the `xmc` dispatcher."""
+
     def _main(self, argv: list[str]) -> tuple[int, str, str]:
         out, err = io.StringIO(), io.StringIO()
         code = main.main(argv, out=out, err=err)
         return code, out.getvalue(), err.getvalue()
 
     def test_registers_logout(self) -> None:
-        self.assertEqual(main.SUBCOMMANDS["logout"].run, logout_command.run_logout)
+        self.assertIs(main.SUBCOMMANDS["logout"].run, logout_command.run_logout)
 
     def test_help_lists_every_subcommand_on_stdout(self) -> None:
         for flag in ("-h", "--help"):
@@ -97,7 +98,12 @@ class MainTest(unittest.TestCase):
         self.assertTrue(out.startswith("usage: xmc logout "))
 
     def test_subcommand_system_exit_from_subcommand_is_returned(self) -> None:
-        for exc, expected in ((SystemExit("boom"), 1), (SystemExit(None), 0)):
+        cases = [
+            (SystemExit("boom"), 1, "boom\n"),
+            (SystemExit(None), 0, ""),
+            (SystemExit(2), 2, ""),
+        ]
+        for exc, expected_code, expected_err in cases:
             with self.subTest(code=exc.code):
                 run = mock.Mock(side_effect=exc)
                 with mock.patch.object(
@@ -105,7 +111,7 @@ class MainTest(unittest.TestCase):
                 ):
                     code, out, err = self._main(["logout"])
 
-                self.assertEqual((code, out, err), (expected, "", ""))
+                self.assertEqual((code, out, err), (expected_code, "", expected_err))
 
 
 if __name__ == "__main__":

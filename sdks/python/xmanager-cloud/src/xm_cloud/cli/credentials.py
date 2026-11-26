@@ -30,29 +30,46 @@ from typing import Any
 
 NO_SERVER_MESSAGE = (
     "No XManager on Cloud (xm_cloud) deployment configured"
-    " (set XMANAGER_UI_URL, XMANAGER_ENDPOINT, XMC_API_URL, or XMC_DOMAIN)."
+    " (set XMANAGER_ENDPOINT, XMC_API_URL, XMANAGER_UI_URL, or XMC_DOMAIN)."
     " For xm_local / Vertex AI, use 'gcloud auth application-default login'"
     " instead."
 )
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-_LOCAL_HOSTS = _LOOPBACK_HOSTS | {"0.0.0.0"}
+_UNSPECIFIED_HOSTS = frozenset({"0.0.0.0"})
+_LOCAL_HOSTS = _LOOPBACK_HOSTS | _UNSPECIFIED_HOSTS  # Same set as xdash.auth.LOCAL_HOSTS.
+_RESET_HINT = "Run `xmc logout --all` to reset."
 
 
 class AuthError(Exception):
     """Raised when CLI authentication or configuration fails."""
 
 
+def _reject_unsafe_target(raw: str, what: str) -> None:
+    """Rejects `raw` if it has whitespace, control characters, userinfo, a query, or a fragment.
+
+    The error never echoes `raw`, which may embed credentials or tokens.
+    """
+    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw):
+        raise AuthError(f"Invalid {what}: whitespace or control characters are not allowed.")
+    if any(ch in raw for ch in "@?#"):
+        raise AuthError(f"Invalid {what}: credentials, a query, or a fragment are not allowed.")
+
+
 def _extract_grpc_host(endpoint: str) -> str:
-    """Extracts the lowercased hostname from a gRPC target string."""
+    """Extracts the lowercased hostname from a gRPC target, or "" if the target is invalid."""
     target = endpoint.strip().lower()
     for prefix in ("dns:///", "dns://", "grpc://"):
         if target.startswith(prefix):
             target = target.removeprefix(prefix).rsplit("/", 1)[-1]
             break
     try:
-        return urllib.parse.urlsplit(f"//{target}").hostname or ""
+        parts = urllib.parse.urlsplit(f"//{target}")
+        port = parts.port
     except ValueError:
         return ""
+    if port is not None and port < 1:
+        return ""
+    return parts.hostname or ""
 
 
 def _strip_grpc_prefix(host: str) -> str:
@@ -66,10 +83,10 @@ def _strip_grpc_prefix(host: str) -> str:
 def _origin(raw: str, *, domain: bool = False) -> str:
     """Returns the normalized `scheme://host[:port]` origin of the URL `raw`.
 
-    The origin is the key of the credentials cache. It follows the same rules as
-    `xdash.auth`, which reads the cache: a `grpc.` or `grpc.api.` host prefix and
-    a default port are dropped. Only a `domain` (XMC_DOMAIN) may omit the scheme,
-    and it must not carry a path.
+    The origin is the key of the credentials cache. It uses the same normalization
+    as `xdash.auth`, which reads the cache: a `grpc.` or `grpc.api.` host prefix
+    and a default port are dropped. Only a `domain` (XMC_DOMAIN) may omit the
+    scheme, and it must not carry a path.
 
     Args:
         raw: Deployment URL or bare domain string.
@@ -79,14 +96,16 @@ def _origin(raw: str, *, domain: bool = False) -> str:
         Normalized `scheme://host[:port]` origin string.
 
     Raises:
-        AuthError: If `raw` is not a valid, userinfo-free https (or loopback http) URL.
+        AuthError: If `raw` is not a valid https (or loopback http) URL, or contains
+            whitespace, control characters, userinfo, a query, or a fragment.
     """
+    _reject_unsafe_target(raw, "deployment server URL")
+    # Echoing `raw` is safe from here on: it has no userinfo, query, or fragment.
     invalid = AuthError(f"Invalid deployment server URL: {raw!r}.")
     if "://" not in raw:
         if not domain:
             raise invalid
         raw = f"https://{raw}"
-    allow_path = not domain
     try:
         p = urllib.parse.urlsplit(raw)
         port = p.port
@@ -95,11 +114,9 @@ def _origin(raw: str, *, domain: bool = False) -> str:
     if port is not None and port < 1:
         raise invalid
     scheme, host = p.scheme.lower(), _strip_grpc_prefix((p.hostname or "").lower())
-    if scheme not in ("https", "http") or not host:
+    if scheme not in ("https", "http") or not host or host in _UNSPECIFIED_HOSTS:
         raise invalid
-    if any((p.username, p.password, p.query, p.fragment)):
-        raise invalid
-    if (not allow_path and p.path not in ("", "/")) or host in _LOCAL_HOSTS - _LOOPBACK_HOSTS:
+    if domain and p.path not in ("", "/"):
         raise invalid
     if scheme == "http" and host not in _LOOPBACK_HOSTS:
         raise AuthError(f"Deployment server must use https:// (got {raw!r}).")
@@ -111,6 +128,7 @@ def _origin(raw: str, *, domain: bool = False) -> str:
 
 def _endpoint_origin(endpoint: str) -> str | None:
     """Returns the origin named by XMANAGER_ENDPOINT, or None for a loopback gRPC target."""
+    _reject_unsafe_target(endpoint, "XMANAGER_ENDPOINT")
     if endpoint.lower().startswith(("http://", "https://")):
         return _origin(endpoint)
     host = _extract_grpc_host(endpoint)
@@ -122,13 +140,17 @@ def _endpoint_origin(endpoint: str) -> str | None:
     if host not in _LOOPBACK_HOSTS:
         raise AuthError(
             f"Unsupported XMANAGER_ENDPOINT {endpoint!r} (expected grpc.<domain>, an"
-            " http(s) URL, or loopback)."
+            " http(s) URL, or loopback). Unset it or run `xmc logout --all`."
         )
     return None
 
 
 def resolve_server(env: Mapping[str, str]) -> str:
     """Resolves and validates the XMC deployment origin from `env`.
+
+    Valid values are normalized the same way as in `xdash.auth`. Unlike xdash,
+    which skips an invalid variable and reads the next one, an invalid value here
+    is an error, so the CLI never uses a cache key the user did not intend.
 
     Args:
         env: Environment mapping checked in precedence order (`XMANAGER_ENDPOINT`,
@@ -154,7 +176,10 @@ def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
     """Returns `$XMC_CREDENTIALS_FILE` or `$XDG_CONFIG_HOME/xmc/credentials.json`.
 
     Args:
-        env: Environment mapping to inspect for path overrides.
+        env: Environment mapping to inspect for `XMC_CREDENTIALS_FILE` and
+            `XDG_CONFIG_HOME` overrides. Home-directory fallback and `~` expansion
+            use the process environment, matching
+            `xdash.auth.get_credentials_file_path`.
 
     Returns:
         Absolute path to the credentials JSON file.
@@ -178,50 +203,79 @@ def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
 
 
 def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
-    """Loads the `deployments` map from `path`, verifying 0600 permissions.
+    """Loads the `deployments` map from `path`, rejecting group/other-accessible files.
 
     Args:
         path: Path to the credentials JSON file.
 
     Returns:
-        Mapping from deployment origin to credential entry, or `{}` if missing.
+        Mapping from deployment origin to credential entry, or `{}` if `path` is
+        missing or has no `deployments` object. Entries whose value is not a JSON
+        object are dropped.
 
     Raises:
-        AuthError: If `path` cannot be opened/stat'd, is not a 0600 regular file
-            owned by the current user, or contains corrupt/unsupported JSON.
+        AuthError: If `path` cannot be opened or read, is not a regular file owned by
+            the current user, grants any group/other permission bits, or contains
+            corrupt or unsupported JSON.
     """
-    hint = "Run `xmc logout --all` to reset."
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-    except FileNotFoundError:
+    raw = _read_private_file(path)
+    if raw is None:
         return {}
-    except OSError as exc:
-        raise AuthError(f"Refusing to read {path}: {exc}. {hint}") from None
-    fd_owned = False
     try:
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            raise AuthError(f"Refusing to read {path} (must be a regular file). {hint}")
-        if hasattr(os, "getuid") and st.st_uid != os.getuid():
-            raise AuthError(f"Refusing to read {path} (must be owned by the current user). {hint}")
-        if os.name == "posix" and (stat.S_IMODE(st.st_mode) & 0o077):
-            raise AuthError(f"Refusing to read {path} (must be a 0600 regular file). {hint}")
-        with os.fdopen(fd, "rb") as f:
-            fd_owned = True
-            try:
-                data = json.load(f)
-            except (OSError, ValueError) as exc:
-                raise AuthError(f"Corrupt credentials file {path}: {exc}. {hint}") from None
+        data = json.loads(raw)
+    except (ValueError, RecursionError) as exc:
+        raise AuthError(f"Corrupt credentials file {path}: {exc}. {_RESET_HINT}") from None
+    version = data.get("version") if isinstance(data, dict) else None
+    if isinstance(version, bool) or version != 1:
+        raise AuthError(f"Unsupported credentials schema in {path}. {_RESET_HINT}")
+    deployments = data.get("deployments", {})
+    if not isinstance(deployments, dict):
+        return {}
+    return {k: v for k, v in deployments.items() if isinstance(k, str) and isinstance(v, dict)}
+
+
+def _read_private_file(path: pathlib.Path) -> bytes | None:
+    """Returns the contents of `path`, or None if it does not exist.
+
+    Raises:
+        AuthError: If `path` cannot be opened or read, or fails
+            `_check_private_regular_file`.
+    """
+    # O_NONBLOCK keeps open() from blocking on a FIFO; regular files ignore it.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except FileNotFoundError:
+        return None
     except OSError as exc:
-        raise AuthError(f"Refusing to read {path}: {exc}. {hint}") from None
+        raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
+    fd_closed_by_file = False
+    try:
+        _check_private_regular_file(os.fstat(fd), path)
+        with os.fdopen(fd, "rb") as f:
+            fd_closed_by_file = True
+            return f.read()
+    except OSError as exc:
+        raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
     finally:
-        if not fd_owned:
+        if not fd_closed_by_file:
             with contextlib.suppress(OSError):
                 os.close(fd)
-    if not isinstance(data, dict) or data.get("version") != 1:
-        raise AuthError(f"Unsupported credentials schema in {path}. {hint}")
-    deps = data.get("deployments", {})
-    return dict(deps) if isinstance(deps, dict) else {}
+
+
+def _check_private_regular_file(st: os.stat_result, path: pathlib.Path) -> None:
+    """Raises AuthError unless `st` is a regular file that only the current user can access."""
+    if not stat.S_ISREG(st.st_mode):
+        raise AuthError(f"Refusing to read {path} (must be a regular file). {_RESET_HINT}")
+    if hasattr(os, "getuid") and st.st_uid != os.getuid():
+        raise AuthError(
+            f"Refusing to read {path} (must be owned by the current user). {_RESET_HINT}"
+        )
+    if os.name == "posix" and (stat.S_IMODE(st.st_mode) & 0o077):
+        raise AuthError(
+            f"Refusing to read {path} (must not be accessible by group or others;"
+            f" run `chmod 600 {path}`). {_RESET_HINT}"
+        )
 
 
 def save_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, Any]]) -> None:
@@ -252,16 +306,16 @@ def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str
         {"version": 1, "deployments": dict(deployments)}, indent=2, sort_keys=True
     ).encode("utf-8")
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.")
-    fd_owned = True
+    fd_closed_by_file = False
     try:
         with os.fdopen(fd, "wb") as f:
-            fd_owned = False
+            fd_closed_by_file = True
             f.write(payload + b"\n")
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
     except BaseException:
-        if fd_owned:
+        if not fd_closed_by_file:
             with contextlib.suppress(OSError):
                 os.close(fd)
         with contextlib.suppress(FileNotFoundError):
@@ -282,6 +336,8 @@ def credentials_file_exists(path: pathlib.Path) -> bool:
         AuthError: If accessing `path` fails with an `OSError`.
     """
     try:
-        return path.exists() or path.is_symlink()
+        # is_symlink() (lstat) runs first: exists() follows the link and can raise
+        # EACCES for a target the user cannot reach.
+        return path.is_symlink() or path.exists()
     except OSError as exc:
         raise AuthError(f"Cannot access credentials file {path}: {exc}") from None
