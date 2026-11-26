@@ -419,7 +419,8 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	}}}
 	getter.mu.Unlock()
 	waitHTTPStatus(t, addr, "/readyz", http.StatusOK)
-	for d := time.Now().Add(5 * time.Second); consumerCmds.Load() == 0 && time.Now().Before(d); time.Sleep(10 * time.Millisecond) {
+	for d := time.Now().Add(5 * time.Second); consumerCmds.Load() == 0 && time.Now().Before(d); {
+		time.Sleep(10 * time.Millisecond)
 	}
 	if consumerCmds.Load() == 0 {
 		t.Error("expected Redis consumer commands after Vizier latch, got 0")

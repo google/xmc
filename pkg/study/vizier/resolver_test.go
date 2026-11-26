@@ -33,11 +33,10 @@ import (
 func vizierComponent(enabled bool, state, endpoint string, withParams bool) *unstructured.Unstructured {
 	spec := map[string]any{"enabled": enabled}
 	if withParams {
-		params := map[string]any{}
+		spec["parameters"] = map[string]any{}
 		if endpoint != "" {
-			params["endpoint"] = endpoint
+			spec["parameters"] = map[string]any{"endpoint": endpoint}
 		}
-		spec["parameters"] = params
 	}
 	obj := map[string]any{"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc"}, "spec": spec}
 	if state != "" {
@@ -54,12 +53,9 @@ func TestValidateEndpoint(t *testing.T) {
 		}
 	}
 	for _, raw := range []string{
-		"", "   \t ", " vizier:7077", "vizier:7077 ", "vizier-service", "vizier-service:", ":7077",
-		"vizier-service:0", "vizier-service:65536", "vizier:07077", "vizier-service:grpc", "vizier-service:+7077",
-		"::1:7077", "[not:ip]:7077", "[vizier-service]:7077", "vizier,bad:7077", "vizier!bad:7077",
-		"http://vizier-service:7077", "https://vizier-service:7077", "grpc://vizier-service:7077",
-		"user:s3cr3t@vizier-service:7077", "s3cr3t%zz:7077", "vizier-service:7077/v1",
-		"vizier-service:7077?foo=bar", "vizier-service:7077#frag", "viziér:7077", "vizier:７０７７", "vizier\x00:7077",
+		"", "   \t ", " vizier:7077", "vizier:7077 ", "vizier-service", "vizier-service:", ":7077", "vizier-service:0", "vizier-service:65536", "vizier:07077",
+		"vizier-service:grpc", "vizier-service:+7077", "::1:7077", "[not:ip]:7077", "[vizier-service]:7077", "vizier,bad:7077", "vizier!bad:7077", "http://vizier-service:7077",
+		"https://vizier-service:7077", "grpc://vizier-service:7077", "user:s3cr3t@vizier-service:7077", "s3cr3t%zz:7077", "vizier-service:7077/v1", "vizier-service:7077?foo=bar", "vizier-service:7077#frag", "viziér:7077", "vizier:７０７７", "vizier\x00:7077",
 	} {
 		if _, err := validateEndpoint(raw); err == nil || (raw != "" && strings.Contains(err.Error(), raw)) {
 			t.Errorf("validateEndpoint(%q) = %v, want error without raw input", raw, err)
@@ -90,12 +86,8 @@ func TestResolveEndpoint(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := resolveEndpoint(context.Background(), tc.getter, "xmc")
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("resolveEndpoint() error = %v, wantErr %v", err, tc.wantErr)
-			}
-			if got != tc.want {
-				t.Errorf("resolveEndpoint() = %q, want %q", got, tc.want)
+			if got, err := resolveEndpoint(context.Background(), tc.getter, "xmc"); (err != nil) != tc.wantErr || got != tc.want {
+				t.Errorf("resolveEndpoint() = (%q, %v), want (%q, err=%v)", got, err, tc.want, tc.wantErr)
 			}
 		})
 	}
@@ -142,11 +134,8 @@ func TestWaitForEndpoint_TransitionsAndSecretFreeLogs(t *testing.T) {
 	}}
 
 	got, err := waitForEndpoint(ctx, getter, "", time.Millisecond, 4*time.Millisecond)
-	if err != nil {
-		t.Fatalf("waitForEndpoint() error = %v, want nil", err)
-	}
-	if got != "vizier-service.xmc.svc.cluster.local:7077" {
-		t.Errorf("waitForEndpoint() = %q, want vizier-service.xmc.svc.cluster.local:7077", got)
+	if err != nil || got != "vizier-service.xmc.svc.cluster.local:7077" {
+		t.Fatalf("waitForEndpoint() = (%q, %v), want (vizier-service.xmc.svc.cluster.local:7077, nil)", got, err)
 	}
 	logged := logs.String()
 	if !strings.Contains(logged, "Waiting for valid Vizier") || !strings.Contains(logged, "Resolved Vizier endpoint") {
