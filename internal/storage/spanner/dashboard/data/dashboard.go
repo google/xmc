@@ -251,10 +251,11 @@ func DashboardRowToProto(row *spanner.Row, chartIDs []string) (*dpb.Dashboard, e
 // ChartProtoToInsertMutations creates Spanner mutations to insert a Chart and its PlotSpecs.
 //
 // The Charts row uses a strict Insert, so applying the mutations for an existing chart ID fails
-// with codes.AlreadyExists and, because all mutations commit together, writes no plot rows.
+// with codes.AlreadyExists and, because all mutations commit together, writes no plot rows. Plot
+// rows reuse PlotSpecsToInsertMutations, matching the PostgreSQL ChartPlots upsert.
 func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
 	if chart == nil {
-		return nil, fmt.Errorf("chart proto must not be nil")
+		return nil, fmt.Errorf("chart proto must not be nil: %w", grpcerr.ErrInvalidArgument)
 	}
 
 	xid, wid, chartID, err := validator.ValidateChartName(chart.GetName())
@@ -280,31 +281,16 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 		}
 	}
 
-	var mutations []*spanner.Mutation
-	m := spanner.Insert(dashboardschema.ChartsTableName, []string{
+	chartMut := spanner.Insert(dashboardschema.ChartsTableName, []string{
 		"ChartId", "Title", "Description", "Xid", "Wid", "PlotLayout", "Owner", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
 		chartID, chart.GetTitle(), chart.GetDescription(), chartXid, chartWid, layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
-	mutations = append(mutations, m)
-
-	for _, plot := range chart.GetPlots() {
-		if plot == nil {
-			continue
-		}
-		plotSpecBytes, err := proto.Marshal(plot)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal plot spec: %w", err)
-		}
-		mPlot := spanner.Insert(dashboardschema.ChartPlotsTableName, []string{
-			"ChartId", "PlotId", "Title", "PlotType", "PlotSpec",
-		}, []interface{}{
-			chartID, plot.GetPlotId(), plot.GetTitle(), int64(plot.GetType()), plotSpecBytes,
-		})
-		mutations = append(mutations, mPlot)
+	plotMuts, err := PlotSpecsToInsertMutations(chartID, chart.GetPlots())
+	if err != nil {
+		return nil, err
 	}
-
-	return mutations, nil
+	return append([]*spanner.Mutation{chartMut}, plotMuts...), nil
 }
 
 // ChartRowToProto converts a Spanner Row into a Chart protobuf message.

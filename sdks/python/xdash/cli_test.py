@@ -21,24 +21,18 @@ from unittest.mock import MagicMock, patch
 from xdash._protos import messages_pb2
 from xdash.cli import run_cli
 from xdash.client import XDashConnectionError, XDashRPCError
-from xdash.presets import (
-    VCC_BASELINE_XID,
-    VCC_TUNED_V1_XID,
-    VCC_TUNED_V2_XID,
-    create_vcc_comparison_dashboard,
-)
+from xdash.presets import create_vcc_comparison_dashboard
 
 
 def _assign_server_ids(charts: list[messages_pb2.Chart]) -> list[messages_pb2.Chart]:
     """Mimics CreateChart: the server names each chart with an ID it generates."""
-    return [
-        messages_pb2.Chart(
-            name=f"experiments/{chart.xid}/workUnits/{chart.wid}/charts/server-{chart.xid}",
-            xid=chart.xid,
-            wid=chart.wid,
-        )
-        for chart in charts
-    ]
+    assigned = []
+    for idx, chart in enumerate(charts, start=1):
+        created = messages_pb2.Chart()
+        created.CopyFrom(chart)
+        created.name = f"experiments/{chart.xid}/workUnits/{chart.wid}/charts/server-{idx}"
+        assigned.append(created)
+    return assigned
 
 
 class CliTest(unittest.TestCase):
@@ -74,10 +68,7 @@ class CliTest(unittest.TestCase):
         args, kwargs = self.mock_client.create_dashboard.call_args
         self.assertEqual(args[0].name, "dashboards/test_dash")
         self.assertEqual(args[0].title, "Test Title")
-        self.assertEqual(
-            list(args[0].chart_ids),
-            [f"server-{xid}" for xid in (VCC_BASELINE_XID, VCC_TUNED_V1_XID, VCC_TUNED_V2_XID)],
-        )
+        self.assertEqual(list(args[0].chart_ids), ["server-1", "server-2", "server-3"])
         self.assertEqual(kwargs["dashboard_id"], "test_dash")
         self.assertIn("3 charts", out)
         # Charts must be created before the dashboard that references them.
@@ -114,7 +105,7 @@ class CliTest(unittest.TestCase):
         self.mock_client.create_dashboard.assert_called_once()
         built = self.mock_client.create_dashboard.call_args[0][0]
         # Whitespace trimmed and the trailing empty element dropped, not turned into a chart.
-        self.assertEqual(list(built.chart_ids), ["server-234911122", "server-234911123"])
+        self.assertEqual(list(built.chart_ids), ["server-1", "server-2"])
         created_charts = self.mock_client.create_charts.call_args[0][0]
         self.assertEqual([chart.xid for chart in created_charts], [234911122, 234911123])
 

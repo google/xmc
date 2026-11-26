@@ -15,12 +15,16 @@
 package data
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"cloud.google.com/go/spanner"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/storage/spanner/schema/dashboardschema"
 )
 
 func TestDashboardProtoToInsertMutations_Success(t *testing.T) {
@@ -155,8 +159,24 @@ func TestChartProtoToInsertMutations_Success(t *testing.T) {
 		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
 	}
 
-	if len(mutations) != 2 {
-		t.Errorf("Expected 2 mutations (chart + plot spec), got %d", len(mutations))
+	layoutBytes, err := proto.Marshal(chart.GetPlotLayout())
+	if err != nil {
+		t.Fatalf("proto.Marshal(PlotLayout) failed: %v", err)
+	}
+	plotBytes, err := proto.Marshal(chart.GetPlots()[0])
+	if err != nil {
+		t.Fatalf("proto.Marshal(PlotSpec) failed: %v", err)
+	}
+	want := []*spanner.Mutation{
+		spanner.Insert(dashboardschema.ChartsTableName,
+			[]string{"ChartId", "Title", "Description", "Xid", "Wid", "PlotLayout", "Owner", "CreatedAt", "UpdatedAt"},
+			[]any{"test-chart-data-1", "Test Chart Title", "Test Chart Description", int64(100), int64(1), layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp}),
+		spanner.InsertOrUpdate(dashboardschema.ChartPlotsTableName,
+			[]string{"ChartId", "PlotId", "Title", "PlotType", "PlotSpec"},
+			[]any{"test-chart-data-1", "plot-1", "Loss", int64(dpb.PlotType_SCATTER), plotBytes}),
+	}
+	if diff := cmp.Diff(want, mutations, cmp.AllowUnexported(spanner.Mutation{})); diff != "" {
+		t.Errorf("ChartProtoToInsertMutations() mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -254,8 +274,8 @@ func TestDashboardProtoToInsertMutations_Nil(t *testing.T) {
 }
 
 func TestChartProtoToInsertMutations_Nil(t *testing.T) {
-	if _, err := ChartProtoToInsertMutations(nil); err == nil {
-		t.Errorf("ChartProtoToInsertMutations(nil) expected error, got nil")
+	if _, err := ChartProtoToInsertMutations(nil); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ChartProtoToInsertMutations(nil) error = %v, want %v", err, grpcerr.ErrInvalidArgument)
 	}
 }
 

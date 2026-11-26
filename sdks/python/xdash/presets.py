@@ -46,9 +46,9 @@ def create_standard_experiment_chart(
     """Creates a standard 4-plot KPI & scatter chart for an experiment work unit.
 
     Includes validation loss and training accuracy KPIs and scatter plots matching
-    XMC UI and DataEngine test data schemas. The chart carries no ID of its own:
-    DashboardClient.create_chart() has the server assign one, and the returned chart's
-    name is what a dashboard must reference.
+    XMC UI and DataEngine test data schemas. It sets no persistent server ID:
+    DashboardClient.create_chart() ignores chart.name so the server assigns one, and
+    the returned chart's name is what a dashboard must reference.
 
     Args:
         xid: Experiment ID (e.g., 234911122).

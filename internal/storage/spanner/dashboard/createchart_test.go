@@ -16,19 +16,11 @@ package dashboard
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"cloud.google.com/go/spanner"
-	"github.com/google/go-cmp/cmp"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/testing/protocmp"
 
-	dpb "xmanager_cloud/api/protos/dashboard"
-	"xmanager_cloud/internal/grpcerr"
-	"xmanager_cloud/internal/prototest"
-	"xmanager_cloud/internal/validator"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 func TestCreateChart_Success(t *testing.T) {
@@ -68,36 +60,6 @@ func TestCreateChart_WithoutLayout(t *testing.T) {
 	}
 }
 
-func assertDuplicateChartRejected(ctx context.Context, t *testing.T, repo *Repository, chartID string, xid, wid int64) {
-	t.Helper()
-	base := blankChartProto(chartID, 100, 1)
-	if err := repo.CreateChart(ctx, base); err != nil {
-		t.Fatalf("CreateChart(original) failed: %v", err)
-	}
-	want, err := repo.GetChart(ctx, chartID)
-	if err != nil {
-		t.Fatalf("GetChart(original) failed: %v", err)
-	}
-	dup := prototest.Modify(base, func(c *dpb.Chart) {
-		c.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
-		c.Xid, c.Wid, c.Title = xid, wid, "Duplicate Title"
-		c.Plots = []*dpb.PlotSpec{
-			{PlotId: "plot-1", Title: "Replaced", Type: dpb.PlotType_BAR},
-			{PlotId: "plot-2", Title: "Extra", Type: dpb.PlotType_SCATTER},
-		}
-	})
-	if err := repo.CreateChart(ctx, dup); !errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) != codes.AlreadyExists {
-		t.Fatalf("CreateChart(duplicate) error = %v (code %v), want %v", err, status.Code(err), grpcerr.ErrAlreadyExists)
-	}
-	got, err := repo.GetChart(ctx, chartID)
-	if err != nil {
-		t.Fatalf("GetChart(after duplicate) failed: %v", err)
-	}
-	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
-		t.Errorf("chart changed after rejected duplicate CreateChart (-want +got):\n%s", diff)
-	}
-}
-
 func TestCreateChart_DuplicateIDReturnsAlreadyExists(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -110,7 +72,7 @@ func TestCreateChart_DuplicateIDReturnsAlreadyExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			repo := setupDashboardRepository(ctx, t)
-			assertDuplicateChartRejected(ctx, t, repo, "test-create-chart-dup", tt.xid, tt.wid)
+			storagetest.AssertDuplicateChartRejected(ctx, t, repo, blankChartProto("test-create-chart-dup", 100, 1), tt.xid, tt.wid)
 		})
 	}
 }

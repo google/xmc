@@ -409,5 +409,9 @@ func TestCreateDashboard(t *testing.T) {
 		if status.Code(err) != codes.AlreadyExists {
 			t.Errorf("Expected code AlreadyExists, got %v", status.Code(err))
 		}
+		const wantMsg = `an inline chart of dashboard "duplicate-id" already exists`
+		if gotMsg := status.Convert(err).Message(); gotMsg != wantMsg {
+			t.Errorf("CreateDashboard() message = %q, want %q", gotMsg, wantMsg)
+		}
 	})
 }

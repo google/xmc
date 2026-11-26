@@ -17,7 +17,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"google.golang.org/grpc/codes"
@@ -28,7 +27,6 @@ import (
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
-	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
 )
@@ -142,7 +140,7 @@ func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, grpcerr.ErrNotFound) || status.Code(err) == codes.NotFound
+	return status.Code(err) == codes.NotFound
 }
 
 // isAlreadyExistsError checks if an error represents an AlreadyExists error code.
@@ -150,7 +148,7 @@ func isAlreadyExistsError(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) == codes.AlreadyExists
+	return status.Code(err) == codes.AlreadyExists
 }
 
 // createDefaultPlotSpecs returns standard default plots for on-the-fly work unit charts.

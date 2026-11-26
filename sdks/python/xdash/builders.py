@@ -209,7 +209,9 @@ class ChartBuilder:
         """Initializes a new ChartBuilder instance.
 
         Args:
-            name: Optional full resource name for the chart.
+            name: Optional full resource name for the chart. DashboardClient.create_chart()
+                ignores it and the server assigns the ID; pass chart_id to create_chart()
+                to choose one.
             title: Human-readable chart title.
             description: Optional detailed description.
         """
@@ -234,7 +236,11 @@ class ChartBuilder:
         return self
 
     def set_name(self, name: str) -> ChartBuilder:
-        """Sets the explicit resource name for the chart."""
+        """Sets the explicit resource name for the chart.
+
+        DashboardClient.create_chart() ignores it and the server assigns the ID; pass
+        chart_id to create_chart() to choose one.
+        """
         self._name = name
         return self
 

@@ -74,7 +74,8 @@ func (s *Server) CreateDashboard(ctx context.Context, req *dpb.CreateDashboardRe
 
 	if err := s.repo.CreateDashboard(ctx, dash, charts); err != nil {
 		if isAlreadyExistsError(err) {
-			return nil, status.Errorf(codes.AlreadyExists, "dashboard %q already exists", dashID)
+			// Dashboards are upserted, so AlreadyExists can only come from an inline chart ID collision.
+			return nil, status.Errorf(codes.AlreadyExists, "an inline chart of dashboard %q already exists", dashID)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to create dashboard: %v", err)
 	}

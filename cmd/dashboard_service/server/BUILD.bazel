@@ -40,7 +40,6 @@ go_library(
         "//api/protos/xid:messages_go_proto",
         "//internal/auth",
         "//internal/dashboard/dataengine",
-        "//internal/grpcerr",
         "//internal/logging",
         "//internal/validator",
         "@com_github_google_uuid//:uuid",

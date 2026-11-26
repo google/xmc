@@ -19,11 +19,14 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestCreateDashboard_Success(t *testing.T) {
@@ -137,8 +140,23 @@ func TestCreateDashboard_DuplicateInlineChartIDReturnsAlreadyExists(t *testing.T
 
 	dash := blankDashboardProto("dashboards/test-dup-inline-chart")
 	dash.ChartIds = []string{chartID}
-	err := repo.CreateDashboard(ctx, dash, []*dpb.Chart{blankChartProto(chartID, 100, 1)})
+	original, err := repo.GetChart(ctx, chartID)
+	if err != nil {
+		t.Fatalf("GetChart(original) failed: %v", err)
+	}
+	dup := prototest.Modify(blankChartProto(chartID, 100, 1), func(c *dpb.Chart) { c.Title = "Duplicate Title" })
+	err = repo.CreateDashboard(ctx, dash, []*dpb.Chart{dup})
 	if !errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("CreateDashboard(duplicate inline chart) error = %v (code %v), want %v", err, status.Code(err), grpcerr.ErrAlreadyExists)
+	}
+	if _, err := repo.GetDashboard(ctx, "test-dup-inline-chart"); !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("GetDashboard after rejected CreateDashboard error = %v, want %v", err, grpcerr.ErrNotFound)
+	}
+	got, err := repo.GetChart(ctx, chartID)
+	if err != nil {
+		t.Fatalf("GetChart(after rejected CreateDashboard) failed: %v", err)
+	}
+	if diff := cmp.Diff(original, got, protocmp.Transform()); diff != "" {
+		t.Errorf("chart changed after rejected CreateDashboard (-want +got):\n%s", diff)
 	}
 }

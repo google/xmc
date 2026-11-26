@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 type (
@@ -663,6 +665,9 @@ func TestIsNotFoundError(t *testing.T) {
 	if !isNotFoundError(status.Error(codes.NotFound, "not found")) {
 		t.Errorf("isNotFoundError(status.NotFound) = false, want true")
 	}
+	if !isNotFoundError(fmt.Errorf("chart x: %w", grpcerr.ErrNotFound)) {
+		t.Errorf("isNotFoundError(wrapped grpcerr.ErrNotFound) = false, want true")
+	}
 }
 
 func TestIsAlreadyExistsError(t *testing.T) {
@@ -671,6 +676,9 @@ func TestIsAlreadyExistsError(t *testing.T) {
 	}
 	if !isAlreadyExistsError(status.Error(codes.AlreadyExists, "already exists")) {
 		t.Errorf("isAlreadyExistsError(status.AlreadyExists) = false, want true")
+	}
+	if !isAlreadyExistsError(fmt.Errorf("chart x: %w", grpcerr.ErrAlreadyExists)) {
+		t.Errorf("isAlreadyExistsError(wrapped grpcerr.ErrAlreadyExists) = false, want true")
 	}
 }
 

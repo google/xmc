@@ -193,6 +193,10 @@ message CreateChartRequest {
     }
   ];
   Chart chart = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // ID for the new chart. When omitted, the server generates a UUID. Chart IDs are unique across
+  // all experiments and work units; an ID that is already taken returns ALREADY_EXISTS and the
+  // existing chart is never overwritten.
   string chart_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
