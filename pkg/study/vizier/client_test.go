@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -28,6 +29,15 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 )
+
+type errHealthServer struct {
+	healthpb.UnimplementedHealthServer
+	err error
+}
+
+func (s errHealthServer) Check(context.Context, *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	return nil, s.err
+}
 
 func dialBufconn(t *testing.T, register func(*grpc.Server)) (*Client, func()) {
 	t.Helper()
@@ -58,19 +68,27 @@ func TestClient_Ping(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct {
-		name    string
-		reg     func(*grpc.Server)
-		wantErr bool
+		name      string
+		reg       func(*grpc.Server)
+		wantTrunc bool
+		wantErr   bool
 	}{
-		{"SERVING returns nil", setHealth(healthpb.HealthCheckResponse_SERVING), false},
-		{"Unimplemented returns nil for OSS Vizier", nil, false},
-		{"NOT_SERVING returns error", setHealth(healthpb.HealthCheckResponse_NOT_SERVING), true},
+		{"SERVING returns nil", setHealth(healthpb.HealthCheckResponse_SERVING), false, false},
+		{"Unimplemented returns nil for OSS Vizier", nil, false, false},
+		{"NOT_SERVING returns error", setHealth(healthpb.HealthCheckResponse_NOT_SERVING), false, true},
+		{"truncates long multibyte status", func(s *grpc.Server) {
+			healthpb.RegisterHealthServer(s, errHealthServer{err: status.Error(codes.Internal, strings.Repeat("é", 150))})
+		}, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			c, _ := dialBufconn(t, tc.reg)
-			if err := c.Ping(context.Background()); (err != nil) != tc.wantErr {
-				t.Errorf("Ping() = %v, wantErr %v", err, tc.wantErr)
+			err := c.Ping(context.Background())
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Ping() = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantTrunc && (!utf8.ValidString(err.Error()) || !strings.Contains(err.Error(), "...") || len(err.Error()) > 330) {
+				t.Errorf("Ping() = %v, want valid-UTF8 truncated error", err)
 			}
 		})
 	}
@@ -84,22 +102,15 @@ func TestClient_Ping(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		start := time.Now()
-		err := c.Ping(ctx)
-		if status.Code(err) != codes.Unavailable {
-			t.Fatalf("Ping() on stopped server code = %v (err=%v), want %v", status.Code(err), err, codes.Unavailable)
-		}
-		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-			t.Errorf("Ping() took %v, want fast fail (<500ms)", elapsed)
+		if err := c.Ping(ctx); status.Code(err) != codes.Unavailable || time.Since(start) > 500*time.Millisecond {
+			t.Fatalf("Ping() = %v (code %v) in %v, want Unavailable <500ms", err, status.Code(err), time.Since(start))
 		}
 	})
 	t.Run("nil client", func(t *testing.T) {
 		t.Parallel()
 		var nilClient *Client
-		if err := nilClient.Ping(context.Background()); err == nil {
-			t.Error("(*Client)(nil).Ping() = nil, want error")
-		}
-		if err := nilClient.Close(); err != nil {
-			t.Errorf("(*Client)(nil).Close() = %v, want nil", err)
+		if err := nilClient.Ping(context.Background()); err == nil || nilClient.Close() != nil {
+			t.Errorf("(*Client)(nil) Ping=%v Close=%v", err, nilClient.Close())
 		}
 	})
 }

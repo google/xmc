@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	spb "xmanager_cloud/api/protos/experiment"
@@ -62,12 +63,12 @@ func (e *Engine) CreateStudy(ctx context.Context, xid int64, cfg *spb.StudyConfi
 	created, err := e.client.CreateStudy(ctx, &vizierpb.CreateStudyRequest{
 		Parent: vizierOwnerParent,
 		Study:  &vizierpb.Study{DisplayName: displayName, StudySpec: spec},
-	})
+	}, grpc.WaitForReady(true))
 	if err == nil {
 		return cmp.Or(created.GetName(), studyName), nil
 	}
 	if status.Code(err) == codes.AlreadyExists {
-		got, getErr := e.client.GetStudy(ctx, &vizierpb.GetStudyRequest{Name: studyName})
+		got, getErr := e.client.GetStudy(ctx, &vizierpb.GetStudyRequest{Name: studyName}, grpc.WaitForReady(true))
 		if getErr != nil {
 			return "", fmt.Errorf("vizier get existing study (code=%s): %w", status.Code(getErr), getErr)
 		}

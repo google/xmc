@@ -17,14 +17,18 @@ package vizier
 import (
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"xmanager_cloud/internal/experiment/experimenttest"
@@ -205,6 +209,58 @@ func TestEngine_CreateStudy_FallbacksAndErrors(t *testing.T) {
 		}
 		if len(srv.createReqs) != 0 {
 			t.Fatalf("CreateStudy RPC calls = %d, want 0", len(srv.createReqs))
+		}
+	})
+
+	t.Run("WaitForReady buffers until server becomes reachable", func(t *testing.T) {
+		t.Parallel()
+		lis := bufconn.Listen(1 << 20)
+		gsrv := grpc.NewServer()
+		vizierpb.RegisterVizierServiceServer(gsrv, &fakeVizierServer{})
+		go func() { _ = gsrv.Serve(lis) }()
+		t.Cleanup(func() { gsrv.Stop(); _ = lis.Close() })
+
+		var attempts atomic.Int32
+		client, err := dial("127.0.0.1:7077", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			if attempts.Add(1) == 1 {
+				return nil, errors.New("server not ready yet")
+			}
+			return lis.DialContext(ctx)
+		}))
+		if err != nil {
+			t.Fatalf("dial() = %v", err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
+
+		engine, err := NewEngine(client)
+		if err != nil {
+			t.Fatalf("NewEngine() = %v", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if name, err := engine.CreateStudy(ctx, 11, experimenttest.StudyConfig()); err != nil || name != "owners/xmc/studies/study-11" || attempts.Load() < 2 {
+			t.Fatalf("CreateStudy() = (%q, %v), attempts=%d", name, err, attempts.Load())
+		}
+	})
+
+	t.Run("WaitForReady returns DeadlineExceeded when context expires", func(t *testing.T) {
+		t.Parallel()
+		client, err := dial("127.0.0.1:7077", grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return nil, errors.New("unreachable")
+		}))
+		if err != nil {
+			t.Fatalf("dial() = %v", err)
+		}
+		t.Cleanup(func() { _ = client.Close() })
+
+		engine, err := NewEngine(client)
+		if err != nil {
+			t.Fatalf("NewEngine() = %v", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		if _, err = engine.CreateStudy(ctx, 12, experimenttest.StudyConfig()); status.Code(err) != codes.DeadlineExceeded && !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("CreateStudy() = %v (code=%s), want DeadlineExceeded", err, status.Code(err))
 		}
 	})
 }
