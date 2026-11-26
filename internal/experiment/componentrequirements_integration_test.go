@@ -26,13 +26,12 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	componentspb "xmanager_cloud/api/protos/components/v1alpha1"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/storage"
-	"xmanager_cloud/pkg/components/store"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
 )
 
@@ -42,46 +41,22 @@ const (
 	seededMaxTrialBudget = 5
 )
 
-// catalogRecord returns an ENABLED record at generation 1 that has observed that generation.
-func catalogRecord(id int64, name string, componentType componentspb.ComponentType, stability componentspb.ComponentStability, deps ...string) *store.ComponentRecord {
-	return &store.ComponentRecord{
-		ComponentID:        id,
-		Name:               name,
-		Spec:               &componentspb.ComponentSpec{Type: componentType, Version: "v1.0.0", Stability: stability, Dependencies: deps},
-		State:              componentspb.ComponentState_COMPONENT_STATE_ENABLED,
-		Generation:         1,
-		ObservedGeneration: proto.Int64(1),
-		Dependencies:       deps,
-	}
-}
-
 // seedHPOCatalog writes ready EXPERIMENTAL hpo and vizier components and a ready STABLE clickhouse
-// component, on which hpo depends, through the transaction-scoped component repository. hpo limits
-// study trial budgets to seededMaxTrialBudget.
-func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) {
+// component, on which hpo depends, through the transaction-scoped component repository, and returns
+// the seeded vizier component ID. hpo limits study trial budgets to seededMaxTrialBudget.
+func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) int64 {
 	t.Helper()
-	hpo := catalogRecord(103, "hpo", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_1P_COMPONENT, componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL, "clickhouse", "vizier")
-	hpo.Spec.Parameters = map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)}
-	recs := []*store.ComponentRecord{
-		catalogRecord(101, "clickhouse", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, componentspb.ComponentStability_COMPONENT_STABILITY_STABLE),
-		catalogRecord(102, "vizier", componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER, componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL),
-		hpo,
+	recs := experimenttest.OrderedHPOCatalog(map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)})
+	if err := storagetest.SeedComponentCatalog(ctx, st, recs...); err != nil {
+		t.Fatalf("SeedComponentCatalog() failed: %v", err)
 	}
-	depIDs := map[string]int64{"clickhouse": 101, "vizier": 102}
 	for _, rec := range recs {
-		_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-			return tx.Components.InsertComponent(ctx, rec, depIDs)
-		})
-		if err != nil {
-			t.Fatalf("InsertComponent(%q) failed: %v", rec.Name, err)
-		}
-		_, err = st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-			return tx.Components.UpdateComponentObservation(ctx, rec, false)
-		})
-		if err != nil {
-			t.Fatalf("UpdateComponentObservation(%q) failed: %v", rec.Name, err)
+		if rec.Name == "vizier" {
+			return rec.ComponentID
 		}
 	}
+	t.Fatal(`OrderedHPOCatalog() missing "vizier" record`)
+	return 0
 }
 
 func newStudy(xid int64) *essmsgpb.Experiment {
@@ -115,7 +90,7 @@ func TestCreateExperiment_StudyPinsComponentsOnEveryBackend(t *testing.T) {
 		t.Run(backend.Name, func(t *testing.T) {
 			ctx := t.Context()
 			st, _ := backend.Open(ctx, t)
-			seedHPOCatalog(ctx, t, st)
+			vizierID := seedHPOCatalog(ctx, t, st)
 
 			const xid = 501
 			if _, err := experiment.CreateExperiment(ctx, st, newStudy(xid)); err != nil {
@@ -127,7 +102,7 @@ func TestCreateExperiment_StudyPinsComponentsOnEveryBackend(t *testing.T) {
 			// vizier stops being ready while hpo stays ENABLED: the in-transaction check rejects the
 			// study and rolls back its experiment row.
 			_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
-				return tx.Components.UpdateComponentState(ctx, 102, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, nil)
+				return tx.Components.UpdateComponentState(ctx, vizierID, componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION, nil)
 			})
 			if err != nil {
 				t.Fatalf("UpdateComponentState(vizier) failed: %v", err)

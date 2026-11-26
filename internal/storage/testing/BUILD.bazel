@@ -20,6 +20,7 @@ go_library(
     testonly = True,
     srcs = [
         "active_resources_fixture.go",
+        "component_catalog.go",
         "dashboard_charts.go",
         "pausedtask_fake.go",
         "pausestate_fake.go",
@@ -35,6 +36,7 @@ go_library(
         "//internal/storage",
         "//internal/storage/state",
         "//internal/validator",
+        "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_go_cmp//cmp/cmpopts",
         "@org_golang_google_protobuf//proto",
@@ -46,6 +48,7 @@ go_library(
 go_test(
     name = "testing_test",
     srcs = [
+        "component_catalog_test.go",
         "dashboard_charts_test.go",
         "pausedtask_fake_test.go",
         "pausestate_fake_test.go",
@@ -58,6 +61,7 @@ go_test(
         "//internal/grpcerr",
         "//internal/prototest",
         "//internal/storage",
+        "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
         "@org_golang_google_protobuf//testing/protocmp",
     ],

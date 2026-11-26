@@ -22,6 +22,43 @@ import (
 	"xmanager_cloud/pkg/components/store/lifecycle"
 )
 
+func TestOrderedHPOCatalog(t *testing.T) {
+	params := map[string]string{"maxTrialBudget": "7"}
+	recs := OrderedHPOCatalog(params)
+	if len(recs) != 3 {
+		t.Fatalf("len(OrderedHPOCatalog()) = %d, want 3", len(recs))
+	}
+	seenIDs := make(map[int64]bool, len(recs))
+	for _, rec := range recs {
+		if rec.ComponentID <= 0 || seenIDs[rec.ComponentID] {
+			t.Errorf("ComponentID for %q = %d, want positive unique ID (seen=%v)", rec.Name, rec.ComponentID, seenIDs)
+		}
+		seenIDs[rec.ComponentID] = true
+	}
+	wantObs := int64(1)
+	type item struct {
+		Name               string
+		Stability          componentspb.ComponentStability
+		State              componentspb.ComponentState
+		Generation         int64
+		ObservedGeneration *int64
+		Deps, SpecDeps     []string
+		Params             map[string]string
+	}
+	got := make([]item, len(recs))
+	for i, rec := range recs {
+		got[i] = item{rec.Name, rec.Spec.GetStability(), rec.State, rec.Generation, rec.ObservedGeneration, rec.Dependencies, rec.Spec.GetDependencies(), rec.Spec.GetParameters()}
+	}
+	want := []item{
+		{"clickhouse", componentspb.ComponentStability_COMPONENT_STABILITY_STABLE, componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, &wantObs, nil, nil, nil},
+		{"vizier", componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL, componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, &wantObs, nil, nil, nil},
+		{"hpo", componentspb.ComponentStability_COMPONENT_STABILITY_EXPERIMENTAL, componentspb.ComponentState_COMPONENT_STATE_ENABLED, 1, &wantObs, []string{"vizier", "clickhouse"}, []string{"vizier", "clickhouse"}, params},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("OrderedHPOCatalog() mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestHPOCatalog_IsReady(t *testing.T) {
 	params := map[string]string{"maxTrialBudget": "5"}
 	catalog := HPOCatalog(params)
