@@ -77,7 +77,7 @@ func TestClient_Ping(t *testing.T) {
 		{"Unimplemented returns nil for OSS Vizier", nil, false, false},
 		{"NOT_SERVING returns error", setHealth(healthpb.HealthCheckResponse_NOT_SERVING), false, true},
 		{"truncates long multibyte status", func(s *grpc.Server) {
-			healthpb.RegisterHealthServer(s, errHealthServer{err: status.Error(codes.Internal, strings.Repeat("é", 150))})
+			healthpb.RegisterHealthServer(s, errHealthServer{err: status.Error(codes.Internal, strings.Repeat("€", 100))})
 		}, true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestClient_Ping(t *testing.T) {
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("Ping() = %v, wantErr %v", err, tc.wantErr)
 			}
-			if tc.wantTrunc && (!utf8.ValidString(err.Error()) || !strings.Contains(err.Error(), "...") || len(err.Error()) > 330) {
+			if msg := status.Convert(err).Message(); tc.wantTrunc && (!utf8.ValidString(msg) || !strings.HasSuffix(msg, "...") || len(msg) > 290) {
 				t.Errorf("Ping() = %v, want valid-UTF8 truncated error", err)
 			}
 		})
