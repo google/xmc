@@ -42,15 +42,21 @@ const (
 )
 
 // seedHPOCatalog writes ready EXPERIMENTAL hpo and vizier components and a ready STABLE clickhouse
-// component, on which hpo depends, through the transaction-scoped component repository. hpo limits
-// study trial budgets to seededMaxTrialBudget.
+// component, on which hpo depends, through the transaction-scoped component repository, and returns
+// the seeded vizier component ID. hpo limits study trial budgets to seededMaxTrialBudget.
 func seedHPOCatalog(ctx context.Context, t *testing.T, st storage.Storage) int64 {
 	t.Helper()
 	recs := experimenttest.OrderedHPOCatalog(map[string]string{"maxTrialBudget": strconv.Itoa(seededMaxTrialBudget)})
 	if err := storagetest.SeedComponentCatalog(ctx, st, recs...); err != nil {
 		t.Fatalf("SeedComponentCatalog() failed: %v", err)
 	}
-	return recs[1].ComponentID
+	for _, rec := range recs {
+		if rec.Name == "vizier" {
+			return rec.ComponentID
+		}
+	}
+	t.Fatal(`OrderedHPOCatalog() missing "vizier" record`)
+	return 0
 }
 
 func newStudy(xid int64) *essmsgpb.Experiment {
