@@ -25,7 +25,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from typing import NamedTuple, Protocol, TextIO
 
-from xm_cloud.cli import arg_parsing, logout_command, terminal_text
+from xm_cloud.cli import arg_parsing, login_command, logout_command, terminal_text
 
 
 class SubcommandRunner(Protocol):
@@ -48,6 +48,10 @@ class Subcommand(NamedTuple):
 
 
 SUBCOMMANDS: Mapping[str, Subcommand] = {
+    "login": Subcommand(
+        "Authenticates with an XManager on Cloud (XMC) deployment and caches the credentials.",
+        login_command.run_login,
+    ),
     "logout": Subcommand("Clears cached XMC credentials.", logout_command.run_logout),
 }
 _HELP_FLAGS = frozenset({"-h", "--help"})

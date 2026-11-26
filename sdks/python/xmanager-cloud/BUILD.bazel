@@ -27,6 +27,7 @@ py_library(
         "src/xm_cloud/cli/__init__.py",
         "src/xm_cloud/cli/arg_parsing.py",
         "src/xm_cloud/cli/credentials.py",
+        "src/xm_cloud/cli/login_command.py",
         "src/xm_cloud/cli/logout_command.py",
         "src/xm_cloud/cli/main.py",
         "src/xm_cloud/cli/terminal_text.py",
@@ -53,6 +54,15 @@ py_test(
         ":xm_cloud_cli",
         # Checks that the credentials cache key matches the one xdash reads.
         "//sdks/python/xdash:auth",
+    ],
+)
+
+py_test(
+    name = "login_command_test",
+    srcs = ["src/xm_cloud/cli/login_command_test.py"],
+    deps = [
+        ":xm_cloud_cli",
+        "@absl_py//absl/testing:absltest",
     ],
 )
 
