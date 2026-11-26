@@ -39,12 +39,13 @@ func (p *pagedChartStore) ListCharts(_ context.Context, _ string, _ int32, tok, 
 	return []*dpb.Chart{{Name: "experiments/100/charts/b"}}, "", nil
 }
 
-func TestDashboardChartVerificationHelpers(t *testing.T) {
-	ctx := context.Background()
+func TestVerifyExperimentLevelChartRoundTrip(t *testing.T) {
 	c := ExperimentChartProto("study-a", 100)
-	store := &pagedChartStore{&storage.MockStorage{Chart: c}}
-	VerifyExperimentLevelChartRoundTrip(ctx, t, store, c)
-	if diff := cmp.Diff([]string{"experiments/100/charts/a", "experiments/100/charts/b"}, CollectChartPages(ctx, t, store, "", 1, "", "")); diff != "" {
+	VerifyExperimentLevelChartRoundTrip(t.Context(), t, &pagedChartStore{&storage.MockStorage{Chart: c}}, c)
+}
+
+func TestCollectChartPages(t *testing.T) {
+	if diff := cmp.Diff([]string{"experiments/100/charts/a", "experiments/100/charts/b"}, CollectChartPages(t.Context(), t, &pagedChartStore{&storage.MockStorage{}}, "", 1, "", "")); diff != "" {
 		t.Errorf("CollectChartPages mismatch (-want +got):\n%s", diff)
 	}
 }
