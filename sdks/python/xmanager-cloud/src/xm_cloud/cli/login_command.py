@@ -36,7 +36,7 @@ import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO
 
-from xm_cloud.cli import credentials
+from xm_cloud.cli import credentials, logout_command
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -196,7 +196,7 @@ def _parse_login_args(
             " (default ~/.config/xmc/credentials.json)."
         ),
     )
-    return credentials.parse_cli_args(parser, argv, out, err)
+    return logout_command.parse_cli_args(parser, argv, out, err)
 
 
 def _cache_grant(
@@ -219,12 +219,15 @@ def _cache_grant(
 
 def run_login(
     argv: Sequence[str],
-    env: Mapping[str, str] = os.environ,
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
+    env: Mapping[str, str] | None = None,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
     prompt: Callable[[str], str] = getpass.getpass,
 ) -> int:
     """Parses `xmc login` flags, executes manual login, and returns exit code."""
+    env = os.environ if env is None else env
+    out = sys.stdout if out is None else out
+    err = sys.stderr if err is None else err
     parsed = _parse_login_args(argv, out, err)
     if isinstance(parsed, int):
         return parsed

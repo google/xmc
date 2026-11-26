@@ -60,10 +60,7 @@ py_test(
 py_test(
     name = "login_command_test",
     srcs = ["src/xm_cloud/cli/login_command_test.py"],
-    deps = [
-        ":xm_cloud_cli",
-        "@absl_py//absl/testing:absltest",
-    ],
+    deps = [":xm_cloud_cli"],
 )
 
 py_test(

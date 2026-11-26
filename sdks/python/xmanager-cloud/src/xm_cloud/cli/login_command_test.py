@@ -20,24 +20,25 @@ import http.client
 import io
 import json
 import os
+import tempfile
+import unittest
 import urllib.error
 import urllib.request
 from unittest import mock
-
-from absl.testing import absltest
 
 from xm_cloud.cli import credentials, login_command, logout_command
 
 _SERVER = "https://xmc.example.com"
 
 
-# absl-py ships no type information to mypy here, so absltest.TestCase is typed as Any.
-class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
+class LoginCommandTest(unittest.TestCase):
     """Unit tests for `xmc login`."""
 
     def setUp(self) -> None:
         super().setUp()
-        self._xdg = self.create_tempdir().full_path
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        self._xdg = temp_dir.name
 
     def _env(self, **extra: str) -> dict[str, str]:
         env = {"XDG_CONFIG_HOME": self._xdg, "XMANAGER_UI_URL": _SERVER}
@@ -254,4 +255,4 @@ class LoginCommandTest(absltest.TestCase):  # type: ignore[misc]
 
 
 if __name__ == "__main__":
-    absltest.main()
+    unittest.main()
