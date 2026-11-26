@@ -17,9 +17,10 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 # The xmanager_cloud package needs PyPI dependencies (`packaging`) that Bazel does
 # not provide, so src/xmanager_cloud/*_test.py runs against the installed wheel
 # and sdist in .github/workflows/xmanager-cloud-package.yml instead. The
-# xm_cloud.cli tests run in both places. The CLI itself needs only the standard
-# library; its tests also use absl-py (a Bazel module dependency) and xdash.auth,
-# to check that the credentials cache key matches the one xdash reads.
+# xm_cloud.cli tests will run in both places once xm_cloud is packaged. The CLI
+# itself needs only the standard library; its tests also use absl-py (a Bazel
+# module dependency) and xdash.auth, to check that the credentials cache key
+# matches the one xdash reads.
 
 py_library(
     name = "xm_cloud_cli",
