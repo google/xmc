@@ -36,7 +36,7 @@ import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO
 
-from xm_cloud.cli import credentials, logout_command
+from xm_cloud.cli import arg_parsing, credentials
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -196,7 +196,7 @@ def _parse_login_args(
             " (default ~/.config/xmc/credentials.json)."
         ),
     )
-    return logout_command.parse_cli_args(parser, argv, out, err)
+    return arg_parsing.parse_args(parser, argv, out, err)
 
 
 def _cache_grant(
@@ -243,16 +243,3 @@ def run_login(
     except credentials.AuthError as exc:
         err.write(f"Error: {exc}\n")
         return 1
-
-
-def login_command(argv: Sequence[str]) -> None:
-    """Runs `login` from a full `<program> login ...` argv and exits on failure.
-
-    This keeps the call shape that the core `xmanager login` command uses, so it
-    can forward to this module.
-
-    Args:
-        argv: The full command line, including the program and command names.
-    """
-    if code := run_login(argv[2:]):
-        sys.exit(code)

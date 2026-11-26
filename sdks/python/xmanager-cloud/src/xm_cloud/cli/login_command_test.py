@@ -19,7 +19,6 @@ import email.message
 import http.client
 import io
 import json
-import os
 import tempfile
 import unittest
 import urllib.error
@@ -240,18 +239,6 @@ class LoginCommandTest(unittest.TestCase):
         self.assertEqual(cached[_SERVER]["access_token"], "jwt")
         self.assertEqual(logout_command.run_logout([], env=env, out=out, err=err), 0)
         self.assertEqual(credentials.load_credentials(credentials.credentials_path(env)), {})
-
-    def test_login_command_exits_only_on_failure(self) -> None:
-        # run_login binds os.environ as its default, so patching it in place reaches it.
-        with mock.patch.dict(os.environ, self._env(), clear=True):
-            with (
-                mock.patch.object(
-                    login_command, "_probe_cli_login", side_effect=credentials.AuthError("down")
-                ),
-                self.assertRaises(SystemExit) as login_exit,
-            ):
-                login_command.login_command(["xmanager", "login"])
-        self.assertEqual(login_exit.exception.code, 1)
 
 
 if __name__ == "__main__":
