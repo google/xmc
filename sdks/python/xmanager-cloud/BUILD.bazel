@@ -25,3 +25,16 @@ py_test(
     srcs = ["build_staging_test.py"],
     deps = [":build_staging"],
 )
+
+py_library(
+    name = "install_smoke_check",
+    srcs = ["install_smoke_check.py"],
+    imports = ["."],
+    deps = [":build_staging"],
+)
+
+py_test(
+    name = "install_smoke_check_test",
+    srcs = ["install_smoke_check_test.py"],
+    deps = [":install_smoke_check"],
+)

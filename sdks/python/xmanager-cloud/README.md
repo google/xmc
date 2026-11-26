@@ -44,7 +44,10 @@ version.
 
 ## Testing
 
-- `bazel test //sdks/python/xmanager-cloud/...` covers the build staging logic.
+- `bazel test //sdks/python/xmanager-cloud/...` covers the build staging and smoke-check
+  tooling.
 - [`xmanager-cloud-package.yml`](../../../.github/workflows/xmanager-cloud-package.yml) builds the
-  sdist and then the wheel from the unpacked sdist, which runs the staging and proto compile
-  hooks outside the repository tree.
+  wheel and sdist, installs each into clean virtualenvs on Python 3.11–3.14 against the
+  protobuf floor (`5.29.6`) and the latest `<7` release, then runs
+  [`install_smoke_check.py`](install_smoke_check.py) against the installed package. The sdist is
+  not installed on Python 3.14 (see [Building](#building)).
