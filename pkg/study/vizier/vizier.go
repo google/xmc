@@ -146,14 +146,20 @@ func validateEndpoint(raw string) (string, error) {
 		}
 	}
 	host, port, err := net.SplitHostPort(raw)
-	validHost := (strings.Contains(host, ":") && net.ParseIP(host) != nil) || (!strings.Contains(host, ":") && strings.IndexFunc(host, func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '.' && r != '-'
-	}) < 0)
-	if err != nil || host == "" || strings.HasPrefix(raw, "[") != strings.Contains(host, ":") || !validHost {
+	if err != nil || host == "" || strings.HasPrefix(raw, "[") != strings.Contains(host, ":") || !isValidEndpointHost(host) {
 		return "", errors.New("invalid vizier endpoint: must be host:port, with IPv6 hosts in brackets")
 	}
 	if n, err := strconv.ParseUint(port, 10, 64); err != nil || n < 1 || n > 65535 || strconv.FormatUint(n, 10) != port {
 		return "", errors.New("invalid vizier endpoint: port must be a canonical integer between 1 and 65535")
 	}
 	return raw, nil
+}
+
+func isValidEndpointHost(host string) bool {
+	if strings.Contains(host, ":") {
+		return net.ParseIP(host) != nil
+	}
+	return strings.IndexFunc(host, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '.' && r != '-'
+	}) < 0
 }
