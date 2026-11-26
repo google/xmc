@@ -285,6 +285,7 @@ func TestServeWithClient_ServesHealthzWhileWaitingForVizierAndCancelsCleanly(t *
 	done := make(chan error, 1)
 	t.Cleanup(func() { cancel(); <-done })
 	go func() {
+		defer close(done)
 		done <- serveWithClient(ctx, lis, client, nil, "xmc", func() (crreader.Getter, error) { return &crreadertest.FakeGetter{}, nil })
 	}()
 	addr := lis.Addr().String()
@@ -403,6 +404,7 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	done := make(chan error, 1)
 	t.Cleanup(func() { cancel(); <-done })
 	go func() {
+		defer close(done)
 		done <- serveWithClient(ctx, lis, client, func(vc *vizier.Client) (worker.ReconcileFunc, error) {
 			gotVizier.Store(vc)
 			return nil, nil
