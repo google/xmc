@@ -13,12 +13,20 @@
 # limitations under the License.
 
 [build-system]
-requires = ["setuptools>=61.0"]
+# setup.py compiles api/protos/metrics/metrics.proto at build time. Generated
+# *_pb2.py modules refuse to load on a protobuf runtime older than the protoc that
+# generated them, so compile with the runtime floor below (protobuf 5.29.6, which
+# grpcio-tools 1.70.0 bundles). grpcio-tools 1.70.0 has no Python 3.14 wheel:
+# building from the sdist on 3.14 compiles grpcio-tools from source. setuptools 77 is
+# the first release that accepts the SPDX `license` string below (PEP 639).
+requires = ["setuptools>=77.0", "grpcio-tools==1.70.0", "protobuf==5.29.6"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "xmc"
-version = "0.1.0"
+# Distribution name only: the import name stays `xmc`. Never `pip install xmc`,
+# which is an unrelated package on PyPI.
+name = "xmc-metrics"
+dynamic = ["version"]
 description = "XMC Python SDK for Metrics Collection & Management"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -35,7 +43,9 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "protobuf>=5.29.6,<7.0.0",
+]
 
 [project.optional-dependencies]
 keras = [
@@ -47,12 +57,16 @@ lightning = [
 
 
 [tool.setuptools]
-packages = ["xmc", "xmc.integrations"]
+packages = ["xmc", "xmc._protos", "xmc.integrations"]
 
 [tool.setuptools.package-dir]
 "xmc" = "."
+"xmc._protos" = "_protos"
 "xmc.integrations" = "integrations"
 
 [tool.setuptools.package-data]
 "xmc" = ["py.typed"]
+
+[tool.setuptools.dynamic]
+version = { attr = "xmc._version.__version__" }
 

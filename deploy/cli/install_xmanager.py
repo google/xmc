@@ -41,18 +41,20 @@ DEFAULT_XMANAGER_SPEC = "xmanager>=0.8.5.post1,<0.9.0"
 #   modules compiled against google/longrunning/operations.proto (see 941b7b7325).
 # - protobuf<7.0.0 keeps the environment on protobuf 6.x (matching xmanager)
 #   and prevents pip from selecting grpcio-tools releases that require
-#   protobuf>=7.0.0.
+#   protobuf>=7.0.0. The 5.29.6 floor matches xmc-metrics (sdks/python/xmc), whose
+#   generated metrics_pb2 refuses older runtimes; it is installed with --no-deps.
 RUNTIME_DEPENDENCIES = (
     "absl-py>=2.1.0",
     "google-auth>=2.28.0",
     "googleapis-common-protos>=1.63.0,<1.75.4",
     "grpcio>=1.62.0",
     "grpcio-tools>=1.62.0",
-    "protobuf>=4.25.0,<7.0.0",
+    "protobuf>=5.29.6,<7.0.0",
     "python-dotenv>=1.0.0",
     "requests>=2.32.0",
 )
 
+# Keep in sync with PROTO_PACKAGES in sdks/python/xmanager-cloud/build_staging.py.
 PROTO_PACKAGE_DIRS = (
     ("experiment", "experiment_state_server"),
     ("xid", "xid_service"),
@@ -76,8 +78,9 @@ VERIFIED_MODULES = (
 # Each must resolve from its repository directory, never from a same-named copy
 # bundled by another distribution (see verify_sdk_provenance). Today only `xdash` is
 # actually shadowed (by the xmanager wheel) and imported on the launcher side; `xmc` is
-# guarded for future-proofing. It is provenance-checked but not import-verified, because
-# `import xmc` needs `api.protos.metrics`, which this script does not compile.
+# guarded for future-proofing. It is provenance-checked but not import-verified,
+# because no launcher-side code imports it (its editable install compiles its own
+# `xmc._protos.metrics_pb2`, see sdks/python/xmc/setup.py).
 LOCAL_SDKS: Mapping[str, Path] = MappingProxyType(
     {
         "xdash": Path("sdks") / "python" / "xdash",

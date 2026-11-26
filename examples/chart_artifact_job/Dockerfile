@@ -15,16 +15,20 @@
 # Build from the repository root so the XMC SDK sources are inside the build context:
 #   docker build -f examples/chart_artifact_job/Dockerfile <repo-root>
 
-# `xmc.types` does `from api.protos.metrics import metrics_pb2`, and that module is
-# generated rather than checked in -- in-tree it comes from the Bazel py_proto_library in
-# api/protos/metrics/BUILD.bazel. There is no Bazel in the image, so compile the proto
-# with protoc in a builder stage and copy only the generated module into the runtime
-# stage, keeping grpcio-tools out of the final image.
+# The xmc-metrics package build compiles its own `xmc._protos.metrics_pb2` from
+# /app/api/protos/metrics/metrics.proto. This builder stage also compiles
+# `api.protos.metrics.metrics_pb2`, the module images used before xmc-metrics shipped
+# its own copy, and keeps grpcio-tools out of the final image. Both copies share one
+# descriptor, so loading both is safe; the stage goes away once images install
+# xmc-metrics from PyPI.
 FROM python:3.11-slim AS proto-builder
 
 WORKDIR /build
 
-RUN pip install --no-cache-dir grpcio-tools
+# Keep in sync with [build-system] in sdks/python/xmc/pyproject.toml. xmc-metrics
+# caps protobuf below 7, and generated code refuses older runtimes, so this copy
+# must be generated with the same protobuf 5.29 floor.
+RUN pip install --no-cache-dir grpcio-tools==1.70.0
 
 # metrics.proto imports nothing, so the repository root is the only proto path needed.
 COPY api/protos/metrics/metrics.proto /build/api/protos/metrics/metrics.proto
@@ -37,7 +41,8 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # api/, api/protos/ and api/protos/metrics/ carry no __init__.py; they resolve as PEP 420
-# namespace packages off PYTHONPATH below.
+# namespace packages off PYTHONPATH below. The copy also carries metrics.proto, which
+# the xmc-metrics install below compiles; keep the .proto in it.
 COPY --from=proto-builder /build/api /app/api
 
 # Install the XMC Python SDK used to log metrics.

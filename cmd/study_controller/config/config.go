@@ -115,12 +115,8 @@ func validateESSAudience(aud string) error {
 
 // validateOptionalNamespace checks that ns, when non-empty, is a valid Kubernetes DNS-1123 label.
 func validateOptionalNamespace(ns string) error {
-	if ns == "" {
-		return nil
-	}
 	isAlnum := func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') }
-	invalid := strings.IndexFunc(ns, func(r rune) bool { return r > 0x7f || (!isAlnum(byte(r)) && r != '-') }) >= 0
-	if len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) || invalid {
+	if ns != "" && (len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) || strings.IndexFunc(ns, func(r rune) bool { return r > 0x7f || (!isAlnum(byte(r)) && r != '-') }) >= 0) {
 		return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
 	}
 	return nil

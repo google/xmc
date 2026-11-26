@@ -141,9 +141,9 @@ func TestWaitForEndpoint_TransitionsAndSecretFreeLogs(t *testing.T) {
 	if !strings.Contains(logged, "Waiting for valid Vizier") || !strings.Contains(logged, "Resolved Vizier endpoint") {
 		t.Errorf("expected transition logs, got:\n%s", logged)
 	}
-	for _, secret := range []string{secretEndpoint, "s3cr3t", "user:s3cr3t", "bad-host"} {
-		if strings.Contains(logged, secret) {
-			t.Errorf("logs leaked secret fragment %q:\n%s", secret, logged)
+	for _, s := range []string{secretEndpoint, "s3cr3t", "user:s3cr3t", "bad-host"} {
+		if strings.Contains(logged, s) {
+			t.Errorf("logs leaked %q", s)
 		}
 	}
 }
@@ -151,11 +151,11 @@ func TestWaitForEndpoint_TransitionsAndSecretFreeLogs(t *testing.T) {
 func TestWaitForEndpoint_DeadlineAndNilGetter(t *testing.T) {
 	t.Parallel()
 	if _, err := WaitForEndpoint(context.Background(), nil, "xmc"); err == nil {
-		t.Fatal("WaitForEndpoint(nil) error = nil, want non-nil")
+		t.Fatal("WaitForEndpoint(nil) = nil, want error")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	if _, err := waitForEndpoint(ctx, &crreadertest.FakeGetter{}, "xmc", 10*time.Millisecond, 10*time.Millisecond); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("waitForEndpoint() error = %v, want context.DeadlineExceeded", err)
+		t.Errorf("waitForEndpoint() = %v, want DeadlineExceeded", err)
 	}
 }

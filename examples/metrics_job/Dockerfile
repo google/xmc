@@ -16,7 +16,10 @@ FROM python:3.11-slim AS proto-builder
 
 WORKDIR /build
 
-RUN pip install --no-cache-dir grpcio-tools
+# Keep in sync with [build-system] in sdks/python/xmc/pyproject.toml. xmc-metrics
+# caps protobuf below 7, and generated code refuses older runtimes, so this copy
+# must be generated with the same protobuf 5.29 floor.
+RUN pip install --no-cache-dir grpcio-tools==1.70.0
 
 COPY api/protos/metrics/metrics.proto /build/api/protos/metrics/metrics.proto
 RUN python3 -m grpc_tools.protoc -I /build --python_out=/build \
@@ -27,7 +30,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy compiled python proto package from builder stage
+# Copy compiled python proto package from builder stage. It also carries
+# api/protos/metrics/metrics.proto, which installing sdks/python/xmc (xmc-metrics)
+# compiles into xmc._protos; keep the .proto in this copy.
 COPY --from=proto-builder /build/api /app/api
 
 # Copy and install XMC Python SDK, protobuf, PyTorch (CPU), PyTorch Lightning, and Keras 3

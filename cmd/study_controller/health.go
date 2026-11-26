@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -73,17 +74,17 @@ func readinessCheck(redis, vizier pinger) http.HandlerFunc {
 			p    pinger
 		}{{"Redis", redis}, {"Vizier", vizier}} {
 			g.Go(func() error {
-				err := errors.New("probe not configured")
-				if dep.p != nil {
-					err = dep.p.Ping(pingCtx)
+				if dep.p == nil {
+					return fmt.Errorf("%s: probe not configured", dep.name)
 				}
-				if err != nil {
-					logging.Warn(pingCtx, "Readiness check failed", "dependency", dep.name, "error", err)
+				if err := dep.p.Ping(pingCtx); err != nil {
+					return fmt.Errorf("%s: %w", dep.name, err)
 				}
-				return err
+				return nil
 			})
 		}
 		if err := g.Wait(); err != nil {
+			logging.Warn(ctx, "Readiness check failed", "error", err)
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return
 		}

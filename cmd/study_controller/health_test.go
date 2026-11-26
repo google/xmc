@@ -74,8 +74,8 @@ func TestNewHTTPHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			vp := &vizierProbe{}
-			vp.Set(nil)
 			vp.Set(&fakePinger{err: tc.vizierErr})
+			vp.Set(nil)
 			(*vizierProbe)(nil).Set(&fakePinger{})
 			var redis pinger = &fakePinger{err: tc.pingErr}
 			if tc.nilRedis {

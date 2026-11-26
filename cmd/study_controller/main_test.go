@@ -293,7 +293,7 @@ func TestServeWithClient_ServesHealthzWhileWaitingForVizierAndCancelsCleanly(t *
 	waitHTTPStatus(t, addr, "/readyz", http.StatusServiceUnavailable)
 	cancel()
 	if err := <-done; err != nil {
-		t.Errorf("serveWithClient() after cancel = %v, want nil", err)
+		t.Errorf("serveWithClient() = %v, want nil", err)
 	}
 }
 
@@ -312,7 +312,7 @@ func mustListen(t *testing.T) net.Listener {
 	t.Helper()
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("net.Listen() error = %v", err)
+		t.Fatalf("net.Listen() = %v", err)
 	}
 	return lis
 }
@@ -323,18 +323,27 @@ func startPongRedisServer(t *testing.T, consumerCmds *atomic.Int32) string {
 	var mu sync.Mutex
 	var conns []net.Conn
 	var wg sync.WaitGroup
+	var closed bool
 	t.Cleanup(func() {
 		_ = lis.Close()
 		mu.Lock()
+		closed = true
 		for _, c := range conns {
 			_ = c.Close()
 		}
 		mu.Unlock()
 		wg.Wait()
 	})
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for conn, err := lis.Accept(); err == nil; conn, err = lis.Accept() {
 			mu.Lock()
+			if closed {
+				mu.Unlock()
+				_ = conn.Close()
+				return
+			}
 			conns = append(conns, conn)
 			mu.Unlock()
 			wg.Add(1)

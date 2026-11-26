@@ -73,6 +73,8 @@ class TestResolveTestScope(unittest.TestCase):
         self.assertFalse(is_non_code_file("deploy/ctk_v2/BUILD.bazel"))
         self.assertFalse(is_non_code_file("deploy/clickhouse/schema.sql"))
         self.assertFalse(is_non_code_file("deploy/deploy_dev_env.sh"))
+        self.assertTrue(is_non_code_file("test/packaging/xmc_metrics_install_test.py"))
+        self.assertFalse(is_non_code_file("test/e2e/lib/config.py"))
 
     def test_classify_modified_files_inverted_default_safety(self):
         # Brand new unknown backend folder MUST trigger backend code flag!
