@@ -7,7 +7,7 @@ Sequence-level documentation for XMC's principal request, actuation, and observa
 | Document | Covers |
 | :--- | :--- |
 | [Experiment Lifecycle](experiment_lifecycle.md) | Creating, reading, updating, and listing experiments; launch state; status; artifacts; status messages. |
-| [Study Lifecycle](study_lifecycle.md) | Hyperparameter Optimization (`STUDY`) runtime topology, reconcile tick stream, and per-study Redis lease locking. |
+| [Study Lifecycle](study_lifecycle.md) | Hyperparameter Optimization (`STUDY`) runtime topology, reconcile tick stream, per-study Redis lease locking, and the experiment-level parallel-coordinates chart. |
 | [Work Unit Lifecycle](work_unit_lifecycle.md) | Creating, stopping, restarting, and updating work units — the asynchronous actuation path end to end, plus global pause and resume scheduling. |
 | [Reconciliation](reconciliation.md) | How cluster state becomes persisted work unit state: JobSet and ClusterQueue reconcilers, Kueue sync worker, and the batcher. |
 | [Metrics & Observability](metrics_and_observability.md) | The metrics pipeline from training job to dashboard, plus logs, health, and resource observability. |

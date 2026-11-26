@@ -69,6 +69,8 @@ type Provider struct {
 	resolveEngine    EngineResolver
 	retryInterval    time.Duration
 	closeGracePeriod time.Duration
+	// studies is handed to every engine the Provider serves, for PARALLEL_COORDINATES plots.
+	studies StudyReader
 
 	// engine is read on every call and that read must never block. A reader lock would not do:
 	// it queues behind an in-flight dial, which is precisely the wait Engine promises callers it
@@ -106,6 +108,14 @@ func WithRetryInterval(interval time.Duration) ProviderOption {
 func WithCloseGracePeriod(gracePeriod time.Duration) ProviderOption {
 	return func(p *Provider) {
 		p.closeGracePeriod = gracePeriod
+	}
+}
+
+// WithStudyReader sets the reader of the study experiments that PARALLEL_COORDINATES plots are
+// drawn from. Without it, such plots fail with FailedPrecondition.
+func WithStudyReader(studies StudyReader) ProviderOption {
+	return func(p *Provider) {
+		p.studies = studies
 	}
 }
 
@@ -302,6 +312,7 @@ func (p *Provider) rebuild(ctx context.Context, fingerprint string, buildEngine 
 		closeEngine(engine)
 		return fmt.Errorf("failed to ping data engine: %w", err)
 	}
+	engine = engine.withStudyReader(p.studies)
 	old, stored := p.storeEngine(engine, fingerprint)
 	if !stored {
 		closeEngine(engine)
@@ -346,6 +357,7 @@ func (p *Provider) build(ctx context.Context) (*DataEngine, error) {
 	if engine == nil {
 		return nil, p.recordAttempt(fmt.Errorf("engine builder returned nil engine"))
 	}
+	engine = engine.withStudyReader(p.studies)
 
 	if _, stored := p.storeEngine(engine, fp); !stored {
 		closeEngine(engine)

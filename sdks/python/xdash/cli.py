@@ -288,6 +288,11 @@ def _handle_get_data(client: DashboardClient, args: argparse.Namespace) -> int:
             sys.stdout.write(f"Scatter series = {len(pdata.scatter_series.points)} points\n")
         elif content == "bar_data":
             sys.stdout.write(f"Bar buckets = {len(pdata.bar_data.buckets)}\n")
+        elif content == "parallel_coordinates_data":
+            pc = pdata.parallel_coordinates_data
+            sys.stdout.write(
+                f"Parallel coordinates = {len(pc.axes)} axes, {len(pc.trajectories)} trajectories\n"
+            )
         else:
             sys.stdout.write("Empty content\n")
     return 0
