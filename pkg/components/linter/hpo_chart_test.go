@@ -191,16 +191,13 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	for _, tc := range []struct {
 		relNS, wantArg, wantRB string
 		vals                   map[string]any
-	}{
-		{"xmc", "-components_namespace=xmc-custom", `namespace: "xmc"`, map[string]any{"namespace": "xmc-custom"}},
-		{"default", "-components_namespace=xmc", `namespace: "default"`, nil},
-	} {
+	}{{"xmc", "-components_namespace=xmc-custom", `namespace: "xmc"`, map[string]any{"namespace": "xmc-custom"}}, {"default", "-components_namespace=xmc", `namespace: "default"`, nil}} {
 		out, err := renderChartWithNamespace(hpoChartDir(t), "xmc-cmp-hpo", tc.relNS, withBridgeValues(tc.vals))
 		if err != nil {
 			t.Fatalf("renderChartWithNamespace(%s) failed: %v", tc.relNS, err)
 		}
-		if !strings.Contains(out[hpoDeploymentFile], tc.wantArg) || !strings.Contains(out[hpoRBACFile], tc.wantRB) {
-			t.Errorf("relNS=%s: want %q in Deployment and %q in RBAC", tc.relNS, tc.wantArg, tc.wantRB)
+		if !strings.Contains(out[hpoDeploymentFile], tc.wantArg) || !strings.Contains(out[hpoRBACFile], tc.wantRB) || strings.Count(out[hpoRBACFile], "namespace:") != 1 {
+			t.Errorf("relNS=%s: want %q in Deployment and only subject %q in RBAC", tc.relNS, tc.wantArg, tc.wantRB)
 		}
 	}
 }

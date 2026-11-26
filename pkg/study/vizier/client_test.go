@@ -47,13 +47,12 @@ func dialBufconn(t *testing.T, register func(*grpc.Server)) (*Client, func()) {
 		register(srv)
 	}
 	go func() { _ = srv.Serve(lis) }()
+	stop := func() { srv.Stop(); _ = lis.Close() }
 	c, err := dial("127.0.0.1:7077", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }))
 	if err != nil {
-		srv.Stop()
-		_ = lis.Close()
+		stop()
 		t.Fatalf("dial() = %v", err)
 	}
-	stop := func() { srv.Stop(); _ = lis.Close() }
 	t.Cleanup(func() { _ = c.Close(); stop() })
 	return c, stop
 }
