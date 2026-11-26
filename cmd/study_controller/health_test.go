@@ -41,26 +41,29 @@ func TestNewHTTPHandler(t *testing.T) {
 
 	unreachable := errors.New("dial tcp 10.0.0.3:6379: connect: connection refused")
 	tests := []struct {
-		name         string
-		method       string
-		path         string
-		pingErr      error
-		vizierErr    error
-		nilVizier    bool
-		typedNil     bool
-		unconfigured bool
-		wantStatus   int
-		wantContains string
+		name          string
+		method        string
+		path          string
+		pingErr       error
+		vizierErr     error
+		nilRedis      bool
+		unresolvedViz bool
+		typedNil      bool
+		unconfigured  bool
+		wantStatus    int
+		wantContains  string
 	}{
 		{name: "liveness", method: http.MethodGet, path: "/healthz", wantStatus: http.StatusOK, wantContains: "OK"},
 		{name: "liveness ignores Redis and Vizier outage", method: http.MethodGet, path: "/healthz", pingErr: unreachable, vizierErr: unreachable, wantStatus: http.StatusOK, wantContains: "OK"},
 		{name: "readiness with Redis and Vizier reachable", method: http.MethodGet, path: "/readyz", wantStatus: http.StatusOK, wantContains: "OK"},
+		{name: "readiness with nil redis", method: http.MethodGet, path: "/readyz", nilRedis: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Redis unreachable", method: http.MethodGet, path: "/readyz", pingErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Redis ping timeout", method: http.MethodGet, path: "/readyz", pingErr: context.DeadlineExceeded, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
-		{name: "readiness with Vizier unresolved", method: http.MethodGet, path: "/readyz", nilVizier: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with Vizier unresolved", method: http.MethodGet, path: "/readyz", unresolvedViz: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with typed-nil vizierProbe", method: http.MethodGet, path: "/readyz", typedNil: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with nil vizier interface", method: http.MethodGet, path: "/readyz", unconfigured: true, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "readiness with Vizier unreachable", method: http.MethodGet, path: "/readyz", vizierErr: unreachable, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
+		{name: "readiness with Vizier ping timeout", method: http.MethodGet, path: "/readyz", vizierErr: context.DeadlineExceeded, wantStatus: http.StatusServiceUnavailable, wantContains: "Service Unavailable"},
 		{name: "metrics exposes runtime stats", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "go_goroutines"},
 		{name: "metrics exposes reconcile ticks counter", method: http.MethodGet, path: "/metrics", wantStatus: http.StatusOK, wantContains: "xmc_study_controller_reconcile_ticks_total"},
 		{name: "unknown path", method: http.MethodGet, path: "/unknown", wantStatus: http.StatusNotFound},
@@ -71,16 +74,23 @@ func TestNewHTTPHandler(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			vp := &vizierProbe{}
+			vp.Set(nil)
 			vp.Set(&fakePinger{err: tc.vizierErr})
+			(*vizierProbe)(nil).Set(&fakePinger{})
+			var redis pinger = &fakePinger{err: tc.pingErr}
+			if tc.nilRedis {
+				redis = nil
+			}
 			var vizier pinger = vp
-			if tc.nilVizier {
+			switch {
+			case tc.unresolvedViz:
 				vizier = &vizierProbe{}
-			} else if tc.typedNil {
+			case tc.typedNil:
 				vizier = (*vizierProbe)(nil)
-			} else if tc.unconfigured {
+			case tc.unconfigured:
 				vizier = nil
 			}
-			handler := newHTTPHandler(&fakePinger{err: tc.pingErr}, vizier)
+			handler := newHTTPHandler(redis, vizier)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
 			if rec.Code != tc.wantStatus {
@@ -89,11 +99,10 @@ func TestNewHTTPHandler(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), tc.wantContains) {
 				t.Errorf("%s %s body = %q, want it to contain %q", tc.method, tc.path, rec.Body.String(), tc.wantContains)
 			}
-			if tc.pingErr != nil && strings.Contains(rec.Body.String(), tc.pingErr.Error()) {
-				t.Errorf("%s %s body = %q, want it not to expose the ping error", tc.method, tc.path, rec.Body.String())
-			}
-			if tc.vizierErr != nil && strings.Contains(rec.Body.String(), tc.vizierErr.Error()) {
-				t.Errorf("%s %s body = %q, want it not to expose the vizier error", tc.method, tc.path, rec.Body.String())
+			for _, depErr := range []error{tc.pingErr, tc.vizierErr} {
+				if depErr != nil && strings.Contains(rec.Body.String(), depErr.Error()) {
+					t.Errorf("%s %s body = %q, want it not to expose error %q", tc.method, tc.path, rec.Body.String(), depErr)
+				}
 			}
 		})
 	}

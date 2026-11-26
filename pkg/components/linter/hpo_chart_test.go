@@ -177,13 +177,7 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 		t.Errorf("expected a plain ServiceAccount without a Workload Identity annotation, got:\n%s", sa)
 	}
 	rbac := rendered[hpoRBACFile]
-	for _, wantSub := range []string{
-		"kind: Role",
-		"name: xmc-study-controller-components-reader",
-		`resourceNames: ["vizier"]`,
-		"kind: RoleBinding",
-		"name: xmc-study-controller-components-reader-binding",
-	} {
+	for _, wantSub := range []string{"kind: Role", "name: xmc-study-controller-components-reader", `resourceNames: ["vizier"]`, "kind: RoleBinding", "name: xmc-study-controller-components-reader-binding"} {
 		if !strings.Contains(rbac, wantSub) {
 			t.Errorf("expected %q in rendered rbac.yaml, got:\n%s", wantSub, rbac)
 		}
@@ -194,12 +188,20 @@ func TestHPOChart_BridgeReleaseRendersWorkload(t *testing.T) {
 	for _, f := range []string{hpoDeploymentFile, hpoServiceAccountFile, hpoRBACFile} {
 		assertWellFormedManifests(t, rendered[f])
 	}
-	customNS, err := renderChartWithValues(hpoChartDir(t), "xmc-cmp-hpo", withBridgeValues(map[string]any{"namespace": "xmc-custom"}))
-	if err != nil {
-		t.Fatalf("renderChartWithValues(namespace=xmc-custom) failed: %v", err)
-	}
-	if !strings.Contains(customNS[hpoDeploymentFile], "-components_namespace=xmc-custom") {
-		t.Errorf("expected -components_namespace=xmc-custom in Deployment, got:\n%s", customNS[hpoDeploymentFile])
+	for _, tc := range []struct {
+		relNS, wantArg, wantRB string
+		vals                   map[string]any
+	}{
+		{"xmc", "-components_namespace=xmc-custom", `namespace: "xmc"`, map[string]any{"namespace": "xmc-custom"}},
+		{"default", "-components_namespace=xmc", `namespace: "default"`, nil},
+	} {
+		out, err := renderChartWithNamespace(hpoChartDir(t), "xmc-cmp-hpo", tc.relNS, withBridgeValues(tc.vals))
+		if err != nil {
+			t.Fatalf("renderChartWithNamespace(%s) failed: %v", tc.relNS, err)
+		}
+		if !strings.Contains(out[hpoDeploymentFile], tc.wantArg) || !strings.Contains(out[hpoRBACFile], tc.wantRB) {
+			t.Errorf("relNS=%s: want %q in Deployment and %q in RBAC", tc.relNS, tc.wantArg, tc.wantRB)
+		}
 	}
 }
 

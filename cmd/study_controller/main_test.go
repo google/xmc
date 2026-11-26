@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -276,21 +277,14 @@ func TestServe_ReturnsListenerError(t *testing.T) {
 }
 
 func TestServeWithClient_ServesHealthzWhileWaitingForVizierAndCancelsCleanly(t *testing.T) {
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("net.Listen() error = %v", err)
-	}
-	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	lis := mustListen(t)
+	client := worker.NewRedisConsumer(startPongRedisServer(t, nil))
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	done := make(chan error, 1)
+	t.Cleanup(func() { cancel(); <-done })
 	go func() {
-		done <- serveWithClient(ctx, lis, client, nil, "xmc", func() (crreader.Getter, error) {
-			return &crreadertest.FakeGetter{}, nil
-		})
+		done <- serveWithClient(ctx, lis, client, nil, "xmc", func() (crreader.Getter, error) { return &crreadertest.FakeGetter{}, nil })
 	}()
-
 	addr := lis.Addr().String()
 	waitHTTPStatus(t, addr, "/healthz", http.StatusOK)
 	waitHTTPStatus(t, addr, "/readyz", http.StatusServiceUnavailable)
@@ -323,10 +317,25 @@ func mustListen(t *testing.T) net.Listener {
 func startPongRedisServer(t *testing.T, consumerCmds *atomic.Int32) string {
 	t.Helper()
 	lis := mustListen(t)
-	t.Cleanup(func() { _ = lis.Close() })
+	var mu sync.Mutex
+	var conns []net.Conn
+	var wg sync.WaitGroup
+	t.Cleanup(func() {
+		_ = lis.Close()
+		mu.Lock()
+		for _, c := range conns {
+			_ = c.Close()
+		}
+		mu.Unlock()
+		wg.Wait()
+	})
 	go func() {
 		for conn, err := lis.Accept(); err == nil; conn, err = lis.Accept() {
-			go serveFakeRedis(conn, consumerCmds)
+			mu.Lock()
+			conns = append(conns, conn)
+			mu.Unlock()
+			wg.Add(1)
+			go func(c net.Conn) { defer wg.Done(); serveFakeRedis(c, consumerCmds) }(conn)
 		}
 	}()
 	return lis.Addr().String()
@@ -335,30 +344,36 @@ func startPongRedisServer(t *testing.T, consumerCmds *atomic.Int32) string {
 func serveFakeRedis(c net.Conn, consumerCmds *atomic.Int32) {
 	defer c.Close()
 	r := bufio.NewReader(c)
+	replies := map[string]string{"HELLO": "-ERR unknown command\r\n", "CLIENT": "+OK\r\n", "XGROUP": "+OK\r\n", "XREADGROUP": "*-1\r\n", "XAUTOCLAIM": "*2\r\n$3\r\n0-0\r\n*0\r\n"}
 	for line, err := r.ReadString('\n'); err == nil; line, err = r.ReadString('\n') {
 		if !strings.HasPrefix(line, "*") {
 			continue
 		}
-		n, _ := strconv.Atoi(strings.TrimSpace(line[1:]))
+		n, err := strconv.Atoi(strings.TrimSpace(line[1:]))
+		if err != nil || n < 1 {
+			return
+		}
 		var cmd string
 		for i := 0; i < n; i++ {
-			_, err1 := r.ReadString('\n')
-			arg, err2 := r.ReadString('\n')
-			if err1 != nil || err2 != nil {
+			hdr, err := r.ReadString('\n')
+			sz, err2 := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(hdr, "$")))
+			if err != nil || !strings.HasPrefix(hdr, "$") || err2 != nil || sz < 0 {
+				return
+			}
+			buf := make([]byte, sz+2)
+			if _, err := io.ReadFull(r, buf); err != nil {
 				return
 			}
 			if i == 0 {
-				cmd = strings.ToUpper(strings.TrimSpace(arg))
+				cmd = strings.ToUpper(string(buf[:sz]))
 			}
 		}
-		if consumerCmds != nil && (cmd == "XGROUP" || cmd == "XREADGROUP") {
+		if consumerCmds != nil && (cmd == "XGROUP" || cmd == "XREADGROUP" || cmd == "XAUTOCLAIM") {
 			consumerCmds.Add(1)
 		}
-		reply := "+PONG\r\n"
-		if cmd == "HELLO" {
-			reply = "-ERR unknown command\r\n"
-		} else if cmd == "CLIENT" {
-			reply = "+OK\r\n"
+		reply, ok := replies[cmd]
+		if !ok {
+			reply = "+PONG\r\n"
 		}
 		_, _ = c.Write([]byte(reply))
 	}
@@ -383,6 +398,7 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 
 	getter := &atomicGetter{}
 	done := make(chan error, 1)
+	t.Cleanup(func() { cancel(); <-done })
 	go func() {
 		done <- serveWithClient(ctx, lis, client, nil, "xmc-custom", func() (crreader.Getter, error) { return getter, nil })
 	}()
@@ -395,13 +411,10 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	}
 
 	getter.mu.Lock()
-	getter.inner.Components = map[string]*unstructured.Unstructured{
-		"xmc-custom/vizier": {Object: map[string]any{
-			"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
-			"metadata": map[string]any{"name": "vizier", "namespace": "xmc-custom"},
-			"spec":     map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
-		}},
-	}
+	getter.inner.Components = map[string]*unstructured.Unstructured{"xmc-custom/vizier": {Object: map[string]any{
+		"apiVersion": "xmc.dev/v1alpha1", "kind": "Component", "metadata": map[string]any{"name": "vizier", "namespace": "xmc-custom"},
+		"spec": map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
+	}}}
 	getter.mu.Unlock()
 	waitHTTPStatus(t, addr, "/readyz", http.StatusOK)
 	for deadline := time.Now().Add(5 * time.Second); consumerCmds.Load() == 0 && time.Now().Before(deadline); {
@@ -419,16 +432,15 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 func TestServeWithClient_AbortsResolveOnHTTPFailure(t *testing.T) {
 	lis := mustListen(t)
 	lis.Close()
-	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
-	if err := serveWithClient(context.Background(), lis, client, nil, "xmc", func() (crreader.Getter, error) { return &crreadertest.FakeGetter{}, nil }); err == nil {
+	if err := serveWithClient(context.Background(), lis, worker.NewRedisConsumer("127.0.0.1:"+freePort(t)), nil, "xmc", func() (crreader.Getter, error) { return &crreadertest.FakeGetter{}, nil }); err == nil {
 		t.Fatal("serveWithClient() with closed listener = nil, want non-nil")
 	}
 }
 
 func TestServeWithClient_ReturnsGetterError(t *testing.T) {
-	lis := mustListen(t)
-	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
-	if err := serveWithClient(context.Background(), lis, client, nil, "xmc", func() (crreader.Getter, error) { return nil, errors.New("k8s config unavailable") }); err == nil {
-		t.Fatal("serveWithClient() with getter error = nil, want non-nil")
+	for _, fn := range []func() (crreader.Getter, error){nil, func() (crreader.Getter, error) { return nil, errors.New("k8s config unavailable") }} {
+		if err := serveWithClient(context.Background(), mustListen(t), worker.NewRedisConsumer("127.0.0.1:"+freePort(t)), nil, "xmc", fn); err == nil {
+			t.Fatal("serveWithClient() = nil, want non-nil")
+		}
 	}
 }
