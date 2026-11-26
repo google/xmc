@@ -1844,3 +1844,43 @@ func TestGenerateQuery_Unnest(t *testing.T) {
 		})
 	}
 }
+
+func TestDeduplicateSelects_MatchesSelectSQLStringOnPageTokenFields(t *testing.T) {
+	widField := TableField("wid")
+	table := TableView{
+		Name:       "Charts",
+		NameClause: safesql.New("Charts c"),
+		Cost:       10,
+		Fields: map[TableField]Member{
+			SingerIDTableField: {Name: SingerIDTableField, QueryLiteral: safesql.New("c.ChartId"), Type: filtervisitor.String, Selectable: true, Indexed: true},
+			widField:           {Name: widField, QueryLiteral: safesql.New("IFNULL(c.Wid, 0)"), SelectSQLString: safesql.New("c.Wid"), Type: filtervisitor.Integer, Selectable: true},
+		},
+		OrderedIndicesWithSortDirection: []UserOrderedIndex{{TableField: SingerIDTableField, SortOrder: Asc}},
+	}
+	qg, err := NewQueryGenerator([]TableView{table}, nil, nil, nil, DeduplicateSelects(true))
+	if err != nil {
+		t.Fatalf("NewQueryGenerator() failed: %v", err)
+	}
+	for _, tc := range []struct {
+		name         string
+		selectFields []TableField
+	}{
+		{name: "already in selectFields deduplicates by SelectSQLString", selectFields: []TableField{SingerIDTableField, widField}},
+		{name: "unselected page-token field appends SelectSQLString", selectFields: []TableField{SingerIDTableField}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt := spannerdialect.NewStatement(nil)
+			tfToIdx, _, err := qg.GenerateQuery(stmt, tc.selectFields, nil, nil, nil, []UserOrderedIndex{{TableField: widField, SortOrder: Asc}}, 0, 0, nil, nil)
+			if err != nil {
+				t.Fatalf("GenerateQuery() failed: %v", err)
+			}
+			const wantSQL = "SELECT c.ChartId, c.Wid FROM Charts c ORDER BY IFNULL(c.Wid, 0), c.ChartId"
+			if stmt.Spanner().SQL != wantSQL {
+				t.Errorf("GenerateQuery() SQL = %q, want %q", stmt.Spanner().SQL, wantSQL)
+			}
+			if diff := cmp.Diff(map[TableField]int{SingerIDTableField: 0, widField: 1}, tfToIdx); diff != "" {
+				t.Errorf("tfToIdx diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

@@ -237,27 +237,30 @@ func CombineFilters(parentFilter, filter string) string {
 }
 
 // BuildChartParentFilter translates a chart collection parent into a filter expression.
-// The only two parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
+// ListCharts serves three parents: "dashboards/{dashboard_id}", "experiments/{xid}/workUnits/{wid}"
+// and "experiments/{xid}". The chart schemas expose a NULL Charts.Wid as wid 0, which no work unit
+// has, so "wid = 0" selects the experiment-level charts.
 func BuildChartParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
 	}
-	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		withPrefix := "dashboards/" + strings.TrimPrefix(parent, "dashboards/")
-		dashID, err := validator.ValidateDashboardName(withPrefix)
-		if err != nil {
+	if !strings.Contains(parent, "/") {
+		parent = "dashboards/" + parent
+	}
+	parsed, err := validator.ParseChartParent(parent)
+	if err != nil {
+		if strings.HasPrefix(parent, "dashboards/") {
 			return "", fmt.Errorf("invalid dashboard parent name: %w", err)
 		}
-		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
-	}
-	if strings.HasPrefix(parent, "experiments/") {
-		xid, wid, err := validator.ValidateWorkUnitName(parent)
-		if err != nil {
-			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
+		if strings.HasPrefix(parent, "experiments/") {
+			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
 		}
-		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
+		return "", fmt.Errorf("unsupported parent format %q: %w", parent, err)
 	}
-	return "", fmt.Errorf("unsupported parent format: %q", parent)
+	if parsed.DashboardID != "" {
+		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", parsed.DashboardID, parent), nil
+	}
+	return fmt.Sprintf("xid = %d AND wid = %d", parsed.XID, parsed.WID), nil
 }
 
 // ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
@@ -300,13 +303,9 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract chart ID from %q: %w", chart.GetName(), err)
 	}
-	var wid any
-	if chart.GetWid() > 0 {
-		wid = chart.GetWid()
-	}
 	return map[string]any{
 		"chart_id": chartID,
-		"wid":      wid,
+		"wid":      chart.GetWid(),
 	}, nil
 }
 

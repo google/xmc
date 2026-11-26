@@ -364,15 +364,32 @@ func ValidateListChartsRequest(in *spb.ListChartsRequest) error {
 	return nil
 }
 
-// ValidateChartParentName validates a chart collection parent, which may be a dashboard or a work unit.
+// ParsedChartParent describes a validated ListCharts collection parent. Either DashboardID is
+// non-empty (for dashboards/{id}), or XID > 0 (with WID > 0 for work unit parents and WID == 0 for
+// experiment parents).
+type ParsedChartParent struct {
+	DashboardID string
+	XID         int64
+	WID         int64
+}
+
+// ParseChartParent parses and validates a chart collection parent ("dashboards/{dashboard_id}",
+// "experiments/{xid}/workUnits/{wid}", or "experiments/{xid}").
+func ParseChartParent(parent string) (ParsedChartParent, error) {
+	if dashID, err := ValidateDashboardName(parent); err == nil {
+		return ParsedChartParent{DashboardID: dashID}, nil
+	}
+	if xid, wid, err := validateExperimentOrWorkUnitParent(parent); err == nil {
+		return ParsedChartParent{XID: xid, WID: wid}, nil
+	}
+	return ParsedChartParent{}, fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}', 'experiments/{xid}/workUnits/{wid}', or 'experiments/{xid}': %w", grpcerr.ErrInvalidArgument)
+}
+
+// ValidateChartParentName validates a chart collection parent, which may be a dashboard, a work unit,
+// or an experiment (for its experiment-level charts).
 func ValidateChartParentName(parent string) error {
-	if _, err := ValidateDashboardName(parent); err == nil {
-		return nil
-	}
-	if _, _, err := ValidateWorkUnitName(parent); err == nil {
-		return nil
-	}
-	return fmt.Errorf("parent must be in the format 'dashboards/{dashboard_id}' or 'experiments/{xid}/workUnits/{wid}': %w", grpcerr.ErrInvalidArgument)
+	_, err := ParseChartParent(parent)
+	return err
 }
 
 // ValidateUpdateChartRequest validates the given UpdateChartRequest.

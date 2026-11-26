@@ -68,9 +68,9 @@ flowchart LR
     SC -->|"GetExperiment(experiments/{xid})<br/>(WI GSA Google ID token)"| ESS
     SC -.->|"Invalid payload / exhausted retries"| DLQ
 
-    Client -->|"CreateChart(experiments/{xid})<br/>/ getData"| DS
+    Client -->|"CreateChart / ListCharts / getData<br/>(experiments/{xid})"| DS
     DS -->|"CheckUserAuthorization"| XID
-    DS -->|"read StudyConfig + WorkUnits"| DB
+    DS -->|"read Charts + StudyConfig + WorkUnits"| DB
 ```
 
 Key boundaries in this topology:
@@ -165,14 +165,19 @@ sequenceDiagram
     Client->>DS: CreateChart(parent=experiments/{xid}, PARALLEL_COORDINATES plot)
     DS->>XID: CheckUserAuthorization(xids/{xid}, WRITER)
     DS->>DB: insert Charts row (Wid NULL)
+    Client->>DS: GET /v1/experiments/{xid}/charts
+    DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
+    DS->>DB: list Charts rows (Xid = xid AND Wid IS NULL)
+    DS-->>Client: ListChartsResponse (experiment-level charts only)
     Client->>DS: GET /v1/experiments/{xid}/charts/{chart}:getData
     DS->>XID: CheckUserAuthorization(xids/{xid}, READER)
     DS->>DB: read the experiment's StudyConfig and page through all work units
     DS-->>Client: ParallelCoordinatesData (axes, objective, trajectories)
 ```
 
-- **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created under
-  the parent `experiments/{xid}`, with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
+- **Experiment-level charts**: named `experiments/{xid}/charts/{chart}`, created and listed under
+  the parent `experiments/{xid}` (`ListCharts` returns only that experiment's experiment-level charts
+  and never its work unit charts), with `Chart.wid` 0 (stored as a `NULL` `Charts.Wid`, migration 021).
   They may only hold `PARALLEL_COORDINATES` plots, and work unit charts may not hold any
   (`INVALID_ARGUMENT`). Access follows the experiment's XID ACL, like work unit charts.
 - **Axes**: one axis per `StudyConfig` parameter (double or integer range, categorical values in

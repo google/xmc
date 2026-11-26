@@ -469,6 +469,11 @@ func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
 	assertWidNull()
 }
 
+func TestListCharts_ParentExperiment(t *testing.T) {
+	repo, _ := setupDashboardRepository(context.Background(), t)
+	storagetest.VerifyListChartsParentExperiment(context.Background(), t, repo)
+}
+
 func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
 	repo, _ := setupDashboardRepository(context.Background(), t)
 	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, repo)
@@ -533,11 +538,11 @@ func TestRepository_ValidationAndNotFoundErrors(t *testing.T) {
 	if _, _, err := repo.ListCharts(ctx, "", 0, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListCharts(pageSize=0) = %v, want ErrInvalidArgument", err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", 0); err == nil || !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts(experiment-only parent) = %v, want work unit parent error", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "experiment parent name") {
+		t.Errorf("ListCharts(zero xid experiment parent) = %v, want ErrInvalidArgument with experiment parent context", err)
 	}
-	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); err == nil {
-		t.Error("ListCharts(bad parent) = nil, want error")
+	if _, _, err := repo.ListCharts(ctx, "bad/parent/format", 10, "", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ListCharts(bad parent) = %v, want ErrInvalidArgument", err)
 	}
 	if _, _, err := repo.ListCharts(ctx, "", 10, "invalid-token-!@#", "", "", 0); !errors.Is(err, grpcerr.ErrInvalidArgument) {
 		t.Errorf("ListCharts(bad pageToken) = %v, want ErrInvalidArgument", err)

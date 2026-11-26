@@ -822,15 +822,19 @@ func appendSelectMembersClause(stmt queryfilter.Statement, selectMembers []Membe
 		if sf.NeedGroupBy {
 			needGroupBy = true
 		}
-		selectSQL := sf.QueryLiteral
-		if sf.SelectSQLString != safesql.EmptyString() {
-			selectSQL = sf.SelectSQLString
-		}
+		selectSQL := memberSelectSQL(sf)
 		stmt.AppendSQL(selectSQL)
 		selectedMembers[selectSQL] = selectIdx
 		selectIdx++
 	}
 	return selectedMembers, selectIdx, needGroupBy
+}
+
+func memberSelectSQL(m Member) safesql.TrustedSQLString {
+	if m.SelectSQLString != safesql.EmptyString() {
+		return m.SelectSQLString
+	}
+	return m.QueryLiteral
 }
 
 func buildOrderByAndPageTokenFields(fromTable TableView, userOrderBy []UserOrderedIndex, equalityFilters map[TableField]bool) ([]UserOrderedIndex, []UserOrderedIndex) {
@@ -868,17 +872,18 @@ func (q *queryGen) appendPageTokenSelects(stmt queryfilter.Statement, fromTable 
 		if !ok {
 			return nil, status.Errorf(codes.Internal, "%s", fmt.Sprintf("unable to find field %v in table %v", t, fromTable))
 		}
-		if index, ok := selectedMembers[f.QueryLiteral]; q.options.deduplicateSelects && ok {
+		selectSQL := memberSelectSQL(f)
+		if index, ok := selectedMembers[selectSQL]; q.options.deduplicateSelects && ok {
 			tfToIdx[t.TableField] = index
 			continue
 		}
 		if selectIdx > 0 {
 			stmt.AppendSQL(safesql.New(", "))
 		}
-		stmt.AppendSQL(f.QueryLiteral)
+		stmt.AppendSQL(selectSQL)
 		tfToIdx[t.TableField] = selectIdx
 		if q.options.deduplicateSelects {
-			selectedMembers[f.QueryLiteral] = selectIdx
+			selectedMembers[selectSQL] = selectIdx
 		}
 		selectIdx++
 	}

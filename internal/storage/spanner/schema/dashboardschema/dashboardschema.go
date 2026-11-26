@@ -169,13 +169,15 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			// Experiment-level charts store a NULL Wid, which filters as wid 0 (never a work unit ID) but
+			// is still selected as NULL.
 			WidTableField: {
-				Name:         WidTableField,
-				QueryLiteral: safesql.New("c.Wid"),
-				Type:         filtervisitor.Integer,
-				Selectable:   true,
-				Indexed:      false,
-				Nullable:     true,
+				Name:            WidTableField,
+				QueryLiteral:    safesql.New("IFNULL(c.Wid, 0)"),
+				SelectSQLString: safesql.New("c.Wid"),
+				Type:            filtervisitor.Integer,
+				Selectable:      true,
+				Indexed:         false,
 			},
 			PlotLayoutTableField: {
 				Name:         PlotLayoutTableField,
@@ -370,13 +372,15 @@ var (
 				Selectable:   true,
 				Indexed:      false,
 			},
+			// Experiment-level charts store a NULL Wid, which filters as wid 0 (never a work unit ID) but
+			// is still selected as NULL.
 			WidTableField: {
-				Name:         WidTableField,
-				QueryLiteral: safesql.New("c.Wid"),
-				Type:         filtervisitor.Integer,
-				Selectable:   true,
-				Indexed:      false,
-				Nullable:     true,
+				Name:            WidTableField,
+				QueryLiteral:    safesql.New("IFNULL(c.Wid, 0)"),
+				SelectSQLString: safesql.New("c.Wid"),
+				Type:            filtervisitor.Integer,
+				Selectable:      true,
+				Indexed:         false,
 			},
 			PlotLayoutTableField: {
 				Name:         PlotLayoutTableField,
