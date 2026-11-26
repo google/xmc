@@ -138,11 +138,7 @@ func serveWithClient(
 		}
 		return nil
 	}
-	defer func() {
-		if err := vizierClient.Close(); err != nil {
-			logging.Warn(ctx, "Failed to close Vizier client", "error", err)
-		}
-	}()
+	defer func() { _ = vizierClient.Close() }()
 
 	var reconcile worker.ReconcileFunc
 	if newReconciler != nil {

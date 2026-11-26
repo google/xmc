@@ -98,19 +98,18 @@ func convertParameter(idx int, p *spb.ParameterSpec, seen map[string]struct{}) (
 	return out, nil
 }
 
+var scaleTypeMap = map[spb.ParameterSpec_ScaleType]vizierpb.StudySpec_ParameterSpec_ScaleType{
+	spb.ParameterSpec_SCALE_TYPE_UNSPECIFIED: vizierpb.StudySpec_ParameterSpec_SCALE_TYPE_UNSPECIFIED,
+	spb.ParameterSpec_LINEAR:                 vizierpb.StudySpec_ParameterSpec_UNIT_LINEAR_SCALE,
+	spb.ParameterSpec_LOG:                    vizierpb.StudySpec_ParameterSpec_UNIT_LOG_SCALE,
+	spb.ParameterSpec_REVERSE_LOG:            vizierpb.StudySpec_ParameterSpec_UNIT_REVERSE_LOG_SCALE,
+}
+
 func convertScaleType(idx int, s spb.ParameterSpec_ScaleType) (vizierpb.StudySpec_ParameterSpec_ScaleType, error) {
-	switch s {
-	case spb.ParameterSpec_SCALE_TYPE_UNSPECIFIED:
-		return vizierpb.StudySpec_ParameterSpec_SCALE_TYPE_UNSPECIFIED, nil
-	case spb.ParameterSpec_LINEAR:
-		return vizierpb.StudySpec_ParameterSpec_UNIT_LINEAR_SCALE, nil
-	case spb.ParameterSpec_LOG:
-		return vizierpb.StudySpec_ParameterSpec_UNIT_LOG_SCALE, nil
-	case spb.ParameterSpec_REVERSE_LOG:
-		return vizierpb.StudySpec_ParameterSpec_UNIT_REVERSE_LOG_SCALE, nil
-	default:
-		return 0, fmt.Errorf("%w: parameter[%d] unsupported scale_type %d", study.ErrInvalidStudyConfig, idx, int32(s))
+	if mapped, ok := scaleTypeMap[s]; ok {
+		return mapped, nil
 	}
+	return 0, fmt.Errorf("%w: parameter[%d] unsupported scale_type %d", study.ErrInvalidStudyConfig, idx, int32(s))
 }
 
 func convertDoubleSpec(idx int, s *spb.DoubleValueSpec, isLog bool) (*vizierpb.StudySpec_ParameterSpec_DoubleValueSpec_, error) {
