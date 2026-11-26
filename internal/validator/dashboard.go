@@ -111,8 +111,8 @@ func ValidateCreateDashboardRequest(in *spb.CreateDashboardRequest) error {
 }
 
 // validateInlineCharts validates the charts created alongside a dashboard. Their names and IDs are
-// assigned by the server, so only the caller-supplied fields are checked: a title, and the work unit
-// coordinates that decide which experiment's ACL governs the write.
+// assigned by the server, so only the caller-supplied fields are checked: a title, the work unit
+// coordinates that decide which experiment's ACL governs the write, and the work-unit plot specs.
 func validateInlineCharts(charts []*spb.Chart) error {
 	for i, chart := range charts {
 		if chart == nil {
@@ -126,6 +126,9 @@ func validateInlineCharts(charts []*spb.Chart) error {
 		}
 		if chart.GetWid() <= 0 {
 			return fmt.Errorf("charts[%d].wid %d must be a positive work unit ID: %w", i, chart.GetWid(), grpcerr.ErrInvalidArgument)
+		}
+		if err := ValidateChartPlots(chart.GetPlots(), false); err != nil {
+			return fmt.Errorf("charts[%d]: %w", i, err)
 		}
 	}
 	return nil
@@ -302,18 +305,28 @@ func ValidateCreateChartRequest(in *spb.CreateChartRequest) error {
 	if in.GetChart().GetWid() != wuWid {
 		return fmt.Errorf("chart.wid %d must match parent work unit wid %d (0 for an experiment-level chart): %w", in.GetChart().GetWid(), wuWid, grpcerr.ErrInvalidArgument)
 	}
-	if err := validateChartPlotIDs(in.GetChart().GetPlots()); err != nil {
-		return err
-	}
-	return ValidateChartPlotTypes(in.GetChart().GetPlots(), wuWid == 0)
+	return ValidateChartPlots(in.GetChart().GetPlots(), wuWid == 0)
 }
 
-// validateChartPlotIDs checks that every non-nil plot carries a non-whitespace, unique plot_id.
-func validateChartPlotIDs(plots []*spb.PlotSpec) error {
+// IsExperimentLevelChart reports whether chart belongs to an experiment without a work unit.
+func IsExperimentLevelChart(chart *spb.Chart) bool {
+	return chart.GetXid() > 0 && chart.GetWid() == 0
+}
+
+// ValidateChartPlots validates both plot IDs and chart-level plot types.
+func ValidateChartPlots(plots []*spb.PlotSpec, experimentLevel bool) error {
+	if err := ValidateChartPlotIDs(plots); err != nil {
+		return err
+	}
+	return ValidateChartPlotTypes(plots, experimentLevel)
+}
+
+// ValidateChartPlotIDs checks that every plot is non-nil and carries a non-whitespace, unique plot_id.
+func ValidateChartPlotIDs(plots []*spb.PlotSpec) error {
 	seen := make(map[string]bool, len(plots))
 	for i, plot := range plots {
 		if plot == nil {
-			continue
+			return fmt.Errorf("plots[%d] cannot be nil: %w", i, grpcerr.ErrInvalidArgument)
 		}
 		id := plot.GetPlotId()
 		if strings.TrimSpace(id) == "" {
@@ -411,19 +424,24 @@ func ValidateUpdateChartRequest(in *spb.UpdateChartRequest) error {
 		if strings.TrimSpace(chart.GetTitle()) == "" {
 			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
 		}
-		return nil
+		return ValidateChartPlotIDs(chart.GetPlots())
 	}
-	return validateChartUpdateMask(chart.GetTitle(), in.GetUpdateMask().GetPaths())
+	return validateChartUpdateMask(chart, in.GetUpdateMask().GetPaths())
 }
 
 // validateChartUpdateMask verifies update mask paths and associated field constraints for a chart.
-func validateChartUpdateMask(title string, paths []string) error {
+func validateChartUpdateMask(chart *spb.Chart, paths []string) error {
 	for _, path := range paths {
 		if !allowedUpdateChartPaths[path] {
 			return fmt.Errorf("unsupported update_mask path %q, allowed paths are: title, description, plots, plot_layout: %w", path, grpcerr.ErrInvalidArgument)
 		}
-		if path == "title" && strings.TrimSpace(title) == "" {
+		if path == "title" && strings.TrimSpace(chart.GetTitle()) == "" {
 			return fmt.Errorf("chart title cannot be empty or contain only whitespaces: %w", grpcerr.ErrInvalidArgument)
+		}
+		if path == "plots" {
+			if err := ValidateChartPlotIDs(chart.GetPlots()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

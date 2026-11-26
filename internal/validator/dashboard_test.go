@@ -348,6 +348,30 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{
+			name: "invalid_request_inline_chart_parallel_coordinates",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Study", Xid: 4321, Wid: 1, Plots: parallelCoordinatesPlots()}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_empty_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "  ", Type: spb.PlotType_SCATTER}}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_duplicate_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1464,6 +1488,36 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{
+			name: "full_update_empty_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: " "}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_nil_plot",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{nil}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_plots_duplicate_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_title_ignores_invalid_plots",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: ""}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1557,6 +1611,47 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 
 func parallelCoordinatesPlots() []*spb.PlotSpec {
 	return []*spb.PlotSpec{{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}}
+}
+
+func TestValidateChartPlotIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		plots   []*spb.PlotSpec
+		wantErr error
+	}{
+		{name: "empty slice"},
+		{name: "unique non-whitespace IDs", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p2"}}},
+		{name: "nil plot element", plots: []*spb.PlotSpec{nil}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty plot_id", plots: []*spb.PlotSpec{{PlotId: ""}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace plot_id", plots: []*spb.PlotSpec{{PlotId: " \t "}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate plot_id", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}, wantErr: grpcerr.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateChartPlotIDs(tc.plots); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotIDs() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateChartPlotsAndLevelHelpers(t *testing.T) {
+	if !IsExperimentLevelChart(&spb.Chart{Xid: 1}) {
+		t.Error("IsExperimentLevelChart(xid=1, wid=0) = false, want true")
+	}
+	for _, c := range []*spb.Chart{nil, {Xid: 0}, {Xid: 1, Wid: 2}} {
+		if IsExperimentLevelChart(c) {
+			t.Errorf("IsExperimentLevelChart(%v) = true, want false", c)
+		}
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), true); err != nil {
+		t.Errorf("ValidateChartPlots(parallel, true) unexpected error: %v", err)
+	}
+	if err := ValidateChartPlots([]*spb.PlotSpec{{PlotId: " ", Type: spb.PlotType_SCATTER}}, false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(whitespace) error = %v, want ErrInvalidArgument", err)
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(parallel, false) error = %v, want ErrInvalidArgument", err)
+	}
 }
 
 func TestValidateChartPlotTypes(t *testing.T) {
