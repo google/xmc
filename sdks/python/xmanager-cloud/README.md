@@ -42,6 +42,24 @@ pip install --no-binary xmanager-cloud sdks/python/xmanager-cloud/dist/xmanager_
 compiles `grpcio-tools` from source. The wheel is pure Python and installs on every supported
 version.
 
+## Compatibility with legacy `xmanager`
+
+`xmanager` releases before `0.9.0rc1` (notably `0.8.5.post1`) can bundle their own
+`xmanager_cloud` protos and `xdash`.
+Loading both copies registers the `cloud.xmanager.v1` descriptors twice and crashes the process,
+so importing `xmanager_cloud` with such a release installed raises an `ImportError` (provided
+`xmanager-cloud` was installed last; a legacy `xmanager` installed afterwards overwrites the
+check). Both
+distributions own the same files, so upgrading `xmanager` deletes them; reinstall
+`xmanager-cloud` afterwards:
+
+```bash
+pip install -U "xmanager>=0.9.0"  # add --pre while only a 0.9.0 release candidate exists
+pip install --force-reinstall --no-deps xmanager-cloud
+```
+
+Environments without `xmanager` are unaffected.
+
 ## Testing
 
 - `bazel test //sdks/python/xmanager-cloud/...` covers the build staging and smoke-check
@@ -49,5 +67,5 @@ version.
 - [`xmanager-cloud-package.yml`](../../../.github/workflows/xmanager-cloud-package.yml) builds the
   wheel and sdist, installs each into clean virtualenvs on Python 3.11–3.14 against the
   protobuf floor (`5.29.6`) and the latest `<7` release, then runs
-  [`install_smoke_check.py`](install_smoke_check.py) against the installed package. The sdist is
-  not installed on Python 3.14 (see [Building](#building)).
+  [`install_smoke_check.py`](install_smoke_check.py) and the `xmanager_cloud` unit tests against
+  the installed package. The sdist is not installed on Python 3.14 (see [Building](#building)).

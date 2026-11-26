@@ -19,7 +19,7 @@ import tempfile
 import types
 import unittest
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from unittest import mock
 
 import build_staging
@@ -148,9 +148,48 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
         )
 
 
+class PackagingFailuresTest(InstallSmokeCheckTestCase):
+    def _packaging_failures(self, files: list[str] | None) -> dict[str, str]:
+        paths = None if files is None else [PurePosixPath(name) for name in files]
+        with mock.patch.object(install_smoke_check.metadata, "files", return_value=paths) as found:
+            failures = install_smoke_check.packaging_failures()
+        found.assert_called_once_with("xmanager-cloud")
+        return failures
+
+    def test_no_test_modules_passes(self) -> None:
+        files = ["xmanager_cloud/_version_guard.py", "xdash/cli.py"]
+
+        self.assertEqual(self._packaging_failures(files), {})
+
+    def test_packaged_test_modules_fail(self) -> None:
+        files = ["xmanager_cloud/_version_guard_test.py", "xdash/cli_test.py", "xdash/cli.py"]
+
+        self.assertEqual(
+            self._packaging_failures(files),
+            {"packaged tests": "xdash/cli_test.py, xmanager_cloud/_version_guard_test.py"},
+        )
+
+    def test_missing_record_fails(self) -> None:
+        self.assertEqual(
+            self._packaging_failures(None),
+            {"packaged tests": "xmanager-cloud has no RECORD file list"},
+        )
+
+    def test_distribution_not_installed_fails(self) -> None:
+        with mock.patch.object(
+            install_smoke_check.metadata, "files", side_effect=metadata.PackageNotFoundError
+        ):
+            failures = install_smoke_check.packaging_failures()
+
+        self.assertEqual(failures, {"packaged tests": "xmanager-cloud is not installed"})
+
+
 class MainTest(InstallSmokeCheckTestCase):
     def _main(
-        self, import_failures: dict[str, str], env_failures: dict[str, str] | None = None
+        self,
+        import_failures: dict[str, str],
+        env_failures: dict[str, str] | None = None,
+        packaging_failures: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, object]]:
         with (
             mock.patch.object(build_staging, "resolve_source_layout"),
@@ -158,6 +197,9 @@ class MainTest(InstallSmokeCheckTestCase):
             mock.patch.object(install_smoke_check, "import_failures", return_value=import_failures),
             mock.patch.object(
                 install_smoke_check, "environment_failures", return_value=env_failures or {}
+            ),
+            mock.patch.object(
+                install_smoke_check, "packaging_failures", return_value=packaging_failures or {}
             ),
             mock.patch("builtins.print") as printed,
         ):
@@ -183,6 +225,13 @@ class MainTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(status, 1)
         self.assertEqual(output["failures"], {"xmanager": "must not be installed, found 0.8.5"})
+
+    def test_packaging_failure_exits_one(self) -> None:
+        packaged = {"packaged tests": "xmanager_cloud/_version_guard_test.py"}
+        status, output = self._main({}, packaging_failures=packaged)
+
+        self.assertEqual(status, 1)
+        self.assertEqual(output["failures"], packaged)
 
     def test_missing_sources_exit_two_with_json_error(self) -> None:
         with (
