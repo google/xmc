@@ -29,8 +29,15 @@ py_library(
         "src/xm_cloud/cli/credentials.py",
         "src/xm_cloud/cli/logout_command.py",
         "src/xm_cloud/cli/main.py",
+        "src/xm_cloud/cli/terminal_text.py",
     ],
     imports = ["src"],
+)
+
+py_test(
+    name = "terminal_text_test",
+    srcs = ["src/xm_cloud/cli/terminal_text_test.py"],
+    deps = [":xm_cloud_cli"],
 )
 
 py_test(

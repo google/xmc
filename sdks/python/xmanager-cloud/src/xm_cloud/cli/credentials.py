@@ -19,6 +19,7 @@ Uses only the standard library, so it works without `xmanager`.
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import os
 import pathlib
@@ -26,7 +27,7 @@ import stat
 import tempfile
 import urllib.parse
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, BinaryIO
 
 NO_SERVER_MESSAGE = (
     "No XManager on Cloud (xm_cloud) deployment configured"
@@ -38,6 +39,9 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _UNSPECIFIED_HOSTS = frozenset({"0.0.0.0"})
 _LOCAL_HOSTS = _LOOPBACK_HOSTS | _UNSPECIFIED_HOSTS  # Same set as xdash.auth.LOCAL_HOSTS.
 _RESET_HINT = "Run `xmc logout --all` to reset."
+# A cached entry is a few KiB, so 1 MiB holds hundreds of deployments while
+# keeping a hand-edited or misnamed file from exhausting memory.
+_MAX_CREDENTIALS_BYTES = 1 << 20
 
 
 class AuthError(Exception):
@@ -45,22 +49,52 @@ class AuthError(Exception):
 
 
 def _reject_unsafe_target(raw: str, what: str) -> None:
-    """Rejects `raw` if it has whitespace, control characters, userinfo, a query, or a fragment.
+    """Rejects `raw` if it has unsafe characters, userinfo, a query, or a fragment.
 
-    The error never echoes `raw`, which may embed credentials or tokens.
+    Unsafe characters are whitespace and non-printable characters: C0/C1 control
+    characters, Unicode format characters such as bidi overrides, and the lone
+    surrogates that stand for undecodable bytes in `os.environ`. The error never
+    echoes `raw`, which may embed credentials or tokens.
+
+    Args:
+        raw: Deployment URL, domain, or gRPC target read from the environment.
+        what: Name of the value, used in the error message.
+
+    Raises:
+        AuthError: If `raw` is unsafe.
     """
-    if any(ch.isspace() or ord(ch) < 0x20 or ord(ch) == 0x7F for ch in raw):
-        raise AuthError(f"Invalid {what}: whitespace or control characters are not allowed.")
+    if any(ch.isspace() or not ch.isprintable() for ch in raw):
+        raise AuthError(f"Invalid {what}: whitespace or non-printable characters are not allowed.")
     if any(ch in raw for ch in "@?#"):
         raise AuthError(f"Invalid {what}: credentials, a query, or a fragment are not allowed.")
+
+
+def _strip_grpc_scheme(target: str) -> str | None:
+    """Removes a `dns:///`, `dns://<authority>/`, or `grpc://` prefix from `target`.
+
+    Args:
+        target: Lowercased gRPC target.
+
+    Returns:
+        `target` without its prefix (any later `/` is kept, so the caller sees the
+        path), or None for a `dns://<authority>` target without a `/`.
+    """
+    for prefix in ("dns:///", "grpc://"):
+        if target.startswith(prefix):
+            return target.removeprefix(prefix)
+    if target.startswith("dns://"):
+        _, slash, rest = target.removeprefix("dns://").partition("/")
+        return rest if slash else None
+    return target
 
 
 def _extract_grpc_host(endpoint: str) -> str:
     """Extracts the lowercased hostname from a gRPC target.
 
-    A bare target with a path (`grpc.x.dev:443/extra`) is invalid: `xdash.auth`
-    reads the last path segment as the host, so accepting it would write a cache
-    key that `xdash` never looks up.
+    A target with a path (`grpc.x.dev:443/extra`, `dns:///grpc.x.dev:443/extra`)
+    is invalid: `xdash.auth` reads the last path segment as the host, so accepting
+    it would write a cache key that `xdash` never looks up. An unbracketed IPv6
+    address (`::1`) is accepted without a port, as in `xdash.auth`.
 
     Args:
         endpoint: `XMANAGER_ENDPOINT` value, optionally `dns:///`, `dns://<authority>/`,
@@ -69,11 +103,11 @@ def _extract_grpc_host(endpoint: str) -> str:
     Returns:
         The hostname, or "" if the target is invalid, has a path, or has port 0.
     """
-    target = endpoint.strip().lower()
-    for prefix in ("dns:///", "dns://", "grpc://"):
-        if target.startswith(prefix):
-            target = target.removeprefix(prefix).rsplit("/", 1)[-1]
-            break
+    target = _strip_grpc_scheme(endpoint.strip().lower())
+    if target is None:
+        return ""
+    if target.count(":") > 1 and not target.startswith("["):
+        return target if _is_ipv6_address(target) else ""
     try:
         parts = urllib.parse.urlsplit(f"//{target}")
         port = parts.port
@@ -82,6 +116,14 @@ def _extract_grpc_host(endpoint: str) -> str:
     if parts.path or (port is not None and port < 1):
         return ""
     return parts.hostname or ""
+
+
+def _is_ipv6_address(text: str) -> bool:
+    """Returns whether `text` is an IPv6 address literal without brackets or a port."""
+    try:
+        return isinstance(ipaddress.ip_address(text), ipaddress.IPv6Address)
+    except ValueError:
+        return False
 
 
 def _strip_grpc_prefix(host: str) -> str:
@@ -197,7 +239,26 @@ def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
         Absolute path to the credentials JSON file.
 
     Raises:
-        AuthError: If no absolute override is set and the home directory cannot be resolved.
+        AuthError: If no absolute override is set and the home directory cannot be
+            resolved or is relative, or if the path contains a NUL character.
+    """
+    path = _configured_credentials_path(env) or _home_credentials_path()
+    if "\x00" in str(path):
+        raise AuthError(
+            "Invalid credentials path: XMC_CREDENTIALS_FILE, XDG_CONFIG_HOME, and HOME"
+            " must not contain NUL characters."
+        )
+    return path
+
+
+def _configured_credentials_path(env: Mapping[str, str]) -> pathlib.Path | None:
+    """Returns the path named by an absolute `XMC_CREDENTIALS_FILE` or `XDG_CONFIG_HOME`.
+
+    Args:
+        env: Environment mapping to inspect.
+
+    Returns:
+        The credentials path, or None if neither variable is an absolute path.
     """
     custom = os.path.expanduser(env.get("XMC_CREDENTIALS_FILE", "").strip())
     if os.path.isabs(custom):
@@ -205,12 +266,23 @@ def credentials_path(env: Mapping[str, str]) -> pathlib.Path:
     xdg = os.path.expanduser(env.get("XDG_CONFIG_HOME", "").strip())
     if os.path.isabs(xdg):
         return pathlib.Path(xdg) / "xmc" / "credentials.json"
+    return None
+
+
+def _home_credentials_path() -> pathlib.Path:
+    """Returns `~/.config/xmc/credentials.json`.
+
+    Raises:
+        AuthError: If the home directory cannot be resolved or is a relative path,
+            which would put the credentials in the working directory.
+    """
+    hint = "set XMC_CREDENTIALS_FILE to an absolute path."
     try:
         home = pathlib.Path.home()
     except RuntimeError:  # No $HOME and no passwd entry, e.g. an arbitrary container UID.
-        raise AuthError(
-            "Cannot determine the home directory; set XMC_CREDENTIALS_FILE to an absolute path."
-        ) from None
+        raise AuthError(f"Cannot determine the home directory; {hint}") from None
+    if not home.is_absolute():
+        raise AuthError(f"The home directory ($HOME) is a relative path; {hint}")
     return home / ".config" / "xmc" / "credentials.json"
 
 
@@ -250,8 +322,8 @@ def _read_private_file(path: pathlib.Path) -> bytes | None:
     """Returns the contents of `path`, or None if it does not exist.
 
     Raises:
-        AuthError: If `path` cannot be opened or read, or fails
-            `_check_private_regular_file`.
+        AuthError: If `path` cannot be opened or read, is larger than
+            `_MAX_CREDENTIALS_BYTES`, or fails `_check_private_regular_file`.
     """
     # O_NONBLOCK keeps open() from blocking on a FIFO; regular files ignore it.
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -259,20 +331,41 @@ def _read_private_file(path: pathlib.Path) -> bytes | None:
         fd = os.open(path, flags)
     except FileNotFoundError:
         return None
-    except OSError as exc:
+    except (OSError, ValueError) as exc:  # ValueError: a NUL character in `path`.
         raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
     fd_closed_by_file = False
     try:
         _check_private_regular_file(os.fstat(fd), path)
         with os.fdopen(fd, "rb") as f:
             fd_closed_by_file = True
-            return f.read()
+            return _read_bounded(f, path)
     except OSError as exc:
         raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
     finally:
         if not fd_closed_by_file:
             with contextlib.suppress(OSError):
                 os.close(fd)
+
+
+def _read_bounded(f: BinaryIO, path: pathlib.Path) -> bytes:
+    """Reads `f`, refusing more than `_MAX_CREDENTIALS_BYTES`.
+
+    Args:
+        f: Open credentials file.
+        path: Path of `f`, used in the error message.
+
+    Returns:
+        The contents of `f`.
+
+    Raises:
+        AuthError: If `f` holds more than `_MAX_CREDENTIALS_BYTES`.
+    """
+    data = f.read(_MAX_CREDENTIALS_BYTES + 1)
+    if len(data) > _MAX_CREDENTIALS_BYTES:
+        raise AuthError(
+            f"Refusing to read {path} (larger than {_MAX_CREDENTIALS_BYTES} bytes). {_RESET_HINT}"
+        )
+    return data
 
 
 def _check_private_regular_file(st: os.stat_result, path: pathlib.Path) -> None:
@@ -302,18 +395,37 @@ def save_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, 
     """
     try:
         _write_credentials(path, deployments)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:  # ValueError: a NUL character in `path`.
         raise AuthError(f"Cannot write credentials file {path}: {exc}") from None
 
 
-def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, Any]]) -> None:
-    # Only a directory created here is restricted to 0700 (mkdir's mode is
-    # subject to the umask). Existing directories, such as $HOME, /tmp, or a
-    # group-shared directory named by XMC_CREDENTIALS_FILE, keep their mode.
+def _ensure_parent_dir(path: pathlib.Path) -> None:
+    """Creates the parent directory of `path` with mode 0700 if it is missing.
+
+    Only a directory created here is restricted to 0700 (mkdir's mode is subject
+    to the umask). Existing directories, such as $HOME, /tmp, or a group-shared
+    directory named by XMC_CREDENTIALS_FILE, keep their mode.
+
+    Args:
+        path: Path of the credentials file.
+    """
     if not path.parent.is_dir():
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if os.name == "posix":
             os.chmod(path.parent, 0o700)
+
+
+def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, Any]]) -> None:
+    """Writes `deployments` to a temporary file and atomically renames it to `path`.
+
+    Args:
+        path: Target path for the credentials JSON file.
+        deployments: Mapping from deployment origin to credential entry.
+
+    Raises:
+        OSError: If a file system call fails; the temporary file is removed.
+    """
+    _ensure_parent_dir(path)
     payload = json.dumps(
         {"version": 1, "deployments": dict(deployments)}, indent=2, sort_keys=True
     ).encode("utf-8")

@@ -22,7 +22,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from typing import TextIO
 
-from xm_cloud.cli import arg_parsing, credentials
+from xm_cloud.cli import arg_parsing, credentials, terminal_text
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -35,7 +35,14 @@ def _build_parser() -> argparse.ArgumentParser:
             " (default ~/.config/xmc/credentials.json)."
         ),
     )
-    parser.add_argument("--all", action="store_true")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=(
+            "clear the cached credentials of every deployment, without resolving the"
+            " configured deployment or reading the existing file"
+        ),
+    )
     return parser
 
 
@@ -83,8 +90,8 @@ def run_logout(
         return parsed
     try:
         path = credentials.credentials_path(env)
-        out.write(_logout(path, env, all_deployments=parsed.all))
+        terminal_text.write(out, _logout(path, env, all_deployments=parsed.all))
     except credentials.AuthError as exc:
-        err.write(f"Error: {exc}\n")
+        terminal_text.write(err, f"Error: {exc}\n")
         return 1
     return 0

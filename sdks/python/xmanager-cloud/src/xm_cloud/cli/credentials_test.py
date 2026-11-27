@@ -50,8 +50,9 @@ class CredentialsTest(unittest.TestCase):
     @contextlib.contextmanager
     def _pin_home(self) -> Iterator[None]:
         # Path.home() reads USERPROFILE on Windows, so patch it as well as HOME.
+        home = {"HOME": self._xdg, "USERPROFILE": self._xdg}
         with (
-            mock.patch.dict(os.environ, {"HOME": self._xdg}, clear=True),
+            mock.patch.dict(os.environ, home, clear=True),
             mock.patch.object(pathlib.Path, "home", return_value=pathlib.Path(self._xdg)),
         ):
             yield
@@ -127,7 +128,34 @@ class CredentialsTest(unittest.TestCase):
             with self.subTest(env=bad_env), self.assertRaises(credentials.AuthError):
                 credentials.resolve_server(bad_env)
 
-    def test_resolve_server_rejects_bare_grpc_targets_with_a_path(self) -> None:
+    def test_resolve_server_rejects_malformed_grpc_hosts(self) -> None:
+        # Only an IPv6 address may carry several colons, and only a loopback one is
+        # accepted; `dns://<authority>` needs a `/` before the target.
+        for endpoint in ("grpc.xmc.example.com:1:2", "2001:db8::1", "::1:50051", "dns://8.8.8.8"):
+            env = {"XMANAGER_ENDPOINT": endpoint, "XMC_API_URL": _SERVER}
+            with (
+                self.subTest(endpoint=endpoint),
+                self.assertRaisesRegex(credentials.AuthError, "XMANAGER_ENDPOINT"),
+            ):
+                credentials.resolve_server(env)
+
+    def test_resolve_server_rejects_non_printable_characters_without_echoing_them(self) -> None:
+        # Surrogates stand for undecodable bytes in os.environ; C1 controls and
+        # bidi or zero-width format characters could spoof the printed origin.
+        for char in ("\udcff", "\x9b", "\x85", "\u202e", "\u200b", "\x1b"):
+            for env in (
+                {"XMC_API_URL": f"https://xmc{char}.example.com"},
+                {"XMC_DOMAIN": f"xmc{char}.example.com"},
+                {"XMANAGER_ENDPOINT": f"grpc.xmc{char}.example.com:443"},
+            ):
+                with (
+                    self.subTest(char=ascii(char), env=list(env)),
+                    self.assertRaisesRegex(credentials.AuthError, "non-printable") as ctx,
+                ):
+                    credentials.resolve_server(env)
+                self.assertNotIn(char, str(ctx.exception))
+
+    def test_resolve_server_rejects_grpc_targets_with_a_path(self) -> None:
         # xdash.auth reads the last path segment as the host, so these would yield a
         # cache key that xdash never looks up (or silently fall through to XMC_API_URL).
         for endpoint in (
@@ -136,6 +164,12 @@ class CredentialsTest(unittest.TestCase):
             "grpc.xmc.example.com:443/",
             "localhost:50051/extra",
             "dns:///grpc.xmc.example.com:443/",
+            "dns:///grpc.xmc.example.com:443/localhost",
+            "dns:///grpc.xmc.example.com:443/grpc.other.example.com",
+            "grpc://grpc.xmc.example.com:443/localhost:50051",
+            "grpc://grpc.xmc.example.com:443/grpc.other.example.com",
+            "dns://8.8.8.8/grpc.xmc.example.com:443/localhost",
+            "dns://8.8.8.8/grpc.xmc.example.com:443/grpc.other.example.com",
         ):
             env = {"XMANAGER_ENDPOINT": endpoint, "XMC_API_URL": _SERVER}
             with (
@@ -179,6 +213,11 @@ class CredentialsTest(unittest.TestCase):
             {"XMANAGER_ENDPOINT": "grpc://grpc.x.dev:443"},
             {"XMANAGER_ENDPOINT": "dns://8.8.8.8/grpc.x.dev:443"},
             {"XMANAGER_ENDPOINT": "grpc://localhost:50051", "XMC_API_URL": "https://b.dev"},
+            {"XMANAGER_ENDPOINT": "::1", "XMC_API_URL": "https://b.dev"},
+            {"XMANAGER_ENDPOINT": "dns:///::1", "XMC_API_URL": "https://b.dev"},
+            {"XMANAGER_ENDPOINT": "grpc://::1", "XMC_API_URL": "https://b.dev"},
+            {"XMANAGER_ENDPOINT": "dns://8.8.8.8/::1", "XMC_API_URL": "https://b.dev"},
+            {"XMANAGER_ENDPOINT": "[::1]:50051", "XMC_API_URL": "https://b.dev"},
             {"XMC_API_URL": "https://XMC.example.com:443/v1"},
             {"XMC_API_URL": "https://xmc.example.com:8443"},
             {"XMC_API_URL": "https://grpc.api.x.dev"},
@@ -201,7 +240,7 @@ class CredentialsTest(unittest.TestCase):
             {"XDG_CONFIG_HOME": "relative"},
         ]
         for env in envs:
-            patched_env = {"HOME": self._xdg, **env}
+            patched_env = {"HOME": self._xdg, "USERPROFILE": self._xdg, **env}
             with self.subTest(env=env), mock.patch.dict(os.environ, patched_env, clear=True):
                 self.assertEqual(
                     credentials.credentials_path(env), xdash_auth.get_credentials_file_path()
@@ -232,6 +271,36 @@ class CredentialsTest(unittest.TestCase):
             self.assertRaisesRegex(credentials.AuthError, "set XMC_CREDENTIALS_FILE"),
         ):
             credentials.credentials_path({})
+
+    def test_credentials_path_rejects_a_relative_home(self) -> None:
+        # A relative $HOME would read and write the token cache in the working directory.
+        relative_home = {"HOME": "relative/dir", "USERPROFILE": "relative/dir"}
+        for env in ({}, {"XMC_CREDENTIALS_FILE": "~/creds.json"}, {"XDG_CONFIG_HOME": "rel"}):
+            with (
+                self.subTest(env=env),
+                mock.patch.dict(os.environ, relative_home, clear=True),
+                self.assertRaisesRegex(credentials.AuthError, r"relative path; set XMC_CRED"),
+            ):
+                credentials.credentials_path(env)
+
+    def test_credentials_path_rejects_nul_characters(self) -> None:
+        for env in (
+            {"XMC_CREDENTIALS_FILE": os.path.join(self._xdg, "creds\x00.json")},
+            {"XDG_CONFIG_HOME": os.path.join(self._xdg, "x\x00dg")},
+        ):
+            with (
+                self.subTest(env=env),
+                self.assertRaisesRegex(credentials.AuthError, "must not contain NUL"),
+            ):
+                credentials.credentials_path(env)
+
+    def test_load_and_save_report_a_nul_path_as_auth_error(self) -> None:
+        path = pathlib.Path(self._xdg) / "creds\x00.json"
+
+        with self.assertRaisesRegex(credentials.AuthError, "Refusing to read"):
+            credentials.load_credentials(path)
+        with self.assertRaisesRegex(credentials.AuthError, "Cannot write credentials file"):
+            credentials.save_credentials(path, {})
 
     def test_load_credentials_returns_empty_for_a_missing_file(self) -> None:
         self.assertEqual(credentials.load_credentials(self._path), {})
@@ -385,6 +454,40 @@ class CredentialsTest(unittest.TestCase):
 
         close_mock.assert_called_once()
         self.assertEqual(list(path.parent.glob(".credentials.*")), [])
+
+    def test_write_credentials_does_not_double_close_after_fdopen_owns_the_fd(self) -> None:
+        # Once fdopen owns the descriptor, closing it again could close an unrelated
+        # file that reused the number.
+        path = pathlib.Path(self._xdg) / "xmc" / "credentials.json"
+        with (
+            mock.patch.object(os, "replace", side_effect=OSError("replace failed")),
+            mock.patch.object(os, "close", wraps=os.close) as close_mock,
+            self.assertRaisesRegex(credentials.AuthError, "replace failed"),
+        ):
+            credentials.save_credentials(path, {})
+
+        close_mock.assert_not_called()
+        self.assertEqual(list(path.parent.glob(".credentials.*")), [])
+
+    def test_load_credentials_does_not_double_close_after_fdopen_owns_the_fd(self) -> None:
+        credentials.save_credentials(self._path, {})
+        with (
+            mock.patch.object(credentials, "_read_bounded", side_effect=OSError("read failed")),
+            mock.patch.object(os, "close", wraps=os.close) as close_mock,
+            self.assertRaisesRegex(credentials.AuthError, "read failed"),
+        ):
+            credentials.load_credentials(self._path)
+
+        close_mock.assert_not_called()
+
+    def test_load_credentials_enforces_the_size_cap(self) -> None:
+        document = '{"version": 1, "deployments": {}}'
+        at_cap = document.ljust(credentials._MAX_CREDENTIALS_BYTES)
+
+        self.assertEqual(credentials.load_credentials(self._write_private(at_cap)), {})
+        self._write_private(at_cap + " ")
+        with self.assertRaisesRegex(credentials.AuthError, "larger than 1048576 bytes"):
+            credentials.load_credentials(self._path)
 
     def test_credentials_file_exists_is_false_for_a_missing_path(self) -> None:
         self.assertFalse(credentials.credentials_file_exists(self._path))

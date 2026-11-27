@@ -14,7 +14,10 @@
 """Unit tests for `xm_cloud.cli.main`."""
 
 import io
+import sys
 import unittest
+from collections.abc import Sequence
+from typing import TextIO
 from unittest import mock
 
 from xm_cloud.cli import logout_command, main
@@ -69,6 +72,18 @@ class MainTest(unittest.TestCase):
             out=out_stream,
             err=err_stream,
         )
+
+    def test_routes_subcommand_process_stream_writes_to_given_streams(self) -> None:
+        def run(argv: Sequence[str], *, out: TextIO = sys.stdout, err: TextIO = sys.stderr) -> int:
+            del argv, out, err  # Writes through the process streams instead.
+            print("to stdout")
+            print("to stderr", file=sys.stderr)
+            return 0
+
+        with mock.patch.object(main, "SUBCOMMANDS", {"logout": main.Subcommand("Logs out.", run)}):
+            code, out, err = self._main(["logout"])
+
+        self.assertEqual((code, out, err), (0, "to stdout\n", "to stderr\n"))
 
     def test_defaults_to_process_arguments(self) -> None:
         run = mock.Mock(return_value=0)

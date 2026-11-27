@@ -166,6 +166,38 @@ class LogoutCommandTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("Error: Cannot access credentials file", err)
 
+    def test_run_logout_all_recovers_from_bad_config_and_a_corrupt_open_file(self) -> None:
+        # `--all` is the documented reset: it must work when the deployment cannot be
+        # resolved and the cache is corrupt and group-readable.
+        env = {"XDG_CONFIG_HOME": self._xdg, "XMANAGER_ENDPOINT": "grpc-bad.example.com:443"}
+        path = credentials.credentials_path(env)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        path.write_text("{not json", encoding="utf-8")
+        os.chmod(path, 0o644)
+
+        code, out, err = self._run(["--all"], env)
+
+        self.assertEqual((code, out, err), (0, "Logged out of all XMC deployments.\n", ""))
+        self.assertEqual(credentials.load_credentials(path), {})
+
+    def test_run_logout_escapes_untrusted_path_characters_on_a_strict_stream(self) -> None:
+        if os.name != "posix":
+            self.skipTest("POSIX file names only")
+        # \udcff is how os.environ decodes a non-UTF-8 byte; ESC starts a terminal sequence.
+        path = pathlib.Path(self._xdg) / "\udcff\x1b[2J.json"
+        path.write_text("{}", encoding="utf-8")
+        os.chmod(path, 0o644)
+        out = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
+        err = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
+
+        code = logout_command.run_logout(
+            [], env=self._env(XMC_CREDENTIALS_FILE=str(path)), out=out, err=err
+        )
+
+        err.flush()
+        self.assertEqual(code, 1)
+        self.assertIn(b"\\udcff\\x1b[2J.json (must not be accessible", err.buffer.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
