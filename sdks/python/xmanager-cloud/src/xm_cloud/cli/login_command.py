@@ -35,16 +35,30 @@ import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, TextIO
 
-from xm_cloud.cli import arg_parsing, credentials
+from xm_cloud.cli import arg_parsing, credentials, terminal_text
+
+if sys.platform == "win32":
+    _TTY_ERRORS: tuple[type[Exception], ...] = ()
+else:
+    import termios
+
+    _TTY_ERRORS = (termios.error,)
 
 # A token response is a few hundred bytes; the cap bounds memory and JSON parsing.
 _MAX_TOKEN_RESPONSE_BYTES = 64 * 1024
 # Only the start of an error body is needed to find its OAuth error description.
 _MAX_ERROR_BODY_BYTES = 4096
+# XMC's longest CLI session (CLI_SESSION_TTL) is 720h. One year leaves headroom
+# while keeping `expires_at` small enough for `xdash.auth` to convert to a float.
+_MAX_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60
 # Exceptions a malformed or truncated HTTP response can raise while it is read or
 # parsed. UnicodeDecodeError and json.JSONDecodeError are ValueErrors; RecursionError
 # comes from deeply nested JSON.
 _RESPONSE_ERRORS = (OSError, ValueError, RecursionError, http.client.HTTPException)
+# Exceptions `getpass.getpass` can raise besides EOFError: OSError on a hung-up
+# terminal, ValueError (including UnicodeDecodeError) on a closed or non-UTF-8
+# stdin, AttributeError when `sys.stdin` is None, and termios.error.
+_PROMPT_ERRORS = (OSError, ValueError, AttributeError, *_TTY_ERRORS)
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -116,7 +130,7 @@ def _post_token_request(server: str, body: bytes) -> bytes:
             or redirect response.
     """
     headers = {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}
-    opener = urllib.request.build_opener(_NoRedirect)
+    opener = _build_opener(server)
     try:
         req = urllib.request.Request(
             f"{server}/api/cli/token", data=body, headers=headers, method="POST"
@@ -142,10 +156,15 @@ def exchange_code(server: str, code: str, verifier: str) -> dict[str, Any]:
 
     Raises:
         credentials.AuthError: On transport errors, non-2xx or redirect responses,
-            or oversized or malformed token responses.
+            oversized or malformed token responses, or a `code` or `verifier`
+            that cannot be form-encoded.
     """
     form = {"grant_type": "authorization_code", "code": code, "code_verifier": verifier}
-    raw = _post_token_request(server, urllib.parse.urlencode(form).encode("ascii"))
+    try:
+        body = urllib.parse.urlencode(form).encode("ascii")
+    except UnicodeEncodeError:  # A lone surrogate from undecodable terminal input.
+        raise credentials.AuthError("Token exchange failed: the code is not valid text.") from None
+    raw = _post_token_request(server, body)
     if len(raw) > _MAX_TOKEN_RESPONSE_BYTES:
         raise credentials.AuthError("Token exchange failed: response too large.")
     try:
@@ -153,6 +172,21 @@ def exchange_code(server: str, code: str, verifier: str) -> dict[str, Any]:
     except (ValueError, RecursionError) as exc:
         raise credentials.AuthError(f"Token exchange failed: {exc}") from None
     return _validated_grant(payload)
+
+
+def _is_opaque_token(value: str) -> bool:
+    """Returns whether `value` is non-empty printable ASCII without whitespace.
+
+    Bearer tokens (RFC 6750) and authorization codes have this form. Anything
+    else could inject HTTP header lines or terminal control sequences.
+
+    Args:
+        value: Token or code to check.
+
+    Returns:
+        True if every character of a non-empty `value` is in `!`..`~`.
+    """
+    return bool(value) and all("!" <= ch <= "~" for ch in value)
 
 
 def _validated_grant(p: Any) -> dict[str, Any]:
@@ -165,27 +199,65 @@ def _validated_grant(p: Any) -> dict[str, Any]:
         Dict with the stripped `access_token` and `email`, and `expires_in`.
 
     Raises:
-        credentials.AuthError: If `p` is not a Bearer grant with a non-blank token
-            and email and a positive integer lifetime.
+        credentials.AuthError: If `p` is not a Bearer grant with an opaque token
+            (`_is_opaque_token`), a non-blank printable email, and a lifetime
+            accepted by `_validated_lifetime`.
     """
     malformed = credentials.AuthError("Malformed token response from server.")
     if not isinstance(p, dict):
         raise malformed
-    tok, email, exp = p.get("access_token"), p.get("email"), p.get("expires_in")
-    if not isinstance(tok, str) or not isinstance(email, str):
+    tok, email, token_type = p.get("access_token"), p.get("email"), p.get("token_type")
+    if not isinstance(tok, str) or not isinstance(email, str) or not isinstance(token_type, str):
         raise malformed
     tok, email = tok.strip(), email.strip()
-    valid = (
-        bool(tok)
-        and bool(email)
-        and isinstance(exp, int)
-        and not isinstance(exp, bool)
-        and exp > 0
-        and str(p.get("token_type", "")).lower() == "bearer"
-    )
-    if not valid:
+    if token_type.lower() != "bearer" or not _is_opaque_token(tok):
         raise malformed
-    return {"access_token": tok, "email": email, "expires_in": exp}
+    if not email or not email.isprintable():
+        raise malformed
+    return {"access_token": tok, "email": email, "expires_in": _validated_lifetime(p)}
+
+
+def _validated_lifetime(p: Mapping[str, Any]) -> int:
+    """Returns the `expires_in` of token response `p`.
+
+    Args:
+        p: Decoded JSON token response.
+
+    Returns:
+        The lifetime in seconds.
+
+    Raises:
+        credentials.AuthError: Unless `expires_in` is an integer (not a bool) in
+            1..`_MAX_EXPIRES_IN_SECONDS`.
+    """
+    exp = p.get("expires_in")
+    if not isinstance(exp, int) or isinstance(exp, bool) or exp <= 0:
+        raise credentials.AuthError("Malformed token response from server.")
+    if exp > _MAX_EXPIRES_IN_SECONDS:
+        raise credentials.AuthError(
+            "Malformed token response from server: expires_in exceeds"
+            f" {_MAX_EXPIRES_IN_SECONDS} seconds."
+        )
+    return exp
+
+
+def _build_opener(server: str) -> urllib.request.OpenerDirector:
+    """Returns an opener that never follows redirects and never proxies loopback.
+
+    The CLI allows plain http:// only for a loopback `server`; sending it through
+    an ambient `http_proxy` would carry the authorization code and PKCE verifier
+    off the machine in cleartext.
+
+    Args:
+        server: Deployment origin.
+
+    Returns:
+        The opener for the probe and token requests.
+    """
+    handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
+    if credentials.is_loopback_origin(server):
+        handlers.append(urllib.request.ProxyHandler({}))
+    return urllib.request.build_opener(*handlers)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -217,7 +289,7 @@ def _probe_cli_login(server: str) -> None:
         credentials.AuthError: If `server` is unreachable, answers 2xx or 3xx, or
             does not support CLI login.
     """
-    opener = urllib.request.build_opener(_NoRedirect)
+    opener = _build_opener(server)
     try:
         with opener.open(f"{server}/api/cli/login", timeout=10) as resp:
             status = resp.status
@@ -269,25 +341,48 @@ def _interactive_login(
         The validated token grant from `exchange_code`.
 
     Raises:
-        credentials.AuthError: If the probe or token exchange fails, or no code is
-            entered.
+        credentials.AuthError: If the probe or token exchange fails, or the code
+            cannot be read or is invalid.
     """
     _probe_cli_login(server)
     verifier, challenge = pkce_pair()
     url = build_login_url(server, secrets.token_urlsafe(24), challenge)
-    out.write(
+    terminal_text.write(
+        out,
         f"Open this URL in any browser to sign in to {server}:\n  {url}\n"
-        "Never share the one-time code with anyone.\n"
+        "Never share the one-time code with anyone.\n",
     )
     # The prompt may write to /dev/tty, so a buffered `out` must show the URL first.
     out.flush()
+    return exchange_code(server, _read_code(prompt), verifier)
+
+
+def _read_code(prompt: Callable[[str], str]) -> str:
+    """Prompts for the one-time authorization code.
+
+    Args:
+        prompt: Reads the authorization code.
+
+    Returns:
+        The code without surrounding whitespace.
+
+    Raises:
+        credentials.AuthError: If the prompt fails, no code is entered, or the
+            code is not printable ASCII without spaces.
+    """
     try:
         code = prompt("Enter authorization code: ").strip()
     except EOFError:  # Closed or non-interactive stdin.
         code = ""
+    except _PROMPT_ERRORS as exc:
+        raise credentials.AuthError(f"Cannot read the authorization code: {exc}") from None
     if not code:
         raise credentials.AuthError("No authorization code entered.")
-    return exchange_code(server, code, verifier)
+    if not _is_opaque_token(code):
+        raise credentials.AuthError(
+            "Invalid authorization code: expected printable ASCII without spaces."
+        )
+    return code
 
 
 def _format_expiry(expires_at: int) -> str:
@@ -398,10 +493,11 @@ def run_login(
         credentials.load_credentials(path)  # Fail on an unreadable cache before prompting.
         grant = _interactive_login(server, prompt, out)
         expires_at = _cache_grant(path, server, grant)
-        out.write(
-            f"Logged in to {server} as {grant['email']} until {_format_expiry(expires_at)}.\n"
+        terminal_text.write(
+            out,
+            f"Logged in to {server} as {grant['email']} until {_format_expiry(expires_at)}.\n",
         )
         return 0
     except credentials.AuthError as exc:
-        err.write(f"Error: {exc}\n")
+        terminal_text.write(err, f"Error: {exc}\n")
         return 1

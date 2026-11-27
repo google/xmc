@@ -24,6 +24,7 @@ import http.client
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -179,7 +180,7 @@ class LoginCommandTest(unittest.TestCase):
         prompt.assert_not_called()
 
     def test_interactive_login_flushes_url_before_prompt(self) -> None:
-        out = mock.Mock(wraps=io.StringIO())
+        out = mock.Mock(wraps=io.StringIO(), encoding="utf-8")
         flushed_before_prompt: list[bool] = []
 
         def prompt(_: str) -> str:
@@ -291,6 +292,7 @@ class LoginCommandTest(unittest.TestCase):
             {**_GOOD_GRANT, "expires_in": -1},
             {**_GOOD_GRANT, "expires_in": 1.5},
             {**_GOOD_GRANT, "expires_in": "3600"},
+            {**_GOOD_GRANT, "token_type": 7},
         ]
         for body in bodies:
             with (
@@ -299,6 +301,51 @@ class LoginCommandTest(unittest.TestCase):
                 self.assertRaisesRegex(credentials.AuthError, "Malformed token response"),
             ):
                 login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+    def test_exchange_code_rejects_tokens_and_emails_with_unsafe_characters(self) -> None:
+        # A CR/LF or space in the token would inject headers wherever it is sent;
+        # control or bidi characters in the email would reach the terminal.
+        for field, value in (
+            ("access_token", "jwt\r\nX-Injected: 1"),
+            ("access_token", "jwt extra"),
+            ("access_token", "jwt\x00"),
+            ("access_token", "jwt\u00e9"),
+            ("email", "u\x1b[2J@example.com"),
+            ("email", "\u202eu@example.com"),
+            ("email", "u\ud800@example.com"),
+        ):
+            body = json.dumps({**_GOOD_GRANT, field: value}).encode("utf-8")
+            with (
+                self.subTest(field=field, value=ascii(value)),
+                _serve(200, body),
+                self.assertRaisesRegex(credentials.AuthError, "Malformed token response"),
+            ):
+                login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+    def test_exchange_code_bounds_expires_in(self) -> None:
+        limit = login_command._MAX_EXPIRES_IN_SECONDS
+        with _serve(200, json.dumps({**_GOOD_GRANT, "expires_in": limit}).encode("utf-8")):
+            grant = login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+        self.assertEqual(grant["expires_in"], limit)
+        # 10**4300 - 1 still parses, but `now + expires_in` could not be written.
+        for expires_in in (limit + 1, 10**400, 10**4300 - 1):
+            body = json.dumps({**_GOOD_GRANT, "expires_in": expires_in}).encode("utf-8")
+            with (
+                self.subTest(digits=len(str(expires_in))),
+                _serve(200, body),
+                self.assertRaisesRegex(credentials.AuthError, f"exceeds {limit} seconds"),
+            ):
+                login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+    def test_exchange_code_reads_at_most_4_kib_of_an_error_body(self) -> None:
+        padding = b"x" * login_command._MAX_ERROR_BODY_BYTES
+        body = b'{"pad": "' + padding + b'", "error": "invalid_grant"}'
+
+        with (
+            _serve(400, body),
+            self.assertRaisesRegex(credentials.AuthError, r"^Token exchange failed: HTTP 400\.$"),
+        ):
+            login_command.exchange_code(_SERVER, "code-1", "verifier-1")
 
     def test_exchange_code_rejects_unparseable_responses(self) -> None:
         bodies: list[tuple[str, bytes | io.BytesIO, str]] = [
@@ -406,8 +453,138 @@ class LoginCommandTest(unittest.TestCase):
         expires_at = cached[_SERVER]["expires_at"]
         self.assertIsInstance(expires_at, int)
         self.assertTrue(before + 900 <= expires_at <= _now() + 900)
-        self.assertEqual(logout_command.run_logout([], env=env, out=out, err=err), 0)
+        logout_out, logout_err = io.StringIO(), io.StringIO()
+        rc = logout_command.run_logout([], env=env, out=logout_out, err=logout_err)
+        self.assertEqual(
+            (rc, logout_out.getvalue(), logout_err.getvalue()),
+            (0, f"Logged out of {_SERVER}.\n", ""),
+        )
         self.assertEqual(credentials.load_credentials(credentials.credentials_path(env)), {})
+
+    def test_run_login_binds_pkce_challenge_and_strips_the_pasted_code(self) -> None:
+        out = io.StringIO()
+        with (
+            mock.patch.object(login_command, "_probe_cli_login"),
+            mock.patch.object(login_command, "exchange_code", return_value=_GOOD_GRANT) as exchange,
+        ):
+            rc = login_command.run_login(
+                [], env=self._env(), out=out, err=io.StringIO(), prompt=lambda _: "  code-1 \n"
+            )
+
+        self.assertEqual(rc, 0)
+        (server, code, verifier), _ = exchange.call_args
+        self.assertEqual((server, code), (_SERVER, "code-1"))
+        url = next(word for word in out.getvalue().split() if "/api/cli/login?" in word)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        expected_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        self.assertEqual(query["code_challenge"], [expected_challenge])
+        self.assertEqual((query["code_challenge_method"], query["mode"]), (["S256"], ["manual"]))
+
+    def test_read_code_rejects_blank_and_unsafe_codes(self) -> None:
+        cases = [
+            ("   \t\n", "No authorization code entered"),
+            ("code 1", "Invalid authorization code"),
+            ("code\x1b[2J", "Invalid authorization code"),
+            ("code\udcff", "Invalid authorization code"),  # Undecodable terminal byte.
+            ("cöde", "Invalid authorization code"),
+        ]
+        for typed, message in cases:
+            with (
+                self.subTest(typed=ascii(typed)),
+                self.assertRaisesRegex(credentials.AuthError, message),
+            ):
+                login_command._read_code(mock.Mock(return_value=typed))
+
+    def test_run_login_reports_prompt_failures(self) -> None:
+        errors: list[Exception] = [
+            ValueError("I/O operation on closed file"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+            OSError(5, "Input/output error"),
+            AttributeError("'NoneType' object has no attribute 'readline'"),  # stdin is None.
+            *(error_class("tcsetattr") for error_class in login_command._TTY_ERRORS),
+        ]
+        for exc in errors:
+            err = io.StringIO()
+            with (
+                self.subTest(exc=type(exc).__name__),
+                mock.patch.object(login_command, "_probe_cli_login"),
+            ):
+                rc = login_command.run_login(
+                    [],
+                    env=self._env(),
+                    out=io.StringIO(),
+                    err=err,
+                    prompt=mock.Mock(side_effect=exc),
+                )
+            self.assertEqual(rc, 1)
+            self.assertTrue(
+                err.getvalue().startswith("Error: Cannot read the authorization code: ")
+            )
+
+    def test_run_login_defaults_to_process_env_and_streams(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self._xdg}, clear=True),
+            mock.patch.object(sys, "stdout", out),
+            mock.patch.object(sys, "stderr", err),
+        ):
+            self.assertEqual(login_command.run_login([]), 1)
+
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(err.getvalue(), f"Error: {credentials.NO_SERVER_MESSAGE}\n")
+
+    def test_run_login_escapes_server_error_text_on_a_strict_stream(self) -> None:
+        # JSON can carry ESC and lone surrogates; a real UTF-8 stderr must not crash.
+        body = b'{"error_description": "\\u001b[2Jbad\\ud800code"}'
+        err = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", errors="strict")
+        with mock.patch.object(login_command, "_probe_cli_login"), _serve(400, body):
+            rc = login_command.run_login(
+                [], env=self._env(), out=io.StringIO(), err=err, prompt=lambda _: "c"
+            )
+
+        err.flush()
+        self.assertEqual(rc, 1)
+        self.assertIn(b"\\x1b[2Jbad\\ud800code (HTTP 400)", err.buffer.getvalue())
+
+    def test_exchange_code_rejects_an_unencodable_code_without_sending_it(self) -> None:
+        with (
+            _serve(200, json.dumps(_GOOD_GRANT).encode("utf-8")) as requests,
+            self.assertRaisesRegex(credentials.AuthError, "not valid text"),
+        ):
+            login_command.exchange_code(_SERVER, "code\udcff", "verifier-1")
+
+        self.assertEqual(requests, [])
+
+    def test_loopback_requests_bypass_ambient_proxies(self) -> None:
+        # Plain http:// is allowed only for loopback, so a proxy would carry the code
+        # and PKCE verifier off the machine in cleartext.
+        hosts: list[str] = []
+
+        def http_open(handler: object, req: urllib.request.Request) -> _FakeResponse:
+            del handler
+            hosts.append(req.host)
+            return _FakeResponse(req.full_url, 400, io.BytesIO(), {})
+
+        with (
+            mock.patch.dict(
+                os.environ, {"http_proxy": "http://proxy.invalid:3128", "no_proxy": ""}
+            ),
+            mock.patch.object(
+                urllib.request.HTTPHandler, "http_open", autospec=True, side_effect=http_open
+            ),
+        ):
+            login_command._probe_cli_login("http://localhost:8080")
+
+        self.assertEqual(hosts, ["localhost:8080"])
+
+    def test_remote_requests_keep_ambient_proxies(self) -> None:
+        proxy_env = {"https_proxy": "http://proxy.invalid:3128", "no_proxy": ""}
+        with mock.patch.dict(os.environ, proxy_env), _serve(400) as requests:
+            login_command._probe_cli_login(_SERVER)
+
+        (req,) = requests
+        self.assertEqual(req.host, "proxy.invalid:3128")
 
     def test_run_login_preserves_entries_written_during_interactive_login(self) -> None:
         env = self._env()
