@@ -24,6 +24,7 @@ import (
 	spb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/pkg/study"
 )
 
 // ExperimentReader fetches an experiment from the Experiment State Server.
@@ -32,10 +33,14 @@ type ExperimentReader interface {
 }
 
 // NewESSReconciler returns a ReconcileFunc that re-reads each ticked experiment from ESS using
-// reader and gates reconciliation on experiment_type == STUDY and status.active_state == ACTIVE.
-func NewESSReconciler(reader ExperimentReader) (ReconcileFunc, error) {
+// reader, gates reconciliation on experiment_type == STUDY and status.active_state == ACTIVE, and
+// idempotently registers active studies in engine.
+func NewESSReconciler(reader ExperimentReader, engine study.StudyEngine) (ReconcileFunc, error) {
 	if reader == nil {
 		return nil, errors.New("experiment reader must not be nil")
+	}
+	if engine == nil {
+		return nil, errors.New("study engine must not be nil")
 	}
 	return func(ctx context.Context, xid int64) error {
 		name := validator.ConstructExperimentName(xid)
@@ -61,11 +66,13 @@ func NewESSReconciler(reader ExperimentReader) (ReconcileFunc, error) {
 				"launch_state", exp.GetStatus().GetLaunchState().String())
 			return nil
 		}
-		logging.Info(ctx, "Verified active study on ESS",
-			"experiment_type", exp.GetExperimentType().String(),
-			"active_state", exp.GetStatus().GetActiveState().String(),
+		studyName, err := engine.CreateStudy(ctx, xid, exp.GetStudyConfig())
+		if err != nil {
+			return err
+		}
+		logging.Info(ctx, "Registered active study in Vizier",
+			"vizier_study", studyName,
 			"launch_state", exp.GetStatus().GetLaunchState().String(),
-			"algorithm", exp.GetStudyConfig().GetAlgorithm(),
 			"max_trial_budget", exp.GetStudyConfig().GetMaxTrialBudget())
 		return nil
 	}, nil

@@ -39,7 +39,7 @@ sequenceDiagram
     ESS-->>Client: 11. Experiment
     opt STUDY
         Note over ESS,DS: Asynchronously, after the RPC returns (best effort)
-        Redis-->>SC: Reconcile tick (per-study lease lock, logged)
+        Redis-->>SC: Reconcile tick (per-study lease lock, register in Vizier)
         opt Dashboard configured (10b, background goroutine)
             ESS--)XID: CreateXidEntry (child artifact XID, 10s bound)
             ESS->>Storage: Persist study ChartArtifact (PROVISIONING)
@@ -111,9 +111,9 @@ side effects for a `STUDY` (`STANDARD` experiments skip both):
   ([`cmd/study_controller`](../../cmd/study_controller)) consumes the stream asynchronously as the
   `study-controller-group` consumer group under a per-study Redis lease lock
   (`xmc:study-reconcile-lock:{xid}`), acknowledging contended duplicate ticks without reconciling; a
-  payload that does not name a valid experiment goes to the `xmc-study-reconcile-dlq-stream`
-  dead-letter stream. Each submission enqueues one tick (delivered at least once); periodic ticks are
-  not implemented yet.
+  payload that does not name a valid experiment or a `STUDY` whose `StudyConfig` fails validation
+  goes straight to the `xmc-study-reconcile-dlq-stream` dead-letter stream. Each submission enqueues
+  one tick (delivered at least once); periodic ticks are not implemented yet.
 - **Parallel-coordinates chart provisioning (step 10b)**: when a Dashboard Service observer is
   configured (`ess_dashboard_service_addr` non-empty via environment variable or the `ess-config`
   ConfigMap), ESS allocates a child artifact XID and persists a

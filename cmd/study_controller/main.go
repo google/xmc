@@ -94,24 +94,25 @@ func listenAndServe(ctx context.Context, cfg config.Config) error {
 			logging.Warn(ctx, "Failed to close ESS client", "error", closeErr)
 		}
 	}()
-	reconcile, err := worker.NewESSReconciler(essClient)
-	if err != nil {
-		_ = lis.Close()
-		return fmt.Errorf("failed to create ESS reconciler: %w", err)
+	newReconciler := func(vc *vizier.Client) (worker.ReconcileFunc, error) {
+		engine, err := vizier.NewEngine(vc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Vizier engine: %w", err)
+		}
+		return worker.NewESSReconciler(essClient, engine)
 	}
-	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr), reconcile, cfg.ComponentsNamespace, crreader.NewK8sGetter)
+	return serveWithClient(ctx, lis, worker.NewRedisConsumer(cfg.RedisAddr), newReconciler, cfg.ComponentsNamespace, crreader.NewK8sGetter)
 }
 
 func serveWithClient(
 	ctx context.Context,
 	lis net.Listener,
 	client *redisclient.ConsumerClient,
-	reconcile worker.ReconcileFunc,
+	newReconciler func(*vizier.Client) (worker.ReconcileFunc, error),
 	componentsNamespace string,
 	newGetter func() (crreader.Getter, error),
 ) error {
-	handler, err := worker.NewRedisHandler(client, reconcile)
-	if err != nil {
+	if _, err := worker.NewRedisHandler(client, nil); err != nil {
 		_ = lis.Close()
 		closeRedisClient(ctx, client)
 		return fmt.Errorf("failed to create study reconcile handler: %w", err)
@@ -138,11 +139,30 @@ func serveWithClient(
 		return nil
 	}
 	defer func() { _ = vizierClient.Close() }()
+
+	var reconcile worker.ReconcileFunc
+	if newReconciler != nil {
+		if reconcile, err = newReconciler(vizierClient); err != nil {
+			stopServing(ctx, client, cancelHTTP, serveErr)
+			return fmt.Errorf("failed to create ESS reconciler: %w", err)
+		}
+	}
+	handler, err := worker.NewRedisHandler(client, reconcile)
+	if err != nil {
+		stopServing(ctx, client, cancelHTTP, serveErr)
+		return fmt.Errorf("failed to create study reconcile handler: %w", err)
+	}
 	vp.Set(vizierClient)
 
 	consumer := worker.Start(ctx, client, handler)
 	defer stopConsumer(ctx, consumer)
 	return <-serveErr
+}
+
+func stopServing(ctx context.Context, client *redisclient.ConsumerClient, cancel context.CancelFunc, serveErr <-chan error) {
+	cancel()
+	<-serveErr
+	closeRedisClient(ctx, client)
 }
 
 func closeRedisClient(ctx context.Context, client *redisclient.ConsumerClient) {

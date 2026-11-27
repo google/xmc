@@ -11,10 +11,13 @@ profile values and actuation details.
 > [!NOTE]
 > `hpo` and `vizier` are `EXPERIMENTAL` components shipped in the preview
 > [`stable-2026b`](../../deploy/profiles/stable-2026b/README.md) profile (disabled by default;
-> enabling requires `acknowledgeExperimental: true`). Today `xmc-study-controller` validates
-> reconcile ticks, serializes per-study execution under an advisory Redis lease lock, authenticates
-> to ESS with its Workload Identity Google ID token to re-read each ticked experiment (`STUDY` +
-> `ACTIVE` gate), resolves the live `vizier` `Component` CR endpoint at startup (`503` on `/readyz` until resolved and reachable via `Health/Check`), and records health and Prometheus metrics; `VizierService.CreateStudy` on ticks and ClickHouse orchestration are not yet wired.
+> enabling requires `acknowledgeExperimental: true`). Today `xmc-study-controller` resolves the
+> `vizier` Component CR endpoint at startup (`503` on `/readyz` until resolved and reachable via
+> `Health/Check`), serializes per-study execution under an advisory Redis lease lock,
+> authenticates to ESS with its Workload Identity Google ID token to re-read each ticked
+> experiment (`STUDY` + `ACTIVE` gate), and idempotently registers active studies in OSS Vizier via
+> `VizierService.CreateStudy`; trial suggestion/dispatch and ClickHouse orchestration are not yet
+> wired.
 
 ---
 
@@ -58,6 +61,7 @@ flowchart LR
     Bridge -.->|"Readiness probe :7077<br/>(TCP, or gRPC health opt-in)"| Viz
     Bridge -.->|"Readiness check"| CH
     Bridge -.->|"Helm install when<br/>vizier & clickhouse Ready"| SC
+    Prof -.->|"Startup: read vizier CR<br/>spec.parameters.endpoint"| SC
 
     Client -->|"CreateExperiment(STUDY)"| ESS
     ESS -->|"CreateXidEntry"| XID
@@ -70,7 +74,8 @@ flowchart LR
     Stream -.->|"XREADGROUP / XAUTOCLAIM"| SC
     SC <-->|"SET NX PX 70s / Lua DEL<br/>& /readyz PING"| Lock
     SC -->|"GetExperiment(experiments/{xid})<br/>(WI GSA Google ID token)"| ESS
-    SC -.->|"Invalid payload / exhausted retries"| DLQ
+    SC -->|"CreateStudy(owners/xmc, study-{xid})<br/>& /readyz Health/Check"| Viz
+    SC -.->|"Invalid payload / invalid study /<br/>exhausted retries"| DLQ
 
     Client -->|"ListCharts / getData<br/>(experiments/{xid}/charts/...)"| DS
     DS -->|"CheckUserAuthorization"| XID
@@ -120,7 +125,10 @@ flowchart TD
     Acq -->|"Acquired"| Read["ESS GetExperiment(experiments/{xid})<br/>(60s timeout, WI GSA ID token)"]
     Read -->|"NotFound / non-STUDY /<br/>active_state != ACTIVE"| Skip["Log INFO skip<br/>release lease (2s detached)<br/>outcome=reconciled + XACK"]
     Read -->|"Other ESS error or SIGTERM"| RetryRun["outcome=retry_error<br/>release lease + re-enqueue (up to 5 retries -> DLQ)"]
-    Read -->|"STUDY & ACTIVE"| Ok["Log verified study state<br/>release lease (2s detached)<br/>outcome=reconciled + XACK"]
+    Read -->|"STUDY & ACTIVE"| VizCreate["VizierService.CreateStudy<br/>(owners/xmc, display_name=study-{xid})"]
+    VizCreate -->|"OK (created or existing)"| Ok["Log registered study<br/>release lease (2s detached)<br/>outcome=reconciled + XACK"]
+    VizCreate -->|"ErrInvalidStudyConfig (not cancelled)"| InvStudy["outcome=invalid_study<br/>release lease + move to DLQ + XACK (no retry)"]
+    VizCreate -->|"Transient gRPC error or SIGTERM"| RetryRun
 ```
 
 ### Lease, Timeout, and Shutdown Invariants
@@ -136,20 +144,24 @@ flowchart TD
 
 ### Outcomes & Observability
 
-`GET /metrics` pre-initializes all four `outcome` series on
+`GET /metrics` pre-initializes all five `outcome` series on
 `xmc_study_controller_reconcile_ticks_total` at startup:
 
-- **`reconciled`**: lock acquired, reconcile completed, lock released, tick acknowledged.
+- **`reconciled`**: lock acquired, reconcile completed (including idempotent Vizier study
+  registration for active `STUDY` experiments), lock released, tick acknowledged.
 - **`contended`**: another worker already holds `xmc:study-reconcile-lock:{xid}`; the duplicate
   tick is acknowledged immediately without reconciling while the active holder remains responsible
   for the study.
-- **`retry_error`**: Redis lock acquisition failed, `reconcile` returned an error, or `SIGTERM`
-  cancelled an in-flight tick; `ConsumerClient` re-adds and acknowledges the entry up to
+- **`retry_error`**: Redis lock acquisition failed, `reconcile` returned a transient error, or
+  `SIGTERM` cancelled an in-flight tick; `ConsumerClient` re-adds and acknowledges the entry up to
   `RedisMaxRetries` (`5`) before moving it to `xmc-study-reconcile-dlq-stream` (ticks interrupted
   after shutdown begins are always retried rather than dead-lettered unless retries are exhausted).
 - **`invalid_payload`**: `data` failed protojson decoding or did not carry a valid
   `experiments/{xid}` resource name; routed straight to `xmc-study-reconcile-dlq-stream` without
   acquiring the lock or retrying.
+- **`invalid_study`**: `StudyConfig` failed forward conversion or Vizier returned
+  `InvalidArgument` (while `ctx` is not cancelled); routed straight to
+  `xmc-study-reconcile-dlq-stream` without retrying or logging user payload contents.
 
 ---
 

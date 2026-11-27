@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 	"xmanager_cloud/cmd/study_controller/config"
 	"xmanager_cloud/cmd/study_controller/worker"
@@ -38,6 +39,7 @@ import (
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/pkg/components/crreader"
 	"xmanager_cloud/pkg/components/crreader/crreadertest"
+	"xmanager_cloud/pkg/study/vizier"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -407,11 +409,15 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	defer cancel()
 
 	getter := &atomicGetter{}
+	var gotVizier atomic.Pointer[vizier.Client]
 	done := make(chan error, 1)
 	t.Cleanup(func() { cancel(); <-done })
 	go func() {
 		defer close(done)
-		done <- serveWithClient(ctx, lis, client, nil, "xmc-custom", func() (crreader.Getter, error) { return getter, nil })
+		done <- serveWithClient(ctx, lis, client, func(vc *vizier.Client) (worker.ReconcileFunc, error) {
+			gotVizier.Store(vc)
+			return nil, nil
+		}, "xmc-custom", func() (crreader.Getter, error) { return getter, nil })
 	}()
 
 	addr := lis.Addr().String()
@@ -437,6 +443,37 @@ func TestServeWithClient_LatchesVizierOnceComponentAppears(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Errorf("serveWithClient() after Vizier latch = %v, want nil", err)
+	}
+	if gotVizier.Load() == nil {
+		t.Error("newReconciler did not receive latched *vizier.Client")
+	}
+}
+
+func TestServeWithClient_ReturnsReconcilerError(t *testing.T) {
+	lis := mustListen(t)
+	client := worker.NewRedisConsumer("127.0.0.1:" + freePort(t))
+	vizierAddr := startStubVizierServer(t)
+	getter := &crreadertest.FakeGetter{Components: map[string]*unstructured.Unstructured{
+		"xmc/vizier": {Object: map[string]any{
+			"apiVersion": "xmc.dev/v1alpha1", "kind": "Component",
+			"metadata": map[string]any{"name": "vizier", "namespace": "xmc"},
+			"spec":     map[string]any{"enabled": true, "parameters": map[string]any{"endpoint": vizierAddr}},
+		}},
+	}}
+	wantErr := errors.New("reconciler init failed")
+	err := serveWithClient(context.Background(), lis, client, func(*vizier.Client) (worker.ReconcileFunc, error) {
+		return nil, wantErr
+	}, "xmc", func() (crreader.Getter, error) { return getter, nil })
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("serveWithClient() error = %v, want %v", err, wantErr)
+	}
+	if pingErr := client.Ping(context.Background()); !errors.Is(pingErr, redis.ErrClosed) {
+		t.Errorf("client.Ping() after stopServing = %v, want redis.ErrClosed", pingErr)
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+lis.Addr().String()+"/healthz", nil)
+	if resp, getErr := (&http.Client{Timeout: time.Second}).Do(req); getErr == nil {
+		resp.Body.Close()
+		t.Errorf("GET /healthz after stopServing = %d, want error", resp.StatusCode)
 	}
 }
 
