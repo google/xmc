@@ -12,36 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Component, viewChild } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, Subject, throwError } from 'rxjs';
 
-import { GetResourceAvailabilityResponse } from 'app/protos/rod';
+import { AcceleratorSummary, GetResourceAvailabilityResponse } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
-import {
-  bootstrap,
-  cleanState,
-  flush,
-  getHarness,
-  setupModule,
-  setupObservableMatchers,
-} from 'app/testing/test';
+import { bootstrap, cleanState, flush, getHarness, setupModule } from 'app/testing/test';
 
 import { ResourceAvailabilityComponent } from './resource_availability';
 import { ResourceAvailabilityHarness } from './resource_availability_harness';
 
+const BASE_SUMMARY: AcceleratorSummary = {
+  acceleratorType: 'nvidia-tesla-h100',
+  zone: 'us-central1-a',
+  reservation: 'reservation-a',
+  totalAccelerators: 16,
+  activeAccelerators: 16,
+  allocatedAccelerators: 8,
+  totalNodes: 2,
+  activeNodes: 2,
+  clusterQueues: ['h100-queue'],
+};
+
 @Component({
   standalone: true,
   imports: [ResourceAvailabilityComponent],
-  template: `<xmc-rod-resource-availability />`,
+  template: `
+    @if (show()) {
+      <xmc-rod-resource-availability />
+    }
+  `,
 })
 class TestHostComponent {
-  readonly availability = viewChild.required(ResourceAvailabilityComponent);
+  readonly show = signal(true);
 }
 
 describe('ResourceAvailabilityComponent', () => {
-  beforeAll(setupObservableMatchers);
-
   const state = cleanState(() => {
     const resourceService = jasmine.createSpyObj<ResourceService>('ResourceService', [
       'getResourceAvailability',
@@ -89,21 +96,7 @@ describe('ResourceAvailabilityComponent', () => {
     expect(await errorBanner!.getMessage()).toContain('Failed to load resource availability');
 
     state.resourceService.getResourceAvailability.and.returnValue(
-      of({
-        summaries: [
-          {
-            acceleratorType: 'nvidia-tesla-h100',
-            zone: 'us-central1-a',
-            reservation: 'reservation-a',
-            totalAccelerators: 16,
-            activeAccelerators: 16,
-            allocatedAccelerators: 8,
-            totalNodes: 2,
-            activeNodes: 2,
-            clusterQueues: ['h100-queue'],
-          },
-        ],
-      }),
+      of({ summaries: [{ ...BASE_SUMMARY }] }),
     );
 
     await errorBanner!.clickRetry();
@@ -128,19 +121,9 @@ describe('ResourceAvailabilityComponent', () => {
     state.resourceService.getResourceAvailability.and.returnValue(
       of({
         summaries: [
+          { ...BASE_SUMMARY },
           {
-            acceleratorType: 'nvidia-tesla-h100',
-            zone: 'us-central1-a',
-            reservation: 'reservation-a',
-            totalAccelerators: 16,
-            activeAccelerators: 16,
-            allocatedAccelerators: 8,
-            totalNodes: 2,
-            activeNodes: 2,
-            clusterQueues: ['h100-queue'],
-          },
-          {
-            acceleratorType: 'nvidia-tesla-h100',
+            ...BASE_SUMMARY,
             zone: 'us-central1-b',
             reservation: '',
             totalAccelerators: 8,
@@ -148,7 +131,6 @@ describe('ResourceAvailabilityComponent', () => {
             allocatedAccelerators: 0,
             totalNodes: 1,
             activeNodes: 1,
-            clusterQueues: ['h100-queue'],
           },
         ],
       }),
@@ -162,29 +144,43 @@ describe('ResourceAvailabilityComponent', () => {
     expect(await harness.getContentText()).toContain('2 resource group(s) available');
   });
 
-  it('should unsubscribe previous in-flight request when loadAvailability is called again', async () => {
-    const first$ = new Subject<GetResourceAvailabilityResponse>();
-    const second$ = new Subject<GetResourceAvailabilityResponse>();
-    state.resourceService.getResourceAvailability.and.returnValues(
-      first$.asObservable(),
-      second$.asObservable(),
+  it('should reload availability when the Refresh button is clicked', async () => {
+    state.resourceService.getResourceAvailability.and.returnValue(
+      of({ summaries: [{ ...BASE_SUMMARY }] }),
     );
+
+    bootstrap(TestHostComponent);
+    await flush();
+
+    const harness = await getHarness(ResourceAvailabilityHarness);
+    expect(await harness.isRefreshDisabled()).toBeFalse();
+    expect(await harness.getContentText()).toContain('1 resource group(s) available');
+
+    state.resourceService.getResourceAvailability.and.returnValue(
+      of({
+        summaries: [{ ...BASE_SUMMARY }, { ...BASE_SUMMARY, zone: 'us-central1-b' }],
+      }),
+    );
+
+    await harness.clickRefresh();
+    await flush();
+
+    expect(state.resourceService.getResourceAvailability).toHaveBeenCalledTimes(2);
+    expect(await harness.getContentText()).toContain('2 resource group(s) available');
+  });
+
+  it('should unsubscribe in-flight request when component is destroyed', async () => {
+    const response$ = new Subject<GetResourceAvailabilityResponse>();
+    state.resourceService.getResourceAvailability.and.returnValue(response$.asObservable());
 
     const host = bootstrap(TestHostComponent) as TestHostComponent;
     await flush();
 
-    expect(first$.observed).toBeTrue();
+    expect(response$.observed).toBeTrue();
 
-    (host.availability() as unknown as { loadAvailability(): void }).loadAvailability();
-    expect(first$.observed).toBeFalse();
-    expect(second$.observed).toBeTrue();
-
-    second$.next({ summaries: [] });
-    second$.complete();
+    host.show.set(false);
     await flush();
 
-    const harness = await getHarness(ResourceAvailabilityHarness);
-    expect(await harness.isLoading()).toBeFalse();
-    expect(await harness.isEmpty()).toBeTrue();
+    expect(response$.observed).toBeFalse();
   });
 });

@@ -15,7 +15,6 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  computed,
   DestroyRef,
   inject,
   OnInit,
@@ -27,7 +26,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { Subscription } from 'rxjs';
 
 import { ErrorBannerComponent } from 'app/common/components/error_banner/error_banner';
-import { AcceleratorSummary, GetResourceAvailabilityResponse } from 'app/protos/rod';
+import { AcceleratorSummary } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
 
 /**
@@ -48,10 +47,7 @@ export class ResourceAvailabilityComponent implements OnInit {
 
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
-  protected readonly response = signal<GetResourceAvailabilityResponse | null>(null);
-  protected readonly summaries = computed<AcceleratorSummary[]>(
-    () => this.response()?.summaries ?? [],
-  );
+  protected readonly summaries = signal<AcceleratorSummary[]>([]);
 
   private availabilitySubscription?: Subscription;
 
@@ -70,7 +66,7 @@ export class ResourceAvailabilityComponent implements OnInit {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
-          this.response.set(res);
+          this.summaries.set(res.summaries ?? []);
           this.loading.set(false);
         },
         error: () => {
