@@ -23,16 +23,28 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	dashboard_apipb "xmanager_cloud/api/protos/dashboard"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/cmd/experiment_state_server/toollibs"
 	"xmanager_cloud/internal/logging"
+	"xmanager_cloud/internal/prototest"
 	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/internal/validator"
 
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 )
+
+func newTestObserver(mockDash *mockDashboardClient, st storage.Storage) (ArtifactObserver, *sync.WaitGroup) {
+	var wg sync.WaitGroup
+	return NewDashboardObserver(toollibs.NewDashboardToolClient(mockDash), st, &wg), &wg
+}
 
 func chartArtifactFixture() *essmsgpb.Artifact {
 	return &essmsgpb.Artifact{
@@ -44,23 +56,6 @@ func chartArtifactFixture() *essmsgpb.Artifact {
 			},
 		},
 	}
-}
-
-type recordingStorage struct {
-	*storage.MockStorage
-	mu            sync.Mutex
-	updateUpdates []*storage.ArtifactUpdate
-	// updateCtxErrs records ctx.Err() as each write was attempted, so tests can tell a write
-	// that reached storage from one that was refused by an already-finished context.
-	updateCtxErrs []error
-}
-
-func (s *recordingStorage) UpdateArtifact(ctx context.Context, update *storage.ArtifactUpdate) (storage.UpdatedArtifacts, error) {
-	s.mu.Lock()
-	s.updateUpdates = append(s.updateUpdates, update)
-	s.updateCtxErrs = append(s.updateCtxErrs, ctx.Err())
-	s.mu.Unlock()
-	return s.MockStorage.UpdateArtifact(ctx, update)
 }
 
 func TestNewDashboardObserver(t *testing.T) {
@@ -647,4 +642,149 @@ func TestDashboardObserver_OnArtifactCreated_StorageUpdateError(t *testing.T) {
 	// Should not panic or block
 	obs.OnArtifactCreated(t.Context(), proto.Clone(artifact).(*essmsgpb.Artifact))
 	wg.Wait()
+}
+
+func TestDashboardObserver_OnArtifactCreated_ExperimentLevelStudyChart(t *testing.T) {
+	wantReq := studyChartRequest(100, "")
+	createdChart := prototest.Modify(wantReq.GetChart(), func(c *dashboard_apipb.Chart) {
+		c.Name = "experiments/100/charts/study-100-parallel-coordinates"
+	})
+	mockDash, recStorage := &mockDashboardClient{createChartResp: createdChart}, &recordingStorage{MockStorage: &storage.MockStorage{}}
+	obs, wg := newTestObserver(mockDash, recStorage)
+	artifact := prototest.Modify(chartArtifactFixture(), func(a *essmsgpb.Artifact) {
+		a.Parent = "experiments/100"
+		a.GetPayload().GetChart().Title, a.GetPayload().GetChart().MetricNames, a.GetPayload().GetChart().Status = "", []string{"accuracy"}, essmsgpb.ChartArtifact_PROVISIONING
+	})
+	before := studyChartFailureCount(studyChartStageChart)
+	obs.OnArtifactCreated(t.Context(), artifact)
+	wg.Wait()
+	if len(mockDash.reqs) != 1 || len(recStorage.updateUpdates) != 1 {
+		t.Fatalf("dashReqs=%d updates=%d, want 1, 1", len(mockDash.reqs), len(recStorage.updateUpdates))
+	}
+	if diff := cmp.Diff(wantReq, mockDash.reqs[0], protocmp.Transform()); diff != "" {
+		t.Errorf("CreateChart request mismatch (-want +got):\n%s", diff)
+	}
+	if err := validator.ValidateCreateChartRequest(mockDash.reqs[0]); err != nil {
+		t.Errorf("ValidateCreateChartRequest(studyChartRequest) = %v, want nil", err)
+	}
+	gotPayload := recStorage.updateUpdates[0].Artifact.GetPayload().GetChart()
+	if gotPayload.GetStatus() != essmsgpb.ChartArtifact_SUCCESS {
+		t.Errorf("ChartArtifact status = %v, want SUCCESS", gotPayload.GetStatus())
+	}
+	if diff := cmp.Diff(createdChart, gotPayload.GetChart(), protocmp.Transform()); diff != "" {
+		t.Errorf("persisted ChartArtifact.chart mismatch (-want +got):\n%s", diff)
+	}
+	assertStudyChartFailureDelta(t, studyChartStageChart, before, 0)
+}
+
+func TestDashboardObserver_StudyChartFailureCounter(t *testing.T) {
+	dashErr, storeErr := errors.New("dashboard unavailable"), errors.New("storage unavailable")
+	for _, tc := range []struct {
+		name, artifactName, parent                string
+		nilStorage, panicCreateChart, panicUpdate bool
+		createChartErr, updateArtifactErr         error
+		wantDashCalls, wantUpdates                int
+		wantStatus                                essmsgpb.ChartArtifact_Status
+		wantChartStageDelta                       float64
+	}{
+		{name: "study_create_chart_fails", artifactName: "artifacts/300", parent: "experiments/100", createChartErr: dashErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_write_back_fails", artifactName: "artifacts/300", parent: "experiments/100", updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_both_create_and_write_back_fail_counts_once", artifactName: "artifacts/300", parent: "experiments/100", createChartErr: dashErr, updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_invalid_artifact_name_counts_write_back_failure", artifactName: "invalid-artifact-name", parent: "experiments/100", wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_nil_storage_counts_write_back_failure_without_panic", artifactName: "artifacts/300", parent: "experiments/100", nilStorage: true, wantDashCalls: 1, wantUpdates: 0, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_chart_panic_increments_chart_failure_counter", artifactName: "artifacts/300", parent: "experiments/100", panicCreateChart: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "study_write_back_panic_after_success_keeps_success_without_retry", artifactName: "artifacts/300", parent: "experiments/100", panicUpdate: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartStageDelta: 1},
+		{name: "study_both_create_and_write_back_panic_recovers_cleanly", artifactName: "artifacts/300", parent: "experiments/100", panicCreateChart: true, panicUpdate: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED, wantChartStageDelta: 1},
+		{name: "work_unit_create_chart_fails_does_not_count", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", createChartErr: dashErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "work_unit_write_back_fails_does_not_count", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", updateArtifactErr: storeErr, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_SUCCESS},
+		{name: "work_unit_chart_panic_does_not_increment_study_counter", artifactName: "artifacts/300", parent: "experiments/100/workUnits/200", panicCreateChart: true, wantDashCalls: 1, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "invalid_parent_marks_failed_without_study_counter", artifactName: "artifacts/300", parent: "invalid-parent", wantDashCalls: 0, wantUpdates: 1, wantStatus: essmsgpb.ChartArtifact_FAILED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDash := &mockDashboardClient{createChartErr: tc.createChartErr}
+			if tc.panicCreateChart {
+				mockDash.createChartFn = func(context.Context, *dashboard_apipb.CreateChartRequest) (*dashboard_apipb.Chart, error) {
+					panic("unexpected panic")
+				}
+			}
+			recStorage := &recordingStorage{MockStorage: &storage.MockStorage{UpdateArtifactErr: tc.updateArtifactErr}, panicUpdateArtifact: tc.panicUpdate}
+			var st storage.Storage = recStorage
+			if tc.nilStorage {
+				st = nil
+			}
+			obs, wg := newTestObserver(mockDash, st)
+			beforeChart, beforeArtifact := studyChartFailureCount(studyChartStageChart), studyChartFailureCount(studyChartStageArtifact)
+			obs.OnArtifactCreated(t.Context(), prototest.Modify(chartArtifactFixture(), func(a *essmsgpb.Artifact) {
+				a.Name, a.Parent = tc.artifactName, tc.parent
+				a.GetPayload().GetChart().Title, a.GetPayload().GetChart().Status = "Parallel Coordinates", essmsgpb.ChartArtifact_PROVISIONING
+			}))
+			wg.Wait()
+			if len(mockDash.reqs) != tc.wantDashCalls || len(recStorage.updateUpdates) != tc.wantUpdates {
+				t.Fatalf("dashCalls = %d (want %d), updates = %d (want %d)", len(mockDash.reqs), tc.wantDashCalls, len(recStorage.updateUpdates), tc.wantUpdates)
+			}
+			if tc.wantUpdates == 1 {
+				up, gotChart := recStorage.updateUpdates[0], recStorage.updateUpdates[0].Artifact.GetPayload().GetChart()
+				if up.AID != 300 || gotChart.GetStatus() != tc.wantStatus {
+					t.Errorf("persisted (AID, status) = (%d, %v), want (300, %v)", up.AID, gotChart.GetStatus(), tc.wantStatus)
+				}
+				if tc.wantStatus == essmsgpb.ChartArtifact_FAILED && gotChart.GetErrorMessage() == "" {
+					t.Error("persisted FAILED ChartArtifact has empty ErrorMessage, want non-empty")
+				}
+				if tc.panicCreateChart && gotChart.GetErrorMessage() != "chart provisioning failed: internal error" {
+					t.Errorf("panic ErrorMessage = %q, want %q", gotChart.GetErrorMessage(), "chart provisioning failed: internal error")
+				}
+			}
+			assertStudyChartFailureDelta(t, studyChartStageChart, beforeChart, tc.wantChartStageDelta)
+			assertStudyChartFailureDelta(t, studyChartStageArtifact, beforeArtifact, 0)
+		})
+	}
+}
+
+func TestDashboardObserver_RecoversStudyChartAfterAmbiguousCreate(t *testing.T) {
+	const studyChartName, getChartName = "experiments/100/charts/study-100-parallel-coordinates", "charts/study-100-parallel-coordinates"
+	existing := &dashboard_apipb.Chart{Name: studyChartName, Xid: 100}
+	for _, tc := range []struct {
+		name, parent, wantChartName string
+		createErr, getErr           error
+		getChartResp                *dashboard_apipb.Chart
+		expiredParent               bool
+		wantGetChart                []string
+		wantStatus                  essmsgpb.ChartArtifact_Status
+	}{
+		{name: "study_already_exists_reads_back_chart", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), getChartResp: existing, wantGetChart: []string{getChartName}, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartName: studyChartName},
+		{name: "study_deadline_after_commit_reads_back_chart", parent: "experiments/100", createErr: status.Error(codes.DeadlineExceeded, "deadline"), getChartResp: existing, expiredParent: true, wantGetChart: []string{getChartName}, wantStatus: essmsgpb.ChartArtifact_SUCCESS, wantChartName: studyChartName},
+		{name: "study_read_back_failure_records_failed", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), getChartResp: existing, getErr: status.Error(codes.NotFound, "gone"), wantGetChart: []string{getChartName}, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "study_recovered_wrong_xid_records_failed", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), getChartResp: &dashboard_apipb.Chart{Name: studyChartName, Xid: 999}, wantGetChart: []string{getChartName}, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "study_recovered_nonzero_wid_records_failed", parent: "experiments/100", createErr: status.Error(codes.AlreadyExists, "exists"), getChartResp: &dashboard_apipb.Chart{Name: studyChartName, Xid: 100, Wid: 5}, wantGetChart: []string{getChartName}, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "study_other_error_does_not_read_back", parent: "experiments/100", createErr: status.Error(codes.PermissionDenied, "denied"), getChartResp: existing, wantStatus: essmsgpb.ChartArtifact_FAILED},
+		{name: "work_unit_already_exists_does_not_read_back", parent: "experiments/100/workUnits/200", createErr: status.Error(codes.AlreadyExists, "exists"), getChartResp: existing, wantStatus: essmsgpb.ChartArtifact_FAILED},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mockDash, recStorage := &mockDashboardClient{createChartErr: tc.createErr, getChartResp: tc.getChartResp, getChartErr: tc.getErr}, &recordingStorage{MockStorage: &storage.MockStorage{}}
+			obs, wg := newTestObserver(mockDash, recStorage)
+			ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer user-token-123"))
+			if tc.expiredParent {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, time.Now().Add(-time.Second))
+				defer cancel()
+			}
+			obs.OnArtifactCreated(ctx, prototest.Modify(chartArtifactFixture(), func(a *essmsgpb.Artifact) {
+				a.Parent = tc.parent
+				a.GetPayload().GetChart().Title, a.GetPayload().GetChart().Status = "", essmsgpb.ChartArtifact_PROVISIONING
+			}))
+			wg.Wait()
+			if diff := cmp.Diff(tc.wantGetChart, mockDash.getChartReqs); diff != "" {
+				t.Errorf("GetChart names mismatch (-want +got):\n%s", diff)
+			}
+			if len(recStorage.updateUpdates) != 1 {
+				t.Fatalf("len(updateUpdates) = %d, want 1", len(recStorage.updateUpdates))
+			}
+			if tc.expiredParent && (len(mockDash.getChartCtxErrs) != 1 || mockDash.getChartCtxErrs[0] != nil || len(mockDash.getChartMD) != 1 || cmp.Diff([]string{"Bearer user-token-123"}, mockDash.getChartMD[0].Get("authorization")) != "" || len(recStorage.updateCtxErrs) != 1 || recStorage.updateCtxErrs[0] != nil) {
+				t.Errorf("expiredParent telemetry failed: getErrs=%v getMD=%v updateErrs=%v", mockDash.getChartCtxErrs, mockDash.getChartMD, recStorage.updateCtxErrs)
+			}
+			if got := recStorage.updateUpdates[0].Artifact.GetPayload().GetChart(); got.GetStatus() != tc.wantStatus || got.GetChart().GetName() != tc.wantChartName {
+				t.Errorf("persisted ChartArtifact = (%v, %q), want (%v, %q)", got.GetStatus(), got.GetChart().GetName(), tc.wantStatus, tc.wantChartName)
+			}
+		})
+	}
 }

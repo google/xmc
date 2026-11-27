@@ -1,0 +1,51 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package storagetest
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"xmanager_cloud/internal/storage"
+	"xmanager_cloud/pkg/components/store"
+)
+
+// ErrNilRecord is returned when a nil component record is passed to SeedComponentCatalog.
+var ErrNilRecord = errors.New("nil component record provided")
+
+// SeedComponentCatalog inserts and marks observed each record in recs within one serializable
+// transaction. Records must come before their dependents: dependency edges are written from each
+// record's ComponentRecord.Dependencies (which should list the same names as Spec.Dependencies),
+// and a dependency not inserted earlier fails with FailedPrecondition, as on both backends.
+func SeedComponentCatalog(ctx context.Context, st storage.TransactionRunner, recs ...*store.ComponentRecord) error {
+	_, err := st.RunInSerializableTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
+		depIDs := make(map[string]int64, len(recs)) // Reset on every attempt.
+		for i, rec := range recs {
+			if rec == nil {
+				return fmt.Errorf("record[%d]: %w", i, ErrNilRecord)
+			}
+			if err := tx.Components.InsertComponent(ctx, rec, depIDs); err != nil {
+				return fmt.Errorf("insert component %q: %w", rec.Name, err)
+			}
+			if err := tx.Components.UpdateComponentObservation(ctx, rec, false); err != nil {
+				return fmt.Errorf("observe component %q: %w", rec.Name, err)
+			}
+			depIDs[rec.Name] = rec.ComponentID
+		}
+		return nil
+	})
+	return err
+}

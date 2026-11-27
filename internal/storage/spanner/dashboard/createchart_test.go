@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"cloud.google.com/go/spanner"
+
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 func TestCreateChart_Success(t *testing.T) {
@@ -87,4 +89,28 @@ func TestCreateChart_NoArtifactChartsCreated(t *testing.T) {
 	if count != 0 {
 		t.Errorf("Expected 0 ArtifactCharts rows for new chart, got %d", count)
 	}
+}
+
+func TestExperimentLevelChart_NullWidRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	repo := setupDashboardRepository(ctx, t)
+
+	e1 := storagetest.ExperimentChartProto("study-a", 100)
+	if err := repo.CreateChart(ctx, e1); err != nil {
+		t.Fatalf("CreateChart %s failed: %v", e1.GetName(), err)
+	}
+
+	assertWidNull := func() {
+		row, err := repo.client.Single().ReadRow(ctx, "Charts", spanner.Key{"study-a"}, []string{"Wid"})
+		if err != nil {
+			t.Fatalf("ReadRow failed: %v", err)
+		}
+		var wid spanner.NullInt64
+		if err := row.Columns(&wid); err != nil || wid.Valid {
+			t.Fatalf("Charts.Wid for experiment-level chart = (%v, %v), want NULL", wid, err)
+		}
+	}
+	assertWidNull()
+	storagetest.VerifyExperimentLevelChartRoundTrip(ctx, t, repo, e1)
+	assertWidNull()
 }

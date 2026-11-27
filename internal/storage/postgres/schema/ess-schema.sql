@@ -183,7 +183,7 @@ CREATE TABLE Charts (
   Title TEXT NOT NULL,
   Description TEXT,
   Xid BIGINT NOT NULL,
-  Wid BIGINT NOT NULL DEFAULT 0,
+  Wid BIGINT, -- NULL for experiment-level charts.
   PlotLayout BYTEA,
   Owner TEXT NOT NULL,
   CreatedAt TIMESTAMPTZ NOT NULL,

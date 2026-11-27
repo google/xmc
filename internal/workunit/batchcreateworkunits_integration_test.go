@@ -29,6 +29,7 @@ import (
 	"xmanager_cloud/internal/experiment"
 	"xmanager_cloud/internal/experiment/experimenttest"
 	"xmanager_cloud/internal/storage"
+	storagetest "xmanager_cloud/internal/storage/testing"
 	"xmanager_cloud/internal/validator"
 	"xmanager_cloud/internal/workunit"
 	dbstoretest "xmanager_cloud/pkg/components/store/dbstore/testing"
@@ -39,18 +40,10 @@ import (
 func seedStudyController(ctx context.Context, t *testing.T, st storage.Storage) {
 	t.Helper()
 	hpo := experimenttest.HPOCatalog(map[string]string{"studyControllerServiceAccount": studyControllerGSA})["hpo"]
+	hpo.Dependencies = nil
 	hpo.Spec.Dependencies = nil
-	for _, write := range []func(ctx context.Context, tx *storage.Transaction) error{
-		func(ctx context.Context, tx *storage.Transaction) error {
-			return tx.Components.InsertComponent(ctx, hpo, nil)
-		},
-		func(ctx context.Context, tx *storage.Transaction) error {
-			return tx.Components.UpdateComponentObservation(ctx, hpo, false)
-		},
-	} {
-		if _, err := st.RunInSerializableTransaction(ctx, write); err != nil {
-			t.Fatalf("seeding the hpo component failed: %v", err)
-		}
+	if err := storagetest.SeedComponentCatalog(ctx, st, hpo); err != nil {
+		t.Fatalf("seeding the hpo component failed: %v", err)
 	}
 }
 

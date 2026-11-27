@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/testing/protocmp"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	dpb "xmanager_cloud/api/protos/dashboard"
@@ -94,6 +95,37 @@ func TestChartProtoAndRowRoundTrip(t *testing.T) {
 	}
 
 	row.PlotSpecs = [][]byte{plotRows[0].PlotSpec, plotRows[1].PlotSpec}
+	got, err := ChartRowToProto(row)
+	if err != nil {
+		t.Fatalf("ChartRowToProto() failed: %v", err)
+	}
+	if diff := cmp.Diff(chart, got, protocmp.Transform()); diff != "" {
+		t.Errorf("Chart round-trip mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestExperimentLevelChartProtoAndRowRoundTrip(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:       "experiments/100/charts/study",
+		Title:      "Study",
+		Xid:        100,
+		Plots:      []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+		CreateTime: timestamppb.New(testDashboardTime),
+		UpdateTime: timestamppb.New(testDashboardTime),
+	}
+
+	row, plotRows, err := ChartProtoToRow(chart, testDashboardTime)
+	if err != nil {
+		t.Fatalf("ChartProtoToRow() failed: %v", err)
+	}
+	if row.Wid.Valid {
+		t.Errorf("row.Wid = %v, want NULL so that the experiment-level chart stores NULL", row.Wid)
+	}
+	if got := row.GetUpdateArgs()["wid"]; got != (pgtype.Int8{}) {
+		t.Errorf("update args wid = %v, want a NULL pgtype.Int8", got)
+	}
+
+	row.PlotSpecs = [][]byte{plotRows[0].PlotSpec}
 	got, err := ChartRowToProto(row)
 	if err != nil {
 		t.Fatalf("ChartRowToProto() failed: %v", err)

@@ -73,7 +73,7 @@ spec:
         # Set by xmc-bridge from ESS_ADDR/CMS_ADDRESS and IAP_EXPECTED_GRPC_AUDIENCE/CLIENT_ID.
         - {{ printf "-ess_addr=%s" (required "hpoDeployment.essAddr is required" $deploy.essAddr) | quote }}
         - {{ printf "-ess_audience=%s" (required "hpoDeployment.essAudience is required" $deploy.essAudience) | quote }}
-        - "-components_namespace={{ $ns }}"
+        - {{ printf "-components_namespace=%s" $ns | quote }}
         env:
         - name: REDIS_PASSWORD
           valueFrom:

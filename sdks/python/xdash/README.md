@@ -40,7 +40,7 @@ with DashboardClient(endpoint="localhost:8080") as client:
         print(f"{dashboard.name}: {dashboard.title}")
 
     dashboard = client.get_dashboard("dashboards/vcc_comparison")
-    chart = client.get_chart("experiments/234911122/workUnits/1/charts/baseline")
+    chart = client.get_chart("charts/baseline")
     print(f"{chart.title} has {len(chart.plots)} plots")
 ```
 
@@ -112,10 +112,10 @@ with DashboardClient() as client:
     created = client.create_dashboard(builder.build())
 ```
 
-`create_chart` attaches a chart to a **WorkUnit** parent — `experiments/{xid}/workUnits/{wid}` —
-which is the only parent the `CreateChart` RPC accepts. `create_charts` is the batch convenience
-wrapper: it derives each parent from the chart's own `xid`/`wid`, so `for_experiment()` must have
-been called on every chart it is given.
+`create_chart` attaches a chart to either a **WorkUnit** parent (`experiments/{xid}/workUnits/{wid}`)
+or an **Experiment** parent (`experiments/{xid}`, for experiment-level charts). `create_charts` is
+the work-unit batch convenience wrapper: it derives `experiments/{xid}/workUnits/{wid}` from each
+chart's positive `xid` and `wid`, so `for_experiment()` must have been called on every chart it is given.
 
 ### Referencing Charts from a Dashboard
 
@@ -197,11 +197,12 @@ bazel run //sdks/python/xdash:xdash_bin -- list
 # Retrieve an existing dashboard
 bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 
-# Retrieve a single chart (any of the three chart resource patterns works)
-bazel run //sdks/python/xdash:xdash_bin -- get experiments/234911122/workUnits/1/charts/baseline
+# Retrieve a single chart (GetChart accepts charts/{chart_id}; hierarchical patterns work with get-data below)
+bazel run //sdks/python/xdash:xdash_bin -- get charts/baseline
 
-# Fetch evaluated ChartData for a specific chart
+# Fetch evaluated ChartData for a work-unit or experiment-level chart
 bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline
+bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/charts/study
 ```
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see

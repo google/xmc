@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -62,11 +63,14 @@ func TestBigQueryEngineAndSQLGeneration(t *testing.T) {
 	}
 
 	sampleTime := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
 	var queries []string
 	conn := &stubBigQueryConn{
 		tableRef: "`proj.ds.tbl`",
 		queryFn: func(_ context.Context, sql string, _ ...any) (xmcbigquery.Rows, error) {
+			mu.Lock()
 			queries = append(queries, sql)
+			mu.Unlock()
 			if strings.Contains(sql, "ARRAY_AGG") {
 				return &mockRows{Data: [][]any{{"loss", 0.05, 0.01, 0.99, 0.25, int64(500), sampleTime}}}, nil
 			}

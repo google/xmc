@@ -352,8 +352,8 @@ def create_chart_artifact(
     """Attaches the ChartArtifact to the work unit.
 
     Only `title` and `metric_names` may be supplied: the server rejects client-set
-    `chart`, `status` and `error_message`, marks the artifact PROVISIONING, and fills
-    those fields once it has provisioned its own chart resource.
+    `chart`, `status` and `error_message`, marks the artifact PROVISIONING (FAILED if ESS
+    has no Dashboard Service), and fills those fields once it provisions its chart.
 
     The UI does not render `Artifact.url` for chart payloads, so the dashboard link is
     repeated in the notes and carried by the companion URL artifact.

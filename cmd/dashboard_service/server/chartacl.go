@@ -127,6 +127,29 @@ func (s *Server) fetchReferencedChart(ctx context.Context, chartID string) (*dpb
 	return chart, nil
 }
 
+// authorizeChartWrite verifies caller write authorization on the experiment a chart belongs to and
+// returns the stored chart alongside the authorized experiment XID.
+func (s *Server) authorizeChartWrite(ctx context.Context, user, chartName, chartID string) (*dpb.Chart, int64, error) {
+	existing, err := s.repo.GetChart(ctx, chartID)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, 0, status.Errorf(codes.NotFound, "chart %q not found", chartName)
+		}
+		return nil, 0, status.Errorf(codes.Internal, "failed to get chart: %v", err)
+	}
+	if existing == nil {
+		return nil, 0, status.Errorf(codes.Internal, "repository returned nil chart for %q", chartName)
+	}
+	targetXID := existing.GetXid()
+	if targetXID <= 0 {
+		return nil, 0, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", chartName, targetXID)
+	}
+	if err := s.authorizeExperimentWrite(ctx, user, targetXID); err != nil {
+		return nil, 0, err
+	}
+	return existing, targetXID, nil
+}
+
 // isChartReadable reports whether the user holds READER on the chart's experiment. A denial is a
 // decision rather than an error, but any other failure is propagated so that an unreachable XID
 // service is never mistaken for an empty result.
