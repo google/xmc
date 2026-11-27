@@ -38,6 +38,23 @@ func (m *mockDashboardServiceClient) CreateChart(ctx context.Context, in *pb.Cre
 	return nil, nil
 }
 
+func (m *mockDashboardServiceClient) GetChart(_ context.Context, in *pb.GetChartRequest, _ ...grpc.CallOption) (*pb.Chart, error) {
+	return &pb.Chart{Name: in.GetName()}, nil
+}
+
+func TestDashboardToolClient_GetChart(t *testing.T) {
+	got, err := NewDashboardToolClient(&mockDashboardServiceClient{}).GetChart(context.Background(), &pb.GetChartRequest{Name: "charts/c1"})
+	if err != nil || got.GetName() != "charts/c1" {
+		t.Errorf("GetChart() = (%v, %v), want charts/c1", got, err)
+	}
+	if _, err := (*DashboardToolClient)(nil).GetChart(context.Background(), &pb.GetChartRequest{}); err == nil {
+		t.Error("GetChart() on nil client returned nil error, want error")
+	}
+	if _, err := NewDashboardToolClient(&mockDashboardServiceClient{}).GetChart(context.Background(), nil); err == nil {
+		t.Error("GetChart(nil) returned nil error, want error")
+	}
+}
+
 func TestDashboardToolClient_CreateChart(t *testing.T) {
 	expectedChart := &pb.Chart{Name: "test-chart"}
 

@@ -139,7 +139,9 @@ func main() {
 	oauthAuth := oauth.NewAuthenticator(oauthCfg)
 	defer oauthAuth.Close()
 
-	// The gRPC authorizer reuses this authenticator for admission, so gRPC admits the same principals as HTTP.
+	// The gRPC authorizer reuses this authenticator for base admission (wrapped with
+	// studyControllerAdmission in server.NewProd so the active hpo study controller GSA is also
+	// admitted on gRPC without widening HTTP admission).
 	prodServer, err := server.NewProd(ctx, &cfg, oauthCfg, authz.DeploymentAdmission(oauthAuth))
 	if err != nil {
 		logging.Fatal(ctx, "failed to initialize production server", "error", err)

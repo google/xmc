@@ -128,7 +128,7 @@ type ChartRow struct {
 	Title       string      `db:"title"`
 	Description pgtype.Text `db:"description"`
 	Xid         int64       `db:"xid"`
-	Wid         int64       `db:"wid"`
+	Wid         pgtype.Int8 `db:"wid"` // NULL for experiment-level charts (wid 0).
 	PlotLayout  []byte      `db:"plotlayout"`
 	Owner       string      `db:"owner"`
 	CreatedAt   time.Time   `db:"createdat"`
@@ -190,13 +190,9 @@ func ChartRowToProto(row ChartRow) (*dpb.Chart, error) {
 		}
 		plots = append(plots, plot)
 	}
-	name := validator.ConstructRootChartName(row.ChartID)
-	if row.Xid > 0 {
-		name = validator.ConstructWorkUnitChartName(row.Xid, row.Wid, row.ChartID)
-	}
 	return &dpb.Chart{
-		Name: name, Title: row.Title, Description: row.Description.String,
-		Xid: row.Xid, Wid: row.Wid, Plots: plots, PlotLayout: layout,
+		Name: storagedata.ChartName(row.ChartID, row.Xid, row.Wid.Int64), Title: row.Title, Description: row.Description.String,
+		Xid: row.Xid, Wid: row.Wid.Int64, Plots: plots, PlotLayout: layout,
 		CreateTime: timestamppb.New(row.CreatedAt), UpdateTime: timestamppb.New(row.UpdatedAt),
 	}, nil
 }
@@ -228,10 +224,11 @@ func ChartProtoToRow(chart *dpb.Chart, now time.Time) (ChartRow, []ChartPlotRow,
 			PlotType: int64(plot.GetType()), PlotSpec: specBytes,
 		})
 	}
+	chartWid := storagedata.ResolveChartWid(chart, wid)
 	return ChartRow{
 		ChartID: chartID, Title: chart.GetTitle(),
 		Description: pgtype.Text{String: chart.GetDescription(), Valid: true},
-		Xid:         max(xid, chart.GetXid()), Wid: max(wid, chart.GetWid()),
+		Xid:         max(xid, chart.GetXid()), Wid: pgtype.Int8{Int64: chartWid, Valid: chartWid != 0},
 		PlotLayout: layoutBytes, Owner: "", CreatedAt: now, UpdatedAt: now,
 	}, plotRows, nil
 }

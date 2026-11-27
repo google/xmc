@@ -35,13 +35,28 @@ func NewDashboardToolClient(client pb.DashboardServiceClient) *DashboardToolClie
 	}
 }
 
+func (c *DashboardToolClient) validateRequest(reqNil bool) error {
+	if c == nil || c.client == nil {
+		return errors.New("client is not initialized")
+	}
+	if reqNil {
+		return errors.New("request cannot be nil")
+	}
+	return nil
+}
+
 // CreateChart issues a CreateChart RPC to the xmc-dashboard-service.
 func (c *DashboardToolClient) CreateChart(ctx context.Context, req *pb.CreateChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
-	if c == nil || c.client == nil {
-		return nil, errors.New("client is not initialized")
-	}
-	if req == nil {
-		return nil, errors.New("request cannot be nil")
+	if err := c.validateRequest(req == nil); err != nil {
+		return nil, err
 	}
 	return c.client.CreateChart(ctx, req, opts...)
+}
+
+// GetChart issues a GetChart RPC to the xmc-dashboard-service.
+func (c *DashboardToolClient) GetChart(ctx context.Context, req *pb.GetChartRequest, opts ...grpc.CallOption) (*pb.Chart, error) {
+	if err := c.validateRequest(req == nil); err != nil {
+		return nil, err
+	}
+	return c.client.GetChart(ctx, req, opts...)
 }

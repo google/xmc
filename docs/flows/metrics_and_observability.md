@@ -126,7 +126,9 @@ name, so those lead the key and let ClickHouse prune almost everything before re
 
 `GetChartData` resolves the chart, authorizes the caller against the experiment's XID ACLs — the
 _same_ check the ESS applies, so dashboards cannot leak data the user could not read directly —
-and compiles the plot spec into SQL against `xmc_metrics`.
+and compiles the plot spec into SQL against `xmc_metrics`. `PARALLEL_COORDINATES` plots are the
+exception: they read the study configuration and work units from the experiment store instead (see
+[Study Lifecycle](study_lifecycle.md#3-study-visualization-parallel-coordinates-chart)).
 
 Charts are downsampled server-side. The client sends its plot width in pixels; the engine divides
 the step range by a target point count and, if the resulting bucket exceeds 1, aggregates with
@@ -258,7 +260,8 @@ ESS and the Study Controller expose the following Prometheus metrics under `/met
 | Metric | Type | Component | Labels | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `xmc_ess_study_reconcile_enqueue_failures_total` | Counter | ESS | — | Created `STUDY` experiments whose initial reconcile tick could not be enqueued to `xmc-study-reconcile-stream`. Such a study is not reconciled until a future sweeper recovers it, so alert on any increase. |
-| `xmc_study_controller_reconcile_ticks_total` | Counter | Study Controller | `outcome` | Study reconcile ticks processed, partitioned by `outcome` (`reconciled`, `contended`, `retry_error`, `invalid_payload`). |
+| `xmc_ess_study_chart_provisioning_failures_total` | Counter | ESS | `stage` | Created `STUDY` experiments whose parallel coordinates chart could not be provisioned, partitioned by `stage` (`artifact` for child XID or artifact insert failure, `chart` for `DashboardService.CreateChart` or status write-back failure). |
+| `xmc_study_controller_reconcile_ticks_total` | Counter | Study Controller | `outcome` | Study reconcile ticks processed, partitioned by `outcome` (`reconciled`, `contended`, `retry_error`, `invalid_payload`, `invalid_study`). |
 
 ---
 

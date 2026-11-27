@@ -53,6 +53,8 @@ class LightningIntegrationTest(unittest.TestCase):
             with self.assertRaises(ImportError) as ctx:
                 importlib.import_module("xmc.integrations.lightning")
             self.assertIn("PyTorch Lightning is required to use XmcLogger", str(ctx.exception))
+            self.assertIn('pip install "xmc-metrics[lightning]"', str(ctx.exception))
+            self.assertIn('pip install "pytorch-lightning>=2.0.0"', str(ctx.exception))
 
     def test_import_fails_when_lightning_version_incompatible(self) -> None:
         """Verifies eager import fails fast when PyTorch Lightning version < 2.0.0."""
@@ -71,6 +73,8 @@ class LightningIntegrationTest(unittest.TestCase):
             with self.assertRaises(ImportError) as ctx:
                 importlib.import_module("xmc.integrations.lightning")
             self.assertIn("PyTorch Lightning version >= 2.0.0 is required", str(ctx.exception))
+            self.assertIn('pip install --upgrade "xmc-metrics[lightning]"', str(ctx.exception))
+            self.assertIn('pip install --upgrade "pytorch-lightning>=2.0.0"', str(ctx.exception))
 
     def test_import_succeeds_with_valid_lightning(self) -> None:
         """Verifies eager import succeeds when PyTorch Lightning >= 2.0.0 is present."""

@@ -19,7 +19,7 @@ to. Read [Architecture Overview](overview.md) first for how these fit together.
 | ROD Data Provider | [`cmd/rod_data_provider`](../../cmd/rod_data_provider) | GKE `Deployment` | HTTP `8080`, gRPC | `rodDeployment.enabled` |
 | Ingestion Gateway | [`cmd/ingestion_gateway`](../../cmd/ingestion_gateway) | GKE `Deployment` (HPA) | HTTP `8080` | `ingestion-gateway` component enabled (in `xmc-profile`, actuated by XMC Bridge) |
 | XMC Bridge | [`cmd/xmc_bridge`](../../cmd/xmc_bridge) | GKE `Deployment` | gRPC client only | always |
-| Study Controller | [`cmd/study_controller`](../../cmd/study_controller) | GKE `Deployment` (`xmc-cmp-hpo` release installed by XMC Bridge) | HTTP `8080` (health & metrics), Redis stream consumer (`xmc-study-reconcile-stream`) | `hpo` component enabled |
+| Study Controller | [`cmd/study_controller`](../../cmd/study_controller) | GKE `Deployment` (`xmc-cmp-hpo` release installed by XMC Bridge) | HTTP `8080` (health & metrics), Redis stream consumer (`xmc-study-reconcile-stream`), gRPC client to ESS and Vizier | `hpo` component enabled |
 | Log Monitor | [`cmd/log_monitor`](../../cmd/log_monitor) | GKE `Deployment` (or Cloud Run service) | HTTP `8080` (health) | `logMonitorDeployment.enabled` (default `true`) |
 | Component Linter | [`cmd/component-linter`](../../cmd/component-linter) | Developer workstation / CI | CLI | n/a |
 
@@ -341,9 +341,10 @@ declarations fail the build rather than a deployment.
 
 | Client | Source | Purpose |
 | :--- | :--- | :--- |
-| XManager CLI | installed from PyPI via `pip install xmanager` and overlaid with local [`api/protos`](../../api/protos) via [`deploy/cli`](../../deploy/cli) | The user-facing CLI from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager). Launches and manages experiments over gRPC. |
+| XManager CLI | installed from PyPI via `pip install "xmanager>=0.8.5.post1,<0.9.0"` and overlaid with local [`api/protos`](../../api/protos) via [`deploy/cli`](../../deploy/cli) | The user-facing CLI from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager). Launches and manages experiments over gRPC. |
 | `xmc` Python SDK | [`sdks/python/xmc`](../../sdks/python/xmc) | Metrics client embedded in training jobs. Separates the training hot path from a background flusher thread so logging never stalls the training loop, and posts batches to the Ingestion Gateway with bounded buffering and exponential backoff. |
 | `xdash` Python SDK & CLI | [`sdks/python/xdash`](../../sdks/python/xdash) | Fluent builders and a gRPC client for creating and inspecting dashboards and charts against the Dashboard Service. |
+| `xmanager-cloud` Python package (preview, unpublished) | [`sdks/python/xmanager-cloud`](../../sdks/python/xmanager-cloud) | Installable wheel and sdist that compile the `experiment`, `xid`, and `dashboard` protos into the `xmanager_cloud.*.proto` modules and bundle `xdash` with its console script. |
 
 ---
 

@@ -72,6 +72,10 @@ service DashboardService {
     option (google.api.http) = {
       post: "/v1/{parent=experiments/*/workUnits/*}/charts"
       body: "chart"
+      additional_bindings {
+        post: "/v1/{parent=experiments/*}/charts"
+        body: "chart"
+      }
     };
     option (google.api.method_signature) = "parent,chart,chart_id";
   }
@@ -87,6 +91,9 @@ service DashboardService {
     option (google.api.http) = {
       get: "/v1/{name=experiments/*/workUnits/*/charts/*}:getData"
       additional_bindings {
+        get: "/v1/{name=experiments/*/charts/*}:getData"
+      }
+      additional_bindings {
         get: "/v1/{name=charts/*}:getData"
       }
       additional_bindings {
@@ -101,6 +108,9 @@ service DashboardService {
       get: "/v1/{parent=dashboards/*}/charts"
       additional_bindings {
         get: "/v1/{parent=experiments/*/workUnits/*}/charts"
+      }
+      additional_bindings {
+        get: "/v1/{parent=experiments/*}/charts"
       }
     };
     option (google.api.method_signature) = "parent";
@@ -186,13 +196,17 @@ message DeleteDashboardRequest {
 }
 
 message CreateChartRequest {
+  // Either "experiments/{xid}/workUnits/{wid}" for a work unit chart, or "experiments/{xid}" for an
+  // experiment-level chart (only PARALLEL_COORDINATES plots, chart.wid 0).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {
-      type: "cloud.xmanager.googleapis.com/WorkUnit"
+      child_type: "cloud.xmanager.googleapis.com/Chart"
     }
   ];
   Chart chart = 2 [(google.api.field_behavior) = REQUIRED];
+  // Optional client-assigned chart ID. IDs of the form "study-{xid}-parallel-coordinates" are
+  // reserved for the matching canonical parent "experiments/{xid}".
   string chart_id = 3 [(google.api.field_behavior) = OPTIONAL];
 }
 
@@ -218,7 +232,8 @@ message GetChartDataRequest {
 }
 
 message ListChartsRequest {
-  // Either "dashboards/{dashboard_id}" or "experiments/{xid}/workUnits/{wid}".
+  // "dashboards/{dashboard_id}", "experiments/{xid}/workUnits/{wid}", or "experiments/{xid}" (the
+  // experiment-level charts only).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {

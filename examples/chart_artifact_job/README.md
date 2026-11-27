@@ -65,9 +65,10 @@ flowchart TD
 - **`worker.py`**: WorkUnit container script emitting one sample per metric per step via
   `xmc.log_metric()`.
 - **`Dockerfile`**: Container image definition for the worker. Its build context is the
-  repository root, so `sdks/python/xmc` is visible to `COPY`. A builder stage compiles
-  `api/protos/metrics/metrics.proto` with `protoc`, because the `xmc` SDK imports the
-  generated `metrics_pb2` module and neither the repository nor the SDK wheel ships it.
+  repository root, so `sdks/python/xmc` and `api/protos/metrics/metrics.proto` are
+  visible to `COPY`. Installing `sdks/python/xmc` (the `xmc-metrics` package) compiles
+  the proto into `xmc._protos`. A builder stage pinned to `grpcio-tools==1.70.0` also
+  compiles it into `api.protos.metrics` for the image's import check.
 - **`build_and_push.sh`**: Helper script to build and push the worker image to Google
   Cloud Artifact Registry.
 - **`requirements.txt`**: Python dependencies list.
@@ -207,8 +208,14 @@ resource for it. The URL artifact below it links straight to the dashboard.
 ## Notes on the artifact payload
 
 `CreateArtifact` rejects a `ChartArtifact` that sets `chart`, `status` or `error_message`
-— they are `OUTPUT_ONLY`. The client supplies only `title` and `metric_names`; the server
-marks the artifact `PROVISIONING` and fills the rest asynchronously.
+— they are `OUTPUT_ONLY` — and requires a WorkUnit parent
+(`experiments/{xid}/workUnits/{wid}`) for client-created `ChartArtifact` payloads
+(experiment-level `ChartArtifact` resources under `experiments/{xid}` are reserved for
+server-provisioned `STUDY` parallel-coordinates charts; see
+[Study Lifecycle](../../docs/flows/study_lifecycle.md#3-study-visualization-parallel-coordinates-chart)).
+The client supplies only `title` and `metric_names`; when `ess_dashboard_service_addr` is
+configured, the server marks the artifact `PROVISIONING` and fills the rest asynchronously
+(otherwise it records `FAILED` immediately).
 
 The dashboard URL is repeated in three places because each is read by something
 different: `Artifact.url` for API consumers, the artifact's notes for anyone reading the

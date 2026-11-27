@@ -1,0 +1,3 @@
+# Local build output of `python3 -m build` (see README.md).
+/build/
+/dist/

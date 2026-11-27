@@ -53,7 +53,7 @@ Before editing files, identify which 3P wrapper mode the component uses in [`pkg
 ```mermaid
 flowchart TD
     CR["Component CR\n(COMPONENT_TYPE_CUSTOM_3P_WRAPPER)"] --> Mode{"Has spec.wrapperRef?"}
-    Mode -->|"No (Mode A: Operator-less)"| Probe["Active HTTP/TCP Health Probe\n(healthprobe.ResolveProbeEndpoint)"]
+    Mode -->|"No (Mode A: Operator-less)"| Probe["Active HTTP/TCP/gRPC Health Probe\n(healthprobe.ResolveProbeEndpoint)"]
     Probe --> CoordsA["Publish status.access.envVars\n(ENDPOINT, HOST, PORT, SCHEME, SECRET_NAME)"]
     CoordsA --> ConsumerA["Go Consumer Resolves CR + Secret\n• pkg/clickhouse/componentconfig (hot-swap)\n• pkg/bigquery/componentconfig (hot-swap)\n• cmd/ingestion_gateway (startup)"]
 

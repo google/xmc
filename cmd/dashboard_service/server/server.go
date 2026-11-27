@@ -183,26 +183,26 @@ func createDefaultPlotSpecs() []*dpb.PlotSpec {
 
 // resolveChart loads a chart from storage, falling back to a synthesized default
 // specification for work unit charts that have never been persisted.
-func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, error) {
-	_, _, chartID, err := validator.ValidateChartName(name)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name %q: %v", name, err)
-	}
-	chart, err := s.repo.GetChart(ctx, chartID)
+func (s *Server) resolveChart(ctx context.Context, name string, parsed validator.ParsedChartName) (*dpb.Chart, error) {
+	chart, err := s.repo.GetChart(ctx, parsed.ChartID)
 	if err == nil {
 		if chart == nil {
 			return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", name)
 		}
-		if xid := s.resolveChartXID(chart, name); xid > 0 {
-			chart.Xid = xid
+		if !chartMatchesName(parsed, chart) {
+			return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
+		}
+		if chart.GetXid() <= 0 && parsed.XID > 0 {
+			chart.Xid = parsed.XID
 		}
 		return chart, nil
 	}
 	if !isNotFoundError(err) {
 		return nil, status.Errorf(codes.Internal, "failed to get chart %q: %v", name, err)
 	}
-	parsed, parseErr := validator.ParseChartName(name)
-	if parseErr != nil || parsed.XID <= 0 {
+	// Only work unit charts fall back to the default specification; experiment-level charts are
+	// always persisted.
+	if parsed.XID <= 0 || parsed.IsExperimentLevel() {
 		return nil, status.Errorf(codes.NotFound, "chart %q not found", name)
 	}
 	return &dpb.Chart{
@@ -214,16 +214,17 @@ func (s *Server) resolveChart(ctx context.Context, name string) (*dpb.Chart, err
 	}, nil
 }
 
-// resolveChartXID returns the chart's persisted experiment XID, falling back to the
-// XID encoded in the chart resource name when the stored record does not carry one.
-func (s *Server) resolveChartXID(chart *dpb.Chart, name string) int64 {
-	xid := chart.GetXid()
-	if xid <= 0 {
-		if parsed, err := validator.ParseChartName(name); err == nil && parsed.XID > 0 {
-			return parsed.XID
-		}
+// chartMatchesName reports whether a stored chart may be served under the name it was requested
+// by. Experiment-scoped names only resolve charts of that experiment (legacy work unit charts with
+// Xid == 0 match any experiment parent with matching Wid); root and dashboard names resolve by chart ID.
+func chartMatchesName(parsed validator.ParsedChartName, chart *dpb.Chart) bool {
+	if parsed.IsExperimentLevel() {
+		return chart.GetWid() == 0 && chart.GetXid() == parsed.XID
 	}
-	return xid
+	if parsed.WID > 0 {
+		return chart.GetWid() == parsed.WID && (chart.GetXid() == 0 || chart.GetXid() == parsed.XID)
+	}
+	return true
 }
 
 // validateDataEngineDependencies ensures required service dependencies are configured.
@@ -296,12 +297,23 @@ func (s *Server) GetChartData(ctx context.Context, req *dpb.GetChartDataRequest)
 	if err := s.validateDataEngineDependencies(); err != nil {
 		return nil, err
 	}
-	chart, err := s.resolveChart(ctx, req.GetName())
+	parsed, err := validator.ParseChartName(req.GetName())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid chart name %q: %v", req.GetName(), err)
+	}
+	if parsed.XID > 0 {
+		if err := s.authorizeExperimentRead(ctx, user, parsed.XID); err != nil {
+			return nil, err
+		}
+	}
+	chart, err := s.resolveChart(ctx, req.GetName(), parsed)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
-		return nil, err
+	if parsed.XID <= 0 {
+		if err := s.authorizeChartAccess(ctx, user, chart); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.dataEngine.FetchChartData(ctx, chart, req)

@@ -765,3 +765,68 @@ func TestDashboardProtoToInsertMutations_LayoutPositionMatching(t *testing.T) {
 		t.Fatalf("Expected 3 mutations, got %d", len(mutations))
 	}
 }
+
+func TestChartRowToProto_ExperimentLevelChart(t *testing.T) {
+	now := time.Now().UTC()
+	tests := []struct {
+		name    string
+		columns []string
+	}{
+		{name: "table column names", columns: []string{"ChartId", "Title", "Xid", "Wid", "CreatedAt", "UpdatedAt"}},
+		{name: "query generator aliases", columns: []string{"chart_id", "title", "xid", "wid", "created", "updated"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			row, err := spanner.NewRow(tc.columns, []interface{}{"c1", "Study", int64(100), spanner.NullInt64{}, now, now})
+			if err != nil {
+				t.Fatalf("spanner.NewRow failed: %v", err)
+			}
+
+			chart, err := ChartRowToProto(row, nil)
+			if err != nil {
+				t.Fatalf("ChartRowToProto failed: %v", err)
+			}
+			if chart.GetName() != "experiments/100/charts/c1" {
+				t.Errorf("chart.Name: got %q, want %q", chart.GetName(), "experiments/100/charts/c1")
+			}
+			if chart.GetWid() != 0 {
+				t.Errorf("chart.Wid: got %d, want 0 for a NULL Wid", chart.GetWid())
+			}
+		})
+	}
+}
+
+func TestWidToNullInt64(t *testing.T) {
+	tests := []struct {
+		name string
+		wid  int64
+		want spanner.NullInt64
+	}{
+		{name: "experiment-level chart", wid: 0, want: spanner.NullInt64{}},
+		{name: "work unit chart", wid: 7, want: spanner.NullInt64{Int64: 7, Valid: true}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := widToNullInt64(tc.wid); got != tc.want {
+				t.Errorf("widToNullInt64(%d) = %v, want %v", tc.wid, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestChartProtoToInsertMutations_ExperimentLevelChart(t *testing.T) {
+	chart := &dpb.Chart{
+		Name:  "experiments/100/charts/study",
+		Title: "Study",
+		Xid:   100,
+		Plots: []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+	}
+
+	mutations, err := ChartProtoToInsertMutations(chart)
+	if err != nil {
+		t.Fatalf("ChartProtoToInsertMutations failed: %v", err)
+	}
+	if len(mutations) != 2 {
+		t.Errorf("Expected 2 mutations (chart + plot spec), got %d", len(mutations))
+	}
+}

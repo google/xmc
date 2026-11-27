@@ -1,0 +1,23 @@
+-- Copyright 2026 Google LLC
+--
+-- Licensed under the Apache License, Version 2.0 (the "License");
+-- you may not use this file except in compliance with the License.
+-- You may obtain a copy of the License at
+--
+--      http://www.apache.org/licenses/LICENSE-2.0
+--
+-- Unless required by applicable law or agreed to in writing, software
+-- distributed under the License is distributed on an "AS IS" BASIS,
+-- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-- See the License for the specific language governing permissions and
+-- limitations under the License.
+
+-- Restoring NOT NULL fails while experiment-level charts (NULL Wid) exist, and Spanner migrations
+-- run DDL only, so this migration cannot backfill them. Rollback runbook:
+--   1. Delete the experiment-level charts: DELETE FROM Charts WHERE Wid IS NULL.
+--   2. Run the down migration.
+--   3. If it already failed once, the SchemaMigrations row is left dirty at version 21; clear it
+--      (UPDATE SchemaMigrations SET Dirty = false WHERE Version = 21) and run the down migration again.
+-- The PlotType and Chart bundle descriptors are left as they are: they are backward compatible, and
+-- a down migration runs with the descriptor set of the binary that contains this migration.
+ALTER TABLE Charts ALTER COLUMN Wid INT64 NOT NULL DEFAULT (0);

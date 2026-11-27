@@ -145,7 +145,14 @@ func TestDefaultProfileCharts_Stable2026bHPORendersWorkload(t *testing.T) {
 		t.Fatalf("componentChart(stable-2026b, hpo) = %v, %v; want the embedded hpo chart", ch, err)
 	}
 	releaseOpts := chartutil.ReleaseOptions{Name: "xmc-cmp-hpo", Namespace: "xmc", Revision: 1, IsInstall: true}
-	vals, err := chartutil.ToRenderValues(ch, map[string]any{"hpoDeployment": map[string]any{"enabled": true, "redisAddr": "redis-service:6379"}}, releaseOpts, nil)
+	vals, err := chartutil.ToRenderValues(ch, map[string]any{
+		"hpoDeployment": map[string]any{
+			"enabled":     true,
+			"redisAddr":   "redis-service:6379",
+			"essAddr":     "grpc-service:50051",
+			"essAudience": "test-ess-audience",
+		},
+	}, releaseOpts, nil)
 	if err != nil {
 		t.Fatalf("ToRenderValues(xmc-cmp-hpo) failed: %v", err)
 	}
@@ -158,6 +165,9 @@ func TestDefaultProfileCharts_Stable2026bHPORendersWorkload(t *testing.T) {
 	}
 	if got := rendered["hpo/templates/deployment.yaml"]; !strings.Contains(got, "name: xmc-study-controller") {
 		t.Errorf("xmc-cmp-hpo rendered deployment.yaml = %q, want the xmc-study-controller Deployment", got)
+	}
+	if got := rendered["hpo/templates/rbac.yaml"]; !strings.Contains(got, "name: xmc-study-controller-components-reader") {
+		t.Errorf("xmc-cmp-hpo rendered rbac.yaml = %q, want xmc-study-controller-components-reader Role", got)
 	}
 }
 

@@ -10,13 +10,13 @@ The chart orchestrates the following backend and frontend microservices:
 
 | Microservice | Role & Responsibility | Primary Dependencies |
 | :--- | :--- | :--- |
-| **`ess`** | Experiment State Server exposing gRPC and HTTP APIs for experiment/work unit lifecycle management. | Cloud Spanner (`experiment-db`), Redis |
+| **`ess`** | Experiment State Server exposing gRPC and HTTP APIs for experiment/work unit lifecycle management. | Cloud Spanner (`experiment-db`), Redis, Dashboard Service (optional, `dashboardServiceDeployment.enabled`, for chart artifact and `STUDY` chart provisioning) |
 | **`actuator`** | Workload creation engine translating pending work units into Kubernetes `JobSet` resources. | Cloud Spanner, Kubernetes API (In-Cluster or Remote), Redis |
 | **`reconciler`** | Workload status watcher observing Kubernetes `JobSet` pod events and synchronizing state back to the database. | Cloud Spanner, Kubernetes API (In-Cluster or Remote) |
 | **`xid_service`** | Unique distributed identifier generator for experiments and work units. | Cloud Spanner (`xids-db`) |
 | **`ui`** | Angular-based web management console. | ESS, Dex / OAuth2 Gateway |
 | **`xmc_bridge`** | Mandatory Component controller reconciling `components.xmc.dev` CRs (`xmc-profile`), probing 3P backing services, and actuating 1P component charts (e.g., `ingestion-gateway`). | ESS (Component Manager Service, CMS), Kubernetes API |
-| **`dashboard_service`** | Optional dashboard & chart data service (`dashboardServiceDeployment.enabled`) resolving ClickHouse/BigQuery coordinates from `Component` CRs (falling back to static configuration). | Cloud Spanner / PostgreSQL, XID, ClickHouse / BigQuery, Kubernetes API (`Component` CRs, Secrets), Cloud Identity |
+| **`dashboard_service`** | Optional dashboard & chart data service (`dashboardServiceDeployment.enabled`) resolving ClickHouse/BigQuery coordinates from `Component` CRs (falling back to static configuration). When enabled, Helm also sets `ess_dashboard_service_addr` in `ess-config`; when disabled, ESS skips `STUDY` chart auto-provisioning and marks client work-unit `ChartArtifact` payloads `FAILED`. | Cloud Spanner / PostgreSQL, XID, ClickHouse / BigQuery, Kubernetes API (`Component` CRs, Secrets), Cloud Identity |
 | **`rod`** | Resource Observability Dashboard (ROD) data provider serving Kueue ClusterQueue capacity, running/pending jobs, and queue-velocity APIs (`rodDeployment.enabled`, default `true`). | Kubernetes API (Kueue `clusterqueues`/`localqueues`/`resourceflavors`/`workloads`, Core `nodes`/`pods`), Cloud Spanner / PostgreSQL (`experiment-db`) |
 | **`health_service`** | Platform health diagnostics, runtime configuration inspection, and global workload scheduling pause/resume controls. | Cloud Spanner (`experiment-db`, `xids-db`), Redis, ESS, XID, Cloud Run, Cloud Identity |
 | **`log_monitor`** | Pub/Sub subscriber turning filtered workload log entries into work unit status messages. Needs the subscription from `deploy/ctk_v2/modules/log_monitor`. | Pub/Sub, Cloud Spanner (`experiment-db`) |

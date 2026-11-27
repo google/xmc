@@ -18,6 +18,8 @@ py_library(
     name = "xmc",
     srcs = [
         "__init__.py",
+        "_protos/__init__.py",
+        "_version.py",
         "autolog.py",
         "buffer.py",
         "client.py",
@@ -94,6 +96,17 @@ py_test(
 py_test(
     name = "sdk_setup_test",
     srcs = ["sdk_setup_test.py"],
+    deps = [":xmc"],
+)
+
+# setup.py only runs under pip/build, outside Bazel. Its tests import setuptools from
+# the hermetic interpreter and stub out grpc_tools.
+py_test(
+    name = "setup_test",
+    srcs = [
+        "setup.py",
+        "setup_test.py",
+    ],
     deps = [":xmc"],
 )
 

@@ -49,7 +49,7 @@ You can deploy XMC to GKE or evaluate it locally on KinD in three steps:
 2. **Install the XManager launcher and sign in**
    The launcher and `xmanager` CLI come from [google-deepmind/xmanager](https://github.com/google-deepmind/xmanager), published on PyPI:
    ```bash
-   pip install 'xmanager>=0.8.5.post1'
+   pip install 'xmanager>=0.8.5.post1,<0.9.0'
    export XMC_DOMAIN=<your-xmc-domain>
    xmanager login
    ```
@@ -70,7 +70,9 @@ Metrics streaming and Managed XProf are optional and off by default. Enable metr
 - [XManager launcher (`google-deepmind/xmanager`)](https://github.com/google-deepmind/xmanager): Python launch API and `xmanager` CLI that define and submit experiments to XMC.
 - [Installation & Deployment Guide](INSTALL.md): Cluster Toolkit v2 blueprints, Terraform and Helm setup, DNS and TLS configuration, and upgrades.
 - [Authentication & Experiment Access](docs/authentication.md): interactive `xmanager login`, CI service accounts, and experiment ACL sharing.
-- [Python Metrics SDK (`xmc`)](sdks/python/xmc/README.md) and [Dashboard SDK (`xdash`)](sdks/python/xdash/README.md): in-job metric logging and dashboard definitions.
+- [Managed XProf User Guide](docs/managed_xprof.md): enabling GKE Managed ML Diagnostics, attaching `ManagedXprof` work-unit artifacts, capturing programmatic and on-demand XProf profiles, and viewing profiles in XMC and Google Cloud Console.
+- [Python Metrics SDK (`xmc-metrics`, imported as `xmc`)](sdks/python/xmc/README.md) and [Dashboard SDK (`xdash`)](sdks/python/xdash/README.md): in-job metric logging and dashboard definitions.
+- [`xmanager-cloud` Python package](sdks/python/xmanager-cloud/README.md) (preview, unpublished): installable XMC gRPC client protos with the bundled `xdash` SDK.
 
 ### Architecture
 - [Architecture Overview](docs/architecture/overview.md): control, execution, telemetry, and component planes, followed by [Component Reference](docs/architecture/components.md), [Execution Model](docs/architecture/execution_model.md), and [Use Cases](docs/architecture/use_cases.md).

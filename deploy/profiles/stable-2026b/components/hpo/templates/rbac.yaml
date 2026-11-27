@@ -1,0 +1,30 @@
+{{- if hasPrefix "xmc-cmp-" .Release.Name }}
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: xmc-study-controller-components-reader
+  labels:
+    {{- include "hpo.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["xmc.dev"]
+  resources: ["components"]
+  resourceNames: ["vizier"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: xmc-study-controller-components-reader-binding
+  labels:
+    {{- include "hpo.labels" . | nindent 4 }}
+subjects:
+- kind: ServiceAccount
+  name: xmc-study-controller
+  namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  kind: Role
+  name: xmc-study-controller-components-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

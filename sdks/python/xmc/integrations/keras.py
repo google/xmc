@@ -27,7 +27,7 @@ try:
 except ImportError as exc:
     raise ImportError(
         "Keras is required to use XmcKerasCallback. Please install Keras >= 3.0.0 "
-        "via 'pip install xmc[keras]' or 'pip install keras>=3.0.0'."
+        "via 'pip install \"xmc-metrics[keras]\"' or 'pip install \"keras>=3.0.0\"'."
     ) from exc
 
 
@@ -43,8 +43,9 @@ def _validate_keras_version() -> None:
     if parse_version(version_str) < parse_version(MIN_KERAS_VERSION):
         raise ImportError(
             f"Keras version >= {MIN_KERAS_VERSION} is required for XmcKerasCallback, "
-            f"found version {version_str}. Please upgrade via 'pip install --upgrade xmc[keras]' "
-            f"or 'pip install --upgrade keras>=3.0.0'."
+            f"found version {version_str}. Please upgrade via "
+            f"'pip install --upgrade \"xmc-metrics[keras]\"' "
+            f"or 'pip install --upgrade \"keras>=3.0.0\"'."
         )
 
 

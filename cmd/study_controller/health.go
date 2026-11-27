@@ -16,15 +16,18 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"golang.org/x/sync/errgroup"
 	"xmanager_cloud/internal/logging"
 )
 
-// readinessPingTimeout bounds the Redis ping of one readiness probe. It is shorter than the
-// chart's readinessProbe timeoutSeconds, so a hung Redis yields a 503 rather than a probe timeout.
+// readinessPingTimeout bounds the Redis and Vizier checks of one readiness probe (<3s probe timeout).
 const readinessPingTimeout = 2 * time.Second
 
 // pinger reports whether a dependency is reachable.
@@ -32,26 +35,56 @@ type pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// newHTTPHandler returns the mux serving the liveness, readiness and Prometheus metrics endpoints.
-//
-// Liveness only reports that the process serves requests, so a Redis outage never restarts the pod.
-// Readiness additionally requires Redis to answer a ping.
-func newHTTPHandler(redis pinger) http.Handler {
+// vizierProbe holds the latched Vizier client once startup Component CR resolution succeeds.
+type vizierProbe struct{ client atomic.Value }
+
+func (v *vizierProbe) Set(c pinger) {
+	if v != nil && c != nil {
+		v.client.Store(c)
+	}
+}
+
+func (v *vizierProbe) Ping(ctx context.Context) error {
+	if v == nil {
+		return errors.New("vizier probe is nil")
+	}
+	if p, ok := v.client.Load().(pinger); ok && p != nil {
+		return p.Ping(ctx)
+	}
+	return errors.New("vizier endpoint not yet resolved")
+}
+
+// newHTTPHandler returns the mux serving /healthz, /readyz (Redis and Vizier), and /metrics.
+func newHTTPHandler(redis, vizier pinger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", writeOK)
-	mux.HandleFunc("GET /readyz", readinessCheck(redis))
+	mux.HandleFunc("GET /readyz", readinessCheck(redis, vizier))
 	mux.Handle("GET /metrics", promhttp.Handler())
 	return mux
 }
 
-// readinessCheck returns a handler that responds 200 OK when redis answers a ping within
-// readinessPingTimeout, and 503 Service Unavailable otherwise. The cause is logged, not returned.
-func readinessCheck(redis pinger) http.HandlerFunc {
+// readinessCheck responds 200 OK when Redis and Vizier answer concurrently within readinessPingTimeout, else 503.
+func readinessCheck(redis, vizier pinger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), readinessPingTimeout)
 		defer cancel()
-		if err := redis.Ping(ctx); err != nil {
-			logging.Warn(ctx, "Readiness check failed: Redis is unreachable", "error", err)
+		g, pingCtx := errgroup.WithContext(ctx)
+		for _, dep := range []struct {
+			name string
+			p    pinger
+		}{{"Redis", redis}, {"Vizier", vizier}} {
+			g.Go(func() error {
+				if dep.p == nil {
+					return fmt.Errorf("%s: probe not configured", dep.name)
+				}
+				if err := dep.p.Ping(pingCtx); err != nil {
+					return fmt.Errorf("%s: %w", dep.name, err)
+				}
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			logging.Warn(ctx, "Readiness check failed", "error", err)
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return
 		}

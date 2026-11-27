@@ -313,8 +313,8 @@ Variables used by XMC services, reconcilers, and infrastructure:
 | `XMC_NAMESPACE` | Actuator | The Kubernetes namespace where the JobSet runs. |
 | `XMC_QUEUE_NAME` | Actuator | The Kueue local queue assigned to the workload. |
 | `XMC_METRICS_ENABLED` | Actuator | Set to `"true"` when cluster-wide Cloud Monitoring metrics collection is enabled. |
-| `XMC_MANAGED_XPROF_DISPLAY_NAME` | User (Optional) | Optional override for the session display name in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the experiment title). |
-| `XMC_MANAGED_XPROF_RUN_GROUP` | User (Optional) | Optional override for the session run group tag in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to the work unit ID). |
+| `XMC_MANAGED_XPROF_DISPLAY_NAME` | User (Optional) | Optional override for the session display name in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to `<experiment_title>_<wid>`). |
+| `XMC_MANAGED_XPROF_RUN_GROUP` | User (Optional) | Optional override for the session run group tag in the Diagon / XProf UI. When omitted from the container environment, the Reconciler resolves it from the `ManagedXprof` WorkUnit artifact (defaulting in ESS to `<experiment_title>`). |
 
 #### Managed profiling variables (`XMC_MANAGED_XPROF_*`)
 
@@ -395,7 +395,7 @@ duplicate work.
 | Layer | Mechanism | Bounded by | Re-runs succeeded work? |
 | :--- | :--- | :--- | :--- |
 | Actuation task | Redis stream redelivery to the `actuator-group` consumer group | 5 retries, 2 min processing timeout, 5 min abandoned-message reclaim, then `xmc-dlq-stream` | No — payloads carry an idempotency key. |
-| Study reconcile tick | Redis stream redelivery to the `study-controller-group` consumer group | 5 retries, 2 min processing timeout, 5 min abandoned-message reclaim, then `xmc-study-reconcile-dlq-stream`; a tick that does not name a valid experiment goes to the dead-letter stream at once | Yes, harmlessly — a tick is a hint to reconcile a study from its ESS state, so re-handling it repeats an idempotent reconcile. |
+| Study reconcile tick | Redis stream redelivery to the `study-controller-group` consumer group | 5 retries, 2 min processing timeout, 5 min abandoned-message reclaim, then `xmc-study-reconcile-dlq-stream`; a tick that does not name a valid experiment or names a study whose `StudyConfig` is invalid goes to the dead-letter stream at once | Yes, harmlessly — a tick is a hint to reconcile a study from its ESS state, so re-handling it repeats an idempotent reconcile. |
 | Pod | `JobSpec.BackoffLimit` replaces failed pods | Per-job backoff limit (100 by default under `restart_policy: "OnFailure"`) | No — only failed pods are replaced. |
 | Container | Native sidecar `restartPolicy: Always` on init containers | Kubernetes | No — only the failed sidecar restarts. |
 | Execution | A user or automation calls `RestartWorkUnit`, creating a new `WorkUnitExecution` | Explicit user action | Yes, by design and by explicit request. |

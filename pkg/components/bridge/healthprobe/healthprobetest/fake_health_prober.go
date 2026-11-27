@@ -78,3 +78,8 @@ func (f *FakeHealthProber) ProbeHTTP(ctx context.Context, targetURL string, time
 func (f *FakeHealthProber) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	return f.Probe(ctx, address, timeout)
 }
+
+// ProbeGRPC delegates to Probe.
+func (f *FakeHealthProber) ProbeGRPC(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
+	return f.Probe(ctx, address, timeout)
+}

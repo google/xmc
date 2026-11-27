@@ -348,45 +348,9 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 	return createdArtifact
 }
 
-// mockXidClient is a mock implementation of the XidServiceClient.
-type mockXidClient struct {
-	xidmsgpb.XidServiceClient
-	getXidEntryErr             error
-	getXidEntryResp            *xidmsgpb.XidEntry
-	createXidEntryErr          error
-	createXidEntryResp         *xidmsgpb.XidEntry
-	createXidEntryCalls        int
-	gotCreateXidEntryReq       *xidmsgpb.CreateXidEntryRequest
-	checkUserAuthorizationErr  error
-	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
-	updateXidEntryErr          error
-	updateXidEntryResp         *xidmsgpb.XidEntry
-	listXidEntriesErr          error
-	listXidEntriesResp         *xidmsgpb.ListXidEntriesResponse
-	gotListXidEntriesReq       *xidmsgpb.ListXidEntriesRequest
-}
-
-func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	return m.getXidEntryResp, m.getXidEntryErr
-}
-func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	m.createXidEntryCalls++
-	m.gotCreateXidEntryReq = in
-	return m.createXidEntryResp, m.createXidEntryErr
-}
-func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidmsgpb.CheckUserAuthorizationResponse, error) {
-	return m.checkUserAuthorizationResp, m.checkUserAuthorizationErr
-}
-func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidmsgpb.UpdateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	return m.updateXidEntryResp, m.updateXidEntryErr
-}
-func (m *mockXidClient) ListXidEntries(ctx context.Context, in *xidmsgpb.ListXidEntriesRequest, opts ...grpc.CallOption) (*xidmsgpb.ListXidEntriesResponse, error) {
-	m.gotListXidEntriesReq = in
-	return m.listXidEntriesResp, m.listXidEntriesErr
-}
-
 type mockAuthenticator struct {
-	err error
+	email string
+	err   error
 	// denyAuthorization makes IsUserAuthorized report the user as unauthorized.
 	denyAuthorization   bool
 	isUserAuthorizedErr error
@@ -397,6 +361,9 @@ type mockAuthenticator struct {
 func (m *mockAuthenticator) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	if m.err != nil {
 		return "", "", m.err
+	}
+	if m.email != "" {
+		return m.email, "user_id", nil
 	}
 	return "test@example.com", "user_id", nil
 }

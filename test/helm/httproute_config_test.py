@@ -14,6 +14,7 @@
 
 """Verifies GKE Gateway HTTPRoute routing configurations for microservices."""
 
+import re
 import unittest
 
 from chart_test_lib import render_template, require_helm
@@ -70,6 +71,35 @@ class HTTPRouteConfigTest(unittest.TestCase):
         self.assertRegex(
             manifest,
             r"backendRefs:\s*\n\s+-\s+name:\s+rod-data-provider-service\s*\n\s+port:\s+8080",
+        )
+
+    def test_dashboard_httproute_matches_work_unit_and_experiment_charts(self) -> None:
+        """Verifies dashboard-route claims work unit and experiment-level chart paths.
+
+        Without the experiment-level match, /v1/experiments/{xid}/charts... falls through to the
+        ESS /v1 catch-all route instead of reaching dashboard-service.
+        """
+        values = {
+            "gateway.enabled": "true",
+            "dashboardServiceDeployment.enabled": "true",
+        }
+        manifest = render_template("templates/dashboard-service/httproute.yaml", values)
+
+        self.assertIn("name: dashboard-route", manifest)
+        for pattern in (
+            "/v1/experiments/[a-zA-Z0-9_-]+/workUnits/[a-zA-Z0-9_-]+/charts.*",
+            "/v1/experiments/[a-zA-Z0-9_-]+/charts.*",
+        ):
+            with self.subTest(pattern=pattern):
+                self.assertRegex(
+                    manifest,
+                    r"-\s+path:\s*\n\s+type:\s+RegularExpression\s*\n\s+value:\s+"
+                    + re.escape(pattern)
+                    + r"\s*\n",
+                )
+        self.assertRegex(
+            manifest,
+            r"backendRefs:\s*\n\s+-\s+name:\s+dashboard-service\s*\n\s+port:\s+8080",
         )
 
 

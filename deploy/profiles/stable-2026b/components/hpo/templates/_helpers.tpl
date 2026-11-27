@@ -33,3 +33,15 @@ Resolve the xmc-study-controller container image:
   {{- printf "us-docker.pkg.dev/xmc-prod/xmc/study-controller:%s" $tag -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "hpo.namespace" -}}
+{{- .Values.namespace | default (ternary .Release.Namespace "xmc" (and (ne .Release.Namespace "") (ne .Release.Namespace "default"))) -}}
+{{- end -}}
+
+{{- define "hpo.labels" -}}
+app: xmc-study-controller
+app.kubernetes.io/name: xmc-study-controller
+app.kubernetes.io/part-of: xmanager-cloud
+app.kubernetes.io/managed-by: {{ .Release.Service | default "Helm" | quote }}
+xmc.dev/component: hpo
+{{- end -}}
