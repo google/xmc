@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Component } from '@angular/core';
+import { Component, viewChild } from '@angular/core';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of, Subject, throwError } from 'rxjs';
 
@@ -35,7 +35,9 @@ import { ResourceAvailabilityHarness } from './resource_availability_harness';
   imports: [ResourceAvailabilityComponent],
   template: `<xmc-rod-resource-availability />`,
 })
-class TestHostComponent {}
+class TestHostComponent {
+  readonly availability = viewChild.required(ResourceAvailabilityComponent);
+}
 
 describe('ResourceAvailabilityComponent', () => {
   beforeAll(setupObservableMatchers);
@@ -168,14 +170,12 @@ describe('ResourceAvailabilityComponent', () => {
       second$.asObservable(),
     );
 
-    const component = bootstrap(ResourceAvailabilityComponent) as unknown as {
-      loadAvailability(): void;
-    };
+    const host = bootstrap(TestHostComponent) as TestHostComponent;
     await flush();
 
     expect(first$.observed).toBeTrue();
 
-    component.loadAvailability();
+    (host.availability() as unknown as { loadAvailability(): void }).loadAvailability();
     expect(first$.observed).toBeFalse();
     expect(second$.observed).toBeTrue();
 
