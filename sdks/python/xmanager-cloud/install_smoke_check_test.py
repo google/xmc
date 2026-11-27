@@ -57,6 +57,7 @@ class ModulesToCheckTest(InstallSmokeCheckTestCase):
                 "xm_cloud.cli.login_command",
                 "xm_cloud.cli.logout_command",
                 "xm_cloud.cli.main",
+                "xm_cloud.cli.terminal_text",
             ],
         )
         self.assertEqual(modules[-1], "a.proto.x_pb2")

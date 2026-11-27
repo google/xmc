@@ -73,7 +73,13 @@ _RESPONSE_ERRORS = (OSError, ValueError, RecursionError, http.client.HTTPExcepti
 # terminal, ValueError (including UnicodeDecodeError) on a closed or non-UTF-8
 # stdin, AttributeError when `sys.stdin` is None, and termios.error.
 _PROMPT_ERRORS = (OSError, ValueError, AttributeError, *_TTY_ERRORS)
-_EXPIRY_SKEW_SECONDS = 60
+# A cached token this close to expiry is treated as expired; the same buffer as
+# `xdash.auth.CLI_TOKEN_EXPIRY_BUFFER_SEC`, so `--status` agrees with xdash.
+_EXPIRY_SKEW_SECONDS = 30
+# Bounds each loopback request's socket reads (never beyond the `--timeout` left).
+_CALLBACK_SOCKET_TIMEOUT_SECONDS = 10.0
+# Characters left unescaped in a redirect `Location`: URL delimiters and `%`.
+_LOCATION_SAFE_CHARS = ":/?#[]@!$&'()*+,;=%~"
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -166,24 +172,20 @@ def _callback_handler(
     class _Handler(http.server.BaseHTTPRequestHandler):
         """Handles loopback OAuth redirect callbacks on `/callback`."""
 
-        timeout = 10.0
+        timeout = _CALLBACK_SOCKET_TIMEOUT_SECONDS
 
         def do_GET(self) -> None:
             """Validates CSRF `state` and records the authorization code or error."""
             qs = _callback_query(self.path, state)
             if qs is None:
                 self.send_response(400)
-                self.end_headers()
-                return
-            if err := qs.get("error", [""])[0]:
+            elif err := qs.get("error", [""])[0]:
                 result["error"] = err
-                self.send_response(302)
                 q = urllib.parse.urlencode({"error": err})
-                self.send_header("Location", f"{server}/api/cli/success?{q}")
+                _start_redirect(self, f"{server}/api/cli/success?{q}")
             elif code := qs.get("code", [""])[0]:
                 result["code"] = code
-                self.send_response(302)
-                self.send_header("Location", f"{server}/api/cli/success")
+                _start_redirect(self, f"{server}/api/cli/success")
             else:
                 result["error"] = "Callback did not include an authorization code"
                 self.send_response(400)
@@ -193,6 +195,36 @@ def _callback_handler(
             del fmt, args
 
     return _Handler
+
+
+def _start_redirect(handler: http.server.BaseHTTPRequestHandler, location: str) -> None:
+    """Starts a 302 response to `location`.
+
+    Header values must be Latin-1, so non-ASCII characters (an internationalized
+    deployment host) are percent-encoded; browsers decode them back.
+
+    Args:
+        handler: The request handler answering the callback.
+        location: The absolute redirect URL.
+    """
+    handler.send_response(302)
+    handler.send_header("Location", urllib.parse.quote(location, safe=_LOCATION_SAFE_CHARS))
+
+
+class _LoopbackServer(http.server.HTTPServer):
+    """Loopback callback server that does not print tracebacks for failed requests."""
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        """Ignores a failed request, such as a browser that resets the connection.
+
+        `HTTPServer` would print a traceback to stderr. The login keeps waiting for
+        a valid callback until `--timeout`.
+
+        Args:
+            request: The failed request's socket.
+            client_address: The client address.
+        """
+        del request, client_address
 
 
 def await_loopback_code(
@@ -219,8 +251,9 @@ def await_loopback_code(
         credentials.AuthError: On timeout or when the callback reports an error.
     """
     state, result = secrets.token_urlsafe(24), dict[str, str]()
+    handler = _callback_handler(server, state, result)
     try:
-        httpd = http.server.HTTPServer(("127.0.0.1", 0), _callback_handler(server, state, result))
+        httpd = _LoopbackServer(("127.0.0.1", 0), handler)
     except OSError:  # No IPv4 loopback (e.g. a sandbox): fall back to manual login.
         return None
     with httpd:
@@ -231,18 +264,39 @@ def await_loopback_code(
             opened = False
         if not opened:
             return None
-        out.write(f"Opening browser to sign in to {server}:\n  {url}\n")
+        terminal_text.write(out, f"Opening browser to sign in to {server}:\n  {url}\n")
         out.flush()  # Show the URL before blocking, even when `out` is buffered.
-        deadline = time.monotonic() + timeout
-        while not result:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise credentials.AuthError("Timed out waiting for browser authentication.")
-            httpd.timeout = min(remaining, 0.5)
-            httpd.handle_request()
+        _serve_until_callback(httpd, handler, result, time.monotonic() + timeout)
     if "error" in result:
         raise credentials.AuthError(f"Authentication failed: {result['error']}.")
     return result["code"]
+
+
+def _serve_until_callback(
+    httpd: http.server.HTTPServer,
+    handler: type[http.server.BaseHTTPRequestHandler],
+    result: Mapping[str, str],
+    deadline: float,
+) -> None:
+    """Handles loopback requests until `result` is filled or `deadline` passes.
+
+    Args:
+        httpd: The loopback server.
+        handler: Its request handler class, whose socket timeout is capped at the
+            time left, so a client that stalls mid-request cannot outlast it.
+        result: Filled by `handler` from the first valid callback.
+        deadline: `time.monotonic()` value at which to give up.
+
+    Raises:
+        credentials.AuthError: If `deadline` passes first.
+    """
+    while not result:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise credentials.AuthError("Timed out waiting for browser authentication.")
+        handler.timeout = min(_CALLBACK_SOCKET_TIMEOUT_SECONDS, remaining)
+        httpd.timeout = min(remaining, 0.5)
+        httpd.handle_request()
 
 
 def _format_http_error(exc: urllib.error.HTTPError) -> str:
@@ -683,38 +737,49 @@ def _format_expiry(expires_at: int) -> str:
 def _valid_entry(entry: Any) -> dict[str, Any] | None:
     """Validates and normalizes a cached credentials entry.
 
+    Matches `xdash.auth`, which reads the same cache: `email` is optional, and an
+    entry within `_EXPIRY_SKEW_SECONDS` of `expires_at` is expired. Unlike xdash,
+    a token with whitespace or control characters is invalid, so `--print-token`
+    never prints more than one line.
+
     Args:
         entry: A value from the credentials cache.
 
     Returns:
-        The entry with a stripped token and email and an integer `expires_at`, or
-        None if it is not a dict, the token or email is blank, or it expires within
-        `_EXPIRY_SKEW_SECONDS`.
+        The entry with a stripped token, a stripped email ("" if missing), and an
+        integer `expires_at`, or None if it is not a dict, the token is not
+        `_is_opaque_token`, or it is expired.
     """
     if not isinstance(entry, dict):
         return None
-    tok, email, exp = (
-        entry.get("access_token"),
-        entry.get("email"),
-        entry.get("expires_at"),
-    )
-    # Credential expiry is a wall-clock Unix timestamp, not an interval.
-    now = datetime.datetime.now(datetime.UTC).timestamp()
-    if not (
-        isinstance(tok, str)
-        and tok.strip()
-        and isinstance(email, str)
-        and email.strip()
-        and not isinstance(exp, bool)
-        and (isinstance(exp, int) or (isinstance(exp, float) and math.isfinite(exp)))
-        and exp > now + _EXPIRY_SKEW_SECONDS
-    ):
+    tok, email = entry.get("access_token"), entry.get("email")
+    expires_at = _live_expiry(entry.get("expires_at"))
+    if not isinstance(tok, str) or not _is_opaque_token(tok.strip()) or expires_at is None:
         return None
     return {
         "access_token": tok.strip(),
-        "email": email.strip(),
-        "expires_at": int(exp),
+        "email": email.strip() if isinstance(email, str) else "",
+        "expires_at": expires_at,
     }
+
+
+def _live_expiry(expires_at: Any) -> int | None:
+    """Returns `expires_at` as an int if it is more than the skew in the future.
+
+    Args:
+        expires_at: Cached Unix timestamp in seconds.
+
+    Returns:
+        `int(expires_at)` if it is an int or finite float (not a bool) later than
+        now plus `_EXPIRY_SKEW_SECONDS`, else None.
+    """
+    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+        return None
+    if isinstance(expires_at, float) and not math.isfinite(expires_at):
+        return None
+    # Credential expiry is a wall-clock Unix timestamp, not an interval.
+    now = datetime.datetime.now(datetime.UTC).timestamp()
+    return int(expires_at) if expires_at > now + _EXPIRY_SKEW_SECONDS else None
 
 
 def _positive_seconds(raw: str) -> float:
@@ -814,17 +879,16 @@ def _report_cached_login(
     Returns:
         0 if `entry` is valid, else 1.
     """
-    if args.print_token:
-        if not entry:
-            err.write(f"No valid login for {server}. Run `xmc login`.\n")
-            return 1
-        out.write(f"{entry['access_token']}\n")
-        return 0
     if not entry:
-        err.write(f"Not logged in to {server}. Run `xmc login`.\n")
+        missing = "No valid login for" if args.print_token else "Not logged in to"
+        terminal_text.write(err, f"{missing} {server}. Run `xmc login`.\n")
         return 1
-    exp = _format_expiry(entry["expires_at"])
-    out.write(f"Logged in to {server} as {entry['email']} until {exp}.\n")
+    if args.print_token:
+        terminal_text.write(out, f"{entry['access_token']}\n")
+        return 0
+    who = f" as {entry['email']}" if entry["email"] else ""
+    expiry = _format_expiry(entry["expires_at"])
+    terminal_text.write(out, f"Logged in to {server}{who} until {expiry}.\n")
     return 0
 
 
