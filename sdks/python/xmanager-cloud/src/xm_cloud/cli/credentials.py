@@ -551,7 +551,7 @@ def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str
         if not fd_closed_by_file:
             with contextlib.suppress(OSError):
                 os.close(fd)
-        with contextlib.suppress(FileNotFoundError):
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
 

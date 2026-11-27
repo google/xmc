@@ -172,6 +172,8 @@ class MainTest(unittest.TestCase):
         self.assertEqual(main.main([], out=broken, err=broken), 1)
 
     def test_broken_pipe_on_a_real_fd_redirects_the_descriptor_to_devnull(self) -> None:
+        if os.name != "posix":
+            self.skipTest("POSIX broken pipe semantics only")
         r_fd, w_fd = os.pipe()
         os.close(r_fd)
         err = io.StringIO()
@@ -182,6 +184,17 @@ class MainTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("Broken pipe", err.getvalue())
+
+    def test_err_write_failure_does_not_redirect_healthy_stdout(self) -> None:
+        err = _BrokenStream(write_error=OSError(28, "No space left"))
+        with tempfile.TemporaryFile("w+", encoding="utf-8") as out:
+            code = main.main([], out=out, err=err)
+            out.write("still readable\n")
+            out.seek(0)
+            contents = out.read()
+
+        self.assertEqual(code, 1)
+        self.assertIn("still readable\n", contents)
 
 
 class _BrokenStream(io.StringIO):

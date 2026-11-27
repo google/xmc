@@ -439,6 +439,7 @@ class CredentialsTest(unittest.TestCase):
         ) -> None:
             if target == concurrent:
                 real_mkdir(target, mode=0o755)
+                os.chmod(target, 0o755)
                 raise FileExistsError(target)
             real_mkdir(target, mode=mode, parents=parents, exist_ok=exist_ok)
 

@@ -88,7 +88,12 @@ def main(
         _write_quietly(err, "\nxmc: interrupted\n")
         return 130
     except OSError as exc:
-        _discard_unwritten_output(out)
+        try:
+            out.flush()
+        except OSError:
+            _discard_unwritten_output(out)
+        except ValueError:
+            pass
         _write_quietly(err, f"xmc: error: cannot write output: {exc}\n")
         return 1
 
@@ -150,8 +155,11 @@ def _discard_unwritten_output(out: TextIO) -> None:
     with contextlib.suppress(OSError, ValueError):
         fd = out.fileno()
         devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, fd)
-        os.close(devnull)
+        if devnull != fd:
+            try:
+                os.dup2(devnull, fd)
+            finally:
+                os.close(devnull)
 
 
 if __name__ == "__main__":
