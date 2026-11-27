@@ -118,3 +118,19 @@ export interface GetSubmitQueueRequest {
 export interface GetSubmitQueueResponse {
   submitQueue?: string;
 }
+
+export interface AcceleratorSummary {
+  acceleratorType?: string;
+  zone?: string;
+  reservation?: string;
+  totalAccelerators?: number;
+  activeAccelerators?: number;
+  allocatedAccelerators?: number;
+  totalNodes?: number;
+  activeNodes?: number;
+  clusterQueues?: string[];
+}
+
+export interface GetResourceAvailabilityResponse {
+  summaries?: AcceleratorSummary[];
+}

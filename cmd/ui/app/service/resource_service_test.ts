@@ -16,7 +16,11 @@ import { HttpRequest, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom } from 'rxjs';
 
-import { GetRunningAndPendingJobsResponse, ListClusterQueuesResponse } from 'app/protos/rod';
+import {
+  GetResourceAvailabilityResponse,
+  GetRunningAndPendingJobsResponse,
+  ListClusterQueuesResponse,
+} from 'app/protos/rod';
 
 import { cleanState, flush, get, setupModule, setupObservableMatchers } from '../testing/test';
 import { XMC_API_DOMAIN } from './constants';
@@ -158,6 +162,52 @@ describe('ResourceService', () => {
       const response = await responsePromise;
       expect(response.nextPageToken).toBe('next-token');
       await flush();
+    });
+  });
+
+  describe('getResourceAvailability', () => {
+    it('should fetch physical resource availability from /v1/availability', async () => {
+      const mockResponse: GetResourceAvailabilityResponse = {
+        summaries: [
+          {
+            acceleratorType: 'nvidia-tesla-h100',
+            zone: 'us-central1-a',
+            reservation: 'reservation-a',
+            totalAccelerators: 16,
+            activeAccelerators: 16,
+            allocatedAccelerators: 8,
+            totalNodes: 2,
+            activeNodes: 2,
+            clusterQueues: ['h100-queue'],
+          },
+        ],
+      };
+
+      const responsePromise: Promise<GetResourceAvailabilityResponse> = firstValueFrom(
+        state.service.getResourceAvailability(),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/availability`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(mockResponse);
+
+      const response = await responsePromise;
+      expect(response.summaries?.length).toBe(1);
+      expect(response.summaries?.[0].acceleratorType).toBe('nvidia-tesla-h100');
+      expect(response.summaries?.[0].zone).toBe('us-central1-a');
+      expect(response.summaries?.[0].clusterQueues).toEqual(['h100-queue']);
+    });
+
+    it('should propagate HTTP errors so callers can render error states', async () => {
+      const responsePromise: Promise<GetResourceAvailabilityResponse> = firstValueFrom(
+        state.service.getResourceAvailability(),
+      );
+
+      const req = state.httpMock.expectOne(`${XMC_API_DOMAIN}/availability`);
+      req.flush('Server error', { status: 500, statusText: 'Internal Server Error' });
+
+      await expectAsync(responsePromise).toBeRejected();
     });
   });
 });

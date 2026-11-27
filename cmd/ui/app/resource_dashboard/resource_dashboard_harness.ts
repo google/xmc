@@ -15,10 +15,10 @@
 import { ComponentHarness, ElementDimensions } from '@angular/cdk/testing';
 import { MatButtonHarness } from '@angular/material/button/testing';
 
-import { WipBannerHarness } from '../common/components/wip_banner/wip_banner_harness';
 import { QueueJobsTableHarness } from '../side_panel/contents/queue_jobs_table/queue_jobs_table_harness';
 import { QueueListHarness } from './components/queue_list/queue_list_harness';
 import { ResizeDividerHarness } from './components/resize_divider/resize_divider_harness';
+import { ResourceAvailabilityHarness } from './components/resource_availability/resource_availability_harness';
 import { SmartResourceFinderHarness } from './components/smart_resource_finder/smart_resource_finder_harness';
 import { RodSubnavTabsHarness } from './components/subnav_tabs/subnav_tabs_harness';
 
@@ -102,9 +102,9 @@ export class ResourceDashboardHarness extends ComponentHarness {
     return this.locatorForOptional(QueueJobsTableHarness)();
   }
 
-  /** Gets the WIP banner harness if present. */
-  async getWipBanner(): Promise<WipBannerHarness | null> {
-    return this.locatorForOptional(WipBannerHarness)();
+  /** Gets the resource availability harness if present. */
+  async getResourceAvailability(): Promise<ResourceAvailabilityHarness | null> {
+    return this.locatorForOptional(ResourceAvailabilityHarness)();
   }
 
   /** Gets the inline style string of the left queue-list pane if present. */

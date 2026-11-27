@@ -18,6 +18,7 @@ import { catchError, Observable, of, throwError } from 'rxjs';
 
 import {
   BatchGetQueueSecondaryDataResponse,
+  GetResourceAvailabilityResponse,
   GetRunningAndPendingJobsResponse,
   GetSubmitQueueResponse,
   ListClusterQueuesResponse,
@@ -124,6 +125,22 @@ export class ResourceService {
       .pipe(
         catchError((error) => {
           console.error('Failed to fetch secondary queue data:', error);
+          return throwError(() => error);
+        }),
+      );
+  }
+
+  /**
+   * Fetches physical GPU availability grouped by accelerator type, zone, and reservation.
+   */
+  getResourceAvailability(): Observable<GetResourceAvailabilityResponse> {
+    return this.http
+      .get<GetResourceAvailabilityResponse>(`${XMC_API_DOMAIN}/availability`, {
+        withCredentials: true,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch resource availability:', error);
           return throwError(() => error);
         }),
       );

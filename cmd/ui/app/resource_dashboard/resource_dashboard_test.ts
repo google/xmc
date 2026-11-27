@@ -75,12 +75,14 @@ describe('ResourceDashboard Container', () => {
       'getClusterQueues',
       'getQueueJobs',
       'getQueueSecondaryData',
+      'getResourceAvailability',
     ]);
     resourceService.getClusterQueues.and.returnValue(
       of({ queues: [mockGpuQueue, mockCpuQueue] } as ListClusterQueuesResponse),
     );
     resourceService.getQueueJobs.and.returnValue(of({ jobs: [], totalQueueSize: 0 }));
     resourceService.getQueueSecondaryData.and.returnValue(of({ queuePredictability: {} }));
+    resourceService.getResourceAvailability.and.returnValue(of({ summaries: [] }));
 
     setupModule({
       imports: [TestHostComponent, NoopAnimationsModule],
@@ -191,7 +193,7 @@ describe('ResourceDashboard Container', () => {
     expect(await queueListHarness.isEmpty()).toBeTrue();
   });
 
-  it('should switch tabs to Resource availability and render an empty tab without queue list', async () => {
+  it('should switch tabs to Resource availability and render the availability component without queue list', async () => {
     bootstrap(TestHostComponent);
     await flush();
 
@@ -210,9 +212,9 @@ describe('ResourceDashboard Container', () => {
     expect(await tabsHarness.isTabActive(1)).toBeTrue();
     expect(await dashboard.getQueueList()).toBeNull();
     expect(await dashboard.getQueueJobsTable()).toBeNull();
-    const wipBanner = await dashboard.getWipBanner();
-    expect(wipBanner).not.toBeNull();
-    expect(await wipBanner!.getText()).toBe('Work in Progress');
+    const availability = await dashboard.getResourceAvailability();
+    expect(availability).not.toBeNull();
+    expect(await availability!.isEmpty()).toBeTrue();
 
     await tabsHarness.clickTab(0);
     await flush();
