@@ -53,6 +53,7 @@ go_test(
     name = "testing_test",
     srcs = [
         "component_catalog_test.go",
+        "dashboard_assertions_test.go",
         "dashboard_charts_test.go",
         "pausedtask_fake_test.go",
         "pausestate_fake_test.go",
@@ -65,8 +66,10 @@ go_test(
         "//internal/grpcerr",
         "//internal/prototest",
         "//internal/storage",
+        "//internal/validator",
         "//pkg/components/store",
         "@com_github_google_go_cmp//cmp",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

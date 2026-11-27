@@ -48,17 +48,7 @@ func AssertDuplicateChartRejected(ctx context.Context, t *testing.T, store stora
 	if err != nil {
 		t.Fatalf("GetChart(original) failed: %v", err)
 	}
-	dup := prototest.Modify(base, func(c *dpb.Chart) {
-		c.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
-		if wid == 0 {
-			c.Name = validator.ConstructExperimentChartName(xid, chartID)
-		}
-		c.Xid, c.Wid, c.Title = xid, wid, "Duplicate Title"
-		c.Plots = []*dpb.PlotSpec{
-			{PlotId: "plot-1", Title: "Replaced", Type: dpb.PlotType_BAR},
-			{PlotId: "plot-2", Title: "Extra", Type: dpb.PlotType_SCATTER},
-		}
-	})
+	dup := duplicateChart(base, chartID, xid, wid)
 	if err := store.CreateChart(ctx, dup); !errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("CreateChart(duplicate) error = %v (code %v), want %v", err, status.Code(err), grpcerr.ErrAlreadyExists)
 	}
@@ -69,4 +59,25 @@ func AssertDuplicateChartRejected(ctx context.Context, t *testing.T, store stora
 	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
 		t.Errorf("chart changed after rejected duplicate CreateChart (-want +got):\n%s", diff)
 	}
+}
+
+// duplicateChart returns a valid chart that reuses chartID under work unit (xid, wid), or under
+// experiment xid when wid is 0. It retitles base's first plot and adds one more, using plot types
+// the target chart level allows, so a non-strict insert would visibly change the stored chart.
+func duplicateChart(base *dpb.Chart, chartID string, xid, wid int64) *dpb.Chart {
+	name, replacedType, extraType := validator.ConstructWorkUnitChartName(xid, wid, chartID), dpb.PlotType_BAR, dpb.PlotType_SCATTER
+	if wid == 0 {
+		name, replacedType, extraType = validator.ConstructExperimentChartName(xid, chartID), dpb.PlotType_PARALLEL_COORDINATES, dpb.PlotType_PARALLEL_COORDINATES
+	}
+	replacedID := "plot-1"
+	if plots := base.GetPlots(); len(plots) > 0 {
+		replacedID = plots[0].GetPlotId()
+	}
+	return prototest.Modify(base, func(c *dpb.Chart) {
+		c.Name, c.Xid, c.Wid, c.Title = name, xid, wid, "Duplicate Title"
+		c.Plots = []*dpb.PlotSpec{
+			{PlotId: replacedID, Title: "Replaced", Type: replacedType},
+			{PlotId: replacedID + "-extra", Title: "Extra", Type: extraType},
+		}
+	})
 }

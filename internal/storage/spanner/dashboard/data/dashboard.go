@@ -258,7 +258,8 @@ func DashboardRowToProto(row *spanner.Row, chartIDs []string) (*dpb.Dashboard, e
 //
 // The Charts row uses a strict Insert, so applying the mutations for an existing chart ID fails
 // with codes.AlreadyExists and, because all mutations commit together, writes no plot rows. Plot
-// rows reuse PlotSpecsToInsertMutations, matching the PostgreSQL ChartPlots upsert.
+// rows reuse PlotSpecsToInsertMutations; the request validators reject duplicate PlotIds, so each
+// (ChartId, PlotId) row is written once.
 func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) {
 	if chart == nil {
 		return nil, fmt.Errorf("chart proto must not be nil: %w", grpcerr.ErrInvalidArgument)
