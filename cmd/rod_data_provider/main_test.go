@@ -42,6 +42,24 @@ func TestSetupKueueReconcilers_NilCache(t *testing.T) {
 	}
 }
 
+func TestSetupKueueReconcilers_NilPhysicalInventoryCache(t *testing.T) {
+	tests := []struct {
+		name      string
+		physCache *cache.PhysicalInventoryCache
+	}{
+		{name: "nil cache", physCache: nil},
+		{name: "nil nodes", physCache: &cache.PhysicalInventoryCache{Pods: cache.NewPhysicalInventoryCache().Pods}},
+		{name: "nil pods", physCache: &cache.PhysicalInventoryCache{Nodes: cache.NewPhysicalInventoryCache().Nodes}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := SetupKueueReconcilers(nil, nil, cache.NewKueueCache(), tt.physCache); err == nil {
+				t.Error("SetupKueueReconcilers() expected error for uninitialized physical inventory cache, got nil")
+			}
+		})
+	}
+}
+
 func TestBuildHTTPServer(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret-at-least-32-bytes-long!")
 	ctx := context.Background()

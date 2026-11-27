@@ -15,8 +15,9 @@
 package cache
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestNewPhysicalInventoryCache(t *testing.T) {

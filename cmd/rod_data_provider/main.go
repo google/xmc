@@ -30,13 +30,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	spb "xmanager_cloud/api/protos/rod"
 	"xmanager_cloud/cmd/rod_data_provider/cache"
@@ -277,10 +275,14 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache, physCa
 }
 
 // SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
-// to collect and sync Kueue entity information into the in-memory cache.
+// to collect and sync Kueue entity information into the in-memory cache, and registers the
+// physical inventory reconcilers that cache GPU Nodes and GPU-requesting Pods.
 func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache, physCache *cache.PhysicalInventoryCache) error {
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
+	}
+	if physCache == nil || physCache.Nodes == nil || physCache.Pods == nil {
+		return fmt.Errorf("physical inventory cache or its fields are uninitialized")
 	}
 	cqRec := reconciler.NewClusterQueueReconciler(client, cache.ClusterQueues)
 	if err := cqRec.SetupWithManager(mgr); err != nil {
@@ -295,16 +297,9 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
 	}
 
-	physRec := &reconciler.PhysicalInventoryReconciler{
-		Client: client,
-		Scheme: mgr.GetScheme(),
-		Cache:  physCache,
-	}
-	if err := ctrl.NewControllerManagedBy(mgr).For(&corev1.Node{}).Complete(reconcile.Func(physRec.ReconcileNode)); err != nil {
-		return fmt.Errorf("failed to setup PhysicalInventoryReconciler nodes: %w", err)
-	}
-	if err := ctrl.NewControllerManagedBy(mgr).For(&corev1.Pod{}).Complete(reconcile.Func(physRec.ReconcilePod)); err != nil {
-		return fmt.Errorf("failed to setup PhysicalInventoryReconciler pods: %w", err)
+	physRec := &reconciler.PhysicalInventoryReconciler{Client: client, Cache: physCache}
+	if err := physRec.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup PhysicalInventoryReconciler: %w", err)
 	}
 	return nil
 }
