@@ -134,9 +134,11 @@ re-runs work is an explicit human decision. `ListWorkUnitExecutions` shows you e
 
 ### 1.6 Stop work you no longer need
 
-`StopWorkUnit` moves the work unit to `STOPPING` immediately and enqueues a JobSet deletion. The
-finalizer guarantees the Reconciler records the terminal state before the JobSet disappears, so
-`STOPPED` always arrives — a stop cannot silently vanish.
+`StopWorkUnit` moves an active work unit to `STOPPING` immediately and enqueues a JobSet deletion
+(if the work unit is already `COMPLETED` or `STOPPED`, it is a no-op and returns an unnamed
+`Operation` with `done = true`). The finalizer guarantees the Reconciler records the terminal state
+before the JobSet disappears, so `STOPPED` always arrives for a stopped execution — a stop cannot
+silently vanish.
 
 Metrics and status messages already written survive; only the compute stops.
 

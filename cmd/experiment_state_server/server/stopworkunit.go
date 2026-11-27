@@ -70,6 +70,13 @@ func (h *WorkUnitHandler) StopWorkUnit(ctx context.Context, req *msgpb.StopWorkU
 		return nil, fmt.Errorf("failed to get work unit: %w (%v)", grpcerr.ErrInternal, err)
 	}
 
+	if !isWorkUnitStoppable(workUnit) {
+		logging.Info(ctx, "Skipping stop for non-stoppable work unit",
+			"state", workUnit.GetCurrentWorkUnitExecution().GetStatus().GetState(),
+		)
+		return &lropb.Operation{Done: true}, nil
+	}
+
 	// 5. Enqueue the stop request for the work unit.
 	res, err := h.enqueueWorkUnitStop(ctx, workUnit, email)
 	if err != nil {
