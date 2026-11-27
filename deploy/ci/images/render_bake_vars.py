@@ -62,6 +62,8 @@ _TOOL_FIELD_MAP: tuple[tuple[str, str, str], ...] = (
     ("DOCKER_CLI_VERSION", "docker_cli", "version"),
     ("DOCKER_CLI_SHA256", "docker_cli", "sha256"),
     ("HPC_TOOLKIT_COMMIT", "hpc_toolkit", "commit"),
+    ("PLAYWRIGHT_PYTHON_VERSION", "playwright_python", "version"),
+    ("PLAYWRIGHT_NPM_VERSION", "playwright_npm", "version"),
 )
 
 

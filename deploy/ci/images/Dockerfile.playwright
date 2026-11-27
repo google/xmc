@@ -1,0 +1,40 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+FROM ci-base
+
+ARG PLAYWRIGHT_PYTHON_VERSION
+ARG PLAYWRIGHT_NPM_VERSION
+
+ENV PLAYWRIGHT_BROWSERS_PATH="/ms-playwright" \
+    XMC_USE_PREBAKED_ENV="true"
+
+RUN pip3 install --no-cache-dir \
+        "playwright==${PLAYWRIGHT_PYTHON_VERSION}" \
+        requests \
+        absl-py
+
+# Install Chromium + Ubuntu 24.04 OS dependencies for both Python and npm Playwright pins,
+# then expose the bundled Chromium binary for Karma (ChromeHeadlessNoSandbox).
+RUN set -eu; \
+    mkdir -p "${PLAYWRIGHT_BROWSERS_PATH}"; \
+    python3 -m playwright install --with-deps chromium; \
+    npx --yes "playwright@${PLAYWRIGHT_NPM_VERSION}" install chromium; \
+    rm -rf /var/lib/apt/lists/* /root/.npm; \
+    chrome_bin="$(find "${PLAYWRIGHT_BROWSERS_PATH}" -maxdepth 3 -type f \( -path '*/chrome-linux/chrome' -o -path '*/chrome-linux64/chrome' \) | sort | tail -n 1)"; \
+    test -n "${chrome_bin}"; \
+    ln -sf "${chrome_bin}" /usr/local/bin/chromium; \
+    chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}" /opt/python
+
+ENV CHROME_BIN="/usr/local/bin/chromium"

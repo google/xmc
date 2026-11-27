@@ -6,7 +6,9 @@ This directory defines the layered `linux/amd64` Docker images published to GitH
 
 - [`Dockerfile.base`](Dockerfile.base) (`ci-base`): Pinned `ubuntu:24.04` digest, core CLI utilities, standalone Python 3.13 (`/opt/python`), and Node.js 22 (`/opt/node`).
 - [`Dockerfile.lint`](Dockerfile.lint) (`ci-lint`): Extends `ci-base` with Go, Ruff, Mypy, Go-compiled `golangci-lint`, `actionlint`, `buildifier`, `addlicense`, `shellcheck`, Terraform, TFLint (+ pre-cached Google plugin), Helm v3, and Trivy.
+- [`Dockerfile.playwright`](Dockerfile.playwright) (`ci-playwright`): Extends `ci-base` with native Ubuntu 24.04 Chromium system libraries, Playwright Chromium at `/ms-playwright`, Karma `CHROME_BIN` symlink, and pre-installed Python `playwright`, `requests`, and `absl-py`.
 - [`Dockerfile.cloud`](Dockerfile.cloud) (`ci-cloud`): Extends `ci-base` with Google Cloud CLI (`gke-gcloud-auth-plugin`), static Docker CLI client, and `/opt/xmc-tools/bin/` (`gcluster`, `terraform`, `kubectl`, `helm`, `kind`, `bazelisk`/`bazel`).
+- [`Dockerfile.e2e`](Dockerfile.e2e) (`ci-e2e`): Combines `ci-playwright` with `ci-cloud` tools plus `build-essential`, `openssl`, and `patch` for headless KinD + Playwright E2E runs.
 
 ## Single Source of Truth
 

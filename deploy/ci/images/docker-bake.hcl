@@ -65,6 +65,8 @@ variable "BAZELISK_SHA256" { default = "" }
 variable "DOCKER_CLI_VERSION" { default = "" }
 variable "DOCKER_CLI_SHA256" { default = "" }
 variable "HPC_TOOLKIT_COMMIT" { default = "" }
+variable "PLAYWRIGHT_PYTHON_VERSION" { default = "" }
+variable "PLAYWRIGHT_NPM_VERSION" { default = "" }
 
 function "image_tags" {
   params = [name]
@@ -82,7 +84,7 @@ function "gha_cache_to" {
 }
 
 group "default" {
-  targets = ["ci-base", "ci-lint", "ci-cloud"]
+  targets = ["ci-base", "ci-lint", "ci-playwright", "ci-cloud", "ci-e2e"]
 }
 
 target "_common" {
@@ -145,6 +147,21 @@ target "ci-lint" {
   }
 }
 
+target "ci-playwright" {
+  inherits   = ["_common"]
+  dockerfile = "deploy/ci/images/Dockerfile.playwright"
+  tags       = image_tags("ci-playwright")
+  cache-from = gha_cache_from("ci-playwright")
+  cache-to   = gha_cache_to("ci-playwright")
+  contexts = {
+    "ci-base" = "target:ci-base"
+  }
+  args = {
+    PLAYWRIGHT_PYTHON_VERSION = PLAYWRIGHT_PYTHON_VERSION
+    PLAYWRIGHT_NPM_VERSION    = PLAYWRIGHT_NPM_VERSION
+  }
+}
+
 target "ci-cloud" {
   inherits   = ["_common"]
   dockerfile = "deploy/ci/images/Dockerfile.cloud"
@@ -170,5 +187,17 @@ target "ci-cloud" {
     BAZELISK_SHA256    = BAZELISK_SHA256
     DOCKER_CLI_VERSION = DOCKER_CLI_VERSION
     DOCKER_CLI_SHA256  = DOCKER_CLI_SHA256
+  }
+}
+
+target "ci-e2e" {
+  inherits   = ["_common"]
+  dockerfile = "deploy/ci/images/Dockerfile.e2e"
+  tags       = image_tags("ci-e2e")
+  cache-from = gha_cache_from("ci-e2e")
+  cache-to   = gha_cache_to("ci-e2e")
+  contexts = {
+    "ci-playwright" = "target:ci-playwright"
+    "ci-cloud"      = "target:ci-cloud"
   }
 }
