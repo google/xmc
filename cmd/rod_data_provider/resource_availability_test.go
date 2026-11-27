@@ -116,3 +116,91 @@ func TestGetResourceAvailability(t *testing.T) {
 		t.Errorf("Expected cluster queues [cq-1], got %v", summary.ClusterQueues)
 	}
 }
+
+func TestGetResourceAvailabilityZoneScopedFlavors(t *testing.T) {
+	s := &server{
+		physCache:  cache.NewPhysicalInventoryCache(),
+		kueueCache: cache.NewKueueCache(),
+	}
+
+	for _, tc := range []struct {
+		name string
+		zone string
+	}{
+		{name: "node-a", zone: "us-central1-a"},
+		{name: "node-b", zone: "us-central1-b"},
+	} {
+		s.physCache.Nodes.Set(tc.name, &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: tc.name,
+				Labels: map[string]string{
+					"topology.kubernetes.io/zone":      tc.zone,
+					"cloud.google.com/gke-accelerator": "nvidia-tesla-h100",
+				},
+			},
+			Status: corev1.NodeStatus{
+				Capacity: corev1.ResourceList{
+					"nvidia.com/gpu": resource.MustParse("8"),
+				},
+				Conditions: []corev1.NodeCondition{
+					{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+				},
+			},
+		})
+	}
+
+	s.kueueCache.ResourceFlavors.Set("flavor-a", &kueuev1beta1.ResourceFlavor{
+		ObjectMeta: metav1.ObjectMeta{Name: "flavor-a"},
+		Spec: kueuev1beta1.ResourceFlavorSpec{
+			NodeLabels: map[string]string{
+				"cloud.google.com/gke-accelerator": "nvidia-tesla-h100",
+				"topology.kubernetes.io/zone":      "us-central1-a",
+			},
+		},
+	})
+	s.kueueCache.ClusterQueues.Set("h100-queue-a", &kueuev1beta1.ClusterQueue{
+		ObjectMeta: metav1.ObjectMeta{Name: "h100-queue-a"},
+		Spec: kueuev1beta1.ClusterQueueSpec{
+			ResourceGroups: []kueuev1beta1.ResourceGroup{
+				{
+					Flavors: []kueuev1beta1.FlavorQuotas{{Name: kueuev1beta1.ResourceFlavorReference("flavor-a")}},
+				},
+			},
+		},
+	})
+
+	resp, err := s.GetResourceAvailability(context.Background(), &rodpb.GetResourceAvailabilityRequest{})
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(resp.Summaries) != 2 {
+		t.Fatalf("Expected 2 summaries, got %d", len(resp.Summaries))
+	}
+	if got := resp.Summaries[0].ClusterQueues; len(got) != 1 || got[0] != "h100-queue-a" {
+		t.Errorf("Expected us-central1-a cluster queues [h100-queue-a], got %v", got)
+	}
+	if got := resp.Summaries[1].ClusterQueues; len(got) != 0 {
+		t.Errorf("Expected us-central1-b cluster queues [], got %v", got)
+	}
+}
+
+func TestGetResourceAvailabilityHandlesNilEntries(t *testing.T) {
+	agg := make(map[string]map[string]map[string]*rodpb.AcceleratorSummary)
+	nodeMap := make(map[string]*corev1.Node)
+	processNodes([]*corev1.Node{nil}, agg, nodeMap)
+	processPods([]*corev1.Pod{nil}, nodeMap, agg)
+	got := getCorrelatedQueues("nvidia-tesla-h100", "us-central1-a", "", []*kueuev1beta1.ClusterQueue{
+		nil,
+		{
+			ObjectMeta: metav1.ObjectMeta{Name: "h100-queue"},
+			Spec: kueuev1beta1.ClusterQueueSpec{
+				ResourceGroups: []kueuev1beta1.ResourceGroup{
+					{Flavors: []kueuev1beta1.FlavorQuotas{{Name: "nil-flavor"}}},
+				},
+			},
+		},
+	}, map[string]*kueuev1beta1.ResourceFlavor{"nil-flavor": nil})
+	if len(got) != 0 {
+		t.Errorf("Expected no correlated queues for nil flavor, got %v", got)
+	}
+}
