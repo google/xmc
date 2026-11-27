@@ -136,8 +136,8 @@ builder.add_chart(created_chart)  # a created Chart; the ID is taken from chart.
 
 Both reject blanks, IDs containing a `/` (a full resource name is not a chart ID — pass it through
 `chart_id_from_name()` first), and IDs already referenced by the same dashboard. Use `add_chart()`
-only with a chart the server has returned: a locally built chart whose `name` you chose yourself
-would embed an ID that does not exist yet.
+only with a chart the server has returned: `ChartBuilder.build()` always fills `name` (from
+`set_name()` or a slug of the title), so a locally built chart embeds an ID that does not exist yet.
 
 Two consequences of the ID-only model are worth knowing at call sites:
 
@@ -205,13 +205,16 @@ bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 
 # Chart IDs are server-assigned: take <chart_id> from the "Chart IDs" line of
 # `get dashboards/...` or from the name create-chart prints.
-# Retrieve a single chart (GetChart accepts charts/{chart_id}; hierarchical patterns work with get-data below)
+# Retrieve a single chart (`get` accepts only charts/<chart_id> and dashboards/<dashboard_id>)
 bazel run //sdks/python/xdash:xdash_bin -- get charts/<chart_id>
 
-# Fetch evaluated ChartData for a work-unit or experiment-level chart
-bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/<chart_id>
-bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/charts/<chart_id>
+# Fetch evaluated ChartData for a work-unit or experiment-level chart by its chart ID
+bazel run //sdks/python/xdash:xdash_bin -- get-data charts/<chart_id>
 ```
+
+`get-data` also accepts the hierarchical forms `experiments/{xid}/workUnits/{wid}/charts/{chart_id}`
+and `experiments/{xid}/charts/{chart_id}`. Prefer `charts/<chart_id>`: for a work-unit name whose
+chart ID does not exist, the service returns a synthesized default chart instead of `NOT_FOUND`.
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see
 [Installation / Usage in Bazel](#installation--usage-in-bazel) above):

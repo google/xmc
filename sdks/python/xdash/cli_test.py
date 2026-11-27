@@ -316,15 +316,39 @@ class CliTest(unittest.TestCase):
         self.assertIn("Experiment:  1001 (wid: 7)", out)
         self.assertIn("Plots:       2", out)
 
-    def test_get_routes_dashboard_sub_chart_to_get_chart(self) -> None:
-        self.mock_client.get_chart.return_value = messages_pb2.Chart(
-            name="dashboards/d1/charts/c1", title="Sub Chart"
-        )
-
-        ret, _, _ = self._run(["get", "dashboards/d1/charts/c1"])
-        self.assertEqual(ret, 0)
-        self.mock_client.get_chart.assert_called_once_with("dashboards/d1/charts/c1")
+    def test_get_rejects_hierarchical_chart_names_without_calling_the_service(self) -> None:
+        # GetChart accepts only charts/<chart_id>; get-data handles hierarchical names.
+        for name in (
+            "dashboards/d1/charts/c1",
+            "experiments/1001/workUnits/1/charts/c1",
+            "experiments/1001/charts/c1",
+            "charts/",
+            "dashboards/",
+        ):
+            with self.subTest(name=name):
+                ret, _, err = self._run(["get", name])
+                self.assertEqual(ret, 1)
+                self.assertIn("Unrecognised resource name", err)
+                self.assertIn("use get-data for hierarchical chart names", err)
+        self.mock_client.get_chart.assert_not_called()
         self.mock_client.get_dashboard.assert_not_called()
+
+    def test_get_help_documents_root_chart_names(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            run_cli(["get", "--help"], client=self.mock_client)
+        help_text = " ".join(out.getvalue().split())
+        self.assertIn("charts/<chart_id> or dashboards/<dashboard_id>", help_text)
+        self.assertNotIn("experiments/", help_text)
+
+    def test_get_data_accepts_root_chart_name(self) -> None:
+        self.mock_client.get_chart_data.return_value = messages_pb2.ChartData(
+            name="charts/c1", xid=1001, wid=1
+        )
+        ret, out, _ = self._run(["get-data", "charts/c1"])
+        self.assertEqual(ret, 0)
+        self.mock_client.get_chart_data.assert_called_once_with("charts/c1")
+        self.assertIn("ChartData for charts/c1", out)
 
     def test_get_strips_surrounding_whitespace(self) -> None:
         self.mock_client.get_dashboard.return_value = messages_pb2.Dashboard(name="dashboards/d1")
