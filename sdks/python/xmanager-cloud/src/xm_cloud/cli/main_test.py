@@ -14,7 +14,9 @@
 """Unit tests for `xm_cloud.cli.main`."""
 
 import io
+import os
 import sys
+import tempfile
 import unittest
 from collections.abc import Sequence
 from typing import TextIO
@@ -127,6 +129,68 @@ class MainTest(unittest.TestCase):
                     code, out, err = self._main(["logout"])
 
                 self.assertEqual((code, out, err), (expected_code, "", expected_err))
+
+    def test_unknown_command_is_escaped_on_a_strict_ascii_stderr(self) -> None:
+        err = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+
+        code = main.main(["\udcff\u00e9\x1b"], out=io.StringIO(), err=err)
+
+        err.flush()
+        self.assertEqual(code, 2)
+        self.assertIn(b"unknown command '\\udcff\\xe9\\x1b'\n", err.buffer.getvalue())
+
+    def test_subcommand_usage_errors_are_escaped_on_a_strict_ascii_stderr(self) -> None:
+        err = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+
+        code = main.main(["logout", "\udcff"], out=io.StringIO(), err=err)
+
+        err.flush()
+        self.assertEqual(code, 2)
+        self.assertIn(b"unrecognized arguments: \\udcff\n", err.buffer.getvalue())
+
+    def test_output_errors_exit_1_without_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as xdg:
+            env = {"XDG_CONFIG_HOME": xdg, "XMANAGER_UI_URL": "https://xmc.example.com"}
+            cases = [
+                (["--help"], _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))),
+                (["logout"], _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))),
+                (["logout", "--all"], _BrokenStream(flush_error=OSError(28, "No space left"))),
+            ]
+            for argv, out in cases:
+                with self.subTest(argv=argv), mock.patch.dict(os.environ, env, clear=True):
+                    err = io.StringIO()
+
+                    code = main.main(argv, out=out, err=err)
+
+                    self.assertEqual(code, 1)
+                    self.assertRegex(err.getvalue(), r"^xmc: error: cannot write output: \[Errno")
+
+    def test_output_errors_on_both_streams_exit_1(self) -> None:
+        broken = _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))
+
+        self.assertEqual(main.main(["--help"], out=broken, err=broken), 1)
+        self.assertEqual(main.main([], out=broken, err=broken), 1)
+
+
+class _BrokenStream(io.StringIO):
+    """A text stream whose `write` or `flush` fails like a closed pipe or full disk."""
+
+    def __init__(
+        self, *, write_error: OSError | None = None, flush_error: OSError | None = None
+    ) -> None:
+        super().__init__()
+        self._write_error = write_error
+        self._flush_error = flush_error
+
+    def write(self, s: str) -> int:
+        if self._write_error is not None:
+            raise self._write_error
+        return super().write(s)
+
+    def flush(self) -> None:
+        if self._flush_error is not None:
+            raise self._flush_error
+        super().flush()
 
 
 if __name__ == "__main__":

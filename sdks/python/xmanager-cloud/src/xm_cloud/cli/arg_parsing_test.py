@@ -83,6 +83,37 @@ class ArgParsingTest(unittest.TestCase):
 
                 self.assertEqual(err.getvalue(), message)
 
+    def test_parse_args_escapes_echoed_arguments_on_a_strict_ascii_stream(self) -> None:
+        out = io.StringIO()
+        err = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+
+        code = arg_parsing.parse_args(_parser(), ["\udcff", "\x1b[2J", "\u00e9"], out, err)
+
+        err.flush()
+        self.assertEqual((code, out.getvalue()), (2, ""))
+        written = err.buffer.getvalue()
+        self.assertIn(b"unrecognized arguments: \\udcff \\x1b[2J \\xe9\n", written)
+        self.assertNotIn(b"\x1b", written)
+
+    def test_parse_args_writes_help_through_terminal_text(self) -> None:
+        parser = argparse.ArgumentParser(prog="xmc test", description="caf\u00e9 \x1b[2J")
+        out = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+        err = io.StringIO()
+
+        self.assertEqual(arg_parsing.parse_args(parser, ["--help"], out, err), 0)
+
+        out.flush()
+        self.assertEqual(err.getvalue(), "")
+        self.assertIn(b"caf\\xe9 \\x1b[2J", out.buffer.getvalue())
+
+    def test_exit_code_escapes_a_string_code(self) -> None:
+        err = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+
+        self.assertEqual(arg_parsing.exit_code(SystemExit("bad \x1b[2J \udcff"), err), 1)
+
+        err.flush()
+        self.assertEqual(err.buffer.getvalue(), b"bad \\x1b[2J \\udcff\n")
+
 
 if __name__ == "__main__":
     unittest.main()

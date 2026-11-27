@@ -49,6 +49,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def _logout(path: pathlib.Path, env: Mapping[str, str], *, all_deployments: bool) -> str:
     """Removes cached credentials from `path` and returns the message to print.
 
+    Args:
+        path: Path of the credentials file.
+        env: Environment mapping used to resolve the deployment.
+        all_deployments: Whether to clear every deployment (`--all`) without
+            resolving the deployment or reading the existing file.
+
+    Returns:
+        The newline-terminated message for stdout.
+
     Raises:
         credentials.AuthError: If the deployment or the credentials file is invalid.
     """

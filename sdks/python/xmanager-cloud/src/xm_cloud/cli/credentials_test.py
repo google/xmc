@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import pathlib
 import stat
@@ -200,6 +201,42 @@ class CredentialsTest(unittest.TestCase):
                 credentials.resolve_server(env)
             self.assertNotIn("s3cret", str(ctx.exception))
 
+    def test_resolve_server_errors_do_not_echo_a_url_path(self) -> None:
+        # A path can carry a token; errors echo at most the normalized origin.
+        for env in (
+            {"XMC_API_URL": "http://evil.example/oauth/SECRET_TOKEN"},
+            {"XMC_API_URL": "https://xmc.example.com:99999/SECRET_TOKEN"},
+            {"XMC_API_URL": "https://xmc.example.com:0/SECRET_TOKEN"},
+            {"XMC_API_URL": "ftp://xmc.example.com/SECRET_TOKEN"},
+            {"XMANAGER_UI_URL": "xmc.example.com/SECRET_TOKEN"},
+            {"XMC_DOMAIN": "xmc.example.com/SECRET_TOKEN"},
+            {"XMANAGER_ENDPOINT": "grpc.xmc.example.com:443/SECRET_TOKEN"},
+            {"XMANAGER_ENDPOINT": "dns:///grpc.xmc.example.com:443/SECRET_TOKEN"},
+            {"XMANAGER_ENDPOINT": "http://evil.example/SECRET_TOKEN"},
+        ):
+            with self.subTest(env=env), self.assertRaises(credentials.AuthError) as ctx:
+                credentials.resolve_server(env)
+            self.assertNotIn("SECRET_TOKEN", str(ctx.exception))
+            self.assertIn(next(iter(env)), str(ctx.exception))
+
+    def test_resolve_server_errors_name_the_problem(self) -> None:
+        cases = [
+            ({"XMC_API_URL": "http://evil.example/x"}, "http://evil.example must use https://"),
+            ({"XMC_API_URL": "https://xmc.example.com:0"}, "port in 1-65535"),
+            ({"XMC_DOMAIN": "xmc.example.com/ui"}, "a domain must not have a path"),
+            ({"XMANAGER_ENDPOINT": "grpc.xmc.example.com:0"}, "port outside 1-65535"),
+            ({"XMANAGER_ENDPOINT": "grpc.xmc.example.com:99999"}, "port outside 1-65535"),
+            ({"XMANAGER_ENDPOINT": "grpc.xmc.example.com:443/x"}, "must not have a path"),
+            ({"XMANAGER_ENDPOINT": "xmc.example.com:443"}, "got host xmc.example.com\\)"),
+            ({"XMANAGER_ENDPOINT": "grpc.localhost"}, "grpc.localhost does not name"),
+        ]
+        for env, message in cases:
+            with (
+                self.subTest(env=env),
+                self.assertRaisesRegex(credentials.AuthError, message),
+            ):
+                credentials.resolve_server(env)
+
     def test_resolve_server_matches_the_xdash_cache_key(self) -> None:
         # xdash.auth looks up cached tokens by this origin, so the writer must agree.
         envs = [
@@ -294,13 +331,31 @@ class CredentialsTest(unittest.TestCase):
             ):
                 credentials.credentials_path(env)
 
-    def test_load_and_save_report_a_nul_path_as_auth_error(self) -> None:
+    def test_load_credentials_reports_a_nul_path_as_auth_error(self) -> None:
         path = pathlib.Path(self._xdg) / "creds\x00.json"
 
         with self.assertRaisesRegex(credentials.AuthError, "Refusing to read"):
             credentials.load_credentials(path)
+
+    def test_save_credentials_reports_a_nul_path_as_auth_error(self) -> None:
+        path = pathlib.Path(self._xdg) / "creds\x00.json"
+
         with self.assertRaisesRegex(credentials.AuthError, "Cannot write credentials file"):
             credentials.save_credentials(path, {})
+
+    def test_save_credentials_reports_deep_nesting_the_encoder_cannot_handle(self) -> None:
+        # Python 3.11/3.12 serialize `indent=2` with the recursive pure-Python
+        # encoder, so an entry that json.loads accepted can exceed the recursion limit.
+        nested: list[object] = []
+        for _ in range(5000):
+            nested = [nested]
+        with (
+            mock.patch.object(json.encoder, "c_make_encoder", None),
+            self.assertRaisesRegex(credentials.AuthError, "Cannot write credentials file"),
+        ):
+            credentials.save_credentials(self._path, {_SERVER: {"x": nested}})
+
+        self.assertFalse(self._path.exists())
 
     def test_load_credentials_returns_empty_for_a_missing_file(self) -> None:
         self.assertEqual(credentials.load_credentials(self._path), {})
@@ -314,15 +369,36 @@ class CredentialsTest(unittest.TestCase):
         self.assertLess(raw.index(_SERVER), raw.index(other))
         self.assertEqual(credentials.load_credentials(self._path), {other: _ENTRY, _SERVER: _ENTRY})
 
+    def _set_umask(self, mask: int) -> None:
+        self.addCleanup(os.umask, os.umask(mask))
+
     def test_save_credentials_creates_0600_file_in_0700_dir(self) -> None:
         if os.name != "posix":
             self.skipTest("POSIX permissions only")
+        self._set_umask(0o022)
         path = pathlib.Path(self._xdg) / "xmc" / "credentials.json"
 
         credentials.save_credentials(path, {})
 
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+
+    def test_save_credentials_restricts_every_new_ancestor_regardless_of_umask(self) -> None:
+        if os.name != "posix":
+            self.skipTest("POSIX permissions only")
+        # 0o277 strips the owner's write and execute bits from mkdir's mode, so
+        # 0700 holds only if each created directory is chmod-ed explicitly.
+        self._set_umask(0o277)
+        base = pathlib.Path(self._xdg)
+        path = base / "new1" / "new2" / "credentials.json"
+
+        credentials.save_credentials(path, {})
+
+        for directory in (base / "new1", base / "new1" / "new2"):
+            with self.subTest(directory=directory.name):
+                self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode) & 0o077, 0)
+        self.assertEqual(credentials.load_credentials(path), {})
 
     def test_save_credentials_keeps_the_mode_of_an_existing_directory(self) -> None:
         if os.name != "posix":

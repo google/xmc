@@ -39,6 +39,9 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _UNSPECIFIED_HOSTS = frozenset({"0.0.0.0"})
 _LOCAL_HOSTS = _LOOPBACK_HOSTS | _UNSPECIFIED_HOSTS  # Same set as xdash.auth.LOCAL_HOSTS.
 _RESET_HINT = "Run `xmc logout --all` to reset."
+_EXPECTED_URL = (
+    "expected https://<host>[:<port>] with a port in 1-65535 (http:// only for a loopback host)"
+)
 # A cached entry is a few KiB, so 1 MiB holds hundreds of deployments while
 # keeping a hand-edited or misnamed file from exhausting memory.
 _MAX_CREDENTIALS_BYTES = 1 << 20
@@ -88,34 +91,48 @@ def _strip_grpc_scheme(target: str) -> str | None:
     return target
 
 
+def _endpoint_error(problem: str) -> AuthError:
+    """Returns the error for an invalid XMANAGER_ENDPOINT, without echoing its value.
+
+    Args:
+        problem: What is wrong with the value; must not contain the raw value.
+
+    Returns:
+        The `AuthError` to raise.
+    """
+    return AuthError(f"Invalid XMANAGER_ENDPOINT: {problem}. Unset it or run `xmc logout --all`.")
+
+
 def _extract_grpc_host(endpoint: str) -> str:
     """Extracts the lowercased hostname from a gRPC target.
-
-    A target with a path (`grpc.x.dev:443/extra`, `dns:///grpc.x.dev:443/extra`)
-    is invalid: `xdash.auth` reads the last path segment as the host, so accepting
-    it would write a cache key that `xdash` never looks up. An unbracketed IPv6
-    address (`::1`) is accepted without a port, as in `xdash.auth`.
 
     Args:
         endpoint: `XMANAGER_ENDPOINT` value, optionally `dns:///`, `dns://<authority>/`,
             or `grpc://` prefixed.
 
     Returns:
-        The hostname, or "" if the target is invalid, has a path, or has port 0.
+        The hostname; an unbracketed IPv6 address (`::1`) is accepted, as in xdash.
+
+    Raises:
+        AuthError: If the target is malformed, has an invalid port, or has a path.
     """
     target = _strip_grpc_scheme(endpoint.strip().lower())
     if target is None:
-        return ""
+        raise _endpoint_error("a dns://<authority> target needs a `/` before the host")
     if target.count(":") > 1 and not target.startswith("["):
-        return target if _is_ipv6_address(target) else ""
+        if _is_ipv6_address(target):
+            return target
+        raise _endpoint_error("malformed host or port")
     try:
         parts = urllib.parse.urlsplit(f"//{target}")
         port = parts.port
-    except ValueError:
-        return ""
-    if parts.path or (port is not None and port < 1):
-        return ""
-    return parts.hostname or ""
+    except ValueError:  # A non-numeric port or one above 65535.
+        raise _endpoint_error("malformed host, or a port outside 1-65535") from None
+    if parts.path:
+        raise _endpoint_error("a gRPC target must not have a path")
+    if (port is not None and port < 1) or not parts.hostname:
+        raise _endpoint_error("missing host, or a port outside 1-65535")
+    return parts.hostname
 
 
 def _is_ipv6_address(text: str) -> bool:
@@ -134,67 +151,97 @@ def _strip_grpc_prefix(host: str) -> str:
     return host
 
 
-def _origin(raw: str, *, domain: bool = False) -> str:
-    """Returns the normalized `scheme://host[:port]` origin of the URL `raw`.
-
-    The origin is the key of the credentials cache. It uses the same normalization
-    as `xdash.auth`, which reads the cache: a `grpc.` or `grpc.api.` host prefix
-    and a default port are dropped. Only a `domain` (XMC_DOMAIN) may omit the
-    scheme, and it must not carry a path.
+def _split_url(raw: str, name: str) -> tuple[str, str, int | None, str]:
+    """Splits the deployment URL `raw` into its scheme, host, port, and path.
 
     Args:
-        raw: Deployment URL or bare domain string.
-        domain: Whether `raw` is a bare domain (scheme optional, no path allowed).
+        raw: Deployment URL that passed `_reject_unsafe_target`.
+        name: Name of the environment variable, used in the error message.
 
     Returns:
-        Normalized `scheme://host[:port]` origin string.
+        The lowercased `http`/`https` scheme, the lowercased host without brackets
+        or a `grpc.`/`grpc.api.` prefix, the port (None if absent), and the path.
 
     Raises:
-        AuthError: If `raw` is not a valid https (or loopback http) URL, or contains
-            whitespace, control characters, userinfo, a query, or a fragment.
+        AuthError: If `raw` lacks a supported scheme or a host, names the
+            unspecified host, or has a port outside 1-65535. Never echoes `raw`.
     """
-    _reject_unsafe_target(raw, "deployment server URL")
-    # Echoing `raw` is safe from here on: it has no userinfo, query, or fragment.
-    invalid = AuthError(f"Invalid deployment server URL: {raw!r}.")
+    invalid = AuthError(f"Invalid {name}: {_EXPECTED_URL}.")
     if "://" not in raw:
-        if not domain:
-            raise invalid
-        raw = f"https://{raw}"
+        raise invalid
     try:
         p = urllib.parse.urlsplit(raw)
         port = p.port
     except ValueError:
         raise invalid from None
-    if port is not None and port < 1:
-        raise invalid
     scheme, host = p.scheme.lower(), _strip_grpc_prefix((p.hostname or "").lower())
-    if scheme not in ("https", "http") or not host or host in _UNSPECIFIED_HOSTS:
+    if (port is not None and port < 1) or scheme not in ("https", "http"):
         raise invalid
-    if domain and p.path not in ("", "/"):
+    if not host or host in _UNSPECIFIED_HOSTS:
         raise invalid
-    if scheme == "http" and host not in _LOOPBACK_HOSTS:
-        raise AuthError(f"Deployment server must use https:// (got {raw!r}).")
+    return scheme, host, port, p.path
+
+
+def _origin(raw: str, name: str, *, domain: bool = False) -> str:
+    """Returns the normalized `scheme://host[:port]` origin of the URL `raw`.
+
+    The origin is the cache key, normalized as in `xdash.auth` (no `grpc.` or
+    `grpc.api.` host prefix, no default port). Errors echo at most the origin,
+    never `raw`, whose path may carry a token.
+
+    Args:
+        raw: Deployment URL, or a bare domain if `domain` is set.
+        name: Name of the environment variable, used in error messages.
+        domain: Whether `raw` is an XMC_DOMAIN value (scheme optional, no path).
+
+    Returns:
+        Normalized `scheme://host[:port]` origin string.
+
+    Raises:
+        AuthError: If `raw` is unsafe or not a valid https (or loopback http) URL.
+    """
+    _reject_unsafe_target(raw, name)
+    if domain and "://" not in raw:
+        raw = f"https://{raw}"
+    scheme, host, port, path = _split_url(raw, name)
+    if domain and path not in ("", "/"):
+        raise AuthError(f"Invalid {name}: a domain must not have a path.")
     host_str = f"[{host}]" if ":" in host else host
-    if port is None or (scheme, port) in (("https", 443), ("http", 80)):
-        return f"{scheme}://{host_str}"
-    return f"{scheme}://{host_str}:{port}"
+    default_port = 443 if scheme == "https" else 80
+    origin = f"{scheme}://{host_str}" + ("" if port in (None, default_port) else f":{port}")
+    if scheme == "http" and host not in _LOOPBACK_HOSTS:
+        raise AuthError(f"Invalid {name}: {origin} must use https:// (http:// is loopback only).")
+    return origin
 
 
 def _endpoint_origin(endpoint: str) -> str | None:
-    """Returns the origin named by XMANAGER_ENDPOINT, or None for a loopback gRPC target."""
+    """Returns the deployment origin named by an XMANAGER_ENDPOINT value.
+
+    Args:
+        endpoint: Stripped, non-empty `XMANAGER_ENDPOINT` value: an http(s) URL, a
+            `grpc.<domain>` or `grpc.api.<domain>` gRPC target, or a loopback gRPC
+            target.
+
+    Returns:
+        The origin, or None for a loopback gRPC target (the caller then reads the
+        next variable).
+
+    Raises:
+        AuthError: If the value is unsafe or malformed, or is a gRPC target that is
+            neither `grpc.`-prefixed nor loopback. Errors echo at most the host.
+    """
     _reject_unsafe_target(endpoint, "XMANAGER_ENDPOINT")
     if endpoint.lower().startswith(("http://", "https://")):
-        return _origin(endpoint)
+        return _origin(endpoint, "XMANAGER_ENDPOINT")
     host = _extract_grpc_host(endpoint)
     if host.startswith("grpc."):
         domain = _strip_grpc_prefix(host)
         if not domain or domain in _LOCAL_HOSTS:
-            raise AuthError(f"Invalid XMANAGER_ENDPOINT: {endpoint!r}.")
+            raise _endpoint_error(f"{host} does not name a deployment")
         return f"https://{domain}"
     if host not in _LOOPBACK_HOSTS:
-        raise AuthError(
-            f"Unsupported XMANAGER_ENDPOINT {endpoint!r} (expected grpc.<domain>, an"
-            " http(s) URL, or loopback). Unset it or run `xmc logout --all`."
+        raise _endpoint_error(
+            f"expected grpc.<domain>, an http(s) URL, or a loopback target (got host {host})"
         )
     return None
 
@@ -220,9 +267,9 @@ def resolve_server(env: Mapping[str, str]) -> str:
         return origin
     for name in ("XMC_API_URL", "XMANAGER_UI_URL"):
         if raw := env.get(name, "").strip():
-            return _origin(raw)
+            return _origin(raw, name)
     if raw := env.get("XMC_DOMAIN", "").strip():
-        return _origin(raw, domain=True)
+        return _origin(raw, "XMC_DOMAIN", domain=True)
     raise AuthError(NO_SERVER_MESSAGE)
 
 
@@ -272,6 +319,9 @@ def _configured_credentials_path(env: Mapping[str, str]) -> pathlib.Path | None:
 def _home_credentials_path() -> pathlib.Path:
     """Returns `~/.config/xmc/credentials.json`.
 
+    Returns:
+        The default credentials path under the absolute home directory.
+
     Raises:
         AuthError: If the home directory cannot be resolved or is a relative path,
             which would put the credentials in the working directory.
@@ -319,20 +369,21 @@ def load_credentials(path: pathlib.Path) -> dict[str, dict[str, Any]]:
 
 
 def _read_private_file(path: pathlib.Path) -> bytes | None:
-    """Returns the contents of `path`, or None if it does not exist.
+    """Returns the contents of the credentials file `path`.
+
+    Args:
+        path: Path of the credentials file.
+
+    Returns:
+        The file contents, or None if `path` does not exist.
 
     Raises:
         AuthError: If `path` cannot be opened or read, is larger than
             `_MAX_CREDENTIALS_BYTES`, or fails `_check_private_regular_file`.
     """
-    # O_NONBLOCK keeps open() from blocking on a FIFO; regular files ignore it.
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-    try:
-        fd = os.open(path, flags)
-    except FileNotFoundError:
+    fd = _open_without_following(path)
+    if fd is None:
         return None
-    except (OSError, ValueError) as exc:  # ValueError: a NUL character in `path`.
-        raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
     fd_closed_by_file = False
     try:
         _check_private_regular_file(os.fstat(fd), path)
@@ -345,6 +396,28 @@ def _read_private_file(path: pathlib.Path) -> bytes | None:
         if not fd_closed_by_file:
             with contextlib.suppress(OSError):
                 os.close(fd)
+
+
+def _open_without_following(path: pathlib.Path) -> int | None:
+    """Opens `path` read-only without following a symlink or blocking on a FIFO.
+
+    Args:
+        path: Path of the credentials file.
+
+    Returns:
+        The file descriptor, or None if `path` does not exist.
+
+    Raises:
+        AuthError: If `path` cannot be opened or contains a NUL character.
+    """
+    # O_NONBLOCK keeps open() from blocking on a FIFO; regular files ignore it.
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        return os.open(path, flags)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:  # ValueError: a NUL character in `path`.
+        raise AuthError(f"Refusing to read {path}: {exc}. {_RESET_HINT}") from None
 
 
 def _read_bounded(f: BinaryIO, path: pathlib.Path) -> bytes:
@@ -369,7 +442,16 @@ def _read_bounded(f: BinaryIO, path: pathlib.Path) -> bytes:
 
 
 def _check_private_regular_file(st: os.stat_result, path: pathlib.Path) -> None:
-    """Raises AuthError unless `st` is a regular file that only the current user can access."""
+    """Checks that `st` is a regular file that only the current user can access.
+
+    Args:
+        st: `fstat` result of the opened credentials file.
+        path: Path of the file, used in error messages.
+
+    Raises:
+        AuthError: If the file is not regular, is owned by another user, or grants
+            any group/other permission bit (POSIX only).
+    """
     if not stat.S_ISREG(st.st_mode):
         raise AuthError(f"Refusing to read {path} (must be a regular file). {_RESET_HINT}")
     if hasattr(os, "getuid") and st.st_uid != os.getuid():
@@ -395,24 +477,51 @@ def save_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, 
     """
     try:
         _write_credentials(path, deployments)
-    except (OSError, ValueError) as exc:  # ValueError: a NUL character in `path`.
+    # ValueError: a NUL character in `path`. RecursionError: a deeply nested entry
+    # that json.loads accepted but the pure-Python encoder (`indent` on Python
+    # 3.11/3.12) cannot serialize.
+    except (OSError, ValueError, RecursionError) as exc:
         raise AuthError(f"Cannot write credentials file {path}: {exc}") from None
 
 
 def _ensure_parent_dir(path: pathlib.Path) -> None:
-    """Creates the parent directory of `path` with mode 0700 if it is missing.
+    """Creates every missing ancestor directory of `path` with mode 0700.
 
-    Only a directory created here is restricted to 0700 (mkdir's mode is subject
-    to the umask). Existing directories, such as $HOME, /tmp, or a group-shared
-    directory named by XMC_CREDENTIALS_FILE, keep their mode.
+    Each directory created here is restricted to 0700 regardless of the umask.
+    Existing directories, such as $HOME, /tmp, or a group-shared directory named
+    by XMC_CREDENTIALS_FILE, keep their mode.
 
     Args:
         path: Path of the credentials file.
+
+    Raises:
+        OSError: If a directory cannot be created or restricted.
+        ValueError: If `path` contains a NUL character.
     """
-    if not path.parent.is_dir():
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.name == "posix":
-            os.chmod(path.parent, 0o700)
+    missing = []
+    directory = path.parent
+    while not directory.is_dir() and directory != directory.parent:
+        missing.append(directory)
+        directory = directory.parent
+    for directory in reversed(missing):
+        _make_private_dir(directory)
+
+
+def _make_private_dir(directory: pathlib.Path) -> None:
+    """Creates `directory` with mode 0700, unless another process just created it.
+
+    Args:
+        directory: Directory whose parent exists.
+
+    Raises:
+        OSError: If `directory` cannot be created or restricted.
+    """
+    try:
+        directory.mkdir(mode=0o700)
+    except FileExistsError:
+        return  # Created concurrently: not ours to restrict.
+    if os.name == "posix":
+        os.chmod(directory, 0o700)  # mkdir's mode is subject to the umask.
 
 
 def _write_credentials(path: pathlib.Path, deployments: Mapping[str, Mapping[str, Any]]) -> None:

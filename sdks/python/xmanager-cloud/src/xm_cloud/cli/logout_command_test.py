@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import pathlib
 import stat
@@ -197,6 +198,55 @@ class LogoutCommandTest(unittest.TestCase):
         err.flush()
         self.assertEqual(code, 1)
         self.assertIn(b"\\udcff\\x1b[2J.json (must not be accessible", err.buffer.getvalue())
+
+    def test_run_logout_escapes_an_idn_origin_on_a_strict_ascii_stdout(self) -> None:
+        idn_server = "https://b\u00fccher.example"
+        env = self._env(XMANAGER_UI_URL=idn_server)
+        path = credentials.credentials_path(env)
+        for cached, message in ((False, b"Not logged in to"), (True, b"Logged out of")):
+            with self.subTest(cached=cached):
+                if cached:
+                    credentials.save_credentials(path, {idn_server: _ENTRY})
+                out = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+                err = io.StringIO()
+
+                code = logout_command.run_logout([], env=env, out=out, err=err)
+
+                out.flush()
+                self.assertEqual((code, err.getvalue()), (0, ""))
+                expected = message + b" https://b\\xfccher.example.\n"
+                self.assertEqual(out.buffer.getvalue(), expected)
+
+    def test_run_logout_escapes_unsafe_arguments_on_a_strict_ascii_stderr(self) -> None:
+        # argparse echoes argv; a surrogate (undecodable byte) or ESC must not escape raw.
+        out = io.StringIO()
+        err = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+
+        code = logout_command.run_logout(
+            ["\udcff", "\x1b]0;x\x07", "\u00e9"], env=self._env(), out=out, err=err
+        )
+
+        err.flush()
+        self.assertEqual((code, out.getvalue()), (2, ""))
+        written = err.buffer.getvalue()
+        self.assertIn(b"unrecognized arguments: \\udcff \\x1b]0;x\\x07 \\xe9", written)
+        self.assertNotIn(b"\x1b", written)
+
+    def test_run_logout_reports_an_unserializable_sibling_entry(self) -> None:
+        # Python 3.11/3.12 re-serialize with the recursive pure-Python encoder; the
+        # nested sibling is loaded directly, since json.loads limits differ by version.
+        nested: list[object] = []
+        for _ in range(5000):
+            nested = [nested]
+        loaded = {_SERVER: dict(_ENTRY), "https://b.dev": {"x": nested}}
+        with (
+            mock.patch.object(credentials, "load_credentials", return_value=loaded),
+            mock.patch.object(json.encoder, "c_make_encoder", None),
+        ):
+            code, out, err = self._run([], self._env())
+
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("Error: Cannot write credentials file"), err)
 
 
 if __name__ == "__main__":

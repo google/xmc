@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 from collections.abc import Sequence
 from typing import TextIO
+
+from xm_cloud.cli import terminal_text
 
 
 def exit_code(exc: SystemExit, err: TextIO) -> int:
@@ -26,7 +29,8 @@ def exit_code(exc: SystemExit, err: TextIO) -> int:
 
     Args:
         exc: `SystemExit` raised by argparse or a subcommand.
-        err: Stream that receives a non-integer code, as the interpreter prints it.
+        err: Stream that receives a non-integer code, as the interpreter prints it,
+            through `terminal_text.write`.
 
     Returns:
         0 for a `None` code, the code itself if it is an integer, or 1 otherwise.
@@ -35,7 +39,7 @@ def exit_code(exc: SystemExit, err: TextIO) -> int:
         return 0
     if isinstance(exc.code, int):
         return exc.code
-    err.write(f"{exc.code}\n")
+    terminal_text.write(err, f"{exc.code}\n")
     return 1
 
 
@@ -45,7 +49,7 @@ def parse_args(
     out: TextIO,
     err: TextIO,
 ) -> argparse.Namespace | int:
-    """Parses `argv` with `parser`, redirecting argparse output to `out`/`err`.
+    """Parses `argv`, writing argparse output to `out`/`err` via `terminal_text`.
 
     Args:
         parser: Configured argument parser.
@@ -56,8 +60,14 @@ def parse_args(
     Returns:
         Parsed `argparse.Namespace`, or the `exit_code` if argparse exited.
     """
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            return parser.parse_args(list(argv))
+    captured_out, captured_err = io.StringIO(), io.StringIO()
+    result: argparse.Namespace | SystemExit
+    try:  # argparse output echoes `argv`; capture it so it is written safely.
+        with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
+            result = parser.parse_args(list(argv))
     except SystemExit as exc:
-        return exit_code(exc, err)
+        result = exc
+    for stream, captured in ((out, captured_out), (err, captured_err)):
+        if text := captured.getvalue():
+            terminal_text.write(stream, text)
+    return exit_code(result, err) if isinstance(result, SystemExit) else result
