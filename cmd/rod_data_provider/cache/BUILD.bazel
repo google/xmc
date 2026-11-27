@@ -20,11 +20,13 @@ go_library(
     name = "cache",
     srcs = [
         "kueue_cache.go",
+        "physical_inventory_cache.go",
         "resource_cache.go",
     ],
     importpath = "xmanager_cloud/cmd/rod_data_provider/cache",
     visibility = ["//visibility:public"],
     deps = [
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],
 )
@@ -33,11 +35,13 @@ go_test(
     name = "cache_test",
     srcs = [
         "kueue_cache_test.go",
+        "physical_inventory_cache_test.go",
         "resource_cache_test.go",
     ],
     embed = [":cache"],
     deps = [
         "@com_github_google_go_cmp//cmp",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_sigs_kueue//apis/kueue/v1beta1",
     ],

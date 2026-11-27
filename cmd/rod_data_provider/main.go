@@ -69,7 +69,8 @@ func main() {
 
 func run(ctx context.Context, cfg *Config) error {
 	kueueCache := cache.NewKueueCache()
-	mgr, err := setupKueueManager(ctx, kueueCache)
+	physCache := cache.NewPhysicalInventoryCache()
+	mgr, err := setupKueueManager(ctx, kueueCache, physCache)
 	if err != nil {
 		logging.Warn(ctx, "Kueue manager setup failed or running out-of-cluster", "error", err)
 	}
@@ -240,7 +241,7 @@ func performShutdown(ctx context.Context, httpServer *http.Server, grpcServer *g
 	logging.Info(ctx, "ROD data provider service stopped")
 }
 
-func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.Manager, error) {
+func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache, physCache *cache.PhysicalInventoryCache) (ctrl.Manager, error) {
 	k8sConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get k8s config for KueueCache reconciler: %w", err)
@@ -266,7 +267,7 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 		return nil, fmt.Errorf("failed to create controller-runtime manager: %w", err)
 	}
 
-	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache); err != nil {
+	if err := SetupKueueReconcilers(mgr, mgr.GetClient(), kueueCache, physCache); err != nil {
 		return nil, fmt.Errorf("failed to setup Kueue reconcilers: %w", err)
 	}
 
@@ -274,10 +275,14 @@ func setupKueueManager(ctx context.Context, kueueCache *cache.KueueCache) (ctrl.
 }
 
 // SetupKueueReconcilers orchestrates ClusterQueue, LocalQueue, and ResourceFlavor reconcilers
-// to collect and sync Kueue entity information into the in-memory cache.
-func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache) error {
+// to collect and sync Kueue entity information into the in-memory cache, and registers the
+// physical inventory reconcilers that cache GPU Nodes and GPU-requesting Pods.
+func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.KueueCache, physCache *cache.PhysicalInventoryCache) error {
 	if cache == nil || cache.ClusterQueues == nil || cache.LocalQueues == nil || cache.ResourceFlavors == nil {
 		return fmt.Errorf("kueue cache or its fields are uninitialized")
+	}
+	if physCache == nil || physCache.Nodes == nil || physCache.Pods == nil {
+		return fmt.Errorf("physical inventory cache or its fields are uninitialized")
 	}
 	cqRec := reconciler.NewClusterQueueReconciler(client, cache.ClusterQueues)
 	if err := cqRec.SetupWithManager(mgr); err != nil {
@@ -290,6 +295,11 @@ func SetupKueueReconcilers(mgr ctrl.Manager, client client.Client, cache *cache.
 	rfRec := reconciler.NewResourceFlavorReconciler(client, cache.ResourceFlavors)
 	if err := rfRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("failed to setup ResourceFlavorReconciler: %w", err)
+	}
+
+	physRec := &reconciler.PhysicalInventoryReconciler{Client: client, Cache: physCache}
+	if err := physRec.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup PhysicalInventoryReconciler: %w", err)
 	}
 	return nil
 }

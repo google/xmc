@@ -18,6 +18,9 @@ kind: ClusterRole
 metadata:
   name: rod-data-provider-role
 rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods"]
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["kueue.x-k8s.io"]
   resources: ["clusterqueues", "localqueues", "resourceflavors", "workloads"]
   verbs: ["get", "list", "watch"]
