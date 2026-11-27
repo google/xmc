@@ -57,6 +57,26 @@
     "trivy": {
       "version": "0.76.2",
       "sha256": "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
+    },
+    "kubectl": {
+      "version": "1.32.2",
+      "sha256": "4f6a959dcc5b702135f8354cc7109b542a2933c46b808b248a214c1f69f817ea"
+    },
+    "kind": {
+      "version": "0.29.0",
+      "sha256": "c72eda46430f065fb45c5f70e7c957cc9209402ef309294821978677c8fb3284"
+    },
+    "bazelisk": {
+      "version": "1.30.0",
+      "sha256": "a248ae2b2b62b5baebb748f6fba7203bff1a27e5d01b55399a8406744cb539e8"
+    },
+    "docker_cli": {
+      "version": "29.10.1",
+      "sha256": "061642059fa7f2ed9b2f04a327a951cff4249585cf04b2661c2a6539197c9962"
+    },
+    "hpc_toolkit": {
+      "version": "v1.109.0",
+      "commit": "b8e318c782e1c85ec0d312688c099626fa9139b0"
     }
   },
   "images": {}

@@ -53,6 +53,15 @@ _TOOL_FIELD_MAP: tuple[tuple[str, str, str], ...] = (
     ("HELM_SHA256", "helm", "sha256"),
     ("TRIVY_VERSION", "trivy", "version"),
     ("TRIVY_SHA256", "trivy", "sha256"),
+    ("KUBECTL_VERSION", "kubectl", "version"),
+    ("KUBECTL_SHA256", "kubectl", "sha256"),
+    ("KIND_VERSION", "kind", "version"),
+    ("KIND_SHA256", "kind", "sha256"),
+    ("BAZELISK_VERSION", "bazelisk", "version"),
+    ("BAZELISK_SHA256", "bazelisk", "sha256"),
+    ("DOCKER_CLI_VERSION", "docker_cli", "version"),
+    ("DOCKER_CLI_SHA256", "docker_cli", "sha256"),
+    ("HPC_TOOLKIT_COMMIT", "hpc_toolkit", "commit"),
 )
 
 
