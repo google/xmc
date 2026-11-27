@@ -17,6 +17,7 @@ blueprint_name: xmanager-on-cloud-v2
 vars:
   deployment_name: xmc-v2-test
   project_id:
+  reader_service_accounts: [] # Additional custom GCP service account emails granted repository-scoped Artifact Registry reader access
 
   region:
   domain_name:          # Base domain name (e.g. example.com)
@@ -146,7 +147,6 @@ deployment_groups:
         "monitoring.viewer",
         "stackdriver.resourceMetadata.writer",
         "storage.objectAdmin",
-        "artifactregistry.reader",
         "serviceusage.serviceUsageConsumer",
         "browser"
       ], vars.enable_managed_mldiagnostics ? ["hypercomputecluster.editor"] : []))'
@@ -271,10 +271,16 @@ deployment_groups:
         "logging.logWriter",
         "monitoring.metricWriter",
         "monitoring.viewer",
-        "stackdriver.resourceMetadata.writer",
-        "storage.objectViewer",
-        "artifactregistry.reader"
+        "stackdriver.resourceMetadata.writer"
       ], vars.enable_managed_mldiagnostics ? ["storage.objectAdmin"] : []))'
+
+  - id: artifact_registry_reader_iam
+    source: ./deploy/ctk_v2/modules/artifact-registry-iam
+    use: [node_pool_service_account]
+    settings:
+      image_registry: $(vars.image_registry)
+      node_service_account_email: $(node_pool_service_account.service_account_email)
+      reader_service_accounts: $(vars.reader_service_accounts)
 
   - id: xmc_wi_binding_ess
     source: modules/project/workload_identity_binding
@@ -347,7 +353,7 @@ deployment_groups:
 
   - id: compute_cluster
     source: modules/scheduler/gke-cluster
-    use: [network, workload_service_account]
+    use: [network, node_pool_service_account]
     settings:
       deployment_name: xmc-$(vars.deployment_name)-$(vars.environment)
       region: $(vars.region)

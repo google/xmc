@@ -28,6 +28,11 @@ vars:
   # The Google Cloud Project ID to deploy into
   project_id: YOUR_PROJECT_ID
 
+  # Optional: Additional custom GCP service account emails (e.g. dedicated node SAs
+  # of external MultiKueue worker clusters) granted repository-scoped
+  # roles/artifactregistry.reader on image_registry. Host node pools use xmc-np-sa.
+  reader_service_accounts: []
+
   # The Google Cloud Region to deploy into
   region: us-central1
 

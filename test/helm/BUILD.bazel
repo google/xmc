@@ -284,3 +284,18 @@ py_test(
     ],
     deps = [":chart_test_lib"],
 )
+
+py_test(
+    name = "artifact_registry_iam_test",
+    srcs = ["artifact_registry_iam_test.py"],
+    data = [
+        "//deploy/ctk_v2:blueprint",
+        "//deploy/ctk_v2:deployment_template",
+    ],
+    imports = [
+        ".",
+        "../..",
+    ],
+    main = "artifact_registry_iam_test.py",
+    deps = [":chart_test_lib"],
+)

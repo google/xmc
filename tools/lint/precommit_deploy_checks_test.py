@@ -20,6 +20,7 @@ import io
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -70,6 +71,96 @@ class DeployChecksTest(unittest.TestCase):
         )
         self.assertEqual(run_mode.call_args.kwargs["fix_args"], ["fmt", "deploy/main.tf"])
         self.assertEqual(run_mode.call_args.kwargs["cwd"], gates.REPO_ROOT)
+
+    def test_discover_and_check_terraform_test(self):
+        with tempfile.TemporaryDirectory() as tmp_root:
+            root = Path(tmp_root)
+            self.assertEqual(deploy_checks._discover_terraform_test_modules(root), [])
+            tftest_dir = root / "deploy" / "ctk_v2" / "modules" / "foo" / "tests"
+            tftest_dir.mkdir(parents=True)
+            (tftest_dir / "main.tftest.hcl").write_text("", encoding="utf-8")
+            self.assertEqual(
+                deploy_checks._discover_terraform_test_modules(root),
+                ["deploy/ctk_v2/modules/foo"],
+            )
+
+        ctx_skip = gates.RunContext(mode="check")
+        with (
+            mock.patch.object(gates, "should_run_scope", return_value=False),
+            mock.patch.object(deploy_checks, "_discover_terraform_test_modules") as disc_mock,
+        ):
+            deploy_checks.check_terraform_test(ctx_skip)
+        disc_mock.assert_not_called()
+
+        ctx_no_modules = gates.RunContext(mode="check")
+        with (
+            mock.patch.object(gates, "should_run_scope", return_value=True),
+            mock.patch.object(deploy_checks, "_discover_terraform_test_modules", return_value=[]),
+            mock.patch.object(deploy_checks.shutil, "which") as which_mock,
+        ):
+            deploy_checks.check_terraform_test(ctx_no_modules)
+        which_mock.assert_not_called()
+
+        ctx_missing = gates.RunContext(mode="fix")
+        with (
+            mock.patch.object(gates, "should_run_scope", return_value=True),
+            mock.patch.object(
+                deploy_checks,
+                "_discover_terraform_test_modules",
+                return_value=["deploy/ctk_v2/modules/artifact-registry-iam"],
+            ),
+            mock.patch.object(deploy_checks.shutil, "which", return_value=None),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            deploy_checks.check_terraform_test(ctx_missing)
+        self.assertFalse(ctx_missing.failed)
+
+        ctx_pass = gates.RunContext(mode="check")
+        with (
+            mock.patch.object(gates, "should_run_scope", return_value=True),
+            mock.patch.object(
+                deploy_checks,
+                "_discover_terraform_test_modules",
+                return_value=["deploy/ctk_v2/modules/artifact-registry-iam"],
+            ),
+            mock.patch.object(deploy_checks.shutil, "which", return_value="/usr/bin/terraform"),
+            mock.patch.object(deploy_checks.shutil, "copytree"),
+            mock.patch.object(
+                gates,
+                "exec_cmd",
+                side_effect=[
+                    subprocess.CompletedProcess([], 0, "", ""),
+                    subprocess.CompletedProcess([], 0, "", ""),
+                ],
+            ) as exec_pass,
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            deploy_checks.check_terraform_test(ctx_pass)
+        self.assertFalse(ctx_pass.failed)
+        self.assertEqual(exec_pass.call_count, 2)
+
+        ctx_fail = gates.RunContext(mode="check")
+        with (
+            mock.patch.object(gates, "should_run_scope", return_value=True),
+            mock.patch.object(
+                deploy_checks,
+                "_discover_terraform_test_modules",
+                return_value=["deploy/ctk_v2/modules/artifact-registry-iam"],
+            ),
+            mock.patch.object(deploy_checks.shutil, "which", return_value="/usr/bin/terraform"),
+            mock.patch.object(deploy_checks.shutil, "copytree"),
+            mock.patch.object(
+                gates,
+                "exec_cmd",
+                side_effect=[
+                    subprocess.CompletedProcess([], 0, "", ""),
+                    subprocess.CompletedProcess([], 1, "", ""),
+                ],
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            deploy_checks.check_terraform_test(ctx_fail)
+        self.assertTrue(ctx_fail.failed)
 
     def test_check_tflint_local_docker_and_skip_paths(self):
         ctx_skip = gates.RunContext(mode="check")
@@ -131,11 +222,14 @@ class DeployChecksTest(unittest.TestCase):
     def test_check_helm_lint_pythonpath_and_failures(self):
         ctx_skip = gates.RunContext(mode="fix")
         with (
-            mock.patch.object(gates, "should_run_scope", return_value=False),
+            mock.patch.object(gates, "should_run_scope", return_value=False) as scope_mock,
             mock.patch.object(gates, "exec_cmd") as skip_exec,
         ):
             deploy_checks.check_helm(ctx_skip)
         skip_exec.assert_not_called()
+        fix_pattern = scope_mock.call_args.kwargs["fix_pattern"]
+        self.assertRegex("deploy/ctk_v2/xmc-deployment-template.yaml", fix_pattern)
+        self.assertNotRegex("deploy/ctk_v2/modules/artifact-registry-iam/main.tf", fix_pattern)
 
         test_helm_dir = str(gates.REPO_ROOT / "test" / "helm")
         ctx_helm = gates.RunContext(mode="fix")
@@ -275,12 +369,14 @@ class DeployChecksTest(unittest.TestCase):
         ctx = gates.RunContext(mode="check")
         with (
             mock.patch.object(deploy_checks, "check_terraform") as tf_mock,
+            mock.patch.object(deploy_checks, "check_terraform_test") as tftest_mock,
             mock.patch.object(deploy_checks, "check_tflint") as tfl_mock,
             mock.patch.object(deploy_checks, "check_helm") as helm_mock,
             mock.patch.object(deploy_checks, "check_security") as sec_mock,
         ):
             deploy_checks.check_deploy(ctx)
         tf_mock.assert_called_once_with(ctx)
+        tftest_mock.assert_called_once_with(ctx)
         tfl_mock.assert_called_once_with(ctx)
         helm_mock.assert_called_once_with(ctx)
         sec_mock.assert_called_once_with(ctx)
