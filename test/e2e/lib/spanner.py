@@ -121,7 +121,7 @@ class SpannerManager:
                 capture_output=True,
                 check=True,
             )
-            current_ts = int(time.time())
+            current_ts = int(time.time())  # noqa: TID251
             for line in res.stdout.splitlines():
                 db_path = line.strip()
                 db_id = db_path.split("/")[-1]

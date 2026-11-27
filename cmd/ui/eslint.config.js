@@ -23,6 +23,22 @@ import angularTemplateParser from '@angular-eslint/template-parser';
 
 import eslintConfigPrettier from 'eslint-config-prettier';
 
+const SIGNAL_DECORATOR_SELECTORS = [
+  {
+    selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
+    message: 'Use signal primitives `input()` instead of `@Input`.',
+  },
+  {
+    selector: 'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
+    message: 'Use signal primitives `output()` instead of `@Output`.',
+  },
+  {
+    selector:
+      'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
+    message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
+  },
+];
+
 export default tseslint.config(
   {
     ignores: [
@@ -130,23 +146,7 @@ export default tseslint.config(
       '@angular-eslint/no-pipe-impure': 'error',
       '@angular-eslint/directive-class-suffix': 'error',
 
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
-          message: 'Use signal primitives `input()` instead of `@Input`.',
-        },
-        {
-          selector:
-            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
-          message: 'Use signal primitives `output()` instead of `@Output`.',
-        },
-        {
-          selector:
-            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
-          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
-        },
-      ],
+      'no-restricted-syntax': ['error', ...SIGNAL_DECORATOR_SELECTORS],
     },
   },
   {
@@ -163,6 +163,20 @@ export default tseslint.config(
       'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
       'max-lines-per-function': 'off',
       complexity: 'off',
+      'no-restricted-syntax': [
+        'error',
+        ...SIGNAL_DECORATOR_SELECTORS,
+        {
+          selector: 'CallExpression[callee.name=/^(fdescribe|fit|xdescribe|xit|pending)$/]',
+          message:
+            'Focused (fdescribe, fit) and skipped (xdescribe, xit, pending) tests are forbidden.',
+        },
+        {
+          selector:
+            'CallExpression[callee.object.name=/^(describe|it|test|context|suite)$/][callee.property.name=/^(only|skip|fixme)$/], CallExpression[callee.object.object.name="test"][callee.object.property.name="describe"][callee.property.name=/^(only|skip|fixme)$/]',
+          message: 'Focused (.only) and skipped (.skip, .fixme) tests are forbidden in CI.',
+        },
+      ],
     },
   },
   {
@@ -191,20 +205,7 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': [
         'error',
-        {
-          selector: 'Decorator[expression.callee.name="Input"], Decorator[expression.name="Input"]',
-          message: 'Use signal primitives `input()` instead of `@Input`.',
-        },
-        {
-          selector:
-            'Decorator[expression.callee.name="Output"], Decorator[expression.name="Output"]',
-          message: 'Use signal primitives `output()` instead of `@Output`.',
-        },
-        {
-          selector:
-            'Decorator[expression.callee.name="ViewChild"], Decorator[expression.name="ViewChild"]',
-          message: 'Use signal primitives `viewChild()` instead of `@ViewChild`.',
-        },
+        ...SIGNAL_DECORATOR_SELECTORS,
         {
           selector:
             'Identifier[name=/^(Mock[A-Z]|mock[A-Z]|mock$)/]:not(MemberExpression > .property):not(ObjectExpression > Property > .key):not(MethodDefinition > .key):not(PropertyDefinition > .key):not(TSPropertySignature > .key):not(TSMethodSignature > .key)',

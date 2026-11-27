@@ -53,7 +53,7 @@ class TestSpannerManager(unittest.TestCase):
 
     @patch("test.e2e.lib.spanner.run_cmd")
     def test_cleanup_stale_databases_deletes_expired_databases(self, mock_run):
-        now = int(time.time())
+        now = int(time.time())  # noqa: TID251
         old_ts = now - 5000  # > 3600s old
         fresh_ts = now - 500  # < 3600s old
 

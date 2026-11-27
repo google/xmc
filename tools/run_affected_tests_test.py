@@ -93,6 +93,7 @@ class BuildParserTest(unittest.TestCase):
             (args.emulator_wait_seconds, args.skip_emulator_check, args.dry_run),
             (0.0, False, False),
         )
+        self.assertEqual((args.coverage, args.diff_cover_fail_under), (False, 80))
 
     def test_bazel_flags_accumulate_in_order(self):
         args = parse("--bazel-flag=--config=ci", "--bazel-flag=--test_timeout=90,300,300,300")
@@ -449,6 +450,168 @@ class RunAffectedTestsTest(unittest.TestCase):
         self.assertNotIn("bazel_targets", details)
         self.assertNotIn("passed_targets", details)
         self.assertEqual(details["exit_name"], "TESTS_FAILED")
+
+    @mock.patch.object(rat, "resolve_bazel_lcov_path", return_value=Path("/out/_coverage.dat"))
+    @mock.patch.object(
+        rat,
+        "run_diff_cover",
+        return_value={"compare_branch": "origin/main", "fail_under": 85, "report": {}},
+    )
+    def test_coverage_mode_runs_bazel_coverage_and_diff_cover(
+        self, mock_diff_cover, mock_lcov, mock_scope, mock_emulator, mock_bazel
+    ):
+        args = parse("--coverage", "--diff-cover-fail-under=85")
+        result, _ = self._run(args, {})
+        mock_bazel.assert_called_once_with(
+            ["//pkg/a:a_test", "//pkg/b:b_test"], [], {}, coverage=True
+        )
+        mock_lcov.assert_called_once_with([], {})
+        mock_diff_cover.assert_called_once_with(
+            "origin/main", 85, {}, lcov_path=Path("/out/_coverage.dat")
+        )
+        self.assertEqual(result["diff_cover"]["fail_under"], 85)
+
+
+class DiffCoverTest(unittest.TestCase):
+    def test_build_bazel_test_command_with_coverage(self):
+        cmd = rat.build_bazel_test_command(["//pkg:t"], [], {}, Path("/tmp/b.json"), coverage=True)
+        self.assertEqual(cmd[:2], ["bazel", "coverage"])
+        self.assertIn("--combined_report=lcov", cmd)
+
+    def test_resolve_compare_branch_precedence(self):
+        self.assertEqual(rat.resolve_compare_branch(parse("--base-ref=dev"), {}), "dev")
+        self.assertEqual(
+            rat.resolve_compare_branch(parse("--ci"), {"GITHUB_BASE_REF": "release"}),
+            "origin/release",
+        )
+        self.assertEqual(
+            rat.resolve_compare_branch(parse("--ci"), {"GITHUB_BASE_REF": "origin/main"}),
+            "origin/main",
+        )
+        self.assertEqual(rat.resolve_compare_branch(parse(), {}), "origin/main")
+
+    def test_read_diff_cover_report_handles_missing_invalid_and_non_dict_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.json"
+            self.assertEqual(rat._read_diff_cover_report(missing), {})
+
+            invalid = Path(tmp) / "invalid.json"
+            invalid.write_text("{not valid json", encoding="utf-8")
+            self.assertEqual(rat._read_diff_cover_report(invalid), {})
+
+            non_dict = Path(tmp) / "list.json"
+            non_dict.write_text("[1, 2, 3]", encoding="utf-8")
+            self.assertEqual(rat._read_diff_cover_report(non_dict), {})
+
+    def test_resolve_bazel_lcov_path_queries_bazel_info_or_falls_back(self):
+        with mock.patch.object(
+            rat,
+            "run_command",
+            return_value=subprocess.CompletedProcess(["bazel"], 0, stdout="/custom/bazel-out\n"),
+        ) as mock_run:
+            resolved = rat.resolve_bazel_lcov_path(["--repository_cache=/c", "--config=ci"], {})
+        self.assertEqual(resolved, Path("/custom/bazel-out/_coverage/_coverage_report.dat"))
+        mock_run.assert_called_once()
+        self.assertEqual(
+            mock_run.call_args.args[0], ["bazel", "info", "--repository_cache=/c", "output_path"]
+        )
+
+        with mock.patch.object(rat, "run_command", side_effect=FileNotFoundError("bazel")):
+            self.assertEqual(rat.resolve_bazel_lcov_path(), rat.DEFAULT_LCOV_PATH)
+
+    def test_resolve_diff_cover_bin_prefers_venv_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_py = Path(tmp) / "python3"
+            fake_dc = Path(tmp) / "diff-cover"
+            fake_dc.write_text("#!/bin/sh\n", encoding="utf-8")
+            fake_dc.chmod(0o755)
+            with mock.patch.object(sys, "executable", str(fake_py)):
+                self.assertEqual(rat._resolve_diff_cover_bin(), str(fake_dc))
+
+    def test_run_diff_cover_validates_bounds_and_fails_closed_on_missing_or_empty_lcov(self):
+        for bad_percent in (-5, 101):
+            with self.subTest(percent=bad_percent), self.assertRaises(HandledError) as bounds_ctx:
+                rat.run_diff_cover("origin/main", bad_percent, {})
+            self.assertIn("between 0 and 100", bounds_ctx.exception.message)
+
+        res = rat.run_diff_cover("origin/main", 0, {})
+        self.assertTrue(res["skipped"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "missing.dat"
+            with self.assertRaises(HandledError) as missing_ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=missing)
+            self.assertIn("Expected non-empty LCOV", missing_ctx.exception.message)
+
+            empty = Path(tmp) / "empty.dat"
+            empty.write_text("", encoding="utf-8")
+            with self.assertRaises(HandledError) as empty_ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=empty)
+            self.assertIn("Expected non-empty LCOV", empty_ctx.exception.message)
+
+    @mock.patch.object(rat, "run_command")
+    def test_run_diff_cover_passes_and_reads_report(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,1\nend_of_record\n", encoding="utf-8")
+
+            def fake_diff_cover(cmd, **_kwargs):
+                for arg in cmd:
+                    if arg.startswith("--json-report="):
+                        Path(arg.split("=", 1)[1]).write_text(
+                            json.dumps({"total_percent_covered": 100}), encoding="utf-8"
+                        )
+                return subprocess.CompletedProcess(cmd, 0)
+
+            mock_run.side_effect = fake_diff_cover
+            out = rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertEqual(out["report"]["total_percent_covered"], 100)
+
+    @mock.patch.object(rat, "run_command")
+    def test_run_diff_cover_raises_handled_error_when_below_threshold(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,0\nend_of_record\n", encoding="utf-8")
+            report_payload = {
+                "total_percent_covered": 50,
+                "src_stats": {"foo.py": {"percent_covered": 50.0, "violation_lines": [1]}},
+            }
+
+            def fake_failing_diff_cover(cmd, **_kwargs):
+                for arg in cmd:
+                    if arg.startswith("--json-report="):
+                        Path(arg.split("=", 1)[1]).write_text(
+                            json.dumps(report_payload), encoding="utf-8"
+                        )
+                return subprocess.CompletedProcess(cmd, 1)
+
+            mock_run.side_effect = fake_failing_diff_cover
+            with self.assertRaises(HandledError) as ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertIn("below 80%", ctx.exception.message)
+            assert ctx.exception.details is not None
+            self.assertEqual(ctx.exception.details["diff_cover"], report_payload)
+
+    @mock.patch.object(rat, "run_command")
+    def test_run_diff_cover_raises_operational_error_when_report_missing(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,0\nend_of_record\n", encoding="utf-8")
+            mock_run.return_value = subprocess.CompletedProcess(["diff-cover"], 2)
+            with self.assertRaises(HandledError) as ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertIn("without producing a report", ctx.exception.message)
+            assert ctx.exception.details is not None
+            self.assertEqual(ctx.exception.details["exit_code"], 2)
+
+    @mock.patch.object(rat, "run_command", side_effect=FileNotFoundError("diff-cover"))
+    def test_run_diff_cover_missing_binary_is_handled_error(self, _mock_run):
+        with tempfile.TemporaryDirectory() as tmp:
+            lcov = Path(tmp) / "coverage.dat"
+            lcov.write_text("SF:foo.py\nDA:1,1\nend_of_record\n", encoding="utf-8")
+            with self.assertRaises(HandledError) as ctx:
+                rat.run_diff_cover("origin/main", 80, {}, lcov_path=lcov)
+            self.assertIn("diff-cover", ctx.exception.message)
 
 
 class MainTest(unittest.TestCase):

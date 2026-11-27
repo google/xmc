@@ -56,7 +56,7 @@ class TestBoundedMetricsBuffer(unittest.TestCase):
 
     def test_put_and_pop_all(self) -> None:
         buf = BoundedMetricsBuffer(capacity=10)
-        now = time.time()
+        now = time.time()  # noqa: TID251
         buf.put("loss", 0.5, 1, timestamp=now)
         buf.put("accuracy", 0.95, 2, timestamp=now + 1.0)
 

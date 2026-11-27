@@ -114,6 +114,74 @@ runs:
           --bazel-flag="--test_timeout=${TEST_TIMEOUT},300,300,300" \
           "${cache_flags[@]}"
 
+    - name: 'Enforce Backend Diff Coverage (diff-cover)'
+      if: steps.classify.outputs.run_backend == 'true' && github.event_name == 'pull_request'
+      env:
+        SPANNER_EMULATOR_HOST: ${{ inputs.spanner-emulator-host }}
+        TEST_TIMEOUT: ${{ inputs.test-timeout-seconds }}
+      shell: bash
+      run: |
+        COMPARE_BRANCH="$(python3 -c 'import os; from tools.benchmark import resolve_test_scope as r; b = os.environ.get("GITHUB_BASE_REF") or "main"; print(r.resolve_effective_base_ref(f"origin/{b}", "HEAD", b))')"
+        diff_out="$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR "${COMPARE_BRANCH}...HEAD" -- '*.go' '*.py')"
+        if [[ -z "${diff_out}" ]]; then
+          echo "NOTICE: No modified .go or .py files in diff; skipping backend diff-cover."
+          exit 0
+        fi
+        mapfile -t CHANGED_CODE <<< "${diff_out}"
+        declare -A PKG_SET=()
+        for f in "${CHANGED_CODE[@]}"; do
+          [[ -e "${f}" ]] || continue
+          dir="$(dirname "${f}")"
+          while [[ "${dir}" != "." && ! -f "${dir}/BUILD.bazel" && ! -f "${dir}/BUILD" ]]; do
+            dir="$(dirname "${dir}")"
+          done
+          case "${dir}" in
+            api|api/*|cmd|cmd/*|deploy|deploy/*|examples|examples/*|internal|internal/*|pkg|pkg/*|sdks|sdks/*|tools|tools/*)
+              PKG_SET["//${dir}:all"]=1
+              ;;
+          esac
+        done
+        if [[ "${#PKG_SET[@]}" -eq 0 ]]; then
+          echo "NOTICE: No instrumented Bazel packages found for modified .go/.py files; skipping backend diff-cover."
+          exit 0
+        fi
+        PKG_SET_EXPR="set(${!PKG_SET[*]})"
+        query_out="$(bazel query --noimplicit_deps \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
+          "let t = kind('.*_test rule', ${PKG_SET_EXPR}) in \$t except attr(tags, '\\b(e2e|integration|manual)\\b', \$t) except set(//cmd/ui:ui_unit_tests)")"
+        if [[ -z "${query_out}" ]]; then
+          echo "NOTICE: No unit test targets in modified packages (${PKG_SET_EXPR}); skipping backend diff-cover."
+          exit 0
+        fi
+        mapfile -t COV_TARGETS <<< "${query_out}"
+        DIFF_COVER_VENV="${RUNNER_TEMP:-/tmp}/diff-cover-venv"
+        if [[ ! -x "${DIFF_COVER_VENV}/bin/diff-cover" ]]; then
+          python3 -m venv "${DIFF_COVER_VENV}"
+          "${DIFF_COVER_VENV}/bin/pip" install --no-cache-dir "diff-cover==9.2.0"
+        fi
+        TEST_ENV_FLAGS=()
+        if [[ -n "${SPANNER_EMULATOR_HOST:-}" && "${SPANNER_EMULATOR_HOST}" != "localhost:9010" && "${SPANNER_EMULATOR_HOST}" != "127.0.0.1:9010" ]]; then
+          TEST_ENV_FLAGS+=("--test_env=SPANNER_EMULATOR_HOST=${SPANNER_EMULATOR_HOST}")
+        fi
+        bazel coverage \
+          --repository_cache="${HOME}/.cache/bazel-repo" \
+          --config=ci \
+          --disk_cache="${HOME}/.cache/bazel-disk" \
+          --experimental_repository_cache_hardlinks \
+          --test_output=errors \
+          --test_tag_filters=-e2e,-integration,-manual \
+          --test_timeout="${TEST_TIMEOUT},300,300,300" \
+          "${TEST_ENV_FLAGS[@]}" \
+          -- "${COV_TARGETS[@]}"
+        LCOV_REPORT="$(bazel info --repository_cache="${HOME}/.cache/bazel-repo" output_path)/_coverage/_coverage_report.dat"
+        if [[ ! -s "${LCOV_REPORT}" ]]; then
+          echo "::error::Expected non-empty LCOV report at ${LCOV_REPORT} after bazel coverage." >&2
+          exit 1
+        fi
+        "${DIFF_COVER_VENV}/bin/diff-cover" "${LCOV_REPORT}" \
+          --compare-branch="${COMPARE_BRANCH}" \
+          --fail-under=80
+
     - name: 'Save Bazel Repository Cache'
       uses: 'actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf' # v4.2.2
       # Save repository cache on main/merge_group or when no baseline cache exists yet.

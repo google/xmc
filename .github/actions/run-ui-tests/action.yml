@@ -51,8 +51,30 @@ runs:
     - name: 'Run Angular UI Unit Tests'
       if: steps.scope.outputs.run_ui == 'true'
       shell: bash
-      run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox
+      run: npm test -- --watch=false --browsers=ChromeHeadlessNoSandbox --code-coverage
       working-directory: ${{ inputs.working-directory }}
+
+    - name: 'Enforce UI Diff Coverage (diff-cover)'
+      if: steps.scope.outputs.run_ui == 'true' && github.event_name == 'pull_request'
+      env:
+        UI_DIR: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        LCOV_FILE="${UI_DIR}/coverage/xmc-ui/lcov.info"
+        if [ ! -s "${LCOV_FILE}" ]; then
+          echo "::error::Expected non-empty LCOV report at ${LCOV_FILE} after Karma --code-coverage run." >&2
+          exit 1
+        fi
+        COMPARE_BRANCH="$(python3 -c 'import os; from tools.benchmark import resolve_test_scope as r; b = os.environ.get("GITHUB_BASE_REF") or "main"; print(r.resolve_effective_base_ref(f"origin/{b}", "HEAD", b))')"
+        DIFF_COVER_VENV="${RUNNER_TEMP:-/tmp}/diff-cover-venv"
+        if [[ ! -x "${DIFF_COVER_VENV}/bin/diff-cover" ]]; then
+          python3 -m venv "${DIFF_COVER_VENV}"
+          "${DIFF_COVER_VENV}/bin/pip" install --no-cache-dir "diff-cover==9.2.0"
+        fi
+        "${DIFF_COVER_VENV}/bin/diff-cover" "${LCOV_FILE}" \
+          --src-roots . "${UI_DIR}" \
+          --compare-branch="${COMPARE_BRANCH}" \
+          --fail-under=80
 
     # The ubuntu-latest runner image pre-bakes Chrome/Chromium system libraries
     # (Karma runs ChromeHeadless above, and e2e-tests.yml runs Playwright without apt),

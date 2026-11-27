@@ -120,7 +120,7 @@ class E2EConfig:
     def __post_init__(self) -> None:
         if isinstance(self.tier, str):
             self.tier = E2ETier(self.tier)
-        ts = int(time.time())
+        ts = int(time.time())  # noqa: TID251
         suffix = uuid.uuid4().hex[:6]
         if not self.ess_db:
             self.ess_db = f"e2e-ess-{ts}-{suffix}"

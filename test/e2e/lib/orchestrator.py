@@ -104,7 +104,7 @@ class E2EOrchestrator:
                 ``__cause__``. Teardown has completed before this propagates.
             HarnessStoppedError: If the harness was stopped. Teardown has completed as well.
         """
-        start_time = time.time()
+        start_time = time.time()  # noqa: TID251
         logger.info("================================================================")
         logger.info(" Starting XMC Headless E2E Test Suite")
         logger.info(" Cluster:       %s", self.cfg.cluster_name)
@@ -118,7 +118,7 @@ class E2EOrchestrator:
         with self.managed_lifecycle():
             self._run_phases()
 
-        elapsed = time.time() - start_time
+        elapsed = time.time() - start_time  # noqa: TID251
         logger.info("================================================================")
         logger.info("🎉 E2E Test Suite Succeeded in %.2f seconds! 🎉", elapsed)
         logger.info("================================================================")

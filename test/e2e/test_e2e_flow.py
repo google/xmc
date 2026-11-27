@@ -292,7 +292,7 @@ def _verify_live_priority_and_metadata_updates(page: Page, experiment_name: str)
     _patch_resource(
         page,
         experiment_name,
-        {"title": f"Mutated Experiment {int(time.time())}", "priority": "HIGH"},
+        {"title": f"Mutated Experiment {int(time.time())}", "priority": "HIGH"},  # noqa: TID251
         "title,priority",
     )
     exp_res = page.request.get(f"{BASE_URL}/v1/{experiment_name}")
@@ -421,7 +421,7 @@ def test_admin_flow_and_experiment_lifecycle(
     save_screenshot(page, screenshots_dir, "01_dashboard_with_warning_banner")
 
     # 3. Create private experiment via API with admin-only ACLs
-    experiment_title = f"E2E Automated Experiment {int(time.time())}"
+    experiment_title = f"E2E Automated Experiment {int(time.time())}"  # noqa: TID251
     logger.info("Creating experiment via REST API: %s", experiment_title)
 
     payload: dict[str, Any] = {
@@ -652,7 +652,7 @@ def test_viewer_permission_boundaries_and_isolation(
         vuln_msg=f"Security vulnerability: Viewer successfully deleted admin artifact {admin_resources.artifact_name}!",
     )
 
-    viewer_title = f"Viewer Private Experiment {int(time.time())}"
+    viewer_title = f"Viewer Private Experiment {int(time.time())}"  # noqa: TID251
     logger.info("Creating viewer's own experiment: %s...", viewer_title)
     viewer_payload: dict[str, Any] = {
         "title": viewer_title,
@@ -781,8 +781,8 @@ def verify_cms_bridge_reconciliation() -> None:
     subprocess.run([*kubectl_base, "apply", "-f", "-"], input=manifest, text=True, check=True)
     get_cmd = [*kubectl_base, "get", "component", "e2e-cms-auth-check", "-n", "xmc", "-o", "yaml"]
     try:
-        deadline, last_yaml = time.time() + 30.0, ""
-        while time.time() < deadline:
+        deadline, last_yaml = time.time() + 30.0, ""  # noqa: TID251
+        while time.time() < deadline:  # noqa: TID251
             res = subprocess.run(get_cmd, capture_output=True, text=True, check=False)
             last_yaml = res.stdout
             if "state: COMPONENT_STATE_DISABLED" in last_yaml:
