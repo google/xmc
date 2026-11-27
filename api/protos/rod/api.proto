@@ -26,7 +26,6 @@ option go_package = "xmanager_cloud/api/protos/rod";
 service ResourceObservabilityService {
   // TODO: Implement the rest of methods
 
-
   // Get physical resource availability (Screen 3).
   rpc GetResourceAvailability(GetResourceAvailabilityRequest) returns (GetResourceAvailabilityResponse) {
     option (google.api.http) = {
@@ -119,7 +118,6 @@ message ClusterQueueSecondaryMetrics {
 message ListClusterQueuesResponse {
   repeated QueueOverview queues = 1;
 }
-
 
 // GetResourceAvailabilityRequest represents parameters for retrieving physical inventory.
 message GetResourceAvailabilityRequest {}
