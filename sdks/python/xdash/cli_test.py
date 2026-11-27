@@ -342,13 +342,14 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("experiments/", help_text)
 
     def test_get_data_accepts_root_chart_name(self) -> None:
+        # The server answers with the chart's canonical name, not the root name it was asked for.
         self.mock_client.get_chart_data.return_value = messages_pb2.ChartData(
-            name="charts/c1", xid=1001, wid=1
+            name="experiments/1001/workUnits/1/charts/c1", xid=1001, wid=1
         )
         ret, out, _ = self._run(["get-data", "charts/c1"])
         self.assertEqual(ret, 0)
         self.mock_client.get_chart_data.assert_called_once_with("charts/c1")
-        self.assertIn("ChartData for charts/c1", out)
+        self.assertIn("ChartData for experiments/1001/workUnits/1/charts/c1", out)
 
     def test_get_strips_surrounding_whitespace(self) -> None:
         self.mock_client.get_dashboard.return_value = messages_pb2.Dashboard(name="dashboards/d1")
