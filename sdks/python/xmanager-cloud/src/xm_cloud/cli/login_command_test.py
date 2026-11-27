@@ -359,23 +359,50 @@ class LoginCommandTest(unittest.TestCase):
         # wall-clock deadline ends the wait. The client gives up after 3 s, so a
         # regression fails the test instead of hanging it.
         stop = threading.Event()
-        self.addCleanup(stop.set)
+        threads: list[threading.Thread] = []
+        errors: list[Exception] = []
+        dripped = 0
 
         def drip(port: int) -> None:
+            nonlocal dripped
             end = time.monotonic() + 3.0
-            with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", port)) as s:
-                while not stop.wait(0.05) and time.monotonic() < end:
-                    s.sendall(b"G")
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1.0) as s:
+                    with contextlib.suppress(OSError):
+                        while not stop.wait(0.05) and time.monotonic() < end:
+                            s.sendall(b"G")
+                            dripped += 1
+            except Exception as exc:
+                errors.append(exc)
 
         def open_url(login_url: str) -> bool:
-            threading.Thread(target=drip, args=(_port_of(login_url),), daemon=True).start()
+            thread = threading.Thread(target=drip, args=(_port_of(login_url),), daemon=True)
+            threads.append(thread)
+            thread.start()
             return True
 
         start = time.monotonic()
-        with self.assertRaisesRegex(credentials.AuthError, "Timed out"):
-            login_command.await_loopback_code(_SERVER, "c", open_url, io.StringIO(), timeout=0.5)
+        try:
+            with self.assertRaisesRegex(credentials.AuthError, "Timed out"):
+                login_command.await_loopback_code(
+                    _SERVER, "c", open_url, io.StringIO(), timeout=0.5
+                )
+        finally:
+            stop.set()
+            for thread in threads:
+                thread.join(timeout=2.0)
 
+        self.assertEqual(errors, [])
+        self.assertGreater(dripped, 0)
         self.assertLess(time.monotonic() - start, 3.0)
+
+    def test_run_login_rejects_excessive_timeout_without_overflow(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+
+        code = login_command.run_login(["--timeout", "1e15"], out=out, err=err)
+
+        self.assertEqual((code, out.getvalue()), (2, ""))
+        self.assertIn("must be at most", err.getvalue())
 
     def test_idle_preconnect_does_not_delay_the_callback(self) -> None:
         # Browsers open speculative connections that send nothing; the real

@@ -866,6 +866,8 @@ def _positive_seconds(raw: str) -> float:
         raise argparse.ArgumentTypeError(f"invalid number: {raw!r}") from None
     if not math.isfinite(value) or value <= 0:
         raise argparse.ArgumentTypeError("must be a positive finite number")
+    if value > threading.TIMEOUT_MAX:
+        raise argparse.ArgumentTypeError(f"must be at most {threading.TIMEOUT_MAX:.0f} seconds")
     return value
 
 
