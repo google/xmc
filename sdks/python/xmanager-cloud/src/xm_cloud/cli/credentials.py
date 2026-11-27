@@ -246,6 +246,21 @@ def _endpoint_origin(endpoint: str) -> str | None:
     return None
 
 
+def is_loopback_origin(origin: str) -> bool:
+    """Returns whether the URL `origin` names a loopback host.
+
+    Args:
+        origin: Deployment origin, such as `http://localhost:8080`.
+
+    Returns:
+        True if the host is `localhost`, `127.0.0.1`, or `::1`.
+    """
+    try:
+        return urllib.parse.urlsplit(origin).hostname in _LOOPBACK_HOSTS
+    except ValueError:
+        return False
+
+
 def resolve_server(env: Mapping[str, str]) -> str:
     """Resolves and validates the XMC deployment origin from `env`.
 

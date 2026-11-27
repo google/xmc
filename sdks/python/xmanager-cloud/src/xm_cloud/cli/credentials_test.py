@@ -83,6 +83,22 @@ class CredentialsTest(unittest.TestCase):
 
         self.assertEqual(str(ctx.exception), credentials.NO_SERVER_MESSAGE)
 
+    def test_is_loopback_origin(self) -> None:
+        cases = [
+            ("http://localhost:8080", True),
+            ("http://LOCALHOST", True),
+            ("http://127.0.0.1:1", True),
+            ("http://[::1]:8080", True),
+            ("https://[::1]", True),
+            ("http://localhost.:8080", False),
+            ("http://127.0.0.2", False),
+            ("https://xmc.example.com", False),
+            ("http://[::1", False),  # urlsplit raises ValueError.
+        ]
+        for origin, expected in cases:
+            with self.subTest(origin=origin):
+                self.assertIs(credentials.is_loopback_origin(origin), expected)
+
     def test_resolve_server_drops_grpc_prefixes_and_default_ports(self) -> None:
         cases = [
             (

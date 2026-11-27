@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from typing import TextIO
 from unittest import mock
 
-from xm_cloud.cli import logout_command, main
+from xm_cloud.cli import login_command, logout_command, main
 
 
 class MainTest(unittest.TestCase):
@@ -33,7 +33,8 @@ class MainTest(unittest.TestCase):
         code = main.main(argv, out=out, err=err)
         return code, out.getvalue(), err.getvalue()
 
-    def test_registers_logout(self) -> None:
+    def test_registers_login_and_logout(self) -> None:
+        self.assertIs(main.SUBCOMMANDS["login"].run, login_command.run_login)
         self.assertIs(main.SUBCOMMANDS["logout"].run, logout_command.run_logout)
 
     def test_help_lists_every_subcommand_on_stdout(self) -> None:
@@ -42,7 +43,7 @@ class MainTest(unittest.TestCase):
                 code, out, err = self._main([flag])
 
                 self.assertEqual((code, err), (0, ""))
-                self.assertTrue(out.startswith("usage: xmc {logout} ...\n"))
+                self.assertTrue(out.startswith("usage: xmc {login,logout} ...\n"))
                 for name, command in main.SUBCOMMANDS.items():
                     self.assertIn(f"  {name:<8}{command.summary}\n", out)
 
@@ -195,6 +196,24 @@ class MainTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("still readable\n", contents)
+
+    def test_login_output_errors_exit_1_without_a_traceback(self) -> None:
+        # Writing the sign-in URL fails, so the code prompt is never reached.
+        env = {"XMANAGER_UI_URL": "https://xmc.example.com"}
+        with (
+            tempfile.TemporaryDirectory() as xdg,
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": xdg, **env}, clear=True),
+            mock.patch.object(login_command, "_probe_cli_login"),
+        ):
+            err = io.StringIO()
+            out = _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))
+
+            code = main.main(["login"], out=out, err=err)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            err.getvalue(), "xmc: error: cannot write output: [Errno 32] Broken pipe\n"
+        )
 
 
 class _BrokenStream(io.StringIO):
