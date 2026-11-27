@@ -35,6 +35,7 @@ import urllib.parse
 import urllib.request
 import urllib.response
 from collections.abc import Callable, Iterator, Mapping
+from typing import Any
 from unittest import mock
 
 from xm_cloud.cli import credentials, login_command, logout_command
@@ -167,6 +168,11 @@ def _now() -> int:
     return int(datetime.datetime.now(datetime.UTC).timestamp())
 
 
+def _port_of(login_url: str) -> int:
+    """Returns the loopback `port` query parameter of a browser-flow login URL."""
+    return int(urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)["port"][0])
+
+
 def _s256(verifier: str) -> str:
     """Returns the RFC 7636 S256 code challenge of `verifier`."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
@@ -278,16 +284,6 @@ class LoginCommandTest(unittest.TestCase):
         self.assertEqual((code, out.getvalue()), (2, ""))
         self.assertIn("not allowed with argument", err.getvalue())
 
-    def test_status_shows_out_of_range_expiry_without_crashing(self) -> None:
-        env, out = self._env(), io.StringIO()
-        entry = {"access_token": "t", "email": "u@example.com", "expires_at": 10**20}
-        credentials.save_credentials(credentials.credentials_path(env), {_SERVER: entry})
-
-        rc = login_command.run_login(["--status"], env=env, out=out, err=io.StringIO())
-
-        self.assertEqual(rc, 0)
-        self.assertIn(f"until Unix time {10**20}.", out.getvalue())
-
     def test_run_login_browser_flow_exchanges_the_verifier_for_the_loopback_challenge(
         self,
     ) -> None:
@@ -319,27 +315,18 @@ class LoginCommandTest(unittest.TestCase):
         out = mock.Mock(wraps=io.StringIO(), encoding="utf-8")
         flushed_before_wait: list[bool] = []
 
-        def handle_request(server: object) -> None:
-            del server
+        def serve(*args: object) -> None:
+            del args
             flushed_before_wait.append(out.flush.called)
 
-        with (
-            mock.patch.object(
-                login_command._LoopbackServer,
-                "handle_request",
-                autospec=True,
-                side_effect=handle_request,
-            ),
-            self.assertRaisesRegex(credentials.AuthError, "Timed out"),
-        ):
+        with mock.patch.object(login_command, "_serve_until_callback", side_effect=serve):
             login_command.await_loopback_code(_SERVER, "c", lambda _: True, out, timeout=0.05)
 
         self.assertIn("Opening browser to sign in", out.write.call_args.args[0])
-        self.assertTrue(flushed_before_wait)
-        self.assertTrue(all(flushed_before_wait))
+        self.assertEqual(flushed_before_wait, [True])
 
     def test_loopback_server_does_not_print_tracebacks_for_failed_requests(self) -> None:
-        handler = login_command._callback_handler(_SERVER, "s", {})
+        handler = login_command._callback_handler(_SERVER, "s", login_command._CallbackResult())
         stderr = io.StringIO()
         with (
             login_command._LoopbackServer(("127.0.0.1", 0), handler) as httpd,
@@ -354,11 +341,10 @@ class LoginCommandTest(unittest.TestCase):
 
     def test_stalled_loopback_client_cannot_outlast_the_timeout(self) -> None:
         # A client that connects and never sends a request must not hold the login
-        # for the 10-second per-request socket timeout once `--timeout` runs out.
+        # for the 10-second per-connection socket timeout once `--timeout` runs out.
 
         def open_url(login_url: str) -> bool:
-            port = int(urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)["port"][0])
-            sock = socket.create_connection(("127.0.0.1", port))
+            sock = socket.create_connection(("127.0.0.1", _port_of(login_url)))
             self.addCleanup(sock.close)
             return True
 
@@ -368,21 +354,66 @@ class LoginCommandTest(unittest.TestCase):
 
         self.assertLess(time.monotonic() - start, 3.0)
 
-    def test_serve_until_callback_caps_the_socket_timeout_at_the_time_left(self) -> None:
-        handler = login_command._callback_handler(_SERVER, "s", {})
-        result: dict[str, str] = {}
-        seen_timeouts: list[float | None] = []
+    def test_dripping_loopback_client_cannot_outlast_the_timeout(self) -> None:
+        # One byte every 50 ms resets a per-read socket timeout forever; only the
+        # wall-clock deadline ends the wait. The client gives up after 3 s, so a
+        # regression fails the test instead of hanging it.
+        stop = threading.Event()
+        self.addCleanup(stop.set)
 
-        def handle_request() -> None:
-            seen_timeouts.append(handler.timeout)
-            result["code"] = "c"
+        def drip(port: int) -> None:
+            end = time.monotonic() + 3.0
+            with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", port)) as s:
+                while not stop.wait(0.05) and time.monotonic() < end:
+                    s.sendall(b"G")
 
-        httpd = mock.Mock(handle_request=handle_request)
-        login_command._serve_until_callback(httpd, handler, result, time.monotonic() + 2.0)
+        def open_url(login_url: str) -> bool:
+            threading.Thread(target=drip, args=(_port_of(login_url),), daemon=True).start()
+            return True
 
-        (seen,) = seen_timeouts
-        self.assertIsNotNone(seen)
-        self.assertTrue(0 < (seen or 0) <= 2.0)
+        start = time.monotonic()
+        with self.assertRaisesRegex(credentials.AuthError, "Timed out"):
+            login_command.await_loopback_code(_SERVER, "c", open_url, io.StringIO(), timeout=0.5)
+
+        self.assertLess(time.monotonic() - start, 3.0)
+
+    def test_idle_preconnect_does_not_delay_the_callback(self) -> None:
+        # Browsers open speculative connections that send nothing; the real
+        # callback on a second connection must be answered right away.
+        client = _CallbackClient(lambda state: [f"/callback?state={state}&code=c-1"])
+
+        def open_url(login_url: str) -> bool:
+            idle = socket.create_connection(("127.0.0.1", _port_of(login_url)))
+            self.addCleanup(idle.close)
+            return client.open_url(login_url)
+
+        start = time.monotonic()
+        try:
+            code = login_command.await_loopback_code(
+                _SERVER, "challenge", open_url, io.StringIO(), timeout=8.0
+            )
+        finally:
+            statuses = client.join()
+
+        self.assertEqual((code, statuses), ("c-1", [302]))
+        self.assertLess(time.monotonic() - start, 3.0)
+
+    def test_loopback_server_listens_only_on_127_0_0_1(self) -> None:
+        servers: list[login_command._LoopbackServer] = []
+        real_server = login_command._LoopbackServer
+
+        def make_server(*args: Any) -> login_command._LoopbackServer:
+            servers.append(real_server(*args))
+            return servers[-1]
+
+        with (
+            mock.patch.object(login_command, "_LoopbackServer", side_effect=make_server),
+            mock.patch.object(login_command, "_serve_until_callback"),
+        ):
+            login_command.await_loopback_code(_SERVER, "c", lambda _: True, io.StringIO(), 1.0)
+
+        (httpd,) = servers
+        self.assertEqual(httpd.server_address[0], "127.0.0.1")
 
     def test_run_login_reports_save_failure_after_token_exchange(self) -> None:
         out, err = io.StringIO(), io.StringIO()
@@ -537,6 +568,9 @@ class LoginCommandTest(unittest.TestCase):
         cases = [
             ("&error=denied", 302, f"{_SERVER}/api/cli/success?error=denied", "failed: denied"),
             ("", 400, None, "Callback did not include an authorization code"),
+            # Like a pasted code, a callback code must be printable ASCII without spaces.
+            ("&code=a%20b%0D%0AX%1B%5B2J", 400, None, "invalid authorization code"),
+            ("&code=c%C3%B6de", 400, None, "invalid authorization code"),
         ]
         for query, status, location, message in cases:
 
@@ -796,28 +830,41 @@ class LoginCommandTest(unittest.TestCase):
         self.assertEqual((req.full_url, req.get_method()), (f"{_SERVER}/api/cli/login", "GET"))
         self.assertEqual(req.timeout, 10)
 
-    def test_await_loopback_code_times_out_or_reports_unopenable_browser(self) -> None:
+    def test_await_loopback_code_times_out(self) -> None:
         with self.assertRaisesRegex(credentials.AuthError, "Timed out"):
             login_command.await_loopback_code(
                 _SERVER, "challenge", lambda _: True, io.StringIO(), timeout=0.05
             )
 
+    def test_await_loopback_code_falls_back_when_the_browser_cannot_open(self) -> None:
         def broken_browser(_: str) -> bool:
             raise RuntimeError("no browser")
 
-        self.assertIsNone(
-            login_command.await_loopback_code(
-                _SERVER, "challenge", broken_browser, io.StringIO(), timeout=5.0
-            )
-        )
+        for name, open_url in (("raises", broken_browser), ("returns False", lambda _: False)):
+            out = io.StringIO()
+            with self.subTest(open_url=name):
+                code = login_command.await_loopback_code(
+                    _SERVER, "challenge", open_url, out, timeout=5.0
+                )
+                self.assertIsNone(code)
+                self.assertEqual(
+                    out.getvalue(), "Could not launch browser; falling back to manual login.\n"
+                )
+
+    def test_await_loopback_code_reports_a_loopback_bind_failure(self) -> None:
+        out, open_url = io.StringIO(), mock.Mock(return_value=True)
         with mock.patch.object(
             login_command, "_LoopbackServer", side_effect=OSError("no IPv4 loopback")
         ):
-            self.assertIsNone(
-                login_command.await_loopback_code(
-                    _SERVER, "challenge", lambda _: True, io.StringIO(), timeout=5.0
-                )
-            )
+            code = login_command.await_loopback_code(_SERVER, "challenge", open_url, out, 5.0)
+
+        self.assertIsNone(code)
+        self.assertEqual(
+            out.getvalue(),
+            "Cannot start the local callback server (no IPv4 loopback);"
+            " falling back to manual login.\n",
+        )
+        open_url.assert_not_called()
 
     def test_probe_cli_login_rejects_other_statuses(self) -> None:
         cases = [
@@ -888,7 +935,11 @@ class LoginCommandTest(unittest.TestCase):
             mock.patch.object(login_command, "exchange_code", return_value=grant),
         ):
             login_command.run_login(
-                [], env=env, out=io.StringIO(), err=io.StringIO(), prompt=lambda _: "c"
+                ["--no-browser"],
+                env=env,
+                out=io.StringIO(),
+                err=io.StringIO(),
+                prompt=lambda _: "c",
             )
         out, err = io.StringIO(), io.StringIO()
 
@@ -902,7 +953,9 @@ class LoginCommandTest(unittest.TestCase):
     def test_run_login_probes_before_prompting(self) -> None:
         env, err, prompt = self._env(), io.StringIO(), mock.Mock(return_value="c")
         with _serve(404):
-            rc = login_command.run_login([], env=env, out=io.StringIO(), err=err, prompt=prompt)
+            rc = login_command.run_login(
+                ["--no-browser"], env=env, out=io.StringIO(), err=err, prompt=prompt
+            )
 
         self.assertEqual(rc, 1)
         self.assertRegex(err.getvalue(), r"^Error: Server .* does not support `xmc login`")
@@ -1131,6 +1184,50 @@ class LoginCommandTest(unittest.TestCase):
                 else:
                     self.assertNotIn("manual login", out.getvalue())
 
+    def test_run_login_passes_the_timeout_flag_to_the_loopback_wait(self) -> None:
+        wait = mock.Mock(return_value="c-1")
+        with (
+            mock.patch.object(login_command, "_probe_cli_login"),
+            mock.patch.object(login_command, "await_loopback_code", wait),
+            mock.patch.object(login_command, "exchange_code", return_value=_GOOD_GRANT),
+        ):
+            rc = login_command.run_login(
+                ["--timeout", "0.25"], env=self._env(), out=io.StringIO(), err=io.StringIO()
+            )
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(wait.call_args.args[4], 0.25)
+
+    def test_run_login_gives_up_after_the_timeout_flag(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        start = time.monotonic()
+        with mock.patch.object(login_command, "_probe_cli_login"):
+            rc = login_command.run_login(
+                ["--timeout", "0.2"], env=self._env(), out=out, err=err, open_url=lambda _: True
+            )
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(err.getvalue(), "Error: Timed out waiting for browser authentication.\n")
+        self.assertLess(time.monotonic() - start, 3.0)
+
+    def test_run_login_reports_a_loopback_bind_failure_before_manual_login(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            mock.patch.object(login_command, "_probe_cli_login"),
+            mock.patch.object(login_command, "exchange_code", return_value=_GOOD_GRANT),
+            mock.patch.object(login_command, "_LoopbackServer", side_effect=OSError("denied")),
+        ):
+            rc = login_command.run_login(
+                [], env=self._env(), out=out, err=err, prompt=lambda _: "c"
+            )
+
+        self.assertEqual((rc, err.getvalue()), (0, ""))
+        self.assertIn(
+            "Cannot start the local callback server (denied); falling back", out.getvalue()
+        )
+        self.assertNotIn("Could not launch browser", out.getvalue())
+        self.assertIn("mode=manual", out.getvalue())
+
     def test_status_and_print_token_report_the_cached_login(self) -> None:
         env = self._env()
         entry = {"access_token": " jwt ", "email": "u@example.com", "expires_at": _now() + 900}
@@ -1151,12 +1248,14 @@ class LoginCommandTest(unittest.TestCase):
         env = self._env()
         entry = {"access_token": "jwt", "expires_at": _now() + 900.5}
         credentials.save_credentials(credentials.credentials_path(env), {_SERVER: entry})
-        status_out, token_out = io.StringIO(), io.StringIO()
+        status_out, status_err = io.StringIO(), io.StringIO()
+        token_out, token_err = io.StringIO(), io.StringIO()
 
-        status_rc = login_command.run_login(["--status"], env=env, out=status_out)
-        token_rc = login_command.run_login(["--print-token"], env=env, out=token_out)
+        status_rc = login_command.run_login(["--status"], env=env, out=status_out, err=status_err)
+        token_rc = login_command.run_login(["--print-token"], env=env, out=token_out, err=token_err)
 
         self.assertEqual((status_rc, token_rc, token_out.getvalue()), (0, 0, "jwt\n"))
+        self.assertEqual((status_err.getvalue(), token_err.getvalue()), ("", ""))
         self.assertRegex(status_out.getvalue(), rf"^Logged in to {_SERVER} until \d")
 
     def test_status_escapes_control_characters_in_a_cached_email(self) -> None:
@@ -1167,27 +1266,43 @@ class LoginCommandTest(unittest.TestCase):
             "expires_at": _now() + 900,
         }
         credentials.save_credentials(credentials.credentials_path(env), {_SERVER: entry})
-        out = io.StringIO()
+        out, err = io.StringIO(), io.StringIO()
 
-        self.assertEqual(login_command.run_login(["--status"], env=env, out=out), 0)
+        self.assertEqual(login_command.run_login(["--status"], env=env, out=out, err=err), 0)
+        self.assertEqual(err.getvalue(), "")
         self.assertIn("as u\\x1b]0;pwned\\x07@x.io until", out.getvalue())
 
     def test_loopback_handler_socket_timeout_defaults_to_ten_seconds(self) -> None:
-        self.assertEqual(login_command._callback_handler(_SERVER, "s", {}).timeout, 10.0)
+        handler = login_command._callback_handler(_SERVER, "s", login_command._CallbackResult())
 
-    def test_valid_entry_keeps_a_huge_integer_expiry(self) -> None:
-        huge_entry = {"access_token": "jwt", "email": "u@x.io", "expires_at": 10**400}
+        self.assertEqual(handler.timeout, 10.0)
 
-        self.assertEqual(login_command._valid_entry(huge_entry), huge_entry)
+    def test_valid_entry_rejects_an_expiry_beyond_the_longest_grant(self) -> None:
+        # The CLI never caches more than a year ahead; xdash.auth crashes on 10**400.
+        for expires_at in (10**400, 1e308, _now() + login_command._MAX_EXPIRES_IN_SECONDS + 60):
+            entry = {"access_token": "jwt", "email": "u@x.io", "expires_at": expires_at}
+            with self.subTest(expires_at=expires_at):
+                self.assertIsNone(login_command._valid_entry(entry))
 
     def test_valid_entry_rejects_a_non_dict(self) -> None:
         self.assertIsNone(login_command._valid_entry("not-a-dict"))
 
-    def test_live_expiry_applies_the_30_second_skew_like_xdash(self) -> None:
+    def test_live_expiry_applies_the_30_second_skew_and_one_year_cap(self) -> None:
         self.assertEqual(login_command._EXPIRY_SKEW_SECONDS, 30)
+        cap = 1000 + login_command._MAX_EXPIRES_IN_SECONDS
         with mock.patch.object(login_command, "datetime") as fake:
             fake.datetime.now.return_value.timestamp.return_value = 1000.0
-            cases = [(1030, None), (1030.0, None), (1030.5, 1030), (1031, 1031), (999, None)]
+            cases = [
+                (1030, None),
+                (1030.0, None),
+                (1030.5, 1030),
+                (1031, 1031),
+                (999, None),
+                (cap, cap),
+                (cap + 1, None),
+                (float("inf"), None),
+                (float("nan"), None),
+            ]
             for expires_at, expected in cases:
                 with self.subTest(expires_at=expires_at):
                     self.assertEqual(login_command._live_expiry(expires_at), expected)
@@ -1204,6 +1319,8 @@ class LoginCommandTest(unittest.TestCase):
             {**good, "expires_at": True},
             {**good, "expires_at": float("nan")},
             {**good, "expires_at": float("inf")},
+            {**good, "expires_at": 10**20},  # Beyond the one-year cap on cached grants.
+            {**good, "expires_at": 1e308},
             {**good, "access_token": "  "},
             {**good, "access_token": "jwt\r\nX-Injected: 1"},
             {**good, "access_token": "jwt extra"},

@@ -96,5 +96,7 @@ py_library(
 py_test(
     name = "install_smoke_check_test",
     srcs = ["install_smoke_check_test.py"],
+    # The test compares the smoke-check module list with every file in the package.
+    data = glob(["src/xm_cloud/cli/*.py"]),
     deps = [":install_smoke_check"],
 )

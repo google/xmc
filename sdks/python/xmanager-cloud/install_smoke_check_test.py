@@ -49,18 +49,22 @@ class ModulesToCheckTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(modules[0], "xmanager_cloud")
         self.assertIn("xdash.auth", modules)
-        self.assertEqual(
-            [name for name in modules if name.startswith("xm_cloud.cli.")],
-            [
-                "xm_cloud.cli.arg_parsing",
-                "xm_cloud.cli.credentials",
-                "xm_cloud.cli.login_command",
-                "xm_cloud.cli.logout_command",
-                "xm_cloud.cli.main",
-                "xm_cloud.cli.terminal_text",
-            ],
-        )
         self.assertEqual(modules[-1], "a.proto.x_pb2")
+
+    def test_imports_every_shipped_xm_cloud_cli_module(self) -> None:
+        # Derived from the package directory, so a new CLI module cannot be missed.
+        cli_dir = Path(__file__).resolve().parent / "src" / "xm_cloud" / "cli"
+        shipped = sorted(
+            f"xm_cloud.cli.{path.stem}"
+            for path in cli_dir.glob("*.py")
+            if path.stem != "__init__" and not path.stem.endswith("_test")
+        )
+        layout = build_staging.SourceLayout(proto_root=self.root, xdash_dir=self.root)
+        with mock.patch.object(build_staging, "expected_proto_modules", return_value=[]):
+            modules = install_smoke_check.modules_to_check(layout)
+
+        self.assertIn("xm_cloud.cli.login_command", shipped)
+        self.assertEqual(sorted(m for m in modules if m.startswith("xm_cloud.cli.")), shipped)
 
 
 class ImportFailuresTest(InstallSmokeCheckTestCase):

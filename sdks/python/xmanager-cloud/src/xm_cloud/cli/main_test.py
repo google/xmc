@@ -208,7 +208,7 @@ class MainTest(unittest.TestCase):
             err = io.StringIO()
             out = _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))
 
-            code = main.main(["login"], out=out, err=err)
+            code = main.main(["login", "--no-browser"], out=out, err=err)
 
         self.assertEqual(code, 1)
         self.assertEqual(
