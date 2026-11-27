@@ -809,7 +809,8 @@ class LoginCommandTest(unittest.TestCase):
         bodies: list[tuple[str, bytes | io.BytesIO, str]] = [
             ("html", b"<html>", "Expecting value"),
             ("not utf-8", b"\xff\xfe", "codec can't decode"),
-            ("deep nesting", b"[" * 65536, "recursion"),
+            # Python <=3.13 hits RecursionError; Python 3.14's iterative _json hits EOF.
+            ("deep nesting", b"[" * 65536, "(?:recursion|Expecting value)"),
             ("truncated", _FailingBody(http.client.IncompleteRead(b"{")), "IncompleteRead"),
             ("reset", _FailingBody(OSError("reset by peer")), "reset by peer"),
             ("oversized", b" " * (65536 + 1), "response too large"),
@@ -1050,9 +1051,7 @@ class LoginCommandTest(unittest.TestCase):
                     prompt=mock.Mock(side_effect=exc),
                 )
                 self.assertEqual(rc, 1)
-                self.assertTrue(
-                    err.getvalue().startswith("Error: Cannot read the authorization code: ")
-                )
+                self.assertRegex(err.getvalue(), r"^Error: Cannot read the authorization code: ")
 
     def test_run_login_defaults_to_process_env_and_streams(self) -> None:
         out, err = io.StringIO(), io.StringIO()
