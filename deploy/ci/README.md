@@ -2,9 +2,10 @@
 
 This directory contains Kubernetes deployment manifests for CI/CD support infrastructure running on the self-hosted Actions Runner Controller (ARC) GKE cluster.
 
-## Manifests
+## Manifests & Images
 
 - [`bazel-remote-cache.yaml`](bazel-remote-cache.yaml): Deploys an in-cluster HTTP/gRPC Bazel Remote Cache (`buchgr/bazel-remote-cache`) backed by a 100Gi SSD Persistent Volume (`premium-rwo`) in the `arc-runners` namespace.
+- [`images/`](images/README.md): Layered GHCR CI runner Dockerfiles (`ghcr.io/google/xmc/ci-*`), central version manifest (`versions.json`), Bake build graph, and in-container smoke verifier.
 
 ## Complete Documentation & Migration Guide
 

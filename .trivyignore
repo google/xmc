@@ -17,3 +17,6 @@ KSV-0014
 
 # KSV-0017: The nightly/test in-cluster k3s MultiKueue worker addon requires privileged execution to run a nested kubelet and containerd.
 KSV-0017
+
+# DS-0002: GitHub Actions job containers (deploy/ci/images/Dockerfile.*) require UID 0 (root) to manage host-mounted workspace and runner directories.
+DS-0002

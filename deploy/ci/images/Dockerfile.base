@@ -1,0 +1,66 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+ARG BASE_IMAGE=ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
+FROM ${BASE_IMAGE}
+
+ARG PYTHON_VERSION
+ARG PYTHON_RELEASE_TAG
+ARG PYTHON_SHA256
+ARG NODE_VERSION
+ARG NODE_SHA256
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        jq \
+        procps \
+        tar \
+        unzip \
+        xz-utils \
+        zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install standalone Python 3.13 into /opt/python, leaving Ubuntu's system Python intact.
+RUN set -eu; \
+    url="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_RELEASE_TAG}/cpython-${PYTHON_VERSION}%2B${PYTHON_RELEASE_TAG}-x86_64-unknown-linux-gnu-install_only.tar.gz"; \
+    curl -fsSL "${url}" -o /tmp/python.tar.gz; \
+    echo "${PYTHON_SHA256}  /tmp/python.tar.gz" | sha256sum -c -; \
+    mkdir -p /opt/python; \
+    tar -xzf /tmp/python.tar.gz -C /opt/python --strip-components=1; \
+    rm -f /tmp/python.tar.gz; \
+    /opt/python/bin/pip3 install --no-cache-dir --upgrade "setuptools>=78.1.1"; \
+    chmod -R a+rX /opt/python
+
+# Install Node.js 22 into /opt/node.
+RUN set -eu; \
+    url="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"; \
+    curl -fsSL "${url}" -o /tmp/node.tar.xz; \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c -; \
+    mkdir -p /opt/node; \
+    tar -xJf /tmp/node.tar.xz -C /opt/node --strip-components=1; \
+    rm -f /tmp/node.tar.xz; \
+    chmod -R a+rX /opt/node
+
+ENV PATH="/opt/python/bin:/opt/node/bin:${PATH}"
+
+# GitHub Actions container jobs run as UID 0 against host-owned workspace mounts.
+RUN git config --system --add safe.directory '*'

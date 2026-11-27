@@ -1,0 +1,15 @@
+{
+  "base_image": "ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b",
+  "tools": {
+    "python": {
+      "version": "3.13.18",
+      "release_tag": "20261124",
+      "sha256": "86ed5fcc8f99d3d85dad7336af68e914d9ce3559dc760dd6cf1f2d06df6601d5"
+    },
+    "node": {
+      "version": "22.23.5",
+      "sha256": "cdeb8670a0c81f51b4dc4ac61919f9b1ad917b304bf8221eb939570663d240f8"
+    }
+  },
+  "images": {}
+}
