@@ -39,7 +39,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
 ### Feature Switches
-*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
+*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations, and to wire `ess_dashboard_service_addr` on ESS (which enables `STUDY` parallel-coordinates chart auto-provisioning and work-unit `ChartArtifact` provisioning; when `false`, work-unit `ChartArtifact`s fail immediately with `"dashboard service is not configured"` and `STUDY` chart auto-provisioning is skipped).
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
 *   **`pause_scheduling_enabled`**: Boolean flag (`true`/`false`, default: `true`). Set to `true` to enable the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS (`XMC_PAUSE_SCHEDULING_ENABLED`). Resumption batch size and backlog throttling can be tuned via `health_scheduling_resume_batch_size` (default: `100`) and `health_scheduling_resume_max_backlog` (default: `500`).

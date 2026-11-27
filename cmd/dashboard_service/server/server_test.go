@@ -20,16 +20,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/internal/auth"
+	"xmanager_cloud/internal/prototest"
+	"xmanager_cloud/internal/validator"
 )
 
 type (
@@ -522,6 +526,7 @@ func TestGetChartData(t *testing.T) {
 				return &dpb.Chart{
 					Name: "experiments/1001/workUnits/2002/charts/chart-loss",
 					Xid:  0,
+					Wid:  2002,
 				}, nil
 			},
 		}
@@ -550,11 +555,87 @@ func TestGetChartData(t *testing.T) {
 		}
 	})
 
-	t.Run("returns InvalidArgument when experiment chart without work unit is requested", func(t *testing.T) {
-		s := NewServer(&Config{}, &mockRepository{}, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
+	t.Run("returns NotFound for a missing experiment-level chart instead of a fallback", func(t *testing.T) {
+		repo := &mockRepository{
+			getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+				return nil, status.Error(codes.NotFound, "not found")
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, &mockChartDataEngine{})
 		_, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/234911122/charts/baseline"})
-		if status.Code(err) != codes.InvalidArgument {
-			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		if status.Code(err) != codes.NotFound {
+			t.Errorf("GetChartData() code = %v, want %v", status.Code(err), codes.NotFound)
+		}
+	})
+
+	newChartDataServer := func(repo *mockRepository, allowed bool, onAuth func(*xidapipb.CheckUserAuthorizationRequest)) *Server {
+		return NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{
+			checkUserAuthorizationFn: func(_ context.Context, in *xidapipb.CheckUserAuthorizationRequest, _ ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				if onAuth != nil {
+					onAuth(in)
+				}
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(allowed)}, nil
+			},
+		}, &mockChartDataEngine{})
+	}
+	baseExpChart := &dpb.Chart{Name: "experiments/1001/charts/hpo-parallel-coord", Xid: 1001, Plots: []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}}
+	baseWuChart := &dpb.Chart{Name: "experiments/1001/workUnits/3/charts/c", Xid: 1001, Wid: 3}
+
+	t.Run("scoped chart names reject mismatched stored chart levels", func(t *testing.T) {
+		tests := []struct {
+			name, reqName string
+			stored        *dpb.Chart
+		}{
+			{"experiment URL for work unit chart", "experiments/1001/charts/c", prototest.Modify(baseWuChart, func(c *dpb.Chart) { c.Name = "experiments/1001/workUnits/2/charts/c"; c.Wid = 2 })},
+			{"experiment URL for another experiment", "experiments/1001/charts/c", prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/7/charts/c"; c.Xid = 7 })},
+			{"work unit URL for experiment-level chart", "experiments/1001/workUnits/2002/charts/c", prototest.Modify(baseExpChart, func(c *dpb.Chart) { c.Name = "experiments/1001/charts/c" })},
+			{"work unit URL for another experiment", "experiments/1001/workUnits/1/charts/c", prototest.Modify(baseWuChart, func(c *dpb.Chart) { c.Name = "experiments/7/workUnits/3/charts/c"; c.Xid = 7 })},
+			{"work unit URL for wrong work unit", "experiments/1001/workUnits/1/charts/c", prototest.Modify(baseWuChart, nil)},
+		}
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				var authTargets []string
+				s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, _ string) (*dpb.Chart, error) { return tc.stored, nil }}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { authTargets = append(authTargets, in.GetName()) })
+				if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: tc.reqName}); status.Code(err) != codes.NotFound {
+					t.Errorf("GetChartData(%q) code = %v, want %v", tc.reqName, status.Code(err), codes.NotFound)
+				}
+				if diff := cmp.Diff([]string{"xids/1001"}, authTargets); diff != "" {
+					t.Errorf("CheckUserAuthorization targets mismatch (-want +got):\n%s", diff)
+				}
+			})
+		}
+	})
+
+	t.Run("authorizes experiment XID before querying repository", func(t *testing.T) {
+		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, id string) (*dpb.Chart, error) {
+			t.Fatalf("GetChart(%q) called pre-auth", id)
+			return nil, nil
+		}}, false, nil)
+		for _, name := range []string{"experiments/1001/charts/missing-chart", "experiments/1001/workUnits/1/charts/missing-chart"} {
+			if _, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: name}); status.Code(err) != codes.PermissionDenied {
+				t.Errorf("GetChartData(%q) code = %v, want %v", name, status.Code(err), codes.PermissionDenied)
+			}
+		}
+	})
+
+	t.Run("authorized user gets experiment-level chart data", func(t *testing.T) {
+		var capturedReq *xidapipb.CheckUserAuthorizationRequest
+		s := newChartDataServer(&mockRepository{getChartFn: func(_ context.Context, chartID string) (*dpb.Chart, error) {
+			if chartID != "hpo-parallel-coord" {
+				t.Errorf("GetChart(%q), want chart ID %q", chartID, "hpo-parallel-coord")
+			}
+			return prototest.Modify(baseExpChart, nil), nil
+		}}, true, func(in *xidapipb.CheckUserAuthorizationRequest) { capturedReq = in })
+		resp, err := s.GetChartData(ctx, &dpb.GetChartDataRequest{Name: "experiments/1001/charts/hpo-parallel-coord"})
+		if err != nil {
+			t.Fatalf("GetChartData() unexpected error: %v", err)
+		}
+		want := &dpb.ChartData{Name: "experiments/1001/charts/hpo-parallel-coord", Xid: 1001, PlotsData: []*dpb.ChartData_PlotData{}}
+		if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
+			t.Errorf("GetChartData() mismatch (-want +got):\n%s", diff)
+		}
+		if capturedReq.GetName() != "xids/1001" || capturedReq.GetRoleType() != xidapipb.XidAcls_READER {
+			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedReq)
 		}
 	})
 
@@ -720,4 +801,35 @@ func TestAuthorizeExperiment(t *testing.T) {
 			t.Errorf("authorizeExperimentWrite code = %v, want %v", status.Code(err), codes.Internal)
 		}
 	})
+}
+
+func TestChartMatchesName(t *testing.T) {
+	tests := []struct {
+		name      string
+		chartName string
+		chart     *dpb.Chart
+		want      bool
+	}{
+		{name: "experiment name, experiment-level chart of that experiment", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 100}, want: true},
+		{name: "experiment name, work unit chart", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 1}, want: false},
+		{name: "experiment name, chart of another experiment", chartName: "experiments/100/charts/c", chart: &dpb.Chart{Xid: 7}, want: false},
+		{name: "work unit name rejects experiment-level chart", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100}, want: false},
+		{name: "work unit name accepts matching (Xid, Wid)", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 1}, want: true},
+		{name: "work unit name accepts legacy zero-Xid chart with matching Wid", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 0, Wid: 1}, want: true},
+		{name: "work unit name rejects chart of another experiment and work unit", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 3}, want: false},
+		{name: "work unit name rejects chart of another experiment with same Wid", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 7, Wid: 1}, want: false},
+		{name: "work unit name rejects chart of wrong Wid under same experiment", chartName: "experiments/100/workUnits/1/charts/c", chart: &dpb.Chart{Xid: 100, Wid: 3}, want: false},
+		{name: "root name keeps resolving by chart ID", chartName: "charts/c", chart: &dpb.Chart{Xid: 7}, want: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := validator.ParseChartName(tc.chartName)
+			if err != nil {
+				t.Fatalf("ParseChartName(%q) error = %v", tc.chartName, err)
+			}
+			if got := chartMatchesName(parsed, tc.chart); got != tc.want {
+				t.Errorf("chartMatchesName(%q, %v) = %v, want %v", tc.chartName, tc.chart, got, tc.want)
+			}
+		})
+	}
 }

@@ -35,8 +35,8 @@ except ImportError:
     except ImportError as exc:
         raise ImportError(
             "PyTorch Lightning is required to use XmcLogger. Please install "
-            "pytorch-lightning>=2.0.0 via 'pip install xmc[lightning]' or "
-            "'pip install pytorch-lightning>=2.0.0'."
+            "pytorch-lightning>=2.0.0 via 'pip install \"xmc-metrics[lightning]\"' or "
+            "'pip install \"pytorch-lightning>=2.0.0\"'."
         ) from exc
 
 
@@ -55,8 +55,9 @@ def _validate_lightning_version() -> None:
     if parse_version(version_str) < parse_version(MIN_LIGHTNING_VERSION):
         raise ImportError(
             f"PyTorch Lightning version >= {MIN_LIGHTNING_VERSION} is required for XmcLogger, "
-            f"found version {version_str}. Please upgrade via 'pip install --upgrade xmc[lightning]' "
-            f"or 'pip install --upgrade pytorch-lightning>=2.0.0'."
+            f"found version {version_str}. Please upgrade via "
+            f"'pip install --upgrade \"xmc-metrics[lightning]\"' "
+            f"or 'pip install --upgrade \"pytorch-lightning>=2.0.0\"'."
         )
 
 

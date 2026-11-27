@@ -58,6 +58,7 @@ message Chart {
   option (google.api.resource) = {
     type: "cloud.xmanager.googleapis.com/Chart"
     pattern: "experiments/{experiment}/workUnits/{wid}/charts/{chart}"
+    pattern: "experiments/{experiment}/charts/{chart}"
     pattern: "charts/{chart}"
     pattern: "dashboards/{dashboard}/charts/{chart}"
     singular: "chart"
@@ -68,7 +69,9 @@ message Chart {
   string title = 2 [(google.api.field_behavior) = REQUIRED];
   string description = 3 [(google.api.field_behavior) = OPTIONAL];
   int64 xid = 4 [(google.api.field_behavior) = REQUIRED];
-  int64 wid = 5 [(google.api.field_behavior) = REQUIRED];
+  // The work unit the chart belongs to. 0 for experiment-level charts, which are created under
+  // "experiments/{experiment}" and may only contain PARALLEL_COORDINATES plots.
+  int64 wid = 5 [(google.api.field_behavior) = OPTIONAL];
   repeated PlotSpec plots = 6 [(google.api.field_behavior) = REQUIRED];
   LayoutSpec plot_layout = 7 [(google.api.field_behavior) = REQUIRED];
   google.protobuf.Timestamp create_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
@@ -81,6 +84,10 @@ enum PlotType {
   SCATTER = 2;
   BAR = 3;
   HISTOGRAM = 4;
+  // One axis per parameter of a hyperparameter optimization study and one line per work unit of
+  // the study. Only allowed on experiment-level charts (GetChartData requires a STUDY experiment);
+  // the plot's data spec is not used.
+  PARALLEL_COORDINATES = 5;
 }
 
 message GridPosition {
@@ -268,11 +275,116 @@ message ChartData {
       SummaryBoxValue summary_data = 3;
       SeriesData scatter_series = 4;
       BarData bar_data = 5;
+      ParallelCoordinatesData parallel_coordinates_data = 6;
     }
   }
 
   string name = 1;
   int64 xid = 2;
+  // 0 for experiment-level charts.
   int64 wid = 3;
   repeated PlotData plots_data = 4;
+}
+
+// The data of a PARALLEL_COORDINATES plot: one axis per parameter of the study configuration, the
+// objective metric, and one trajectory per work unit (trial) of the study.
+//
+// The dashboard protos cannot import the experiment protos (which import this file), so the enums
+// below mirror their experiment counterparts value for value.
+message ParallelCoordinatesData {
+  // The axis of one study parameter, mirroring cloud.xmanager.v1.ParameterSpec.
+  message Axis {
+    // Mirrors cloud.xmanager.v1.ParameterSpec.ScaleType.
+    enum ScaleType {
+      SCALE_TYPE_UNSPECIFIED = 0;
+      LINEAR = 1;
+      LOG = 2;
+      REVERSE_LOG = 3;
+    }
+
+    // An inclusive range of real values.
+    message DoubleRange {
+      double min_value = 1;
+      double max_value = 2;
+    }
+
+    // An inclusive range of integer values.
+    message IntegerRange {
+      int64 min_value = 1;
+      int64 max_value = 2;
+    }
+
+    // Unordered string values, in the order of the study configuration.
+    message CategoricalValues {
+      repeated string values = 1;
+    }
+
+    // Numeric values, in ascending order.
+    message DiscreteValues {
+      repeated double values = 1;
+    }
+
+    // The parameter ID of the study configuration.
+    string parameter_id = 1;
+    // The feasible values of the parameter, which span the axis.
+    oneof values {
+      DoubleRange double_range = 2;
+      IntegerRange integer_range = 3;
+      CategoricalValues categorical_values = 4;
+      DiscreteValues discrete_values = 5;
+    }
+    // The scale of a numeric axis. Unset for categorical axes.
+    ScaleType scale_type = 6;
+  }
+
+  // The objective metric of the study, mirroring cloud.xmanager.v1.MetricSpec.
+  message Objective {
+    // Mirrors cloud.xmanager.v1.MetricSpec.GoalType.
+    enum GoalType {
+      GOAL_TYPE_UNSPECIFIED = 0;
+      MAXIMIZE = 1;
+      MINIMIZE = 2;
+    }
+
+    // The name of the metric that trials report.
+    string metric_id = 1;
+    // Whether the metric is maximized or minimized.
+    GoalType goal = 2;
+  }
+
+  // One work unit (trial) of the study.
+  message RunTrajectory {
+    // Mirrors cloud.xmanager.v1.WorkUnitStatus.WorkUnitState.
+    enum WorkUnitState {
+      WORK_UNIT_STATE_UNSPECIFIED = 0;
+      INITIALIZING = 1;
+      SCHEDULING = 2;
+      STARTING = 3;
+      RUNNING = 4;
+      PARTIALLY_FAILED = 5;
+      STOPPING = 6;
+      RESTARTING = 7;
+      STOPPED = 8;
+      DESCHEDULING = 9;
+      COMPLETED = 10;
+      FAILED = 11;
+      SCHEDULING_PAUSED = 12;
+    }
+
+    // The work unit ID.
+    int64 wid = 1;
+    // The state of the work unit's current execution.
+    WorkUnitState state = 2;
+    // When the work unit was created.
+    google.protobuf.Timestamp create_time = 3;
+    // When the work unit's current execution reached a terminal state. Unset until then.
+    google.protobuf.Timestamp complete_time = 4;
+  }
+
+  // One axis per study parameter, in the order of the study configuration.
+  repeated Axis axes = 1;
+  // The objective metric of the study.
+  Objective objective = 2;
+  // One trajectory per work unit of the study, in ascending work unit ID order.
+  repeated RunTrajectory trajectories = 3;
 }

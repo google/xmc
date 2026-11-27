@@ -2,7 +2,7 @@
 
 This Helm sub-chart (`deploy/profiles/stable-2026b/components/vizier/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) for the **Open Source Vizier** hyperparameter optimization engine (`optimization-engine`).
 
-Because Open Source Vizier is deployed as a bring-your-own (BYO) gRPC service (`vizier-service:7077`) without a custom Kubernetes operator or CRD, this blueprint omits `spec.wrapperRef`. Instead, `xmc-bridge` verifies readiness directly via active TCP health probing against `parameters.endpoint` and publishes resolved connection coordinates (`status.access.envVars.ENDPOINT`, `HOST`, `PORT`) to downstream consumers (`hpo` / `xmc-study-controller`).
+Because Open Source Vizier is deployed as a bring-your-own (BYO) gRPC service (`vizier-service:7077`) without a custom Kubernetes operator or CRD, this blueprint omits `spec.wrapperRef`. Instead, `xmc-bridge` verifies readiness directly via active health probing (TCP against `parameters.endpoint` by default, or gRPC health checking when `parameters.healthCheckEndpoint` opts in) and publishes `status.access.envVars` (`ENDPOINT`, `HOST`, `PORT`), while `xmc-study-controller` reads `spec.parameters.endpoint` directly from `Component/vizier`.
 
 > [!NOTE]
 > **Bring your own Vizier.** XMC does not run Vizier: operators provide an Open Source Vizier gRPC endpoint and set `parameters.endpoint` to it. A dev/test-only fixture for KinD and dev environments lives in [`test/e2e/testdata/vizier`](../../../../../test/e2e/testdata/vizier/README.md).
@@ -44,7 +44,22 @@ All values under `spec.parameters` are rendered as strings in [`templates/compon
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `parameters.endpoint` | `string` | `"vizier-service.xmc.svc.cluster.local:7077"` | Internal Kubernetes DNS endpoint (`host:port`) of the Open Source Vizier gRPC server, probed via TCP by `xmc-bridge`. |
+| `parameters.endpoint` | `string` | `"vizier-service.xmc.svc.cluster.local:7077"` | Internal Kubernetes DNS endpoint (`host:port`) of the Open Source Vizier gRPC server. Published to consumers and, unless `healthCheckEndpoint` is set, probed via TCP by `xmc-bridge`. |
+| `parameters.healthCheckEndpoint` | `string` | `""` (not rendered) | Optional `xmc-bridge` probe target. Set `"grpc://<host>:<port>"` to call `grpc.health.v1.Health/Check` for the overall server (empty service name) instead of the TCP probe. Never published to consumers. |
+
+#### gRPC health probe (`grpc://`)
+
+A TCP probe only proves that the port accepts connections. With `healthCheckEndpoint: "grpc://vizier-service.xmc.svc.cluster.local:7077"`, `xmc-bridge` calls the standard gRPC health service instead:
+
+| Health/Check outcome | `vizier` readiness |
+| :--- | :--- |
+| `SERVING` | Ready, with the condition message `Static endpoint is reachable and healthy: gRPC health SERVING`. |
+| `UNIMPLEMENTED` (the server does not register `grpc.health.v1`) | Ready, with the condition message `Static endpoint is reachable and healthy: gRPC health service not implemented; server reachable (TCP-equivalent fallback)`. The server answered over HTTP/2, which proves at least what the TCP probe proves. (gRPC clients also report a plain HTTP/2 `404` as `UNIMPLEMENTED`, so this does not prove the listener is Vizier.) |
+| `NOT_SERVING`, `SERVICE_UNKNOWN`, any other gRPC error, or timeout | Not Ready (`Reconciling=True`) with the status in the message. |
+
+- Upstream Open Source Vizier (`DefaultVizierServer`, including the dev fixture) does not register the health service, so it reports `UNIMPLEMENTED`. To get a real `SERVING` / `NOT_SERVING` signal, register a `grpc.health.v1` servicer in your Vizier server. What `SERVING` means (for example, whether it covers the Vizier database) is up to that servicer.
+- The probe is plaintext (in-cluster). `grpcs://`, paths (named services), queries, fragments, and user info are rejected, and `vizier` stays not Ready with the parse error. To return to the TCP probe, leave `healthCheckEndpoint` empty or set it to `tcp://<host>:<port>`.
+- If you restrict ingress to Vizier with a NetworkPolicy, keep admitting `app: xmc-bridge` pods (for the bridge probe) and `xmc.google.com/vizier-client: "true"` pods (`xmc-study-controller`, which reads `spec.parameters.endpoint` from `Component/vizier`) on the Vizier port.
 
 ---
 

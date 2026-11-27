@@ -110,19 +110,51 @@ def render_template(show_only: str, values: dict[str, str], *, namespace: str | 
     return _render(values, "--show-only", show_only, *extra)
 
 
-def render_chart(values: dict[str, str]) -> str:
+def render_chart(
+    values: dict[str, str],
+    *,
+    chart_dir: str | None = None,
+    release_name: str = "xmc",
+) -> str:
     """Renders every enabled template and returns the concatenated manifest text.
 
     Suites asserting on one resource should use render_template. This is for the ones whose
     subject is the set of resources the chart produces rather than any single one of them.
+
+    Args:
+        values: Helm `--set` overrides keyed by dotted value path.
+        chart_dir: Optional chart directory (absolute path or repo-relative path containing
+            `Chart.yaml`). Defaults to `deploy/helm`.
+        release_name: Helm release name passed to `helm template`. Defaults to `"xmc"`.
     """
-    return _render(values)
+    return _render(values, chart_dir=chart_dir, release_name=release_name)
 
 
-def _render(values: dict[str, str], *args: str) -> str:
+def _resolve_chart_dir(chart_dir: str | None) -> str:
+    """Resolves a chart directory path: defaults to deploy/helm, resolves repo-relative paths."""
+    if not chart_dir:
+        return find_chart_dir()
+    if os.path.isabs(chart_dir):
+        return chart_dir
+    return os.path.dirname(find_repo_file(os.path.join(chart_dir, "Chart.yaml")))
+
+
+def _render(
+    values: dict[str, str],
+    *args: str,
+    chart_dir: str | None = None,
+    release_name: str = "xmc",
+) -> str:
     """Shells out to helm and returns what it rendered."""
     overrides = [arg for key, value in values.items() for arg in ("--set", f"{key}={value}")]
-    command = ["helm", "template", "xmc", find_chart_dir(), *args, *overrides]
+    command = [
+        "helm",
+        "template",
+        release_name,
+        _resolve_chart_dir(chart_dir),
+        *args,
+        *overrides,
+    ]
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as error:

@@ -22,9 +22,11 @@ go_library(
         "consumer.go",
         "handler.go",
         "payload.go",
+        "reconcile.go",
     ],
     importpath = "xmanager_cloud/cmd/study_controller/worker",
     deps = [
+        "//api/protos/experiment",
         "//api/protos/task_queue:task_go_proto",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
@@ -33,6 +35,8 @@ go_library(
         "//internal/validator",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promauto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
 )
@@ -43,9 +47,11 @@ go_test(
         "consumer_test.go",
         "handler_test.go",
         "payload_test.go",
+        "reconcile_test.go",
     ],
     embed = [":worker"],
     deps = [
+        "//api/protos/experiment",
         "//internal/kubernetes/common/constants",
         "//internal/logging",
         "//internal/redislock",
@@ -53,5 +59,7 @@ go_test(
         "@com_github_google_go_cmp//cmp",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_redis_go_redis_v9//:go-redis",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
     ],
 )

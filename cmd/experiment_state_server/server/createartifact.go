@@ -66,6 +66,18 @@ func (h *ArtifactHandler) validateAndPrepareArtifactCreation(ctx context.Context
 	return createArtifactContext{creator: creator, parentXID: parentXID}, artifact, nil
 }
 
+func (h *ArtifactHandler) hasDashboardObserver() bool {
+	if h == nil {
+		return false
+	}
+	for _, obs := range h.artifactObservers {
+		if _, ok := obs.(*dashboardObserver); ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *ArtifactHandler) notifyArtifactObservers(ctx context.Context, artifact *msgpb.Artifact) error {
 	for _, obs := range h.artifactObservers {
 		artifactCopy, ok := proto.Clone(artifact).(*msgpb.Artifact)
@@ -87,35 +99,47 @@ func (h *ArtifactHandler) CreateArtifact(ctx context.Context, req *msgpb.CreateA
 		return nil, err
 	}
 	ctx = logging.WithArtifactParent(ctx, req.GetParent())
+	return h.persistArtifact(ctx, idCtx, req.GetParent(), artifact)
+}
 
+func (h *ArtifactHandler) provisionArtifactXID(ctx context.Context, idCtx createArtifactContext, artifact *msgpb.Artifact) (int64, *xidmsgpb.XidEntry, error) {
 	logging.Debug(ctx, "Calling XID service to provision ID", "creator", idCtx.creator)
-	artifactXIDEntry, err := h.createXid(ctx, idCtx.creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(idCtx.parentXID))
+	entry, err := h.createXid(ctx, idCtx.creator, h.cfg.EndpointURL, artifact.Acls, validator.ConstructXIDName(idCtx.parentXID))
 	if err != nil {
 		logging.Error(ctx, "Failed to provision XID", "error", err)
-		return nil, fmt.Errorf("failed to provision XID: %w", err)
+		return 0, nil, fmt.Errorf("failed to provision XID: %w", err)
 	}
-	artifactXID, err := validator.ValidateXIDName(artifactXIDEntry.GetName())
+	id, err := validator.ValidateXIDName(entry.GetName())
 	if err != nil {
-		logging.Error(ctx, "Failed to validate XID name", "xid_name", artifactXIDEntry.GetName(), "error", err)
-		return nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", artifactXIDEntry.GetName(), grpcerr.ErrInternal, err)
+		logging.Error(ctx, "Failed to validate XID name", "xid_name", entry.GetName(), "error", err)
+		return 0, nil, fmt.Errorf("failed to validate XID name %s: %w (%v)", entry.GetName(), grpcerr.ErrInternal, err)
 	}
+	return id, entry, nil
+}
 
+// persistArtifact provisions an artifact XID under idCtx.parentXID on behalf of idCtx.creator,
+// stores the validated artifact under parent, and notifies the artifact observers. Callers
+// validate the artifact first: user requests through validateAndPrepareArtifactCreation, and
+// server-built artifacts by construction.
+func (h *ArtifactHandler) persistArtifact(ctx context.Context, idCtx createArtifactContext, parent string, artifact *msgpb.Artifact) (*msgpb.Artifact, error) {
+	artifactXID, artifactXIDEntry, err := h.provisionArtifactXID(ctx, idCtx, artifact)
+	if err != nil {
+		return nil, err
+	}
 	name := validator.ConstructArtifactName(artifactXID)
 	ctx = logging.WithArtifactName(ctx, name)
 	newArtifact := &msgpb.Artifact{
-		Name: name, Parent: req.GetParent(), Url: artifact.Url, Priority: artifact.Priority,
+		Name: name, Parent: parent, Url: artifact.Url, Priority: artifact.Priority,
 		Tags: artifact.Tags, Notes: artifact.Notes, LifecyclePhase: artifact.LifecyclePhase,
 		DataType: artifact.DataType, MimeType: artifact.MimeType, AdditionalInfo: artifact.AdditionalInfo, Payload: artifact.Payload,
 	}
-
 	logging.Debug(ctx, "Persisting artifact")
 	retArtifact, err := h.storage.CreateArtifact(ctx, newArtifact)
-	if err != nil {
+	if err != nil || retArtifact == nil {
 		logging.Error(ctx, "Failed to save artifact", "artifact_name", name, "error", err)
 		return nil, fmt.Errorf("failed to save artifact %s: %w (%v)", name, grpcerr.ErrInternal, err)
 	}
 	retArtifact.Acls = artifactXIDEntry.Acls
-
 	if err := h.notifyArtifactObservers(ctx, retArtifact); err != nil {
 		return nil, err
 	}
@@ -132,6 +156,10 @@ func (h *ArtifactHandler) validateChartArtifactPayload(ctx context.Context, arti
 		if chartArtifact.GetStatus() != msgpb.ChartArtifact_STATUS_UNSPECIFIED || chartArtifact.GetChart() != nil || chartArtifact.GetErrorMessage() != "" {
 			logging.Warn(ctx, "ChartArtifact client-supplied status, chart, or error_message values are not allowed")
 			return fmt.Errorf("ChartArtifact client-supplied status, chart, or error_message values are not allowed: %w", grpcerr.ErrInvalidArgument)
+		}
+		if !h.hasDashboardObserver() {
+			chartArtifact.Status, chartArtifact.ErrorMessage = msgpb.ChartArtifact_FAILED, "dashboard service is not configured"
+			return nil
 		}
 		chartArtifact.Status = msgpb.ChartArtifact_PROVISIONING
 	}

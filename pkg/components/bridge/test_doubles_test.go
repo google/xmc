@@ -16,6 +16,7 @@ package bridge
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,6 +109,16 @@ type mockProber struct {
 	probeErr    error
 	probeRes    *healthprobe.HealthProbeResult
 	hasProbeRes bool
+	// lastTarget records the target of the most recent Probe call; read it via LastTarget.
+	mu         sync.Mutex
+	lastTarget string
+}
+
+// LastTarget returns the target of the most recent Probe call.
+func (m *mockProber) LastTarget() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastTarget
 }
 
 func (m *mockProber) DetectStatus(ctx context.Context, ref statusdetector.WrapperRef) (*statusdetector.ResourceStatus, error) {
@@ -130,6 +141,9 @@ func (m *mockProber) Probe(ctx context.Context, target string, timeout time.Dura
 	if m == nil {
 		return &healthprobe.HealthProbeResult{Healthy: true}, nil
 	}
+	m.mu.Lock()
+	m.lastTarget = target
+	m.mu.Unlock()
 	if m.probeErr != nil {
 		return nil, m.probeErr
 	}

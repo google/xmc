@@ -95,7 +95,7 @@ type Handler struct {
 }
 
 // NewRedisHandler constructs a Handler sharing consumer's underlying *redis.Client pool.
-func NewRedisHandler(consumer *redisclient.ConsumerClient) (*Handler, error) {
+func NewRedisHandler(consumer *redisclient.ConsumerClient, reconcile ReconcileFunc) (*Handler, error) {
 	if consumer == nil {
 		return nil, errors.New("redis consumer client must not be nil")
 	}
@@ -107,7 +107,7 @@ func NewRedisHandler(consumer *redisclient.ConsumerClient) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerParams{Locker: redisLocker{locker: locker}})
+	return NewHandler(HandlerParams{Locker: redisLocker{locker: locker}, Reconcile: reconcile})
 }
 
 // NewHandler validates p and returns a Handler with defaults applied to zero-valued parameters.

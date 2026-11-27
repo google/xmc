@@ -20,10 +20,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	spb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
@@ -116,6 +118,57 @@ func TestListCharts(t *testing.T) {
 		}
 		if gotRole != xidapipb.XidAcls_READER {
 			t.Errorf("Expected role READER, got %v", gotRole)
+		}
+	})
+
+	t.Run("experiment parent lists its experiment-level charts after experiment READER check", func(t *testing.T) {
+		var gotParent, gotXidName, gotUser string
+		var xidCalls int
+		repo := &mockRepository{
+			listChartsFn: func(ctx context.Context, parent string, pageSize int32, pageToken, filter, orderBy string, staleness time.Duration) ([]*spb.Chart, string, error) {
+				gotParent = parent
+				return []*spb.Chart{{Name: "experiments/42/charts/study", Xid: 42}}, "", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				xidCalls++
+				gotXidName, gotUser = in.GetName(), in.GetUser()
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(in.GetRoleType() == xidapipb.XidAcls_READER)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		resp, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42"})
+		if err != nil {
+			t.Fatalf("ListCharts failed: %v", err)
+		}
+		if gotParent != "experiments/42" || gotXidName != "xids/42" || gotUser != "user@example.com" || xidCalls != 1 {
+			t.Errorf("got (parent=%q, xid=%q, user=%q, xidCalls=%d), want (experiments/42, xids/42, user@example.com, 1)", gotParent, gotXidName, gotUser, xidCalls)
+		}
+		want := &spb.ListChartsResponse{Charts: []*spb.Chart{{Name: "experiments/42/charts/study", Xid: 42}}}
+		if diff := cmp.Diff(want, resp, protocmp.Transform()); diff != "" {
+			t.Errorf("ListCharts response mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("experiment parent denied without experiment READER access", func(t *testing.T) {
+		repo := &mockRepository{
+			listChartsFn: func(context.Context, string, int32, string, string, string, time.Duration) ([]*spb.Chart, string, error) {
+				t.Fatal("ListCharts called on storage despite experiment READER denial")
+				return nil, "", nil
+			},
+		}
+		xidMock := &mockXidClient{
+			checkUserAuthorizationFn: func(ctx context.Context, in *xidapipb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidapipb.CheckUserAuthorizationResponse, error) {
+				return &xidapipb.CheckUserAuthorizationResponse{Authorized: proto.Bool(false)}, nil
+			},
+		}
+		s := NewServer(&Config{}, repo, &mockAuthorizer{}, xidMock, nil)
+
+		_, err := s.ListCharts(ctx, &spb.ListChartsRequest{Parent: "experiments/42"})
+		if status.Code(err) != codes.PermissionDenied {
+			t.Errorf("Expected code PermissionDenied, got %v", status.Code(err))
 		}
 	})
 
@@ -287,9 +340,10 @@ func TestListCharts(t *testing.T) {
 
 	t.Run("unsupported parent shapes return InvalidArgument", func(t *testing.T) {
 		for _, parent := range []string{
-			"experiments/123",             // experiment is not a chart collection parent
+			"experiments/0",               // zero xid
 			"experiments/123/workUnits",   // truncated work unit name
 			"experiments/abc/workUnits/1", // non-numeric xid
+			"experiments/123/charts/c",    // chart name, not a parent
 			"dashboards/1/charts/2",       // chart name, not a parent
 			"charts/1",
 		} {

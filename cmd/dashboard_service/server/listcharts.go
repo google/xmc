@@ -31,17 +31,20 @@ const (
 	maxChartPageSize int32 = 100
 )
 
-// chartParentKind identifies which of the two collection parents ListCharts was called with. The
-// two are authorized differently, so the handler resolves the shape explicitly instead of treating
-// "not a work unit" as "therefore a dashboard".
+// chartParentKind identifies which collection parent ListCharts was called with. Dashboards and
+// experiment-scoped parents are authorized differently, so the handler resolves the shape
+// explicitly instead of treating "not a work unit" as "therefore a dashboard".
 type chartParentKind int
 
 const (
 	dashboardParent chartParentKind = iota
-	workUnitParent
+	// experimentScopedParent is a work unit, or an experiment for its experiment-level charts. Both
+	// carry the xid whose ACL governs every chart listed under them.
+	experimentScopedParent
 )
 
-// ListCharts retrieves a paginated list of charts under a dashboard or work unit parent (AIP-132).
+// ListCharts retrieves a paginated list of charts under a dashboard, work unit, or experiment parent
+// (AIP-132).
 func (s *Server) ListCharts(ctx context.Context, req *dpb.ListChartsRequest) (*dpb.ListChartsResponse, error) {
 	user, _, err := s.auth.AuthenticateUserFromContext(ctx)
 	if err != nil {
@@ -75,25 +78,26 @@ func (s *Server) ListCharts(ctx context.Context, req *dpb.ListChartsRequest) (*d
 }
 
 // resolveChartParent classifies the parent and enforces experiment READER access up front when it
-// names a work unit, matching the per-chart check in GetChart. A dashboard parent carries no single
-// xid, so its charts are authorized individually after the read instead.
+// names a work unit or an experiment, matching the per-chart check in GetChart. A dashboard parent
+// carries no single xid, so its charts are authorized individually after the read instead.
 func (s *Server) resolveChartParent(ctx context.Context, user, parent string) (chartParentKind, error) {
-	if _, err := validator.ValidateDashboardName(parent); err == nil {
-		return dashboardParent, nil
-	}
-	xid, _, err := validator.ValidateWorkUnitName(parent)
+	parsed, err := validator.ParseChartParent(parent)
 	if err != nil {
 		return dashboardParent, status.Errorf(codes.InvalidArgument, "unsupported chart parent %q", parent)
 	}
-	return workUnitParent, s.authorizeExperimentRead(ctx, user, xid)
+	if parsed.XID > 0 {
+		return experimentScopedParent, s.authorizeExperimentRead(ctx, user, parsed.XID)
+	}
+	return dashboardParent, nil
 }
 
 // authorizeListedCharts prunes charts the caller cannot read and guarantees a non-nil slice. A work
-// unit parent was already authorized as a whole, so only dashboard parents need the per-chart pass.
+// unit or experiment parent was already authorized as a whole, so only dashboard parents need the
+// per-chart pass.
 // Pruning happens after pagination, so a page may hold fewer charts than page_size while
 // next_page_token is still set; AIP-158 requires clients to follow the token regardless.
 func (s *Server) authorizeListedCharts(ctx context.Context, user string, kind chartParentKind, charts []*dpb.Chart) ([]*dpb.Chart, error) {
-	if kind == workUnitParent {
+	if kind == experimentScopedParent {
 		if charts == nil {
 			return []*dpb.Chart{}, nil
 		}

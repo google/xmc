@@ -132,9 +132,27 @@ func PrepareDashboardUpdate(existing, updated *dpb.Dashboard, updateMask *fieldm
 }
 
 // MergeCharts merges an updated Chart proto message into a current Chart proto message based on an update mask.
-// Note: xid and wid are immutable chart ownership fields and cannot be updated.
+// Note: xid and wid are immutable chart ownership fields and cannot be updated. When updated.Name
+// carries an experiment or work-unit scope, current must still belong to that exact (xid, wid).
 func MergeCharts(current, updated *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+	if err := verifyChartScope(current, updated); err != nil {
+		return nil, err
+	}
 	return mergeProtoWithMask("chart", current, updated, updateMask, defaultChartMaskPaths, applyChartMaskPath)
+}
+
+func verifyChartScope(current, updated *dpb.Chart) error {
+	if current == nil || updated == nil || updated.GetName() == "" {
+		return nil
+	}
+	expXid, wuWid, _, err := validator.ValidateChartName(updated.GetName())
+	if err != nil {
+		return fmt.Errorf("invalid chart name %q: %w", updated.GetName(), err)
+	}
+	if expXid > 0 && (current.GetXid() != expXid || current.GetWid() != wuWid) {
+		return fmt.Errorf("chart %q does not match expected scope %q: %w", current.GetName(), updated.GetName(), grpcerr.ErrNotFound)
+	}
+	return nil
 }
 
 func applyChartMaskPath(merged, updated *dpb.Chart, path string) error {
@@ -144,6 +162,9 @@ func applyChartMaskPath(merged, updated *dpb.Chart, path string) error {
 	case "description":
 		merged.Description = updated.GetDescription()
 	case "plots":
+		if err := validator.ValidateChartPlots(updated.GetPlots(), validator.IsExperimentLevelChart(merged)); err != nil {
+			return err
+		}
 		merged.Plots = updated.GetPlots()
 	case "plot_layout", "plotLayout":
 		merged.PlotLayout = updated.GetPlotLayout()
@@ -237,27 +258,46 @@ func CombineFilters(parentFilter, filter string) string {
 }
 
 // BuildChartParentFilter translates a chart collection parent into a filter expression.
-// The only two parents ListCharts serves are "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
+// ListCharts serves three parents: "dashboards/{dashboard_id}", "experiments/{xid}/workUnits/{wid}"
+// and "experiments/{xid}". The chart schemas expose a NULL Charts.Wid as wid 0, which no work unit
+// has, so "wid = 0" selects the experiment-level charts.
 func BuildChartParentFilter(parent string) (string, error) {
 	if parent == "" {
 		return "", nil
 	}
-	if strings.HasPrefix(parent, "dashboards/") || (!strings.HasPrefix(parent, "experiments/") && !strings.Contains(parent, "/")) {
-		withPrefix := "dashboards/" + strings.TrimPrefix(parent, "dashboards/")
-		dashID, err := validator.ValidateDashboardName(withPrefix)
-		if err != nil {
+	if !strings.Contains(parent, "/") {
+		parent = "dashboards/" + parent
+	}
+	parsed, err := validator.ParseChartParent(parent)
+	if err != nil {
+		if strings.HasPrefix(parent, "dashboards/") {
 			return "", fmt.Errorf("invalid dashboard parent name: %w", err)
 		}
-		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", dashID, withPrefix), nil
-	}
-	if strings.HasPrefix(parent, "experiments/") {
-		xid, wid, err := validator.ValidateWorkUnitName(parent)
-		if err != nil {
-			return "", fmt.Errorf("failed to validate work unit parent name: %w", err)
+		if strings.HasPrefix(parent, "experiments/") {
+			return "", fmt.Errorf("failed to validate experiment parent name: %w", err)
 		}
-		return fmt.Sprintf("xid = %d AND wid = %d", xid, wid), nil
+		return "", fmt.Errorf("unsupported parent format %q: %w", parent, err)
 	}
-	return "", fmt.Errorf("unsupported parent format: %q", parent)
+	if parsed.DashboardID != "" {
+		return fmt.Sprintf("dashboard_id = %q OR dashboard_id = %q", parsed.DashboardID, parent), nil
+	}
+	return fmt.Sprintf("xid = %d AND wid = %d", parsed.XID, parsed.WID), nil
+}
+
+// ChartName returns the resource name of a stored chart: the work unit name for a chart with a wid,
+// the experiment-level name for a chart with an experiment but wid 0, and the root name otherwise.
+func ChartName(chartID string, xid, wid int64) string {
+	return validator.ConstructCanonicalChartName(chartID, xid, wid)
+}
+
+// ResolveChartWid returns the wid to store for a chart: its wid field when set, otherwise the wid
+// parsed from its name, and 0 for an experiment-level chart, whose name has no wid. Backends store
+// wid 0 as NULL.
+func ResolveChartWid(chart *dpb.Chart, nameWid int64) int64 {
+	if chart.GetWid() != 0 {
+		return chart.GetWid()
+	}
+	return nameWid
 }
 
 // BuildListChartsFilter combines a chart collection parent filter with an optional user filter.
@@ -280,6 +320,7 @@ func ExtractChartCursor(chart *dpb.Chart) (map[string]any, error) {
 	}
 	return map[string]any{
 		"chart_id": chartID,
+		"wid":      chart.GetWid(),
 	}, nil
 }
 

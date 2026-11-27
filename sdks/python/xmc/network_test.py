@@ -18,6 +18,7 @@ import threading
 import unittest
 from unittest import mock
 
+import xmc
 from xmc.network import HTTPClient, SendResult
 
 
@@ -80,6 +81,7 @@ class TestHTTPClient(unittest.TestCase):
         headers = kwargs.get("headers", {})
         self.assertEqual(headers.get("Connection"), "keep-alive")
         self.assertEqual(headers.get("Content-Type"), "application/json")
+        self.assertEqual(headers.get("User-Agent"), f"xmc-python-network/{xmc.__version__}")
 
     @mock.patch("http.client.HTTPSConnection")
     def test_https_connection_created(self, mock_https_conn_cls: mock.MagicMock) -> None:

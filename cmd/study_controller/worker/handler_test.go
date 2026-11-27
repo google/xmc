@@ -144,7 +144,7 @@ func TestNewHandler_ValidationAndRedisWiring(t *testing.T) {
 	_ = typedNilConsumer.Close(context.Background())
 	typedNilConsumer.Client = (*redis.Client)(nil)
 	for _, bad := range []*redisclient.ConsumerClient{nil, &nonLockConsumer, typedNilConsumer} {
-		if _, err := NewRedisHandler(bad); err == nil {
+		if _, err := NewRedisHandler(bad, nil); err == nil {
 			t.Fatalf("NewRedisHandler(%+v) error = nil, want error", bad)
 		}
 	}
@@ -153,7 +153,7 @@ func TestNewHandler_ValidationAndRedisWiring(t *testing.T) {
 	_ = okConsumer.Close(context.Background())
 	okClient := &stubLockClient{}
 	okConsumer.Client = okClient
-	h, err := NewRedisHandler(okConsumer)
+	h, err := NewRedisHandler(okConsumer, nil)
 	if err != nil || !h.HandleTask(context.Background(), "w", `{"experiment":"experiments/55"}`).WasRunSuccessful {
 		t.Fatalf("NewRedisHandler(ok) err = %v or HandleTask failed", err)
 	}
@@ -161,7 +161,7 @@ func TestNewHandler_ValidationAndRedisWiring(t *testing.T) {
 		t.Fatalf("lease TTL = %v, want %v (> reconcileTimeout %v)", okClient.gotTTL, defaultLeaseTTL, h.reconcileTimeout)
 	}
 	okConsumer.Client = &stubLockClient{setErr: redis.Nil}
-	hContended, err := NewRedisHandler(okConsumer)
+	hContended, err := NewRedisHandler(okConsumer, nil)
 	if err != nil || !hContended.HandleTask(context.Background(), "w", `{"experiment":"experiments/55"}`).WasRunSuccessful {
 		t.Fatalf("NewRedisHandler(contended) err = %v or HandleTask failed", err)
 	}

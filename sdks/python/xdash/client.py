@@ -372,7 +372,7 @@ class DashboardClient:
         chart: messages_pb2.Chart,
         chart_id: str | None = None,
     ) -> messages_pb2.Chart:
-        """Creates a new chart attached to an experiment work unit parent."""
+        """Creates a chart under `experiments/{xid}/workUnits/{wid}` or `experiments/{xid}`."""
         if not parent or not parent.strip():
             raise ValueError("parent resource name is required")
         if not chart:

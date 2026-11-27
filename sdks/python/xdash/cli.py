@@ -113,7 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     get_parser.add_argument(
         "name",
-        help="Resource name (e.g. dashboards/vcc_comparison or experiments/234911122/charts/baseline)",
+        help="Resource name (e.g. charts/baseline or dashboards/vcc_comparison)",
     )
 
     # get-data subcommand
@@ -243,10 +243,10 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
     name = args.name.strip()
     if not name:
         raise ValueError("Resource name cannot be blank")
-    if not name.startswith(("dashboards/", "experiments/")):
+    if not name.startswith(("charts/", "dashboards/", "experiments/")):
         raise ValueError(
             f"Unrecognised resource name '{name}'. Expected it to start with "
-            "'dashboards/' or 'experiments/'."
+            "'charts/', 'dashboards/', or 'experiments/'."
         )
 
     if name.startswith("dashboards/") and "/charts/" not in name:
@@ -288,6 +288,11 @@ def _handle_get_data(client: DashboardClient, args: argparse.Namespace) -> int:
             sys.stdout.write(f"Scatter series = {len(pdata.scatter_series.points)} points\n")
         elif content == "bar_data":
             sys.stdout.write(f"Bar buckets = {len(pdata.bar_data.buckets)}\n")
+        elif content == "parallel_coordinates_data":
+            pc = pdata.parallel_coordinates_data
+            sys.stdout.write(
+                f"Parallel coordinates = {len(pc.axes)} axes, {len(pc.trajectories)} trajectories\n"
+            )
         else:
             sys.stdout.write("Empty content\n")
     return 0

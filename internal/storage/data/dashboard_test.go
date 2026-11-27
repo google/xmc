@@ -16,6 +16,7 @@ package data
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -275,7 +276,7 @@ func TestMergeCharts(t *testing.T) {
 		updated    *dpb.Chart
 		updateMask *fieldmaskpb.FieldMask
 		want       *dpb.Chart
-		wantErr    bool
+		wantErr    error
 	}{
 		{
 			name:       "nil mask updates all mutable fields while preserving xid and wid",
@@ -306,31 +307,96 @@ func TestMergeCharts(t *testing.T) {
 			current:    nil,
 			updated:    updated,
 			updateMask: nil,
-			wantErr:    true,
+			wantErr:    grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:       "nil updated returns error",
 			current:    current,
 			updated:    nil,
 			updateMask: nil,
-			wantErr:    true,
+			wantErr:    grpcerr.ErrInvalidArgument,
 		},
 		{
 			name:       "unrecognized field returns error",
 			current:    current,
 			updated:    updated,
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"xid"}},
-			wantErr:    true,
+			wantErr:    grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:    "matching scoped updated.Name succeeds",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/100/workUnits/1/charts/c1" }),
+			want: prototest.Modify(current, func(c *dpb.Chart) {
+				c.Title = "New Chart"
+				c.Description = "New Desc"
+				c.Plots = []*dpb.PlotSpec{{PlotId: "p2", Title: "Plot 2"}}
+				c.PlotLayout = &dpb.LayoutSpec{Columns: 3}
+			}),
+		},
+		{
+			name:    "matching experiment-level updated.Name with PARALLEL_COORDINATES succeeds",
+			current: &dpb.Chart{Name: "experiments/100/charts/c1", Title: "Study", Xid: 100},
+			updated: &dpb.Chart{
+				Name:  "experiments/100/charts/c1",
+				Plots: []*dpb.PlotSpec{{PlotId: "pc", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			want: &dpb.Chart{
+				Name:  "experiments/100/charts/c1",
+				Title: "Study",
+				Xid:   100,
+				Plots: []*dpb.PlotSpec{{PlotId: "pc", Type: dpb.PlotType_PARALLEL_COORDINATES}},
+			},
+		},
+		{
+			name:    "malformed updated.Name returns ErrInvalidArgument",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "invalid/chart/name" }),
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:    "mismatched scoped updated.Name Xid returns ErrNotFound",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/200/workUnits/1/charts/c1" }),
+			wantErr: grpcerr.ErrNotFound,
+		},
+		{
+			name:    "mismatched scoped updated.Name Wid returns ErrNotFound",
+			current: current,
+			updated: prototest.Modify(updated, func(c *dpb.Chart) { c.Name = "experiments/100/charts/c1" }),
+			wantErr: grpcerr.ErrNotFound,
+		},
+		{
+			name:       "work-unit chart rejects PARALLEL_COORDINATES in MergeCharts",
+			current:    current,
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "pc", Type: dpb.PlotType_PARALLEL_COORDINATES}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:       "experiment-level chart rejects SCATTER in MergeCharts",
+			current:    &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "loss", Type: dpb.PlotType_SCATTER}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    grpcerr.ErrInvalidArgument,
+		},
+		{
+			name:       "duplicate plot_id rejected in MergeCharts",
+			current:    current,
+			updated:    &dpb.Chart{Plots: []*dpb.PlotSpec{{PlotId: "dup"}, {PlotId: "dup"}}},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			wantErr:    grpcerr.ErrInvalidArgument,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := MergeCharts(tc.current, tc.updated, tc.updateMask)
-			if (err != nil) != tc.wantErr {
+			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("MergeCharts() error = %v, wantErr %v", err, tc.wantErr)
 			}
-			if tc.wantErr {
+			if tc.wantErr != nil {
 				return
 			}
 			if diff := cmp.Diff(tc.want, got, protocmp.Transform()); diff != "" {
@@ -406,6 +472,46 @@ func TestUnmarshalPlotSpec(t *testing.T) {
 	}
 }
 
+func TestChartName(t *testing.T) {
+	tests := []struct {
+		name string
+		xid  int64
+		wid  int64
+		want string
+	}{
+		{name: "work unit chart", xid: 100, wid: 2, want: "experiments/100/workUnits/2/charts/c1"},
+		{name: "experiment-level chart", xid: 100, want: "experiments/100/charts/c1"},
+		{name: "chart without experiment", wid: 2, want: "charts/c1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ChartName("c1", tc.xid, tc.wid); got != tc.want {
+				t.Errorf("ChartName(%q, %d, %d) = %q, want %q", "c1", tc.xid, tc.wid, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveChartWid(t *testing.T) {
+	tests := []struct {
+		name    string
+		chart   *dpb.Chart
+		nameWid int64
+		want    int64
+	}{
+		{name: "chart wid wins over name wid", chart: &dpb.Chart{Wid: 3}, nameWid: 2, want: 3},
+		{name: "name wid fills an unset chart wid", chart: &dpb.Chart{}, nameWid: 2, want: 2},
+		{name: "experiment-level chart stays 0", chart: &dpb.Chart{}, want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveChartWid(tc.chart, tc.nameWid); got != tc.want {
+				t.Errorf("ResolveChartWid() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestBuildListChartsFilter(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -445,8 +551,19 @@ func TestBuildListChartsFilter(t *testing.T) {
 			want:   "xid = 100",
 		},
 		{
-			name:    "experiment-only parent rejected",
-			parent:  "experiments/100",
+			name:   "experiment parent selects its experiment-level charts",
+			parent: "experiments/100",
+			filter: `title = "Study"`,
+			want:   `(xid = 100 AND wid = 0) AND (title = "Study")`,
+		},
+		{
+			name:    "experiment parent with zero xid rejected",
+			parent:  "experiments/0",
+			wantErr: true,
+		},
+		{
+			name:    "experiment parent with trailing slash rejected",
+			parent:  "experiments/100/",
 			wantErr: true,
 		},
 		{
@@ -466,6 +583,9 @@ func TestBuildListChartsFilter(t *testing.T) {
 			got, err := BuildListChartsFilter(tc.parent, tc.filter)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("BuildListChartsFilter(%q, %q) error = %v, wantErr %v", tc.parent, tc.filter, err, tc.wantErr)
+			}
+			if tc.parent == "experiments/0" && !strings.Contains(err.Error(), "experiment parent name") {
+				t.Errorf("BuildListChartsFilter(%q) error = %q, want experiment parent context", tc.parent, err)
 			}
 			if !tc.wantErr && got != tc.want {
 				t.Errorf("BuildListChartsFilter(%q, %q) = %q, want %q", tc.parent, tc.filter, got, tc.want)
@@ -492,11 +612,14 @@ func TestExtractChartCursor(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name:  "valid chart returns chart_id cursor",
-			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1"},
-			want: map[string]any{
-				"chart_id": "c1",
-			},
+			name:  "work unit chart returns chart_id and wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c1", Wid: 1},
+			want:  map[string]any{"chart_id": "c1", "wid": int64(1)},
+		},
+		{
+			name:  "experiment-level chart returns zero wid cursor",
+			chart: &dpb.Chart{Name: "experiments/100/charts/c1", Xid: 100},
+			want:  map[string]any{"chart_id": "c1", "wid": int64(0)},
 		},
 	}
 

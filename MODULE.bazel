@@ -83,6 +83,44 @@ http_file(
     urls = ["https://github.com/kubernetes-sigs/kueue/releases/download/v0.18.2/manifests.yaml"],
 )
 
+_OSS_VIZIER_BUILD_FILE = """load("@rules_proto//proto:defs.bzl", "proto_library")
+
+exports_files(["LICENSE"])
+
+proto_library(
+    name = "vizier_proto",
+    srcs = [
+        "vizier/_src/service/key_value.proto",
+        "vizier/_src/service/study.proto",
+        "vizier/_src/service/vizier_service.proto",
+    ],
+    strip_import_prefix = "/vizier/_src/service",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_google_googleapis//google/api:annotations_proto",
+        "@com_google_googleapis//google/api:client_proto",
+        "@com_google_googleapis//google/api:field_behavior_proto",
+        "@com_google_googleapis//google/api:resource_proto",
+        "@com_google_googleapis//google/longrunning:operations_proto",
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:empty_proto",
+        "@com_google_protobuf//:struct_proto",
+        "@com_google_protobuf//:timestamp_proto",
+        "@com_google_protobuf//:wrappers_proto",
+    ],
+)
+"""
+
+# OSS Vizier v0.1.24 service protos (keep in lockstep with test/e2e/testdata/vizier/requirements.txt).
+http_archive(
+    name = "oss_vizier",
+    build_file_content = _OSS_VIZIER_BUILD_FILE,
+    sha256 = "d6de357a021152260507295207dc0296c900a47729f5619cb763fc3992330c1a",
+    strip_prefix = "vizier-7ce0ae865a7d47dc9549757d32747c0df6746b81",
+    urls = ["https://github.com/google/vizier/archive/7ce0ae865a7d47dc9549757d32747c0df6746b81.tar.gz"],
+)
+
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
 go_deps.module(

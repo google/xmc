@@ -39,5 +39,11 @@ deploy/local/*-local.yaml
 /.venv*/
 *.egg-info/
 
+# xmc-metrics: setuptools build tree, and the metrics proto modules that editable
+# installs (pip install -e sdks/python/xmc) generate in place
+/sdks/python/xmc/build/
+/sdks/python/xmc/_protos/*_pb2.py
+/sdks/python/xmc/_protos/*_pb2.pyi
+
 # PR review checklist artifacts
 pr_review_checklist.md
