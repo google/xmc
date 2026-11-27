@@ -26,10 +26,14 @@ go_library(
     importpath = "xmanager_cloud/cmd/study_controller",
     deps = [
         "//cmd/study_controller/config",
+        "//cmd/study_controller/essclient",
         "//cmd/study_controller/worker",
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
+        "//pkg/components/crreader",
+        "//pkg/study/vizier",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -57,5 +61,9 @@ go_test(
         "//cmd/study_controller/worker",
         "//internal/logging",
         "//internal/task_queue_redis/redisclient",
+        "//pkg/components/crreader",
+        "//pkg/components/crreader/crreadertest",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

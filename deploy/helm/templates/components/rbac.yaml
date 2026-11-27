@@ -90,7 +90,7 @@ rules:
   # trivy:ignore:KSV-0050
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
-    resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding"]
+    resourceNames: ["ingestion-gateway-components-reader", "ingestion-gateway-components-reader-binding", "xmc-study-controller-components-reader", "xmc-study-controller-components-reader-binding"]
     verbs: ["get", "update", "patch", "delete"]
   # ...and their NetworkPolicy, so it lives and dies with the component's workload.
   # trivy:ignore:KSV-0056

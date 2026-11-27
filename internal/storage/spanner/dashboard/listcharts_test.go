@@ -16,11 +16,14 @@ package dashboard
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
+	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
 func TestListCharts_All(t *testing.T) {
@@ -165,10 +168,10 @@ func TestListCharts_ParentDashboard_Empty(t *testing.T) {
 	}
 }
 
-// TestListCharts_ParentExperimentRejected pins that an experiment name without a work unit is not a
-// chart collection parent. Charts are keyed by xid and wid, and ListCharts serves only
-// "dashboards/{dashboard_id}" and "experiments/{xid}/workUnits/{wid}".
-func TestListCharts_ParentExperimentRejected(t *testing.T) {
+// TestListCharts_ParentExperimentExcludesWorkUnitCharts pins that an experiment parent lists only the
+// experiment-level charts (NULL Wid), never the charts of the experiment's work units, and that a
+// malformed experiment parent is rejected.
+func TestListCharts_ParentExperimentExcludesWorkUnitCharts(t *testing.T) {
 	ctx := context.Background()
 	repo := setupDashboardRepository(ctx, t)
 
@@ -178,11 +181,11 @@ func TestListCharts_ParentExperimentRejected(t *testing.T) {
 	}
 
 	charts, token, err := repo.ListCharts(ctx, "experiments/100", 10, "", "", "", time.Duration(0))
-	if err == nil {
-		t.Fatalf("ListCharts with experiment-only parent succeeded, want error: got %d charts, token %q", len(charts), token)
+	if err != nil || len(charts) != 0 || token != "" {
+		t.Fatalf("ListCharts experiment parent = (%d charts, token %q, %v), want no charts", len(charts), token, err)
 	}
-	if !strings.Contains(err.Error(), "work unit parent name") {
-		t.Errorf("ListCharts experiment-only parent error = %v, want it to mention the work unit parent", err)
+	if _, _, err := repo.ListCharts(ctx, "experiments/0", 10, "", "", "", time.Duration(0)); !errors.Is(err, grpcerr.ErrInvalidArgument) || !strings.Contains(err.Error(), "experiment parent name") {
+		t.Errorf("ListCharts zero xid experiment parent error = %v, want ErrInvalidArgument with experiment parent context", err)
 	}
 }
 
@@ -420,4 +423,12 @@ func TestListCharts_ParentDashboard_Pagination(t *testing.T) {
 	if token2 != "" {
 		t.Errorf("ListCharts page 2 token should be empty, got %q", token2)
 	}
+}
+
+func TestListCharts_WidNullOrderAndPagination(t *testing.T) {
+	storagetest.VerifyListChartsWidNullOrderAndPagination(context.Background(), t, setupDashboardRepository(context.Background(), t))
+}
+
+func TestListCharts_ParentExperiment(t *testing.T) {
+	storagetest.VerifyListChartsParentExperiment(context.Background(), t, setupDashboardRepository(context.Background(), t))
 }

@@ -232,7 +232,7 @@ func (h *WorkUnitHandler) addCreateOperation(ctx context.Context, xid int64, wu 
 // per-work-unit operation stops cannot use up the cleanup budget before it. It returns the names of
 // the failed work units.
 func (h *WorkUnitHandler) compensateFailedWorkUnits(ctx context.Context, xid int64, failed []failedWorkUnit) []string {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), batchActuationCleanupTimeout)
+	cleanupCtx, cancel := boundedCompensationContext(ctx, batchActuationCleanupTimeout)
 	defer cancel()
 	names := make([]string, len(failed))
 	var updates []*storage.WorkUnitExecutionUpdate

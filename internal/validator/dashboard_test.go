@@ -22,6 +22,7 @@ import (
 
 	spb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/prototest"
 )
 
 func TestValidateChartID(t *testing.T) {
@@ -344,6 +345,30 @@ func TestValidateCreateDashboardRequest(t *testing.T) {
 			req: &spb.CreateDashboardRequest{
 				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
 				Charts:    []*spb.Chart{{Title: "Baseline", Xid: -1, Wid: 1}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_parallel_coordinates",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Study", Xid: 4321, Wid: 1, Plots: parallelCoordinatesPlots()}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_empty_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "  ", Type: spb.PlotType_SCATTER}}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "invalid_request_inline_chart_duplicate_plot_id",
+			req: &spb.CreateDashboardRequest{
+				Dashboard: &spb.Dashboard{Title: "Valid Dashboard"},
+				Charts:    []*spb.Chart{{Title: "Loss", Xid: 4321, Wid: 1, Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}}},
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -759,10 +784,17 @@ func TestValidateGetChartDataRequest(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "invalid_request_experiment_chart_without_wid",
+			name: "valid_request_experiment_level_chart",
 			req: &spb.GetChartDataRequest{
 				Name:             "experiments/1001/charts/chart-1",
 				ChartWidthPixels: 800,
+			},
+			wantErr: nil,
+		},
+		{
+			name: "invalid_request_experiment_chart_with_zero_xid",
+			req: &spb.GetChartDataRequest{
+				Name: "experiments/0/charts/chart-1",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -965,6 +997,10 @@ func TestValidateCreateChartParent(t *testing.T) {
 			wantWid: 2,
 			wantErr: nil,
 		},
+		{name: "valid_parent_experiment", req: &spb.CreateChartRequest{Parent: "experiments/100"}, wantXid: 100},
+		{name: "invalid_parent_experiment_zero_xid", req: &spb.CreateChartRequest{Parent: "experiments/0"}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "invalid_parent_experiment_trailing_slash", req: &spb.CreateChartRequest{Parent: "experiments/100/"}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "invalid_parent_experiment_chart_name", req: &spb.CreateChartRequest{Parent: "experiments/100/charts/c1"}, wantErr: grpcerr.ErrInvalidArgument},
 		{
 			name: "invalid_parent_zero_wid",
 			req: &spb.CreateChartRequest{
@@ -1024,6 +1060,8 @@ func TestValidateCreateChartParent(t *testing.T) {
 }
 
 func TestValidateCreateChartRequest(t *testing.T) {
+	baseWuReq := &spb.CreateChartRequest{Parent: "experiments/1/workUnits/2", Chart: &spb.Chart{Title: "My Chart", Xid: 1, Wid: 2}}
+	baseExpReq := &spb.CreateChartRequest{Parent: "experiments/1", ChartId: "hpo-parallel-coord", Chart: &spb.Chart{Title: "Study", Xid: 1, Plots: parallelCoordinatesPlots()}}
 	tests := []struct {
 		name    string
 		req     *spb.CreateChartRequest
@@ -1132,6 +1170,23 @@ func TestValidateCreateChartRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{name: "valid_experiment_level_parallel_coordinates", req: prototest.Modify(baseExpReq, nil)},
+		{name: "valid_experiment_level_without_plots", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.ChartId, r.Chart.Plots = "", nil })},
+		{name: "experiment_level_with_wid", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.Chart.Wid = 3 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_mismatched_xid", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) { r.Chart.Xid = 2 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment_level_with_scatter_plot", req: prototest.Modify(baseExpReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: "loss", Type: spb.PlotType_SCATTER}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_with_parallel_coordinates_plot", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = parallelCoordinatesPlots() }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work_unit_level_without_wid", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Wid = 0 }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = []*spb.PlotSpec{{Type: spb.PlotType_SCATTER}} }), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: " \t ", Type: spb.PlotType_SCATTER}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate_plot_id", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) {
+			r.Chart.Plots = []*spb.PlotSpec{{PlotId: "p1", Type: spb.PlotType_SCATTER}, {PlotId: "p1", Type: spb.PlotType_BAR}}
+		}), wantErr: grpcerr.ErrInvalidArgument},
+		{name: "nil_plot_entry", req: prototest.Modify(baseWuReq, func(r *spb.CreateChartRequest) { r.Chart.Plots = []*spb.PlotSpec{nil} }), wantErr: grpcerr.ErrInvalidArgument},
 	}
 
 	for _, tc := range tests {
@@ -1141,6 +1196,27 @@ func TestValidateCreateChartRequest(t *testing.T) {
 				t.Errorf("ValidateCreateChartRequest() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestParseChartParent(t *testing.T) {
+	tests := []struct {
+		parent  string
+		want    ParsedChartParent
+		wantErr error
+	}{
+		{parent: "dashboards/dash-1", want: ParsedChartParent{DashboardID: "dash-1"}},
+		{parent: "experiments/100", want: ParsedChartParent{XID: 100}},
+		{parent: "experiments/100/workUnits/2", want: ParsedChartParent{XID: 100, WID: 2}},
+		{parent: "", wantErr: grpcerr.ErrInvalidArgument},
+		{parent: "experiments/0", wantErr: grpcerr.ErrInvalidArgument},
+		{parent: "experiments/100/workUnits/0", wantErr: grpcerr.ErrInvalidArgument},
+	}
+	for _, tc := range tests {
+		got, err := ParseChartParent(tc.parent)
+		if !errors.Is(err, tc.wantErr) || got != tc.want {
+			t.Errorf("ParseChartParent(%q) = (%+v, %v), want (%+v, %v)", tc.parent, got, err, tc.want, tc.wantErr)
+		}
 	}
 }
 
@@ -1186,9 +1262,23 @@ func TestValidateListChartsRequest(t *testing.T) {
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
 		{
-			name: "experiment_parent_without_work_unit",
+			name: "valid_experiment_parent",
 			req: &spb.ListChartsRequest{
 				Parent: "experiments/42",
+			},
+			wantErr: nil,
+		},
+		{
+			name: "experiment_parent_with_zero_xid",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/0",
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "experiment_chart_name_is_not_a_parent",
+			req: &spb.ListChartsRequest{
+				Parent: "experiments/42/charts/chart-1",
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
@@ -1398,6 +1488,36 @@ func TestValidateUpdateChartRequest(t *testing.T) {
 			},
 			wantErr: grpcerr.ErrInvalidArgument,
 		},
+		{
+			name: "full_update_empty_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: " "}}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "full_update_nil_plot",
+			req: &spb.UpdateChartRequest{
+				Chart: &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{nil}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_plots_duplicate_plot_id",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"plots"}},
+			},
+			wantErr: grpcerr.ErrInvalidArgument,
+		},
+		{
+			name: "masked_title_ignores_invalid_plots",
+			req: &spb.UpdateChartRequest{
+				Chart:      &spb.Chart{Name: "charts/chart-1", Title: "Title", Plots: []*spb.PlotSpec{{PlotId: ""}}},
+				UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"title"}},
+			},
+			wantErr: nil,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1484,6 +1604,76 @@ func TestValidateDeleteChartRequest(t *testing.T) {
 			err := ValidateDeleteChartRequest(tc.req)
 			if !errors.Is(err, tc.wantErr) {
 				t.Errorf("ValidateDeleteChartRequest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func parallelCoordinatesPlots() []*spb.PlotSpec {
+	return []*spb.PlotSpec{{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}}
+}
+
+func TestValidateChartPlotIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		plots   []*spb.PlotSpec
+		wantErr error
+	}{
+		{name: "empty slice"},
+		{name: "unique non-whitespace IDs", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p2"}}},
+		{name: "nil plot element", plots: []*spb.PlotSpec{nil}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "empty plot_id", plots: []*spb.PlotSpec{{PlotId: ""}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "whitespace plot_id", plots: []*spb.PlotSpec{{PlotId: " \t "}}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "duplicate plot_id", plots: []*spb.PlotSpec{{PlotId: "p1"}, {PlotId: "p1"}}, wantErr: grpcerr.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateChartPlotIDs(tc.plots); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotIDs() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateChartPlotsAndLevelHelpers(t *testing.T) {
+	if !IsExperimentLevelChart(&spb.Chart{Xid: 1}) {
+		t.Error("IsExperimentLevelChart(xid=1, wid=0) = false, want true")
+	}
+	for _, c := range []*spb.Chart{nil, {Xid: 0}, {Xid: 1, Wid: 2}} {
+		if IsExperimentLevelChart(c) {
+			t.Errorf("IsExperimentLevelChart(%v) = true, want false", c)
+		}
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), true); err != nil {
+		t.Errorf("ValidateChartPlots(parallel, true) unexpected error: %v", err)
+	}
+	if err := ValidateChartPlots([]*spb.PlotSpec{{PlotId: " ", Type: spb.PlotType_SCATTER}}, false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(whitespace) error = %v, want ErrInvalidArgument", err)
+	}
+	if err := ValidateChartPlots(parallelCoordinatesPlots(), false); !errors.Is(err, grpcerr.ErrInvalidArgument) {
+		t.Errorf("ValidateChartPlots(parallel, false) error = %v, want ErrInvalidArgument", err)
+	}
+}
+
+func TestValidateChartPlotTypes(t *testing.T) {
+	scatter, parallel := &spb.PlotSpec{PlotId: "loss", Type: spb.PlotType_SCATTER}, &spb.PlotSpec{PlotId: "study", Type: spb.PlotType_PARALLEL_COORDINATES}
+	for _, tc := range []struct {
+		name            string
+		plots           []*spb.PlotSpec
+		experimentLevel bool
+		wantErr         error
+	}{
+		{name: "experiment level without plots", experimentLevel: true},
+		{name: "experiment level with parallel coordinates", plots: []*spb.PlotSpec{parallel, parallel}, experimentLevel: true},
+		{name: "experiment level with scatter", plots: []*spb.PlotSpec{parallel, scatter}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with unspecified plot type", plots: []*spb.PlotSpec{{PlotId: "p"}}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "experiment level with nil plot", plots: []*spb.PlotSpec{nil}, experimentLevel: true, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with nil plot", plots: []*spb.PlotSpec{scatter, nil}, wantErr: grpcerr.ErrInvalidArgument},
+		{name: "work unit level with scatter", plots: []*spb.PlotSpec{scatter}},
+		{name: "work unit level with parallel coordinates", plots: []*spb.PlotSpec{scatter, parallel}, wantErr: grpcerr.ErrInvalidArgument},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ValidateChartPlotTypes(tc.plots, tc.experimentLevel); !errors.Is(err, tc.wantErr) {
+				t.Errorf("ValidateChartPlotTypes() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

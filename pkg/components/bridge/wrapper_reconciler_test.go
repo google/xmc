@@ -311,6 +311,53 @@ func TestReconcile_OperatorlessProfile3(t *testing.T) {
 	}
 }
 
+func TestReconcile_OperatorlessReadyMessageCarriesProbeVerdict(t *testing.T) {
+	const generic = "Static endpoint is reachable and healthy"
+	tests := []struct {
+		name         string
+		probeMessage string
+		want         string
+	}{
+		{name: "probe without message keeps the generic text", probeMessage: "", want: generic},
+		{name: "gRPC SERVING", probeMessage: "gRPC health SERVING", want: generic + ": gRPC health SERVING"},
+		{name: "gRPC UNIMPLEMENTED fallback", probeMessage: healthprobe.GRPCHealthUnimplementedMessage, want: generic + ": " + healthprobe.GRPCHealthUnimplementedMessage},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prober := &mockProber{probeRes: &healthprobe.HealthProbeResult{Healthy: true, Message: tt.probeMessage}}
+			r, err := NewReconciler(&mockCMS{}, prober, nil)
+			if err != nil {
+				t.Fatalf("NewReconciler() error = %v", err)
+			}
+			in := ReconcileComponentInput{
+				Namespace: "xmc", Name: "vizier", Generation: 1, Enabled: true,
+				Spec: &componentspb.ComponentSpec{
+					Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+					Parameters: map[string]string{
+						"endpoint":            "vizier-service.xmc.svc.cluster.local:7077",
+						"healthCheckEndpoint": "grpc://vizier-service.xmc.svc.cluster.local:7077",
+					},
+				},
+			}
+
+			res, err := r.ReconcileComponent(context.Background(), in)
+			if err != nil {
+				t.Fatalf("ReconcileComponent() error = %v", err)
+			}
+			ready := findCondition(res.Conditions, ConditionTypeReady)
+			if ready == nil || ready.Status != ConditionStatusTrue || ready.Message != tt.want {
+				t.Errorf("Ready condition = %+v, want status %s with message %q", ready, ConditionStatusTrue, tt.want)
+			}
+			if got := prober.LastTarget(); got != "grpc://vizier-service.xmc.svc.cluster.local:7077" {
+				t.Errorf("probe target = %q, want the healthCheckEndpoint", got)
+			}
+			if got := res.Access.EnvVars["ENDPOINT"]; got != "vizier-service.xmc.svc.cluster.local:7077" {
+				t.Errorf("ENDPOINT = %q, want the connection endpoint, not the probe target", got)
+			}
+		})
+	}
+}
+
 func TestVerifyEndpointHealth(t *testing.T) {
 	const endpoint = "http://svc.xmc:8080"
 	type verdict struct {
@@ -325,7 +372,7 @@ func TestVerifyEndpointHealth(t *testing.T) {
 		want     verdict
 	}{
 		{name: "empty endpoint skips probe", prober: &mockProber{probeErr: errors.New("unused")}, want: verdict{OK: true}},
-		{name: "healthy discards probe message", endpoint: endpoint, prober: &mockProber{probeRes: &healthprobe.HealthProbeResult{Healthy: true, Message: "HTTP 200"}}, want: verdict{OK: true}},
+		{name: "healthy returns probe message", endpoint: endpoint, prober: &mockProber{probeRes: &healthprobe.HealthProbeResult{Healthy: true, Message: "HTTP 200"}}, want: verdict{OK: true, Message: "HTTP 200"}},
 		{
 			name:     "probe error",
 			endpoint: endpoint,

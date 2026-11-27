@@ -161,15 +161,21 @@ type dashboardRow struct {
 }
 
 type chartRow struct {
-	ID          string    `spanner:"ChartId"`
-	Title       string    `spanner:"Title"`
-	Description string    `spanner:"Description"`
-	Xid         int64     `spanner:"Xid"`
-	Wid         int64     `spanner:"Wid"`
-	PlotLayout  []byte    `spanner:"PlotLayout"`
-	Owner       string    `spanner:"Owner"`
-	CreatedAt   time.Time `spanner:"CreatedAt"`
-	UpdatedAt   time.Time `spanner:"UpdatedAt"`
+	ID          string            `spanner:"ChartId"`
+	Title       string            `spanner:"Title"`
+	Description string            `spanner:"Description"`
+	Xid         int64             `spanner:"Xid"`
+	Wid         spanner.NullInt64 `spanner:"Wid"`
+	PlotLayout  []byte            `spanner:"PlotLayout"`
+	Owner       string            `spanner:"Owner"`
+	CreatedAt   time.Time         `spanner:"CreatedAt"`
+	UpdatedAt   time.Time         `spanner:"UpdatedAt"`
+}
+
+// widToNullInt64 maps Chart.wid to the Charts.Wid column, which is NULL for experiment-level charts
+// (wid 0).
+func widToNullInt64(wid int64) spanner.NullInt64 {
+	return spanner.NullInt64{Int64: wid, Valid: wid != 0}
 }
 
 type artifactChartRow struct {
@@ -267,10 +273,7 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 	if chartXid == 0 && xid > 0 {
 		chartXid = xid
 	}
-	chartWid := chart.GetWid()
-	if chartWid == 0 && wid > 0 {
-		chartWid = wid
-	}
+	chartWid := storagedata.ResolveChartWid(chart, wid)
 
 	var layoutBytes []byte
 	if plotLayout := chart.GetPlotLayout(); plotLayout != nil {
@@ -284,7 +287,7 @@ func ChartProtoToInsertMutations(chart *dpb.Chart) ([]*spanner.Mutation, error) 
 	chartMut := spanner.Insert(dashboardschema.ChartsTableName, []string{
 		"ChartId", "Title", "Description", "Xid", "Wid", "PlotLayout", "Owner", "CreatedAt", "UpdatedAt",
 	}, []interface{}{
-		chartID, chart.GetTitle(), chart.GetDescription(), chartXid, chartWid, layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp,
+		chartID, chart.GetTitle(), chart.GetDescription(), chartXid, widToNullInt64(chartWid), layoutBytes, "", spanner.CommitTimestamp, spanner.CommitTimestamp,
 	})
 	plotMuts, err := PlotSpecsToInsertMutations(chartID, chart.GetPlots())
 	if err != nil {
@@ -345,17 +348,13 @@ func ChartRowToProto(row *spanner.Row, plots []*dpb.PlotSpec) (*dpb.Chart, error
 		}
 	}
 
-	name := validator.ConstructRootChartName(data.ID)
-	if data.Xid > 0 {
-		name = validator.ConstructWorkUnitChartName(data.Xid, data.Wid, data.ID)
-	}
-
+	wid := data.Wid.Int64 // 0 for a NULL Wid (experiment-level chart).
 	return &dpb.Chart{
-		Name:        name,
+		Name:        storagedata.ChartName(data.ID, data.Xid, wid),
 		Title:       data.Title,
 		Description: data.Description,
 		Xid:         data.Xid,
-		Wid:         data.Wid,
+		Wid:         wid,
 		Plots:       plots,
 		PlotLayout:  layout,
 		CreateTime:  timestamppb.New(data.CreatedAt),
@@ -389,7 +388,7 @@ func ChartProtoToUpdateMutation(chart *dpb.Chart) (*spanner.Mutation, error) {
 	return spanner.Update(dashboardschema.ChartsTableName, []string{
 		"ChartId", "Title", "Description", "Wid", "PlotLayout", "UpdatedAt",
 	}, []interface{}{
-		chartID, chart.GetTitle(), chart.GetDescription(), chart.GetWid(), layoutBytes, spanner.CommitTimestamp,
+		chartID, chart.GetTitle(), chart.GetDescription(), widToNullInt64(chart.GetWid()), layoutBytes, spanner.CommitTimestamp,
 	}), nil
 }
 

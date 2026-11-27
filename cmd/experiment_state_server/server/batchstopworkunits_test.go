@@ -359,6 +359,16 @@ func TestBatchStopWorkUnits_TaskEnqueueFails(t *testing.T) {
 	if !errors.Is(err, grpcerr.ErrInternal) {
 		t.Errorf("BatchStopWorkUnits() got error %v, want %v", err, grpcerr.ErrInternal)
 	}
+	if got := len(taskQueueClient.EnqueuedTasks); got != 1 {
+		t.Fatalf("BatchStopWorkUnits() attempted %d enqueues, want 1", got)
+	}
+	checkOperationStopped(t, storage, 123, 456)
+	checkSystemMessage(t, storage, 456, "experiments/123/workUnits/456/executions/1", &msgpb.StructuredMessage{
+		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,
+		Severity:       msgpb.StructuredMessage_ERROR,
+		UserFacingText: "Failed to stop work unit. Please try again.",
+		Parent:         "experiments/123/workUnits/456",
+	})
 }
 
 func TestBatchStopWorkUnits_PartialFailure(t *testing.T) {
@@ -433,6 +443,9 @@ func TestBatchStopWorkUnits_PartialFailure(t *testing.T) {
 	if states[msgpb.WorkUnitStatus_INITIALIZING] != 1 || states[msgpb.WorkUnitStatus_STOPPING] != 1 {
 		t.Errorf("Work unit execution states got %v and %v, want one INITIALIZING and one STOPPING", wu1Exec.GetStatus().GetState(), wu2Exec.GetStatus().GetState())
 	}
+
+	// Verify only the failed enqueue closed its operation and recorded an ERROR status message.
+	checkPartialEnqueueOperations(ctx, t, server.WorkUnitHandler.storage, xid, taskQueueClient.EnqueuedTasks, "stop", msgpb.StructuredMessage_ERROR)
 }
 
 func TestBatchStopWorkUnits_FilterReturnsNoWorkUnits(t *testing.T) {

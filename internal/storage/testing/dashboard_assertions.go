@@ -32,8 +32,9 @@ import (
 )
 
 // AssertDuplicateChartRejected creates base, then attempts a CreateChart that reuses base's chart
-// ID under work unit (xid, wid) with different content. It fails t unless the duplicate returns
-// grpcerr.ErrAlreadyExists with codes.AlreadyExists and the stored chart is left unchanged.
+// ID under work unit (xid, wid), or under experiment xid when wid is 0, with different content. It
+// fails t unless the duplicate returns grpcerr.ErrAlreadyExists with codes.AlreadyExists and the
+// stored chart is left unchanged.
 func AssertDuplicateChartRejected(ctx context.Context, t *testing.T, store storage.DashboardStore, base *dpb.Chart, xid, wid int64) {
 	t.Helper()
 	_, _, chartID, err := validator.ValidateChartName(base.GetName())
@@ -49,6 +50,9 @@ func AssertDuplicateChartRejected(ctx context.Context, t *testing.T, store stora
 	}
 	dup := prototest.Modify(base, func(c *dpb.Chart) {
 		c.Name = validator.ConstructWorkUnitChartName(xid, wid, chartID)
+		if wid == 0 {
+			c.Name = validator.ConstructExperimentChartName(xid, chartID)
+		}
 		c.Xid, c.Wid, c.Title = xid, wid, "Duplicate Title"
 		c.Plots = []*dpb.PlotSpec{
 			{PlotId: "plot-1", Title: "Replaced", Type: dpb.PlotType_BAR},

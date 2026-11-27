@@ -34,9 +34,11 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
+	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
 	xidmsgpb "xmanager_cloud/api/protos/xid"
 	"xmanager_cloud/cmd/experiment_state_server/config"
 	xidconfig "xmanager_cloud/cmd/xid_service/config"
@@ -48,6 +50,7 @@ import (
 	"xmanager_cloud/internal/storage/spanner/emulator"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/validator"
 )
 
 var testExecutable = &essmsgpb.Executable{
@@ -345,45 +348,9 @@ func mustCreateArtifact(ctx context.Context, t *testing.T, server *Server, paren
 	return createdArtifact
 }
 
-// mockXidClient is a mock implementation of the XidServiceClient.
-type mockXidClient struct {
-	xidmsgpb.XidServiceClient
-	getXidEntryErr             error
-	getXidEntryResp            *xidmsgpb.XidEntry
-	createXidEntryErr          error
-	createXidEntryResp         *xidmsgpb.XidEntry
-	createXidEntryCalls        int
-	gotCreateXidEntryReq       *xidmsgpb.CreateXidEntryRequest
-	checkUserAuthorizationErr  error
-	checkUserAuthorizationResp *xidmsgpb.CheckUserAuthorizationResponse
-	updateXidEntryErr          error
-	updateXidEntryResp         *xidmsgpb.XidEntry
-	listXidEntriesErr          error
-	listXidEntriesResp         *xidmsgpb.ListXidEntriesResponse
-	gotListXidEntriesReq       *xidmsgpb.ListXidEntriesRequest
-}
-
-func (m *mockXidClient) GetXidEntry(ctx context.Context, in *xidmsgpb.GetXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	return m.getXidEntryResp, m.getXidEntryErr
-}
-func (m *mockXidClient) CreateXidEntry(ctx context.Context, in *xidmsgpb.CreateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	m.createXidEntryCalls++
-	m.gotCreateXidEntryReq = in
-	return m.createXidEntryResp, m.createXidEntryErr
-}
-func (m *mockXidClient) CheckUserAuthorization(ctx context.Context, in *xidmsgpb.CheckUserAuthorizationRequest, opts ...grpc.CallOption) (*xidmsgpb.CheckUserAuthorizationResponse, error) {
-	return m.checkUserAuthorizationResp, m.checkUserAuthorizationErr
-}
-func (m *mockXidClient) UpdateXidEntry(ctx context.Context, in *xidmsgpb.UpdateXidEntryRequest, opts ...grpc.CallOption) (*xidmsgpb.XidEntry, error) {
-	return m.updateXidEntryResp, m.updateXidEntryErr
-}
-func (m *mockXidClient) ListXidEntries(ctx context.Context, in *xidmsgpb.ListXidEntriesRequest, opts ...grpc.CallOption) (*xidmsgpb.ListXidEntriesResponse, error) {
-	m.gotListXidEntriesReq = in
-	return m.listXidEntriesResp, m.listXidEntriesErr
-}
-
 type mockAuthenticator struct {
-	err error
+	email string
+	err   error
 	// denyAuthorization makes IsUserAuthorized report the user as unauthorized.
 	denyAuthorization   bool
 	isUserAuthorizedErr error
@@ -394,6 +361,9 @@ type mockAuthenticator struct {
 func (m *mockAuthenticator) AuthenticateUserFromContext(ctx context.Context) (string, string, error) {
 	if m.err != nil {
 		return "", "", m.err
+	}
+	if m.email != "" {
+		return m.email, "user_id", nil
 	}
 	return "test@example.com", "user_id", nil
 }
@@ -441,6 +411,7 @@ func TestStopOperationOnError(t *testing.T) {
 		wantUpdateWorkUnitOperation bool
 		wantDone                    bool
 		wantCode                    codes.Code
+		wantMessage                 string
 	}{
 		{
 			name:                        "no_error",
@@ -461,6 +432,23 @@ func TestStopOperationOnError(t *testing.T) {
 			op:                          &lropb.Operation{Name: "invalid/op/name"},
 			err:                         grpcerr.ErrInternal,
 			wantUpdateWorkUnitOperation: false,
+		},
+		{
+			// The generated GetName getter is nil-safe, so a nil operation fails name validation
+			// instead of panicking.
+			name:                        "nil_operation",
+			op:                          nil,
+			err:                         grpcerr.ErrInternal,
+			wantUpdateWorkUnitOperation: false,
+		},
+		{
+			name:                        "error_without_status",
+			op:                          &lropb.Operation{Name: opName},
+			err:                         errors.New("failed to add message to redis"),
+			wantUpdateWorkUnitOperation: true,
+			wantDone:                    true,
+			wantCode:                    codes.Internal,
+			wantMessage:                 "failed to add message to redis",
 		},
 		{
 			name:                        "update_op_error",
@@ -498,11 +486,285 @@ func TestStopOperationOnError(t *testing.T) {
 			if codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()) != tc.wantCode {
 				t.Errorf("stopOperationOnError() updated operation with code = %v, want %v", codes.Code(storage.GotOperationUpdate.Operation.GetError().GetCode()), tc.wantCode)
 			}
+			if tc.wantMessage != "" {
+				if got := storage.GotOperationUpdate.Operation.GetError().GetMessage(); got != tc.wantMessage {
+					t.Errorf("stopOperationOnError() updated operation with message = %q, want %q", got, tc.wantMessage)
+				}
+			}
 			wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
 			if diff := cmp.Diff(wantMask, storage.GotOperationUpdate.UpdateMask, protocmp.Transform()); diff != "" {
 				t.Errorf("stopOperationOnError() updated operation with wrong update mask (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// checkOperationStopped checks that st recorded the work unit operation for xid and wid as done
+// with an INTERNAL error, which is how stopOperationOnError closes an operation after a failure.
+func checkOperationStopped(t *testing.T, st *storage.MockStorage, xid, wid int64) {
+	t.Helper()
+	got := st.GotOperationUpdate
+	if got == nil {
+		t.Fatalf("UpdateWorkUnitOperation() was not called, want the operation of experiments/%d/workUnits/%d stopped", xid, wid)
+	}
+	if got.XID != xid || got.WID != wid {
+		t.Errorf("stopped operation of XID %d, WID %d, want XID %d, WID %d", got.XID, got.WID, xid, wid)
+	}
+	if !got.Operation.GetDone() {
+		t.Error("stopped operation done = false, want true")
+	}
+	if code := codes.Code(got.Operation.GetError().GetCode()); code != codes.Internal {
+		t.Errorf("stopped operation error code = %v, want %v", code, codes.Internal)
+	}
+	wantMask := &fmpb.FieldMask{Paths: []string{"done", "error"}}
+	if diff := cmp.Diff(wantMask, got.UpdateMask, protocmp.Transform()); diff != "" {
+		t.Errorf("stopped operation update mask mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// checkSystemMessage checks that the last execution st recorded for wid is wantExecution and
+// carries the want system message. The message's create time is ignored.
+func checkSystemMessage(t *testing.T, st *storage.MockStorage, wid int64, wantExecution string, want *essmsgpb.StructuredMessage) {
+	t.Helper()
+	got, ok := st.UpdatedWorkUnitExecutions[wid]
+	if !ok {
+		t.Fatalf("no work unit execution was written for WID %d, want %s with system message %v", wid, wantExecution, want)
+	}
+	if got.GetName() != wantExecution {
+		t.Errorf("written work unit execution = %s, want %s", got.GetName(), wantExecution)
+	}
+	opts := []cmp.Option{protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")}
+	if diff := cmp.Diff(want, got.GetStatus().GetSystemMessage(), opts...); diff != "" {
+		t.Errorf("written system message mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// fetchRecordedOperation parses opName and fetches the corresponding operation from st.
+func fetchRecordedOperation(ctx context.Context, t *testing.T, st storage.Storage, opName string) (int64, *lropb.Operation) {
+	t.Helper()
+	xid, wid, oid, err := validator.ValidateOperationName(opName)
+	if err != nil {
+		t.Fatalf("ValidateOperationName(%q) failed: %v", opName, err)
+	}
+	op, err := st.FetchWorkUnitOperation(ctx, xid, wid, oid)
+	if err != nil {
+		t.Fatalf("FetchWorkUnitOperation(%q) failed: %v", opName, err)
+	}
+	return wid, op
+}
+
+// checkPartialEnqueueOperations verifies that after a 2-task batch where tasks[0] succeeded and
+// tasks[1] failed to enqueue, only tasks[1] closed its operation and recorded wantFailSeverity.
+func checkPartialEnqueueOperations(ctx context.Context, t *testing.T, st storage.Storage, xid int64, tasks []tq.EnqueuedTask, action string, wantFailSeverity essmsgpb.StructuredMessage_Severity) {
+	t.Helper()
+	okWID, okOp := fetchRecordedOperation(ctx, t, st, tasks[0].OperationName)
+	if okOp.GetDone() || okOp.GetError() != nil {
+		t.Errorf("succeeded %s operation %s = (done=%v, error=%v), want pending with nil error", action, okOp.GetName(), okOp.GetDone(), okOp.GetError())
+	}
+	okExec, err := st.FetchCurrentWorkUnitExecution(ctx, xid, okWID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution(%d) failed: %v", okWID, err)
+	}
+	if sev := okExec.GetStatus().GetSystemMessage().GetSeverity(); sev == wantFailSeverity {
+		t.Errorf("succeeded work unit %d execution system message severity = %v, want non-%v", okWID, sev, wantFailSeverity)
+	}
+	failWID, failOp := fetchRecordedOperation(ctx, t, st, tasks[1].OperationName)
+	if !failOp.GetDone() || codes.Code(failOp.GetError().GetCode()) != codes.Internal {
+		t.Errorf("failed %s operation %s = (done=%v, code=%v), want (done=true, code=%v)", action, failOp.GetName(), failOp.GetDone(), codes.Code(failOp.GetError().GetCode()), codes.Internal)
+	}
+	failExec, err := st.FetchCurrentWorkUnitExecution(ctx, xid, failWID)
+	if err != nil {
+		t.Fatalf("FetchCurrentWorkUnitExecution(%d) failed: %v", failWID, err)
+	}
+	wantMsg := &essmsgpb.StructuredMessage{
+		Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+		Severity:       wantFailSeverity,
+		UserFacingText: fmt.Sprintf("Failed to %s work unit. Please try again.", action),
+		Parent:         validator.ConstructWorkUnitName(xid, failWID),
+	}
+	if diff := cmp.Diff(wantMsg, failExec.GetStatus().GetSystemMessage(), protocmp.Transform(), protocmp.IgnoreFields(&essmsgpb.StructuredMessage{}, "create_time")); diff != "" {
+		t.Errorf("failed work unit %d system message mismatch (-want +got):\n%s", failWID, diff)
+	}
+}
+
+// ctxHonoringStorage fails writes on a done context, as real storage does, so a test can tell
+// whether compensation ran on the caller's context. It also records the deadline of each
+// operation update.
+type ctxHonoringStorage struct {
+	*storage.MockStorage
+	operationUpdateDeadlines *[]time.Time
+}
+
+func (s ctxHonoringStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.MockStorage.RunInTransaction(ctx, fn)
+}
+
+func (s ctxHonoringStorage) UpdateWorkUnitOperation(ctx context.Context, update *storage.OperationUpdate) (*lropb.Operation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	deadline, _ := ctx.Deadline()
+	*s.operationUpdateDeadlines = append(*s.operationUpdateDeadlines, deadline)
+	return s.MockStorage.UpdateWorkUnitOperation(ctx, update)
+}
+
+// TestEnqueueFailureCompensation_CallerCancelled checks that when the caller cancels while the
+// task is enqueued and the enqueue fails, the compensation still lands: the operation is closed
+// and the status message is written, under a bounded context.
+func TestEnqueueFailureCompensation_CallerCancelled(t *testing.T) {
+	storedWorkUnit := &essmsgpb.WorkUnit{
+		Name:                     "experiments/123/workUnits/456",
+		WorkUnitType:             essmsgpb.WorkUnit_STANDARD,
+		Executable:               testExecutable,
+		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{Name: "experiments/123/workUnits/456/executions/1"},
+	}
+	testCases := []struct {
+		name           string
+		storedWorkUnit *essmsgpb.WorkUnit
+		call           func(ctx context.Context, s *Server) error
+		wid            int64
+		wantExecution  string
+		wantSeverity   essmsgpb.StructuredMessage_Severity
+		wantText       string
+	}{
+		{
+			name: "create",
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.CreateWorkUnit(ctx, &essmsgpb.CreateWorkUnitRequest{
+					Parent:     "experiments/123",
+					WorkUnitId: 1,
+					WorkUnit:   &essmsgpb.WorkUnit{WorkUnitType: essmsgpb.WorkUnit_STANDARD, Executable: testExecutable},
+				})
+				return err
+			},
+			wid:           1,
+			wantExecution: "experiments/123/workUnits/1/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Work unit was created but could not be scheduled for execution. Please restart the work unit.",
+		},
+		{
+			name:           "restart",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.RestartWorkUnit(ctx, &essmsgpb.RestartWorkUnitRequest{Name: "experiments/123/workUnits/456"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/2",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Failed to restart work unit. Please try again.",
+		},
+		{
+			name:           "stop",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.StopWorkUnit(ctx, &essmsgpb.StopWorkUnitRequest{Name: "experiments/123/workUnits/456"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_ERROR,
+			wantText:      "Failed to stop work unit. Please try again.",
+		},
+		{
+			name:           "batch_restart",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.BatchRestartWorkUnits(ctx, &essmsgpb.BatchRestartWorkUnitsRequest{Parent: "experiments/123"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/2",
+			wantSeverity:  essmsgpb.StructuredMessage_FATAL,
+			wantText:      "Failed to restart work unit. Please try again.",
+		},
+		{
+			name:           "batch_stop",
+			storedWorkUnit: storedWorkUnit,
+			call: func(ctx context.Context, s *Server) error {
+				_, err := s.BatchStopWorkUnits(ctx, &essmsgpb.BatchStopWorkUnitsRequest{Parent: "experiments/123"})
+				return err
+			},
+			wid:           456,
+			wantExecution: "experiments/123/workUnits/456/executions/1",
+			wantSeverity:  essmsgpb.StructuredMessage_ERROR,
+			wantText:      "Failed to stop work unit. Please try again.",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			st := &storage.MockStorage{
+				Experiment: &essmsgpb.Experiment{Name: "experiments/123"},
+				WorkUnit:   tc.storedWorkUnit,
+			}
+			if tc.storedWorkUnit != nil {
+				st.ListWorkUnitsResp = []*essmsgpb.WorkUnit{tc.storedWorkUnit}
+			}
+			var deadlines []time.Time
+			actuator := &tq.FakeClient{
+				EnqueueFunc: func(context.Context, string, *essmsgpb.WorkUnit, *actuatortaskpb.Action, string) error {
+					cancel()
+					return errors.New("task enqueue failed")
+				},
+			}
+			server := newTestServer(t,
+				withConfig(&config.Config{DefaultExecutionEnvironment: "gke"}),
+				withXidClient(&mockXidClient{
+					checkUserAuthorizationResp: &xidmsgpb.CheckUserAuthorizationResponse{Authorized: proto.Bool(true)},
+				}),
+				withStorage(ctxHonoringStorage{MockStorage: st, operationUpdateDeadlines: &deadlines}),
+				withWorkUnitActuator(actuator),
+			)
+
+			if err := tc.call(ctx, server); !errors.Is(err, grpcerr.ErrInternal) {
+				t.Errorf("%s returned error %v, want %v", tc.name, err, grpcerr.ErrInternal)
+			}
+			latestDeadline := time.Now().Add(compensationTimeout)
+
+			checkOperationStopped(t, st, 123, tc.wid)
+			checkSystemMessage(t, st, tc.wid, tc.wantExecution, &essmsgpb.StructuredMessage{
+				Source:         essmsgpb.StructuredMessage_XMANAGER_BACKEND,
+				Severity:       tc.wantSeverity,
+				UserFacingText: tc.wantText,
+				Parent:         validator.ConstructWorkUnitName(123, tc.wid),
+			})
+			for _, deadline := range deadlines {
+				if deadline.IsZero() || deadline.After(latestDeadline) {
+					t.Errorf("operation update deadline = %v, want a deadline of at most %v", deadline, compensationTimeout)
+				}
+			}
+		})
+	}
+}
+
+// TestCompensationContext_NestedSharesOuterBudget checks that compensation outlives the caller's
+// cancellation, and that compensation nested in a bounded one, such as closing each operation of a
+// failed batch, keeps the outer deadline instead of starting a new compensationTimeout.
+func TestCompensationContext_NestedSharesOuterBudget(t *testing.T) {
+	callerCtx, cancelCaller := context.WithCancel(context.Background())
+	cancelCaller()
+	const outerTimeout = time.Second
+
+	outerCtx, cancelOuter := boundedCompensationContext(callerCtx, outerTimeout)
+	defer cancelOuter()
+	innerCtx, cancelInner := compensationContext(outerCtx)
+	defer cancelInner()
+
+	if err := outerCtx.Err(); err != nil {
+		t.Fatalf("outer compensation context error = %v, want nil after the caller is cancelled", err)
+	}
+	outerDeadline, ok := outerCtx.Deadline()
+	if !ok || outerDeadline.After(time.Now().Add(outerTimeout)) {
+		t.Fatalf("outer compensation deadline = %v (set %t), want at most %v from now", outerDeadline, ok, outerTimeout)
+	}
+	if innerDeadline, ok := innerCtx.Deadline(); !ok || !innerDeadline.Equal(outerDeadline) {
+		t.Errorf("nested compensation deadline = %v (set %t), want the outer deadline %v", innerDeadline, ok, outerDeadline)
 	}
 }
 

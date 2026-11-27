@@ -24,6 +24,7 @@ import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
+from xmc._version import __version__
 from xmc.dist_harvest import (
     harvest_client_metadata,
 )
@@ -65,7 +66,8 @@ class Client:
     """Base HTTP client for interacting with XMC Metrics APIs.
 
     Note:
-        Uses urllib.request.urlopen for zero external runtime dependencies.
+        Uses urllib.request.urlopen to avoid HTTP-library runtime dependencies
+        (protobuf is the only runtime dependency).
         TODO: Higher-level SDK producers should implement request
         batching and connection reuse to avoid per-request TLS overhead in
         high-frequency logging loops.
@@ -122,7 +124,7 @@ class Client:
         self._headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "xmc-python-sdk/0.1.0",
+            "User-Agent": f"xmc-python-sdk/{__version__}",
         }
         if self._job_name:
             self._headers["X-Job-Name"] = self._job_name

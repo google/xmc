@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -24,20 +25,42 @@ import (
 
 type mockDashboardClient struct {
 	dashboard_pb.DashboardServiceClient
-	createChartResp *dashboard_pb.Chart
-	createChartErr  error
-	reqs            []*dashboard_pb.CreateChartRequest
-	// outgoingMD records the metadata each call carried, so tests can assert that the caller's
-	// credentials were forwarded.
-	outgoingMD []metadata.MD
+	mu                            sync.Mutex
+	createChartResp, getChartResp *dashboard_pb.Chart
+	createChartErr, getChartErr   error
+	createChartFn                 func(ctx context.Context, in *dashboard_pb.CreateChartRequest) (*dashboard_pb.Chart, error)
+	reqs                          []*dashboard_pb.CreateChartRequest
+	outgoingMD, getChartMD        []metadata.MD // records forwarded credential metadata
+	ctxErrs, getChartCtxErrs      []error
+	getChartReqs                  []string
 }
 
-func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, opts ...grpc.CallOption) (*dashboard_pb.Chart, error) {
-	m.reqs = append(m.reqs, in)
+func appendMetadataCall(ctx context.Context, mds *[]metadata.MD, errs *[]error) {
 	md, _ := metadata.FromOutgoingContext(ctx)
-	m.outgoingMD = append(m.outgoingMD, md)
-	if m.createChartErr != nil {
-		return nil, m.createChartErr
+	*mds = append(*mds, md)
+	*errs = append(*errs, ctx.Err())
+}
+
+func (m *mockDashboardClient) GetChart(ctx context.Context, in *dashboard_pb.GetChartRequest, _ ...grpc.CallOption) (*dashboard_pb.Chart, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getChartReqs = append(m.getChartReqs, in.GetName())
+	appendMetadataCall(ctx, &m.getChartMD, &m.getChartCtxErrs)
+	return m.getChartResp, m.getChartErr
+}
+
+func (m *mockDashboardClient) CreateChart(ctx context.Context, in *dashboard_pb.CreateChartRequest, _ ...grpc.CallOption) (*dashboard_pb.Chart, error) {
+	m.mu.Lock()
+	fn, err, resp := m.createChartFn, m.createChartErr, m.createChartResp
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.reqs = append(m.reqs, in)
+		appendMetadataCall(ctx, &m.outgoingMD, &m.ctxErrs)
+		m.mu.Unlock()
+	}()
+	if fn != nil {
+		return fn(ctx, in)
 	}
-	return m.createChartResp, nil
+	return resp, err
 }

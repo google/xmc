@@ -19,6 +19,7 @@ sequenceDiagram
     participant Storage as Storage (Spanner/Postgres)
     participant Redis as Redis (xmc-study-reconcile-stream)
     participant SC as Study Controller
+    participant DS as Dashboard Service
 
     Client->>ESS: 1. CreateExperiment(req)
     ESS->>ESS: 2. Authenticate & Validate (incl. study_config)
@@ -33,12 +34,18 @@ sequenceDiagram
     ESS->>Storage: 8. One transaction: resolve components, clamp study budget, insert experiment, pin components, record status history
     Storage-->>ESS: 9. Success
     opt STUDY
-        ESS->>Redis: 10. Enqueue StudyReconcilePayload (best effort)
+        ESS->>Redis: 10a. Enqueue StudyReconcilePayload (best effort)
     end
     ESS-->>Client: 11. Experiment
     opt STUDY
-        Note over Redis,SC: Asynchronously, after the RPC returns
+        Note over ESS,DS: Asynchronously, after the RPC returns (best effort)
         Redis-->>SC: Reconcile tick (per-study lease lock, logged)
+        opt Dashboard configured (10b, background goroutine)
+            ESS--)XID: CreateXidEntry (child artifact XID, 10s bound)
+            ESS->>Storage: Persist study ChartArtifact (PROVISIONING)
+            ESS--)DS: CreateChart(study-{xid}-parallel-coordinates) / GetChart read-back
+            ESS->>Storage: UpdateArtifact(status=SUCCESS/FAILED, chart)
+        end
     end
 ```
 
@@ -89,22 +96,39 @@ found there still returns `FAILED_PRECONDITION` and leaves no experiment row, wh
 errors return `INTERNAL`. A retried transaction starts again from the requested status and study
 config, so the budget is never clamped twice.
 
-**Study reconcile tick (step 10).** After the transaction commits, ESS publishes one
-`StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}` as protojson,
-[`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) for a `STUDY` to the
-`xmc-study-reconcile-stream` Redis stream. The payload names the study only; the Study Controller
-re-reads its state from ESS. Enqueueing is best effort and bounded at 2s, and it is not cancelled
-when the client cancels the RPC: when it fails, ESS logs the error, increments
-`xmc_ess_study_reconcile_enqueue_failures_total`, and still returns the created experiment, because
-failing the RPC would make the client retry and create a duplicate study. Such a study is not
-reconciled until a future sweeper recovers it. `STANDARD` experiments enqueue nothing. The Study
-Controller ([`cmd/study_controller`](../../cmd/study_controller)) consumes the stream
-asynchronously as the `study-controller-group` consumer group under a per-study Redis lease lock
-(`xmc:study-reconcile-lock:{xid}`), acknowledging contended duplicate ticks without reconciling; a
-payload that does not name a valid experiment goes to the `xmc-study-reconcile-dlq-stream`
-dead-letter stream; see [Study Lifecycle](study_lifecycle.md) for the end-to-end topology and
-per-tick flow.
-Each submission enqueues one tick (delivered at least once); periodic ticks are not implemented yet.
+**Study post-commit hooks (steps 10a–10b).** After the transaction commits, ESS runs two best-effort
+side effects for a `STUDY` (`STANDARD` experiments skip both):
+
+- **Reconcile tick enqueue (step 10a)**: ESS publishes one `StudyReconcilePayload`
+  (`{"experiment": "experiments/{xid}"}` as protojson,
+  [`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) to the
+  `xmc-study-reconcile-stream` Redis stream. The payload names the study only; the Study Controller
+  re-reads its state from ESS. Enqueueing is bounded at 2s and is not cancelled when the client
+  cancels the RPC: when it fails, ESS logs the error, increments
+  `xmc_ess_study_reconcile_enqueue_failures_total`, and still returns the created experiment, because
+  failing the RPC would make the client retry and create a duplicate study. Such a study is not
+  reconciled until a future sweeper recovers it. The Study Controller
+  ([`cmd/study_controller`](../../cmd/study_controller)) consumes the stream asynchronously as the
+  `study-controller-group` consumer group under a per-study Redis lease lock
+  (`xmc:study-reconcile-lock:{xid}`), acknowledging contended duplicate ticks without reconciling; a
+  payload that does not name a valid experiment goes to the `xmc-study-reconcile-dlq-stream`
+  dead-letter stream. Each submission enqueues one tick (delivered at least once); periodic ticks are
+  not implemented yet.
+- **Parallel-coordinates chart provisioning (step 10b)**: when a Dashboard Service observer is
+  configured (`ess_dashboard_service_addr` non-empty via environment variable or the `ess-config`
+  ConfigMap), ESS allocates a child artifact XID and persists a
+  server-provisioned experiment-level `ChartArtifact` (`parent = experiments/{xid}`, title `"Parallel
+  Coordinates"`, `PROVISIONING`, on a background goroutine bounded at 10s on a cancellation-detached
+  context so the RPC returns right after commit; client
+  `CreateArtifact` calls continue to reject experiment-level `ChartArtifact` payloads), which triggers
+  asynchronous `DashboardService.CreateChart` provisioning under the deterministic ID
+  `study-{xid}-parallel-coordinates` and writes the resulting `Chart` and status back to the artifact
+  (reading the chart back with `GetChart` when `CreateChart` returns `ALREADY_EXISTS` or
+  `DEADLINE_EXCEEDED`).
+  Failures log an error, increment `xmc_ess_study_chart_provisioning_failures_total`
+  (`stage="artifact"` or `stage="chart"`), and still return the created experiment. See
+  [Study Lifecycle](study_lifecycle.md) for the end-to-end topology, per-tick flow, and
+  [study visualization details](study_lifecycle.md#3-study-visualization-parallel-coordinates-chart).
 
 Domain rules for assembling the experiment — defaults, derived fields, validation — live in
 [`internal/domain/experiment`](../../internal/domain/experiment), separate from the RPC handler.
@@ -134,7 +158,11 @@ sequenceDiagram
 
 `GetXidEntry` serves double duty: it authorizes the read (a caller who cannot see the entry cannot
 see the experiment) and supplies the ACL data attached to the response, so the UI can decide
-whether to render stop/restart controls without a second round trip.
+whether to render stop/restart controls without a second round trip. When `GetXidEntry` returns
+`PERMISSION_DENIED` or `INTERNAL`, ESS checks whether the caller matches the active `hpo`
+component's `parameters.studyControllerServiceAccount`; if so, it reads directly from storage and
+returns `STUDY` experiments with `acls` omitted (rejecting non-`STUDY` experiments with
+`PERMISSION_DENIED`).
 
 ### List or search experiments
 
@@ -240,9 +268,12 @@ The counts it aggregates are written by the observation loop described in
 ## 6. Artifacts
 
 Artifacts are named outputs and references attached to experiments and work units — checkpoint
-paths, dataset URIs, links to external systems. They are pure Spanner CRUD with no cluster
+paths, dataset URIs, links to external systems. They are Spanner/Postgres CRUD with no cluster
 involvement — [Shape 1](README.md#shape-1--synchronous-read) for the reads and
-[Shape 2](README.md#shape-2--synchronous-write) for the writes, with nothing bolted on.
+[Shape 2](README.md#shape-2--synchronous-write) for the writes, plus an asynchronous post-commit
+`DashboardService.CreateChart` observer for `ChartArtifact` payloads when `ess_dashboard_service_addr`
+is configured (when unset, client work-unit `ChartArtifact` writes persist `FAILED` immediately and
+`STUDY` auto-provisioning is skipped).
 
 All six artifact RPCs follow that shape, differing only in the role they require:
 

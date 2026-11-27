@@ -33,6 +33,9 @@ deletionPolicy: Delete
 parameters:
   # Internal Kubernetes DNS endpoint (host:port) for the Open Source Vizier gRPC server.
   endpoint: "vizier-service.xmc.svc.cluster.local:7077"
+  # Optional xmc-bridge health probe target. Empty probes `endpoint` over TCP. Set it to
+  # "grpc://<host>:<port>" to call grpc.health.v1 Health/Check (plaintext) instead.
+  healthCheckEndpoint: ""
 
 # Optional list of upstream XMC Component names that must be Ready before Vizier is reconciled.
 dependencies: []

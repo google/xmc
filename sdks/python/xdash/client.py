@@ -372,14 +372,15 @@ class DashboardClient:
         chart: messages_pb2.Chart,
         chart_id: str | None = None,
     ) -> messages_pb2.Chart:
-        """Creates a new chart attached to an experiment work unit parent.
+        """Creates a chart under `experiments/{xid}/workUnits/{wid}` or `experiments/{xid}`.
 
         The chart's own name is never used as its ID: ChartBuilder names every chart,
         falling back to a slug of its title, so deriving an ID from it would make unrelated
         charts collide. The server assigns a fresh ID unless chart_id is passed explicitly.
 
         Args:
-            parent: Work unit resource name, 'experiments/{xid}/workUnits/{wid}'.
+            parent: Work unit resource name, 'experiments/{xid}/workUnits/{wid}', or
+                experiment resource name, 'experiments/{xid}', for experiment-level charts.
             chart: The Chart protobuf message to create.
             chart_id: Optional explicit chart ID. CreateChart never overwrites an existing
                 chart, so an ID that is already taken fails with ALREADY_EXISTS.

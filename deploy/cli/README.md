@@ -4,7 +4,7 @@
 
 [XManager CLI](https://github.com/google-deepmind/xmanager) is a Python library for interacting with XManager on Cloud (`xm_cloud`) and other XManager execution backends.
 
-The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
+The published `xmanager` package on PyPI (`xmanager>=0.8.5.post1,<0.9.0`) bundles `xmanager.xm_cloud` and the precompiled gRPC proto bindings (`xmanager_cloud.experiment_state_server.proto.*`, `xmanager_cloud.xid_service.proto.*`, and `xmanager_cloud.dashboard_service.proto.*`).
 
 ---
 
@@ -22,7 +22,7 @@ It automates:
 2. Upgrading `pip`, installing any `-r` / `--requirements` files, and installing `xmanager` and XMC client dependencies from PyPI.
 3. Compiling the local XMC API protos from `api/protos` (`experiment`, `xid`, and `dashboard`) directly into `site-packages/xmanager_cloud` via `grpc_tools.protoc` so local proto changes take effect immediately without waiting for a PyPI release.
 4. Purging the obsolete wheel-bundled `site-packages/xdash` package and installing local repository SDKs `sdks/python/xdash` and `sdks/python/xmc` in editable mode (`pip install --no-deps -e`).
-5. Verifying SDK provenance: `xdash` and `xmc` must resolve from `sdks/python/<sdk>` in the repository checkout. The script fails if a same-named package shipped by another distribution (such as the stale `xdash` copy bundled in the `xmanager` wheel) shadows the editable install. This runs before the import check so that a shadowed SDK produces this actionable error rather than a bare import failure. `xmc` is checked for provenance only: `import xmc` needs `api.protos.metrics`, which this script doesn't compile, so it isn't importable in this venv (worker images compile it themselves).
+5. Verifying SDK provenance: `xdash` and `xmc` must resolve from `sdks/python/<sdk>` in the repository checkout. The script fails if a same-named package shipped by another distribution (such as the stale `xdash` copy bundled in the `xmanager` wheel) shadows the editable install. This runs before the import check so that a shadowed SDK produces this actionable error rather than a bare import failure. `xmc` is checked for provenance only, because no launcher-side code imports it. Its editable install compiles its own `xmc._protos.metrics_pb2` (see [`sdks/python/xmc/README.md`](../../sdks/python/xmc/README.md#-installation)), which pulls `grpcio-tools==1.70.0` into pip's isolated build environment. That version has no Python 3.14 wheel, so on 3.14 pip compiles it from source first.
 6. Verifying that `xmanager.xm_cloud`, `xdash`, `xdash.auth`, and the compiled XMC gRPC proto modules import cleanly.
 
 #### Prerequisites
@@ -46,7 +46,7 @@ Options:
   --xmanager-version <spec>      Optional xmanager version (e.g. 0.8.5.post1), specifier
                                  (e.g. '>=0.8.5.post1,<0.9'), or full PEP 508 requirement
                                  (e.g. 'xmanager @ git+https://github.com/google-deepmind/xmanager@main')
-                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.5.post1)
+                                 (default: XMANAGER_VERSION env var, or xmanager>=0.8.5.post1,<0.9.0)
   -r, --requirements <path>      Optional requirements file to install before applying
                                  xmanager and runtime dependency pins (repeatable)
   -h, --help                     Show usage information
@@ -65,7 +65,7 @@ If you do not need unreleased local `.proto` changes from `api/protos`, you can 
 python3 -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install "xmanager>=0.8.5.post1"
+pip install "xmanager>=0.8.5.post1,<0.9.0"
 ```
 
 ### Verification

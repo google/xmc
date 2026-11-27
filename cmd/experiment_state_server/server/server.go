@@ -18,6 +18,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	apipb "xmanager_cloud/api/protos/experiment"
 	actuatortaskpb "xmanager_cloud/api/protos/task_queue"
@@ -68,6 +69,7 @@ type ExperimentHandler struct {
 	baseHandler
 	driftEvaluator          *experiment.DriftEvaluator
 	studyReconcilePublisher StudyReconcilePublisher
+	studyCharts             *studyChartProvisioner
 	server                  apipb.ExperimentStateServiceServer
 }
 
@@ -131,6 +133,9 @@ type Params struct {
 	ArtifactObservers []ArtifactObserver
 	// StudyReconcilePublisher receives the initial reconcile tick of every created STUDY.
 	StudyReconcilePublisher StudyReconcilePublisher
+	// BackgroundTasks, when set, tracks post-commit study chart provisioning so shutdown can drain
+	// it; when nil, provisioning runs inline in CreateExperiment.
+	BackgroundTasks *sync.WaitGroup
 }
 
 // New creates a new instance of the Experiment State Server.
@@ -165,6 +170,7 @@ func New(p Params) (*Server, error) {
 	s.ExperimentHandler = newExperimentHandler(base, p.StudyReconcilePublisher, s)
 	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
 	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
+	s.ExperimentHandler.studyCharts = newStudyChartProvisioner(s.ArtifactHandler, p.BackgroundTasks)
 	s.StatusMessageHandler = newStatusMessageHandler(base)
 	return s, nil
 }

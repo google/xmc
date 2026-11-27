@@ -1,4 +1,5 @@
 # Direct dependencies of the dev/test Vizier fixture image (Python 3.11), pinned exactly.
+# Keep in lockstep with @oss_vizier in MODULE.bazel (see pkg/study/vizierpb/README.md).
 google-vizier==0.1.24
 # The stubs generated for google-vizier 0.1.24 need grpcio >= 1.70.0 and protobuf 5.x.
 grpcio==1.70.0

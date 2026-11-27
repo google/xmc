@@ -489,6 +489,12 @@ class PythonGateTest(unittest.TestCase):
             by_script["tools/lint/check_agent_doc_paths.py"].staged_am_pattern,
             r"^\.agents/.*\.md$|(^|/)AGENTS\.md$|^tools/lint/check_agent_doc_paths\.py$",
         )
+        self.assertIn("tools/lint/check_migration_order.py", by_script)
+        self.assertEqual(
+            by_script["tools/lint/check_migration_order.py"].staged_am_pattern,
+            r"^internal/storage/(spanner|postgres)/migrations/ess/.*\.sql$"
+            r"|^tools/lint/check_migration_order\.py$",
+        )
 
 
 if __name__ == "__main__":

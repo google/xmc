@@ -312,12 +312,12 @@ class DashboardClientTest(unittest.TestCase):
         chart = messages_pb2.Chart(name="experiments/1001/charts/c1", title="Exp Chart", xid=1001)
         self.mock_stub.GetChart.return_value = chart
 
-        result = self.client.get_chart("experiments/1001/charts/c1")
+        result = self.client.get_chart("charts/c1")
         self.assertEqual(result.title, "Exp Chart")
         self.mock_stub.GetChart.assert_called_once()
         req = self.mock_stub.GetChart.call_args[0][0]
         self.assertIsInstance(req, dashboard_service_pb2.GetChartRequest)
-        self.assertEqual(req.name, "experiments/1001/charts/c1")
+        self.assertEqual(req.name, "charts/c1")
 
     def test_get_chart_data(self) -> None:
         self.mock_stub.GetChartData.return_value = messages_pb2.ChartData(
@@ -377,7 +377,7 @@ class DashboardClientTest(unittest.TestCase):
         with patch("xdash.client.grpc") as mock_grpc:
             mock_grpc.RpcError = FakeRpcError
             with self.assertRaises(XDashError) as cm:
-                self.client.get_chart("experiments/1/charts/c1")
+                self.client.get_chart("charts/c1")
         self.assertNotIsInstance(cm.exception, XDashRPCError)
         self.assertEqual(str(cm.exception), "Unexpected error in GetChart: boom")
 

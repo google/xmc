@@ -16,10 +16,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"time"
 
 	lropb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/google/uuid"
 	rpcstatuspb "google.golang.org/genproto/googleapis/rpc/status"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -115,15 +117,45 @@ func newWorkUnitExecution(xid int64, wid int64) *msgpb.WorkUnitExecution {
 	}
 }
 
+// compensationTimeout bounds the compensation that runs after a work unit write has committed and
+// a later step, such as enqueueing the actuator task, failed.
+const compensationTimeout = 30 * time.Second
+
+// compensationContext returns a context for compensation after a committed write that nothing
+// retries: marking the work unit execution FATAL or closing its operation. It keeps the values of
+// ctx, such as the trace, but not its cancellation, so a client that cancels or times out can't
+// leave the committed state half-compensated. Callers must call the returned cancel function.
+func compensationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return boundedCompensationContext(ctx, compensationTimeout)
+}
+
+// compensationContextKey marks a context returned by boundedCompensationContext.
+type compensationContextKey struct{}
+
+// boundedCompensationContext is compensationContext bounded by timeout instead of
+// compensationTimeout. When ctx is already a compensation context, it keeps the cancellation and
+// deadline of ctx, so nested compensation, such as closing each operation of a failed batch, shares
+// the budget of the outer compensation instead of starting a new one.
+func boundedCompensationContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx.Value(compensationContextKey{}) != nil {
+		return context.WithCancel(ctx)
+	}
+	detached := context.WithValue(context.WithoutCancel(ctx), compensationContextKey{}, true)
+	return context.WithTimeout(detached, timeout)
+}
+
 func (h *WorkUnitHandler) stopOperationOnError(ctx context.Context, operation *lropb.Operation, err error) {
 	if err == nil {
 		return
 	}
+	ctx, cancel := compensationContext(ctx)
+	defer cancel()
 
+	// An error without a gRPC status, such as a raw task queue error, is an internal failure. The
+	// operation must still be closed, or clients polling it wait forever.
 	st, ok := status.FromError(err)
 	if !ok {
-		logging.Error(ctx, "Failed to convert error to status", "error", err)
-		return
+		st = status.New(codes.Internal, err.Error())
 	}
 	// The error field in lropb.Operation expects a google.rpc.Status,
 	// while status.FromError returns a gRPC Status. We need to convert.
@@ -186,7 +218,9 @@ func (h *WorkUnitHandler) handleEnqueueActionError(ctx context.Context, action s
 	}
 
 	userFacingText := fmt.Sprintf("Failed to %s work unit. Please try again.", action)
-	if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(ctx, xid, wid, eid, &msgpb.StructuredMessage{
+	compensationCtx, cancel := compensationContext(ctx)
+	defer cancel()
+	if statusMsgErr := h.updateWorkUnitExecutionStatusMessage(compensationCtx, xid, wid, eid, &msgpb.StructuredMessage{
 		UserFacingText: userFacingText,
 		Severity:       severity,
 		Source:         msgpb.StructuredMessage_XMANAGER_BACKEND,

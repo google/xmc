@@ -256,11 +256,11 @@ func resolveBigQueryWithDialer(src bqconfig.Source, dial func(context.Context, *
 //
 // A failed first attempt is not fatal. The provider dials again on demand, and readiness holds the
 // pod out of the service endpoints until one of those attempts succeeds.
-func initDataEngine(ctx context.Context, cfg *server.Config) *dataengine.Provider {
-	return initDataEngineWithGetter(ctx, cfg, nil)
+func initDataEngine(ctx context.Context, cfg *server.Config, opts ...dataengine.ProviderOption) *dataengine.Provider {
+	return initDataEngineWithGetter(ctx, cfg, nil, opts...)
 }
 
-func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGetter crreader.Getter) *dataengine.Provider {
+func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGetter crreader.Getter, opts ...dataengine.ProviderOption) *dataengine.Provider {
 	store, err := resolveMetricsStore(cfg)
 	if err != nil {
 		logging.Error(ctx, "Invalid metrics store configuration", "error", err)
@@ -272,11 +272,11 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 	}
 	lazy := &lazyComponentGetter{getter: customGetter}
 	if store == storeBigQuery {
-		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, lazy)))
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, lazy), opts...))
 	}
 	chExpected := isClickHouseExpected(ctx, componentsNamespace, lazy)
 	if store == "" && !chExpected && isBigQueryExpected(ctx, componentsNamespace, lazy) {
-		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, lazy)))
+		return warmProvider(ctx, "BigQuery", dataengine.NewDynamicEngineProvider(buildBigQueryResolver(componentsNamespace, projectID, lazy), opts...))
 	}
 	if !chExpected {
 		if store == storeClickHouse {
@@ -290,7 +290,7 @@ func initDataEngineWithGetter(ctx context.Context, cfg *server.Config, customGet
 		logging.Info(ctx, "No ClickHouse or BigQuery component is enabled; starting without a chart data engine. Enabling Component/clickhouse or Component/bigquery later requires a dashboard-service restart (kubectl rollout restart deployment/dashboard-service-deployment)")
 		return nil
 	}
-	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolver(componentsNamespace, lazy)))
+	return warmProvider(ctx, "ClickHouse", dataengine.NewDynamicProvider(buildClickHouseResolver(componentsNamespace, lazy), opts...))
 }
 
 func warmProvider(ctx context.Context, name string, provider *dataengine.Provider) *dataengine.Provider {
@@ -509,10 +509,6 @@ func run() int {
 		return 1
 	}
 	defer authenticator.Close()
-	de := initDataEngine(ctx, cfg)
-	if de != nil {
-		defer de.Close()
-	}
 
 	dbCfg, err := dbconfig.Load()
 	if err != nil {
@@ -525,6 +521,11 @@ func run() int {
 		return 1
 	}
 	defer storage.Close()
+
+	de := initDataEngine(ctx, cfg, dataengine.WithStudyReader(storage))
+	if de != nil {
+		defer de.Close()
+	}
 
 	authorizer, err := initAuthorizer(ctx, cfg.ProjectID, oauthCfg, auth.DeploymentAdmission(authenticator))
 	if err != nil {

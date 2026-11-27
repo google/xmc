@@ -71,7 +71,7 @@ KUBECONFIG="${HOME}/.kube/config.${XMANAGER_ENV}"
 ## 4. Setup & Running the Example
 
 ### Step 1: Run `setup.sh`
-Configure `KUBECONFIG` for the existing cluster and create the local Python virtual environment (`.venv`), installing `requirements.txt` (`xmanager>=0.8.5.post1`, `absl-py`):
+Configure `KUBECONFIG` for the existing cluster and create the local Python virtual environment (`.venv`), installing `requirements.txt` (`xmanager>=0.8.5.post1,<0.9.0`, `absl-py`):
 ```bash
 ./examples/xmc_lite_job/setup.sh
 ```

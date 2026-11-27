@@ -42,23 +42,7 @@ func (s *Server) DeleteChart(ctx context.Context, req *spb.DeleteChartRequest) (
 		return nil, status.Error(codes.FailedPrecondition, "server repository not initialized")
 	}
 
-	chart, err := s.repo.GetChart(ctx, chartID)
-	if err != nil {
-		if isNotFoundError(err) {
-			return nil, status.Errorf(codes.NotFound, "chart %q not found", req.GetName())
-		}
-		return nil, status.Errorf(codes.Internal, "failed to get chart: %v", err)
-	}
-	if chart == nil {
-		return nil, status.Errorf(codes.Internal, "repository returned nil chart for %q", req.GetName())
-	}
-
-	xid := chart.GetXid()
-	if xid <= 0 {
-		return nil, status.Errorf(codes.FailedPrecondition, "chart %q is missing a valid experiment XID (%d)", req.GetName(), xid)
-	}
-
-	if err := s.authorizeExperimentWrite(ctx, user, xid); err != nil {
+	if _, _, err := s.authorizeChartWrite(ctx, user, req.GetName(), chartID); err != nil {
 		return nil, err
 	}
 

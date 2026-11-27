@@ -89,6 +89,17 @@ PYTHON_GATES: tuple[PythonGate, ...] = (
             "Nightly UI selectors reference missing DOM or unannotated copy (see JSON error above)."
         ),
     ),
+    PythonGate(
+        banner="--> Checking ESS Migration Ordering...",
+        script="tools/lint/check_migration_order.py",
+        failure_msg=(
+            "Added ESS migration has version <= max on origin/main (see JSON error above)."
+        ),
+        staged_am_pattern=(
+            r"^internal/storage/(spanner|postgres)/migrations/ess/.*\.sql$"
+            r"|^tools/lint/check_migration_order\.py$"
+        ),
+    ),
 )
 
 

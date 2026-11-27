@@ -206,10 +206,11 @@ class BuildersTest(unittest.TestCase):
                 chart_id_from_name(blank)
 
     def test_chart_id_from_name_accepts_every_chart_pattern(self) -> None:
-        # All three patterns the Chart resource declares, including the top-level one
-        # that has no parent collection before "charts".
+        # All four patterns the Chart resource declares, including the experiment-level
+        # pattern and the top-level one that has no parent collection before "charts".
         for name in (
             "experiments/1001/workUnits/1/charts/c1",
+            "experiments/1001/charts/c1",
             "charts/c1",
             "dashboards/d1/charts/c1",
         ):

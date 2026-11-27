@@ -22,6 +22,7 @@ import unittest
 import urllib.error
 from unittest.mock import MagicMock, patch
 
+import xmc
 from xmc.client import Client, XMCAPIError, XMCError, XMCNetworkError
 
 
@@ -51,6 +52,7 @@ class TestClient(unittest.TestCase):
         self.assertEqual(client.base_url, "https://xmc.googleapis.com")
         self.assertEqual(client._headers["Authorization"], "Bearer test-token")
         self.assertEqual(client._headers["Content-Type"], "application/json")
+        self.assertEqual(client._headers["User-Agent"], f"xmc-python-sdk/{xmc.__version__}")
 
     @patch("urllib.request.urlopen")
     def test_get_request_success(self, mock_urlopen: MagicMock) -> None:

@@ -17,14 +17,18 @@ package server
 import (
 	"context"
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -106,8 +110,8 @@ func TestUpdateChart(t *testing.T) {
 		if resp.GetXid() != 100 {
 			t.Errorf("Xid: got %d, want 100 (preserved from existing)", resp.GetXid())
 		}
-		if resp.GetName() != "charts/chart-1" {
-			t.Errorf("Name: got %q, want 'charts/chart-1'", resp.GetName())
+		if resp.GetName() != "experiments/100/workUnits/1/charts/chart-1" {
+			t.Errorf("Name: got %q, want 'experiments/100/workUnits/1/charts/chart-1'", resp.GetName())
 		}
 		if resp.GetUpdateTime() == nil {
 			t.Errorf("UpdateTime: expected non-nil")
@@ -115,10 +119,12 @@ func TestUpdateChart(t *testing.T) {
 		if updatedInRepo == nil {
 			t.Fatalf("Repository UpdateChart was not invoked")
 		}
-		// The handler must hand the request through untouched: merging it against a chart it read
-		// separately is what the storage transaction exists to prevent.
-		if !proto.Equal(updatedInRepo, req.GetChart()) {
-			t.Errorf("Repository received %v, want the request chart %v", updatedInRepo, req.GetChart())
+		// The handler stamps the authorized (Xid, Wid) scope onto Name while passing mutable fields
+		// through untouched so MergeCharts enforces both ownership and plot level inside the transaction.
+		wantRepoChart := proto.Clone(req.GetChart()).(*dpb.Chart)
+		wantRepoChart.Name = "experiments/100/workUnits/1/charts/chart-1"
+		if diff := cmp.Diff(wantRepoChart, updatedInRepo, protocmp.Transform()); diff != "" {
+			t.Errorf("Repository received chart mismatch (-want +got):\n%s", diff)
 		}
 		if capturedXIDReq == nil || capturedXIDReq.GetName() != "xids/100" || capturedXIDReq.GetUser() != "writer@example.com" || capturedXIDReq.GetRoleType() != xidapipb.XidAcls_WRITER {
 			t.Errorf("CheckUserAuthorization called with unexpected request: %v", capturedXIDReq)
@@ -462,4 +468,136 @@ func TestUpdateChart(t *testing.T) {
 			t.Errorf("Expected authorization header %q, got %v", "Bearer writer-token", got)
 		}
 	})
+}
+
+func newPlotUpdateMockRepo(t *testing.T, stored *dpb.Chart, wantMask []string, repoErr error, updated *bool) *mockRepository {
+	t.Helper()
+	return &mockRepository{
+		getChartFn: func(context.Context, string) (*dpb.Chart, error) { return stored, nil },
+		updateChartFn: func(_ context.Context, chart *dpb.Chart, updateMask *fieldmaskpb.FieldMask) (*dpb.Chart, error) {
+			*updated = true
+			if chart.GetName() != stored.GetName() {
+				t.Errorf("UpdateChart scoped Name = %q, want %q", chart.GetName(), stored.GetName())
+			}
+			if diff := cmp.Diff(wantMask, updateMask.GetPaths()); diff != "" {
+				t.Errorf("UpdateChart mask mismatch (-want +got):\n%s", diff)
+			}
+			if repoErr != nil {
+				return nil, repoErr
+			}
+			merged := proto.Clone(stored).(*dpb.Chart)
+			merged.Title = chart.GetTitle()
+			if len(updateMask.GetPaths()) == 0 || slices.Contains(updateMask.GetPaths(), "plots") {
+				merged.Plots = chart.GetPlots()
+			}
+			return merged, nil
+		},
+	}
+}
+
+func TestUpdateChartPlotTypesFollowChartLevel(t *testing.T) {
+	ctx := context.Background()
+	parallel := []*dpb.PlotSpec{{PlotId: "study", Type: dpb.PlotType_PARALLEL_COORDINATES}}
+	scatter := []*dpb.PlotSpec{{PlotId: "loss", Type: dpb.PlotType_SCATTER}}
+	experimentChart := &dpb.Chart{Name: "experiments/100/charts/c", Title: "Old", Xid: 100, Plots: parallel}
+	workUnitChart := &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c", Title: "Old", Xid: 100, Wid: 1, Plots: scatter}
+
+	tests := []struct {
+		name     string
+		stored   *dpb.Chart
+		plots    []*dpb.PlotSpec
+		mask     []string
+		repoErr  error
+		wantCode codes.Code
+		want     *dpb.Chart
+	}{
+		{
+			name: "experiment-level chart keeps parallel coordinates", stored: experimentChart, plots: parallel, wantCode: codes.OK,
+			want: &dpb.Chart{Name: "experiments/100/charts/c", Title: "Title", Xid: 100, Plots: parallel},
+		},
+		{name: "experiment-level chart rejects scatter", stored: experimentChart, plots: scatter, wantCode: codes.InvalidArgument},
+		{name: "experiment-level chart rejects scatter in plots mask", stored: experimentChart, plots: scatter, mask: []string{"title", "plots"}, wantCode: codes.InvalidArgument},
+		{
+			name: "mask without plots skips the check and preserves stored plots", stored: experimentChart, plots: scatter, mask: []string{"title"}, wantCode: codes.OK,
+			want: &dpb.Chart{Name: "experiments/100/charts/c", Title: "Title", Xid: 100, Plots: parallel},
+		},
+		{name: "work unit chart rejects parallel coordinates", stored: workUnitChart, plots: parallel, wantCode: codes.InvalidArgument},
+		{
+			name: "work unit chart keeps scatter", stored: workUnitChart, plots: scatter, wantCode: codes.OK,
+			want: &dpb.Chart{Name: "experiments/100/workUnits/1/charts/c", Title: "Title", Xid: 100, Wid: 1, Plots: scatter},
+		},
+		{
+			name: "duplicate plot_id rejected before storage", stored: workUnitChart,
+			plots:    []*dpb.PlotSpec{{PlotId: "dup", Type: dpb.PlotType_SCATTER}, {PlotId: "dup", Type: dpb.PlotType_SCATTER}},
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "in-transaction plot validation InvalidArgument surfaces as InvalidArgument", stored: workUnitChart,
+			plots: scatter, repoErr: status.Error(codes.InvalidArgument, "level changed"), wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "in-transaction scope rebind NotFound scrubs foreign XID", stored: workUnitChart,
+			plots:    scatter,
+			repoErr:  status.Error(codes.NotFound, `chart "experiments/200/charts/c" does not match expected scope "experiments/100/workUnits/1/charts/c"`),
+			wantCode: codes.NotFound,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			updated := false
+			repo := newPlotUpdateMockRepo(t, tc.stored, tc.mask, tc.repoErr, &updated)
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+			req := &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "charts/c", Title: "Title", Plots: tc.plots}}
+			if tc.mask != nil {
+				req.UpdateMask = &fieldmaskpb.FieldMask{Paths: tc.mask}
+			}
+
+			resp, err := s.UpdateChart(ctx, req)
+			if status.Code(err) != tc.wantCode {
+				t.Fatalf("UpdateChart() code = %v, want %v (err: %v)", status.Code(err), tc.wantCode, err)
+			}
+			if tc.wantCode == codes.NotFound && strings.Contains(err.Error(), "experiments/200") {
+				t.Errorf("UpdateChart() NotFound error leaked foreign scope: %q", err)
+			}
+			wantUpdated := tc.wantCode == codes.OK || tc.repoErr != nil
+			if updated != wantUpdated {
+				t.Errorf("repository UpdateChart called = %v, want %v", updated, wantUpdated)
+			}
+			if tc.want != nil {
+				if diff := cmp.Diff(tc.want, resp, protocmp.Transform()); diff != "" {
+					t.Errorf("UpdateChart() response mismatch (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+}
+
+// TestUpdateChartRejectsExperimentLevelNames pins that UpdateChart only addresses charts by
+// "charts/{chart}": an experiment-level name can therefore never reach a work unit chart or a chart
+// of another experiment, and the stored chart is not even read.
+func TestUpdateChartRejectsExperimentLevelNames(t *testing.T) {
+	stored := map[string]*dpb.Chart{
+		"work unit chart":             {Name: "experiments/100/workUnits/1/charts/c", Xid: 100, Wid: 1},
+		"chart of another experiment": {Name: "experiments/7/charts/c", Xid: 7},
+	}
+	for name, chart := range stored {
+		t.Run(name, func(t *testing.T) {
+			read := false
+			repo := &mockRepository{
+				getChartFn: func(ctx context.Context, chartId string) (*dpb.Chart, error) {
+					read = true
+					return chart, nil
+				},
+			}
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+
+			_, err := s.UpdateChart(context.Background(), &dpb.UpdateChartRequest{Chart: &dpb.Chart{Name: "experiments/100/charts/c", Title: "Title"}})
+			if status.Code(err) != codes.InvalidArgument {
+				t.Errorf("UpdateChart() code = %v, want %v", status.Code(err), codes.InvalidArgument)
+			}
+			if read {
+				t.Error("UpdateChart read the stored chart for a non-root name")
+			}
+		})
+	}
 }

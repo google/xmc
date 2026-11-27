@@ -94,6 +94,23 @@ py_test(
 )
 
 py_library(
+    name = "check_migration_order_lib",
+    srcs = ["check_migration_order.py"],
+    imports = ["../.."],
+    deps = ["//tools/common:tool_utils"],
+)
+
+py_test(
+    name = "check_migration_order_test",
+    srcs = ["check_migration_order_test.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_migration_order_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "check_ui_selector_contract_lib",
     srcs = ["check_ui_selector_contract.py"],
     imports = ["../.."],

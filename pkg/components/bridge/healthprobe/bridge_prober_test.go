@@ -175,3 +175,6 @@ func (m *mockProberDirect) ProbeHTTP(ctx context.Context, targetURL string, time
 func (m *mockProberDirect) ProbeTCP(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	return m.probeRes, m.err
 }
+func (m *mockProberDirect) ProbeGRPC(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
+	return m.probeRes, m.err
+}

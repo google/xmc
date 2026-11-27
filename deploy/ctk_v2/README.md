@@ -39,7 +39,7 @@ For step-by-step setup of Google Trust Services (GTS) External Account Binding (
 *   **`gts_hmac_key`**: GTS External Account Binding HMAC secret.
 
 ### Feature Switches
-*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations.
+*   **`dashboard_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `false`). Set to `true` to provision the Dashboard Service backend and UI visualization components for custom chart and dashboard visualizations, and to wire `ess_dashboard_service_addr` on ESS (which enables `STUDY` parallel-coordinates chart auto-provisioning and work-unit `ChartArtifact` provisioning; when `false`, work-unit `ChartArtifact`s fail immediately with `"dashboard service is not configured"` and `STUDY` chart auto-provisioning is skipped).
 *   **`rod_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Resource Optimization & Diagnostics (ROD) Data Provider.
 *   **`health_service_deployment_enabled`**: Boolean flag (`true`/`false`, default: `true`). Provisions the Health Service backing the Admin Panel.
 *   **`pause_scheduling_enabled`**: Boolean flag (`true`/`false`, default: `true`). Set to `true` to enable the global workload scheduling pause feature across the Admin Panel, Health Service, Actuator, and ESS (`XMC_PAUSE_SCHEDULING_ENABLED`). Resumption batch size and backlog throttling can be tuned via `health_scheduling_resume_batch_size` (default: `100`) and `health_scheduling_resume_max_backlog` (default: `500`).
@@ -75,7 +75,7 @@ gcloud container clusters update <CLUSTER_NAME> \
   --enable-managed-mldiagnostics
 ```
 
-> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path.
+> **Note:** Only clusters on `1.35.0-gke.3065000+` are supported. Older clusters (which would require installing the ML Diagnostics operator via Helm) are out of scope for this deployment path. For a complete end-to-end walkthrough of cluster configuration, workload instrumentation, and viewing profile data in the XMC UI, see the [Managed XProf User Guide](../../docs/managed_xprof.md).
 
 ### ClickHouse Connection & Credentials (Metrics Pipeline)
 ClickHouse is Bring-Your-Own infrastructure deployed out-of-band; see the [ClickHouse Addon Guide](../addons/metrics/clickhouse/README.md). When the [`clickhouse` `Component` CR](../profiles/stable-2026a/components/clickhouse/README.md) in `xmc-profile` is enabled at pod startup, `dashboard-service` dynamically resolves its ClickHouse connection coordinates (`host`, `nativePort`, `defaultDatabase`, `user`, and `secretName`) from `Component/clickhouse` and hot-swaps on subsequent CR or Secret updates without pod restarts. If you enable `Component/clickhouse` for the first time after `dashboard-service` is already running, wait for `xmc-bridge` to reconcile it (a CR still in `COMPONENT_STATE_DISABLED` counts as disabled at startup) and then restart the service once so it initializes its dynamic chart data engine:
