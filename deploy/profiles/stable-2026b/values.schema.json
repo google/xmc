@@ -110,6 +110,25 @@
             "description": "commonKeys plus imageTag.",
             "enum": ["enabled", "namespace", "deletionProtection", "deletionPolicy", "acknowledgeExperimental", "parameters", "dependencies", "imageTag"]
           }
+        },
+        "mlflow": {
+          "allOf": [{ "$ref": "#/definitions/componentOverrides" }],
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "trackingUri": { "$ref": "#/definitions/parameterValue" },
+                "uiBaseUrl": { "$ref": "#/definitions/parameterValue" },
+                "secretName": { "$ref": "#/definitions/parameterValue" },
+                "secretTokenKey": { "$ref": "#/definitions/parameterValue" },
+                "secretUsernameKey": { "$ref": "#/definitions/parameterValue" },
+                "secretPasswordKey": { "$ref": "#/definitions/parameterValue" },
+                "healthCheckEndpoint": { "$ref": "#/definitions/parameterValue" }
+              }
+            }
+          },
+          "propertyNames": { "$ref": "#/definitions/commonKeys" }
         }
       }
     }

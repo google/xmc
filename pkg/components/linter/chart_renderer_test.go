@@ -959,6 +959,17 @@ func TestStable2026bExperimentalBlueprints(t *testing.T) {
 					Parameters:   map[string]string{"maxTrialBudget": "1000"},
 					Dependencies: []linter.ComponentDependencyRef{{Name: "vizier"}, {Name: "clickhouse"}}}},
 		},
+		{
+			component: "mlflow",
+			want: linter.ComponentManifest{APIVersion: "xmc.dev/v1alpha1", Kind: "Component", Metadata: metadata("mlflow", nil),
+				Spec: linter.ComponentManifestSpec{Enabled: boolPtr(false), ComponentType: "COMPONENT_TYPE_CUSTOM_3P_WRAPPER", ComponentClass: "experiment-tracker",
+					Version: "0.1.0", ChartVersion: "0.1.0", Stability: "EXPERIMENTAL", DeletionProtection: true, DeletionPolicy: "Delete",
+					Parameters: map[string]string{
+						"trackingUri":         "http://mlflow-service.xmc.svc.cluster.local:5000",
+						"uiBaseUrl":           "http://mlflow-service.xmc.svc.cluster.local:5000",
+						"healthCheckEndpoint": "http://mlflow-service.xmc.svc.cluster.local:5000/health",
+					}}},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.component, func(t *testing.T) {
@@ -991,6 +1002,16 @@ func TestStable2026bProfileDAGValidation(t *testing.T) {
 			name:      "vizier enabled without acknowledgeExperimental fails",
 			overrides: map[string]any{"vizier": map[string]any{"enabled": true}},
 			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:      "mlflow enabled without acknowledgeExperimental fails",
+			overrides: map[string]any{"mlflow": map[string]any{"enabled": true}},
+			wantRules: []string{"EXPERIMENTAL_NOT_ACKNOWLEDGED"},
+		},
+		{
+			name:      "mlflow enabled with acknowledgeExperimental passes",
+			overrides: map[string]any{"mlflow": map[string]any{"enabled": true, "acknowledgeExperimental": true}},
+			wantValid: true,
 		},
 		{
 			name: "hpo enabled without acknowledgeExperimental fails",
