@@ -237,6 +237,11 @@ class _CallbackClient:
         except BaseException as exc:  # Re-raised on the test thread by join().
             self._error = exc
 
+    def close(self) -> None:
+        """Joins the callback thread if started, without masking an active exception."""
+        if self._thread is not None:
+            self._thread.join(timeout=10)
+
     def join(self) -> list[int]:
         """Waits for the client thread, re-raises its error, and returns the statuses."""
         if self._thread is None:
@@ -298,7 +303,8 @@ class LoginCommandTest(unittest.TestCase):
                     ["--timeout", "5"], env=env, out=out, open_url=client.open_url
                 )
             finally:
-                statuses = client.join()
+                client.close()
+        statuses = client.join()
 
         success = f"{_SERVER}/api/cli/success"
         self.assertEqual((rc, statuses, client.locations), (0, [302], [success]))
@@ -359,6 +365,7 @@ class LoginCommandTest(unittest.TestCase):
         # wall-clock deadline ends the wait. The client gives up after 3 s, so a
         # regression fails the test instead of hanging it.
         stop = threading.Event()
+        first_byte = threading.Event()
         threads: list[threading.Thread] = []
         errors: list[Exception] = []
         dripped = 0
@@ -369,16 +376,22 @@ class LoginCommandTest(unittest.TestCase):
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=1.0) as s:
                     with contextlib.suppress(OSError):
+                        s.sendall(b"G")
+                        dripped += 1
+                        first_byte.set()
                         while not stop.wait(0.05) and time.monotonic() < end:
                             s.sendall(b"G")
                             dripped += 1
             except Exception as exc:
                 errors.append(exc)
+            finally:
+                first_byte.set()
 
         def open_url(login_url: str) -> bool:
             thread = threading.Thread(target=drip, args=(_port_of(login_url),), daemon=True)
             threads.append(thread)
             thread.start()
+            first_byte.wait(timeout=2.0)
             return True
 
         start = time.monotonic()
@@ -388,13 +401,14 @@ class LoginCommandTest(unittest.TestCase):
                     _SERVER, "c", open_url, io.StringIO(), timeout=0.5
                 )
         finally:
+            elapsed = time.monotonic() - start
             stop.set()
             for thread in threads:
                 thread.join(timeout=2.0)
 
         self.assertEqual(errors, [])
         self.assertGreater(dripped, 0)
-        self.assertLess(time.monotonic() - start, 3.0)
+        self.assertLess(elapsed, 3.0)
 
     def test_run_login_rejects_excessive_timeout_without_overflow(self) -> None:
         out, err = io.StringIO(), io.StringIO()
@@ -420,7 +434,8 @@ class LoginCommandTest(unittest.TestCase):
                 _SERVER, "challenge", open_url, io.StringIO(), timeout=8.0
             )
         finally:
-            statuses = client.join()
+            client.close()
+        statuses = client.join()
 
         self.assertEqual((code, statuses), ("c-1", [302]))
         self.assertLess(time.monotonic() - start, 3.0)
@@ -585,11 +600,23 @@ class LoginCommandTest(unittest.TestCase):
                 _SERVER, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
             )
         finally:
-            statuses = client.join()  # Surfaces a client failure instead of a timeout.
+            client.close()
+        statuses = client.join()  # Surfaces a client failure instead of a timeout.
 
         self.assertEqual(statuses, [400, 400, 400, 400, 302])
         self.assertEqual(client.locations, [None, None, None, None, f"{_SERVER}/api/cli/success"])
         self.assertEqual(code, "good-code")
+
+    def test_callback_result_keeps_the_first_recorded_outcome(self) -> None:
+        code_first = login_command._CallbackResult()
+        code_first.record(code="first")
+        code_first.record(error="later")
+        self.assertEqual((code_first.code, code_first.error), ("first", None))
+
+        err_first = login_command._CallbackResult()
+        err_first.record(error="denied")
+        err_first.record(code="late-code")
+        self.assertEqual((err_first.code, err_first.error), (None, "denied"))
 
     def test_await_loopback_code_reports_callback_errors(self) -> None:
         cases = [
@@ -605,17 +632,16 @@ class LoginCommandTest(unittest.TestCase):
                 return [f"/callback?state={state}{query}"]
 
             client = _CallbackClient(targets)
-            try:
-                with (
-                    self.subTest(query=query),
-                    self.assertRaisesRegex(credentials.AuthError, message),
-                ):
-                    login_command.await_loopback_code(
-                        _SERVER, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
-                    )
-            finally:
+            with self.subTest(query=query):
+                try:
+                    with self.assertRaisesRegex(credentials.AuthError, message):
+                        login_command.await_loopback_code(
+                            _SERVER, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
+                        )
+                finally:
+                    client.close()
                 statuses = client.join()
-            self.assertEqual((statuses, client.locations), ([status], [location]))
+                self.assertEqual((statuses, client.locations), ([status], [location]))
 
     def test_await_loopback_code_redirects_to_an_internationalized_host(self) -> None:
         # Header values must be Latin-1; the handler must still answer the browser.
@@ -626,7 +652,8 @@ class LoginCommandTest(unittest.TestCase):
                 server, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
             )
         finally:
-            statuses = client.join()
+            client.close()
+        statuses = client.join()
 
         self.assertEqual((code, statuses), ("c-1", [302]))
         self.assertEqual(client.locations, ["https://%E4%BE%8B%E3%81%88.jp/api/cli/success"])
