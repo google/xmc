@@ -524,6 +524,54 @@ class TriageNightlyRunTest(unittest.TestCase):
             self.assertIsNone(_load_json_object(ctx, self.tmpdir / name))
         self.assertEqual(len(ctx.warnings), 3)
 
+    def test_versioned_job_title_maps_example_id_and_downloads_versioned_result(self) -> None:
+        scratch = self.tmpdir / "versioned_triage_out"
+        jobs = [
+            _job_fixture(11, "Run & Verify: Simple Job (xmanager 0.8.5.post1)", "success"),
+            _job_fixture(
+                12,
+                "Run & Verify: Simple Job (xmanager 0.8.4)",
+                "failure",
+                [("Launch Example Workload", "failure")],
+            ),
+        ]
+        result_json = {
+            "id": "simple_job",
+            "xmanager_version": "0.8.4",
+            "status": "FAILED",
+            "launch_status": "failure",
+            "verify_status": "skipped",
+            "xid": "",
+        }
+        self._mock_triage(
+            jobs=jobs,
+            job_logs=[_proc("2026-11-04T04:05:00Z ##[error]Launch failed on 0.8.4\n")],
+            artifacts=_artifacts_fixture(
+                "result-simple_job-0.8.5.post1",
+                "result-simple_job-0.8.4",
+                "ui-screenshots-simple_job-0.8.4",
+            ),
+            downloads=2,
+            on_download=lambda dest: (
+                (dest / "simple_job-0.8.4.json").write_text(
+                    json.dumps(result_json), encoding="utf-8"
+                )
+                if dest.name == "result-simple_job-0.8.4"
+                else None
+            ),
+        )
+        res = self._triage(f"--scratch-dir={scratch}")
+
+        self.assertEqual(len(res["failed_jobs"]), 1)
+        failed_job = res["failed_jobs"][0]
+        self.assertEqual(failed_job["example_id"], "simple_job")
+        self.assertEqual(failed_job["xmanager_version"], "0.8.4")
+        self.assertEqual(failed_job["result"], result_json)
+        self.assertEqual(
+            [Path(p).name for p in res["downloaded_artifacts"]],
+            ["result-simple_job-0.8.4", "ui-screenshots-simple_job-0.8.4"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

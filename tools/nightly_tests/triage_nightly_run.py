@@ -45,6 +45,7 @@ _SHA_RE = re.compile(r"[0-9a-fA-F]{7,40}")
 _ARTIFACT_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")
 _LOG_PREFIX_RE = re.compile(r"^\ufeff?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+)?")
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_VERSIONED_JOB_RE = re.compile(r"^(?P<base>Run & Verify: .+) \(xmanager (?P<version>[^)]+)\)$")
 
 _FAILURE_CONCLUSIONS = frozenset({"failure", "timed_out", "startup_failure", "action_required"})
 _HEALTHY_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
@@ -264,6 +265,25 @@ def _save_job_log(ctx: _TriageContext, job_id: int) -> tuple[str | None, list[st
     return str(dest), excerpt
 
 
+def _resolve_job_identity(job_name: str, name_map: dict[str, str]) -> tuple[str, str]:
+    """Resolves `(example_id, xmanager_version)` from a plain or versioned job title."""
+    if job_name in name_map:
+        return name_map[job_name], ""
+    match = _VERSIONED_JOB_RE.match(job_name)
+    if match:
+        return name_map.get(match.group("base"), ""), match.group("version")
+    return "", ""
+
+
+def _job_artifact_stems(job: dict[str, Any]) -> tuple[str, ...]:
+    """Returns candidate result artifact stems (`<id>-<version>`, `<id>`) for a failed job."""
+    example_id = str(job.get("example_id") or "")
+    if not example_id:
+        return ()
+    version = str(job.get("xmanager_version") or "")
+    return (f"{example_id}-{version}", example_id) if version else (example_id,)
+
+
 def _build_failed_job_entry(
     ctx: _TriageContext,
     job: dict[str, Any],
@@ -273,22 +293,26 @@ def _build_failed_job_entry(
     """Formats a single failed job record with its saved log path and bounded error excerpt."""
     job_id = int(job["id"])
     job_name = str(job.get("name") or "")
+    example_id, xmanager_version = _resolve_job_identity(job_name, name_map)
     failed_steps = [
         step.get("name", "")
         for step in job.get("steps", [])
         if step.get("conclusion") in bad_conclusions
     ]
     log_path, error_excerpt = _save_job_log(ctx, job_id)
-    return {
+    entry: dict[str, Any] = {
         "job_id": job_id,
         "name": job_name,
-        "example_id": name_map.get(job_name, ""),
+        "example_id": example_id,
         "conclusion": job.get("conclusion") or "",
         "failed_steps": failed_steps,
         "log_path": log_path,
         "error_excerpt": error_excerpt,
         "result": None,
     }
+    if xmanager_version:
+        entry["xmanager_version"] = xmanager_version
+    return entry
 
 
 def _collect_failed_jobs(
@@ -392,10 +416,11 @@ def _attach_job_results(
     """Populates `job['result']` on failed matrix jobs from downloaded `result-*` artifacts."""
     downloaded_dirs = set(e2e_artifacts)
     for job in failed_jobs:
-        example_id = job["example_id"]
-        artifact_dir = ctx.scratch_dir / f"result-{example_id}"
-        if str(artifact_dir) in downloaded_dirs:
-            job["result"] = _load_json_object(ctx, artifact_dir / f"{example_id}.json")
+        for stem in _job_artifact_stems(job):
+            artifact_dir = ctx.scratch_dir / f"result-{stem}"
+            if str(artifact_dir) in downloaded_dirs:
+                job["result"] = _load_json_object(ctx, artifact_dir / f"{stem}.json")
+                break
 
 
 def _find_prior_green_e2e_sha(target_run: dict[str, Any], e2e_runs: list[dict[str, Any]]) -> str:
@@ -525,7 +550,7 @@ def _enrich_with_failure_diagnostics(
     """Populates failed jobs, parsed result JSON, recent commits, and cluster rollout skew."""
     run_id = int(target_run["databaseId"])
     failed_jobs = _collect_failed_jobs(ctx, run_id, str(target_run.get("conclusion") or ""))
-    result_names = {f"result-{job['example_id']}" for job in failed_jobs if job["example_id"]}
+    result_names = {f"result-{stem}" for job in failed_jobs for stem in _job_artifact_stems(job)}
     e2e_artifacts = _download_artifacts(ctx, run_id, result_names, "ui-screenshots-")
     _attach_job_results(ctx, failed_jobs, e2e_artifacts)
     recent_commits = _collect_recent_commits(ctx, target_run)

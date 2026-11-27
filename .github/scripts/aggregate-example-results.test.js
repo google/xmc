@@ -445,3 +445,110 @@ test('aggregateResults handles launch-only mode (verify skipped but status passe
   assert.ok(summaryMarkdown.includes('| **Verify Step** | `⏭️ Skipped` |'));
   assert.ok(summaryMarkdown.includes('| **Experiment / Identifier** | `8008` |'));
 });
+
+test('aggregateResults renders XManager Version column and disambiguates xidMap for cross-version results', () => {
+  const results = [
+    {
+      id: 'simple_job',
+      name: 'Simple Job',
+      xmanager_version: '0.8.5.post1',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '9001'
+    },
+    {
+      id: 'simple_job',
+      name: 'Simple Job',
+      xmanager_version: '0.8.4',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '9002'
+    },
+    {
+      id: 'admin_panel_ui',
+      name: 'Admin Panel (Playwright UI)',
+      xmanager_version: '0.8.5.post1',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: 'N/A'
+    },
+    {
+      id: 'admin_panel_ui',
+      name: 'Admin Panel (Playwright UI)',
+      xmanager_version: '0.8.4',
+      status: 'SKIPPED',
+      launch_status: 'skipped',
+      verify_status: 'skipped',
+      xid: 'skipped'
+    },
+    {
+      id: 'sidecar',
+      name: 'Sidecar Job',
+      xmanager_version: '0.8.5.post1',
+      status: 'PASSED',
+      launch_status: 'success',
+      verify_status: 'success',
+      xid: '9003'
+    },
+    {
+      id: 'sidecar',
+      name: 'Sidecar Job',
+      xmanager_version: '0.8.4',
+      status: 'SKIPPED',
+      launch_status: 'skipped',
+      verify_status: 'skipped',
+      xid: 'skipped'
+    }
+  ];
+
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+
+  assert.strictEqual(allPassed, true);
+  assert.deepStrictEqual(xidMap, {
+    'simple_job@0.8.5.post1': '9001',
+    'simple_job@0.8.4': '9002',
+    sidecar: '9003'
+  });
+  assert.ok(
+    summaryMarkdown.includes(
+      '| Example ID | Name | XManager Version | Status | Launch | Verify | Experiment / Identifier |'
+    )
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `simple_job` | Simple Job | `0.8.5.post1` | ✅ PASSED | `success` | `success` | `9001` |'
+    )
+  );
+  assert.ok(
+    summaryMarkdown.includes(
+      '| `simple_job` | Simple Job | `0.8.4` | ✅ PASSED | `success` | `success` | `9002` |'
+    )
+  );
+});
+
+test('aggregateResults single result includes XManager Version row and resolveFailureAnnotation includes version', () => {
+  const results = [
+    {
+      id: 'simple_job',
+      name: 'Simple Job',
+      xmanager_version: '0.8.4',
+      status: 'VERIFY_FAILED',
+      launch_status: 'success',
+      verify_status: 'failure',
+      xid: '9010'
+    }
+  ];
+
+  const { xidMap, summaryMarkdown, allPassed } = aggregateResults(results);
+
+  assert.strictEqual(allPassed, false);
+  assert.deepStrictEqual(xidMap, { simple_job: '9010' });
+  assert.ok(summaryMarkdown.includes('| **XManager Version** | `0.8.4` |'));
+  assert.strictEqual(
+    resolveFailureAnnotation(results),
+    '::error::One or more example workloads failed launch or verification: simple_job@0.8.4 (VERIFY_FAILED)'
+  );
+});
