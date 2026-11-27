@@ -28,6 +28,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+import tools.dev_env.cleanup_gateway_rules as cleanup_gateway_rules  # noqa: E402
 from tools.common.tool_utils import (  # noqa: E402
     COMPONENT_PROFILES,
     DEFAULT_COMPONENT_PROFILE,
@@ -72,6 +73,14 @@ def handle_upgrade(args: argparse.Namespace) -> None:
         log_error(f"Unsupported upgrade target: {target}")
         sys.exit(1)
     handle_gke_upgrade(args)
+
+
+def handle_cleanup_gateway(args: argparse.Namespace) -> None:
+    """Handler for cleaning up orphaned Gateway forwarding rules."""
+    cleanup_argv = ["--config", args.config]
+    if getattr(args, "dry_run", False):
+        cleanup_argv.append("--dry-run")
+    cleanup_gateway_rules.main(cleanup_argv)
 
 
 def handle_spanner(args: argparse.Namespace) -> None:
@@ -352,6 +361,22 @@ def _add_upgrade_flags(p: argparse.ArgumentParser, *, is_gke: bool) -> None:
     group.add_argument("--only", choices=upgrade_dev_env.STEPS, help="Execute only step.")
 
 
+def _add_cleanup_gateway_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Adds the 'cleanup-gateway' subcommand parser."""
+    p = subparsers.add_parser(
+        "cleanup-gateway",
+        help="Cleanup orphaned GKE Gateway global forwarding rules.",
+        description="Identifies and deletes stale global forwarding rules created by GKE Gateway.",
+    )
+    p.add_argument("-c", "--config", required=True, help="Path to deployment YAML config.")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print rules to be deleted without actually deleting them.",
+    )
+    p.set_defaults(func=handle_cleanup_gateway)
+
+
 def _add_spanner_parser(subparsers: argparse._SubParsersAction) -> None:
     """Adds the 'spanner' subcommand parser for database management."""
     p = subparsers.add_parser(
@@ -622,6 +647,7 @@ def create_parser() -> argparse.ArgumentParser:
     _add_status_parser(subparsers)
     _add_logs_parser(subparsers)
     _add_build_images_parser(subparsers)
+    _add_cleanup_gateway_parser(subparsers)
     _add_spanner_parser(subparsers)
 
     return parser
