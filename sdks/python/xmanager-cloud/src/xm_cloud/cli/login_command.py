@@ -325,11 +325,28 @@ def _build_opener(server: str) -> urllib.request.OpenerDirector:
         The opener for the probe and token requests.
 
     Raises:
-        ValueError: If `server` is neither `https://` nor a loopback `http://`.
+        ValueError: If `server` is not a valid `https://` or loopback `http://` origin.
     """
-    scheme = urllib.parse.urlsplit(server).scheme.lower()
-    if scheme != "https" and not (scheme == "http" and credentials.is_loopback_origin(server)):
-        raise ValueError(f"unsupported deployment URL scheme: {server!r}")
+    parts = urllib.parse.urlsplit(server)
+    scheme = parts.scheme.lower()
+    if scheme not in ("https", "http"):
+        raise ValueError(f"unsupported deployment URL scheme: {scheme!r}")
+    try:
+        port, hostname = parts.port, parts.hostname
+    except ValueError:
+        raise ValueError("invalid deployment URL origin") from None
+    if (
+        not hostname
+        or (port is not None and port < 1)
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
+        raise ValueError("invalid deployment URL origin")
+    if scheme == "http" and not credentials.is_loopback_origin(server):
+        raise ValueError(f"unsupported deployment URL scheme: {scheme!r}")
     opener = urllib.request.OpenerDirector()
     handlers: tuple[urllib.request.BaseHandler, ...] = (
         urllib.request.ProxyHandler({})
@@ -390,6 +407,9 @@ def _send_probe(server: str) -> None:
     """
     try:
         opener = _build_opener(server)
+    except ValueError as exc:
+        raise credentials.AuthError(f"Cannot reach deployment server: {exc}") from None
+    try:
         with opener.open(f"{server}/api/cli/login", timeout=_PROBE_TIMEOUT_SECONDS) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:

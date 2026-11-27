@@ -331,12 +331,14 @@ class LoginCommandTest(unittest.TestCase):
             (_FailingBody(http.client.IncompleteRead(b"{")), r"failed: HTTP 400\.$"),
         ]
         for body, pattern in cases:
+            payload = io.BytesIO(body) if isinstance(body, bytes) else body
             with (
                 self.subTest(body=body),
-                _serve(400, body),
+                _serve(400, payload),
                 self.assertRaisesRegex(credentials.AuthError, pattern),
             ):
                 login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+            self.assertTrue(payload.closed)
 
     def test_exchange_code_rejects_malformed_grants(self) -> None:
         bodies: list[object] = [
@@ -468,9 +470,11 @@ class LoginCommandTest(unittest.TestCase):
                 login_command.exchange_code(server, "code-1", "verifier-1")
 
     def test_probe_cli_login_accepts_http_400(self) -> None:
-        with _serve(400) as requests:
+        buf = io.BytesIO(b"")
+        with _serve(400, buf) as requests:
             login_command._probe_cli_login(_SERVER)
 
+        self.assertTrue(buf.closed)
         (req,) = requests
         self.assertEqual((req.full_url, req.get_method()), (f"{_SERVER}/api/cli/login", "GET"))
         self.assertEqual(req.timeout, 10)
@@ -482,13 +486,15 @@ class LoginCommandTest(unittest.TestCase):
             *((code, f"returned HTTP {code} on") for code in (301, 302, 307, 308, 500, 502)),
         ]
         for code, pattern in cases:
+            buf = io.BytesIO(b"<html>")
             headers = {"Location": "https://attacker.example.com/"} if 300 <= code < 400 else {}
             with (
                 self.subTest(code=code),
-                _serve(code, b"<html>", headers) as requests,
+                _serve(code, buf, headers) as requests,
                 self.assertRaisesRegex(credentials.AuthError, pattern),
             ):
                 login_command._probe_cli_login(_SERVER)
+            self.assertTrue(buf.closed)
             self.assertEqual(len(requests), 1)  # Redirects are never followed.
 
     def test_probe_cli_login_wraps_transport_and_url_errors(self) -> None:
@@ -730,6 +736,28 @@ class LoginCommandTest(unittest.TestCase):
                 ),
             ):
                 login_command._probe_cli_login(server)
+
+    def test_exchange_code_and_probe_reject_invalid_origins_without_leaking_secrets(self) -> None:
+        for server in (
+            "https://",
+            "http://user:s3cret@xmc.example.com",
+            "https://user:s3cret@xmc.example.com",
+            "https://xmc.example.com/extra?q=1",
+            "https://xmc.example.com:0",
+            "https://xmc.example.com#frag",
+        ):
+            with self.subTest(server=server):
+                with self.assertRaisesRegex(
+                    credentials.AuthError, "^Token exchange failed: invalid deployment URL origin$"
+                ) as exc_ctx:
+                    login_command.exchange_code(server, "code-1", "verifier-1")
+                self.assertNotIn("s3cret", str(exc_ctx.exception))
+            with self.subTest(probe_server=server):
+                with self.assertRaisesRegex(
+                    credentials.AuthError, "^Cannot reach .*: invalid deployment URL origin$"
+                ) as probe_ctx:
+                    login_command._probe_cli_login(server)
+                self.assertNotIn("s3cret", str(probe_ctx.exception))
 
     def test_run_login_preserves_entries_written_during_interactive_login(self) -> None:
         env = self._env()
