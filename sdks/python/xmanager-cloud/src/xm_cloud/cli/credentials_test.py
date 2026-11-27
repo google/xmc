@@ -425,6 +425,30 @@ class CredentialsTest(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
                 self.assertEqual(credentials.load_credentials(path), {})
 
+    def test_save_credentials_tolerates_concurrent_directory_creation(self) -> None:
+        if os.name != "posix":
+            self.skipTest("POSIX permissions only")
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        concurrent = pathlib.Path(temp_dir.name) / "concurrent"
+        path = concurrent / "credentials.json"
+        real_mkdir = pathlib.Path.mkdir
+
+        def race_mkdir(
+            target: pathlib.Path, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+        ) -> None:
+            if target == concurrent:
+                real_mkdir(target, mode=0o755)
+                raise FileExistsError(target)
+            real_mkdir(target, mode=mode, parents=parents, exist_ok=exist_ok)
+
+        with mock.patch.object(pathlib.Path, "mkdir", race_mkdir):
+            credentials.save_credentials(path, {})
+
+        self.assertEqual(stat.S_IMODE(concurrent.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+        self.assertEqual(credentials.load_credentials(path), {})
+
     def test_load_credentials_accepts_owner_only_modes(self) -> None:
         if os.name != "posix":
             self.skipTest("POSIX permissions only")
