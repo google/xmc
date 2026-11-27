@@ -29,13 +29,16 @@ import os
 import pathlib
 import secrets
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, TextIO
+from typing import Any, TextIO, TypeVar
 
 from xm_cloud.cli import arg_parsing, credentials, terminal_text
+
+_T = TypeVar("_T")
 
 if sys.platform == "win32":
     _TTY_ERRORS: tuple[type[Exception], ...] = ()
@@ -48,9 +51,16 @@ else:
 _MAX_TOKEN_RESPONSE_BYTES = 64 * 1024
 # Only the start of an error body is needed to find its OAuth error description.
 _MAX_ERROR_BODY_BYTES = 4096
+# Wall-clock limits for the whole probe and token request (DNS, connect, and every
+# read); urllib's own `timeout` bounds only each socket operation.
+_PROBE_TIMEOUT_SECONDS = 10.0
+_TOKEN_TIMEOUT_SECONDS = 30.0
 # XMC's longest CLI session (CLI_SESSION_TTL) is 720h. One year leaves headroom
 # while keeping `expires_at` small enough for `xdash.auth` to convert to a float.
 _MAX_EXPIRES_IN_SECONDS = 365 * 24 * 60 * 60
+# `xdash.auth` (CLI_TOKEN_EXPIRY_BUFFER_SEC) treats a token as expired this many
+# seconds early, so a shorter grant is unusable the moment it is cached.
+_EXPIRY_SKEW_SECONDS = 30
 # Exceptions a malformed or truncated HTTP response can raise while it is read or
 # parsed. UnicodeDecodeError and json.JSONDecodeError are ValueErrors; RecursionError
 # comes from deeply nested JSON.
@@ -116,6 +126,25 @@ def _format_http_error(exc: urllib.error.HTTPError) -> str:
 
 
 def _post_token_request(server: str, body: bytes) -> bytes:
+    """POSTs `body` to `/api/cli/token` within `_TOKEN_TIMEOUT_SECONDS` of wall time.
+
+    Args:
+        server: Deployment origin.
+        body: Form-encoded token request.
+
+    Returns:
+        The response body, at most `_MAX_TOKEN_RESPONSE_BYTES` + 1 bytes long.
+
+    Raises:
+        credentials.AuthError: On transport errors, an invalid URL, a non-2xx or
+            redirect response, or no complete response before the deadline.
+    """
+    return _with_deadline(
+        lambda: _send_token_request(server, body), _TOKEN_TIMEOUT_SECONDS, "Token exchange failed"
+    )
+
+
+def _send_token_request(server: str, body: bytes) -> bytes:
     """POSTs `body` to `/api/cli/token` without following redirects.
 
     Args:
@@ -135,12 +164,45 @@ def _post_token_request(server: str, body: bytes) -> bytes:
         req = urllib.request.Request(
             f"{server}/api/cli/token", data=body, headers=headers, method="POST"
         )
-        with opener.open(req, timeout=30) as resp:
+        with opener.open(req, timeout=_TOKEN_TIMEOUT_SECONDS) as resp:
             return resp.read(_MAX_TOKEN_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         raise credentials.AuthError(f"Token exchange failed: {_format_http_error(exc)}.") from None
     except _RESPONSE_ERRORS as exc:
         raise credentials.AuthError(f"Token exchange failed: {exc}") from None
+
+
+def _with_deadline(request: Callable[[], _T], seconds: float, failure: str) -> _T:
+    """Runs `request` on a daemon thread and waits at most `seconds` for it.
+
+    Args:
+        request: The network request to run.
+        seconds: Wall-clock limit.
+        failure: Error message prefix, such as "Token exchange failed".
+
+    Returns:
+        The result of `request`.
+
+    Raises:
+        credentials.AuthError: If `request` does not finish in time. Exceptions
+            from `request` are re-raised on the calling thread.
+    """
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            outcome["result"] = request()
+        except Exception as exc:  # Re-raised on the calling thread below.
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=run, name="xmc-login-request", daemon=True)
+    worker.start()
+    worker.join(seconds)  # An abandoned request ends with the process.
+    if worker.is_alive():
+        raise credentials.AuthError(f"{failure}: no complete response within {seconds:g} seconds.")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
 
 
 def exchange_code(server: str, code: str, verifier: str) -> dict[str, Any]:
@@ -227,12 +289,17 @@ def _validated_lifetime(p: Mapping[str, Any]) -> int:
         The lifetime in seconds.
 
     Raises:
-        credentials.AuthError: Unless `expires_in` is an integer (not a bool) in
-            1..`_MAX_EXPIRES_IN_SECONDS`.
+        credentials.AuthError: Unless `expires_in` is an integer (not a bool)
+            above `_EXPIRY_SKEW_SECONDS` and at most `_MAX_EXPIRES_IN_SECONDS`.
     """
     exp = p.get("expires_in")
     if not isinstance(exp, int) or isinstance(exp, bool) or exp <= 0:
         raise credentials.AuthError("Malformed token response from server.")
+    if exp <= _EXPIRY_SKEW_SECONDS:
+        raise credentials.AuthError(
+            f"Token from server is already expired: expires_in {exp} is within the"
+            f" {_EXPIRY_SKEW_SECONDS}-second expiry skew."
+        )
     if exp > _MAX_EXPIRES_IN_SECONDS:
         raise credentials.AuthError(
             "Malformed token response from server: expires_in exceeds"
@@ -276,7 +343,20 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _probe_cli_login(server: str) -> None:
-    """Verifies that `server` is reachable and supports `/api/cli/login`.
+    """Verifies within `_PROBE_TIMEOUT_SECONDS` that `server` supports CLI login.
+
+    Args:
+        server: Deployment origin.
+
+    Raises:
+        credentials.AuthError: If `server` is unreachable, answers 2xx or 3xx,
+            does not support CLI login, or sends no complete response in time.
+    """
+    _with_deadline(lambda: _send_probe(server), _PROBE_TIMEOUT_SECONDS, f"Cannot reach {server}")
+
+
+def _send_probe(server: str) -> None:
+    """Sends a bare GET to `/api/cli/login` and checks the status.
 
     XMC >= 0.16.0 answers a bare GET with HTTP 400 (missing parameters); it never
     returns 2xx, so a 2xx means the request reached something other than XMC
@@ -291,7 +371,7 @@ def _probe_cli_login(server: str) -> None:
     """
     opener = _build_opener(server)
     try:
-        with opener.open(f"{server}/api/cli/login", timeout=10) as resp:
+        with opener.open(f"{server}/api/cli/login", timeout=_PROBE_TIMEOUT_SECONDS) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:
         _check_probe_status(server, exc.code)

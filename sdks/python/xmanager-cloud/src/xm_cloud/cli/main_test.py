@@ -197,6 +197,24 @@ class MainTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("still readable\n", contents)
 
+    def test_login_output_errors_exit_1_without_a_traceback(self) -> None:
+        # Writing the sign-in URL fails, so the code prompt is never reached.
+        env = {"XMANAGER_UI_URL": "https://xmc.example.com"}
+        with (
+            tempfile.TemporaryDirectory() as xdg,
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": xdg, **env}, clear=True),
+            mock.patch.object(login_command, "_probe_cli_login"),
+        ):
+            err = io.StringIO()
+            out = _BrokenStream(write_error=BrokenPipeError(32, "Broken pipe"))
+
+            code = main.main(["login"], out=out, err=err)
+
+        self.assertEqual(code, 1)
+        self.assertEqual(
+            err.getvalue(), "xmc: error: cannot write output: [Errno 32] Broken pipe\n"
+        )
+
 
 class _BrokenStream(io.StringIO):
     """A text stream whose `write` or `flush` fails like a closed pipe or full disk."""

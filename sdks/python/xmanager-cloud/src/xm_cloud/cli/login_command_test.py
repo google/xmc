@@ -24,8 +24,11 @@ import http.client
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import urllib.error
 import urllib.parse
@@ -97,6 +100,67 @@ def _serve(
         urllib.request.HTTPSHandler, "https_open", autospec=True, side_effect=https_open
     ):
         yield requests
+
+
+@contextlib.contextmanager
+def _serve_http(code: int, body: bytes = b"") -> Iterator[list[urllib.request.Request]]:
+    """Like `_serve`, but answers plain-http requests via `HTTPHandler.http_open`.
+
+    A proxied request reaches `http_open` with the proxy as its host, so the
+    recorded `host` shows whether an ambient proxy was used.
+
+    Args:
+        code: HTTP status to return.
+        body: Response body, served fresh for each request.
+
+    Yields:
+        The list of requests sent, in order.
+    """
+    requests: list[urllib.request.Request] = []
+
+    def http_open(handler: object, req: urllib.request.Request) -> _FakeResponse:
+        del handler
+        requests.append(req)
+        return _FakeResponse(req.full_url, code, io.BytesIO(body), {})
+
+    with mock.patch.object(
+        urllib.request.HTTPHandler, "http_open", autospec=True, side_effect=http_open
+    ):
+        yield requests
+
+
+@contextlib.contextmanager
+def _dripping_server(give_up_after: float = 3.0) -> Iterator[str]:
+    """Accepts one connection on 127.0.0.1 and sends it one byte every 50 ms.
+
+    Only a wall-clock deadline ends such a request. The server closes the
+    connection after `give_up_after` seconds, so a regression fails, not hangs.
+
+    Args:
+        give_up_after: Seconds after which the server closes the connection.
+
+    Yields:
+        The `http://127.0.0.1:<port>` origin.
+    """
+    listener = socket.create_server(("127.0.0.1", 0))
+    listener.settimeout(give_up_after)
+    port, stop = listener.getsockname()[1], threading.Event()
+
+    def drip() -> None:
+        with listener, contextlib.suppress(OSError):
+            conn, _ = listener.accept()
+            with conn:
+                end = time.monotonic() + give_up_after
+                while not stop.wait(0.05) and time.monotonic() < end:
+                    conn.sendall(b"x")
+
+    thread = threading.Thread(target=drip, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        stop.set()
+        thread.join()
 
 
 def _now() -> int:
@@ -324,9 +388,12 @@ class LoginCommandTest(unittest.TestCase):
 
     def test_exchange_code_bounds_expires_in(self) -> None:
         limit = login_command._MAX_EXPIRES_IN_SECONDS
-        with _serve(200, json.dumps({**_GOOD_GRANT, "expires_in": limit}).encode("utf-8")):
-            grant = login_command.exchange_code(_SERVER, "code-1", "verifier-1")
-        self.assertEqual(grant["expires_in"], limit)
+        skew = login_command._EXPIRY_SKEW_SECONDS
+        for accepted in (skew + 1, limit):
+            body = json.dumps({**_GOOD_GRANT, "expires_in": accepted}).encode("utf-8")
+            with self.subTest(accepted=accepted), _serve(200, body):
+                grant = login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+                self.assertEqual(grant["expires_in"], accepted)
         # 10**4300 - 1 still parses, but `now + expires_in` could not be written.
         for expires_in in (limit + 1, 10**400, 10**4300 - 1):
             body = json.dumps({**_GOOD_GRANT, "expires_in": expires_in}).encode("utf-8")
@@ -334,6 +401,17 @@ class LoginCommandTest(unittest.TestCase):
                 self.subTest(digits=len(str(expires_in))),
                 _serve(200, body),
                 self.assertRaisesRegex(credentials.AuthError, f"exceeds {limit} seconds"),
+            ):
+                login_command.exchange_code(_SERVER, "code-1", "verifier-1")
+
+    def test_exchange_code_rejects_lifetimes_within_the_xdash_expiry_skew(self) -> None:
+        # xdash.auth treats a token as expired 30 s early, so it could never use these.
+        for expires_in in (1, 29, login_command._EXPIRY_SKEW_SECONDS):
+            body = json.dumps({**_GOOD_GRANT, "expires_in": expires_in}).encode("utf-8")
+            with (
+                self.subTest(expires_in=expires_in),
+                _serve(200, body),
+                self.assertRaisesRegex(credentials.AuthError, "^Token from server is already exp"),
             ):
                 login_command.exchange_code(_SERVER, "code-1", "verifier-1")
 
@@ -434,7 +512,7 @@ class LoginCommandTest(unittest.TestCase):
                 fake.datetime.fromtimestamp.return_value.astimezone.side_effect = exc
                 self.assertEqual(login_command._format_expiry(123), "Unix time 123")
 
-    def test_run_login_manual_flow_caches_grant_and_logout_clears_it(self) -> None:
+    def test_run_login_manual_flow_caches_the_grant(self) -> None:
         out, err, env = io.StringIO(), io.StringIO(), self._env()
         grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
         before = _now()
@@ -453,25 +531,47 @@ class LoginCommandTest(unittest.TestCase):
         expires_at = cached[_SERVER]["expires_at"]
         self.assertIsInstance(expires_at, int)
         self.assertTrue(before + 900 <= expires_at <= _now() + 900)
-        logout_out, logout_err = io.StringIO(), io.StringIO()
-        rc = logout_command.run_logout([], env=env, out=logout_out, err=logout_err)
+
+    def test_logout_clears_a_login_written_by_run_login(self) -> None:
+        env = self._env()
+        grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
+        with (
+            mock.patch.object(login_command, "_probe_cli_login"),
+            mock.patch.object(login_command, "exchange_code", return_value=grant),
+        ):
+            login_command.run_login(
+                [], env=env, out=io.StringIO(), err=io.StringIO(), prompt=lambda _: "c"
+            )
+        out, err = io.StringIO(), io.StringIO()
+
+        rc = logout_command.run_logout([], env=env, out=out, err=err)
+
         self.assertEqual(
-            (rc, logout_out.getvalue(), logout_err.getvalue()),
-            (0, f"Logged out of {_SERVER}.\n", ""),
+            (rc, out.getvalue(), err.getvalue()), (0, f"Logged out of {_SERVER}.\n", "")
         )
         self.assertEqual(credentials.load_credentials(credentials.credentials_path(env)), {})
 
+    def test_run_login_probes_before_prompting(self) -> None:
+        env, err, prompt = self._env(), io.StringIO(), mock.Mock(return_value="c")
+        with _serve(404):
+            rc = login_command.run_login([], env=env, out=io.StringIO(), err=err, prompt=prompt)
+
+        self.assertEqual(rc, 1)
+        self.assertRegex(err.getvalue(), r"^Error: Server .* does not support `xmc login`")
+        prompt.assert_not_called()
+        self.assertFalse(credentials.credentials_path(env).exists())
+
     def test_run_login_binds_pkce_challenge_and_strips_the_pasted_code(self) -> None:
-        out = io.StringIO()
+        out, err = io.StringIO(), io.StringIO()
         with (
             mock.patch.object(login_command, "_probe_cli_login"),
             mock.patch.object(login_command, "exchange_code", return_value=_GOOD_GRANT) as exchange,
         ):
             rc = login_command.run_login(
-                [], env=self._env(), out=out, err=io.StringIO(), prompt=lambda _: "  code-1 \n"
+                [], env=self._env(), out=out, err=err, prompt=lambda _: "  code-1 \n"
             )
 
-        self.assertEqual(rc, 0)
+        self.assertEqual((rc, err.getvalue()), (0, ""))
         (server, code, verifier), _ = exchange.call_args
         self.assertEqual((server, code), (_SERVER, "code-1"))
         url = next(word for word in out.getvalue().split() if "/api/cli/login?" in word)
@@ -517,10 +617,10 @@ class LoginCommandTest(unittest.TestCase):
                     err=err,
                     prompt=mock.Mock(side_effect=exc),
                 )
-            self.assertEqual(rc, 1)
-            self.assertTrue(
-                err.getvalue().startswith("Error: Cannot read the authorization code: ")
-            )
+                self.assertEqual(rc, 1)
+                self.assertTrue(
+                    err.getvalue().startswith("Error: Cannot read the authorization code: ")
+                )
 
     def test_run_login_defaults_to_process_env_and_streams(self) -> None:
         out, err = io.StringIO(), io.StringIO()
@@ -559,24 +659,46 @@ class LoginCommandTest(unittest.TestCase):
     def test_loopback_requests_bypass_ambient_proxies(self) -> None:
         # Plain http:// is allowed only for loopback, so a proxy would carry the code
         # and PKCE verifier off the machine in cleartext.
-        hosts: list[str] = []
+        proxies = {"http_proxy": "http://proxy.invalid:3128", "no_proxy": ""}
+        proxies["https_proxy"] = proxies["HTTP_PROXY"] = proxies["http_proxy"]
+        for host in ("localhost", "127.0.0.1", "[::1]"):
+            server = f"http://{host}:8080"
+            with self.subTest(host=host), mock.patch.dict(os.environ, proxies):
+                with _serve_http(400) as probe_requests:
+                    login_command._probe_cli_login(server)
+                with _serve_http(200, json.dumps(_GOOD_GRANT).encode()) as token_requests:
+                    grant = login_command.exchange_code(server, "code-1", "verifier-1")
 
-        def http_open(handler: object, req: urllib.request.Request) -> _FakeResponse:
-            del handler
-            hosts.append(req.host)
-            return _FakeResponse(req.full_url, 400, io.BytesIO(), {})
+                self.assertEqual([r.host for r in probe_requests], [f"{host}:8080"])
+                self.assertEqual([r.host for r in token_requests], [f"{host}:8080"])
+                self.assertEqual(grant["access_token"], _GOOD_GRANT["access_token"])
 
+    def test_exchange_code_gives_up_on_a_dripping_server_at_the_deadline(self) -> None:
         with (
-            mock.patch.dict(
-                os.environ, {"http_proxy": "http://proxy.invalid:3128", "no_proxy": ""}
-            ),
-            mock.patch.object(
-                urllib.request.HTTPHandler, "http_open", autospec=True, side_effect=http_open
+            mock.patch.object(login_command, "_TOKEN_TIMEOUT_SECONDS", 0.3),
+            _dripping_server() as server,
+            self.assertRaisesRegex(
+                credentials.AuthError,
+                r"^Token exchange failed: no complete response within 0\.3 seconds\.$",
             ),
         ):
-            login_command._probe_cli_login("http://localhost:8080")
+            start = time.monotonic()
+            login_command.exchange_code(server, "code-1", "verifier-1")
 
-        self.assertEqual(hosts, ["localhost:8080"])
+        self.assertLess(time.monotonic() - start, 2)
+
+    def test_probe_gives_up_on_a_dripping_server_at_the_deadline(self) -> None:
+        with (
+            mock.patch.object(login_command, "_PROBE_TIMEOUT_SECONDS", 0.3),
+            _dripping_server() as server,
+            self.assertRaisesRegex(
+                credentials.AuthError, r"^Cannot reach .*: no complete response within 0\.3 seconds"
+            ),
+        ):
+            start = time.monotonic()
+            login_command._probe_cli_login(server)
+
+        self.assertLess(time.monotonic() - start, 2)
 
     def test_remote_requests_keep_ambient_proxies(self) -> None:
         proxy_env = {"https_proxy": "http://proxy.invalid:3128", "no_proxy": ""}
@@ -592,6 +714,7 @@ class LoginCommandTest(unittest.TestCase):
         other = {"access_token": "o", "email": "o@example.com", "expires_at": 1}
         credentials.save_credentials(path, {"https://stale.example.com": other})
         grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
+        err = io.StringIO()
 
         def prompt(_: str) -> str:
             # A concurrent `xmc logout`/`login` rewrites the cache while we wait.
@@ -602,9 +725,9 @@ class LoginCommandTest(unittest.TestCase):
             mock.patch.object(login_command, "_probe_cli_login"),
             mock.patch.object(login_command, "exchange_code", return_value=grant),
         ):
-            rc = login_command.run_login([], env=env, out=io.StringIO(), prompt=prompt)
+            rc = login_command.run_login([], env=env, out=io.StringIO(), err=err, prompt=prompt)
 
-        self.assertEqual(rc, 0)
+        self.assertEqual((rc, err.getvalue()), (0, ""))
         self.assertEqual(
             sorted(credentials.load_credentials(path)), ["https://other.example.com", _SERVER]
         )
