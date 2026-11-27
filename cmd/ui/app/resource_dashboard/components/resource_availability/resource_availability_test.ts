@@ -168,7 +168,7 @@ describe('ResourceAvailabilityComponent', () => {
       second$.asObservable(),
     );
 
-    const { fixture } = bootstrap(ResourceAvailabilityComponent);
+    const fixture = bootstrap(ResourceAvailabilityComponent);
     await flush();
 
     expect(first$.observed).toBeTrue();
