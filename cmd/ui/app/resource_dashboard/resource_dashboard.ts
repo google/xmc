@@ -36,12 +36,12 @@ import {
   AutoReloadService,
   ReloaderControl,
 } from '../common/components/autoreloader/autoreloader_service';
-import { WipBannerComponent } from '../common/components/wip_banner/wip_banner';
 import { QueueListComponent } from './components/queue_list/queue_list';
 import {
   DEFAULT_SPLIT_RATIO_PERCENT,
   ResizeDividerComponent,
 } from './components/resize_divider/resize_divider';
+import { ResourceAvailabilityComponent } from './components/resource_availability/resource_availability';
 import {
   ResourceRequirementQuery,
   ResourceRequirementRow,
@@ -78,7 +78,7 @@ import { mapPeriodToRangePreset } from './resource_velocity';
     QueueListComponent,
     ResizeDividerComponent,
     QueueJobsTable,
-    WipBannerComponent,
+    ResourceAvailabilityComponent,
   ],
 })
 export class ResourceDashboard implements OnInit, OnDestroy {
