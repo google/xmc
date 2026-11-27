@@ -159,4 +159,30 @@ describe('ResourceAvailabilityComponent', () => {
     expect(await harness.hasContent()).toBeTrue();
     expect(await harness.getContentText()).toContain('2 resource group(s) available');
   });
+
+  it('should unsubscribe previous in-flight request when loadAvailability is called again', async () => {
+    const first$ = new Subject<GetResourceAvailabilityResponse>();
+    const second$ = new Subject<GetResourceAvailabilityResponse>();
+    state.resourceService.getResourceAvailability.and.returnValues(
+      first$.asObservable(),
+      second$.asObservable(),
+    );
+
+    const { fixture } = bootstrap(ResourceAvailabilityComponent);
+    await flush();
+
+    expect(first$.observed).toBeTrue();
+
+    (fixture.componentInstance as unknown as { loadAvailability(): void }).loadAvailability();
+    expect(first$.observed).toBeFalse();
+    expect(second$.observed).toBeTrue();
+
+    second$.next({ summaries: [] });
+    second$.complete();
+    await flush();
+
+    const harness = await getHarness(ResourceAvailabilityHarness);
+    expect(await harness.isLoading()).toBeFalse();
+    expect(await harness.isEmpty()).toBeTrue();
+  });
 });
