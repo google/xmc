@@ -37,3 +37,18 @@ py_test(
     imports = ["."],
     deps = [":render_bake_vars_lib"],
 )
+
+py_library(
+    name = "verify_image_lib",
+    srcs = ["verify_image.py"],
+    data = ["versions.json"],
+    imports = ["."],
+)
+
+py_test(
+    name = "verify_image_test",
+    srcs = ["verify_image_test.py"],
+    data = ["versions.json"],
+    imports = ["."],
+    deps = [":verify_image_lib"],
+)

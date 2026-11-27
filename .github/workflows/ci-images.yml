@@ -1,0 +1,128 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Build & Publish CI Runner Images'
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/ci/images/**'
+      - '.github/workflows/ci-images.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'deploy/ci/images/**'
+      - '.github/workflows/ci-images.yml'
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Comma-separated bake targets (default: default group)'
+        required: false
+        default: 'default'
+        type: string
+
+concurrency:
+  group: ci-images-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    name: 'Build & Smoke-Test GHCR Runner Images'
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Reclaim Unused Runner Disk Space'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: 'Set up Docker Buildx'
+        uses: 'docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069' # v4.4.1
+
+      - name: 'Resolve Build Targets & Tags'
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGES: ${{ inputs.images || 'default' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short_sha="${GIT_SHA:0:12}"
+          if [ "${EVENT_NAME}" = "pull_request" ]; then
+            local_tag="pr-${PR_NUMBER:-local}"
+          else
+            local_tag="sha-${short_sha}"
+          fi
+          if [ -z "${INPUT_IMAGES}" ] || [ "${INPUT_IMAGES}" = "default" ] || [ "${INPUT_IMAGES}" = "all" ]; then
+            bake_targets="default"
+            target_list="ci-base"
+          else
+            bake_targets="${INPUT_IMAGES}"
+            target_list="${INPUT_IMAGES//,/ }"
+          fi
+          {
+            echo "local_tag=${local_tag}"
+            echo "bake_targets=${bake_targets}"
+            echo "target_list=${target_list}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: 'Render Bake Variables from versions.json'
+        run: |
+          python3 deploy/ci/images/render_bake_vars.py \
+            --versions deploy/ci/images/versions.json \
+            --output "${RUNNER_TEMP}/bake-vars.json"
+
+      - name: 'Build & Load Images Locally for Verification'
+        uses: 'docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e' # v7.5.0
+        env:
+          TAGS: ${{ steps.plan.outputs.local_tag }}
+          GIT_SHA: ${{ github.sha }}
+          CACHE_MODE: gha
+        with:
+          source: '.'
+          files: |
+            deploy/ci/images/docker-bake.hcl
+            ${{ runner.temp }}/bake-vars.json
+          targets: ${{ steps.plan.outputs.bake_targets }}
+          load: true
+          push: false
+
+      - name: 'Run In-Container Smoke Tests'
+        env:
+          LOCAL_TAG: ${{ steps.plan.outputs.local_tag }}
+          TARGET_LIST: ${{ steps.plan.outputs.target_list }}
+        run: |
+          set -euo pipefail
+          for target in ${TARGET_LIST}; do
+            role="${target#ci-}"
+            image="ghcr.io/google/xmc/${target}:${LOCAL_TAG}"
+            echo "=== Smoke testing ${image} (role=${role}) ==="
+            docker run --rm --shm-size=2g \
+              -v "${GITHUB_WORKSPACE}/deploy/ci/images:/smoke:ro" \
+              "${image}" \
+              python3 /smoke/verify_image.py --role "${role}" --versions /smoke/versions.json
+          done
