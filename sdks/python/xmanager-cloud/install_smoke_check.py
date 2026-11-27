@@ -50,7 +50,10 @@ _SDK_MODULES = (
     "xdash.client",
     "xm_cloud",
     "xm_cloud.cli",
+    "xm_cloud.cli.arg_parsing",
+    "xm_cloud.cli.credentials",
     "xm_cloud.cli.login_command",
+    "xm_cloud.cli.logout_command",
     "xm_cloud.cli.main",
 )
 _CONSOLE_SCRIPTS = ("xdash", "xmc")

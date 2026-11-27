@@ -28,13 +28,12 @@ import socket
 import sys
 import tempfile
 import threading
-import time
 import unittest
 import urllib.error
 import urllib.parse
 import urllib.request
 import urllib.response
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from unittest import mock
 
 from xm_cloud.cli import credentials, login_command, logout_command
@@ -167,6 +166,72 @@ def _now() -> int:
     return int(datetime.datetime.now(datetime.UTC).timestamp())
 
 
+def _raw_status(port: int, target: str) -> int:
+    """Sends `GET <target>` to the loopback server verbatim and returns the status.
+
+    `http.client` sends the request target unparsed and never uses a proxy or
+    follows redirects, so malformed targets reach the handler as written.
+
+    Args:
+        port: Loopback server port.
+        target: Request target, e.g. `/callback?state=...`.
+
+    Returns:
+        The HTTP status code.
+    """
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        # skip_host stops http.client from parsing an absolute-form target itself.
+        conn.putrequest("GET", target, skip_host=True)
+        conn.putheader("Host", f"127.0.0.1:{port}")
+        conn.endheaders()
+        return conn.getresponse().status
+    finally:
+        conn.close()
+
+
+class _CallbackClient:
+    """Plays the browser: sends loopback callbacks on a thread for `open_url`.
+
+    A failed assertion inside a thread does not fail the test, so the thread only
+    records status codes (or the exception it hit), and `join` hands them to the
+    test thread, which asserts on them.
+    """
+
+    def __init__(self, targets: Callable[[str], list[str]]) -> None:
+        self._targets = targets  # Maps the login URL's `state` to request targets.
+        self._thread: threading.Thread | None = None
+        self._statuses: list[int] = []
+        self._error: BaseException | None = None
+        self.login_urls: list[str] = []
+
+    def open_url(self, login_url: str) -> bool:
+        self.login_urls.append(login_url)
+        qs = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
+        args = (int(qs["port"][0]), self._targets(qs["state"][0]))
+        self._thread = threading.Thread(target=self._send, args=args, daemon=True)
+        self._thread.start()
+        return True
+
+    def _send(self, port: int, targets: list[str]) -> None:
+        try:
+            for target in targets:
+                self._statuses.append(_raw_status(port, target))
+        except BaseException as exc:  # Re-raised on the test thread by join().
+            self._error = exc
+
+    def join(self) -> list[int]:
+        """Waits for the client thread, re-raises its error, and returns the statuses."""
+        if self._thread is None:
+            raise AssertionError("open_url was never called")
+        self._thread.join(timeout=10)
+        if self._thread.is_alive():
+            raise AssertionError("the callback client thread did not finish")
+        if self._error is not None:
+            raise self._error
+        return self._statuses
+
+
 class LoginCommandTest(unittest.TestCase):
     """Unit tests for `xmc login`."""
 
@@ -181,6 +246,27 @@ class LoginCommandTest(unittest.TestCase):
         env.update(extra)
         return env
 
+    def test_run_login_help_lists_every_flag(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+
+        code = login_command.run_login(["--help"], env=self._env(), out=out, err=err)
+
+        self.assertEqual((code, err.getvalue()), (0, ""))
+        self.assertTrue(out.getvalue().startswith("usage: xmc login "))
+        for flag in ("--no-browser", "--timeout", "--status", "--print-token"):
+            self.assertIn(flag, out.getvalue())
+        self.assertIn("default: 300.0", out.getvalue())
+
+    def test_status_and_print_token_are_mutually_exclusive(self) -> None:
+        out, err = io.StringIO(), io.StringIO()
+
+        code = login_command.run_login(
+            ["--status", "--print-token"], env=self._env(), out=out, err=err
+        )
+
+        self.assertEqual((code, out.getvalue()), (2, ""))
+        self.assertIn("not allowed with argument", err.getvalue())
+
     def test_status_shows_out_of_range_expiry_without_crashing(self) -> None:
         env, out = self._env(), io.StringIO()
         entry = {"access_token": "t", "email": "u@example.com", "expires_at": 10**20}
@@ -194,21 +280,7 @@ class LoginCommandTest(unittest.TestCase):
     def test_run_login_browser_flow_exchanges_the_verifier_for_the_loopback_challenge(
         self,
     ) -> None:
-        opener = urllib.request.build_opener(login_command._NoRedirect)
-        challenges: list[str] = []
-
-        def open_url(login_url: str) -> bool:
-            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
-            challenges.append(qs["code_challenge"][0])
-            port, state = int(qs["port"][0]), qs["state"][0]
-
-            def callback() -> None:
-                with contextlib.suppress(urllib.error.HTTPError):  # The 302 redirect.
-                    opener.open(f"http://127.0.0.1:{port}/callback?state={state}&code=c-1")
-
-            threading.Thread(target=callback, daemon=True).start()
-            return True
-
+        client = _CallbackClient(lambda state: [f"/callback?state={state}&code=c-1"])
         grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
         env, out = self._env(), io.StringIO()
         with (
@@ -216,19 +288,32 @@ class LoginCommandTest(unittest.TestCase):
             mock.patch.object(login_command, "exchange_code", return_value=grant) as exchange,
         ):
             rc = login_command.run_login(
-                ["--timeout", "5"], env=env, out=out, err=io.StringIO(), open_url=open_url
+                ["--timeout", "5"], env=env, out=out, err=io.StringIO(), open_url=client.open_url
             )
 
+        self.assertEqual(client.join(), [302])
         self.assertEqual(rc, 0)
         server, code, verifier = exchange.call_args.args
         digest = hashlib.sha256(verifier.encode("ascii")).digest()
         self.assertEqual((server, code), (_SERVER, "c-1"))
+        (login_url,) = client.login_urls
+        challenge = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
         self.assertEqual(
-            challenges, [base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")]
+            challenge["code_challenge"],
+            [base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")],
         )
         self.assertIn(f"Logged in to {_SERVER} as u@example.com", out.getvalue())
         cached = credentials.load_credentials(credentials.credentials_path(env))
         self.assertEqual(cached[_SERVER]["access_token"], "jwt")
+
+    def test_await_loopback_code_flushes_url_before_waiting(self) -> None:
+        out = mock.Mock(wraps=io.StringIO())
+
+        with self.assertRaisesRegex(credentials.AuthError, "Timed out"):
+            login_command.await_loopback_code(_SERVER, "c", lambda _: True, out, timeout=0.05)
+
+        self.assertIn("Opening browser to sign in", out.write.call_args.args[0])
+        out.flush.assert_called_once_with()
 
     def test_run_login_reports_save_failure_after_token_exchange(self) -> None:
         out, err = io.StringIO(), io.StringIO()
@@ -279,7 +364,9 @@ class LoginCommandTest(unittest.TestCase):
         prompt, err = mock.Mock(return_value="c"), io.StringIO()
 
         with mock.patch.object(login_command, "_probe_cli_login") as mock_probe:
-            rc = login_command.run_login([], env=env, out=io.StringIO(), err=err, prompt=prompt)
+            rc = login_command.run_login(
+                ["--no-browser"], env=env, out=io.StringIO(), err=err, prompt=prompt
+            )
 
         self.assertEqual(rc, 1)
         self.assertIn("Corrupt credentials file", err.getvalue())
@@ -336,80 +423,65 @@ class LoginCommandTest(unittest.TestCase):
             "xmc login: error: argument --timeout: invalid number: 'soon'", err.getvalue()
         )
 
-    def test_pkce_and_browser_availability(self) -> None:
-        verifier, challenge = login_command.pkce_pair()
-        self.assertGreaterEqual(len(verifier), 43)
-        self.assertNotIn("=", challenge)
-        self.assertTrue(login_command.browser_available({"DISPLAY": ":0"}))
-        self.assertFalse(
-            login_command.browser_available(
-                {"DISPLAY": ":0", "SSH_CONNECTION": "1.2.3.4 55 1.2.3.5 22"}
+    def test_browser_available(self) -> None:
+        cases = [
+            ({"DISPLAY": ":0"}, "linux", True),
+            ({"WAYLAND_DISPLAY": "wayland-0"}, "linux", True),
+            ({}, "linux", False),
+            ({}, "darwin", True),
+            ({}, "win32", True),
+            ({"DISPLAY": ":0", "SSH_CONNECTION": "1.2.3.4 55 1.2.3.5 22"}, "linux", False),
+            ({"DISPLAY": ":0", "SSH_CLIENT": "1.2.3.4 55 22"}, "linux", False),
+            ({"SSH_TTY": "/dev/pts/0"}, "darwin", False),
+        ]
+        for env, platform, expected in cases:
+            with (
+                self.subTest(env=env, platform=platform),
+                mock.patch.object(login_command.sys, "platform", platform),
+            ):
+                self.assertIs(login_command.browser_available(env), expected)
+
+    def test_await_loopback_code_rejects_forged_callbacks_and_returns_the_code(self) -> None:
+        def targets(state: str) -> list[str]:
+            return [
+                "/callback?state=wrong&code=bad",
+                "/callback?state=%C3%BC&code=bad",  # Non-ASCII state.
+                f"/other?state={state}&code=bad",
+                "http://[bad/callback",  # urlsplit raises ValueError.
+                f"/callback?state={state}&code=good-code",
+            ]
+
+        client = _CallbackClient(targets)
+
+        try:
+            code = login_command.await_loopback_code(
+                _SERVER, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
             )
-        )
+        finally:
+            statuses = client.join()  # Surfaces a client failure instead of a timeout.
 
-    def test_await_loopback_code_handles_forged_and_genuine_callbacks(
-        self,
-    ) -> None:
-        opener = urllib.request.build_opener(login_command._NoRedirect)
-
-        def open_url(login_url: str) -> bool:
-            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
-            port, state = int(qs["port"][0]), qs["state"][0]
-
-            def send_callbacks() -> None:
-                with self.assertRaises(urllib.error.HTTPError) as bad:
-                    opener.open(f"http://127.0.0.1:{port}/callback?state=wrong&code=bad")
-                self.assertEqual(bad.exception.code, 400)
-                with self.assertRaises(urllib.error.HTTPError) as non_ascii:
-                    opener.open(f"http://127.0.0.1:{port}/callback?state=%C3%BC&code=bad")
-                self.assertEqual(non_ascii.exception.code, 400)
-                with self.assertRaises(urllib.error.HTTPError) as redirect:
-                    opener.open(f"http://127.0.0.1:{port}/callback?state={state}&code=good-code")
-                self.assertEqual(redirect.exception.code, 302)
-
-            threading.Thread(target=send_callbacks, daemon=True).start()
-            return True
-
-        code = login_command.await_loopback_code(
-            _SERVER, "challenge-xyz", open_url, io.StringIO(), timeout=5.0
-        )
+        self.assertEqual(statuses, [400, 400, 400, 400, 302])
         self.assertEqual(code, "good-code")
 
-        def open_url_error(login_url: str) -> bool:
-            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
-            port, state = int(qs["port"][0]), qs["state"][0]
+    def test_await_loopback_code_reports_callback_errors(self) -> None:
+        cases = [
+            ("&error=denied", 302, "Authentication failed: denied"),
+            ("", 400, "Callback did not include an authorization code"),
+        ]
+        for query, status, message in cases:
 
-            def send_err() -> None:
-                with self.assertRaises(urllib.error.HTTPError) as redirect:
-                    opener.open(f"http://127.0.0.1:{port}/callback?state={state}&error=denied")
-                self.assertEqual(redirect.exception.code, 302)
+            def targets(state: str, query: str = query) -> list[str]:
+                return [f"/callback?state={state}{query}"]
 
-            threading.Thread(target=send_err, daemon=True).start()
-            return True
-
-        with self.assertRaisesRegex(credentials.AuthError, "denied"):
-            login_command.await_loopback_code(
-                _SERVER, "challenge-xyz", open_url_error, io.StringIO(), timeout=5.0
-            )
-
-        def open_url_missing_code(login_url: str) -> bool:
-            qs = urllib.parse.parse_qs(urllib.parse.urlsplit(login_url).query)
-            port, state = int(qs["port"][0]), qs["state"][0]
-
-            def send_missing() -> None:
-                with self.assertRaises(urllib.error.HTTPError) as empty:
-                    opener.open(f"http://127.0.0.1:{port}/callback?state={state}")
-                self.assertEqual(empty.exception.code, 400)
-
-            threading.Thread(target=send_missing, daemon=True).start()
-            return True
-
-        with self.assertRaisesRegex(
-            credentials.AuthError, "Callback did not include an authorization code"
-        ):
-            login_command.await_loopback_code(
-                _SERVER, "challenge-xyz", open_url_missing_code, io.StringIO(), timeout=5.0
-            )
+            client = _CallbackClient(targets)
+            with (
+                self.subTest(query=query),
+                self.assertRaisesRegex(credentials.AuthError, message),
+            ):
+                login_command.await_loopback_code(
+                    _SERVER, "challenge-xyz", client.open_url, io.StringIO(), timeout=5.0
+                )
+            self.assertEqual(client.join(), [status])
 
     def test_build_login_url(self) -> None:
         url = login_command.build_login_url(_SERVER, "state-1", "challenge-1")
@@ -420,6 +492,19 @@ class LoginCommandTest(unittest.TestCase):
             urllib.parse.parse_qs(split.query),
             {
                 "mode": ["manual"],
+                "state": ["state-1"],
+                "code_challenge": ["challenge-1"],
+                "code_challenge_method": ["S256"],
+            },
+        )
+
+    def test_build_login_url_loopback_mode(self) -> None:
+        url = login_command.build_login_url(_SERVER, "state-1", "challenge-1", port=8080)
+
+        self.assertEqual(
+            urllib.parse.parse_qs(urllib.parse.urlsplit(url).query),
+            {
+                "port": ["8080"],
                 "state": ["state-1"],
                 "code_challenge": ["challenge-1"],
                 "code_challenge_method": ["S256"],
@@ -929,69 +1014,45 @@ class LoginCommandTest(unittest.TestCase):
                     login_command._probe_cli_login(server)
                 self.assertNotIn("s3cret", str(probe_ctx.exception))
 
-    def test_run_login_manual_status_print_token_and_logout(self) -> None:
-        out, err, env = io.StringIO(), io.StringIO(), self._env()
-        grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
+    def test_run_login_chooses_manual_or_browser_flow(self) -> None:
+        ssh = {"SSH_CONNECTION": "1.2.3.4 55 1.2.3.5 22"}
         no_open = mock.Mock(side_effect=AssertionError("unexpected open_url"))
-        with (
-            mock.patch.object(login_command, "_probe_cli_login") as mock_probe,
-            mock.patch.object(login_command, "exchange_code", return_value=grant),
-        ):
-            self.assertEqual(
-                login_command.run_login(
-                    ["--no-browser"],
-                    env=env,
-                    out=out,
-                    err=err,
-                    open_url=no_open,
-                    prompt=lambda _: "c",
-                ),
-                0,
-            )
-            self.assertNotIn("No local browser detected", out.getvalue())
-            ssh_out = io.StringIO()
-            self.assertEqual(
-                login_command.run_login(
-                    [],
-                    env=self._env(SSH_CONNECTION="1.2.3.4 55 1.2.3.5 22"),
-                    out=ssh_out,
-                    err=err,
-                    open_url=no_open,
-                    prompt=lambda _: "c",
-                ),
-                0,
-            )
-            self.assertIn("No local browser detected", ssh_out.getvalue())
-            rc = login_command.run_login(
-                [],
-                env=env,
-                out=out,
-                err=err,
-                open_url=lambda _: False,
-                prompt=lambda _: "c",
-            )
-        self.assertEqual(mock_probe.call_count, 3)
-        self.assertEqual(rc, 0)
-        self.assertIn("falling back to manual login", out.getvalue())
-        status_out, token_out = io.StringIO(), io.StringIO()
-        self.assertEqual(
-            login_command.run_login(["--status"], env=env, out=status_out, err=err),
-            0,
-        )
-        self.assertIn("u@example.com", status_out.getvalue())
+        cases: list[tuple[list[str], dict[str, str], Callable[[str], bool], str | None]] = [
+            (["--no-browser"], self._env(), no_open, None),
+            ([], self._env(**ssh), no_open, "No local browser detected; using manual login."),
+            ([], self._env(), lambda _: False, "Could not launch browser; falling back"),
+        ]
+        grant = {"access_token": "jwt", "email": "u@example.com", "expires_in": 900}
+        for argv, env, open_url, notice in cases:
+            out, err = io.StringIO(), io.StringIO()
+            with (
+                self.subTest(argv=argv, env=env),
+                mock.patch.object(login_command, "_probe_cli_login"),
+                mock.patch.object(login_command, "exchange_code", return_value=grant),
+            ):
+                rc = login_command.run_login(
+                    argv, env=env, out=out, err=err, open_url=open_url, prompt=lambda _: "c"
+                )
+                self.assertEqual((rc, err.getvalue()), (0, ""))
+                self.assertIn("mode=manual", out.getvalue())
+                if notice:
+                    self.assertIn(notice, out.getvalue())
+                else:
+                    self.assertNotIn("manual login", out.getvalue())
+
+    def test_status_and_print_token_report_the_cached_login(self) -> None:
+        env = self._env()
+        entry = {"access_token": " jwt ", "email": "u@example.com", "expires_at": _now() + 900}
+        credentials.save_credentials(credentials.credentials_path(env), {_SERVER: entry})
+        status_out, token_out, err = io.StringIO(), io.StringIO(), io.StringIO()
+
+        status_rc = login_command.run_login(["--status"], env=env, out=status_out, err=err)
+        token_rc = login_command.run_login(["--print-token"], env=env, out=token_out, err=err)
+
+        self.assertEqual((status_rc, token_rc, err.getvalue()), (0, 0, ""))
+        self.assertIn(f"Logged in to {_SERVER} as u@example.com until", status_out.getvalue())
         self.assertNotIn("jwt", status_out.getvalue())
-        self.assertEqual(
-            login_command.run_login(["--print-token"], env=env, out=token_out, err=err),
-            0,
-        )
         self.assertEqual(token_out.getvalue(), "jwt\n")
-        self.assertEqual(logout_command.run_logout([], env=env, out=out, err=err), 0)
-        status_err_out, status_err = io.StringIO(), io.StringIO()
-        self.assertEqual(
-            login_command.run_login(["--status"], env=env, out=status_err_out, err=status_err), 1
-        )
-        self.assertEqual(status_err_out.getvalue(), "")
-        self.assertIn("Not logged in to", status_err.getvalue())
 
     def test_valid_entry_and_loopback_handler_timeout(self) -> None:
         self.assertEqual(login_command._callback_handler(_SERVER, "s", {}).timeout, 10.0)
@@ -1001,32 +1062,45 @@ class LoginCommandTest(unittest.TestCase):
             {"access_token": "jwt", "email": "u@x.io", "expires_at": 10**400},
         )
 
-    def test_expired_or_malformed_token_and_logout_all(self) -> None:
+    def test_expired_or_malformed_entries_are_not_logged_in(self) -> None:
         env = self._env()
         path = credentials.credentials_path(env)
-        # Cached expiry is a wall-clock Unix timestamp, matching login_command.
-        now = int(time.time())  # noqa: TID251
+        now = _now()
+        good = {"access_token": "old", "email": "u@x.io", "expires_at": now + 900}
         for bad_entry in (
-            {
-                "access_token": "old",
-                "email": "u@x.io",
-                "expires_at": now - 10,
-            },
-            {"access_token": "old", "email": "u@x.io", "expires_at": "not-an-int"},
-            {"access_token": "old", "expires_at": now + 900},
+            {**good, "expires_at": now - 10},
+            {**good, "expires_at": now + 30},  # Inside the 60-second expiry skew.
+            {**good, "expires_at": "not-an-int"},
+            {**good, "expires_at": True},
+            {**good, "expires_at": float("nan")},
+            {**good, "expires_at": float("inf")},
+            {**good, "access_token": "  "},
+            {**good, "email": " "},
+            {k: v for k, v in good.items() if k != "email"},
             "not-a-dict",
         ):
-            credentials.save_credentials(path, {_SERVER: bad_entry})  # type: ignore[dict-item]
-            out, err = io.StringIO(), io.StringIO()
-            self.assertEqual(
-                login_command.run_login(["--print-token"], env=env, out=out, err=err),
-                1,
-            )
-            self.assertEqual(login_command.run_login(["--status"], env=env, out=out, err=err), 1)
-        self.assertEqual(
-            logout_command.run_logout(["--all"], env=env, out=io.StringIO(), err=io.StringIO()),
-            0,
-        )
+            with self.subTest(entry=bad_entry):
+                credentials.save_credentials(path, {_SERVER: bad_entry})  # type: ignore[dict-item]
+                token_out, token_err = io.StringIO(), io.StringIO()
+                rc = login_command.run_login(
+                    ["--print-token"], env=env, out=token_out, err=token_err
+                )
+                self.assertEqual((rc, token_out.getvalue()), (1, ""))
+                self.assertIn(f"No valid login for {_SERVER}", token_err.getvalue())
+                status_out, status_err = io.StringIO(), io.StringIO()
+                rc = login_command.run_login(["--status"], env=env, out=status_out, err=status_err)
+                self.assertEqual((rc, status_out.getvalue()), (1, ""))
+                self.assertIn(f"Not logged in to {_SERVER}", status_err.getvalue())
+
+    def test_logout_all_clears_every_cached_login(self) -> None:
+        env = self._env()
+        path = credentials.credentials_path(env)
+        entry = {"access_token": "t", "email": "u@x.io", "expires_at": _now() + 900}
+        credentials.save_credentials(path, {_SERVER: entry, "https://b.example.com": entry})
+
+        rc = logout_command.run_logout(["--all"], env=env, out=io.StringIO(), err=io.StringIO())
+
+        self.assertEqual(rc, 0)
         self.assertEqual(credentials.load_credentials(path), {})
 
     def test_run_login_preserves_entries_written_during_interactive_login(self) -> None:

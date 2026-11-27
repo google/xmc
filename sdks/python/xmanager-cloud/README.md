@@ -36,7 +36,8 @@ file that `xmanager login` writes. Tokens are keyed by deployment origin, normal
 both map to `https://<domain>`). `xmanager login` in `xmanager` 0.8.x skips some of these
 normalizations, so for such inputs a token cached by one CLI may not be found by the other.
 Run `xmc <command> --help` for details, and see
-[Authentication](../../../docs/authentication.md) for how the XMC backend issues CLI tokens.
+[CLI Login](../../../docs/design/gateway.md#3-cli-login-browser-loopback) for how the XMC backend
+issues CLI tokens.
 
 ## Building
 

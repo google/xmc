@@ -49,7 +49,16 @@ class ModulesToCheckTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(modules[0], "xmanager_cloud")
         self.assertIn("xdash.auth", modules)
-        self.assertIn("xm_cloud.cli.main", modules)
+        self.assertEqual(
+            [name for name in modules if name.startswith("xm_cloud.cli.")],
+            [
+                "xm_cloud.cli.arg_parsing",
+                "xm_cloud.cli.credentials",
+                "xm_cloud.cli.login_command",
+                "xm_cloud.cli.logout_command",
+                "xm_cloud.cli.main",
+            ],
+        )
         self.assertEqual(modules[-1], "a.proto.x_pb2")
 
 
@@ -169,12 +178,17 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
             del group
             return [broken] if name == "xmc" else [mock.MagicMock()]
 
-        with mock.patch.object(install_smoke_check.metadata, "entry_points", entry_points):
-            self.assertEqual(install_smoke_check.console_script_failures("xdash"), {})
-            self.assertEqual(
-                install_smoke_check.console_script_failures("xmc"),
-                {"xmc console script": "ImportError: cannot import name 'main'"},
-            )
+        with (
+            mock.patch.object(
+                install_smoke_check.metadata,
+                "version",
+                side_effect=metadata.PackageNotFoundError,
+            ),
+            mock.patch.object(install_smoke_check.metadata, "entry_points", entry_points),
+        ):
+            failures = install_smoke_check.environment_failures()
+
+        self.assertEqual(failures, {"xmc console script": "ImportError: cannot import name 'main'"})
 
 
 class PackagingFailuresTest(InstallSmokeCheckTestCase):
