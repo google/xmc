@@ -708,6 +708,29 @@ class LoginCommandTest(unittest.TestCase):
         (req,) = requests
         self.assertEqual(req.host, "proxy.invalid:3128")
 
+    def test_exchange_code_and_probe_reject_disallowed_url_schemes(self) -> None:
+        for server in (
+            "file:///etc/passwd",
+            "ftp://example.com",
+            "data:text/plain,hello",
+            "http://xmc.example.com",
+        ):
+            with (
+                self.subTest(server=server),
+                self.assertRaisesRegex(
+                    credentials.AuthError,
+                    "^Token exchange failed: unsupported deployment URL scheme",
+                ),
+            ):
+                login_command.exchange_code(server, "code-1", "verifier-1")
+            with (
+                self.subTest(probe_server=server),
+                self.assertRaisesRegex(
+                    credentials.AuthError, "^Cannot reach .*: unsupported deployment URL scheme"
+                ),
+            ):
+                login_command._probe_cli_login(server)
+
     def test_run_login_preserves_entries_written_during_interactive_login(self) -> None:
         env = self._env()
         path = credentials.credentials_path(env)

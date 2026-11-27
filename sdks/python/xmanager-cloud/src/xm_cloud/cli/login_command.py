@@ -159,15 +159,17 @@ def _send_token_request(server: str, body: bytes) -> bytes:
             or redirect response.
     """
     headers = {"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}
-    opener = _build_opener(server)
     try:
+        opener = _build_opener(server)
         req = urllib.request.Request(
             f"{server}/api/cli/token", data=body, headers=headers, method="POST"
         )
         with opener.open(req, timeout=_TOKEN_TIMEOUT_SECONDS) as resp:
             return resp.read(_MAX_TOKEN_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
-        raise credentials.AuthError(f"Token exchange failed: {_format_http_error(exc)}.") from None
+        with exc:
+            detail = _format_http_error(exc)
+        raise credentials.AuthError(f"Token exchange failed: {detail}.") from None
     except _RESPONSE_ERRORS as exc:
         raise credentials.AuthError(f"Token exchange failed: {exc}") from None
 
@@ -313,18 +315,35 @@ def _build_opener(server: str) -> urllib.request.OpenerDirector:
 
     The CLI allows plain http:// only for a loopback `server`; sending it through
     an ambient `http_proxy` would carry the authorization code and PKCE verifier
-    off the machine in cleartext.
+    off the machine in cleartext. Non-HTTP(S) schemes such as `file://`,
+    `ftp://`, and `data:` are rejected.
 
     Args:
         server: Deployment origin.
 
     Returns:
         The opener for the probe and token requests.
+
+    Raises:
+        ValueError: If `server` is neither `https://` nor a loopback `http://`.
     """
-    handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
-    if credentials.is_loopback_origin(server):
-        handlers.append(urllib.request.ProxyHandler({}))
-    return urllib.request.build_opener(*handlers)
+    scheme = urllib.parse.urlsplit(server).scheme.lower()
+    if scheme != "https" and not (scheme == "http" and credentials.is_loopback_origin(server)):
+        raise ValueError(f"unsupported deployment URL scheme: {server!r}")
+    opener = urllib.request.OpenerDirector()
+    handlers: tuple[urllib.request.BaseHandler, ...] = (
+        urllib.request.ProxyHandler({})
+        if credentials.is_loopback_origin(server)
+        else urllib.request.ProxyHandler(),
+        urllib.request.HTTPHandler(),
+        urllib.request.HTTPSHandler(),
+        urllib.request.HTTPDefaultErrorHandler(),
+        _NoRedirect(),
+        urllib.request.HTTPErrorProcessor(),
+    )
+    for handler in handlers:
+        opener.add_handler(handler)
+    return opener
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -369,12 +388,13 @@ def _send_probe(server: str) -> None:
         credentials.AuthError: If `server` is unreachable, answers 2xx or 3xx, or
             does not support CLI login.
     """
-    opener = _build_opener(server)
     try:
+        opener = _build_opener(server)
         with opener.open(f"{server}/api/cli/login", timeout=_PROBE_TIMEOUT_SECONDS) as resp:
             status = resp.status
     except urllib.error.HTTPError as exc:
-        _check_probe_status(server, exc.code)
+        with exc:
+            _check_probe_status(server, exc.code)
         return
     except _RESPONSE_ERRORS as exc:  # ValueError includes a bad IDNA host.
         raise credentials.AuthError(f"Cannot reach {server}: {exc}") from None
@@ -484,8 +504,8 @@ def _format_expiry(expires_at: int) -> str:
 
 def _parse_login_args(
     argv: Sequence[str],
-    out: TextIO = sys.stdout,
-    err: TextIO = sys.stderr,
+    out: TextIO,
+    err: TextIO,
 ) -> argparse.Namespace | int:
     """Parses and validates CLI arguments for `xmc login`.
 
