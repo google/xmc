@@ -81,7 +81,7 @@ func run(ctx context.Context, cfg *Config) error {
 	}
 	defer dbStorage.Close()
 
-	grpcComp, err := buildGRPCServer(cfg, kueueCache, dbStorage, dbStorage)
+	grpcComp, err := buildGRPCServer(cfg, kueueCache, physCache, dbStorage, dbStorage)
 	if err != nil {
 		return fmt.Errorf("failed to build gRPC server: %w", err)
 	}
@@ -143,13 +143,13 @@ type GRPCServerComponents struct {
 	Server   *grpc.Server
 }
 
-func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, workUnitStore WorkUnitFetcher, velocityStore QueueVelocityFetcher) (GRPCServerComponents, error) {
+func buildGRPCServer(cfg *Config, kueueCache *cache.KueueCache, physCache *cache.PhysicalInventoryCache, workUnitStore WorkUnitFetcher, velocityStore QueueVelocityFetcher) (GRPCServerComponents, error) {
 	lis, err := net.Listen("tcp", ":"+cfg.GRPCPort)
 	if err != nil {
 		return GRPCServerComponents{}, fmt.Errorf("failed to listen on gRPC port %s: %w", cfg.GRPCPort, err)
 	}
 	grpcServer := grpc.NewServer(grpc.Creds(insecure.NewCredentials()))
-	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, workUnitStore, velocityStore))
+	spb.RegisterResourceObservabilityServiceServer(grpcServer, newServer(cfg, kueueCache, physCache, workUnitStore, velocityStore))
 	reflection.Register(grpcServer)
 	return GRPCServerComponents{
 		Listener: lis,

@@ -75,7 +75,7 @@ func TestBatchGetQueueSecondaryData(t *testing.T) {
 	})
 
 	srv := &server{
-		cache:         c,
+		kueueCache:    c,
 		velocityStore: mockFetcher,
 	}
 
@@ -135,7 +135,7 @@ func TestBatchGetQueueSecondaryData_MultiResource(t *testing.T) {
 		Spec:       kueuev1beta1.LocalQueueSpec{ClusterQueue: "cq-mixed"},
 	})
 
-	srv := &server{cache: c, velocityStore: mockFetcher}
+	srv := &server{kueueCache: c, velocityStore: mockFetcher}
 	req := &spb.BatchGetQueueSecondaryDataRequest{
 		QueueNames: []string{"cq-mixed"},
 		Range:      spb.RangePreset_RANGE_PRESET_LAST_HOUR,
