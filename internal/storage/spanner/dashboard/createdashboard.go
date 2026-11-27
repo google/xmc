@@ -16,8 +16,13 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 )
@@ -34,6 +39,10 @@ func (r *Repository) CreateDashboard(ctx context.Context, dashboard *dpb.Dashboa
 	}
 
 	_, err = r.client.Apply(ctx, mutations)
+	if status.Code(err) == codes.AlreadyExists {
+		// Dashboards rows are upserted, so only an inline chart ID collision can return AlreadyExists.
+		return fmt.Errorf("inline chart of dashboard %q already exists: %w: %w", dashboard.GetName(), grpcerr.ErrAlreadyExists, err)
+	}
 	if err != nil {
 		logging.Error(ctx, "Failed to apply create dashboard mutations", "error", err)
 		return err

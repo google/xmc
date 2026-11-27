@@ -40,7 +40,9 @@ with DashboardClient(endpoint="localhost:8080") as client:
         print(f"{dashboard.name}: {dashboard.title}")
 
     dashboard = client.get_dashboard("dashboards/vcc_comparison")
-    chart = client.get_chart("charts/baseline")
+    # Chart IDs are server-assigned: take one from dashboard.chart_ids or from the name
+    # create_chart() returns. GetChart accepts the root form charts/{chart_id}.
+    chart = client.get_chart(f"charts/{dashboard.chart_ids[0]}")
     print(f"{chart.title} has {len(chart.plots)} plots")
 ```
 
@@ -88,7 +90,7 @@ from xdash import (
 
 # Build a chart for Experiment 1001, Work Unit 1
 chart = (
-    ChartBuilder(name="experiments/1001/workUnits/1/charts/val_metrics")
+    ChartBuilder()
     .for_experiment(xid=1001, wid=1)
     .set_title("Validation Overview")
     .set_grid_layout(columns=2)
@@ -117,6 +119,11 @@ or an **Experiment** parent (`experiments/{xid}`, for experiment-level charts). 
 the work-unit batch convenience wrapper: it derives `experiments/{xid}/workUnits/{wid}` from each
 chart's positive `xid` and `wid`, so `for_experiment()` must have been called on every chart it is given.
 
+The server assigns every chart its ID. `create_chart` never derives one from the chart's `name`;
+send your own only by passing `chart_id=` explicitly. `CreateChart` never overwrites an existing
+chart, so an ID that is already taken fails with `ALREADY_EXISTS` (raised as `XDashRPCError`).
+Always reference a chart through the name of the chart returned by `create_chart`/`create_charts`.
+
 ### Referencing Charts from a Dashboard
 
 A `Dashboard` stores a list of bare chart IDs (`chart_ids`), not embedded `Chart` messages, and it
@@ -129,8 +136,8 @@ builder.add_chart(created_chart)  # a created Chart; the ID is taken from chart.
 
 Both reject blanks, IDs containing a `/` (a full resource name is not a chart ID — pass it through
 `chart_id_from_name()` first), and IDs already referenced by the same dashboard. Use `add_chart()`
-only with a chart the server has returned: a locally built chart whose `name` you chose yourself
-would embed an ID that does not exist yet.
+only with a chart the server has returned: `ChartBuilder.build()` always fills `name` (from
+`set_name()` or a slug of the title), so a locally built chart embeds an ID that does not exist yet.
 
 Two consequences of the ID-only model are worth knowing at call sites:
 
@@ -163,9 +170,8 @@ with DashboardClient(endpoint="localhost:8080") as client:
     print(f"Created: {created_dashboard.name}")
 ```
 
-`create_vcc_comparison_dashboard()` defaults `chart_ids` to the preset slugs (`baseline`,
-`tuned_v1`, `tuned_v2`), which is only correct if the charts were created under exactly those IDs.
-Pass the IDs back from `create_charts()` whenever the server may assign them itself.
+`create_vcc_comparison_dashboard()` requires `chart_ids`: pass the IDs the server assigned to the
+charts returned by `create_charts()`.
 
 A runnable end-to-end version of this, including a virtualenv installer, lives in
 [`examples/xdash_dashboard/`](../../../examples/xdash_dashboard/).
@@ -197,13 +203,18 @@ bazel run //sdks/python/xdash:xdash_bin -- list
 # Retrieve an existing dashboard
 bazel run //sdks/python/xdash:xdash_bin -- get dashboards/vcc_comparison
 
-# Retrieve a single chart (GetChart accepts charts/{chart_id}; hierarchical patterns work with get-data below)
-bazel run //sdks/python/xdash:xdash_bin -- get charts/baseline
+# Chart IDs are server-assigned: take <chart_id> from the "Chart IDs" line of
+# `get dashboards/...` or from the name create-chart prints.
+# Retrieve a single chart (`get` accepts only charts/<chart_id> and dashboards/<dashboard_id>)
+bazel run //sdks/python/xdash:xdash_bin -- get charts/<chart_id>
 
-# Fetch evaluated ChartData for a work-unit or experiment-level chart
-bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/workUnits/1/charts/baseline
-bazel run //sdks/python/xdash:xdash_bin -- get-data experiments/234911122/charts/study
+# Fetch evaluated ChartData for a work-unit or experiment-level chart by its chart ID
+bazel run //sdks/python/xdash:xdash_bin -- get-data charts/<chart_id>
 ```
+
+`get-data` also accepts the hierarchical forms `experiments/{xid}/workUnits/{wid}/charts/{chart_id}`,
+`experiments/{xid}/charts/{chart_id}`, and `dashboards/{dashboard_id}/charts/{chart_id}`. Prefer `charts/<chart_id>`: for a work-unit name whose
+chart ID does not exist, the service returns a synthesized default chart instead of `NOT_FOUND`.
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see
 [Installation / Usage in Bazel](#installation--usage-in-bazel) above):

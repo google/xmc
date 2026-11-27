@@ -61,7 +61,7 @@ func (s *Server) CreateChart(ctx context.Context, req *dpb.CreateChartRequest) (
 
 	if err := s.repo.CreateChart(ctx, chart); err != nil {
 		if isAlreadyExistsError(err) {
-			return nil, status.Errorf(codes.AlreadyExists, "chart %q already exists: %v", chart.GetName(), err)
+			return nil, status.Errorf(codes.AlreadyExists, "chart %q already exists", chart.GetName())
 		}
 		return nil, status.Errorf(codes.Internal, "failed to create chart: %v", err)
 	}

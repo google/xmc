@@ -16,13 +16,19 @@ package dashboard
 
 import (
 	"context"
+	"fmt"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	dpb "xmanager_cloud/api/protos/dashboard"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/spanner/dashboard/data"
 )
 
-// CreateChart writes a new chart and its plot specifications to Spanner.
+// CreateChart writes a new chart and its plot specifications to Spanner. It never overwrites an
+// existing chart: a duplicate chart ID returns grpcerr.ErrAlreadyExists and writes nothing.
 func (r *Repository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
 	logging.Info(ctx, "Create chart in storage", "name", chart.GetName())
 
@@ -33,6 +39,9 @@ func (r *Repository) CreateChart(ctx context.Context, chart *dpb.Chart) error {
 	}
 
 	_, err = r.client.Apply(ctx, mutations)
+	if status.Code(err) == codes.AlreadyExists {
+		return fmt.Errorf("chart %q already exists: %w: %w", chart.GetName(), grpcerr.ErrAlreadyExists, err)
+	}
 	if err != nil {
 		logging.Error(ctx, "Failed to apply create chart mutations", "error", err)
 		return err

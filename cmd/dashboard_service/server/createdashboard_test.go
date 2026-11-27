@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/grpcerr"
 )
 
 // existingChartFn answers GetChart with a chart belonging to the given experiment, so that chart
@@ -391,23 +393,36 @@ func TestCreateDashboard(t *testing.T) {
 		}
 	})
 
-	t.Run("repo AlreadyExists error returns AlreadyExists", func(t *testing.T) {
-		repo := &mockRepository{
-			createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
-				return status.Error(codes.AlreadyExists, "dashboard already exists")
-			},
+	t.Run("repo inline chart AlreadyExists error returns sanitized AlreadyExists", func(t *testing.T) {
+		repoErrs := []error{
+			status.Error(codes.AlreadyExists, "inline chart already exists"),
+			fmt.Errorf("inline chart of duplicate-id: %w", grpcerr.ErrAlreadyExists),
 		}
-		authMock := &mockAuthorizer{}
-		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+		for _, repoErr := range repoErrs {
+			repo := &mockRepository{
+				createDashboardFn: func(ctx context.Context, dashboard *dpb.Dashboard, charts []*dpb.Chart) error {
+					return repoErr
+				},
+			}
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
 
-		req := &dpb.CreateDashboardRequest{
-			DashboardId: "duplicate-id",
-			Dashboard:   &dpb.Dashboard{Title: "My Dash"},
-		}
+			req := &dpb.CreateDashboardRequest{
+				DashboardId: "duplicate-id",
+				Dashboard:   &dpb.Dashboard{Title: "My Dash"},
+				Charts: []*dpb.Chart{{
+					Title: "Inline", Xid: 100, Wid: 1,
+					Plots: []*dpb.PlotSpec{{PlotId: "loss", Title: "Loss", Type: dpb.PlotType_SCATTER}},
+				}},
+			}
 
-		_, err := s.CreateDashboard(ctx, req)
-		if status.Code(err) != codes.AlreadyExists {
-			t.Errorf("Expected code AlreadyExists, got %v", status.Code(err))
+			_, err := s.CreateDashboard(ctx, req)
+			if status.Code(err) != codes.AlreadyExists {
+				t.Errorf("CreateDashboard() with repo error %v: code = %v, want AlreadyExists", repoErr, status.Code(err))
+			}
+			const wantMsg = `an inline chart of dashboard "duplicate-id" already exists`
+			if gotMsg := status.Convert(err).Message(); gotMsg != wantMsg {
+				t.Errorf("CreateDashboard() with repo error %v: message = %q, want %q", repoErr, gotMsg, wantMsg)
+			}
 		}
 	})
 }

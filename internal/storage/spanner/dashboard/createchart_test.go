@@ -20,6 +20,7 @@ import (
 
 	"cloud.google.com/go/spanner"
 
+	dpb "xmanager_cloud/api/protos/dashboard"
 	storagetest "xmanager_cloud/internal/storage/testing"
 )
 
@@ -57,6 +58,28 @@ func TestCreateChart_WithoutLayout(t *testing.T) {
 	}
 	if got.GetPlotLayout() != nil {
 		t.Errorf("GetChart PlotLayout expected nil, got %v", got.GetPlotLayout())
+	}
+}
+
+func TestCreateChart_DuplicateIDReturnsAlreadyExists(t *testing.T) {
+	const chartID = "test-create-chart-dup"
+	workUnitChart := blankChartProto(chartID, 100, 1)
+	tests := []struct {
+		name     string
+		base     *dpb.Chart
+		xid, wid int64
+	}{
+		{name: "same work unit", base: workUnitChart, xid: 100, wid: 1},
+		{name: "different experiment", base: workUnitChart, xid: 200, wid: 2},
+		{name: "experiment-level duplicate of work-unit chart", base: workUnitChart, xid: 100},
+		{name: "experiment-level duplicate of experiment-level chart", base: storagetest.ExperimentChartProto(chartID, 100), xid: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := setupDashboardRepository(ctx, t)
+			storagetest.AssertDuplicateChartRejected(ctx, t, repo, tt.base, tt.xid, tt.wid)
+		})
 	}
 }
 

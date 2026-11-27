@@ -113,7 +113,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     get_parser.add_argument(
         "name",
-        help="Resource name (e.g. charts/baseline or dashboards/vcc_comparison)",
+        help=(
+            "charts/<chart_id> or dashboards/<dashboard_id> (e.g. dashboards/vcc_comparison). "
+            "Chart IDs are server-assigned; take one from the Chart IDs line of "
+            "`get dashboards/...` or the name create-chart prints"
+        ),
     )
 
     # get-data subcommand
@@ -121,7 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "get-data",
         help="Fetch evaluated metrics data for a chart",
     )
-    get_data_parser.add_argument("name", help="Chart resource name")
+    get_data_parser.add_argument("name", help="Chart resource name (e.g. charts/<chart_id>)")
 
     # list subcommand
     subparsers.add_parser("list", help="List all dashboards")
@@ -171,11 +175,9 @@ def _handle_create_dashboard(client: DashboardClient, args: argparse.Namespace) 
                 ) from err
             # No guard on xid_val: ChartBuilder.for_experiment rejects a non-positive ID
             # with a clear message, rather than the dashboard silently losing a chart.
-            charts.append(
-                create_standard_experiment_chart(xid=xid_val, wid=1, chart_id=f"exp_{xid_val}")
-            )
+            charts.append(create_standard_experiment_chart(xid=xid_val, wid=1))
 
-    # Charts must exist before the dashboard can reference them by ID.
+    # Charts must exist before the dashboard can reference them, by the IDs the server assigned.
     for created_chart in client.create_charts(charts):
         builder.add_chart_id(chart_id_from_name(created_chart.name))
 
@@ -237,19 +239,24 @@ def _handle_create_chart(client: DashboardClient, args: argparse.Namespace) -> i
 def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
     """Handles the get subcommand.
 
+    GetChart accepts only root chart names, so hierarchical chart names are rejected locally
+    instead of failing server-side; get-data accepts those.
+
     Raises:
-        ValueError: If the resource name is blank or is not a dashboard or chart name.
+        ValueError: If the resource name is blank or is not 'charts/<chart_id>' or
+            'dashboards/<dashboard_id>'.
     """
     name = args.name.strip()
     if not name:
         raise ValueError("Resource name cannot be blank")
-    if not name.startswith(("charts/", "dashboards/", "experiments/")):
+    collection, _, resource_id = name.partition("/")
+    if collection not in ("charts", "dashboards") or not resource_id or "/" in resource_id:
         raise ValueError(
-            f"Unrecognised resource name '{name}'. Expected it to start with "
-            "'charts/', 'dashboards/', or 'experiments/'."
+            f"Unrecognised resource name '{name}'. Expected 'charts/<chart_id>' or "
+            "'dashboards/<dashboard_id>'; use get-data for hierarchical chart names."
         )
 
-    if name.startswith("dashboards/") and "/charts/" not in name:
+    if collection == "dashboards":
         dash = client.get_dashboard(name)
         sys.stdout.write(
             f"Dashboard: {dash.name}\n"
@@ -257,6 +264,8 @@ def _handle_get(client: DashboardClient, args: argparse.Namespace) -> int:
             f"Description: {dash.description}\n"
             f"Charts:      {len(dash.chart_ids)}\n"
         )
+        if dash.chart_ids:
+            sys.stdout.write(f"Chart IDs:   {', '.join(dash.chart_ids)}\n")
         return 0
 
     chart = client.get_chart(name)

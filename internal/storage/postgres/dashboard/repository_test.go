@@ -26,10 +26,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/testing/protocmp"
 	fmpb "google.golang.org/protobuf/types/known/fieldmaskpb"
 	dpb "xmanager_cloud/api/protos/dashboard"
 	"xmanager_cloud/internal/grpcerr"
+	"xmanager_cloud/internal/prototest"
 	storagedata "xmanager_cloud/internal/storage/data"
 	postgrestest "xmanager_cloud/internal/storage/postgres/testing"
 	storagetest "xmanager_cloud/internal/storage/testing"
@@ -195,6 +198,58 @@ func TestCreateDashboard_InlineChartsRolledBackOnFailure(t *testing.T) {
 	}
 	if _, err := repo.GetChart(ctx, chartID1); !errors.Is(err, grpcerr.ErrNotFound) {
 		t.Errorf("GetChart for rolled-back inline chart error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCreateDashboard_DuplicateInlineChartIDReturnsAlreadyExists(t *testing.T) {
+	ctx := context.Background()
+	repo, _ := setupDashboardRepository(ctx, t)
+
+	if err := repo.CreateChart(ctx, blankChartProto(chartID1, 100, 1)); err != nil {
+		t.Fatalf("CreateChart(original) failed: %v", err)
+	}
+	original, err := repo.GetChart(ctx, chartID1)
+	if err != nil {
+		t.Fatalf("GetChart(original) failed: %v", err)
+	}
+
+	dash := blankDashboardProto("dashboards/dup-inline-dash")
+	dash.ChartIds = []string{chartID1}
+	dup := prototest.Modify(blankChartProto(chartID1, 100, 1), func(c *dpb.Chart) { c.Title = "Duplicate Title" })
+	err = repo.CreateDashboard(ctx, dash, []*dpb.Chart{dup})
+	if !errors.Is(err, grpcerr.ErrAlreadyExists) || status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("CreateDashboard(duplicate inline chart) error = %v (code %v), want %v", err, status.Code(err), grpcerr.ErrAlreadyExists)
+	}
+	if _, err := repo.GetDashboard(ctx, "dup-inline-dash"); !errors.Is(err, grpcerr.ErrNotFound) {
+		t.Errorf("GetDashboard after rejected CreateDashboard error = %v, want %v", err, grpcerr.ErrNotFound)
+	}
+	got, err := repo.GetChart(ctx, chartID1)
+	if err != nil {
+		t.Fatalf("GetChart(after rejected CreateDashboard) failed: %v", err)
+	}
+	if diff := cmp.Diff(original, got, protocmp.Transform()); diff != "" {
+		t.Errorf("chart changed after rejected CreateDashboard (-want +got):\n%s", diff)
+	}
+}
+
+func TestCreateChart_DuplicateIDReturnsAlreadyExists(t *testing.T) {
+	workUnitChart := blankChartProto(chartID1, 100, 1)
+	tests := []struct {
+		name     string
+		base     *dpb.Chart
+		xid, wid int64
+	}{
+		{name: "same work unit", base: workUnitChart, xid: 100, wid: 1},
+		{name: "different experiment", base: workUnitChart, xid: 200, wid: 2},
+		{name: "experiment-level duplicate of work-unit chart", base: workUnitChart, xid: 100},
+		{name: "experiment-level duplicate of experiment-level chart", base: storagetest.ExperimentChartProto(chartID1, 100), xid: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo, _ := setupDashboardRepository(ctx, t)
+			storagetest.AssertDuplicateChartRejected(ctx, t, repo, tt.base, tt.xid, tt.wid)
+		})
 	}
 }
 

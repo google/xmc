@@ -33,7 +33,7 @@ from xdash.auth import (
     mint_iam_impersonated_token,
     resolve_env_auth_token,
 )
-from xdash.builders import chart_id_from_name
+from xdash.builders import chart_id_from_name, validate_chart_id
 
 DEFAULT_DASHBOARD_ENDPOINT = "localhost:8080"
 _TOKEN_TTL_SEC = 3300.0
@@ -372,18 +372,38 @@ class DashboardClient:
         chart: messages_pb2.Chart,
         chart_id: str | None = None,
     ) -> messages_pb2.Chart:
-        """Creates a chart under `experiments/{xid}/workUnits/{wid}` or `experiments/{xid}`."""
+        """Creates a chart under `experiments/{xid}/workUnits/{wid}` or `experiments/{xid}`.
+
+        The chart's own name is never used as its ID: ChartBuilder names every chart,
+        falling back to a slug of its title, so deriving an ID from it would make unrelated
+        charts collide. The server assigns a fresh ID unless chart_id is passed explicitly.
+
+        Args:
+            parent: Work unit resource name, 'experiments/{xid}/workUnits/{wid}', or
+                experiment resource name, 'experiments/{xid}', for experiment-level charts.
+            chart: The Chart protobuf message to create.
+            chart_id: Optional explicit chart ID. CreateChart never overwrites an existing
+                chart, so an ID that is already taken fails with ALREADY_EXISTS.
+
+        Returns:
+            The created chart. Its name carries the authoritative chart ID; reference the
+            chart through it, e.g. DashboardBuilder.add_chart(created).
+
+        Raises:
+            ValueError: If parent is blank, chart is unset, or an explicit chart_id is
+                blank or contains a slash.
+            XDashRPCError: If the server rejects the request, with code ALREADY_EXISTS
+                when chart_id is already taken.
+        """
         if not parent or not parent.strip():
             raise ValueError("parent resource name is required")
         if not chart:
             raise ValueError("chart message is required")
-        if not chart_id and chart.name:
-            # See create_dashboard: a trailing slash would otherwise derive an empty id.
-            chart_id = chart.name.rstrip("/").split("/")[-1]
+        validated_id = validate_chart_id(chart_id) if chart_id is not None else ""
         req = dashboard_service_pb2.CreateChartRequest(
             parent=parent,
             chart=chart,
-            chart_id=chart_id or "",
+            chart_id=validated_id,
         )
         return self._execute_rpc(self._stub.CreateChart, req, "CreateChart")
 
@@ -423,7 +443,11 @@ class DashboardClient:
         return created
 
     def get_chart(self, name: str) -> messages_pb2.Chart:
-        """Retrieves a chart by its full resource name."""
+        """Retrieves a chart by its root resource name, 'charts/{chart_id}'.
+
+        GetChart rejects hierarchical names such as the name of a created chart; pass
+        f"charts/{chart_id_from_name(created.name)}" instead, or use get_chart_data.
+        """
         if not name or not name.strip():
             raise ValueError("Chart resource name is required")
         req = dashboard_service_pb2.GetChartRequest(name=name)

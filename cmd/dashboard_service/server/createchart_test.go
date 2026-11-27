@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -30,6 +31,7 @@ import (
 
 	dpb "xmanager_cloud/api/protos/dashboard"
 	xidapipb "xmanager_cloud/api/protos/xid"
+	"xmanager_cloud/internal/grpcerr"
 	"xmanager_cloud/internal/prototest"
 )
 
@@ -267,24 +269,32 @@ func TestCreateChart(t *testing.T) {
 		}
 	})
 
-	t.Run("repo AlreadyExists error returns AlreadyExists", func(t *testing.T) {
-		repo := &mockRepository{
-			createChartFn: func(ctx context.Context, chart *dpb.Chart) error {
-				return status.Error(codes.AlreadyExists, "chart already exists")
-			},
+	t.Run("repo AlreadyExists error returns sanitized AlreadyExists", func(t *testing.T) {
+		repoErrs := []error{
+			status.Error(codes.AlreadyExists, "SQLSTATE 23505: duplicate key value"),
+			fmt.Errorf("chart dup-id already exists: %w", grpcerr.ErrAlreadyExists),
 		}
-		authMock := &mockAuthorizer{}
-		s := NewServer(&Config{}, repo, authMock, &mockXidClient{}, nil)
+		for _, repoErr := range repoErrs {
+			repo := &mockRepository{
+				createChartFn: func(ctx context.Context, chart *dpb.Chart) error {
+					return repoErr
+				},
+			}
+			s := NewServer(&Config{}, repo, &mockAuthorizer{}, &mockXidClient{}, nil)
+			req := &dpb.CreateChartRequest{
+				Parent:  "experiments/100/workUnits/1",
+				ChartId: "dup-id",
+				Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
+			}
 
-		req := &dpb.CreateChartRequest{
-			Parent:  "experiments/100/workUnits/1",
-			ChartId: "dup-id",
-			Chart:   &dpb.Chart{Title: "Title", Xid: 100, Wid: 1},
-		}
-
-		_, err := s.CreateChart(ctx, req)
-		if status.Code(err) != codes.AlreadyExists {
-			t.Errorf("Expected code AlreadyExists, got %v", status.Code(err))
+			_, err := s.CreateChart(ctx, req)
+			if status.Code(err) != codes.AlreadyExists {
+				t.Errorf("CreateChart() code = %v, want %v (repoErr=%v)", status.Code(err), codes.AlreadyExists, repoErr)
+			}
+			const wantMsg = `chart "experiments/100/workUnits/1/charts/dup-id" already exists`
+			if gotMsg := status.Convert(err).Message(); gotMsg != wantMsg {
+				t.Errorf("CreateChart() message = %q, want %q", gotMsg, wantMsg)
+			}
 		}
 	})
 
