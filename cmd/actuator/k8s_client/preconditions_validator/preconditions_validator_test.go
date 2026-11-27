@@ -261,6 +261,96 @@ func TestValidateJobSetManifest(t *testing.T) {
 	}
 }
 
+func TestValidateJobSetManifest_ExclusiveResources(t *testing.T) {
+	validator := NewWithOptions(Options{ExclusiveResources: []string{constants.NvidiaGPUResourceName}})
+
+	buildHostNetworkJobSet := func(limits map[string]any) *unstructured.Unstructured {
+		return &unstructured.Unstructured{
+			Object: map[string]any{
+				"spec": map[string]any{
+					"replicatedJobs": []any{
+						map[string]any{
+							"template": map[string]any{
+								"spec": map[string]any{
+									"template": map[string]any{
+										"spec": map[string]any{
+											"hostNetwork": true,
+											"containers": []any{
+												map[string]any{
+													"name": "worker",
+													"resources": map[string]any{
+														"limits": limits,
+													},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		limits  map[string]any
+		wantErr bool
+	}{
+		{
+			name:    "exclusive_accelerator_resource_allows_hostNetwork_without_gke_annotation",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: "8"},
+			wantErr: false,
+		},
+		{
+			name:    "zero_string_limit_still_rejected",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: "0"},
+			wantErr: true,
+		},
+		{
+			name:    "numeric_zero_int64_limit_still_rejected",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: int64(0)},
+			wantErr: true,
+		},
+		{
+			name:    "numeric_zero_float64_limit_still_rejected",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: float64(0)},
+			wantErr: true,
+		},
+		{
+			name:    "numeric_zero_int_limit_still_rejected",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: 0},
+			wantErr: true,
+		},
+		{
+			name:    "numeric_positive_int64_limit_allowed",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: int64(8)},
+			wantErr: false,
+		},
+		{
+			name:    "nil_limit_still_rejected",
+			limits:  map[string]any{constants.NvidiaGPUResourceName: nil},
+			wantErr: true,
+		},
+		{
+			name:    "cpu_only_pod_still_rejected",
+			limits:  map[string]any{"cpu": "4"},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validator.ValidateJobSetManifest(buildHostNetworkJobSet(tc.limits))
+			if (err != nil) != tc.wantErr {
+				t.Errorf("ValidateJobSetManifest() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestIsExecutionIDAligned(t *testing.T) {
 	ctx := context.Background()
 	validator := New()

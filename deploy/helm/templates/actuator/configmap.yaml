@@ -37,6 +37,9 @@ data:
   {{- if .Values.redisReadBatchSize }}
   redis_read_batch_size: {{ .Values.redisReadBatchSize | quote }}
   {{- end }}
+  {{- if .Values.kubernetesPlacement }}
+  kubernetes_placement_config: {{ .Values.kubernetesPlacement | toJson | quote }}
+  {{- end }}
   {{- if .Values.isDevEnvironment }}
   XMC_PROJECT_ID: {{ .Values.projectId | quote }}
   XMC_CLUSTER_NAME: {{ .Values.clusterName | default (printf "xmc-%s" .Values.environment) | quote }}

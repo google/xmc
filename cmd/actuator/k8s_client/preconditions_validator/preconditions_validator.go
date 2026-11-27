@@ -40,11 +40,32 @@ type Validator interface {
 	ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error
 }
 
-type validatorImpl struct{}
+// Options configures creation-time manifest validation rules.
+type Options struct {
+	// ExclusiveResources lists extended resource names (e.g. "nvidia.com/gpu") whose
+	// cluster placement profile guarantees exclusive host assignment without requiring
+	// the GKE exclusive-topology annotation.
+	ExclusiveResources []string
+}
 
-// New creates a new preconditions validator.
+type validatorImpl struct {
+	exclusiveResources map[string]bool
+}
+
+// New creates a new preconditions validator with default options.
 func New() Validator {
-	return &validatorImpl{}
+	return NewWithOptions(Options{})
+}
+
+// NewWithOptions creates a new preconditions validator with explicit options.
+func NewWithOptions(opts Options) Validator {
+	res := make(map[string]bool, len(opts.ExclusiveResources))
+	for _, name := range opts.ExclusiveResources {
+		if name != "" {
+			res[name] = true
+		}
+	}
+	return &validatorImpl{exclusiveResources: res}
 }
 
 // IsActuationRequestValid checks if the actuation request is valid.
@@ -85,7 +106,7 @@ func (v *validatorImpl) IsActuationRequestValid(ctx context.Context, target stri
 
 // ValidateJobSetManifest performs creation-time structural validation on the JobSet spec.
 func (v *validatorImpl) ValidateJobSetManifest(jobSetUnstructured *unstructured.Unstructured) error {
-	return validateHostNetworkExclusiveTopology(jobSetUnstructured)
+	return v.validateHostNetworkExclusiveTopology(jobSetUnstructured)
 }
 
 func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstructured) (bool, error) {
@@ -121,7 +142,7 @@ func isNonRestartingJobSetContractValid(jobSetUnstructured *unstructured.Unstruc
 
 const exclusiveTopologyAnnotation = "alpha.jobset.sigs.k8s.io/exclusive-topology"
 
-func validateHostNetworkExclusiveTopology(jobSetUnstructured *unstructured.Unstructured) error {
+func (v *validatorImpl) validateHostNetworkExclusiveTopology(jobSetUnstructured *unstructured.Unstructured) error {
 	if jobSetUnstructured == nil {
 		return nil
 	}
@@ -172,12 +193,68 @@ func validateHostNetworkExclusiveTopology(jobSetUnstructured *unstructured.Unstr
 		hasRJExclusiveTopology := checkNestedAnnotation(template, exclusiveTopologyAnnotation) ||
 			checkNestedAnnotation(podTemplate, exclusiveTopologyAnnotation)
 
-		if !hasJobSetExclusiveTopology && !hasRJExclusiveTopology {
+		if !hasJobSetExclusiveTopology && !hasRJExclusiveTopology && !v.podRequestsExclusiveResource(podSpec) {
 			return fmt.Errorf("pods with hostNetwork=true must specify exclusive node placement annotation (%q)", exclusiveTopologyAnnotation)
 		}
 	}
 
 	return nil
+}
+
+func (v *validatorImpl) podRequestsExclusiveResource(podSpec map[string]any) bool {
+	if len(v.exclusiveResources) == 0 {
+		return false
+	}
+	containers, ok := podSpec["containers"].([]any)
+	if !ok {
+		return false
+	}
+	for _, cAny := range containers {
+		cMap, ok := cAny.(map[string]any)
+		if !ok {
+			continue
+		}
+		if hasExclusiveResourceEntry(cMap, "limits", v.exclusiveResources) || hasExclusiveResourceEntry(cMap, "requests", v.exclusiveResources) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasExclusiveResourceEntry(container map[string]any, section string, allowed map[string]bool) bool {
+	res, ok := container["resources"].(map[string]any)
+	if !ok {
+		return false
+	}
+	entries, ok := res[section].(map[string]any)
+	if !ok {
+		return false
+	}
+	for key, val := range entries {
+		if !allowed[key] || isZeroOrEmptyResourceQuantity(val) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isZeroOrEmptyResourceQuantity(val any) bool {
+	if val == nil {
+		return true
+	}
+	switch v := val.(type) {
+	case string:
+		return v == "" || v == "0"
+	case float64:
+		return v == 0
+	case int64:
+		return v == 0
+	case int:
+		return v == 0
+	default:
+		return false
+	}
 }
 
 func checkNestedAnnotation(obj map[string]any, annotationKey string) bool {

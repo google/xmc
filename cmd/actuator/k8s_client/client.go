@@ -37,6 +37,7 @@ import (
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
+	ee "xmanager_cloud/internal/toollibs/execution_environments"
 	"xmanager_cloud/internal/validator"
 )
 
@@ -48,6 +49,9 @@ type ActuatorRuntimeConfig struct {
 	// The execution environment to use.
 	DefaultExecutionEnvironment string
 
+	// Cluster-administrator accelerator placement defaults for the "kubernetes" execution environment.
+	KubernetesPlacement ee.PlacementConfig
+
 	// Decides whether XMC metrics are enabled.
 	MetricsEnabled bool
 
@@ -56,6 +60,13 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether pods can run with host networking when requested.
 	AllowHostNetwork bool
+}
+
+func (cfg ActuatorRuntimeConfig) exclusiveResourceNames() []string {
+	if cfg.DefaultExecutionEnvironment != "kubernetes" {
+		return nil
+	}
+	return cfg.KubernetesPlacement.ExclusiveResourceNames()
 }
 
 // Priorities holds experiment and work unit priorities.
@@ -131,12 +142,14 @@ func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage) (*Client,
 	}
 
 	return &Client{
-		clientset:              clientset,
-		dynamicClient:          dynamicClient,
-		ManagerClient:          managerClient,
-		storage:                storage,
-		RuntimeConfig:          runtimeConfig,
-		preconditionsValidator: preconditionsvalidator.New(),
+		clientset:     clientset,
+		dynamicClient: dynamicClient,
+		ManagerClient: managerClient,
+		storage:       storage,
+		RuntimeConfig: runtimeConfig,
+		preconditionsValidator: preconditionsvalidator.NewWithOptions(preconditionsvalidator.Options{
+			ExclusiveResources: runtimeConfig.exclusiveResourceNames(),
+		}),
 	}, nil
 }
 

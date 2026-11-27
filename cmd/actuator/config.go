@@ -27,6 +27,7 @@ import (
 	"xmanager_cloud/internal/featureflags"
 	"xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
+	ee "xmanager_cloud/internal/toollibs/execution_environments"
 )
 
 // RedisConfig holds the configuration for the Redis queue.
@@ -60,6 +61,7 @@ var (
 	jwksURL                     string
 	oidcIssuerURL               string
 	defaultExecutionEnvironment string
+	kubernetesPlacementJSON     string
 	verifyingKeyFile            string
 	maxRecentKeys               int
 	metricsEnabled              bool
@@ -103,26 +105,42 @@ func registerConfigs() {
 	configutil.DurationEnv(&redisProcessTimeout, "redis_process_timeout", constants.RedisProcessTimeout)
 	configutil.DurationEnv(&redisAbandonedMessageTimeout, "redis_abandoned_message_timeout", constants.RedisAbandonedMessageTimeout)
 	configutil.Int64Env(&redisReadBatchSize, "redis_read_batch_size", constants.RedisReadBatchSize)
+	configutil.StringEnv(&kubernetesPlacementJSON, "kubernetes_placement_config", "")
 	featureFlags = featureflags.Load()
 }
 
-func validate() error {
+func validate() (ee.PlacementConfig, error) {
 	if p, err := strconv.Atoi(port); err != nil || p <= 0 || p > 65535 {
-		return fmt.Errorf("invalid -port: %q; must be an integer between 1 and 65535", port)
+		return ee.PlacementConfig{}, fmt.Errorf("invalid -port: %q; must be an integer between 1 and 65535", port)
 	}
 	if xmanagerServiceAccount == "" {
-		return fmt.Errorf("missing -xmanager_service_account")
+		return ee.PlacementConfig{}, fmt.Errorf("missing -xmanager_service_account")
 	}
 	if redisAddr == "" {
-		return fmt.Errorf("-redis_addr must be provided")
+		return ee.PlacementConfig{}, fmt.Errorf("-redis_addr must be provided")
 	}
-	return nil
+	return validateExecutionEnvironmentConfig(defaultExecutionEnvironment, kubernetesPlacementJSON)
+}
+
+func validateExecutionEnvironmentConfig(envName, placementJSON string) (ee.PlacementConfig, error) {
+	if _, ok := ee.Lookup(envName); !ok {
+		return ee.PlacementConfig{}, fmt.Errorf("unknown -default_execution_environment: %q", envName)
+	}
+	placementCfg, err := ee.ParsePlacementConfig(placementJSON)
+	if err != nil {
+		return ee.PlacementConfig{}, fmt.Errorf("invalid kubernetes_placement_config: %w", err)
+	}
+	if _, err := ee.NewKubernetes(placementCfg); err != nil {
+		return ee.PlacementConfig{}, fmt.Errorf("invalid kubernetes_placement_config: %w", err)
+	}
+	return placementCfg, nil
 }
 
 // Load returns a Config struct populated with the values from ConfigMaps and parsed flags.
 func Load() Config {
 	ctx := context.Background()
-	if err := validate(); err != nil {
+	placementCfg, err := validate()
+	if err != nil {
 		logging.Fatal(ctx, "Invalid configuration", "error", err)
 	}
 
@@ -149,6 +167,7 @@ func Load() Config {
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
 			CreateNewNamespaces:         createNewNamespaces,
 			DefaultExecutionEnvironment: defaultExecutionEnvironment,
+			KubernetesPlacement:         placementCfg,
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
