@@ -47,6 +47,20 @@ def _fake_runner_factory(
         "git": "git version 2.43.0\n*",
         "jq": "jq-1.7",
         "curl": "curl 8.5.0",
+        "go": f"go version go{tools['go']['version']} linux/amd64",
+        "ruff": f"ruff {tools['ruff']['version']}",
+        "mypy": f"mypy {tools['mypy']['version']}",
+        "golangci-lint": (
+            f"golangci-lint has version {tools['golangci_lint']['version']} "
+            f"built with go{tools['go']['version']}"
+        ),
+        "actionlint": tools["actionlint"]["version"],
+        "buildifier": f"buildifier version: {tools['buildifier']['version']}",
+        "shellcheck": f"version: {tools['shellcheck']['version']}",
+        "terraform": f"Terraform v{tools['terraform']['version']}",
+        "tflint": f"TFLint version {tools['tflint']['version']}",
+        "helm": f"v{tools['helm']['version']}+g1234",
+        "trivy": f"Version: {tools['trivy']['version']}",
     }
 
     def _run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -63,9 +77,50 @@ class RunSmokeChecksTest(unittest.TestCase):
 
     def test_base_role_passes(self) -> None:
         failures = verify_image.run_smoke_checks(
-            "base", _load_manifest(), runner=_fake_runner_factory()
+            "base", _load_manifest(), env={}, runner=_fake_runner_factory()
         )
         self.assertEqual(failures, [])
+
+    def test_lint_role_passes_with_preinstalled_plugin(self) -> None:
+        manifest = _load_manifest()
+        plugin_ver = manifest["tools"]["tflint_google_plugin"]["version"]
+        with tempfile.TemporaryDirectory() as tmp:
+            plugin_path = (
+                Path(tmp)
+                / "github.com"
+                / "terraform-linters"
+                / "tflint-ruleset-google"
+                / plugin_ver
+            )
+            plugin_path.mkdir(parents=True)
+            with mock.patch("shutil.which", return_value="/usr/local/bin/addlicense"):
+                failures = verify_image.run_smoke_checks(
+                    "lint",
+                    manifest,
+                    env={"TFLINT_PLUGIN_DIR": tmp},
+                    runner=_fake_runner_factory(),
+                )
+        self.assertEqual(failures, [])
+
+    def test_lint_role_reports_missing_addlicense_and_plugin(self) -> None:
+        with mock.patch("shutil.which", return_value=None):
+            failures = verify_image.run_smoke_checks(
+                "lint", _load_manifest(), env={}, runner=_fake_runner_factory()
+            )
+        self.assertTrue(any("addlicense" in f for f in failures))
+        self.assertTrue(any("TFLINT_PLUGIN_DIR" in f for f in failures))
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            mock.patch("shutil.which", return_value="/usr/local/bin/addlicense"),
+        ):
+            missing_dir_failures = verify_image.run_smoke_checks(
+                "lint",
+                _load_manifest(),
+                env={"TFLINT_PLUGIN_DIR": tmp},
+                runner=_fake_runner_factory(),
+            )
+        self.assertTrue(any("missing pre-cached plugin" in f for f in missing_dir_failures))
 
     def test_command_failures_nonzero_version_mismatch_and_oserror(self) -> None:
         bad_runner = _fake_runner_factory(

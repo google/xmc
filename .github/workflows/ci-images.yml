@@ -18,12 +18,14 @@ on:
   pull_request:
     paths:
       - 'deploy/ci/images/**'
+      - '.tflint.hcl'
       - '.github/workflows/ci-images.yml'
   push:
     branches:
       - main
     paths:
       - 'deploy/ci/images/**'
+      - '.tflint.hcl'
       - '.github/workflows/ci-images.yml'
   workflow_dispatch:
     inputs:
@@ -79,7 +81,7 @@ jobs:
           fi
           if [ -z "${INPUT_IMAGES}" ] || [ "${INPUT_IMAGES}" = "default" ] || [ "${INPUT_IMAGES}" = "all" ]; then
             bake_targets="default"
-            target_list="ci-base"
+            target_list="ci-base ci-lint"
           else
             bake_targets="${INPUT_IMAGES}"
             target_list="${INPUT_IMAGES//,/ }"
