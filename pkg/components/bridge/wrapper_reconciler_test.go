@@ -17,7 +17,11 @@ package bridge
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -395,7 +399,7 @@ func TestVerifyEndpointHealth(t *testing.T) {
 			name:     "unhealthy with message",
 			endpoint: endpoint,
 			prober:   &mockProber{probeRes: &healthprobe.HealthProbeResult{Message: "HTTP 503 (unhealthy status)"}},
-			want:     verdict{Reason: "ProbeUnhealthy", Message: "HTTP 503 (unhealthy status)"},
+			want:     verdict{Reason: "ProbeUnhealthy", Message: "Health probe unhealthy for http://svc.xmc:8080: HTTP 503 (unhealthy status)"},
 		},
 	}
 	for _, tt := range tests {
@@ -494,4 +498,121 @@ func TestResolveOperatorlessEndpointAndIPv6(t *testing.T) {
 	if got := healthprobe.ResolveConnectionEndpoint(params); got != "clickhouse.xmc-metrics.svc.cluster.local:9000" {
 		t.Errorf("ResolveConnectionEndpoint() = %q, want clickhouse.xmc-metrics.svc.cluster.local:9000", got)
 	}
+}
+
+func TestReconcile_MLflowHTTPServerHealthAndAccess(t *testing.T) {
+	var statusCode atomic.Int32
+	statusCode.Store(http.StatusOK)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(int(statusCode.Load()))
+	}))
+	defer srv.Close()
+
+	bp := healthprobe.NewBridgeProber(nil, healthprobe.NewNetworkHealthProber(), time.Second)
+	r, err := NewReconciler(&mockCMS{}, bp, nil)
+	if err != nil {
+		t.Fatalf("NewReconciler() error = %v", err)
+	}
+
+	in := ReconcileComponentInput{
+		Namespace: "xmc", Name: "mlflow", Generation: 1, Enabled: true,
+		Spec: &componentspb.ComponentSpec{
+			Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+			Parameters: map[string]string{
+				"trackingUri":    srv.URL,
+				"secretName":     "mlflow-creds",
+				"secretTokenKey": "token",
+			},
+		},
+	}
+
+	t.Run("Ready while /health answers 2xx and publishes access metadata", func(t *testing.T) {
+		statusCode.Store(http.StatusOK)
+		res, err := r.ReconcileComponent(context.Background(), in)
+		if err != nil {
+			t.Fatalf("ReconcileComponent() error = %v", err)
+		}
+		if res.State != componentspb.ComponentState_COMPONENT_STATE_ENABLED {
+			t.Errorf("State = %v, want COMPONENT_STATE_ENABLED", res.State)
+		}
+		ready := findCondition(res.Conditions, ConditionTypeReady)
+		if ready == nil || ready.Status != ConditionStatusTrue {
+			t.Fatalf("Ready condition = %+v, want True", ready)
+		}
+		wantEnv := map[string]string{
+			"ENDPOINT":         srv.URL,
+			"HOST":             strings.TrimPrefix(srv.URL, "http://")[:strings.Index(strings.TrimPrefix(srv.URL, "http://"), ":")],
+			"PORT":             strings.Split(strings.TrimPrefix(srv.URL, "http://"), ":")[1],
+			"SCHEME":           "http",
+			"SECRET_NAME":      "mlflow-creds",
+			"TRACKING_URI":     srv.URL,
+			"UI_BASE_URL":      srv.URL,
+			"SECRET_TOKEN_KEY": "token",
+		}
+		if diff := cmp.Diff(wantEnv, res.Access.EnvVars); diff != "" {
+			t.Errorf("Access.EnvVars mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("publishes basic auth key names and explicit uiBaseUrl", func(t *testing.T) {
+		statusCode.Store(http.StatusOK)
+		basicIn := ReconcileComponentInput{
+			Namespace: "xmc", Name: "mlflow", Generation: 2, Enabled: true,
+			Spec: &componentspb.ComponentSpec{
+				Type: componentspb.ComponentType_COMPONENT_TYPE_CUSTOM_3P_WRAPPER,
+				Parameters: map[string]string{
+					"trackingUri":       srv.URL,
+					"uiBaseUrl":         "https://mlflow.ui.example.com",
+					"secretName":        "mlflow-basic",
+					"secretUsernameKey": "username",
+					"secretPasswordKey": "password",
+				},
+			},
+		}
+		res, err := r.ReconcileComponent(context.Background(), basicIn)
+		if err != nil {
+			t.Fatalf("ReconcileComponent() error = %v", err)
+		}
+		if res.Access == nil || res.Access.EnvVars["UI_BASE_URL"] != "https://mlflow.ui.example.com" ||
+			res.Access.EnvVars["SECRET_USERNAME_KEY"] != "username" || res.Access.EnvVars["SECRET_PASSWORD_KEY"] != "password" {
+			t.Errorf("unexpected basic auth Access.EnvVars: %+v", res.Access)
+		}
+	})
+
+	t.Run("not Ready with probed address when /health returns non-2xx", func(t *testing.T) {
+		statusCode.Store(http.StatusServiceUnavailable)
+		res, err := r.ReconcileComponent(context.Background(), in)
+		if err != nil {
+			t.Fatalf("ReconcileComponent() error = %v", err)
+		}
+		if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+			t.Errorf("State = %v, want COMPONENT_STATE_PENDING_RECONCILIATION", res.State)
+		}
+		ready := findCondition(res.Conditions, ConditionTypeReady)
+		wantAddr := srv.URL + "/health"
+		if ready == nil || ready.Status != ConditionStatusFalse || !strings.Contains(ready.Message, wantAddr) {
+			t.Errorf("Ready condition = %+v, want False with message naming %q", ready, wantAddr)
+		}
+	})
+
+	t.Run("not Ready with probed address when server is unreachable", func(t *testing.T) {
+		srv.Close()
+		res, err := r.ReconcileComponent(context.Background(), in)
+		if err != nil {
+			t.Fatalf("ReconcileComponent() error = %v", err)
+		}
+		if res.State != componentspb.ComponentState_COMPONENT_STATE_PENDING_RECONCILIATION {
+			t.Errorf("State = %v, want COMPONENT_STATE_PENDING_RECONCILIATION", res.State)
+		}
+		ready := findCondition(res.Conditions, ConditionTypeReady)
+		wantAddr := srv.URL + "/health"
+		if ready == nil || ready.Status != ConditionStatusFalse || !strings.Contains(ready.Message, wantAddr) {
+			t.Errorf("Ready condition = %+v, want False with message naming %q", ready, wantAddr)
+		}
+	})
 }

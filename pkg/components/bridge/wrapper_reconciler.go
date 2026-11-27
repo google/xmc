@@ -158,6 +158,8 @@ func (r *Reconciler) verifyEndpointHealth(ctx context.Context, endpoint string) 
 		msg := probeRes.Message
 		if msg == "" {
 			msg = fmt.Sprintf("Health probe unhealthy for %s", endpoint)
+		} else if endpoint != "" && !strings.Contains(msg, endpoint) {
+			msg = fmt.Sprintf("Health probe unhealthy for %s: %s", endpoint, msg)
 		}
 		return false, "ProbeUnhealthy", msg
 	}
@@ -185,6 +187,9 @@ func (r *Reconciler) handle3PReadyStatus(ctx context.Context, in ReconcileCompon
 		preserveExistingAccess(res, in.ExistingAccess)
 	} else {
 		populateAccessEnvVars(res, resStatus)
+		if in.Spec != nil {
+			populateParameterAccessEnvVars(res, in.Spec.GetParameters())
+		}
 	}
 	setReadiness(res, in, ConditionStatusTrue, ReasonComponentHealthy, msg)
 	return res, r.syncReadyToCMS(ctx, in, canonicalName, res, ConditionStatusTrue)
@@ -216,5 +221,38 @@ func populateAccessEnvVars(res *ReconcileResult, resStatus *statusdetector.Resou
 	}
 	if coords.SecretName != "" {
 		res.Access.EnvVars["SECRET_NAME"] = coords.SecretName
+	}
+}
+
+// populateParameterAccessEnvVars publishes non-secret connection and Secret key-name metadata
+// from component parameters without reading Secret values.
+func populateParameterAccessEnvVars(res *ReconcileResult, params map[string]string) {
+	if res == nil || len(params) == 0 {
+		return
+	}
+	if res.Access == nil {
+		res.Access = &AccessStatus{EnvVars: make(map[string]string)}
+	}
+	if res.Access.EnvVars == nil {
+		res.Access.EnvVars = make(map[string]string)
+	}
+	if trackingURI := strings.TrimSpace(params["trackingUri"]); trackingURI != "" {
+		res.Access.EnvVars["TRACKING_URI"] = trackingURI
+		uiBaseURL := strings.TrimSpace(params["uiBaseUrl"])
+		if uiBaseURL == "" {
+			uiBaseURL = trackingURI
+		}
+		res.Access.EnvVars["UI_BASE_URL"] = uiBaseURL
+	} else if uiBaseURL := strings.TrimSpace(params["uiBaseUrl"]); uiBaseURL != "" {
+		res.Access.EnvVars["UI_BASE_URL"] = uiBaseURL
+	}
+	for paramKey, envKey := range map[string]string{
+		"secretTokenKey":    "SECRET_TOKEN_KEY",
+		"secretUsernameKey": "SECRET_USERNAME_KEY",
+		"secretPasswordKey": "SECRET_PASSWORD_KEY",
+	} {
+		if val := strings.TrimSpace(params[paramKey]); val != "" {
+			res.Access.EnvVars[envKey] = val
+		}
 	}
 }

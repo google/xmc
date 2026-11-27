@@ -162,6 +162,9 @@ func ResolveProbeEndpoint(params map[string]string) string {
 	if ep := firstNonEmptyToken(params["healthCheckEndpoint"]); ep != "" {
 		return ep
 	}
+	if trackingURI := firstNonEmptyToken(params["trackingUri"]); trackingURI != "" {
+		return strings.TrimRight(trackingURI, "/") + "/health"
+	}
 	return ResolveConnectionEndpoint(params)
 }
 
@@ -170,7 +173,7 @@ func ResolveConnectionEndpoint(params map[string]string) string {
 	if len(params) == 0 {
 		return ""
 	}
-	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints"} {
+	for _, k := range []string{"endpoint", "clusterEndpoints", "brokerEndpoints", "trackingUri"} {
 		if first := firstNonEmptyToken(params[k]); first != "" {
 			return first
 		}

@@ -46,3 +46,5 @@ components:
     enabled: false
   hpo:
     enabled: false
+  mlflow:
+    enabled: false

@@ -22,6 +22,7 @@ filegroup(
         "//deploy/profiles/stable-2026b/components/clickhouse:chart",
         "//deploy/profiles/stable-2026b/components/hpo:chart",
         "//deploy/profiles/stable-2026b/components/ingestion-gateway:chart",
+        "//deploy/profiles/stable-2026b/components/mlflow:chart",
         "//deploy/profiles/stable-2026b/components/redpanda:chart",
         "//deploy/profiles/stable-2026b/components/vizier:chart",
     ] + glob(["templates/**"]),

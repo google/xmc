@@ -36,7 +36,7 @@ func stable2026b() profilecontract.Spec {
 	return profilecontract.Spec{
 		ChartRelPath: "deploy/profiles/stable-2026b",
 		ProfileName:  "stable-2026b",
-		Components:   []string{"redpanda", "clickhouse", "ingestion-gateway", "vizier", "hpo"},
+		Components:   []string{"redpanda", "clickhouse", "ingestion-gateway", "vizier", "hpo", "mlflow"},
 	}
 }
 
@@ -58,7 +58,8 @@ func TestStable2026b_RendersCatalogWithImageTag(t *testing.T) {
 	t.Parallel()
 	profilecontract.AssertRendersComponents(t, stable2026b(), map[string]any{"components": map[string]any{"redpanda": map[string]any{"enabled": true},
 		"clickhouse": map[string]any{"enabled": true}, "ingestion-gateway": map[string]any{"enabled": true, "imageTag": "v1.2.3"},
-		"vizier": map[string]any{"enabled": true, "acknowledgeExperimental": true}, "hpo": map[string]any{"enabled": true, "acknowledgeExperimental": true, "imageTag": "v1.2.3"}}})
+		"vizier": map[string]any{"enabled": true, "acknowledgeExperimental": true}, "hpo": map[string]any{"enabled": true, "acknowledgeExperimental": true, "imageTag": "v1.2.3"},
+		"mlflow": map[string]any{"enabled": true, "acknowledgeExperimental": true}}})
 }
 
 // TestStable2026b_LabelsComponentsWithProfile checks that every Component CR carries the profile
@@ -98,6 +99,9 @@ func TestStable2026b_OverridesMatchStandalone(t *testing.T) {
 			"parameters": map[string]any{"maxTrialBudget": "250"}}},
 		{name: "hpo studyControllerServiceAccount override", component: "hpo", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
 			"parameters": map[string]any{"studyControllerServiceAccount": "xmc-study-controller@my-project.iam.gserviceaccount.com"}}},
+		{name: "mlflow overrides", component: "mlflow", overrides: map[string]any{"enabled": true, "acknowledgeExperimental": true,
+			"parameters": map[string]any{"trackingUri": "https://mlflow.internal.example.com", "uiBaseUrl": "https://mlflow.example.com",
+				"secretName": "mlflow-creds", "secretTokenKey": "token", "healthCheckEndpoint": "https://mlflow.internal.example.com/healthz"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,6 +128,13 @@ func TestStable2026b_ExperimentalComponentDefaults(t *testing.T) {
 		{name: "hpo renders catalog EXPERIMENTAL stability", component: "hpo", field: "stability", want: "EXPERIMENTAL"},
 		{name: "hpo omits acknowledgeExperimental", component: "hpo", field: "acknowledgeExperimental", want: nil},
 		{name: "hpo renders default maxTrialBudget", component: "hpo", field: "parameters", want: map[string]any{"maxTrialBudget": "1000"}},
+		{name: "mlflow renders catalog EXPERIMENTAL stability", component: "mlflow", field: "stability", want: "EXPERIMENTAL"},
+		{name: "mlflow omits acknowledgeExperimental", component: "mlflow", field: "acknowledgeExperimental", want: nil},
+		{name: "mlflow renders default parameters", component: "mlflow", field: "parameters", want: map[string]any{
+			"trackingUri":         "http://mlflow-service.xmc.svc.cluster.local:5000",
+			"uiBaseUrl":           "http://mlflow-service.xmc.svc.cluster.local:5000",
+			"healthCheckEndpoint": "http://mlflow-service.xmc.svc.cluster.local:5000/health",
+		}},
 		{name: "global imageTag reaches hpo", component: "hpo", field: "imageTag", want: "v2"},
 	}
 	for _, tt := range tests {
@@ -186,6 +197,8 @@ func TestStable2026b_RejectsInvalidValues(t *testing.T) {
 		{name: "stable-2026a platformProfile", overrides: map[string]any{"global": map[string]any{"platformProfile": "stable-2026a"}}, wantErr: "platformProfile"},
 		{name: "workload key override on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"hpoDeployment": map[string]any{"image": "r/sc:v1"}}), wantErr: "hpoDeployment"},
 		{name: "unknown 3P parameter on vizier", overrides: profilecontract.ComponentOverrides("vizier", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
+		{name: "unknown 3P parameter on mlflow", overrides: profilecontract.ComponentOverrides("mlflow", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
+		{name: "stability override on mlflow", overrides: profilecontract.ComponentOverrides("mlflow", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
 		{name: "unknown parameter on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"parameters": map[string]any{"unknownParam": "foo"}}), wantErr: "unknownParam"},
 		{name: "stability override on vizier", overrides: profilecontract.ComponentOverrides("vizier", map[string]any{"stability": "STABLE"}), wantErr: "stability"},
 		{name: "stability override on hpo", overrides: profilecontract.ComponentOverrides("hpo", map[string]any{"stability": "STABLE"}), wantErr: "stability"},

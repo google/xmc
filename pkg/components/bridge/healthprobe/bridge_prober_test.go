@@ -178,3 +178,44 @@ func (m *mockProberDirect) ProbeTCP(ctx context.Context, address string, timeout
 func (m *mockProberDirect) ProbeGRPC(ctx context.Context, address string, timeout time.Duration) (*healthprobe.HealthProbeResult, error) {
 	return m.probeRes, m.err
 }
+
+func TestResolveTrackingURIEndpoints(t *testing.T) {
+	tests := []struct {
+		name           string
+		params         map[string]string
+		wantProbe      string
+		wantConnection string
+	}{
+		{
+			name:           "trackingUri defaults probe to /health",
+			params:         map[string]string{"trackingUri": "http://mlflow-service.xmc.svc.cluster.local:5000"},
+			wantProbe:      "http://mlflow-service.xmc.svc.cluster.local:5000/health",
+			wantConnection: "http://mlflow-service.xmc.svc.cluster.local:5000",
+		},
+		{
+			name:           "trackingUri trims trailing slash before /health",
+			params:         map[string]string{"trackingUri": "https://mlflow.example.com/"},
+			wantProbe:      "https://mlflow.example.com/health",
+			wantConnection: "https://mlflow.example.com/",
+		},
+		{
+			name: "explicit healthCheckEndpoint overrides trackingUri /health",
+			params: map[string]string{
+				"trackingUri":         "https://mlflow.example.com",
+				"healthCheckEndpoint": "https://mlflow.example.com/healthz",
+			},
+			wantProbe:      "https://mlflow.example.com/healthz",
+			wantConnection: "https://mlflow.example.com",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := healthprobe.ResolveProbeEndpoint(tt.params); got != tt.wantProbe {
+				t.Errorf("ResolveProbeEndpoint() = %q, want %q", got, tt.wantProbe)
+			}
+			if got := healthprobe.ResolveConnectionEndpoint(tt.params); got != tt.wantConnection {
+				t.Errorf("ResolveConnectionEndpoint() = %q, want %q", got, tt.wantConnection)
+			}
+		})
+	}
+}
