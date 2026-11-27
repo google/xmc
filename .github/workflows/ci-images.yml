@@ -27,6 +27,9 @@ on:
       - 'deploy/ci/images/**'
       - '.tflint.hcl'
       - '.github/workflows/ci-images.yml'
+  schedule:
+    # Weekly Sunday 03:00 UTC rebuild for Ubuntu OS and base security patches.
+    - cron: '0 3 * * 0'
   workflow_dispatch:
     inputs:
       images:
@@ -44,11 +47,16 @@ permissions:
 
 jobs:
   build-and-publish:
-    name: 'Build & Smoke-Test GHCR Runner Images'
+    name: 'Build, Smoke-Test & Publish GHCR Runner Images'
     runs-on: 'ubuntu-latest'
     timeout-minutes: 60
     permissions:
       contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      pushed_images: ${{ steps.collect-digests.outputs.pushed_images }}
 
     steps:
       - name: 'Checkout Repository'
@@ -70,14 +78,20 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           INPUT_IMAGES: ${{ inputs.images || 'default' }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          RUN_NUMBER: ${{ github.run_number }}
           GIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           short_sha="${GIT_SHA:0:12}"
+          date_tag="$(date -u +%Y%m%d)-${RUN_NUMBER}"
           if [ "${EVENT_NAME}" = "pull_request" ]; then
+            should_push="false"
             local_tag="pr-${PR_NUMBER:-local}"
+            publish_tags="${local_tag}"
           else
+            should_push="true"
             local_tag="sha-${short_sha}"
+            publish_tags="sha-${short_sha},${date_tag},main"
           fi
           if [ -z "${INPUT_IMAGES}" ] || [ "${INPUT_IMAGES}" = "default" ] || [ "${INPUT_IMAGES}" = "all" ]; then
             bake_targets="default"
@@ -87,7 +101,9 @@ jobs:
             target_list="${INPUT_IMAGES//,/ }"
           fi
           {
+            echo "should_push=${should_push}"
             echo "local_tag=${local_tag}"
+            echo "publish_tags=${publish_tags}"
             echo "bake_targets=${bake_targets}"
             echo "target_list=${target_list}"
           } >> "${GITHUB_OUTPUT}"
@@ -127,4 +143,143 @@ jobs:
               -v "${GITHUB_WORKSPACE}/deploy/ci/images:/smoke:ro" \
               "${image}" \
               python3 /smoke/verify_image.py --role "${role}" --versions /smoke/versions.json
+          done
+
+      - name: 'Scan Built Images with Trivy (HIGH, CRITICAL)'
+        env:
+          LOCAL_TAG: ${{ steps.plan.outputs.local_tag }}
+          TARGET_LIST: ${{ steps.plan.outputs.target_list }}
+        run: |
+          set -euo pipefail
+          trivy_ver="$(jq -r '.tools.trivy.version' deploy/ci/images/versions.json)"
+          trivy_sha="$(jq -r '.tools.trivy.sha256' deploy/ci/images/versions.json)"
+          mkdir -p "${RUNNER_TEMP}/trivy"
+          curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${trivy_ver}/trivy_${trivy_ver}_Linux-64bit.tar.gz" \
+            -o "${RUNNER_TEMP}/trivy.tar.gz"
+          echo "${trivy_sha}  ${RUNNER_TEMP}/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "${RUNNER_TEMP}/trivy.tar.gz" -C "${RUNNER_TEMP}/trivy" trivy
+          chmod +x "${RUNNER_TEMP}/trivy/trivy"
+          for target in ${TARGET_LIST}; do
+            image="ghcr.io/google/xmc/${target}:${LOCAL_TAG}"
+            echo "=== Trivy OS vulnerability gate: ${image} ==="
+            "${RUNNER_TEMP}/trivy/trivy" image \
+              --pkg-types os \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              --no-progress \
+              "${image}"
+            echo "=== Trivy advisory library audit (non-blocking): ${image} ==="
+            "${RUNNER_TEMP}/trivy/trivy" image \
+              --pkg-types library \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 0 \
+              --no-progress \
+              "${image}"
+          done
+
+      - name: 'Log in to GitHub Container Registry'
+        if: steps.plan.outputs.should_push == 'true'
+        uses: 'docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550' # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 'Push Verified Images to GHCR with Provenance & SBOM'
+        id: push
+        if: steps.plan.outputs.should_push == 'true'
+        uses: 'docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e' # v7.5.0
+        env:
+          TAGS: ${{ steps.plan.outputs.publish_tags }}
+          GIT_SHA: ${{ github.sha }}
+          CACHE_MODE: gha
+        with:
+          source: '.'
+          files: |
+            deploy/ci/images/docker-bake.hcl
+            ${{ runner.temp }}/bake-vars.json
+          targets: ${{ steps.plan.outputs.bake_targets }}
+          push: true
+          provenance: mode=max
+          sbom: true
+
+      - name: 'Collect Published Image Digests'
+        id: collect-digests
+        if: steps.plan.outputs.should_push == 'true'
+        env:
+          BAKE_METADATA: ${{ steps.push.outputs.metadata }}
+          PRIMARY_TAG: ${{ steps.plan.outputs.local_tag }}
+        run: |
+          set -euo pipefail
+          pushed_json="$(echo "${BAKE_METADATA}" | jq -c --arg tag "${PRIMARY_TAG}" '[to_entries[] | {name: .key, image: ("ghcr.io/google/xmc/" + .key), tag: $tag, digest: .value["containerimage.digest"]}]')"
+          echo "pushed_images=${pushed_json}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "## Published GHCR CI Runner Images"
+            echo ""
+            echo "| Image | Immutable Reference |"
+            echo "| :--- | :--- |"
+            echo "${pushed_json}" | jq -r '.[] | "| `\(.name)` | `\(.image):\(.tag)@\(.digest)` |"'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  attest-provenance:
+    name: 'Attest Build Provenance (${{ matrix.item.name }})'
+    needs: [build-and-publish]
+    if: github.event_name != 'pull_request' && needs.build-and-publish.outputs.pushed_images != '' && needs.build-and-publish.outputs.pushed_images != '[]'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      id-token: write
+      attestations: write
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        item: ${{ fromJSON(needs.build-and-publish.outputs.pushed_images) }}
+    steps:
+      - name: 'Attest OCI Image Provenance'
+        uses: 'actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8' # v4.2.2
+        with:
+          subject-name: ${{ matrix.item.image }}
+          subject-digest: ${{ matrix.item.digest }}
+          push-to-registry: true
+
+  prune-old-digests:
+    name: 'Prune Untagged GHCR Digests (>30d)'
+    needs: [attest-provenance]
+    if: github.event_name != 'pull_request'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 'Checkout Repository'
+        uses: 'actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683' # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: 'Delete Stale Untagged Package Versions'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cutoff="$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          pinned="$(jq -r '.images[]?.digest // empty' deploy/ci/images/versions.json)"
+          for pkg in ci-base ci-lint ci-playwright ci-cloud ci-e2e; do
+            versions_json="$(gh api --paginate "/orgs/google/packages/container/xmc%2F${pkg}/versions" 2>/dev/null || echo '[]')"
+            stale_ids="$(echo "${versions_json}" | jq -r --arg cutoff "${cutoff}" --arg pinned "${pinned}" '
+              ($pinned | split("\n") | map(select(length > 0))) as $keep
+              | sort_by(.created_at) | reverse | .[5:]
+              | .[]
+              | select((.metadata.container.tags | length) == 0)
+              | select(.created_at < $cutoff)
+              | select((.name as $d | $keep | index($d)) == null)
+              | .id
+            ')"
+            for ver_id in ${stale_ids}; do
+              echo "Deleting stale untagged version ${ver_id} of xmc/${pkg}..."
+              gh api -X DELETE "/orgs/google/packages/container/xmc%2F${pkg}/versions/${ver_id}" || true
+            done
           done

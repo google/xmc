@@ -20,13 +20,13 @@ Build and smoke-test any target locally:
 
 ```bash
 python3 deploy/ci/images/render_bake_vars.py --output /tmp/bake-vars.json
-docker buildx bake -f deploy/ci/images/docker-bake.hcl -f /tmp/bake-vars.json --load ci-base
+docker buildx bake -f deploy/ci/images/docker-bake.hcl -f /tmp/bake-vars.json --load ci-lint
 docker run --rm --shm-size=2g \
   -v "${PWD}/deploy/ci/images:/smoke:ro" \
-  ghcr.io/google/xmc/ci-base:local \
-  python3 /smoke/verify_image.py --role base --versions /smoke/versions.json
+  ghcr.io/google/xmc/ci-lint:local \
+  python3 /smoke/verify_image.py --role lint --versions /smoke/versions.json
 ```
 
-## CI Verification
+## Publishing Pipeline
 
-[`.github/workflows/ci-images.yml`](../../../.github/workflows/ci-images.yml) builds and smoke-tests images on PRs (`push: false`).
+[`.github/workflows/ci-images.yml`](../../../.github/workflows/ci-images.yml) builds and validates images on PRs (`push: false`) and publishes digest-pinned, provenance/SBOM-attested images to `ghcr.io/google/xmc/ci-*` on `main`, weekly security rebuilds, and `workflow_dispatch`.
