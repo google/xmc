@@ -14,8 +14,7 @@ profile values and actuation details.
 > enabling requires `acknowledgeExperimental: true`). Today `xmc-study-controller` validates
 > reconcile ticks, serializes per-study execution under an advisory Redis lease lock, authenticates
 > to ESS with its Workload Identity Google ID token to re-read each ticked experiment (`STUDY` +
-> `ACTIVE` gate), and records health and Prometheus metrics; Vizier and ClickHouse orchestration is
-> not yet wired.
+> `ACTIVE` gate), resolves the live `vizier` `Component` CR endpoint at startup (`503` on `/readyz` until resolved and reachable via `Health/Check`), and records health and Prometheus metrics; `VizierService.CreateStudy` on ticks and ClickHouse orchestration are not yet wired.
 
 ---
 
@@ -86,9 +85,9 @@ Key boundaries in this topology:
   generations.
 - **Dependency loss after actuation**: once `xmc-cmp-hpo` is installed, `xmc-bridge` leaves the
   running `xmc-study-controller` workload in place if `vizier` or `clickhouse` later becomes
-  unready (holding only future Helm upgrades). `/readyz` on `xmc-study-controller` currently pings
-  Redis (`2s` timeout); `/healthz` checks only HTTP liveness so a Redis outage marks the pod
-  `NotReady` without restarting it.
+  unready (holding only future Helm upgrades). `/readyz` on `xmc-study-controller` checks both
+  Redis (`Ping`) and Vizier (`grpc.health.v1.Health/Check`) within a `2s` timeout; `/healthz`
+  checks only HTTP liveness so a dependency outage marks the pod `NotReady` without restarting it.
 - **Unsigned hint stream**: `xmc-study-reconcile-stream` carries an unsigned protojson
   `StudyReconcilePayload` (`{"experiment": "experiments/{xid}"}`,
   [`api/protos/task_queue/task.proto`](../../api/protos/task_queue/task.proto)) with at-least-once

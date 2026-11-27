@@ -2,7 +2,7 @@
 
 This Helm sub-chart (`deploy/profiles/stable-2026b/components/vizier/`) renders the XMC `Component` Custom Resource (`apiVersion: xmc.dev/v1alpha1`, `kind: Component`) for the **Open Source Vizier** hyperparameter optimization engine (`optimization-engine`).
 
-Because Open Source Vizier is deployed as a bring-your-own (BYO) gRPC service (`vizier-service:7077`) without a custom Kubernetes operator or CRD, this blueprint omits `spec.wrapperRef`. Instead, `xmc-bridge` verifies readiness directly via active health probing (TCP against `parameters.endpoint` by default, or gRPC health checking when `parameters.healthCheckEndpoint` opts in) and publishes resolved connection coordinates (`status.access.envVars.ENDPOINT`, `HOST`, `PORT`) to downstream consumers (`hpo` / `xmc-study-controller`).
+Because Open Source Vizier is deployed as a bring-your-own (BYO) gRPC service (`vizier-service:7077`) without a custom Kubernetes operator or CRD, this blueprint omits `spec.wrapperRef`. Instead, `xmc-bridge` verifies readiness directly via active health probing (TCP against `parameters.endpoint` by default, or gRPC health checking when `parameters.healthCheckEndpoint` opts in) and publishes `status.access.envVars` (`ENDPOINT`, `HOST`, `PORT`), while `xmc-study-controller` reads `spec.parameters.endpoint` directly from `Component/vizier`.
 
 > [!NOTE]
 > **Bring your own Vizier.** XMC does not run Vizier: operators provide an Open Source Vizier gRPC endpoint and set `parameters.endpoint` to it. A dev/test-only fixture for KinD and dev environments lives in [`test/e2e/testdata/vizier`](../../../../../test/e2e/testdata/vizier/README.md).
@@ -59,7 +59,7 @@ A TCP probe only proves that the port accepts connections. With `healthCheckEndp
 
 - Upstream Open Source Vizier (`DefaultVizierServer`, including the dev fixture) does not register the health service, so it reports `UNIMPLEMENTED`. To get a real `SERVING` / `NOT_SERVING` signal, register a `grpc.health.v1` servicer in your Vizier server. What `SERVING` means (for example, whether it covers the Vizier database) is up to that servicer.
 - The probe is plaintext (in-cluster). `grpcs://`, paths (named services), queries, fragments, and user info are rejected, and `vizier` stays not Ready with the parse error. To return to the TCP probe, leave `healthCheckEndpoint` empty or set it to `tcp://<host>:<port>`.
-- If you restrict ingress to Vizier with a NetworkPolicy, keep admitting `app: xmc-bridge` pods on the Vizier port for the probe.
+- If you restrict ingress to Vizier with a NetworkPolicy, keep admitting `app: xmc-bridge` pods (for the bridge probe) and `xmc.google.com/vizier-client: "true"` pods (`xmc-study-controller`, which reads `spec.parameters.endpoint` from `Component/vizier`) on the Vizier port.
 
 ---
 

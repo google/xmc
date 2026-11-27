@@ -39,6 +39,8 @@ type Config struct {
 	ESSAddr string
 	// ESSAudience is the target audience used when minting Google ID tokens for ESS gRPC calls.
 	ESSAudience string
+	// ComponentsNamespace is the Kubernetes namespace containing the vizier Component CR.
+	ComponentsNamespace string
 }
 
 // RegisterFlags registers the Study Controller flags on fs and returns the Config they populate
@@ -49,6 +51,7 @@ func RegisterFlags(fs *flag.FlagSet) *Config {
 	fs.StringVar(&c.RedisAddr, "redis_addr", "", "Required. Redis server address as host:port (no scheme or credentials).")
 	fs.StringVar(&c.ESSAddr, "ess_addr", "", "Required. Experiment State Server gRPC address as host:port (no scheme or credentials).")
 	fs.StringVar(&c.ESSAudience, "ess_audience", "", "Required. Audience for Google ID tokens sent to the Experiment State Server.")
+	fs.StringVar(&c.ComponentsNamespace, "components_namespace", "", "Kubernetes namespace containing the vizier Component CR. Defaults to xmc when empty.")
 	return c
 }
 
@@ -63,7 +66,10 @@ func (c Config) Validate() error {
 	if err := validateHostPort("ess_addr", c.ESSAddr); err != nil {
 		return err
 	}
-	return validateESSAudience(c.ESSAudience)
+	if err := validateESSAudience(c.ESSAudience); err != nil {
+		return err
+	}
+	return validateOptionalNamespace(c.ComponentsNamespace)
 }
 
 // validateHostPort reports whether addr is a host:port with a non-empty host and a valid port.
@@ -103,6 +109,15 @@ func validateESSAudience(aud string) error {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {
 			return errors.New("invalid ess_audience: must not contain whitespace or control characters")
 		}
+	}
+	return nil
+}
+
+// validateOptionalNamespace checks that ns, when non-empty, is a valid Kubernetes DNS-1123 label.
+func validateOptionalNamespace(ns string) error {
+	isAlnum := func(b byte) bool { return (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') }
+	if ns != "" && (len(ns) > 63 || !isAlnum(ns[0]) || !isAlnum(ns[len(ns)-1]) || strings.IndexFunc(ns, func(r rune) bool { return r > 0x7f || (!isAlnum(byte(r)) && r != '-') }) >= 0) {
+		return errors.New("invalid components_namespace: must be a 1-63 char DNS-1123 label")
 	}
 	return nil
 }
