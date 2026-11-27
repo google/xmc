@@ -573,6 +573,18 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 		SystemMessageText: "Work unit has been fully stopped.",
 		FinalizersAtWrite: []string{constants.JobSetFinalizer},
 	}}
+	// The stored current execution for the baseline labels, already STOPPING
+	// because a stop raced the JobSet reaching a terminal state (#1413).
+	storedStopping := &spb.WorkUnitExecution{
+		Name:   "experiments/123/workUnits/1/executions/1",
+		Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_STOPPING},
+	}
+	// The stored current execution is a newer run (eid=2) of the same work
+	// unit, already STOPPING for its own reasons.
+	storedStoppingNewerEID := &spb.WorkUnitExecution{
+		Name:   "experiments/123/workUnits/1/executions/2",
+		Status: &spb.WorkUnitStatus{State: spb.WorkUnitStatus_STOPPING},
+	}
 	// A stale pending JobsetSource update for the same work unit execution.
 	pendingRunning := &storagepkg.WorkUnitExecutionUpdate{
 		WID: 1,
@@ -588,6 +600,8 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 		pending         *storagepkg.WorkUnitExecutionUpdate
 		nilStorage      bool
 		updateErr       error
+		fetchRes        *spb.WorkUnitExecution
+		fetchErr        error
 		sinceDeletion   time.Duration
 		wantErr         bool
 		wantDeleted     bool
@@ -651,6 +665,87 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 				SystemMessageText: "Work unit failed: job failed (Reason: BackoffLimitExceeded)",
 				FinalizersAtWrite: []string{constants.JobSetFinalizer},
 			}},
+		},
+		{
+			name: "deleting Completed JobSet with stored execution STOPPING persists STOPPED",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:   string(v1alpha2.JobSetCompleted),
+					Status: metav1.ConditionTrue,
+				}}
+				return js
+			}(),
+			pending:     pendingRunning,
+			fetchRes:    storedStopping,
+			wantDeleted: true,
+			wantWrites:  wantStopped,
+		},
+		{
+			name: "deleting Failed JobSet with stored execution STOPPING persists STOPPED",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:    string(v1alpha2.JobSetFailed),
+					Status:  metav1.ConditionTrue,
+					Reason:  "BackoffLimitExceeded",
+					Message: "job failed",
+				}}
+				return js
+			}(),
+			pending:     pendingRunning,
+			fetchRes:    storedStopping,
+			wantDeleted: true,
+			wantWrites:  wantStopped,
+		},
+		{
+			name: "deleting Completed JobSet with newer execution STOPPING keeps COMPLETED",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:   string(v1alpha2.JobSetCompleted),
+					Status: metav1.ConditionTrue,
+				}}
+				return js
+			}(),
+			pending:     pendingRunning,
+			fetchRes:    storedStoppingNewerEID,
+			wantDeleted: true,
+			wantWrites: []stoppedWrite{{
+				XID:               123,
+				WID:               1,
+				EID:               1,
+				State:             spb.WorkUnitStatus_COMPLETED,
+				SystemMessageText: "Work unit completed successfully.",
+				FinalizersAtWrite: []string{constants.JobSetFinalizer},
+			}},
+		},
+		{
+			name: "stored execution fetch failure keeps finalizer and writes nothing",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:   string(v1alpha2.JobSetCompleted),
+					Status: metav1.ConditionTrue,
+				}}
+				return js
+			}(),
+			fetchErr: grpcerr.ErrUnavailable,
+			wantErr:  true,
+		},
+		{
+			name: "stored execution fetch NotFound abandons and releases finalizer",
+			jobSet: func() *v1alpha2.JobSet {
+				js := deletingJobSet()
+				js.Status.Conditions = []metav1.Condition{{
+					Type:   string(v1alpha2.JobSetCompleted),
+					Status: metav1.ConditionTrue,
+				}}
+				return js
+			}(),
+			fetchErr:      grpcerr.ErrNotFound,
+			wantDeleted:   true,
+			wantAbandoned: map[string]float64{abandonReasonPermanent: 1},
 		},
 		{
 			name:        "nil Storage evicts pending batcher update and releases finalizer",
@@ -774,7 +869,7 @@ func TestHandleJobSetFinalizerRemoval(t *testing.T) {
 			var gotWrites []stoppedWrite
 			var store ReconcilerStorage
 			if !tc.nilStorage {
-				mockStore := &mockStorageUpdater{updateErr: tc.updateErr}
+				mockStore := &mockStorageUpdater{updateErr: tc.updateErr, fetchRes: tc.fetchRes, fetchErr: tc.fetchErr}
 				mockStore.onUpdate = func(ctx context.Context, xid int64, updates []*storagepkg.WorkUnitExecutionUpdate) {
 					if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > stoppedWriteTimeout {
 						t.Errorf("storage ctx deadline = %v (set %v), want within %v", deadline, ok, stoppedWriteTimeout)

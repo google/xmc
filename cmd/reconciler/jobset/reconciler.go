@@ -264,6 +264,47 @@ func (r *Reconciler) buildDeletionUpdate(ctx context.Context, jobSet *v1alpha2.J
 	}
 }
 
+// stoppingAwareDeletionUpdate adjusts the terminal update built by
+// buildDeletionUpdate for the stop/completion race in #1413. Storage only
+// allows STOPPING -> STOPPED (state.WorkUnitAllowedForwardTransitions), so
+// when the stored execution is already STOPPING — a stop raced the JobSet
+// reaching Completed/Failed — a COMPLETED/FAILED write is silently dropped by
+// the storage merge, and the execution stays in STOPPING forever once the
+// finalizer is released. In that case write STOPPED instead: it is the only
+// terminal state storage accepts from STOPPING, and it preserves the
+// invariant that a terminal result does not override stop intent. Updates
+// that are already STOPPED, and executions that are not STOPPING, keep the
+// update from buildDeletionUpdate unchanged.
+//
+// A fetch failure is returned as an error so the caller applies the same
+// retry/abandon policy as for a failed write: the stored state could not be
+// ruled out, and guessing would reintroduce the race.
+func (r *Reconciler) stoppingAwareDeletionUpdate(ctx context.Context, jobSet *v1alpha2.JobSet, xid, wid, eid int64, update *storagepkg.WorkUnitExecutionUpdate) (*storagepkg.WorkUnitExecutionUpdate, error) {
+	switch update.WorkUnitExecution.GetStatus().GetState() {
+	case spb.WorkUnitStatus_COMPLETED, spb.WorkUnitStatus_FAILED:
+	default:
+		return update, nil
+	}
+	current, err := r.Storage.FetchCurrentWorkUnitExecution(ctx, xid, wid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch current work unit execution for JobSet %s/%s: %w", jobSet.Namespace, jobSet.Name, err)
+	}
+	if current == nil {
+		return update, nil
+	}
+	if current.GetStatus().GetState() != spb.WorkUnitStatus_STOPPING {
+		return update, nil
+	}
+	if _, _, currentEID, err := validator.ValidateWorkUnitExecutionName(current.GetName()); err == nil && currentEID != eid {
+		// The stored execution is a newer run of this work unit, not the
+		// deleting JobSet's execution. Keep the terminal update; storage
+		// ignores writes whose EID is not the current one.
+		return update, nil
+	}
+	logging.Info(ctx, "Stored execution is STOPPING, persisting STOPPED instead of the JobSet terminal state", "namespace", jobSet.Namespace, "jobSetState", update.WorkUnitExecution.GetStatus().GetState())
+	return createStoppedUpdate(wid, eid), nil
+}
+
 // evictPendingJobSetUpdate removes any pending JobsetSource batcher entry and
 // cached MLRun URL for (xid, wid) with EID <= eid so a stale non-terminal
 // update cannot flush after the synchronous deletion write completes.
@@ -296,6 +337,14 @@ func (r *Reconciler) persistStoppedOnDelete(ctx context.Context, jobSet *v1alpha
 	update := r.buildDeletionUpdate(ctx, jobSet, wid, eid)
 	writeCtx, cancel := context.WithTimeout(ctx, stoppedWriteTimeout)
 	defer cancel()
+	update, err := r.stoppingAwareDeletionUpdate(writeCtx, jobSet, xid, wid, eid, update)
+	if err != nil {
+		if handleErr := r.handleStoppedWriteFailure(ctx, jobSet, err); handleErr != nil {
+			return handleErr
+		}
+		r.evictPendingJobSetUpdate(xid, wid, eid)
+		return nil
+	}
 	if _, err := r.Storage.UpdateWorkUnitExecutions(writeCtx, xid, []*storagepkg.WorkUnitExecutionUpdate{update}); err != nil {
 		if handleErr := r.handleStoppedWriteFailure(ctx, jobSet, err); handleErr != nil {
 			return handleErr
