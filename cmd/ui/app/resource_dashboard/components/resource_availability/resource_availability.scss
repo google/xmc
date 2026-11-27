@@ -16,23 +16,167 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px 0;
 }
 
 .availability-header {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: space-between;
+  align-items: center;
 }
 
 .availability-title {
   margin: 0;
   font-size: 18px;
   font-weight: 500;
+  color: #202124;
 }
 
 .state-message {
-  padding: 24px;
+  padding: 32px;
   text-align: center;
-  color: rgba(0, 0, 0, 0.6);
+  color: #5f6368;
+  font-size: 14px;
+}
+
+.accelerator-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.kpi-card {
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kpi-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  border-bottom: 1px solid #e8eaed;
+  padding-bottom: 8px;
+}
+
+.kpi-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #202124;
+}
+
+.kpi-nodes {
+  font-size: 12px;
+  color: #5f6368;
+}
+
+.kpi-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.kpi-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.kpi-value {
+  font-size: 20px;
+  font-weight: 500;
+  color: #202124;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &.kpi-accent {
+    color: #1a73e8;
+  }
+}
+
+.table-wrapper {
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.availability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th,
+  td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid #e8eaed;
+    color: #202124;
+  }
+
+  th {
+    font-weight: 500;
+    color: #5f6368;
+    background: #f8f9fa;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .num-col {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.unassigned-cell {
+  font-weight: 500;
+  color: #1a73e8;
+}
+
+.mono {
+  font-family: monospace;
+}
+
+.muted {
+  color: #5f6368;
+}
+
+.queue-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pill {
+  display: inline-block;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pill-reserved {
+  background-color: #f1f3f4;
+  color: #202124;
+}
+
+.pill-queue {
+  background-color: #e8f0fe;
+  color: #1a73e8;
 }

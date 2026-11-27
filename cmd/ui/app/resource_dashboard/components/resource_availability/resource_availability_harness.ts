@@ -12,9 +12,69 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ComponentHarness } from '@angular/cdk/testing';
+import { ComponentHarness, TestElement } from '@angular/cdk/testing';
 
 import { ErrorBannerHarness } from 'app/common/components/error_banner/error_banner_harness';
+
+/** Test harness for a single per-accelerator summary card. */
+export class AcceleratorCardHarness extends ComponentHarness {
+  static hostSelector = '[data-testid="accelerator-card"]';
+
+  private readonly titleEl = this.locatorFor('[data-testid="card-title"]');
+  private readonly nodesEl = this.locatorFor('[data-testid="card-nodes"]');
+  private readonly allocatedEl = this.locatorFor('[data-testid="kpi-allocated"] .kpi-value');
+  private readonly unassignedEl = this.locatorFor('[data-testid="kpi-unassigned"] .kpi-value');
+  private readonly readyEl = this.locatorFor('[data-testid="kpi-ready"] .kpi-value');
+  private readonly reservedEl = this.locatorFor('[data-testid="kpi-reserved"] .kpi-value');
+
+  async getTitle(): Promise<string> {
+    return this.getTrimmedText(this.titleEl);
+  }
+
+  async getNodesText(): Promise<string> {
+    return this.getTrimmedText(this.nodesEl);
+  }
+
+  async getAllocatedText(): Promise<string> {
+    return this.getTrimmedText(this.allocatedEl);
+  }
+
+  async getUnassignedText(): Promise<string> {
+    return this.getTrimmedText(this.unassignedEl);
+  }
+
+  async getReadyText(): Promise<string> {
+    return this.getTrimmedText(this.readyEl);
+  }
+
+  async getReservedText(): Promise<string> {
+    return this.getTrimmedText(this.reservedEl);
+  }
+
+  private async getTrimmedText(locator: () => Promise<TestElement>): Promise<string> {
+    return (await (await locator()).text()).trim();
+  }
+}
+
+/** Test harness for a single row in the physical inventory table. */
+export class AvailabilityRowHarness extends ComponentHarness {
+  static hostSelector = '[data-testid="availability-row"]';
+
+  private readonly cells = this.locatorForAll('td');
+  private readonly queuePills = this.locatorForAll('.pill-queue');
+
+  /** Returns the trimmed text of all cells in the row. */
+  async getCellTexts(): Promise<string[]> {
+    const cellEls = await this.cells();
+    return Promise.all(cellEls.map(async (cell) => (await cell.text()).trim()));
+  }
+
+  /** Returns the trimmed text of all ClusterQueue pills rendered in the row. */
+  async getQueuePills(): Promise<string[]> {
+    const pillEls = await this.queuePills();
+    return Promise.all(pillEls.map(async (pill) => (await pill.text()).trim()));
+  }
+}
 
 /** Test harness for ResourceAvailabilityComponent. */
 export class ResourceAvailabilityHarness extends ComponentHarness {
@@ -25,6 +85,8 @@ export class ResourceAvailabilityHarness extends ComponentHarness {
   private readonly contentEl = this.locatorForOptional('[data-testid="availability-content"]');
   private readonly refreshBtn = this.locatorFor('[data-testid="availability-refresh-btn"]');
   private readonly errorBanner = this.locatorForOptional(ErrorBannerHarness);
+  private readonly cards = this.locatorForAll(AcceleratorCardHarness);
+  private readonly rows = this.locatorForAll(AvailabilityRowHarness);
 
   /** Checks whether the loading state is currently shown. */
   async isLoading(): Promise<boolean> {
@@ -46,10 +108,14 @@ export class ResourceAvailabilityHarness extends ComponentHarness {
     return (await this.contentEl()) !== null;
   }
 
-  /** Gets the text content of the loaded content container, or null if absent. */
-  async getContentText(): Promise<string | null> {
-    const el = await this.contentEl();
-    return el ? (await el.text()).trim() : null;
+  /** Gets all per-accelerator summary card harnesses. */
+  async getAcceleratorCards(): Promise<AcceleratorCardHarness[]> {
+    return this.cards();
+  }
+
+  /** Gets all physical inventory table row harnesses. */
+  async getTableRows(): Promise<AvailabilityRowHarness[]> {
+    return this.rows();
   }
 
   /** Clicks the refresh button. */

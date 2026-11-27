@@ -40,7 +40,94 @@
     </div>
   } @else {
     <div class="availability-content" data-testid="availability-content">
-      <p class="availability-summary-count">{{ summaries().length }} resource group(s) available</p>
+      <div class="accelerator-cards-grid" data-testid="availability-kpi-cards">
+        @for (card of acceleratorCards(); track card.acceleratorType) {
+          <div class="kpi-card" data-testid="accelerator-card">
+            <div class="kpi-card-header">
+              <span class="kpi-title mono" data-testid="card-title">{{
+                card.acceleratorType
+              }}</span>
+              <span class="kpi-nodes" data-testid="card-nodes"
+                >{{ card.activeNodes }} / {{ card.totalNodes }} nodes</span
+              >
+            </div>
+            <div class="kpi-metrics">
+              <div class="kpi-metric" data-testid="kpi-allocated">
+                <span class="kpi-label">Allocated</span>
+                <span class="kpi-value">{{ card.allocated }}</span>
+              </div>
+              <div class="kpi-metric" data-testid="kpi-unassigned">
+                <span class="kpi-label">Unassigned</span>
+                <span class="kpi-value kpi-accent">{{ card.unassigned }}</span>
+              </div>
+              <div class="kpi-metric" data-testid="kpi-ready">
+                <span class="kpi-label">Ready / Total</span>
+                <span class="kpi-value">{{ card.active }} / {{ card.total }}</span>
+              </div>
+              <div class="kpi-metric" data-testid="kpi-reserved">
+                <span class="kpi-label">Reserved</span>
+                <span class="kpi-value">{{ card.reserved }}</span>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="table-wrapper">
+        <table class="availability-table" data-testid="availability-table">
+          <thead>
+            <tr>
+              <th>Accelerator</th>
+              <th>Zone</th>
+              <th>Reservation</th>
+              <th class="num-col">Nodes (Ready / Total)</th>
+              <th class="num-col">Allocated</th>
+              <th class="num-col">Unassigned</th>
+              <th class="num-col">Ready / Total GPUs</th>
+              <th>ClusterQueues</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (
+              item of summaries();
+              track (item.acceleratorType ?? '') +
+                '|' +
+                (item.zone ?? '') +
+                '|' +
+                (item.reservation ?? '')
+            ) {
+              <tr data-testid="availability-row">
+                <td class="mono">{{ item.acceleratorType || 'unknown' }}</td>
+                <td>{{ item.zone || '—' }}</td>
+                <td>
+                  @if (item.reservation) {
+                    <span class="pill pill-reserved">{{ item.reservation }}</span>
+                  } @else {
+                    <span class="muted">On-demand</span>
+                  }
+                </td>
+                <td class="num-col">{{ item.activeNodes ?? 0 }} / {{ item.totalNodes ?? 0 }}</td>
+                <td class="num-col">{{ item.allocatedAccelerators ?? 0 }}</td>
+                <td class="num-col unassigned-cell">{{ unassignedCount(item) }}</td>
+                <td class="num-col">
+                  {{ item.activeAccelerators ?? 0 }} / {{ item.totalAccelerators ?? 0 }}
+                </td>
+                <td>
+                  @if (item.clusterQueues && item.clusterQueues.length > 0) {
+                    <div class="queue-pills">
+                      @for (q of item.clusterQueues; track $index) {
+                        <span class="pill pill-queue">{{ q }}</span>
+                      }
+                    </div>
+                  } @else {
+                    <span class="muted">—</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
   }
 </div>
