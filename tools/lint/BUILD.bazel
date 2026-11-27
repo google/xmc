@@ -128,6 +128,36 @@ py_test(
 )
 
 py_library(
+    name = "check_codeowners_alignment_lib",
+    srcs = ["check_codeowners_alignment.py"],
+    data = [
+        "//:CODEOWNERS",
+        "//:OWNERS",
+        "//deploy/profiles:locked_profiles",
+    ],
+    imports = ["../.."],
+    deps = [
+        "//tools/common:tool_utils",
+        "//tools/components:check_profile_lock_lib",
+    ],
+)
+
+py_test(
+    name = "check_codeowners_alignment_test",
+    srcs = ["check_codeowners_alignment_test.py"],
+    data = [
+        "//:CODEOWNERS",
+        "//:OWNERS",
+        "//deploy/profiles:locked_profiles",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":check_codeowners_alignment_lib",
+        "//tools/common:tool_utils",
+    ],
+)
+
+py_library(
     name = "precommit_autostage_lib",
     srcs = ["precommit_autostage.py"],
     imports = ["../.."],

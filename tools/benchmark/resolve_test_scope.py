@@ -97,6 +97,7 @@ NON_CODE_PREFIXES: tuple[str, ...] = (
 NON_CODE_FILES: set[str] = {
     "LICENSE",
     "OWNERS",
+    "CODEOWNERS",
     ".gitignore",
     ".tflint.hcl",
     ".golangci.yml",
@@ -149,6 +150,8 @@ def is_non_code_file(path_str: str) -> bool:
     p = Path(path_str)
     if p.name in NON_CODE_FILES or p.suffix == ".md":
         return True
+    if path_str.startswith("deploy/profiles/"):
+        return False
     if path_str.startswith(NON_BAZEL_CODE_PREFIXES):
         return True
     if p.name in BUILD_FILE_NAMES or p.suffix in CODE_EXTENSIONS:

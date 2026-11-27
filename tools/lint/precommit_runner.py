@@ -400,6 +400,21 @@ def _autostage(subcommand: str, state_path: str) -> bool:
     return gates.exec_cmd(cmd, quiet_out=True).returncode == 0
 
 
+def check_codeowners_alignment(ctx: gates.RunContext) -> None:
+    print("--> Checking CODEOWNERS Alignment...")
+    if gates.exec_cmd([sys.executable, "tools/lint/check_codeowners_alignment.py"]).returncode != 0:
+        ctx.fail("CODEOWNERS alignment check failed (see JSON error above).")
+
+
+def check_profile_lock(ctx: gates.RunContext) -> None:
+    print("--> Checking Component Profile Release Locks...")
+    args = [sys.executable, "tools/components/check_profile_lock.py"]
+    if ctx.mode != "check":
+        args.append("--staged")
+    if gates.exec_cmd(args).returncode != 0:
+        ctx.fail("GA-locked component profile check failed (see JSON error above).")
+
+
 def _run_linter_phase(mode: str) -> bool:
     ctx = gates.RunContext(mode=mode)
     autostage = mode == "fix" and os.environ.get("XMC_PRECOMMIT_NO_AUTOSTAGE", "0") != "1"
@@ -412,6 +427,8 @@ def _run_linter_phase(mode: str) -> bool:
             fn(ctx)
         for gate in gates.PYTHON_GATES:
             gates.run_python_gate(ctx, gate)
+        for fn in (check_codeowners_alignment, check_profile_lock):
+            fn(ctx)
         for fn in (
             check_ui,
             check_license,

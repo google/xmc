@@ -451,6 +451,21 @@ alias(
 
 # Components
 alias(
+    name = "check_profile_lock_lib",
+    actual = "//tools/components:check_profile_lock_lib",
+)
+
+alias(
+    name = "check_profile_lock",
+    actual = "//tools/components:check_profile_lock",
+)
+
+alias(
+    name = "check_profile_lock_test",
+    actual = "//tools/components:check_profile_lock_test",
+)
+
+alias(
     name = "run_linter_lib",
     actual = "//tools/components:run_linter_lib",
 )

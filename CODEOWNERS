@@ -1,0 +1,28 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Code owners for GA-locked component profiles and lock enforcement (mirrors the OWNERS reviewer pool).
+/CODEOWNERS @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/OWNERS @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/.githooks/pre-commit @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/.github/workflows/lint.yml @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/deploy/profiles/locked_profiles.yaml @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/deploy/profiles/BUILD.bazel @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/deploy/profiles/stable-2026a/ @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/tools/components/check_profile_lock.py @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/tools/components/BUILD.bazel @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/tools/lint/check_codeowners_alignment.py @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/tools/lint/BUILD.bazel @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/test/helm/profiles/profilecontract/ @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
+/test/helm/profiles/stable2026a/ @AntonTyb @andrzejfudro @janzak-dev @pachopepe @VLukiantsev
