@@ -171,6 +171,18 @@ class MainTest(unittest.TestCase):
         self.assertEqual(main.main(["--help"], out=broken, err=broken), 1)
         self.assertEqual(main.main([], out=broken, err=broken), 1)
 
+    def test_broken_pipe_on_a_real_fd_redirects_the_descriptor_to_devnull(self) -> None:
+        r_fd, w_fd = os.pipe()
+        os.close(r_fd)
+        err = io.StringIO()
+        with os.fdopen(w_fd, "w", encoding="utf-8", buffering=1) as out:
+            code = main.main(["--help"], out=out, err=err)
+            out.write("flushed on exit\n")
+            out.flush()
+
+        self.assertEqual(code, 1)
+        self.assertIn("Broken pipe", err.getvalue())
+
 
 class _BrokenStream(io.StringIO):
     """A text stream whose `write` or `flush` fails like a closed pipe or full disk."""

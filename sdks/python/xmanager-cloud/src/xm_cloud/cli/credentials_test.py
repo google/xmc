@@ -132,7 +132,15 @@ class CredentialsTest(unittest.TestCase):
     def test_resolve_server_rejects_malformed_grpc_hosts(self) -> None:
         # Only an IPv6 address may carry several colons, and only a loopback one is
         # accepted; `dns://<authority>` needs a `/` before the target.
-        for endpoint in ("grpc.xmc.example.com:1:2", "2001:db8::1", "::1:50051", "dns://8.8.8.8"):
+        for endpoint in (
+            "grpc.xmc.example.com:1:2",
+            "2001:db8::1",
+            "::1:50051",
+            "dns://8.8.8.8",
+            "dns:///",
+            "grpc://",
+            ":443",
+        ):
             env = {"XMANAGER_ENDPOINT": endpoint, "XMC_API_URL": _SERVER}
             with (
                 self.subTest(endpoint=endpoint),
