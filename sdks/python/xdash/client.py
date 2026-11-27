@@ -443,7 +443,11 @@ class DashboardClient:
         return created
 
     def get_chart(self, name: str) -> messages_pb2.Chart:
-        """Retrieves a chart by its full resource name."""
+        """Retrieves a chart by its root resource name, 'charts/{chart_id}'.
+
+        GetChart rejects hierarchical names such as the name of a created chart; pass
+        f"charts/{chart_id_from_name(created.name)}" instead, or use get_chart_data.
+        """
         if not name or not name.strip():
             raise ValueError("Chart resource name is required")
         req = dashboard_service_pb2.GetChartRequest(name=name)

@@ -212,8 +212,8 @@ bazel run //sdks/python/xdash:xdash_bin -- get charts/<chart_id>
 bazel run //sdks/python/xdash:xdash_bin -- get-data charts/<chart_id>
 ```
 
-`get-data` also accepts the hierarchical forms `experiments/{xid}/workUnits/{wid}/charts/{chart_id}`
-and `experiments/{xid}/charts/{chart_id}`. Prefer `charts/<chart_id>`: for a work-unit name whose
+`get-data` also accepts the hierarchical forms `experiments/{xid}/workUnits/{wid}/charts/{chart_id}`,
+`experiments/{xid}/charts/{chart_id}`, and `dashboards/{dashboard_id}/charts/{chart_id}`. Prefer `charts/<chart_id>`: for a work-unit name whose
 chart ID does not exist, the service returns a synthesized default chart instead of `NOT_FOUND`.
 
 Or as a Python module, once the generated protos are on `PYTHONPATH` (see

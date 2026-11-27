@@ -186,10 +186,10 @@ perf/step_time_ms   100
 
 ```bash
 python3 -m xdash get dashboards/exp_<XID>_overview
-python3 -m xdash get-data experiments/<XID>/workUnits/1/charts/<CHART_ID>
+python3 -m xdash get-data charts/<CHART_ID>
 ```
 
-Chart IDs are assigned by the server: take `<CHART_ID>` from the `created ...` lines `launch.py` prints, or from the `chart_ids` that `get` lists for the dashboard.
+Chart IDs are assigned by the server: take `<CHART_ID>` from the `created ...` lines `launch.py` prints, or from the `Chart IDs` line that `get` prints for the dashboard. Use the root `charts/<CHART_ID>` form: for a work-unit name whose chart ID does not exist, the service returns a synthesized default chart instead of `NOT_FOUND`.
 
 Both take the Dashboard Service address from `XMC_DASHBOARD_ENDPOINT`, or from `--endpoint`. TLS is the default for anything but a local address, so add `--insecure` when port-forwarding.
 
