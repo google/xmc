@@ -15,6 +15,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   DestroyRef,
   inject,
   OnInit,
@@ -28,6 +29,31 @@ import { Subscription } from 'rxjs';
 import { ErrorBannerComponent } from 'app/common/components/error_banner/error_banner';
 import { AcceleratorSummary } from 'app/protos/rod';
 import { ResourceService } from 'app/service/resource_service';
+
+/** Aggregated physical GPU metrics for a single accelerator type. */
+export interface AcceleratorCardSummary {
+  acceleratorType: string;
+  allocated: number;
+  unassigned: number;
+  active: number;
+  total: number;
+  reserved: number;
+  activeNodes: number;
+  totalNodes: number;
+}
+
+function createEmptyCard(acceleratorType: string): AcceleratorCardSummary {
+  return {
+    acceleratorType,
+    allocated: 0,
+    unassigned: 0,
+    active: 0,
+    total: 0,
+    reserved: 0,
+    activeNodes: 0,
+    totalNodes: 0,
+  };
+}
 
 /**
  * Displays physical GPU availability grouped by accelerator type, zone, and reservation,
@@ -48,6 +74,19 @@ export class ResourceAvailabilityComponent implements OnInit {
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
   protected readonly summaries = signal<AcceleratorSummary[]>([]);
+
+  protected readonly acceleratorCards = computed<AcceleratorCardSummary[]>(() => {
+    const byType = new Map<string, AcceleratorCardSummary>();
+    for (const item of this.summaries()) {
+      const accelType = item.acceleratorType || 'unknown';
+      const card = byType.get(accelType) ?? createEmptyCard(accelType);
+      byType.set(accelType, card);
+      this.addSummaryToCard(card, item);
+    }
+    return Array.from(byType.values()).sort((a, b) =>
+      a.acceleratorType.localeCompare(b.acceleratorType),
+    );
+  });
 
   private availabilitySubscription?: Subscription;
 
@@ -74,5 +113,23 @@ export class ResourceAvailabilityComponent implements OnInit {
           this.loading.set(false);
         },
       });
+  }
+
+  /** Returns the number of ready but unallocated accelerators in a summary row. */
+  protected unassignedCount(item: AcceleratorSummary): number {
+    return Math.max(0, (item.activeAccelerators ?? 0) - (item.allocatedAccelerators ?? 0));
+  }
+
+  private addSummaryToCard(card: AcceleratorCardSummary, item: AcceleratorSummary): void {
+    const total = item.totalAccelerators ?? 0;
+    card.allocated += item.allocatedAccelerators ?? 0;
+    card.unassigned += this.unassignedCount(item);
+    card.active += item.activeAccelerators ?? 0;
+    card.total += total;
+    if (item.reservation) {
+      card.reserved += total;
+    }
+    card.activeNodes += item.activeNodes ?? 0;
+    card.totalNodes += item.totalNodes ?? 0;
   }
 }
