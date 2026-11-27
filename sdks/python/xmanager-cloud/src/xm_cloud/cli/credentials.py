@@ -56,7 +56,19 @@ def _reject_unsafe_target(raw: str, what: str) -> None:
 
 
 def _extract_grpc_host(endpoint: str) -> str:
-    """Extracts the lowercased hostname from a gRPC target, or "" if the target is invalid."""
+    """Extracts the lowercased hostname from a gRPC target.
+
+    A bare target with a path (`grpc.x.dev:443/extra`) is invalid: `xdash.auth`
+    reads the last path segment as the host, so accepting it would write a cache
+    key that `xdash` never looks up.
+
+    Args:
+        endpoint: `XMANAGER_ENDPOINT` value, optionally `dns:///`, `dns://<authority>/`,
+            or `grpc://` prefixed.
+
+    Returns:
+        The hostname, or "" if the target is invalid, has a path, or has port 0.
+    """
     target = endpoint.strip().lower()
     for prefix in ("dns:///", "dns://", "grpc://"):
         if target.startswith(prefix):
@@ -67,7 +79,7 @@ def _extract_grpc_host(endpoint: str) -> str:
         port = parts.port
     except ValueError:
         return ""
-    if port is not None and port < 1:
+    if parts.path or (port is not None and port < 1):
         return ""
     return parts.hostname or ""
 

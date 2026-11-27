@@ -127,13 +127,33 @@ class CredentialsTest(unittest.TestCase):
             with self.subTest(env=bad_env), self.assertRaises(credentials.AuthError):
                 credentials.resolve_server(bad_env)
 
+    def test_resolve_server_rejects_bare_grpc_targets_with_a_path(self) -> None:
+        # xdash.auth reads the last path segment as the host, so these would yield a
+        # cache key that xdash never looks up (or silently fall through to XMC_API_URL).
+        for endpoint in (
+            "grpc.xmc.example.com:443/extra",
+            "grpc.xmc.example.com:443/grpc.other.example.com",
+            "grpc.xmc.example.com:443/",
+            "localhost:50051/extra",
+            "dns:///grpc.xmc.example.com:443/",
+        ):
+            env = {"XMANAGER_ENDPOINT": endpoint, "XMC_API_URL": _SERVER}
+            with (
+                self.subTest(endpoint=endpoint),
+                self.assertRaisesRegex(credentials.AuthError, "XMANAGER_ENDPOINT"),
+            ):
+                credentials.resolve_server(env)
+
     def test_resolve_server_raises_where_xdash_falls_through(self) -> None:
         # xdash.auth skips an unsupported XMANAGER_ENDPOINT and reads XMANAGER_UI_URL;
         # the CLI refuses instead, so it never acts on a deployment the user did not name.
-        env = {"XMANAGER_ENDPOINT": "grpc-xmc.example.com:443", "XMANAGER_UI_URL": _SERVER}
-
-        with self.assertRaisesRegex(credentials.AuthError, "Unset it or run `xmc logout --all`"):
-            credentials.resolve_server(env)
+        for endpoint in ("grpc-xmc.example.com:443", "grpc.xmc.example.com:443/extra"):
+            env = {"XMANAGER_ENDPOINT": endpoint, "XMANAGER_UI_URL": _SERVER}
+            with (
+                self.subTest(endpoint=endpoint),
+                self.assertRaisesRegex(credentials.AuthError, "Unset it or run `xmc logout --all`"),
+            ):
+                credentials.resolve_server(env)
 
     def test_resolve_server_errors_do_not_echo_credentials(self) -> None:
         for env in (
