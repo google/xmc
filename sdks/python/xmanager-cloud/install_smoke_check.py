@@ -19,11 +19,11 @@ installed and no `xmanager`:
 
     <venv>/bin/python sdks/python/xmanager-cloud/install_smoke_check.py
 
-It imports every generated proto module, the bundled xdash SDK, and the xdash
-console script, requires each to load from the virtualenv rather than the
-repository, and checks that no `*_test.py` module was packaged. Prints a JSON
-summary and exits 0 on success, 1 when a check fails, and 2 when the
-repository's proto or xdash sources cannot be found.
+It imports every generated proto module, the bundled xdash SDK, the xm_cloud
+CLI, and the xdash and xmc console scripts, requires each to load from the
+virtualenv rather than the repository, and checks that no `*_test.py` module
+was packaged. Prints a JSON summary and exits 0 on success, 1 when a check
+fails, and 2 when the repository's proto or xdash sources cannot be found.
 """
 
 from __future__ import annotations
@@ -42,11 +42,33 @@ import build_staging
 _PROJECT_DIR = Path(__file__).resolve().parent
 _DISTRIBUTION = "xmanager-cloud"
 # Importing xmanager_cloud runs the legacy xmanager guard.
-_SDK_MODULES = ("xmanager_cloud", "xdash", "xdash.auth", "xdash.cli", "xdash.client")
+_SDK_MODULES = (
+    "xmanager_cloud",
+    "xdash",
+    "xdash.auth",
+    "xdash.cli",
+    "xdash.client",
+    "xm_cloud",
+    "xm_cloud.cli",
+    "xm_cloud.cli.arg_parsing",
+    "xm_cloud.cli.credentials",
+    "xm_cloud.cli.login_command",
+    "xm_cloud.cli.logout_command",
+    "xm_cloud.cli.main",
+    "xm_cloud.cli.terminal_text",
+)
+_CONSOLE_SCRIPTS = ("xdash", "xmc")
 
 
 def modules_to_check(layout: build_staging.SourceLayout) -> list[str]:
-    """Lists the SDK modules plus every generated proto module."""
+    """Lists the SDK modules plus every generated proto module.
+
+    Args:
+        layout: Repository source layout that locates the proto sources.
+
+    Returns:
+        Fully qualified names of the modules to import.
+    """
     return [*_SDK_MODULES, *build_staging.expected_proto_modules(layout)]
 
 
@@ -78,22 +100,45 @@ def import_failures(modules: Sequence[str], installed_root: Path) -> dict[str, s
 
 
 def environment_failures() -> dict[str, str]:
-    """Checks that xmanager is absent and the xdash console script loads."""
+    """Checks that xmanager is absent and every console script loads.
+
+    Returns:
+        A mapping of check name to failure reason; empty when all pass.
+    """
     failures: dict[str, str] = {}
     with contextlib.suppress(metadata.PackageNotFoundError):
         failures["xmanager"] = f"must not be installed, found {metadata.version('xmanager')}"
-    scripts = metadata.entry_points(group="console_scripts", name="xdash")
-    if not scripts:
-        return {**failures, "xdash console script": "not registered"}
-    try:
-        next(iter(scripts)).load()
-    except Exception as err:
-        failures["xdash console script"] = f"{type(err).__name__}: {err}"
+    for name in _CONSOLE_SCRIPTS:
+        failures.update(console_script_failures(name))
     return failures
 
 
+def console_script_failures(name: str) -> dict[str, str]:
+    """Checks that the console script `name` is registered and its target loads.
+
+    Args:
+        name: Console script name, such as `xmc`.
+
+    Returns:
+        `{"<name> console script": reason}` on failure; empty when it loads.
+    """
+    label = f"{name} console script"
+    scripts = metadata.entry_points(group="console_scripts", name=name)
+    if not scripts:
+        return {label: "not registered"}
+    try:
+        next(iter(scripts)).load()
+    except Exception as err:
+        return {label: f"{type(err).__name__}: {err}"}
+    return {}
+
+
 def packaging_failures() -> dict[str, str]:
-    """Checks that the installed distribution ships no unit test modules."""
+    """Checks that the installed distribution ships no unit test modules.
+
+    Returns:
+        `{"packaged tests": reason}` on failure; empty when no test module ships.
+    """
     try:
         files = metadata.files(_DISTRIBUTION)
     except metadata.PackageNotFoundError:
@@ -109,7 +154,12 @@ def packaging_failures() -> dict[str, str]:
 
 
 def main() -> int:
-    """Runs the smoke check and prints a JSON summary."""
+    """Runs the smoke check and prints a JSON summary.
+
+    Returns:
+        0 on success, 1 when a check fails, or 2 when the repository's proto or
+        xdash sources cannot be found.
+    """
     try:
         modules = modules_to_check(build_staging.resolve_source_layout(_PROJECT_DIR))
     except FileNotFoundError as err:

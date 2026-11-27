@@ -51,6 +51,21 @@ class ModulesToCheckTest(InstallSmokeCheckTestCase):
         self.assertIn("xdash.auth", modules)
         self.assertEqual(modules[-1], "a.proto.x_pb2")
 
+    def test_imports_every_shipped_xm_cloud_cli_module(self) -> None:
+        # Derived from the package directory, so a new CLI module cannot be missed.
+        cli_dir = Path(__file__).resolve().parent / "src" / "xm_cloud" / "cli"
+        shipped = sorted(
+            f"xm_cloud.cli.{path.stem}"
+            for path in cli_dir.glob("*.py")
+            if path.stem != "__init__" and not path.stem.endswith("_test")
+        )
+        layout = build_staging.SourceLayout(proto_root=self.root, xdash_dir=self.root)
+        with mock.patch.object(build_staging, "expected_proto_modules", return_value=[]):
+            modules = install_smoke_check.modules_to_check(layout)
+
+        self.assertIn("xm_cloud.cli.login_command", shipped)
+        self.assertEqual(sorted(m for m in modules if m.startswith("xm_cloud.cli.")), shipped)
+
 
 class ImportFailuresTest(InstallSmokeCheckTestCase):
     def _import_failures(self, modules: dict[str, object]) -> dict[str, str]:
@@ -114,7 +129,13 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
         ):
             failures = install_smoke_check.environment_failures()
         version.assert_called_once_with("xmanager")
-        entry_points.assert_called_once_with(group="console_scripts", name="xdash")
+        self.assertEqual(
+            entry_points.call_args_list,
+            [
+                mock.call(group="console_scripts", name="xdash"),
+                mock.call(group="console_scripts", name="xmc"),
+            ],
+        )
         return failures
 
     def test_clean_environment_passes(self) -> None:
@@ -129,23 +150,50 @@ class EnvironmentFailuresTest(InstallSmokeCheckTestCase):
 
         self.assertEqual(failures, {"xmanager": "must not be installed, found 0.8.5.post1"})
 
-    def test_missing_console_script_fails(self) -> None:
+    def test_missing_console_scripts_fail(self) -> None:
         version = mock.MagicMock(side_effect=metadata.PackageNotFoundError)
 
         failures = self._environment_failures(version, [])
 
-        self.assertEqual(failures, {"xdash console script": "not registered"})
+        self.assertEqual(
+            failures,
+            {"xdash console script": "not registered", "xmc console script": "not registered"},
+        )
 
     def test_console_script_load_error_fails(self) -> None:
         version = mock.MagicMock(side_effect=metadata.PackageNotFoundError)
         script = mock.MagicMock()
-        script.load.side_effect = ModuleNotFoundError("No module named 'xdash'")
+        script.load.side_effect = ModuleNotFoundError("No module named 'xm_cloud'")
 
         failures = self._environment_failures(version, [script])
 
         self.assertEqual(
-            failures, {"xdash console script": "ModuleNotFoundError: No module named 'xdash'"}
+            failures,
+            {
+                "xdash console script": "ModuleNotFoundError: No module named 'xm_cloud'",
+                "xmc console script": "ModuleNotFoundError: No module named 'xm_cloud'",
+            },
         )
+
+    def test_reports_only_the_failing_console_script(self) -> None:
+        broken = mock.MagicMock()
+        broken.load.side_effect = ImportError("cannot import name 'main'")
+
+        def entry_points(group: str, name: str) -> list[mock.MagicMock]:
+            del group
+            return [broken] if name == "xmc" else [mock.MagicMock()]
+
+        with (
+            mock.patch.object(
+                install_smoke_check.metadata,
+                "version",
+                side_effect=metadata.PackageNotFoundError,
+            ),
+            mock.patch.object(install_smoke_check.metadata, "entry_points", entry_points),
+        ):
+            failures = install_smoke_check.environment_failures()
+
+        self.assertEqual(failures, {"xmc console script": "ImportError: cannot import name 'main'"})
 
 
 class PackagingFailuresTest(InstallSmokeCheckTestCase):

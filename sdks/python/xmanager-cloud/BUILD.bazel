@@ -17,8 +17,7 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 # The xmanager_cloud package needs PyPI dependencies (`packaging`) that Bazel does
 # not provide, so src/xmanager_cloud/*_test.py runs against the installed wheel
 # and sdist in .github/workflows/xmanager-cloud-package.yml instead. The xm_cloud
-# CLI uses only the standard library; its tests run under Bazel until xm_cloud is
-# packaged.
+# CLI uses only the standard library; its tests run in both places.
 
 py_library(
     name = "xm_cloud_cli",
@@ -97,5 +96,7 @@ py_library(
 py_test(
     name = "install_smoke_check_test",
     srcs = ["install_smoke_check_test.py"],
+    # The test compares the smoke-check module list with every file in the package.
+    data = glob(["src/xm_cloud/cli/*.py"]),
     deps = [":install_smoke_check"],
 )
