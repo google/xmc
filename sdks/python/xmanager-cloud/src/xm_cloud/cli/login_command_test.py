@@ -89,11 +89,11 @@ def _serve(
         The list of requests sent, in order.
     """
     requests: list[urllib.request.Request] = []
-    fp = body if isinstance(body, io.BytesIO) else io.BytesIO(body)
 
     def https_open(handler: object, req: urllib.request.Request) -> _FakeResponse:
         del handler
         requests.append(req)
+        fp = io.BytesIO(body) if isinstance(body, bytes) else body
         return _FakeResponse(req.full_url, code, fp, headers or {})
 
     with mock.patch.object(
