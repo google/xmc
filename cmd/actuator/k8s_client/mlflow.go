@@ -75,17 +75,17 @@ func (c *Client) configureMLflowForJobSet(ctx context.Context, xid, wid, eid int
 		return
 	}
 
-	expID, parentRunID, childRunID, err := c.ensureMLflowRuns(ctx, cfg, title, xid, wid, eid)
+	ids, err := c.ensureMLflowRuns(ctx, cfg, title, xid, wid, eid)
 	if err != nil {
 		logging.Warn(ctx, "Failed to create MLflow runs at launch; continuing without MLFLOW_RUN_ID", "error", err)
 		c.recordMLflowWarning(ctx, xid, wid, eid, fmt.Sprintf("MLflow run setup failed (work unit will still run): %v", err))
-		injectMLflowEnvIntoJobSet(jobSet, cfg, expID, "")
+		injectMLflowEnvIntoJobSet(jobSet, cfg, ids.experimentID, "")
 		return
 	}
 
-	annotateMLflowJobSet(jobSet, expID, parentRunID, childRunID)
-	c.persistMLflowMetadata(ctx, xid, wid, eid, expID, parentRunID, childRunID)
-	injectMLflowEnvIntoJobSet(jobSet, cfg, expID, childRunID)
+	annotateMLflowJobSet(jobSet, ids.experimentID, ids.parentRunID, ids.childRunID)
+	c.persistMLflowMetadata(ctx, xid, wid, eid, ids.experimentID, ids.parentRunID, ids.childRunID)
+	injectMLflowEnvIntoJobSet(jobSet, cfg, ids.experimentID, ids.childRunID)
 }
 
 func (c *Client) resolveMLflowExperimentTitle(ctx context.Context, xid int64) (string, bool, error) {
@@ -107,21 +107,27 @@ func (c *Client) resolveMLflowExperimentTitle(ctx context.Context, xid int64) (s
 	return fallbackTitle, true, nil
 }
 
-func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title string, xid, wid, eid int64) (string, string, string, error) {
+type mlflowRunIDs struct {
+	experimentID string
+	parentRunID  string
+	childRunID   string
+}
+
+func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title string, xid, wid, eid int64) (mlflowRunIDs, error) {
 	httpClient := c.mlflowHTTP
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: mlflowLaunchTimeout}
 	}
 	client, err := mlflow.NewClient(cfg, httpClient)
 	if err != nil {
-		return "", "", "", err
+		return mlflowRunIDs{}, err
 	}
 	mlflowCtx, cancel := context.WithTimeout(ctx, mlflowLaunchTimeout)
 	defer cancel()
 
 	expID, err := client.EnsureExperiment(mlflowCtx, title)
 	if err != nil {
-		return "", "", "", err
+		return mlflowRunIDs{}, err
 	}
 
 	mu := c.lockMLflowExperiment(xid)
@@ -129,14 +135,14 @@ func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title
 	parentRunID, err := client.EnsureParentRun(mlflowCtx, expID, xid)
 	mu.Unlock()
 	if err != nil {
-		return expID, "", "", err
+		return mlflowRunIDs{experimentID: expID}, err
 	}
 
 	childRunID, err := client.EnsureChildRun(mlflowCtx, expID, parentRunID, xid, wid, eid)
 	if err != nil {
-		return expID, parentRunID, "", err
+		return mlflowRunIDs{experimentID: expID, parentRunID: parentRunID}, err
 	}
-	return expID, parentRunID, childRunID, nil
+	return mlflowRunIDs{experimentID: expID, parentRunID: parentRunID, childRunID: childRunID}, nil
 }
 
 func (c *Client) lockMLflowExperiment(xid int64) *sync.Mutex {

@@ -132,6 +132,9 @@ func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkU
 	if strings.HasPrefix(path, "metadata.management_cluster") || strings.HasPrefix(path, "metadata.executing_cluster") {
 		return mergeWorkUnitExecutionClusterPath(newExecution, updatedExecution, path)
 	}
+	if strings.HasPrefix(path, "metadata.mlflow_") {
+		return mergeWorkUnitExecutionMLflowPath(newExecution, updatedExecution, path)
+	}
 	switch path {
 	case "metadata":
 		newExecution.Metadata = updatedExecution.Metadata
@@ -151,6 +154,14 @@ func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkU
 		newExecution.Metadata.MultiKueueClusterName = updatedExecution.GetMetadata().GetMultiKueueClusterName()
 	case "metadata.mlrun_url":
 		newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
+	default:
+		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func mergeWorkUnitExecutionMLflowPath(newExecution, updatedExecution *pb.WorkUnitExecution, path string) error {
+	switch path {
 	case "metadata.mlflow_experiment_id":
 		newExecution.Metadata.MlflowExperimentId = updatedExecution.GetMetadata().GetMlflowExperimentId()
 	case "metadata.mlflow_parent_run_id":
