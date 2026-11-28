@@ -20,7 +20,7 @@ metadata:
     app: actuator
 data:
   port: "8080"
-  frontend_url: {{ .Values.auth.frontendUrl | default (printf "https://%s" (include "xmanager-cloud.uiHostname" .)) | quote }}
+  frontend_url: {{ ((.Values.auth | default dict).frontendUrl) | default (printf "https://%s" (include "xmanager-cloud.uiHostname" .)) | quote }}
   redis_addr: {{ .Values.redisAddr | quote }}
   xmanager_service_account: {{ required "gcpServiceAccount is required" .Values.gcpServiceAccount | quote }}
   audience: {{ printf "https://actuator.api.%s.%s/actuate" .Values.environment .Values.domainSuffix | quote }}

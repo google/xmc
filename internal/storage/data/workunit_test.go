@@ -184,6 +184,7 @@ func TestMergeWorkUnits(t *testing.T) {
 			},
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
 			want: &pb.WorkUnit{
+				Priority: pb.Priority_LOW,
 				Urls: []*pb.Url{
 					{Url: "http://new-user.com", DisplayName: "New User"},
 					{Url: "http://mlflow/#/experiments/1/runs/r1", DisplayName: "MLflow run", Icon: "timeline"},
