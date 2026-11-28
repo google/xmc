@@ -147,6 +147,7 @@ jobs:
           build_and_push chart-artifact-job     chart_artifact_job     .
           build_and_push metrics-dashboard-job  metrics_dashboard_job  .
           build_and_push managed-xprof-artifact-job managed_xprof_artifact_job
+          build_and_push mlflow-job             mlflow_job
           build_and_push per-job-node-selector  per_job_node_selector
 
   run-and-verify-examples:
@@ -202,6 +203,14 @@ jobs:
             verify_module: 'tools.nightly_tests.examples_verification.metrics_job_test'
             expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
             requires_clickhouse: true
+          - id: 'mlflow_job'
+            name: 'MLflow Sweep Job'
+            example_path: 'examples/mlflow_job'
+            entrypoint: 'launch.py'
+            args: '--queue=${QUEUE_NAME}'
+            verify_module: 'tools.nightly_tests.examples_verification.mlflow_job_test'
+            expected_queue: "${{ inputs.queue_name || 'cpu-queue' }}"
+            requires_mlflow: true
           - id: 'managed_xprof_artifact_job'
             name: 'Managed XProf Artifact Job'
             example_path: 'examples/managed_xprof_artifact_job'
@@ -315,6 +324,7 @@ jobs:
         env:
           EXAMPLE_ID: '${{ matrix.example.id }}'
           FILTER: ${{ inputs.examples_filter || '' }}
+          REQUIRES_MLFLOW: '${{ matrix.example.requires_mlflow }}'
         run: |
           if [ -n "${FILTER}" ]; then
             if echo ",${FILTER}," | grep -qi ",${EXAMPLE_ID},"; then
@@ -323,6 +333,9 @@ jobs:
               echo "Skipping ${EXAMPLE_ID} (not in filter: ${FILTER})"
               echo "should_run=false" >> "$GITHUB_OUTPUT"
             fi
+          elif [ "${REQUIRES_MLFLOW:-}" = "true" ]; then
+            echo "Skipping ${EXAMPLE_ID} (mlflow component is off by default; pass examples_filter=mlflow_job to run)"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           fi
