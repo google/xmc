@@ -111,4 +111,13 @@ message WorkUnitExecutionMetadata {
 
   // The URL of the MLRun associated with this execution.
   string mlrun_url = 10 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The MLflow experiment ID associated with this execution.
+  string mlflow_experiment_id = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The MLflow parent run ID associated with this execution's experiment.
+  string mlflow_parent_run_id = 12 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // The MLflow child run ID associated with this work unit.
+  string mlflow_run_id = 13 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

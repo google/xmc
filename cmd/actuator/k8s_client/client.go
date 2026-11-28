@@ -17,8 +17,10 @@ package k8sclient
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
+	"sync"
 
 	longrunningpb "cloud.google.com/go/longrunning/autogen/longrunningpb"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
@@ -38,6 +40,7 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/validator"
+	"xmanager_cloud/pkg/components/crreader"
 )
 
 // ActuatorRuntimeConfig holds runtime configuration for Actuator.
@@ -69,9 +72,13 @@ type Client struct {
 	clientset              kubernetes.Interface
 	dynamicClient          dynamic.Interface
 	ManagerClient          runtimeclient.Reader
+	secretReader           crreader.SecretReader
 	storage                storage.Storage
 	RuntimeConfig          ActuatorRuntimeConfig
 	preconditionsValidator preconditionsvalidator.Validator
+	mlflowHTTP             *http.Client
+	mlflowExpMu            sync.Mutex
+	mlflowExpLocks         map[int64]*sync.Mutex
 }
 
 var inClusterConfig = rest.InClusterConfig
@@ -134,6 +141,7 @@ func New(runtimeConfig ActuatorRuntimeConfig, storage storage.Storage) (*Client,
 		clientset:              clientset,
 		dynamicClient:          dynamicClient,
 		ManagerClient:          managerClient,
+		secretReader:           crreader.NewSecretReaderFromClientset(clientset),
 		storage:                storage,
 		RuntimeConfig:          runtimeConfig,
 		preconditionsValidator: preconditionsvalidator.New(),
@@ -145,11 +153,26 @@ func (c *Client) SetManagerClient(managerClient runtimeclient.Reader) {
 	c.ManagerClient = managerClient
 }
 
+// SetSecretReader overrides the SecretReader used to read component credential Secrets.
+func (c *Client) SetSecretReader(reader crreader.SecretReader) {
+	c.secretReader = reader
+}
+
+// SetMLflowHTTPClient overrides the HTTP client used for MLflow REST calls.
+func (c *Client) SetMLflowHTTPClient(hc *http.Client) {
+	c.mlflowHTTP = hc
+}
+
 // NewWithClients creates a new Kubernetes client with the given clientset and dynamic client.
 func NewWithClients(clientset kubernetes.Interface, dynamicClient dynamic.Interface, runtimeConfig ActuatorRuntimeConfig, preconditionsValidator preconditionsvalidator.Validator, storage storage.Storage) *Client {
+	var secretReader crreader.SecretReader
+	if clientset != nil {
+		secretReader = crreader.NewSecretReaderFromClientset(clientset)
+	}
 	return &Client{
 		clientset:              clientset,
 		dynamicClient:          dynamicClient,
+		secretReader:           secretReader,
 		storage:                storage,
 		RuntimeConfig:          runtimeConfig,
 		preconditionsValidator: preconditionsValidator,
