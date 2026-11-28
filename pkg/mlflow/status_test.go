@@ -16,6 +16,7 @@ package mlflow
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 
 	essmsgpb "xmanager_cloud/api/protos/experiment"
@@ -71,10 +72,11 @@ func TestComputeParentRunStatus(t *testing.T) {
 
 func TestClient_UpdateRunStatus_AndReopenParent(t *testing.T) {
 	ctx := context.Background()
-	srv := newFakeMLflowServer()
-	defer srv.Close()
+	srv := newFakeMLflowServer("")
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
 
-	client, err := NewClient(&Config{TrackingURI: srv.server.URL}, srv.server.Client())
+	client, err := NewClient(&Config{TrackingURI: ts.URL}, ts.Client())
 	if err != nil {
 		t.Fatalf("NewClient() error: %v", err)
 	}
