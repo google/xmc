@@ -113,6 +113,19 @@ def _get_mlflow_experiment_id(base_uri: str, title: str) -> str:
     return exp_id
 
 
+def _poll_mlflow_experiment_id(base_uri: str, title: str, timeout_sec: int = 120) -> str:
+    """Polls MLflow until the experiment is created and returns its ID."""
+    deadline = time.monotonic() + timeout_sec
+    last_error = "experiment not found"
+    while time.monotonic() < deadline:
+        try:
+            return _get_mlflow_experiment_id(base_uri, title)
+        except (AssertionError, urllib.error.URLError, KeyError) as exc:
+            last_error = str(exc)
+        time.sleep(3)
+    raise AssertionError(f"Timed out waiting for MLflow experiment {title!r}: {last_error}")
+
+
 def _search_mlflow_runs(base_uri: str, exp_id: str, xid: str) -> list[dict[str, Any]]:
     """Returns all MLflow runs tagged with xmc.experiment_id == xid."""
     resp = _mlflow_request(
@@ -218,7 +231,7 @@ def _poll_runs_status(
 def _assert_completed_mlflow_state(stub: Any, xid: str, expected_wus: int, mlflow_uri: str) -> None:
     """Asserts XMC links, MLflow run hierarchy, tags, metrics, and FINISHED status."""
     exp = xmc_entities_validator.validate_experiment(stub, xid, EXPECTED_TITLE_PATTERN)
-    exp_id = _get_mlflow_experiment_id(mlflow_uri, exp.title)
+    exp_id = _poll_mlflow_experiment_id(mlflow_uri, exp.title)
     parent, children = _poll_runs_status(mlflow_uri, exp_id, xid, expected_wus, "FINISHED")
 
     ui_base = (verifier_cli.get_flag(FLAGS, "mlflow_ui_base_url", "") or mlflow_uri).rstrip("/")
@@ -310,7 +323,7 @@ def _verify_stop_transitions_to_killed(stub: Any, source_xid: str, mlflow_uri: s
             "CreateWorkUnitRequest", parent=exp.name, work_unit=wu_proto
         )
     )
-    exp_id = _get_mlflow_experiment_id(mlflow_uri, stop_title)
+    exp_id = _poll_mlflow_experiment_id(mlflow_uri, stop_title)
     _poll_runs_status(mlflow_uri, exp_id, stop_xid, 1, "RUNNING", timeout_sec=120)
     xmc_entities_validator.stop_work_units(stub, stop_xid)
     _poll_runs_status(mlflow_uri, exp_id, stop_xid, 1, "KILLED", timeout_sec=120)
