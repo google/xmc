@@ -18,8 +18,10 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
@@ -48,7 +50,7 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:     "experiments/1/workUnits/1/executions/1",
-			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING},
+			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, StateUpdateTime: timestamppb.New(time.Now())},
 			Metadata: &essmsgpb.WorkUnitExecutionMetadata{MlflowRunId: "run-1"},
 		},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "metadata.mlflow_run_id"}},
@@ -65,7 +67,7 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:   "experiments/1/workUnits/1/executions/1",
-			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED},
+			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED, StateUpdateTime: timestamppb.New(time.Now())},
 		},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 	}})
@@ -88,7 +90,7 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:   "experiments/1/workUnits/1/executions/1",
-			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_STOPPED},
+			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_STOPPED, StateUpdateTime: timestamppb.New(time.Now())},
 		},
 		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 	}})
