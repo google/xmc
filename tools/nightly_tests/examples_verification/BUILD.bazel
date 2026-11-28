@@ -27,6 +27,7 @@ exports_files([
     "metrics_dashboard_job_test.py",
     "metrics_dashboard_ui_test.py",
     "metrics_job_test.py",
+    "mlflow_job_test.py",
     "multikueue_job_test.py",
     "multipod_job_test.py",
     "pathways_job_test.py",
@@ -153,6 +154,18 @@ py_binary(
     deps = [
         "//tools/nightly_tests/verification:verifier_cli",
         "//tools/nightly_tests/verification:workload_verification",
+    ],
+)
+
+py_binary(
+    name = "mlflow_job_test",
+    srcs = ["mlflow_job_test.py"],
+    imports = ["../../.."],
+    deps = [
+        "//tools/nightly_tests/verification:ess_session",
+        "//tools/nightly_tests/verification:verifier_cli",
+        "//tools/nightly_tests/verification:workload_verification",
+        "//tools/nightly_tests/verification:xmc_entities_validator_lib",
     ],
 )
 
