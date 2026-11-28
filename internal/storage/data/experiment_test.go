@@ -254,7 +254,8 @@ func TestMergeExperiments(t *testing.T) {
 			},
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
 			want: &pb.Experiment{
-				Title: "Test",
+				Title:    "Test",
+				Priority: pb.Priority_LOW,
 				Urls: []*pb.Url{
 					{Url: "http://new-user.com", DisplayName: "New User"},
 					{Url: "http://mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
@@ -278,7 +279,8 @@ func TestMergeExperiments(t *testing.T) {
 			},
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
 			want: &pb.Experiment{
-				Title: "Test",
+				Title:    "Test",
+				Priority: pb.Priority_LOW,
 				Urls: []*pb.Url{
 					{Url: "http://new-mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
 				},
