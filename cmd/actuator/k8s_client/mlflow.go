@@ -86,6 +86,7 @@ func (c *Client) configureMLflowForJobSet(ctx context.Context, xid, wid, eid int
 
 	annotateMLflowJobSet(jobSet, ids.experimentID, ids.parentRunID, ids.childRunID)
 	c.persistMLflowMetadata(ctx, xid, wid, eid, ids.experimentID, ids.parentRunID, ids.childRunID)
+	c.persistMLflowURLs(ctx, cfg, xid, wid, ids)
 	injectMLflowEnvIntoJobSet(jobSet, cfg, ids.experimentID, ids.childRunID)
 }
 
@@ -131,17 +132,23 @@ func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title
 		return mlflowRunIDs{}, err
 	}
 
+	links := mlflow.RunLinks{
+		ExperimentTitle: title,
+		ExperimentURL:   mlflow.XMCExperimentURL(c.RuntimeConfig.FrontendURL, xid),
+		WorkUnitURL:     mlflow.XMCWorkUnitURL(c.RuntimeConfig.FrontendURL, xid, wid),
+	}
+
 	mu := c.lockMLflowExperiment(xid)
 	parentRunID, err := func() (string, error) {
 		mu.Lock()
 		defer mu.Unlock()
-		return client.EnsureParentRun(mlflowCtx, expID, xid)
+		return client.EnsureParentRun(mlflowCtx, expID, xid, links)
 	}()
 	if err != nil {
 		return mlflowRunIDs{experimentID: expID}, err
 	}
 
-	childRunID, err := client.EnsureChildRun(mlflowCtx, expID, parentRunID, xid, wid, eid)
+	childRunID, err := client.EnsureChildRun(mlflowCtx, expID, parentRunID, xid, wid, eid, links)
 	if err != nil {
 		return mlflowRunIDs{experimentID: expID, parentRunID: parentRunID}, err
 	}
@@ -218,6 +225,87 @@ func (c *Client) persistMLflowMetadata(ctx context.Context, xid, wid, eid int64,
 	if err != nil {
 		logging.Warn(ctx, "Failed to persist MLflow metadata onto WorkUnitExecution", "error", err)
 	}
+}
+
+func (c *Client) persistMLflowURLs(ctx context.Context, cfg *mlflow.Config, xid, wid int64, ids mlflowRunIDs) {
+	if c.storage == nil || cfg == nil {
+		return
+	}
+	if expURL := mlflow.ExperimentChartsURL(cfg.UIBaseURL, ids.experimentID, xid); expURL != "" {
+		c.upsertExperimentMLflowURL(ctx, xid, &esspb.Url{
+			Url:         expURL,
+			DisplayName: mlflow.ExperimentURLDisplayName,
+			Icon:        mlflow.ExperimentURLIcon,
+		})
+	}
+	if wuURL := mlflow.WorkUnitRunURL(cfg.UIBaseURL, ids.experimentID, ids.childRunID); wuURL != "" {
+		c.upsertWorkUnitMLflowURL(ctx, xid, wid, &esspb.Url{
+			Url:         wuURL,
+			DisplayName: mlflow.WorkUnitURLDisplayName,
+			Icon:        mlflow.WorkUnitURLIcon,
+		})
+	}
+}
+
+func (c *Client) upsertExperimentMLflowURL(ctx context.Context, xid int64, target *esspb.Url) {
+	mu := c.lockMLflowExperiment(xid)
+	err := func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		exp, err := c.storage.FetchExperiment(ctx, xid)
+		if err != nil {
+			return err
+		}
+		updatedURLs, changed := upsertURLByDisplayName(exp.GetUrls(), target)
+		if !changed {
+			return nil
+		}
+		_, err = c.storage.UpdateExperiment(ctx, &storage.ExperimentUpdate{
+			XID:        xid,
+			Experiment: &esspb.Experiment{Name: validator.ConstructExperimentName(xid), Urls: updatedURLs},
+			UpdateMask: &fmpb.FieldMask{Paths: []string{"urls"}},
+		})
+		return err
+	}()
+	if err != nil {
+		logging.Warn(ctx, "Failed to persist MLflow URL onto Experiment", "xid", xid, "error", err)
+	}
+}
+
+func (c *Client) upsertWorkUnitMLflowURL(ctx context.Context, xid, wid int64, target *esspb.Url) {
+	wu, err := c.storage.FetchWorkUnit(ctx, xid, wid)
+	if err != nil {
+		logging.Warn(ctx, "Failed to fetch WorkUnit for MLflow URL update", "xid", xid, "wid", wid, "error", err)
+		return
+	}
+	updatedURLs, changed := upsertURLByDisplayName(wu.GetUrls(), target)
+	if !changed {
+		return
+	}
+	_, err = c.storage.UpdateWorkUnit(ctx, &storage.WorkUnitUpdate{
+		XID:        xid,
+		WID:        wid,
+		WorkUnit:   &esspb.WorkUnit{Name: validator.ConstructWorkUnitName(xid, wid), Urls: updatedURLs},
+		UpdateMask: &fmpb.FieldMask{Paths: []string{"urls"}},
+	})
+	if err != nil {
+		logging.Warn(ctx, "Failed to persist MLflow URL onto WorkUnit", "xid", xid, "wid", wid, "error", err)
+	}
+}
+
+func upsertURLByDisplayName(existing []*esspb.Url, target *esspb.Url) ([]*esspb.Url, bool) {
+	out := make([]*esspb.Url, len(existing))
+	copy(out, existing)
+	for i, u := range out {
+		if u.GetDisplayName() == target.GetDisplayName() {
+			if u.GetUrl() == target.GetUrl() && u.GetIcon() == target.GetIcon() {
+				return nil, false
+			}
+			out[i] = target
+			return out, true
+		}
+	}
+	return append(out, target), true
 }
 
 func (c *Client) recordMLflowWarning(ctx context.Context, xid, wid, eid int64, msg string) {

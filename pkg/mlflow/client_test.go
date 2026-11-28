@@ -185,11 +185,20 @@ func TestClient_RunLifecycleAndIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureExperiment() error: %v", err)
 	}
-	parentID, err := client.EnsureParentRun(ctx, expID, 100)
+	parentLinks := RunLinks{
+		ExperimentTitle: "sweep-title",
+		ExperimentURL:   "https://xmc.example.com/experiments/100",
+	}
+	parentID, err := client.EnsureParentRun(ctx, expID, 100, parentLinks)
 	if err != nil {
 		t.Fatalf("EnsureParentRun() error: %v", err)
 	}
-	child1, err := client.EnsureChildRun(ctx, expID, parentID, 100, 1, 1)
+	child1Links := RunLinks{
+		ExperimentTitle: "sweep-title",
+		ExperimentURL:   "https://xmc.example.com/experiments/100",
+		WorkUnitURL:     "https://xmc.example.com/experiments/100/workUnits/1",
+	}
+	child1, err := client.EnsureChildRun(ctx, expID, parentID, 100, 1, 1, child1Links)
 	if err != nil {
 		t.Fatalf("EnsureChildRun(1) error: %v", err)
 	}
@@ -199,18 +208,23 @@ func TestClient_RunLifecycleAndIdempotency(t *testing.T) {
 	if err != nil || expID2 != expID {
 		t.Fatalf("EnsureExperiment(2) = (%q, %v), want %q", expID2, err, expID)
 	}
-	parentID2, err := client.EnsureParentRun(ctx, expID2, 100)
+	parentID2, err := client.EnsureParentRun(ctx, expID2, 100, parentLinks)
 	if err != nil || parentID2 != parentID {
 		t.Fatalf("EnsureParentRun(2) = (%q, %v), want %q", parentID2, err, parentID)
 	}
-	child2, err := client.EnsureChildRun(ctx, expID2, parentID2, 100, 2, 1)
+	child2Links := RunLinks{
+		ExperimentTitle: "sweep-title",
+		ExperimentURL:   "https://xmc.example.com/experiments/100",
+		WorkUnitURL:     "https://xmc.example.com/experiments/100/workUnits/2",
+	}
+	child2, err := client.EnsureChildRun(ctx, expID2, parentID2, 100, 2, 1, child2Links)
 	if err != nil || child2 == child1 {
 		t.Fatalf("EnsureChildRun(2) = (%q, %v), want distinct from %q", child2, err, child1)
 	}
 
 	// Retry/restart of work unit 1 reuses child1 and updates xmc.execution_id without redundant runs/update.
 	updatesBeforeRetry := srv.updateCalls
-	child1Retry, err := client.EnsureChildRun(ctx, expID, parentID, 100, 1, 2)
+	child1Retry, err := client.EnsureChildRun(ctx, expID, parentID, 100, 1, 2, child1Links)
 	if err != nil || child1Retry != child1 {
 		t.Fatalf("EnsureChildRun(retry) = (%q, %v), want %q", child1Retry, err, child1)
 	}
@@ -229,6 +243,18 @@ func TestClient_RunLifecycleAndIdempotency(t *testing.T) {
 	}
 	if got, _ := findTag(srv.runs[child1].Data.Tags, "xmc.execution_id"); got != "2" {
 		t.Errorf("child1 xmc.execution_id = %q, want 2", got)
+	}
+	if got, _ := findTag(srv.runs[parentID].Data.Tags, "xmc.experiment_url"); got != parentLinks.ExperimentURL {
+		t.Errorf("parent xmc.experiment_url = %q, want %q", got, parentLinks.ExperimentURL)
+	}
+	if got, _ := findTag(srv.runs[parentID].Data.Tags, "mlflow.note.content"); !strings.Contains(got, "sweep-title") || !strings.Contains(got, parentLinks.ExperimentURL) {
+		t.Errorf("parent mlflow.note.content = %q, want title and experiment URL", got)
+	}
+	if got, _ := findTag(srv.runs[child1].Data.Tags, "xmc.work_unit_url"); got != child1Links.WorkUnitURL {
+		t.Errorf("child1 xmc.work_unit_url = %q, want %q", got, child1Links.WorkUnitURL)
+	}
+	if got, _ := findTag(srv.runs[child1].Data.Tags, "mlflow.note.content"); !strings.Contains(got, child1Links.WorkUnitURL) {
+		t.Errorf("child1 mlflow.note.content = %q, want work unit URL", got)
 	}
 }
 

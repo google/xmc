@@ -240,6 +240,52 @@ func TestMergeExperiments(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
 			wantErr:    true,
 		},
+		{
+			name: "preserves MLflow charts url on user urls update",
+			current: &pb.Experiment{
+				Title: "Test",
+				Urls: []*pb.Url{
+					{Url: "http://user.com", DisplayName: "User"},
+					{Url: "http://mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
+				},
+			},
+			updated: &pb.Experiment{
+				Urls: []*pb.Url{{Url: "http://new-user.com", DisplayName: "New User"}},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
+			want: &pb.Experiment{
+				Title:    "Test",
+				Priority: pb.Priority_LOW,
+				Urls: []*pb.Url{
+					{Url: "http://new-user.com", DisplayName: "New User"},
+					{Url: "http://mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
+				},
+				Tags: []string{},
+			},
+		},
+		{
+			name: "replaces MLflow charts url without duplicating",
+			current: &pb.Experiment{
+				Title: "Test",
+				Urls: []*pb.Url{
+					{Url: "http://old-mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
+				},
+			},
+			updated: &pb.Experiment{
+				Urls: []*pb.Url{
+					{Url: "http://new-mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
+				},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
+			want: &pb.Experiment{
+				Title:    "Test",
+				Priority: pb.Priority_LOW,
+				Urls: []*pb.Url{
+					{Url: "http://new-mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
+				},
+				Tags: []string{},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

@@ -86,7 +86,7 @@ func MergeExperiments(current, updated *pb.Experiment, updateMask *fieldmaskpb.F
 			if updated.Urls == nil {
 				return nil, fmt.Errorf("urls field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
-			merged.Urls = updated.Urls
+			merged.Urls = mergePreservedURLs(current.GetUrls(), updated.Urls, "MLflow charts")
 		case "tags":
 			if updated.Tags == nil {
 				return nil, fmt.Errorf("tags field cannot be nil: %w", grpcerr.ErrInvalidArgument)
@@ -99,4 +99,24 @@ func MergeExperiments(current, updated *pb.Experiment, updateMask *fieldmaskpb.F
 		}
 	}
 	return validator.FillExperimentNullValues(merged), nil
+}
+
+func mergePreservedURLs(currentURLs, updatedURLs []*pb.Url, preservedDisplayName string) []*pb.Url {
+	merged := make([]*pb.Url, 0, len(updatedURLs)+1)
+	hasPreserved := false
+	for _, u := range updatedURLs {
+		merged = append(merged, u)
+		if u.GetDisplayName() == preservedDisplayName {
+			hasPreserved = true
+		}
+	}
+	if !hasPreserved {
+		for _, u := range currentURLs {
+			if u.GetDisplayName() == preservedDisplayName {
+				merged = append(merged, u)
+				break
+			}
+		}
+	}
+	return merged
 }
