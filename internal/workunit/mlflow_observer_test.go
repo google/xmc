@@ -32,38 +32,35 @@ import (
 
 func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 	ctx := context.Background()
-	emu, err := emulator.New(ctx, spanner.DefaultTestSchemaPath())
+	_, essClient := emulator.Setup(ctx, t)
+	st, err := spanner.NewStorage(essClient)
 	if err != nil {
-		t.Fatalf("emulator.New() error: %v", err)
+		t.Fatalf("spanner.NewStorage() error: %v", err)
 	}
-	defer emu.Close()
 
-	st, err := spanner.NewTestStorage(ctx, emu)
-	if err != nil {
-		t.Fatalf("NewTestStorage() error: %v", err)
-	}
-	defer st.Close()
-
-	exp, err := st.CreateExperiment(ctx, &essmsgpb.Experiment{Title: "mlflow-obs"})
-	if err != nil {
-		t.Fatalf("CreateExperiment() error: %v", err)
-	}
 	const xid = 1
-	_ = exp
-	if _, err := st.CreateWorkUnit(ctx, xid, &essmsgpb.WorkUnit{
-		Name: "experiments/1/workUnits/1",
-		CurrentWorkUnitExecution: &essmsgpb.WorkUnitExecution{
-			Name:     "experiments/1/workUnits/1/executions/1",
-			State:    essmsgpb.WorkUnitExecution_ACTIVE,
-			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, StateUpdateTime: timestamppb.New(time.Unix(10, 0))},
-			Metadata: &essmsgpb.WorkUnitExecutionMetadata{MlflowRunId: "run-1"},
-		},
-	}); err != nil {
-		t.Fatalf("CreateWorkUnit() error: %v", err)
-	}
+	spanner.CreateBlankExperiment(ctx, t, st, xid)
+	spanner.CreateBlankWorkUnit(ctx, t, st, xid, 1)
 
 	fakeRedis := redisclient.NewFakeClient()
 	updater := workunit.NewUpdaterWithObserver(st, workunit.NewRedisTerminalObserver(fakeRedis))
+
+	// Non-terminal transition INITIALIZING -> RUNNING with MlflowRunId: must NOT publish.
+	_, err = updater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{{
+		WID: 1, EID: 1,
+		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
+			Name:     "experiments/1/workUnits/1/executions/1",
+			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, StateUpdateTime: timestamppb.New(time.Unix(10, 0))},
+			Metadata: &essmsgpb.WorkUnitExecutionMetadata{MlflowRunId: "run-1"},
+		},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "status.state_update_time", "metadata.mlflow_run_id"}},
+	}})
+	if err != nil {
+		t.Fatalf("UpdateWorkUnitExecutions(RUNNING) error: %v", err)
+	}
+	if len(fakeRedis.Messages) != 0 {
+		t.Fatalf("expected 0 messages for non-terminal transition, got %d", len(fakeRedis.Messages))
+	}
 
 	// Transition RUNNING -> COMPLETED: should publish once.
 	_, err = updater.UpdateWorkUnitExecutions(ctx, xid, []*storage.WorkUnitExecutionUpdate{{
@@ -81,7 +78,7 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		t.Fatalf("expected 1 published message, got %d", len(fakeRedis.Messages))
 	}
 	var got workunit.MLflowSyncPayload
-	if err := json.Unmarshal([]byte(fakeRedis.Messages[0].Data), &got); err != nil {
+	if err := json.Unmarshal([]byte(fakeRedis.Messages[0]), &got); err != nil {
 		t.Fatalf("json.Unmarshal() error: %v", err)
 	}
 	if got != (workunit.MLflowSyncPayload{XID: 1, WID: 1, EID: 1}) {
