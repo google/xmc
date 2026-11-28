@@ -161,6 +161,10 @@ func NewProd(ctx context.Context, cfg *Config, projectID string) (_ *ProdServer,
 	go redisConsumer.StartWorker(ctx, workerID)
 	logging.Info(ctx, "Started Redis task queue worker", "worker_id", workerID)
 
+	if cfg.RedisConfig.RedisAddr != "" {
+		cleanups = append(cleanups, k8sClient.StartMLflowSyncConsumer(ctx, cfg.RedisConfig.RedisAddr))
+	}
+
 	return &ProdServer{
 		Handler: handler, K8sClient: k8sClient, dbHealth: dbStorage, RedisClient: redisConsumer,
 		PauseListener: pauseListener, PauseHandler: pauseHandler, cleanup: func() error { return runCleanups(cleanups) },

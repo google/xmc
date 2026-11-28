@@ -80,8 +80,7 @@ type Client struct {
 	RuntimeConfig          ActuatorRuntimeConfig
 	preconditionsValidator preconditionsvalidator.Validator
 	mlflowHTTP             *http.Client
-	mlflowExpMu            sync.Mutex
-	mlflowExpLocks         map[int64]*sync.Mutex
+	mlflowExpLocks         [256]sync.Mutex
 }
 
 var inClusterConfig = rest.InClusterConfig

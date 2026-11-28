@@ -44,6 +44,7 @@ go_library(
         "//internal/storage",
         "//internal/storage/dbconfig",
         "//internal/storage/factory",
+        "//internal/task_queue_redis/redisclient",
         "//internal/workunit",
         "@com_github_go_logr_logr//:logr",
         "@io_k8s_api//core/v1:core",

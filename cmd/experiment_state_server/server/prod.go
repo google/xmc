@@ -42,6 +42,7 @@ import (
 	dbfactory "xmanager_cloud/internal/storage/factory"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
@@ -274,10 +275,18 @@ func NewProd(ctx context.Context, cfg *config.Config, oauthCfg *oauth.Config, ad
 	studyReconcilePublisher, publisherCleanup := initStudyReconcilePublisher(cfg)
 	cleanups = append(cleanups, publisherCleanup)
 
+	var terminalObserver workunit.TerminalTransitionObserver
+	if cfg.RedisAddr != "" {
+		mlflowSyncPub := redisclient.NewPublisher(redisclient.Config{Addr: cfg.RedisAddr, ContextTimeoutEnabled: true}, constants.RedisMLflowSyncStream)
+		cleanups = append(cleanups, closeWithLabel("MLflow sync publisher", func() error { return mlflowSyncPub.Close(context.Background()) }))
+		terminalObserver = workunit.NewRedisTerminalObserver(mlflowSyncPub)
+	}
+
 	srv, err := New(Params{
 		Config: cfg, Storage: st, Authorizer: auth,
 		XidClient: xidClient, WorkUnitActuator: taskQueueClient, ArtifactObservers: observers,
-		StudyReconcilePublisher: studyReconcilePublisher, BackgroundTasks: &bgTaskWG,
+		TerminalTransitionObserver: terminalObserver,
+		StudyReconcilePublisher:    studyReconcilePublisher, BackgroundTasks: &bgTaskWG,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)

@@ -156,17 +156,7 @@ func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title
 }
 
 func (c *Client) lockMLflowExperiment(xid int64) *sync.Mutex {
-	c.mlflowExpMu.Lock()
-	defer c.mlflowExpMu.Unlock()
-	if c.mlflowExpLocks == nil {
-		c.mlflowExpLocks = make(map[int64]*sync.Mutex)
-	}
-	mu, ok := c.mlflowExpLocks[xid]
-	if !ok {
-		mu = &sync.Mutex{}
-		c.mlflowExpLocks[xid] = mu
-	}
-	return mu
+	return &c.mlflowExpLocks[uint64(xid)%uint64(len(c.mlflowExpLocks))]
 }
 
 func annotateMLflowJobSet(jobSet *jobsetv1alpha2.JobSet, expID, parentRunID, childRunID string) {

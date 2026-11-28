@@ -77,15 +77,16 @@ func newJobSetStorage(s storage.Storage, u *workunit.Updater) jobset.ReconcilerS
 }
 
 type controllerRegistrationParams struct {
-	mgr         ctrl.Manager
-	cfg         Config
-	storage     storage.Storage
-	k8sClient   *k8sclient.Client
-	cqCache     *clusterqueue.NameCache
-	mlRunClient jobset.MLRunCreator
-	projectID   string
-	location    string
-	clusterName string
+	mgr              ctrl.Manager
+	cfg              Config
+	storage          storage.Storage
+	k8sClient        *k8sclient.Client
+	cqCache          *clusterqueue.NameCache
+	mlRunClient      jobset.MLRunCreator
+	terminalObserver workunit.TerminalTransitionObserver
+	projectID        string
+	location         string
+	clusterName      string
 }
 
 func registerControllers(ctx context.Context, p controllerRegistrationParams) (*shared.UpdateBatcher, error) {
@@ -108,7 +109,7 @@ func registerControllers(ctx context.Context, p controllerRegistrationParams) (*
 		return nil, fmt.Errorf("unable to setup clusterqueue controller: %w", err)
 	}
 
-	updater := workunit.NewUpdater(p.storage)
+	updater := workunit.NewUpdaterWithObserver(p.storage, p.terminalObserver)
 	batcher := shared.NewUpdateBatcher(
 		ctx,
 		&shared.BatcherConfig{

@@ -17,6 +17,7 @@ package workunit
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
@@ -32,17 +33,80 @@ import (
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/data"
 	"xmanager_cloud/internal/storage/state"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
 	"xmanager_cloud/internal/validator"
 )
+
+// TerminalTransition describes a work unit execution that transitioned from a
+// non-terminal state into COMPLETED, FAILED, or STOPPED.
+type TerminalTransition struct {
+	XID         int64
+	WID         int64
+	EID         int64
+	State       essmsgpb.WorkUnitStatus_WorkUnitState
+	MlflowRunID string
+}
+
+// TerminalTransitionObserver is notified after a storage transaction commits
+// new terminal transitions for work unit executions.
+type TerminalTransitionObserver interface {
+	OnTerminalTransitions(ctx context.Context, transitions []TerminalTransition)
+}
+
+// MLflowSyncPayload is the JSON message published when an execution with an MLflow run ID ends.
+type MLflowSyncPayload struct {
+	XID int64 `json:"xid"`
+	WID int64 `json:"wid"`
+	EID int64 `json:"eid"`
+}
+
+// NewRedisTerminalObserver returns a TerminalTransitionObserver backed by publisher, or nil.
+func NewRedisTerminalObserver(publisher redisclient.Publisher) TerminalTransitionObserver {
+	if publisher == nil {
+		return nil
+	}
+	return redisTerminalObserver{publisher: publisher}
+}
+
+type redisTerminalObserver struct{ publisher redisclient.Publisher }
+
+func (o redisTerminalObserver) OnTerminalTransitions(ctx context.Context, transitions []TerminalTransition) {
+	var payloads []string
+	for _, t := range transitions {
+		if t.MlflowRunID == "" {
+			continue
+		}
+		if raw, err := json.Marshal(MLflowSyncPayload{XID: t.XID, WID: t.WID, EID: t.EID}); err == nil {
+			payloads = append(payloads, string(raw))
+		}
+	}
+	if len(payloads) == 0 {
+		return
+	}
+	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	for _, err := range o.publisher.AddMessages(pubCtx, payloads) {
+		if err != nil {
+			logging.Warn(ctx, "Failed to publish MLflow sync event", "error", err)
+		}
+	}
+}
 
 // Updater orchestrates work unit execution updates across storage repositories.
 type Updater struct {
 	txRunner storage.TransactionRunner
+	observer TerminalTransitionObserver
 }
 
 // NewUpdater creates a new Updater backed by the given TransactionRunner.
 func NewUpdater(txRunner storage.TransactionRunner) *Updater {
 	return &Updater{txRunner: txRunner}
+}
+
+// NewUpdaterWithObserver creates a new Updater that notifies observer after
+// committing new terminal work unit execution transitions.
+func NewUpdaterWithObserver(txRunner storage.TransactionRunner, observer TerminalTransitionObserver) *Updater {
+	return &Updater{txRunner: txRunner, observer: observer}
 }
 
 // UpdateWorkUnitExecutions updates the executions of a work unit. It returns the canonical
@@ -62,21 +126,30 @@ func (u *Updater) UpdateWorkUnitExecutions(ctx context.Context, xid int64, updat
 		logging.Info(ctx, "Process work unit execution update", "update", update.WorkUnitExecution)
 	}
 
-	var updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
-	var exp *essmsgpb.Experiment
+	var res txnUpdateResult
 	err := u.txRunner.RunInTransaction(ctx, func(ctx context.Context, tx *storage.Transaction) error {
 		var err error
-		updatedExecutions, exp, err = updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
+		res, err = updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	logging.Info(ctx, "Updated work unit executions", "updatedExecutions", updatedExecutions)
-	logging.Info(ctx, "Updated Experiment", "exp", exp)
+	logging.Info(ctx, "Updated work unit executions", "updatedExecutions", res.updatedExecutions)
+	logging.Info(ctx, "Updated Experiment", "exp", res.exp)
 
-	return updatedExecutions, nil
+	if u.observer != nil && len(res.transitions) > 0 {
+		u.observer.OnTerminalTransitions(ctx, res.transitions)
+	}
+
+	return res.updatedExecutions, nil
+}
+
+type txnUpdateResult struct {
+	updatedExecutions map[int64]*essmsgpb.WorkUnitExecution
+	exp               *essmsgpb.Experiment
+	transitions       []TerminalTransition
 }
 
 // UpdateWorkUnitExecutionsInTx updates the executions of a work unit using the bound read-write
@@ -89,13 +162,13 @@ func UpdateWorkUnitExecutionsInTx(ctx context.Context, tx *storage.Transaction, 
 		return nil, nil
 	}
 
-	updatedExecutions, _, err := updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
-	return updatedExecutions, err
+	res, err := updateWorkUnitExecutionsInTxn(ctx, tx, xid, updates)
+	return res.updatedExecutions, err
 }
 
 // updateWorkUnitExecutionsInTxn applies the updates within tx and returns the canonical
-// executions and the experiment read within the transaction.
-func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (map[int64]*essmsgpb.WorkUnitExecution, *essmsgpb.Experiment, error) {
+// executions, the experiment read within the transaction, and any newly terminal transitions.
+func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction, xid int64, updates []*storage.WorkUnitExecutionUpdate) (txnUpdateResult, error) {
 	wids := make([]int64, len(updates))
 	for i, update := range updates {
 		wids[i] = update.WID
@@ -105,7 +178,7 @@ func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction,
 	// duration of the transaction using the `FOR UPDATE` hint.
 	workUnits, err := tx.WorkUnits.FetchUpdatingWorkUnits(ctx, xid, wids)
 	if err != nil {
-		return nil, nil, err
+		return txnUpdateResult{}, err
 	}
 
 	// 1.1. Process the rows and build a map of WorkUnitExecutions keyed by WorkUnitId.
@@ -129,34 +202,47 @@ func updateWorkUnitExecutionsInTxn(ctx context.Context, tx *storage.Transaction,
 
 	executionDeltas, err := processExecutionUpdates(ctx, tx, xid, workUnits, updatedExecutions, updates)
 	if err != nil {
-		return nil, nil, err
+		return txnUpdateResult{}, err
 	}
 
 	// 2.1. Update the database with the processed updates.
+	var transitions []TerminalTransition
 	for wid, execution := range updatedExecutions {
 		_, _, eid, err := validator.ValidateWorkUnitExecutionName(execution.GetName())
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to validate work unit execution name %q: %w", execution.GetName(), err)
+			return txnUpdateResult{}, fmt.Errorf("failed to validate work unit execution name %q: %w", execution.GetName(), err)
 		}
 		if eid == 0 {
-			return nil, nil, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), grpcerr.ErrInternal)
+			return txnUpdateResult{}, fmt.Errorf("invalid eid 0 from work unit execution name %q: %w", execution.GetName(), grpcerr.ErrInternal)
 		}
 
 		ctx := logging.WithWorkUnitExecutionName(ctx, execution.GetName())
 		protoDiff := diff.Diff(prototext.Format(originalExecutions[wid]), prototext.Format(execution))
 
 		if err := tx.WorkUnits.UpdateCurrentWorkUnitExecution(ctx, xid, wid, eid, execution); err != nil {
-			return nil, nil, fmt.Errorf("failed to update current work unit execution: %w", err)
+			return txnUpdateResult{}, fmt.Errorf("failed to update current work unit execution: %w", err)
 		}
 		logging.Info(ctx, fmt.Sprintf("Updated work unit execution: %s", protoDiff), "execution", execution)
+
+		prevState := originalExecutions[wid].GetStatus().GetState()
+		newState := execution.GetStatus().GetState()
+		if !slices.Contains(state.WorkUnitTerminalStates, prevState) && slices.Contains(state.WorkUnitTerminalStates, newState) {
+			transitions = append(transitions, TerminalTransition{
+				XID:         xid,
+				WID:         wid,
+				EID:         eid,
+				State:       newState,
+				MlflowRunID: execution.GetMetadata().GetMlflowRunId(),
+			})
+		}
 	}
 
 	exp, err := updateExperimentFromExecutions(ctx, tx, xid, executionDeltas, updatedExecutions)
 	if err != nil {
-		return nil, nil, err
+		return txnUpdateResult{}, err
 	}
 
-	return updatedExecutions, exp, nil
+	return txnUpdateResult{updatedExecutions: updatedExecutions, exp: exp, transitions: transitions}, nil
 }
 
 func processExecutionUpdates(ctx context.Context, tx *storage.Transaction, xid int64, workUnits map[int64]*essmsgpb.WorkUnit, updatedExecutions map[int64]*essmsgpb.WorkUnitExecution, updates []*storage.WorkUnitExecutionUpdate) ([]*state.WorkUnitStateDelta, error) {

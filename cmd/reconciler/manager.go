@@ -40,6 +40,8 @@ import (
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/internal/storage/dbconfig"
 	dbfactory "xmanager_cloud/internal/storage/factory"
+	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/workunit"
 )
 
 // healthProbeBindAddress is the address on which the manager serves the
@@ -228,15 +230,16 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		newMLRunCreator(ctx, mlRunProject, cfg.MldiagnosticsEnvironment, mlRunLocation, cfg.MLRunImpersonateSA))
 
 	batcher, err := registerControllers(ctx, controllerRegistrationParams{
-		mgr:         ctrlMgr,
-		cfg:         cfg,
-		storage:     storage,
-		k8sClient:   k8sClient,
-		cqCache:     cqCache,
-		mlRunClient: mlRunClient,
-		projectID:   gceMeta.ProjectID,
-		location:    gceMeta.Location,
-		clusterName: gceMeta.ClusterName,
+		mgr:              ctrlMgr,
+		cfg:              cfg,
+		storage:          storage,
+		k8sClient:        k8sClient,
+		cqCache:          cqCache,
+		mlRunClient:      mlRunClient,
+		terminalObserver: initMLflowTerminalObserver(cfg, &cleanups),
+		projectID:        gceMeta.ProjectID,
+		location:         gceMeta.Location,
+		clusterName:      gceMeta.ClusterName,
 	})
 	if err != nil {
 		return nil, err
@@ -259,4 +262,13 @@ func NewManager(ctx context.Context, cfg Config) (mgr *Manager, retErr error) {
 		dbHealth:  storage,
 		cleanup:   cleanup,
 	}, nil
+}
+
+func initMLflowTerminalObserver(cfg Config, cleanups *[]func() error) workunit.TerminalTransitionObserver {
+	if cfg.RedisAddr == "" {
+		return nil
+	}
+	pub := redisclient.NewPublisher(redisclient.Config{Addr: cfg.RedisAddr, ContextTimeoutEnabled: true}, constants.RedisMLflowSyncStream)
+	*cleanups = append(*cleanups, func() error { return pub.Close(context.Background()) })
+	return workunit.NewRedisTerminalObserver(pub)
 }
