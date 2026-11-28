@@ -42,6 +42,7 @@ import (
 	dbfactory "xmanager_cloud/internal/storage/factory"
 	tq "xmanager_cloud/internal/task_queue"
 	"xmanager_cloud/internal/task_queue_redis/redisclient"
+	"xmanager_cloud/internal/workunit"
 	"xmanager_cloud/pkg/auth/jwks"
 	oauth "xmanager_cloud/pkg/auth/oauth2"
 )
