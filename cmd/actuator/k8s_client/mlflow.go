@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -131,9 +132,11 @@ func (c *Client) ensureMLflowRuns(ctx context.Context, cfg *mlflow.Config, title
 	}
 
 	mu := c.lockMLflowExperiment(xid)
-	mu.Lock()
-	parentRunID, err := client.EnsureParentRun(mlflowCtx, expID, xid)
-	mu.Unlock()
+	parentRunID, err := func() (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return client.EnsureParentRun(mlflowCtx, expID, xid)
+	}()
 	if err != nil {
 		return mlflowRunIDs{experimentID: expID}, err
 	}

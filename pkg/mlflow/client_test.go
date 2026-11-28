@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,6 +32,7 @@ type fakeMLflowServer struct {
 	runExpID    map[string]string
 	expSeq      int
 	runSeq      int
+	updateCalls int
 	authHeader  string
 	sawEndTime  bool
 }
@@ -128,6 +130,7 @@ func (f *fakeMLflowServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{})
 	case "/api/2.0/mlflow/runs/update":
+		f.updateCalls++
 		var req map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if _, hasEnd := req["end_time"]; hasEnd {
@@ -205,10 +208,14 @@ func TestClient_RunLifecycleAndIdempotency(t *testing.T) {
 		t.Fatalf("EnsureChildRun(2) = (%q, %v), want distinct from %q", child2, err, child1)
 	}
 
-	// Retry/restart of work unit 1 reuses child1 and updates xmc.execution_id.
+	// Retry/restart of work unit 1 reuses child1 and updates xmc.execution_id without redundant runs/update.
+	updatesBeforeRetry := srv.updateCalls
 	child1Retry, err := client.EnsureChildRun(ctx, expID, parentID, 100, 1, 2)
 	if err != nil || child1Retry != child1 {
 		t.Fatalf("EnsureChildRun(retry) = (%q, %v), want %q", child1Retry, err, child1)
+	}
+	if srv.updateCalls != updatesBeforeRetry {
+		t.Errorf("runs/update called %d times on already-SCHEDULED retry, want 0", srv.updateCalls-updatesBeforeRetry)
 	}
 
 	if srv.sawEndTime {
@@ -222,5 +229,22 @@ func TestClient_RunLifecycleAndIdempotency(t *testing.T) {
 	}
 	if got, _ := findTag(srv.runs[child1].Data.Tags, "xmc.execution_id"); got != "2" {
 		t.Errorf("child1 xmc.execution_id = %q, want 2", got)
+	}
+}
+
+func TestClient_NonJSONErrorFallback(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream proxy timeout"))
+	}))
+	defer ts.Close()
+
+	client, err := NewClient(&Config{TrackingURI: ts.URL}, ts.Client())
+	if err != nil {
+		t.Fatalf("NewClient() error: %v", err)
+	}
+	_, err = client.EnsureExperiment(context.Background(), "exp")
+	if err == nil || !strings.Contains(err.Error(), "upstream proxy timeout") {
+		t.Fatalf("EnsureExperiment() error = %v, want raw body fallback", err)
 	}
 }

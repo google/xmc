@@ -1,3 +1,4 @@
+// Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -159,10 +160,11 @@ func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID s
 		return "", err
 	}
 	eidStr := strconv.FormatInt(eid, 10)
-	var runID string
+	var runID, curStatus string
 	for _, r := range runs {
 		if r.Info.RunID != "" {
 			runID = r.Info.RunID
+			curStatus = r.Info.Status
 			if curEID, ok := findTag(r.Data.Tags, "xmc.execution_id"); !ok || curEID != eidStr {
 				if err := c.setTag(ctx, runID, "xmc.execution_id", eidStr); err != nil {
 					return "", err
@@ -182,8 +184,10 @@ func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID s
 			return "", err
 		}
 	}
-	if err := c.updateRunStatus(ctx, runID, "SCHEDULED"); err != nil {
-		return "", err
+	if curStatus != "SCHEDULED" {
+		if err := c.updateRunStatus(ctx, runID, "SCHEDULED"); err != nil {
+			return "", err
+		}
 	}
 	return runID, nil
 }
@@ -284,6 +288,14 @@ func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, o
 	if resp.StatusCode >= 400 {
 		ae := &apiError{StatusCode: resp.StatusCode}
 		_ = json.Unmarshal(rawResp, ae)
+		if ae.Message == "" && len(rawResp) > 0 {
+			const maxRawErrorBytes = 512
+			msg := strings.TrimSpace(string(rawResp))
+			if len(msg) > maxRawErrorBytes {
+				msg = msg[:maxRawErrorBytes] + "..."
+			}
+			ae.Message = msg
+		}
 		return ae
 	}
 	if out != nil && len(rawResp) > 0 {
