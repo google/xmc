@@ -171,6 +171,26 @@ func TestMergeWorkUnits(t *testing.T) {
 			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"tags"}},
 			wantErr:    true,
 		},
+		{
+			name: "preserves MLflow run url on user urls update",
+			current: &pb.WorkUnit{
+				Urls: []*pb.Url{
+					{Url: "http://user.com", DisplayName: "User"},
+					{Url: "http://mlflow/#/experiments/1/runs/r1", DisplayName: "MLflow run", Icon: "timeline"},
+				},
+			},
+			updated: &pb.WorkUnit{
+				Urls: []*pb.Url{{Url: "http://new-user.com", DisplayName: "New User"}},
+			},
+			updateMask: &fieldmaskpb.FieldMask{Paths: []string{"urls"}},
+			want: &pb.WorkUnit{
+				Urls: []*pb.Url{
+					{Url: "http://new-user.com", DisplayName: "New User"},
+					{Url: "http://mlflow/#/experiments/1/runs/r1", DisplayName: "MLflow run", Icon: "timeline"},
+				},
+				Tags: []string{},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

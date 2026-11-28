@@ -46,7 +46,7 @@ func MergeWorkUnits(current, updated *pb.WorkUnit, updateMask *fieldmaskpb.Field
 			if updated.Urls == nil {
 				return nil, fmt.Errorf("urls field cannot be nil: %w", grpcerr.ErrInvalidArgument)
 			}
-			merged.Urls = updated.Urls
+			merged.Urls = mergePreservedURLs(current.GetUrls(), updated.Urls, "MLflow run")
 		case "tags":
 			if updated.Tags == nil {
 				return nil, fmt.Errorf("tags field cannot be nil: %w", grpcerr.ErrInvalidArgument)

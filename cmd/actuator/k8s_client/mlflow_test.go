@@ -224,8 +224,15 @@ func setupMLflowTestClient(t *testing.T, comp *unstructured.Unstructured, exp *e
 			WorkUnit:   &esspb.WorkUnit{Name: "experiments/123/workUnits/1"},
 		},
 		execs: execs,
+		wus: map[int64]*esspb.WorkUnit{
+			1: {Name: "experiments/123/workUnits/1"},
+			2: {Name: "experiments/123/workUnits/2"},
+		},
 	}
-	c := NewWithClients(cs, dyn, ActuatorRuntimeConfig{DefaultExecutionEnvironment: "gke"}, &alwaysPassingPreconditionsValidator{}, store)
+	c := NewWithClients(cs, dyn, ActuatorRuntimeConfig{
+		DefaultExecutionEnvironment: "gke",
+		FrontendURL:                 "http://localhost:8080",
+	}, &alwaysPassingPreconditionsValidator{}, store)
 	c.SetMLflowHTTPClient(hc)
 	return c, store
 }
@@ -234,6 +241,7 @@ type mlflowTestStorage struct {
 	*storage.MockStorage
 	mu    sync.Mutex
 	execs map[int64]*esspb.WorkUnitExecution
+	wus   map[int64]*esspb.WorkUnit
 }
 
 func (m *mlflowTestStorage) RunInTransaction(ctx context.Context, fn func(ctx context.Context, tx *storage.Transaction) error) error {
@@ -265,6 +273,41 @@ func (m *mlflowTestStorage) UpdateCurrentWorkUnitExecution(_ context.Context, _ 
 	defer m.mu.Unlock()
 	m.execs[wid] = exec
 	return nil
+}
+
+func (m *mlflowTestStorage) UpdateExperiment(_ context.Context, update *storage.ExperimentUpdate) (storage.UpdatedExperiments, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	orig := m.Experiment
+	updated := &esspb.Experiment{
+		Name:           orig.GetName(),
+		Title:          orig.GetTitle(),
+		ExperimentType: orig.GetExperimentType(),
+		Urls:           update.Experiment.GetUrls(),
+	}
+	m.Experiment = updated
+	return storage.UpdatedExperiments{Original: orig, Updated: updated}, nil
+}
+
+func (m *mlflowTestStorage) FetchWorkUnit(_ context.Context, xid, wid int64) (*esspb.WorkUnit, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if wu, ok := m.wus[wid]; ok {
+		return wu, nil
+	}
+	return &esspb.WorkUnit{Name: fmt.Sprintf("experiments/%d/workUnits/%d", xid, wid)}, nil
+}
+
+func (m *mlflowTestStorage) UpdateWorkUnit(_ context.Context, update *storage.WorkUnitUpdate) (storage.UpdatedWorkUnits, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	orig := m.wus[update.WID]
+	updated := &esspb.WorkUnit{
+		Name: fmt.Sprintf("experiments/%d/workUnits/%d", update.XID, update.WID),
+		Urls: update.WorkUnit.GetUrls(),
+	}
+	m.wus[update.WID] = updated
+	return storage.UpdatedWorkUnits{Original: orig, Updated: updated}, nil
 }
 
 func TestConstructJobSet_MLflowLifecycleAndEnvInjection(t *testing.T) {
@@ -368,6 +411,49 @@ func TestConstructJobSet_MLflowLifecycleAndEnvInjection(t *testing.T) {
 	gotExec := store.execs[1]
 	if gotExec.GetMetadata().GetResourceName() != "xmc-operation-123-1" || gotExec.GetMetadata().GetMlflowRunId() == "" {
 		t.Errorf("WorkUnitExecution metadata not merged cleanly: %+v", gotExec.GetMetadata())
+	}
+
+	// Verify Experiment and WorkUnit URLs were persisted without duplicates.
+	if len(store.Experiment.GetUrls()) != 1 || store.Experiment.GetUrls()[0].GetDisplayName() != "MLflow charts" {
+		t.Errorf("Experiment.Urls = %+v, want single MLflow charts entry", store.Experiment.GetUrls())
+	}
+	if !strings.Contains(store.Experiment.GetUrls()[0].GetUrl(), "compareRunsMode=CHART") {
+		t.Errorf("Experiment MLflow URL missing compareRunsMode=CHART: %q", store.Experiment.GetUrls()[0].GetUrl())
+	}
+	if len(store.wus[1].GetUrls()) != 1 || store.wus[1].GetUrls()[0].GetDisplayName() != "MLflow run" {
+		t.Errorf("WorkUnit[1].Urls = %+v, want single MLflow run entry", store.wus[1].GetUrls())
+	}
+
+	// Verify MLflow -> XMC tags and Markdown description on parent and child runs.
+	parentID := js1.Annotations[constants.MLflowParentRunIDAnnotation]
+	childID := js1.Annotations[constants.MLflowRunIDAnnotation]
+	if srv.runs[parentID].Tags["xmc.experiment_url"] != "http://localhost:8080/experiments/123" {
+		t.Errorf("parent xmc.experiment_url = %q", srv.runs[parentID].Tags["xmc.experiment_url"])
+	}
+	if !strings.Contains(srv.runs[parentID].Tags["mlflow.note.content"], "my-sweep") {
+		t.Errorf("parent mlflow.note.content = %q, want title", srv.runs[parentID].Tags["mlflow.note.content"])
+	}
+	if srv.runs[childID].Tags["xmc.work_unit_url"] != "http://localhost:8080/experiments/123/workUnits/1" {
+		t.Errorf("child xmc.work_unit_url = %q", srv.runs[childID].Tags["xmc.work_unit_url"])
+	}
+	if !strings.Contains(srv.runs[childID].Tags["mlflow.note.content"], "http://localhost:8080/experiments/123/workUnits/1") {
+		t.Errorf("child mlflow.note.content = %q, want work unit URL", srv.runs[childID].Tags["mlflow.note.content"])
+	}
+}
+
+func TestUpsertURLByDisplayName_UpdatesInPlace(t *testing.T) {
+	initial := []*esspb.Url{
+		{DisplayName: "Other", Url: "https://other.example.com"},
+		{DisplayName: "MLflow charts", Url: "https://old-mlflow/#/experiments/1", Icon: "analytics"},
+	}
+	target := &esspb.Url{DisplayName: "MLflow charts", Url: "https://new-mlflow/#/experiments/1", Icon: "analytics"}
+
+	updated, changed := upsertURLByDisplayName(initial, target)
+	if !changed || len(updated) != 2 || updated[1].GetUrl() != target.GetUrl() {
+		t.Fatalf("upsertURLByDisplayName() = (%+v, %v), want in-place update", updated, changed)
+	}
+	if _, changedAgain := upsertURLByDisplayName(updated, target); changedAgain {
+		t.Errorf("upsertURLByDisplayName() reported changed=true on identical entry")
 	}
 }
 

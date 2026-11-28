@@ -59,6 +59,9 @@ type ActuatorRuntimeConfig struct {
 
 	// Decides whether pods can run with host networking when requested.
 	AllowHostNetwork bool
+
+	// Browser-facing XMC UI base URL for bidirectional tracking links.
+	FrontendURL string
 }
 
 // Priorities holds experiment and work unit priorities.

@@ -133,53 +133,66 @@ func (c *Client) EnsureExperiment(ctx context.Context, title string) (string, er
 	return "", err
 }
 
-// EnsureParentRun returns the MLflow parent run ID for xid, creating it if absent.
-func (c *Client) EnsureParentRun(ctx context.Context, experimentID string, xid int64) (string, error) {
+// RunLinks holds XMC metadata and URLs attached as tags and description to MLflow runs.
+type RunLinks struct {
+	ExperimentTitle string
+	ExperimentURL   string
+	WorkUnitURL     string
+}
+
+// EnsureParentRun returns the MLflow parent run ID for xid, creating it if absent
+// and ensuring XMC link tags and description are set.
+func (c *Client) EnsureParentRun(ctx context.Context, experimentID string, xid int64, links RunLinks) (string, error) {
 	runName := fmt.Sprintf("xmc-%d", xid)
 	filter := fmt.Sprintf("tags.`xmc.experiment_id` = '%d' AND tags.`mlflow.runName` = '%s'", xid, runName)
 	runs, err := c.searchRuns(ctx, experimentID, filter)
 	if err != nil {
 		return "", err
 	}
+	desiredTags := append([]runTag{
+		{Key: "xmc.experiment_id", Value: strconv.FormatInt(xid, 10)},
+	}, buildLinkTags(links, false)...)
 	for _, r := range runs {
 		if _, hasParent := findTag(r.Data.Tags, "mlflow.parentRunId"); !hasParent && r.Info.RunID != "" {
+			if err := c.syncRunTags(ctx, r.Info.RunID, r.Data.Tags, desiredTags); err != nil {
+				return "", err
+			}
 			return r.Info.RunID, nil
 		}
 	}
-	return c.createRun(ctx, experimentID, runName, []runTag{
-		{Key: "xmc.experiment_id", Value: strconv.FormatInt(xid, 10)},
-	})
+	return c.createRun(ctx, experimentID, runName, desiredTags)
 }
 
-// EnsureChildRun returns the MLflow child run ID for (xid, wid), creating or reusing it
-// and setting its status to SCHEDULED.
-func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID string, xid, wid, eid int64) (string, error) {
+// EnsureChildRun returns the MLflow child run ID for (xid, wid), creating or reusing it,
+// ensuring XMC link tags and description are set, and setting its status to SCHEDULED.
+func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID string, xid, wid, eid int64, links RunLinks) (string, error) {
 	filter := fmt.Sprintf("tags.`xmc.experiment_id` = '%d' AND tags.`xmc.work_unit_id` = '%d'", xid, wid)
 	runs, err := c.searchRuns(ctx, experimentID, filter)
 	if err != nil {
 		return "", err
 	}
 	eidStr := strconv.FormatInt(eid, 10)
+	linkTags := buildLinkTags(links, true)
 	var runID, curStatus string
 	for _, r := range runs {
 		if r.Info.RunID != "" {
 			runID = r.Info.RunID
 			curStatus = r.Info.Status
-			if curEID, ok := findTag(r.Data.Tags, "xmc.execution_id"); !ok || curEID != eidStr {
-				if err := c.setTag(ctx, runID, "xmc.execution_id", eidStr); err != nil {
-					return "", err
-				}
+			desired := append([]runTag{{Key: "xmc.execution_id", Value: eidStr}}, linkTags...)
+			if err := c.syncRunTags(ctx, runID, r.Data.Tags, desired); err != nil {
+				return "", err
 			}
 			break
 		}
 	}
 	if runID == "" {
-		runID, err = c.createRun(ctx, experimentID, fmt.Sprintf("wu-%d", wid), []runTag{
+		tags := []runTag{
 			{Key: "mlflow.parentRunId", Value: parentRunID},
 			{Key: "xmc.experiment_id", Value: strconv.FormatInt(xid, 10)},
 			{Key: "xmc.work_unit_id", Value: strconv.FormatInt(wid, 10)},
 			{Key: "xmc.execution_id", Value: eidStr},
-		})
+		}
+		runID, err = c.createRun(ctx, experimentID, fmt.Sprintf("wu-%d", wid), append(tags, linkTags...))
 		if err != nil {
 			return "", err
 		}
@@ -190,6 +203,33 @@ func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID s
 		}
 	}
 	return runID, nil
+}
+
+func buildLinkTags(links RunLinks, includeWorkUnit bool) []runTag {
+	var tags []runTag
+	if links.ExperimentURL != "" {
+		tags = append(tags, runTag{Key: "xmc.experiment_url", Value: links.ExperimentURL})
+	}
+	wuURL := ""
+	if includeWorkUnit && links.WorkUnitURL != "" {
+		wuURL = links.WorkUnitURL
+		tags = append(tags, runTag{Key: "xmc.work_unit_url", Value: wuURL})
+	}
+	if desc := RunDescription(links.ExperimentTitle, links.ExperimentURL, wuURL); desc != "" {
+		tags = append(tags, runTag{Key: "mlflow.note.content", Value: desc})
+	}
+	return tags
+}
+
+func (c *Client) syncRunTags(ctx context.Context, runID string, existing, desired []runTag) error {
+	for _, want := range desired {
+		if cur, ok := findTag(existing, want.Key); !ok || cur != want.Value {
+			if err := c.setTag(ctx, runID, want.Key, want.Value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (c *Client) getExperimentByName(ctx context.Context, title string) (string, error) {

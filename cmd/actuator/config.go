@@ -65,6 +65,7 @@ var (
 	metricsEnabled              bool
 	allowPrivilegedContainers   bool
 	allowHostNetwork            bool
+	frontendURL                 string
 	featureFlags                featureflags.Flags
 )
 
@@ -94,6 +95,7 @@ func init() {
 // registerConfigs loads ConfigMap managed values using configutil.
 func registerConfigs() {
 	configutil.StringEnv(&port, "port", "8080")
+	configutil.StringEnv(&frontendURL, "frontend_url", "")
 	configutil.StringEnv(&xmanagerServiceAccount, "xmanager_service_account", "")
 	configutil.StringEnv(&audience, "audience", "")
 	configutil.StringEnv(&jwksURL, "jwks_url", "")
@@ -144,6 +146,11 @@ func Load() Config {
 		resolvedJWKSURL = fmt.Sprintf("%s/keys", strings.TrimSuffix(resolvedIssuer, "/"))
 	}
 
+	resolvedFrontendURL := strings.TrimRight(strings.TrimSpace(frontendURL), "/")
+	if resolvedFrontendURL == "" {
+		resolvedFrontendURL = strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_URL")), "/")
+	}
+
 	return Config{
 		Port: port,
 		RuntimeConfig: k8sclient.ActuatorRuntimeConfig{
@@ -152,6 +159,7 @@ func Load() Config {
 			MetricsEnabled:              metricsEnabled,
 			AllowPrivilegedContainers:   allowPrivilegedContainers,
 			AllowHostNetwork:            allowHostNetwork,
+			FrontendURL:                 resolvedFrontendURL,
 		},
 		Audience:               aud,
 		XManagerServiceAccount: xmanagerServiceAccount,
