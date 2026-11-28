@@ -222,7 +222,12 @@ func (c *Client) constructJobSet(ctx context.Context, workUnit *esspb.WorkUnit, 
 	replicatedJobs := c.buildReplicatedJobs(ctx, workUnit, meta.jobLabels, meta.defaultAnnotations, xprofObjectPath)
 	jobSet := buildBaseJobSet(workUnit, buildJobSetName(target), namespace, meta, replicatedJobs)
 
-	return c.finalizeAndValidateJobSet(ctx, workUnit, namespace, jobSet)
+	jobSet, err = c.finalizeAndValidateJobSet(ctx, workUnit, namespace, jobSet)
+	if err != nil {
+		return nil, err
+	}
+	c.configureMLflowForJobSet(ctx, xidInt, widInt, eidInt, namespace, jobSet)
+	return jobSet, nil
 }
 
 // resolveManagedXprofObjectPath returns the managed-xprof GCS destination whenever the cluster

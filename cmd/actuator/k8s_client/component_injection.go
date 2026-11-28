@@ -33,6 +33,7 @@ import (
 	constants "xmanager_cloud/internal/kubernetes/common/constants"
 	"xmanager_cloud/internal/logging"
 	"xmanager_cloud/pkg/components/crreader"
+	"xmanager_cloud/pkg/mlflow"
 )
 
 // componentAccess encapsulates resolved access configurations from a component custom resource.
@@ -72,6 +73,10 @@ func (c *Client) evaluateComponentSnapshots(ctx context.Context, workUnit *esspb
 
 		if err := evaluateComponentPlacement(ctx, compName, lockedGen, comp, jobSet); err != nil {
 			return err
+		}
+		if compName == mlflow.ComponentName {
+			// MLflow pod env vars (MLFLOW_*) are injected separately; never leak raw access metadata.
+			continue
 		}
 		access, err := extractComponentAccess(comp)
 		if err != nil {

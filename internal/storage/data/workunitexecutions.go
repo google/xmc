@@ -151,6 +151,12 @@ func mergeWorkUnitExecutionMetadataPath(newExecution, updatedExecution *pb.WorkU
 		newExecution.Metadata.MultiKueueClusterName = updatedExecution.GetMetadata().GetMultiKueueClusterName()
 	case "metadata.mlrun_url":
 		newExecution.Metadata.MlrunUrl = updatedExecution.GetMetadata().GetMlrunUrl()
+	case "metadata.mlflow_experiment_id":
+		newExecution.Metadata.MlflowExperimentId = updatedExecution.GetMetadata().GetMlflowExperimentId()
+	case "metadata.mlflow_parent_run_id":
+		newExecution.Metadata.MlflowParentRunId = updatedExecution.GetMetadata().GetMlflowParentRunId()
+	case "metadata.mlflow_run_id":
+		newExecution.Metadata.MlflowRunId = updatedExecution.GetMetadata().GetMlflowRunId()
 	default:
 		return fmt.Errorf("field %q is not updateable: %w", path, grpcerr.ErrInvalidArgument)
 	}

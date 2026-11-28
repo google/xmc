@@ -196,6 +196,13 @@ const (
 	// ComponentDriftWarningAnnotation is the annotation applied to JobSets when component drift is detected.
 	ComponentDriftWarningAnnotation = "xmc.dev/component-drift-warning"
 
+	// MLflowExperimentIDAnnotation stores the MLflow experiment ID on a JobSet.
+	MLflowExperimentIDAnnotation = "xmc.dev/mlflow-experiment-id"
+	// MLflowParentRunIDAnnotation stores the MLflow parent run ID on a JobSet.
+	MLflowParentRunIDAnnotation = "xmc.dev/mlflow-parent-run-id"
+	// MLflowRunIDAnnotation stores the MLflow child run ID on a JobSet.
+	MLflowRunIDAnnotation = "xmc.dev/mlflow-run-id"
+
 	// Component custom resource metadata and defaults.
 	ComponentCRDGroup          = "xmc.dev"
 	ComponentCRDVersion        = "v1alpha1"
