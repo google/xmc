@@ -39,6 +39,7 @@ type Config struct {
 	MLRunImpersonateSA               string
 	MetricsPort                      int
 	ReconciliationTimeout            time.Duration
+	RedisAddr                        string
 }
 
 // Flags and ConfigMap configurations.
@@ -60,6 +61,7 @@ var (
 	mlRunImpersonateSA               string
 	metricsPort                      int
 	reconciliationTimeout            time.Duration
+	redisAddr                        string
 )
 
 // init runs when the package is imported. It defines CLI flags and loads ConfigMaps.
@@ -91,6 +93,7 @@ func registerConfigs() {
 	configutil.StringEnv(&mlRunImpersonateSA, "mlrun_impersonate_sa", "")
 	configutil.IntEnv(&metricsPort, "metrics_port", 8082)
 	configutil.DurationEnv(&reconciliationTimeout, "reconciliation_timeout", 2*time.Minute)
+	configutil.StringEnv(&redisAddr, "redis_addr", "")
 }
 
 // Load returns a Config struct populated with values from ConfigMaps and parsed flags.
@@ -115,5 +118,6 @@ func Load() Config {
 		MLRunImpersonateSA:               mlRunImpersonateSA,
 		MetricsPort:                      metricsPort,
 		ReconciliationTimeout:            reconciliationTimeout,
+		RedisAddr:                        redisAddr,
 	}
 }

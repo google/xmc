@@ -150,6 +150,17 @@ const (
 	StudyControllerWorkerID = "study-controller-worker"
 	// StudyControllerCleanupWorkerID is the prefix for the ID of the Study Controller cleanup worker.
 	StudyControllerCleanupWorkerID = "study-controller-cleanup"
+	// RedisMLflowSyncStream is the name of the Redis stream carrying terminal work unit
+	// state sync events for MLflow.
+	RedisMLflowSyncStream = "xmc-mlflow-sync-stream"
+	// RedisMLflowSyncGroup is the name of the Redis consumer group for MLflow sync workers.
+	RedisMLflowSyncGroup = "mlflow-sync-group"
+	// RedisMLflowSyncDLQ is the name of the Redis dead-letter stream for MLflow sync events.
+	RedisMLflowSyncDLQ = "xmc-mlflow-sync-dlq-stream"
+	// MLflowSyncWorkerID is the prefix for the ID of the Actuator MLflow sync worker.
+	MLflowSyncWorkerID = "mlflow-sync-worker"
+	// MLflowSyncCleanupWorkerID is the prefix for the ID of the Actuator MLflow sync cleanup worker.
+	MLflowSyncCleanupWorkerID = "mlflow-sync-cleanup"
 
 	// RedisMaxRetries is the maximum number of retries for a Redis task.
 	RedisMaxRetries = 5

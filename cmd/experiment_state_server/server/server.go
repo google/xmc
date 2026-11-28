@@ -114,10 +114,10 @@ func newStatusMessageHandler(base baseHandler) *StatusMessageHandler {
 	}
 }
 
-func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, server apipb.ExperimentStateServiceServer) *WorkUnitHandler {
+func newWorkUnitHandler(base baseHandler, actuator WorkUnitActuator, observer workunit.TerminalTransitionObserver, server apipb.ExperimentStateServiceServer) *WorkUnitHandler {
 	return &WorkUnitHandler{
 		baseHandler:     base,
-		workUnitUpdater: workunit.NewUpdater(base.storage),
+		workUnitUpdater: workunit.NewUpdaterWithObserver(base.storage, observer),
 		actuator:        actuator,
 		server:          server,
 	}
@@ -131,6 +131,8 @@ type Params struct {
 	XidClient         xidgrpcpb.XidServiceClient
 	WorkUnitActuator  WorkUnitActuator
 	ArtifactObservers []ArtifactObserver
+	// TerminalTransitionObserver, when set, is notified after committed terminal work unit transitions.
+	TerminalTransitionObserver workunit.TerminalTransitionObserver
 	// StudyReconcilePublisher receives the initial reconcile tick of every created STUDY.
 	StudyReconcilePublisher StudyReconcilePublisher
 	// BackgroundTasks, when set, tracks post-commit study chart provisioning so shutdown can drain
@@ -168,7 +170,7 @@ func New(p Params) (*Server, error) {
 
 	s := &Server{}
 	s.ExperimentHandler = newExperimentHandler(base, p.StudyReconcilePublisher, s)
-	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, s)
+	s.WorkUnitHandler = newWorkUnitHandler(base, p.WorkUnitActuator, p.TerminalTransitionObserver, s)
 	s.ArtifactHandler = newArtifactHandler(base, p.ArtifactObservers...)
 	s.ExperimentHandler.studyCharts = newStudyChartProvisioner(s.ArtifactHandler, p.BackgroundTasks)
 	s.StatusMessageHandler = newStatusMessageHandler(base)

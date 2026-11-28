@@ -26,6 +26,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	essmsgpb "xmanager_cloud/api/protos/experiment"
 )
 
 const (
@@ -153,12 +155,18 @@ func (c *Client) EnsureParentRun(ctx context.Context, experimentID string, xid i
 		{Key: "xmc.experiment_id", Value: strconv.FormatInt(xid, 10)},
 	}, buildLinkTags(links, false)...)
 	for _, r := range runs {
-		if _, hasParent := findTag(r.Data.Tags, "mlflow.parentRunId"); !hasParent && r.Info.RunID != "" {
-			if err := c.syncRunTags(ctx, r.Info.RunID, r.Data.Tags, desiredTags); err != nil {
+		if _, hasParent := findTag(r.Data.Tags, "mlflow.parentRunId"); hasParent || r.Info.RunID == "" {
+			continue
+		}
+		if err := c.syncRunTags(ctx, r.Info.RunID, r.Data.Tags, desiredTags); err != nil {
+			return "", err
+		}
+		if isTerminalRunStatus(r.Info.Status) {
+			if err := c.updateRunStatus(ctx, r.Info.RunID, "RUNNING", 0); err != nil {
 				return "", err
 			}
-			return r.Info.RunID, nil
 		}
+		return r.Info.RunID, nil
 	}
 	return c.createRun(ctx, experimentID, runName, desiredTags)
 }
@@ -198,7 +206,7 @@ func (c *Client) EnsureChildRun(ctx context.Context, experimentID, parentRunID s
 		}
 	}
 	if curStatus != "SCHEDULED" {
-		if err := c.updateRunStatus(ctx, runID, "SCHEDULED"); err != nil {
+		if err := c.updateRunStatus(ctx, runID, "SCHEDULED", 0); err != nil {
 			return "", err
 		}
 	}
@@ -291,10 +299,41 @@ func (c *Client) setTag(ctx context.Context, runID, key, value string) error {
 	return c.doJSON(ctx, http.MethodPost, "/api/2.0/mlflow/runs/set-tag", body, nil)
 }
 
-func (c *Client) updateRunStatus(ctx context.Context, runID, status string) error {
-	// Omit end_time when transitioning to SCHEDULED so MLflow does not reject or close the run.
-	body := map[string]string{"run_id": runID, "status": status}
+type updateRunRequest struct {
+	RunID   string `json:"run_id"`
+	Status  string `json:"status"`
+	EndTime int64  `json:"end_time,omitempty"`
+}
+
+// UpdateRunStatus sets the status (and optional end_time in epoch milliseconds) of runID.
+// When endTimeMs is 0, end_time is omitted so non-terminal transitions (SCHEDULED, RUNNING)
+// reopen or reset the run without sending a zero end_time.
+func (c *Client) UpdateRunStatus(ctx context.Context, runID, status string, endTimeMs int64) error {
+	if strings.TrimSpace(runID) == "" {
+		return fmt.Errorf("mlflow run_id cannot be empty")
+	}
+	if strings.TrimSpace(status) == "" {
+		return fmt.Errorf("mlflow status cannot be empty")
+	}
+	return c.updateRunStatus(ctx, runID, status, endTimeMs)
+}
+
+func (c *Client) updateRunStatus(ctx context.Context, runID, status string, endTimeMs int64) error {
+	body := updateRunRequest{RunID: runID, Status: status, EndTime: endTimeMs}
 	return c.doJSON(ctx, http.MethodPost, "/api/2.0/mlflow/runs/update", body, nil)
+}
+
+func isTerminalRunStatus(status string) bool {
+	return status == "FINISHED" || status == "FAILED" || status == "KILLED"
+}
+
+// IsPermanentError reports whether err is a non-retryable MLflow API 4xx error (excluding 429).
+func IsPermanentError(err error) bool {
+	var ae *apiError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	return ae.StatusCode >= 400 && ae.StatusCode < 500 && ae.StatusCode != http.StatusTooManyRequests
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, reqBody any, out any) error {
@@ -370,4 +409,42 @@ func findTag(tags []runTag, key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// MapWorkUnitTerminalState maps a terminal XMC WorkUnitState to its MLflow run status.
+func MapWorkUnitTerminalState(state essmsgpb.WorkUnitStatus_WorkUnitState) (string, bool) {
+	switch state {
+	case essmsgpb.WorkUnitStatus_COMPLETED:
+		return "FINISHED", true
+	case essmsgpb.WorkUnitStatus_FAILED:
+		return "FAILED", true
+	case essmsgpb.WorkUnitStatus_STOPPED:
+		return "KILLED", true
+	default:
+		return "", false
+	}
+}
+
+// ComputeParentRunStatus returns the terminal MLflow status for an experiment's parent run
+// when all work units are terminal: KILLED if all STOPPED, FAILED if all FAILED, else FINISHED.
+func ComputeParentRunStatus(states []essmsgpb.WorkUnitStatus_WorkUnitState) (string, bool) {
+	if len(states) == 0 {
+		return "", false
+	}
+	allStopped, allFailed := true, true
+	for _, s := range states {
+		mapped, ok := MapWorkUnitTerminalState(s)
+		if !ok {
+			return "", false
+		}
+		allStopped = allStopped && mapped == "KILLED"
+		allFailed = allFailed && mapped == "FAILED"
+	}
+	if allStopped {
+		return "KILLED", true
+	}
+	if allFailed {
+		return "FAILED", true
+	}
+	return "FINISHED", true
 }

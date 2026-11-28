@@ -188,7 +188,8 @@ func TestMergeWorkUnits(t *testing.T) {
 					{Url: "http://new-user.com", DisplayName: "New User"},
 					{Url: "http://mlflow/#/experiments/1/runs/r1", DisplayName: "MLflow run", Icon: "timeline"},
 				},
-				Tags: []string{},
+				Tags:     []string{},
+				Priority: pb.Priority_LOW,
 			},
 		},
 	}

@@ -65,8 +65,15 @@ spec:
         {{- $gac := default .Values.googleApplicationCredentials $auth.googleApplicationCredentials }}
         {{- $remoteK8s := default (dict) .Values.remoteK8s }}
         {{- $isPostgres := eq (include "xmanager-cloud.dbBackend" .) "postgres" }}
-        {{- if or $gac $remoteK8s.enabled $isPostgres }}
+        {{- if or .Values.redisAddr $gac $remoteK8s.enabled $isPostgres }}
         env:
+        {{- if .Values.redisAddr }}
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        {{- end }}
         {{- if $gac }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: {{ $gac | quote }}

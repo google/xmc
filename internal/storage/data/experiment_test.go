@@ -259,7 +259,8 @@ func TestMergeExperiments(t *testing.T) {
 					{Url: "http://new-user.com", DisplayName: "New User"},
 					{Url: "http://mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
 				},
-				Tags: []string{},
+				Tags:     []string{},
+				Priority: pb.Priority_LOW,
 			},
 		},
 		{
@@ -281,7 +282,8 @@ func TestMergeExperiments(t *testing.T) {
 				Urls: []*pb.Url{
 					{Url: "http://new-mlflow/#/experiments/1", DisplayName: "MLflow charts", Icon: "analytics"},
 				},
-				Tags: []string{},
+				Tags:     []string{},
+				Priority: pb.Priority_LOW,
 			},
 		},
 	}
