@@ -18,10 +18,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	essmsgpb "xmanager_cloud/api/protos/experiment"
 	"xmanager_cloud/internal/storage"
 	"xmanager_cloud/internal/storage/spanner"
@@ -50,10 +48,10 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:     "experiments/1/workUnits/1/executions/1",
-			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING, StateUpdateTime: timestamppb.New(time.Unix(10, 0))},
+			Status:   &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_RUNNING},
 			Metadata: &essmsgpb.WorkUnitExecutionMetadata{MlflowRunId: "run-1"},
 		},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "status.state_update_time", "metadata.mlflow_run_id"}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "metadata.mlflow_run_id"}},
 	}})
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions(RUNNING) error: %v", err)
@@ -67,9 +65,9 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:   "experiments/1/workUnits/1/executions/1",
-			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED, StateUpdateTime: timestamppb.New(time.Unix(20, 0))},
+			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_COMPLETED},
 		},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "status.state_update_time"}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 	}})
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions(COMPLETED) error: %v", err)
@@ -90,9 +88,9 @@ func TestRedisTerminalObserver_EmitsOnlyOnNewTerminalTransitions(t *testing.T) {
 		WID: 1, EID: 1,
 		WorkUnitExecution: &essmsgpb.WorkUnitExecution{
 			Name:   "experiments/1/workUnits/1/executions/1",
-			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_STOPPED, StateUpdateTime: timestamppb.New(time.Unix(30, 0))},
+			Status: &essmsgpb.WorkUnitStatus{State: essmsgpb.WorkUnitStatus_STOPPED},
 		},
-		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state", "status.state_update_time"}},
+		UpdateMask: &fieldmaskpb.FieldMask{Paths: []string{"status.state"}},
 	}})
 	if err != nil {
 		t.Fatalf("UpdateWorkUnitExecutions(STOPPED on COMPLETED) error: %v", err)
